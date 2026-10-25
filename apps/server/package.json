@@ -5,17 +5,25 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "NODE_ENV=production tsx src/index.ts"
+    "start": "NODE_ENV=production tsx src/index.ts",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.2.14",
     "@rsdp/engine": "*",
+    "drizzle-orm": "^0.36.4",
     "express": "^4.21.1",
     "nanoid": "^5.0.8",
+    "pg": "^8.13.1",
     "socket.io": "^4.8.1",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^22.9.0"
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.28.1",
+    "vitest": "^2.1.4"
   }
 }
