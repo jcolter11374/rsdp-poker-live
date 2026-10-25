@@ -364,6 +364,26 @@ describe('busts, rebuys and re-entry', () => {
     expect(() => sim.register(1, 2)).toThrow();
   });
 
+  it('a lone survivor waits for a late registration the host has not approved yet', () => {
+    const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 4 }, registrationApproval: true });
+    sim.register(2);
+    for (const r of sim.of('requestPending')) sim.do({ type: 'approve', by: 'host', requestId: r.request.id });
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.register(1, 2);
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(sim.state.status).toBe('running');
+    sim.do({ type: 'approve', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.entry('p2').status).toBe('seated');
+  });
+
+  it('with nobody busted yet, a lone player waits for late registration', () => {
+    const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 4 } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.do({ type: 'remove', by: 'host', playerId: 'p1' });
+    expect(sim.state.status).toBe('running');
+  });
+
   it('a quit during a hand takes effect when the hand ends', () => {
     const sim = new Sim({ allowQuit: true });
     sim.register(3);

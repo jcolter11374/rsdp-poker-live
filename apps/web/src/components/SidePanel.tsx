@@ -36,7 +36,7 @@ export function SidePanel({
     view.seats.forEach((s, i) => s && m.set(i, s.name));
     return m;
   }, [view.seats]);
-  const handLines = view.hand ? eventLines(view.hand.events, (seat) => view.hand?.names[seat] ?? names.get(seat) ?? `Seat ${seat + 1}`, fmt, view.me.seat) : [];
+  const handLines = view.hand ? eventLines(view.hand.events, (seat) => view.hand?.names?.[seat] ?? names.get(seat) ?? `Seat ${seat + 1}`, fmt, view.me.seat) : [];
 
   useEffect(() => {
     if (tab === 'chat') setSeenChat(view.chat.length);
