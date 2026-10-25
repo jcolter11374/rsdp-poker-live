@@ -1,6 +1,10 @@
 import { NOTE_COLORS, NOTE_MAX, type NoteColor, type PlayerNote } from '@rsdp/engine/wire';
-import { listNotes, setNote, type Db } from './db';
+import { countNotes, listNotes, setNote, type Db } from './db';
 import { ActionError } from '@rsdp/engine/core';
+
+/** Most notes one player can keep. */
+export const NOTES_PER_PLAYER = 1000;
+const tooMany = () => new ActionError(`you can keep up to ${NOTES_PER_PLAYER} notes; delete some first`);
 
 /** Where private player notes are kept. The default keeps them in memory. */
 export interface NotesStore {
@@ -36,6 +40,7 @@ export function memoryNotes(): NotesStore {
         notes.delete(note.targetPlayerId);
         return null;
       }
+      if (!notes.has(note.targetPlayerId) && notes.size >= NOTES_PER_PLAYER) throw tooMany();
       notes.set(note.targetPlayerId, { ...note });
       return { ...note };
     },
@@ -53,6 +58,7 @@ export function dbNotes(db: Db): NotesStore {
       return (await listNotes(db, owner)).map(view);
     },
     async set(owner, note) {
+      if (!isEmpty(note) && (await countNotes(db, owner, note.targetPlayerId)) >= NOTES_PER_PLAYER) throw tooMany();
       const row = await setNote(db, { ownerPlayerId: owner, ...note });
       return row ? view(row) : null;
     },

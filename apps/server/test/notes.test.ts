@@ -4,7 +4,7 @@ import type { PlayerNote } from '@rsdp/engine/wire';
 import { createApp } from '../src/app';
 import { closeDb, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
-import { cleanNote, dbNotes, memoryNotes } from '../src/notes';
+import { cleanNote, dbNotes, memoryNotes, NOTES_PER_PLAYER } from '../src/notes';
 import { dbIdentity, dbStore } from '../src/storage';
 import { socketClient, type Client } from './socket-client';
 
@@ -33,11 +33,10 @@ const me = (c: ReturnType<typeof client>) =>
 describe('player notes', () => {
   it('keeps notes private to their owner, syncs the owner\'s tabs, and deletes empty notes', async () => {
     const tab1 = client('notes-owner-0123456789');
-    const owner = await me(tab1);
     const tab2 = client('notes-owner-0123456789');
     const other = client('notes-other-0123456789');
-    await me(tab2);
-    const target = await me(other);
+    // Listen on all three before any session can arrive.
+    const [owner, , target] = await Promise.all([me(tab1), me(tab2), me(other)]);
     expect(owner).not.toBe(target);
 
     const synced = new Promise<PlayerNote[]>((resolve) => tab2.socket.once('notes', resolve));
@@ -75,5 +74,12 @@ describe('memory notes', () => {
     expect(await store.set('a', cleanNote({ targetPlayerId: 'b' }))).toBeNull();
     expect(await store.list('a')).toEqual([]);
     expect(await store.list('c')).toHaveLength(1);
+  });
+
+  it('caps how many notes one player keeps, but still allows edits', async () => {
+    const store = memoryNotes();
+    for (let i = 0; i < NOTES_PER_PLAYER; i++) await store.set('a', { targetPlayerId: `p${i}`, text: 'x', color: 'none' });
+    await expect(store.set('a', { targetPlayerId: 'new', text: 'x', color: 'none' })).rejects.toThrow(/up to/);
+    await store.set('a', { targetPlayerId: 'p0', text: 'edited', color: 'red' });
   });
 });

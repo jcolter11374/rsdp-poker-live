@@ -54,7 +54,14 @@ export function NoteBadge({ seat }: { seat: SeatView }) {
       >
         {note?.text ? '✎' : '+'}
       </button>
-      {open && createPortal(<NoteEditor seat={seat} note={note} onClose={() => setOpen(false)} />, document.body)}
+      {open &&
+        createPortal(
+          // Portalled clicks still bubble through React to the nameplate (the host's seat menu).
+          <div onClick={(e) => e.stopPropagation()}>
+            <NoteEditor seat={seat} note={note} onClose={() => setOpen(false)} />
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

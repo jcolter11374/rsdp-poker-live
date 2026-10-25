@@ -1,6 +1,6 @@
 /** Private player notes: one row per owner and target, deleted when emptied. */
 
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, ne, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { playerNotes, type NoteColor } from './schema';
 
@@ -8,6 +8,15 @@ export type PlayerNoteRow = typeof playerNotes.$inferSelect;
 
 export async function listNotes(db: Db, ownerPlayerId: string): Promise<PlayerNoteRow[]> {
   return db.select().from(playerNotes).where(eq(playerNotes.ownerPlayerId, ownerPlayerId)).orderBy(asc(playerNotes.targetPlayerId));
+}
+
+/** How many notes the owner keeps on players other than `except`. */
+export async function countNotes(db: Db, ownerPlayerId: string, except: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(playerNotes)
+    .where(and(eq(playerNotes.ownerPlayerId, ownerPlayerId), ne(playerNotes.targetPlayerId, except)));
+  return row?.n ?? 0;
 }
 
 /** Upserts a note; empty text with no colour removes it and returns null. */
