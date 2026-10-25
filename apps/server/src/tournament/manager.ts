@@ -224,6 +224,11 @@ export class TournamentManager {
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
   }
 
+  /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
+  async peek(id: string): Promise<TournamentState | null> {
+    return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;
+  }
+
   /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
   view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);

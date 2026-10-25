@@ -20,6 +20,8 @@ kill_timeout = "30s"
   NODE_ENV = "production"
   PORT = "8080"
   PGLITE_DIR = "/data/pglite"
+  # Link previews (og:url, og:image) use this rather than the request's Host header.
+  PUBLIC_URL = "https://rsdp-poker-live.fly.dev"
 
 [[mounts]]
   source = "rsdp_data"
