@@ -83,13 +83,12 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   position: relative;
   aspect-ratio: 16 / 10;
   min-height: 320px;
-  margin: 40px 50px 50px;
+  margin: 64px 56px 36px;
   border-radius: 999px;
   background: radial-gradient(ellipse at center, #2a8a5d 0%, var(--felt) 60%, var(--felt-edge) 100%);
   border: 12px solid #3b2a1d;
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
 }
-@media (max-width: 600px) { .felt { margin: 40px 24px 50px; aspect-ratio: 3 / 4; } }
 .board {
   position: absolute;
   inset: 0;
@@ -119,7 +118,10 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   font-size: 0.85rem;
   color: var(--muted);
 }
-.seat .hole { display: flex; gap: 2px; height: 46px; margin-bottom: -4px; z-index: 1; }
+.seat .hole { display: flex; gap: 2px; height: 46px; z-index: 1; position: absolute; bottom: calc(100% - 4px); left: 50%; translate: -50% 0; }
+/* Seats at the far left and right keep their cards over the felt instead of off the edge. */
+.seat.edge-left .hole { left: 0; translate: none; }
+.seat.edge-right .hole { left: auto; right: 0; translate: none; }
 /* Big hands (Omaha, stud, draw) overlap so the seat stays narrow; rank and suit move to the visible corner. */
 .seat .hole.n4 .playing-card + .playing-card { margin-left: -8px; }
 .seat .hole.n5 .playing-card + .playing-card, .seat .hole.n6 .playing-card + .playing-card { margin-left: -12px; }
@@ -146,10 +148,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .seat.me .nameplate { background: var(--panel-2); }
 .dealer {
   position: absolute;
-  right: -14px;
-  top: 30px;
-  width: 22px;
-  height: 22px;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #fff;
   color: #111;
@@ -158,6 +159,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   display: grid;
   place-items: center;
   z-index: 3;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  transition: left 0.5s ease, top 0.5s ease;
 }
 .bet {
   margin-top: 4px;
@@ -199,8 +202,10 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .action-bar .buttons button { flex: 1; padding: 12px; font-size: 1.05rem; }
 .action-bar .fold { background: #3a2323; border-color: #5a3030; }
 .sizing { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.sizing input[type='range'] { flex: 1; min-width: 120px; }
-.sizing input[type='number'] { width: 90px; }
+.sizing .presets, .sizing .slider { display: flex; gap: 6px; align-items: center; }
+.sizing .slider { flex: 1; min-width: 220px; }
+.sizing input[type='range'] { flex: 1; min-width: 0; }
+.sizing input[type='number'] { width: 90px; flex: none; }
 
 .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .panel { background: var(--panel); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -286,9 +291,14 @@ input[type='checkbox'] { width: auto; }
 /* Your own face-down stud cards: visible to you, marked as hidden from others. */
 .playing-card.facedown:not(.back) { background: #dfe6ee; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 2px 4px rgba(0, 0, 0, 0.4); }
 .playing-card.win { box-shadow: 0 0 0 2px var(--good), 0 0 12px var(--good); }
-.playing-card.dim { opacity: 0.45; }
-.deal-hole, .deal-board { animation: deal-in 0.25s ease-out both; }
+.playing-card.dim { filter: brightness(0.5) saturate(0.6); }
+.deal-board { animation: deal-in 0.25s ease-out both; }
 @keyframes deal-in { from { transform: translateY(-12px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Hole cards fly in from the middle of the table (--dx/--dy point back to it). */
+.deal-hole { animation: deal-from 0.32s ease-out both; }
+@keyframes deal-from { from { transform: translate(var(--dx, 0), var(--dy, -12px)) scale(0.45) rotate(-25deg); opacity: 0; } 30% { opacity: 1; } to { transform: none; opacity: 1; } }
+.flip-in { animation: flip-in 0.32s ease-out both; }
+@keyframes flip-in { from { transform: perspective(300px) rotateY(90deg); } to { transform: none; } }
 .log-card { font-weight: 700; padding: 0 3px; margin: 0 1px; border-radius: 3px; background: #f4f4f4; color: #1b1b1b; white-space: nowrap; }
 .log-card.suit-h, .log-card.suit-d { color: #d0312d; }
 
@@ -330,3 +340,112 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .rules section h3 { margin: 0 0 4px; font-size: 1rem; }
 .rules p { margin: 4px 0; line-height: 1.4; }
 .rank-list { margin: 4px 0; padding-left: 20px; columns: 2; }
+
+/* ---- table polish: motion, turn glow, seat badges */
+.felt { transition: box-shadow 0.3s; }
+.felt.my-turn { box-shadow: inset 0 0 50px rgba(242, 184, 75, 0.45), 0 0 0 3px rgba(242, 184, 75, 0.55), 0 10px 30px rgba(0, 0, 0, 0.4); }
+.seat .hole { transition: transform 0.35s ease-in, opacity 0.35s ease-in; }
+/* Opponents who fold throw their cards towards the middle. */
+.seat .hole.mucked { transform: translate(var(--dx), var(--dy)) scale(0.5); opacity: 0; }
+.bet { animation: bet-in 0.3s ease-out both; }
+@keyframes bet-in { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 0.4; } to { transform: translate(-50%, -50%); opacity: 1; } }
+.chip-flight { position: absolute; transform: translate(-50%, -50%); display: flex; gap: 1px; z-index: 4; pointer-events: none; animation: chip-fly 0.5s ease-in-out both; }
+.chip-flight.award { animation: chip-fly 0.6s ease-in-out both, fade-out 0.3s 0.9s both; }
+.chip-flight.award .chip { background: var(--good); }
+@keyframes chip-fly { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 1; } 85% { opacity: 1; } to { transform: translate(-50%, -50%); opacity: 0.2; } }
+@keyframes fade-out { to { opacity: 0; } }
+.seat.winner .nameplate { animation: winner-pulse 1s ease-in-out 4; }
+@keyframes winner-pulse { 50% { box-shadow: 0 0 22px 4px var(--good); } }
+.seat.acting .nameplate { animation: acting-pulse 1.6s ease-in-out infinite; }
+@keyframes acting-pulse { 50% { box-shadow: 0 0 20px 2px var(--accent-2); } }
+.pill { display: inline-block; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 0 6px; margin-bottom: 2px; }
+.pill.away { background: #4a3a14; color: var(--accent-2); }
+.pill.offline { background: #4a1f1c; color: #ffb4ad; }
+.pill.offline::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-right: 4px; vertical-align: 1px; }
+.seat .status.low-text { color: var(--bad); font-weight: 700; }
+.action-bar .fold.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
+  .dealer, .seat .hole { transition: none; }
+  .chip-flight { display: none; }
+}
+
+/* ---- sheets (phone menus) */
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  background: var(--panel);
+  width: min(560px, 100%);
+  max-height: 85dvh;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: sheet-up 0.22s ease-out;
+}
+.sheet.tall { height: 85dvh; }
+@keyframes sheet-up { from { transform: translateY(40%); opacity: 0.5; } }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 4px; }
+.sheet-head h2 { margin: 0; font-size: 1.05rem; }
+button.icon { background: transparent; border-color: transparent; font-size: 1.1rem; padding: 4px 8px; }
+.sheet-body { padding: 8px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+.sheet-body .panel { padding: 0; background: transparent; }
+.sheet-body .side-panel { flex: 1; min-height: 0; }
+.sheet-body .scroll { max-height: none; }
+.menu-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.menu-buttons button { padding: 12px; }
+
+/* ---- phone layout: one screen, no page scroll, actions pinned to the bottom */
+.table-page.portrait { height: 100dvh; min-height: 0; overflow: hidden; }
+.portrait .topbar { padding: 6px 10px; gap: 6px; flex-wrap: nowrap; padding-top: max(6px, env(safe-area-inset-top)); }
+.portrait .topbar .stakes { font-size: 0.8rem; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portrait .topbar .stakes b { font-size: 0.9rem; }
+.portrait .topbar button { padding: 6px 10px; white-space: nowrap; }
+.portrait .logo.small { font-size: 1.3rem; }
+.portrait .layout { display: flex; flex-direction: column; padding: 0; gap: 0; min-height: 0; }
+.portrait .felt-area { flex: 1; min-height: 0; gap: 0; }
+.portrait .banner { border-radius: 0; padding: 6px 10px; font-size: 0.85rem; }
+.portrait .banner button { padding: 2px 8px; }
+.portrait .banner.warn { margin: 0; }
+.felt.compact {
+  flex: 1;
+  min-height: 300px;
+  aspect-ratio: auto;
+  margin: 54px 40px 26px;
+  border-width: 8px;
+  background: radial-gradient(ellipse at center, #2a8a5d 0%, var(--felt) 65%, var(--felt-edge) 100%);
+}
+.felt.compact .felt-brand { top: 18%; font-size: 1rem; }
+.felt.compact .seat, .felt.compact .nameplate { min-width: 0; }
+.felt.compact .nameplate { padding: 2px 6px; border-radius: 8px; min-width: 62px; max-width: 92px; }
+.felt.compact .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.felt.compact .nameplate .name { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
+.felt.compact .nameplate .stack { font-size: 0.8rem; }
+.felt.compact .seat .status, .felt.compact .last-action { font-size: 0.6rem; }
+.felt.compact .seat .hole { height: 34px; bottom: calc(100% - 3px); }
+.felt.compact .playing-card.small { width: 24px; height: 34px; border-radius: 4px; }
+.felt.compact .playing-card.small .rank, .felt.compact .playing-card.small .suit { font-size: 0.72rem; }
+.felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -6px; }
+.felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -10px; }
+.felt.compact .seat.me .hole { height: 62px; bottom: calc(100% - 8px); }
+.felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -6px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -16px; }
+.felt.compact .board .cards { gap: 3px; }
+.felt.compact .board .playing-card { width: 38px; height: 54px; }
+.felt.compact .board .playing-card .rank, .felt.compact .board .playing-card .suit { font-size: 1.05rem; }
+.felt.compact .board-label { width: 34px; font-size: 0.6rem; }
+.felt.compact .pot { font-size: 0.85rem; padding: 2px 10px; }
+.felt.compact .pot.result { font-size: 0.8rem; max-width: 220px; }
+.felt.compact .bet { font-size: 0.75rem; padding: 0 6px; }
+.felt.compact .win-float { left: 50%; bottom: auto; top: -18px; margin: 0; transform: translateX(-50%); font-size: 0.8rem; }
+.felt.compact .seat.empty button, .felt.compact .seat.empty span { padding: 4px 10px; font-size: 0.75rem; }
+.portrait .action-bar { border-radius: 14px 14px 0 0; padding: 10px 10px max(10px, env(safe-area-inset-bottom)); min-height: 56px; gap: 8px; }
+.portrait .action-bar.idle { background: var(--panel); }
+.portrait .action-bar .buttons button { padding: 14px 6px; font-size: 1rem; }
+.portrait .action-bar.pre .buttons button { padding: 10px 4px; font-size: 0.85rem; }
+.portrait .sizing { gap: 4px; }
+.portrait .sizing { flex-direction: column; align-items: stretch; }
+.portrait .sizing .presets button { flex: 1; padding: 8px 4px; font-size: 0.85rem; }
+.portrait .sizing .slider { min-width: 0; }
+.portrait .sizing input[type='number'] { width: 84px; padding: 6px; }
+.portrait .strength { font-size: 0.8rem; }
+.portrait .seat-options { justify-content: flex-start; }

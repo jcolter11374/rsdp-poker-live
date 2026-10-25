@@ -4,13 +4,28 @@ import { call, socket } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
 
-type Tab = 'log' | 'chat' | 'ledger' | 'hands';
+export type Tab = 'log' | 'chat' | 'ledger' | 'hands';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands' };
 
-export function SidePanel({ view, fmt }: { view: TableView; fmt: Fmt }) {
-  const [tab, setTab] = useState<Tab>('log');
+export function SidePanel({
+  view,
+  fmt,
+  initialTab = 'log',
+  chatSeen,
+  onChatSeen,
+}: {
+  view: TableView;
+  fmt: Fmt;
+  initialTab?: Tab;
+  /** Chat messages already read, when the page keeps count (the phone sheet comes and goes). */
+  chatSeen?: number;
+  onChatSeen?: (count: number) => void;
+}) {
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [text, setText] = useState('');
-  const [seenChat, setSeenChat] = useState(view.chat.length);
+  const [ownSeen, setOwnSeen] = useState(view.chat.length);
+  const seenChat = chatSeen ?? ownSeen;
+  const setSeenChat = onChatSeen ?? setOwnSeen;
   const scroller = useRef<HTMLDivElement>(null);
 
   const names = useMemo(() => {

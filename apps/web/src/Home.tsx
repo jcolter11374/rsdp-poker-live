@@ -30,10 +30,11 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
     const settings: SettingsPatch = {
       table: { name: `${name.trim() || 'Friends'}'s table`, maxSeats: Math.min(9, spec.maxPlayers) },
       game: { gameId, betting },
-      // Stud has no blinds: the ante and bring-in start the pot, and limit bets follow the big blind.
-      stakes: stud
-        ? { smallBlind: 0, bigBlind, ante, anteType: ante > 0 ? 'per-player' : 'none', bringIn: 0, smallBet: 0, bigBet: 0 }
-        : { smallBlind, bigBlind },
+      // Stud has no blinds: the ante and bring-in start the pot. Limit bets are the big blind and twice it.
+      stakes: {
+        ...(stud ? { smallBlind: 0, bigBlind, ante, anteType: ante > 0 ? 'per-player' : 'none', bringIn: 0 } : { smallBlind, bigBlind }),
+        ...(betting === 'fixed-limit' ? { smallBet: bigBlind, bigBet: bigBlind * 2 } : {}),
+      },
       timing: { decisionSeconds: turnSeconds },
     };
     call<{ tableId: string }>('table:create', { settings })
