@@ -104,6 +104,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
+  /** A practice bot asking for a seat (its owner sees it too). */
+  bot?: true;
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -119,6 +121,8 @@ export interface LedgerView {
   /** Current chips if still seated. */
   stack: number;
   net: number;
+  /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
+  bot?: true;
 }
 
 export interface ChatView {

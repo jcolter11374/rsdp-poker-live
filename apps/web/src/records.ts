@@ -46,12 +46,17 @@ export interface Transfer {
  * Who pays whom so everyone ends up square, in as few payments as the simple
  * method gives: the biggest loser pays the biggest winner until one is even.
  * `off` is what the nets fail to add up to (0 when the books balance).
+ * Practice bots play for nothing: nobody pays them or is paid by them, and
+ * `bots` is what they won (or, below 0, lost) in all. Those chips are left
+ * out, so some people stay up or down by them.
  */
-export function settleUp(rows: { playerId: string; name: string; net: number }[]): { transfers: Transfer[]; off: number } {
+export function settleUp(rows: { playerId: string; name: string; net: number; bot?: boolean }[]): { transfers: Transfer[]; off: number; bots: number } {
+  const people = rows.filter((r) => !r.bot);
   // Kept per player (two people can share a name); names are only for showing.
-  const owe = rows.filter((r) => r.net < 0).map((r) => ({ id: r.playerId, name: r.name, left: -r.net }));
-  const get = rows.filter((r) => r.net > 0).map((r) => ({ id: r.playerId, name: r.name, left: r.net }));
+  const owe = people.filter((r) => r.net < 0).map((r) => ({ id: r.playerId, name: r.name, left: -r.net }));
+  const get = people.filter((r) => r.net > 0).map((r) => ({ id: r.playerId, name: r.name, left: r.net }));
   const off = rows.reduce((a, r) => a + r.net, 0);
+  const bots = rows.reduce((a, r) => a + (r.bot ? r.net : 0), 0);
   const transfers: Transfer[] = [];
   for (;;) {
     owe.sort((a, b) => b.left - a.left);
@@ -64,7 +69,7 @@ export function settleUp(rows: { playerId: string; name: string; net: number }[]
     d.left -= amount;
     c.left -= amount;
   }
-  return { transfers, off };
+  return { transfers, off, bots };
 }
 
 /** Every hand as a readable text log, the same lines as the table's log. */

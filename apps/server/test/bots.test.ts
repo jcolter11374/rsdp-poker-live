@@ -47,7 +47,7 @@ function play(rt: TableRuntime, clock: FakeClock, hands: number) {
 describe('practice bots', () => {
   // Quick, rough bots: these tests are about the table, not how well they play.
   const tuning = { ...botTuning };
-  beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 3, drawBetSims: 2 }));
+  beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 2, drawFinalSims: 3, drawBetSims: 2, drawBetFinalSims: 2 }));
   afterAll(() => Object.assign(botTuning, tuning));
 
   it('are named after their owner, marked in the view, and seated in the first free seat', () => {
@@ -240,7 +240,10 @@ describe('bots and the money', () => {
     rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
     const bot = rt.addBot('host', { ownerName: 'Host' });
     expect(rt.state.ledger[bot]?.bot).toBe(true);
-    expect(tableView(rt, 'host', 0).ledger.map((r) => r.playerId)).toEqual(['host']);
+    expect(tableView(rt, 'host', 0).ledger.map((r) => [r.playerId, !!r.bot])).toEqual([
+      ['host', false],
+      [bot, true],
+    ]);
     expect(() => rt.hostSitOut('host', bot)).toThrow(/remove the bot/);
     // A bot set to nothing buys back in at the next deal instead of sitting out for good.
     rt.addBot('host', { ownerName: 'Host' });
@@ -265,5 +268,77 @@ describe('bots and the money', () => {
     clock.advance(60_000);
     rt.start('host');
     expect(rt.state.handNumber).toBe(1);
+  });
+});
+
+describe('bots keep playing', () => {
+  it('a bot marked busted outside a hand (a late 7-2 claim, the Nit game) buys back in at the next deal', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    const rt = TableRuntime.create({ id: 't5', hostId: 'host', settings }, { clock, rng: seeded() });
+    rt.connect('host');
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const a = rt.addBot('host', { ownerName: 'Host' });
+    rt.addBot('host', { ownerName: 'Host' });
+    const seat = rt.seatOf(a)!;
+    seat.stack = 0;
+    seat.sittingOut = true;
+    seat.sitOutReason = 'busted';
+    rt.start('host');
+    expect(rt.seatOf(a)).toMatchObject({ stack: 200, sittingOut: false, sitOutReason: null });
+    expect(rt.state.hand?.seats.some((x) => x.playerId === a)).toBe(true);
+  });
+
+  it('a player sees their own bot waiting for approval and can take it back', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    const rt = TableRuntime.create({ id: 't6', hostId: 'host', settings }, { clock, rng: seeded() });
+    rt.connect('host');
+    rt.connect('a');
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    rt.approve('host', rt.state.requests[0].id);
+    const bot = rt.addBot('a', { ownerName: 'Ann' });
+    expect(tableView(rt, 'a', 0).requests).toMatchObject([{ playerId: bot, bot: true, name: "Ann's Poker Bot" }]);
+    expect(tableView(rt, 'b', 0).requests).toEqual([]);
+    rt.removeBot('a', bot);
+    expect(rt.state.requests).toEqual([]);
+    expect(rt.isBot(bot)).toBe(false);
+  });
+
+  it('two strong bots heads-up in uncapped fixed limit stop re-raising', () => {
+    const spec = getVariant('nlhe');
+    const rest = 'AKQJT98765432'.split('').flatMap((r) => 'cdhs'.split('').map((x) => r + x));
+    const top = ['As', 'Ac', 'Ad', 'Kc', 'Ah', 'Kd', 'Qc', '7s', '2h'];
+    const hand = engine.startHand({
+      handId: 'h',
+      handNumber: 1,
+      game: spec,
+      betting: 'fixed-limit',
+      stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 0, smallBet: 2, bigBet: 4 },
+      maxSeats: 2,
+      seats: [0, 1].map((i) => ({ seat: i, playerId: `p${i}`, stack: 400, away: false })),
+      button: 1,
+      buttonDead: false,
+      posts: [
+        { seat: 0, kind: 'small-blind', amount: 1, live: true },
+        { seat: 1, kind: 'big-blind', amount: 2, live: true },
+      ],
+      deck: [...top, ...rest.filter((c) => !top.includes(c))],
+      reshuffleSeed: 1,
+      options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: true },
+      modifiers: [],
+    });
+    let raises = 0;
+    for (let i = 0; i < 200 && hand.phase === 'betting' && hand.toAct !== null; i++) {
+      const move = chooseMove(hand, hand.toAct, seededRand(i));
+      if (move.kind !== 'act') throw new Error('no draws in hold’em');
+      if (move.action.type === 'raise' || move.action.type === 'bet') raises++;
+      engine.act(hand, hand.toAct, move.action);
+    }
+    expect(hand.phase).toBe('complete');
+    // At most seven raises a round on four rounds, and both keep chips behind.
+    expect(raises).toBeLessThanOrEqual(28);
+    expect(hand.seats.every((x) => !x.allIn)).toBe(true);
   });
 });

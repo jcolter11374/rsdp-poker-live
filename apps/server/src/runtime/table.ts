@@ -1060,6 +1060,9 @@ export class TableRuntime {
     const row = this.state.ledger[seat.playerId];
     if (row) row.buyIn += bot.buyIn;
     seat.stack = bot.buyIn;
+    // However it lost its last chips (a hand, a late 7-2 claim, the Nit game), it plays on.
+    seat.sittingOut = false;
+    seat.sitOutReason = null;
     this.log(`${seat.name} bought back in for ${bot.buyIn}`);
   }
 
@@ -1487,11 +1490,12 @@ export class TableRuntime {
 
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
     for (const seat of s.seats) {
+      // A bot with no chips buys back in, even one already marked busted.
+      if (seat && seat.stack === 0 && !this.isTournament && this.isBot(seat.playerId)) {
+        this.botBusted(seat);
+        continue;
+      }
       if (seat && seat.stack === 0 && !this.isTournament && !seat.sittingOut) {
-        if (this.isBot(seat.playerId)) {
-          this.botBusted(seat);
-          continue;
-        }
         seat.sittingOut = true;
         seat.sitOutReason = 'busted';
       }

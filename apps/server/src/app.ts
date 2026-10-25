@@ -326,6 +326,9 @@ export function createApp(deps: AppDeps = {}) {
     return rt;
   }
 
+  /** Practice tables waiting for their creator to arrive before the first deal: table id → creator. */
+  const practiceStarts = new Map<string, PlayerId>();
+
   /** When each player last chatted in a lobby. */
   const lastLobbyChat = new Map<PlayerId, number>();
   const lobby = new LobbyLog(deps.lobby ?? memoryLobbyStore(), log);
@@ -487,7 +490,8 @@ export function createApp(deps: AppDeps = {}) {
       const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
       rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
       for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
-      rt.start(me);
+      // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
+      practiceStarts.set(rt.state.id, me);
     };
     const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
 
@@ -531,6 +535,14 @@ export function createApp(deps: AppDeps = {}) {
             if (!watchers.has(rt.state.id)) watchers.set(rt.state.id, new Set());
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
+          }
+          if (practiceStarts.get(rt.state.id) === me) {
+            practiceStarts.delete(rt.state.id);
+            try {
+              rt.start(me);
+            } catch (e) {
+              log(`practice table ${rt.state.id} could not start`, e);
+            }
           }
           loadAvatars(rt);
           rt.guestNames.set(me, socket.data.session.displayName || 'Guest');

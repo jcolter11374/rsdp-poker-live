@@ -39,9 +39,12 @@ export const botTuning = {
   minSims: 20,
   maxSims: 400,
   /** Deals tried for each way of drawing... */
-  drawSims: 16,
-  /** ...and when it only sizes up the hand for a bet. */
-  drawBetSims: 8,
+  drawSims: 10,
+  /** ...and for the best few of them, to pick one. */
+  drawFinalSims: 60,
+  /** The same two when it only sizes up the hand for a bet. */
+  drawBetSims: 6,
+  drawBetFinalSims: 24,
 };
 
 export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand): BotMove {
@@ -52,7 +55,7 @@ export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand): BotMov
   }
   const legal = engine.legalActions(hand, seat);
   if (!legal) throw new Error('not the bot’s turn');
-  const equity = view.drawsLeft > 0 ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, botTuning.drawBetSims).equity, DRAW_OPPONENTS, view.opponents.length) : estimateEquity(view, rand);
+  const equity = view.drawsLeft > 0 ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, { screen: botTuning.drawBetSims, final: botTuning.drawBetFinalSims }).equity, DRAW_OPPONENTS, view.opponents.length) : estimateEquity(view, rand);
   return { kind: 'act', action: decide(hand, seat, legal, equity, view.opponents.length, rand) };
 }
 
@@ -86,14 +89,17 @@ function situation(hand: HandState, seat: SeatIndex): Situation {
   const drawStreets = streets.map((st, i) => (st.drawMaxDiscard ? i : -1)).filter((i) => i >= 0);
   // In the betting after a draw that draw is done; while drawing, it is still to come.
   const drawsLeft = drawStreets.filter((i) => i > hand.street || (i === hand.street && hand.phase === 'drawing')).length;
+  const boards = (hand.runs[0] ?? [[]]).map((b) => [...b]);
+  // Stud with too many players for the deck deals the last card once, face up in the middle: it is everyone's.
+  const shared = game.family === 'stud' ? boards[0].length : 0;
   return {
     spec,
     mine: me.cards.map((c) => c.card),
-    boards: (hand.runs[0] ?? [[]]).map((b) => [...b]),
+    boards,
     opponents: others.filter((x) => !x.folded).map((x) => x.cards.filter((c) => c.up).map((c) => c.card)),
     dead: others.filter((x) => x.folded).flatMap((x) => x.cards.filter((c) => c.up).map((c) => c.card)),
-    cardsPerPlayer: streets.reduce((n, st) => n + st.dealDown + st.dealUp, 0),
-    boardCards: streets.reduce((n, st) => n + st.dealBoard, 0),
+    cardsPerPlayer: streets.reduce((n, st) => n + st.dealDown + st.dealUp, 0) - shared,
+    boardCards: streets.reduce((n, st) => n + st.dealBoard, 0) + shared,
     drawsLeft,
     drawsInGame: drawStreets.length,
   };
@@ -140,18 +146,29 @@ class Pool {
     }
     return out;
   }
+  /** `count` random cards from those not dealt yet, without dealing them: later deals may repeat them. */
+  sample(count: number): Card[] {
+    const out: Card[] = [];
+    for (let i = this.n; out.length < count && i < this.cards.length; i++) {
+      const j = i + Math.floor(this.rand() * (this.cards.length - i));
+      [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
+      out.push(this.cards[i]);
+    }
+    return out;
+  }
 }
 
 /**
  * Opponents in a draw game have had the chance to improve: model each one as
- * the best of a few random hands, one more per draw in the game, from the
- * cards left once everyone has a hand.
+ * the best of a few random hands, one more per draw in the game. The extra
+ * hands are sampled from the cards left once everyone has a hand, without
+ * using them up, so a big field doesn't run the deck dry.
  */
 function improve(view: Situation, pool: Pool, hand: Card[]): Card[] {
   if (view.spec.family !== 'draw') return hand;
   let best = hand;
   for (let i = 0; i < view.drawsInGame; i++) {
-    const other = pool.deal(view.cardsPerPlayer);
+    const other = pool.sample(view.cardsPerPlayer);
     if (other.length < view.cardsPerPlayer) break;
     if (potShare(view.spec, [other, best], []) > 0.5) best = other;
   }
@@ -196,7 +213,11 @@ export function estimateEquity(view: Situation, rand: Rand): number {
   const start = performance.now();
   let sum = 0;
   let n = 0;
-  while (n < botTuning.maxSims && (n < botTuning.minSims || performance.now() - start < botTuning.thinkMs)) {
+  while (n < botTuning.maxSims) {
+    // Think for thinkMs once minSims are done; an expensive game (big hi-lo Omaha fields) stops at three times that regardless.
+    const spent = performance.now() - start;
+    if (n >= 1 && spent >= botTuning.thinkMs * 3) break;
+    if (n >= botTuning.minSims && spent >= botTuning.thinkMs) break;
     pool.reset();
     sum += simulate(view, pool, [...view.mine, ...pool.deal(myMissing)], opponents);
     n++;
@@ -206,6 +227,8 @@ export function estimateEquity(view: Situation, rand: Rand): number {
 
 /** Drawing is tried against at most this many opponents, to keep it quick. */
 const DRAW_OPPONENTS = 2;
+/** Ways of drawing looked at again more closely. */
+const DRAW_FINALISTS = 4;
 
 /** Equity against `from` opponents, as if each were beaten independently, stretched to `to` of them. */
 function scaleToField(equity: number, from: number, to: number) {
@@ -215,31 +238,46 @@ function scaleToField(equity: number, from: number, to: number) {
 }
 
 /**
- * Draw games: tries every allowed set of cards to throw away (with the same
- * random deals for each, so they compare fairly) and keeps the best.
+ * Draw games: tries every allowed set of cards to throw away with a few
+ * deals (the same ones for each, so they compare fairly), then looks harder
+ * at the best few with more deals and keeps the best.
  */
-export function bestDraw(view: Situation, maxDiscard: number, rand: Rand, sims = botTuning.drawSims): { discard: number[]; equity: number } {
+export function bestDraw(
+  view: Situation,
+  maxDiscard: number,
+  rand: Rand,
+  sims: { screen: number; final: number } = { screen: botTuning.drawSims, final: botTuning.drawFinalSims },
+): { discard: number[]; equity: number } {
   const cards = view.mine.length;
   const opponents = view.opponents.slice(0, DRAW_OPPONENTS);
-  const seeds = Array.from({ length: sims }, () => Math.floor(rand() * 2 ** 31));
-  let best = { discard: [] as number[], equity: -1 };
-  for (let mask = 0; mask < 1 << cards; mask++) {
-    const discard = [...Array(cards).keys()].filter((i) => mask & (1 << i));
-    if (discard.length > maxDiscard) continue;
-    const kept = view.mine.filter((_, i) => !(mask & (1 << i)));
+  const seeds = (n: number) => Array.from({ length: n }, () => Math.floor(rand() * 2 ** 31));
+  const equityOf = (discard: number[], deals: number[]) => {
+    const kept = view.mine.filter((_, i) => !discard.includes(i));
     let sum = 0;
-    for (const seed of seeds) {
-      const deals = new Pool(seenCards(view), seededRand(seed));
+    for (const seed of deals) {
+      const pool = new Pool(seenCards(view), seededRand(seed));
       // Later draws are a few more tries at the same cards.
-      let mine = [...kept, ...deals.deal(discard.length)];
+      let mine = [...kept, ...pool.deal(discard.length)];
       for (let i = 1; i < view.drawsLeft && discard.length; i++) {
-        const other = [...kept, ...deals.deal(discard.length)];
+        const other = [...kept, ...pool.deal(discard.length)];
         if (other.length === mine.length && potShare(view.spec, [other, mine], []) > 0.5) mine = other;
       }
-      sum += simulate(view, deals, mine, opponents);
+      sum += simulate(view, pool, mine, opponents);
     }
-    const equity = sum / seeds.length;
-    // Ties keep the earlier, smaller draw (standing pat comes first).
+    return sum / deals.length;
+  };
+  const options: number[][] = [];
+  for (let mask = 0; mask < 1 << cards; mask++) {
+    const discard = [...Array(cards).keys()].filter((i) => mask & (1 << i));
+    if (discard.length <= maxDiscard) options.push(discard);
+  }
+  const screen = seeds(sims.screen);
+  // A stable sort keeps the smaller draw (standing pat comes first) on ties.
+  const ranked = options.map((discard) => ({ discard, equity: equityOf(discard, screen) })).sort((a, b) => b.equity - a.equity);
+  const final = seeds(sims.final);
+  let best = { discard: [] as number[], equity: -1 };
+  for (const { discard } of ranked.slice(0, DRAW_FINALISTS)) {
+    const equity = equityOf(discard, final);
     if (equity > best.equity + 1e-9) best = { discard, equity };
   }
   return best;
@@ -263,8 +301,10 @@ function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: n
     // Stud: complete with a strong start, otherwise bring it in for the minimum.
     return legal.canRaise && strength >= 1.5 ? raise(0) : { type: 'bring-in' };
   }
-  // Keep re-raising wars short unless the hand is very strong.
-  const mayRaise = legal.canRaise && (hand.raisesThisRound < 3 || equity >= 0.85);
+  // Keep re-raising wars short: each raise past the third needs a stronger hand, and past the seventh none is strong enough
+  // (heads-up fixed limit has no cap, and two strong hands would otherwise raise each other all in a bet at a time).
+  const raiseBar = hand.raisesThisRound < 3 ? 0 : 0.85 + 0.04 * (hand.raisesThisRound - 3);
+  const mayRaise = legal.canRaise && equity >= raiseBar;
 
   if (legal.canCheck) {
     const value = strength >= 1.45 || equity >= 0.62;

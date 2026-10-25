@@ -119,9 +119,13 @@ export function tableView(
     rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
     level: levelView(rt, now),
-    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),
-    // Bots play for nothing, so they stay out of the ledger and settle-up.
-    ledger: Object.values(s.ledger).filter((row) => !row.bot).map((row) => {
+    // Besides their own, a player sees the requests of bots they added, so they can take them back.
+    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => ({
+      ...r,
+      ...(rt.isBot(r.playerId) ? { bot: true as const } : {}),
+    })),
+    // Bot rows are flagged: they play for nothing, so settle-up pays only between people.
+    ledger: Object.values(s.ledger).map((row) => {
       const seat = rt.seatOf(row.playerId);
       const stack = seat ? seat.stack + seat.pendingChips : 0;
       return { ...row, stack, net: stack + row.cashOut - row.buyIn };

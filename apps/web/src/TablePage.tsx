@@ -208,7 +208,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
-  const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length;
+  // A player sees only their own bots' requests; the host sees everyone's and never has to ask.
+  const myBotRequests = view.isHost ? [] : view.requests.filter((r) => r.bot);
+  const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
   const canAddBot = cash && (view.isHost || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
   const addBot = (seat: number) =>
     call('bot:add', { seat })
@@ -385,6 +387,12 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
+          {myBotRequests.map((r) => (
+            <div className="banner" key={r.id}>
+              {r.name} is waiting for the host to let it sit…{' '}
+              <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
+            </div>
+          ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
