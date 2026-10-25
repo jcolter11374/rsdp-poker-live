@@ -31,6 +31,7 @@ import {
   RUNTIME_VERSION,
   systemClock,
   type Clock,
+  type HandRecord,
   type RuntimeState,
   type SeatRequest,
   type SeatState,
@@ -66,7 +67,7 @@ export class TableRuntime {
   /** Called after every change; the server pushes fresh views and saves a snapshot. */
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
-  onHandFinished: (hand: HandState, handNumber: number) => void = () => {};
+  onHandFinished: (record: HandRecord) => void = () => {};
 
   private readonly clock: Clock;
   private readonly rng: Rng;
@@ -726,7 +727,7 @@ export class TableRuntime {
       }
     }
 
-    this.onHandFinished(hand, record.handNumber);
+    this.onHandFinished(record);
     if (this.tournament) {
       this.tournament.handEnded({ handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button });
     }

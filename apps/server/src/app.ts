@@ -4,11 +4,12 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server, type Socket } from 'socket.io';
-import { ActionError, type HandState, type PlayerId } from '@rsdp/engine/core';
+import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { defaultSettings, mergePatches, parseSettings, SettingsError, applyAtNextHand } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
-import { systemClock, type Clock, type RuntimeState } from './runtime/types';
+import { systemClock, type Clock, type HandRecord, type RuntimeState } from './runtime/types';
 import { handRecordView, tableView } from './runtime/view';
 
 /** Who a browser is. The default derives a player id from the browser secret; the database version adds names and accounts. */
@@ -18,9 +19,11 @@ export interface IdentityService {
 
 /** Where tables and finished hands are kept. The default keeps them in memory. */
 export interface TableStore {
+  /** A new table, before anything else is saved for it. */
+  createTable(state: RuntimeState): Promise<void>;
   saveTable(state: RuntimeState): Promise<void>;
   loadTable(id: string): Promise<RuntimeState | null>;
-  saveHand(tableId: string, handNumber: number, hand: HandState): Promise<void>;
+  saveHand(tableId: string, record: HandRecord): Promise<void>;
 }
 
 export const memoryIdentity: IdentityService = {
@@ -32,10 +35,12 @@ export const memoryIdentity: IdentityService = {
 
 export function memoryStore(): TableStore {
   const tables = new Map<string, string>();
+  const save = async (state: RuntimeState) => {
+    tables.set(state.id, JSON.stringify(state));
+  };
   return {
-    async saveTable(state) {
-      tables.set(state.id, JSON.stringify(state));
-    },
+    createTable: save,
+    saveTable: save,
     async loadTable(id) {
       const json = tables.get(id);
       return json ? (JSON.parse(json) as RuntimeState) : null;
@@ -64,7 +69,7 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
     const result = await fn();
     if (typeof ack === 'function') ack({ ok: true, ...(result ?? {}) } as never);
   } catch (err) {
-    const expected = err instanceof ActionError || err instanceof SettingsError;
+    const expected = err instanceof ActionError || err instanceof SettingsError || err instanceof IdentityError;
     if (!expected) log?.('handler failed', err);
     if (typeof ack === 'function') ack({ ok: false, error: expected && err instanceof Error ? err.message : 'something went wrong' });
   }
@@ -126,8 +131,8 @@ export function createApp(deps: AppDeps = {}) {
       broadcast(rt);
       scheduleSave(rt);
     };
-    rt.onHandFinished = (hand, handNumber) => {
-      store.saveHand(rt.state.id, handNumber, hand).catch((e) => log(`saving hand ${handNumber} failed`, e));
+    rt.onHandFinished = (record) => {
+      store.saveHand(rt.state.id, record).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
     };
     return rt;
   }
@@ -180,13 +185,14 @@ export function createApp(deps: AppDeps = {}) {
     on('table:create', (input, ack) =>
       guarded(
         ack,
-        () => {
+        async () => {
           const patch = input?.settings ?? {};
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = attach(TableRuntime.create({ hostId: me, settings }, { clock }));
-          scheduleSave(rt);
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock });
+          await store.createTable(rt.state);
+          attach(rt);
           return { tableId: rt.state.id };
         },
         log,

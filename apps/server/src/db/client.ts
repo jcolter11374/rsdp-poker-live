@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
@@ -84,6 +86,8 @@ async function openPostgres(url: string): Promise<Db> {
 }
 
 async function openPglite(dataDir: string | undefined): Promise<Db> {
+  // PGlite creates only the last folder of the path.
+  if (dataDir) mkdirSync(path.dirname(path.resolve(dataDir)), { recursive: true });
   const client = new PGlite(dataDir);
   const db = drizzlePglite(client, { schema });
   try {
