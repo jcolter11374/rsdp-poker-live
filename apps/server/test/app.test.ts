@@ -28,6 +28,27 @@ afterAll(async () => {
 const client = (token: string) => socketClient(url, token, clients);
 
 describe('socket server', () => {
+  it('exports every finished hand, hiding cards the viewer never saw', async () => {
+    const host = client('export-host-0123456789');
+    const guest = client('export-guest-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { seating: { requireApproval: false } } });
+    await host.call('table:join', { tableId });
+    await guest.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
+    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100 });
+    await host.call('host:start');
+    const v = await host.until((x) => !!x.hand && x.legal !== null);
+    await host.call('hand:act', { type: 'fold' });
+    await host.until((x) => x.history.length === 1);
+    const { hands } = await guest.call<{ hands: import('@rsdp/engine/wire').HandRecordView[] }>('table:export');
+    expect(hands).toHaveLength(1);
+    expect(hands[0].seats.map((s) => s.name).sort()).toEqual(['Guest', 'Host']);
+    const deals = hands[0].events.filter((e) => e.t === 'deal') as Extract<(typeof hands)[0]['events'][number], { t: 'deal' }>[];
+    const hostSeat = v.me.seat!;
+    expect(deals.find((d) => d.seat === hostSeat)!.cards.every((c) => c.card === '??')).toBe(true);
+    expect(deals.find((d) => d.seat !== hostSeat)!.cards.every((c) => c.card !== '??')).toBe(true);
+  });
+
   it('lists people watching the table by name, but not seated players', async () => {
     const host = client('watch-host-0123456789');
     const fan = client('watch-fan-0123456789');

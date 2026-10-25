@@ -3,7 +3,7 @@
  * through the engine's visibleEvents before they leave the server.
  */
 
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import type { Db } from './client';
 import { clampLimit, isUniqueViolation, StorageError } from './errors';
 import { newHandId } from './ids';
@@ -118,4 +118,13 @@ export async function listHandsByTable<Header = unknown, Results = unknown>(
     .limit(limit + 1);
   const page = rows.slice(0, limit) as HandSummary<Header, Results>[];
   return { hands: page, nextBefore: rows.length > limit ? page[page.length - 1].number : null };
+}
+
+/** Every hand of a table with its events, oldest first, for downloads. */
+export async function allHandsOfTable<Header = unknown, Event = unknown, Results = unknown>(
+  db: Db,
+  tableId: string,
+): Promise<HandRecord<Header, Event, Results>[]> {
+  const rows = await db.select().from(hands).where(eq(hands.tableId, tableId)).orderBy(asc(hands.number));
+  return rows as HandRecord<Header, Event, Results>[];
 }
