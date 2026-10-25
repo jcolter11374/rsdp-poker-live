@@ -7,6 +7,7 @@ import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../rec
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { setChatMuted, useChatMutes } from '../chatMutes';
+import { FullLogDownload, Highlights, ohhDownload, ShareHandDialog } from './table/Records';
 
 export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -63,6 +64,7 @@ export function SidePanel({
       <div className="scroll" ref={scroller}>
         {tab === 'log' && (
           <>
+            <FullLogDownload view={view} fmt={fmt} />
             {view.log.map((l, i) => (
               <div key={`t${i}`} className="log-table">
                 {l.text}
@@ -317,6 +319,7 @@ function useAllHands(view: TableView, active: boolean) {
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [open, setOpen] = useState<HandRecordView | null>(null);
   const [replay, setReplay] = useState<number | null>(null);
+  const [sharing, setSharing] = useState<HandRecordView | null>(null);
   const { hands, error: loadError, retry, setHands } = useAllHands(view, true);
   const [error, setError] = useState('');
   const [fromFile, setFromFile] = useState<HandRecordView[] | null>(null);
@@ -380,9 +383,13 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
       <div className="row wrap ledger-actions">
         <button onClick={() => void exportAll('txt')}>Download all hands</button>
         <button onClick={() => void exportAll('json')}>JSON</button>
+        <button onClick={() => setError(ohhDownload(view, hands) ?? '')} title="Open Hand History, for PokerTracker, Holdem Manager and other trackers (Hold'em and Omaha)">
+          Tracker (OHH)
+        </button>
         {opener}
       </div>
       {(error || loadError) && <p className="error">{error || loadError}</p>}
+      <Highlights view={view} hands={hands} fmt={fmt} onReplay={setReplay} onShare={setSharing} />
       {hands
         .map((h, i) => ({ h, i, net: handNet(h, view.me.playerId) }))
         .reverse()
@@ -398,12 +405,16 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
             <button className="hand-text" onClick={() => (setOpen(h), setError(''))} title="Read the log">
               Log
             </button>
+            <button className="hand-text" onClick={() => setSharing(h)} title="Share a link to this hand">
+              Share
+            </button>
           </div>
         ))}
       {replay !== null && (
         <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setReplay(null)} />
       )}
       {fileReplay}
+      {sharing && <ShareHandDialog hand={sharing} onClose={() => setSharing(null)} />}
     </>
   );
 }

@@ -5,6 +5,7 @@ export * from './hands';
 export * from './ledger';
 export * from './avatars';
 export * from './notes';
+export * from './shared';
 export * from './tables';
 export * as schema from './schema';
 export type { AvatarKind, JobStatus, MovementKind, NoteColor, TableMode, TableStatus } from './schema';

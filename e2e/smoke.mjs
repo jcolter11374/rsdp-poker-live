@@ -103,6 +103,25 @@ try {
     await host.keyboard.press('b');
     await host.waitForSelector('.seat.me .stack:has-text("BB")');
     await host.keyboard.press('b');
+
+    // Records: share the hand as a link anyone can open, and download the full log and tracker file.
+    await host.click('.side-panel .tabs button:has-text("Hands")');
+    await host.click('.hand-row .hand-text:has-text("Share")');
+    await host.click('.modal button:has-text("Make a link")');
+    const link = await host.locator('.share-hand input[readonly]').inputValue();
+    await host.click('.modal button:has-text("Close")');
+    const viewer = await open('shared hand viewer', { width: 390, height: 844 });
+    await viewer.goto(link);
+    await viewer.waitForSelector('.replayer .felt');
+    await viewer.screenshot({ path: path.join(OUT, 'shared-hand.png') });
+    await viewer.close();
+    const ohh = host.waitForEvent('download');
+    await host.click('button:has-text("Tracker (OHH)")');
+    if (!(await ohh).suggestedFilename().endsWith('.ohh')) throw new Error('no OHH file');
+    await host.click('.side-panel .tabs button:has-text("Log")');
+    const log = host.waitForEvent('download');
+    await host.click('button:has-text("Download full log")');
+    if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {

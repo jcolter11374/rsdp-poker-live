@@ -376,3 +376,22 @@ export const playerAvatars = pgTable(
   },
   (t) => [check('player_avatars_kind_check', sql`${t.kind} in (${oneOf(AVATAR_KINDS)})`)],
 );
+
+// ---------------------------------------------------------------- shared hands
+
+/** A finished hand frozen as one player saw it, for a link anyone can open. Deleting the row stops the link. */
+export const sharedHands = pgTable(
+  'shared_hands',
+  {
+    id: text('id').primaryKey(),
+    tableId: text('table_id').notNull(),
+    handNumber: integer('hand_number').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    /** Table name, cents mode, seat count and the hand as the sharer saw it (a HandRecordView). */
+    snapshot: jsonb('snapshot').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('shared_hands_created_by_idx').on(t.createdBy)],
+);
