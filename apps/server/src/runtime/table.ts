@@ -1573,6 +1573,16 @@ export function cleanMood(raw: unknown): string | null {
   if (typeof raw !== 'string') throw new ActionError('pick an emoji');
   const mood = raw.replace(/\p{Cs}/gu, '').trim();
   if (!mood) return null;
-  if (mood.length > MOOD_MAX || !/\p{Extended_Pictographic}/u.test(mood) || /[\p{L}\p{N}\p{Cc}\s]/u.test(mood)) throw new ActionError('pick one emoji');
+  // Keycaps (1️⃣, #️⃣) are the one place a digit belongs; joiners and variation selectors are the only invisible characters allowed.
+  const rest = mood.replace(/[0-9#*]\uFE0F?\u20E3/gu, '🔢');
+  const marks = (rest.match(/\p{M}/gu) ?? []).length;
+  if (
+    mood.length > MOOD_MAX ||
+    !/\p{Extended_Pictographic}/u.test(rest) ||
+    /[\p{L}\p{N}\p{Cc}\s]/u.test(rest) ||
+    /\p{Cf}/u.test(rest.replace(/[\u200D\uFE0F]/g, '')) ||
+    marks > 2
+  )
+    throw new ActionError('pick one emoji');
   return mood;
 }

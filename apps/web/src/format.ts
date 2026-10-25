@@ -11,7 +11,12 @@ export function chipFormat(centsMode: boolean): Fmt {
 
 /** Amounts in big blinds ("12.5 BB"), for players who think in blinds. */
 export function bbFormat(bigBlind: number): Fmt {
-  return (n) => `${(n / bigBlind).toLocaleString(undefined, { maximumFractionDigits: n % bigBlind ? 1 : 0 })} BB`;
+  return (n) => {
+    const bb = n / bigBlind;
+    // Under one big blind, keep enough digits that an ante never shows as 0.
+    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(bb)) + 1)) : 1;
+    return `${bb.toLocaleString(undefined, { maximumFractionDigits: digits })} BB`;
+  };
 }
 
 /** Chips to the number typed in an input, and back (cents mode types dollars). */

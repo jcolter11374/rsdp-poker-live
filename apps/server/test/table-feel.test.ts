@@ -87,6 +87,8 @@ describe('avatars', () => {
     await guest.call('avatar:set', null);
     await host.until((x) => x.seats[1]?.avatar === null);
     await expect(guest.call('avatar:set', { library: 'nope' })).rejects.toThrow(/unknown avatar/);
+    await guest.call('avatar:set', { library: 'owl' });
+    await expect(guest.call('avatar:set', { library: 'fox' })).rejects.toThrow(/too many picture changes/);
   });
 });
 
@@ -101,6 +103,9 @@ describe('moods', () => {
     expect(() => cleanMood('😎 nice')).toThrow();
     expect(() => cleanMood('😎😎😎😎😎😎😎😎😎')).toThrow();
     expect(() => cleanMood(5)).toThrow();
+    expect(cleanMood('1️⃣')).toBe('1️⃣');
+    expect(() => cleanMood('🔥\u202E')).toThrow();
+    expect(() => cleanMood('🔥' + '\u0301'.repeat(10))).toThrow();
   });
 
   it('shows a seat’s mood to everyone', async () => {

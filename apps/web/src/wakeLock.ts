@@ -12,13 +12,15 @@ export function useWakeLock(active: boolean) {
     const api = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<Sentinel> } }).wakeLock;
     if (!active || !api) return;
     let lock: Sentinel | null = null;
+    let pending = false;
     let stopped = false;
     const take = () => {
-      if (document.hidden || lock) return;
+      if (document.hidden || lock || pending) return;
+      pending = true;
       api
         .request('screen')
         .then((l) => {
-          if (stopped) return void l.release().catch(() => {});
+          if (stopped || lock) return void l.release().catch(() => {});
           lock = l;
           l.addEventListener('release', () => {
             if (lock === l) lock = null;
@@ -26,6 +28,9 @@ export function useWakeLock(active: boolean) {
         })
         .catch(() => {
           /* refused (battery saver, no user gesture yet): try again on the next visit */
+        })
+        .finally(() => {
+          pending = false;
         });
     };
     take();

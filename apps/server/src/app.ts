@@ -97,15 +97,18 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number; gestures?: number[] }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number }>;
 
 /** Least time between two hand downloads from one browser tab. */
 const EXPORT_GAP_MS = 5_000;
 
 const SAVE_DEBOUNCE_MS = 500;
-/** Gestures one browser tab may throw per window, so nobody floods the table. */
+/** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
+/** Picture changes one player may make per window. */
+const AVATAR_BURST = 4;
+const AVATAR_WINDOW_MS = 30_000;
 const NAME_MAX = 20;
 
 /** Runs a handler and acks the result; expected failures become an error ack, not a crash. */
@@ -145,12 +148,15 @@ export function createApp(deps: AppDeps = {}) {
   /** Pictures of players seen since the server started, as tables show them. */
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
+  const gestureTimes = new Map<PlayerId, number[]>();
+  const avatarChanges = new Map<PlayerId, number[]>();
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
     const missing = rt.state.seats.filter((x) => x && !avatars.has(x.playerId)).map((x) => x!.playerId);
     if (!missing.length) return;
     for (const id of missing) avatars.set(id, null);
-    Promise.all(missing.map((id) => avatarStore.get(id).then((a) => avatars.set(id, avatarToken(a)))))
+    // A failed lookup is forgotten, so the next view tries again.
+    Promise.all(missing.map((id) => avatarStore.get(id).then((a) => avatars.set(id, avatarToken(a)), (e) => (avatars.delete(id), Promise.reject(e)))))
       .then(() => broadcast(rt))
       .catch((e) => log('loading avatars failed', e));
   }
@@ -277,7 +283,11 @@ export function createApp(deps: AppDeps = {}) {
     if (typeof token !== 'string' || token.length < 16 || token.length > 128) return next(new Error('missing token'));
     try {
       const who = await identity.resolve(token);
-      if (!avatars.has(who.playerId)) avatars.set(who.playerId, avatarToken(await avatarStore.get(who.playerId).catch(() => null)));
+      if (!avatars.has(who.playerId)) {
+        // A database hiccup shows no picture for now and tries again on the next connect.
+        const saved = await avatarStore.get(who.playerId).then(avatarToken, () => undefined);
+        if (saved !== undefined) avatars.set(who.playerId, saved);
+      }
       socket.data.playerId = who.playerId;
       socket.data.session = { ...who, avatar: avatars.get(who.playerId) ?? null };
       socket.data.tournaments = new Set();
@@ -442,9 +452,9 @@ export function createApp(deps: AppDeps = {}) {
           const to = String(input?.to ?? '');
           rt.checkGesture(me, to);
           const now = clock.now();
-          const recent = (socket.data.gestures ?? []).filter((t) => now - t < GESTURE_WINDOW_MS);
+          const recent = (gestureTimes.get(me) ?? []).filter((t) => now - t < GESTURE_WINDOW_MS);
           if (recent.length >= GESTURE_BURST) throw new ActionError('easy there: a few seconds between gestures');
-          socket.data.gestures = [...recent, now];
+          gestureTimes.set(me, [...recent, now]);
           for (const s of watchers.get(rt.state.id) ?? []) s.emit('table:gesture', { from: me, to, kind, at: now });
         },
         log,
@@ -454,7 +464,12 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         async () => {
-          const saved = await avatarStore.set(me, cleanAvatar(input));
+          const next = cleanAvatar(input);
+          const now = clock.now();
+          const recent = (avatarChanges.get(me) ?? []).filter((t) => now - t < AVATAR_WINDOW_MS);
+          if (recent.length >= AVATAR_BURST) throw new ActionError('too many picture changes; try again in a moment');
+          avatarChanges.set(me, [...recent, now]);
+          const saved = await avatarStore.set(me, next);
           const avatar = avatarToken(saved);
           avatars.set(me, avatar);
           // Every tab of mine learns it, and every table I'm at shows it.
@@ -516,7 +531,11 @@ export function createApp(deps: AppDeps = {}) {
       leave();
       for (const id of socket.data.tournaments) tournamentWatchers.get(id)?.delete(socket);
       playerSockets.get(me)?.delete(socket);
-      if (!playerSockets.get(me)?.size) playerSockets.delete(me);
+      if (!playerSockets.get(me)?.size) {
+        playerSockets.delete(me);
+        gestureTimes.delete(me);
+        avatarChanges.delete(me);
+      }
     });
   });
 
