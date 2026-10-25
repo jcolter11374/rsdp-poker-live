@@ -4,6 +4,7 @@ import { ActionError, variants, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
 import {
   apply,
+  codeFromWords,
   createTournament,
   DirectorError,
   levelFor,
@@ -12,6 +13,7 @@ import {
   tableAddress,
   tableGate,
   tick,
+  viewFor,
   type Command,
   type DirectorEvent,
   type HandResult,
@@ -76,7 +78,20 @@ interface Live {
 }
 
 /** Commands only the host may send; the director trusts the server to check. */
-const HOST_COMMANDS = new Set<Command['type']>(['approve', 'reject', 'remove', 'pause', 'resume', 'startNow', 'editStructure', 'updateSettings', 'end']);
+const HOST_COMMANDS = new Set<Command['type']>([
+  'approve',
+  'reject',
+  'remove',
+  'pause',
+  'resume',
+  'startNow',
+  'editStructure',
+  'updateSettings',
+  'end',
+  'createInvites',
+  'cancelInvite',
+  'openCheckIn',
+]);
 /** Commands that come from tables, never from a browser. */
 const TABLE_COMMANDS = new Set<Command['type']>(['handStarted', 'handResult']);
 const SAVE_DEBOUNCE_MS = 300;
@@ -144,11 +159,12 @@ export class TournamentManager {
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
   }
 
-  /** What a browser is sent. The seating seed stays on the server. */
-  view(id: string): TournamentView | null {
+  /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
+  view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);
     if (!live) return null;
-    return { state: { ...live.state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+    const state = viewer === undefined ? live.state : viewFor(live.state, viewer);
+    return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
   }
 
   /** A browser's command, with who is acting filled in from the connection. */
@@ -205,14 +221,21 @@ export class TournamentManager {
       // The director checks the shape; the games must also be ones this server can deal.
       if (cmd.type === 'editStructure') checkGames({ ...live.state.settings, structure: cmd.structure });
       if (cmd.type === 'updateSettings') checkGames({ ...live.state.settings, ...cmd.settings });
+      // Codes come from a secure source, never from the browser or the seating seed.
+      if (cmd.type === 'createInvites') {
+        const count = Number.isSafeInteger(cmd.count) && cmd.count > 0 && cmd.count <= 200 ? cmd.count : 0;
+        return { type: 'createInvites', by: me, count: cmd.count, maxUses: cmd.maxUses, codes: newCodes(count, live.state) };
+      }
       return { ...cmd, by: me } as Command;
     }
     switch (cmd.type) {
       case 'register': {
         const displayName = cleanName(myName || ('displayName' in cmd ? String(cmd.displayName ?? '') : ''));
         if (!displayName) throw new ActionError('pick a name first');
-        return { type: 'register', playerId: me, displayName };
+        const code = typeof cmd.code === 'string' ? cmd.code.slice(0, 40) : undefined;
+        return { type: 'register', playerId: me, displayName, ...(code ? { code } : {}) };
       }
+      case 'checkIn':
       case 'unregister':
       case 'rebuy':
       case 'declineRebuy':
@@ -640,6 +663,19 @@ function checkGames(settings: TournamentSettings) {
     }
     if (settings.seatsPerTable > spec.maxPlayers) throw new ActionError(`${spec.name} seats at most ${spec.maxPlayers} per table`);
   }
+}
+
+/** Fresh invite codes no other code in this tournament has. */
+function newCodes(count: number, state: TournamentState): string[] {
+  const taken = new Set(state.invites?.map((c) => c.code));
+  const out: string[] = [];
+  while (out.length < count) {
+    const code = codeFromWords(new Uint32Array(randomBytes(32).buffer));
+    if (taken.has(code)) continue;
+    taken.add(code);
+    out.push(code);
+  }
+  return out;
 }
 
 function cleanName(name: string) {

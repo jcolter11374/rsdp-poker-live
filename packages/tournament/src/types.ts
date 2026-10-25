@@ -54,6 +54,49 @@ export interface TournamentSettings {
   payouts?: { structure: PayoutStructure; money: PrizeMoney };
   /** Play hand-for-hand on the bubble when payouts are set. */
   handForHand: boolean;
+  /** Display-only bounty on every entry; absent = no bounties. */
+  bounty?: BountySettings;
+  /** Invite codes; absent = codes are optional and only skip approval when a code is used. */
+  invites?: InviteSettings;
+  /** Check-in groups (not for Sit & Go); absent = registering holds a seat. */
+  checkIn?: CheckInSettings;
+}
+
+export interface BountySettings {
+  /** Money (cents) on each entry's head, paid to whoever knocks it out. Each rebuy and re-entry buys a fresh one. */
+  amount: number;
+  /** Progressive knockout: this share (0-100) of each bounty won goes onto the winner's own head. 0 = a regular bounty. */
+  progressivePercent: number;
+}
+
+export interface InviteSettings {
+  /** Registering needs a valid code. */
+  required: boolean;
+  /** A valid code skips host approval of the registration. */
+  autoApprove: boolean;
+}
+
+export interface CheckInGroup {
+  /** Who may check in: the first N on the registration list, or null for everyone registered. */
+  firstN: number | null;
+  /** Minutes after this group opens that the next one opens. */
+  waitMinutes: number;
+}
+
+export interface CheckInSettings {
+  /** 1-15 groups, opened in order; once open a group stays open. */
+  groups: CheckInGroup[];
+  /** Scheduled start: the first group opens this long before startAt. Other starts open check-in by host command. */
+  opensMinutesBefore: number;
+}
+
+export interface InviteCode {
+  code: string;
+  /** null = any number of players (a code to share in a group chat). */
+  maxUses: number | null;
+  createdAt: number;
+  cancelled: boolean;
+  usedBy: { playerId: PlayerId; displayName: string; at: number }[];
 }
 
 export type TournamentStatus = 'registering' | 'seating' | 'running' | 'paused' | 'finished' | 'cancelled';
@@ -87,6 +130,14 @@ export interface Entry {
   /** Quit or host removal waiting for the current hand to end. */
   leaveRequested?: 'quit' | 'removed';
   bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[] };
+  /** Bounty tournaments: money (cents) on this entry's head now. */
+  bounty?: number;
+  /** Bounty money (cents) this entry has collected. */
+  bountiesWon?: number;
+  /** Players this entry has knocked out (a split pot counts for every winner). */
+  knockouts?: number;
+  /** Check-in tournaments: when this entry checked in. */
+  checkedInAt?: number;
 }
 
 export interface TableState {
@@ -113,6 +164,8 @@ export interface PendingRequest {
   /** For rebuy, add-on and re-entry: the entry it applies to. */
   entryId?: EntryId;
   at: number;
+  /** Invite code given with a registration; used when the host approves. */
+  code?: string;
 }
 
 export interface EliminationGroup {
@@ -152,6 +205,10 @@ export interface TournamentState {
   counters: { entry: number; table: number; request: number };
   /** mulberry32 state for seating draws. */
   rng: number;
+  /** Invite codes the host has made. Only the host is sent these. */
+  invites?: InviteCode[];
+  /** Check-in progress: when the first group opened, and how many groups are open. */
+  checkIn?: { openedAt: number | null; groupsOpen: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +227,8 @@ export interface HandResult {
 }
 
 export type Command =
-  | { type: 'register'; playerId: PlayerId; displayName: string }
+  | { type: 'register'; playerId: PlayerId; displayName: string; code?: string }
+  | { type: 'checkIn'; playerId: PlayerId }
   | { type: 'unregister'; playerId: PlayerId }
   | { type: 'rebuy'; playerId: PlayerId }
   | { type: 'declineRebuy'; playerId: PlayerId }
@@ -187,6 +245,11 @@ export type Command =
   | { type: 'updateSettings'; by: PlayerId; settings: Partial<TournamentSettings> }
   /** Before the start: cancel. Paused with no hand running: end and rank the rest by chips. */
   | { type: 'end'; by: PlayerId }
+  /** Makes `count` codes. The server fills in `codes` from a secure source; without them the director draws its own. */
+  | { type: 'createInvites'; by: PlayerId; count: number; maxUses: number | null; codes?: string[] }
+  | { type: 'cancelInvite'; by: PlayerId; code: string }
+  /** Opens check-in now (events that do not open it on a schedule). */
+  | { type: 'openCheckIn'; by: PlayerId }
   | { type: 'handStarted'; tableId: TableId; handNumber: number }
   | { type: 'handResult'; result: HandResult };
 
@@ -204,7 +267,13 @@ export interface SeatInfo {
 
 export type DirectorEvent =
   | { type: 'registered'; entryId: EntryId; playerId: PlayerId; displayName: string; late: boolean; entryNo: number }
-  | { type: 'unregistered'; playerId: PlayerId }
+  | { type: 'unregistered'; playerId: PlayerId; reason?: 'not-checked-in' }
+  /** A check-in group opened; `playerIds` may check in from now (nobody is told twice). */
+  | { type: 'checkInOpened'; group: number; playerIds: PlayerId[] }
+  | { type: 'checkedIn'; playerId: PlayerId }
+  /** A knockout paid a bounty: `cash` to the winner, `headAdded` onto their own head (progressive). */
+  | { type: 'bountyWon'; entryId: EntryId; playerId: PlayerId; fromEntryId: EntryId; fromPlayerId: PlayerId; cash: number; headAdded: number }
+  | { type: 'invitesCreated'; codes: string[] }
   | { type: 'requestPending'; request: PendingRequest }
   | { type: 'requestRejected'; request: PendingRequest }
   | { type: 'tablesCreated'; tables: { tableId: TableId; seats: SeatInfo[] }[] }
@@ -253,6 +322,11 @@ export interface Standing {
   /** Display-only prize for a finished place (0 when out of the money or no payouts set). */
   prize: number;
   eliminatedBy: PlayerId[];
+  /** Bounty money (cents) collected; 0 without bounties. */
+  bounties: number;
+  knockouts: number;
+  /** Bounty still on this entry's head; 0 once knocked out. */
+  bounty: number;
 }
 
 export interface Result {

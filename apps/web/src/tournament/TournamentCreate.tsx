@@ -17,6 +17,7 @@ import {
 import { tournamentClient } from './client';
 import { GAMES, localTime } from './format';
 import { useSession } from './hooks';
+import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
 import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
 
@@ -72,6 +73,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
   const [payoutsOn, setPayoutsOn] = useState(false);
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0 });
   const [payouts, setPayouts] = useState(() => payoutPreset('standard', 600));
+  const [formats, setFormats] = useState<Formats>(NO_FORMATS);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -116,6 +118,9 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
     reEntry,
     registrationApproval,
     allowQuit,
+    ...(formats.bounty ? { bounty: formats.bounty } : {}),
+    ...(formats.invites ? { invites: formats.invites } : {}),
+    ...(formats.checkIn && startKind !== 'sng' ? { checkIn: formats.checkIn } : {}),
     // Presets are built for 600 entries; trim them to this event's size.
     ...(payoutsOn ? { payouts: { structure: payouts.name === 'custom' ? payouts : payoutPreset(payouts.name as PayoutPresetName, maxEntrants), money } } : {}),
   };
@@ -395,6 +400,11 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
             <input type="checkbox" checked={allowQuit} onChange={(e) => setAllowQuit(e.target.checked)} />
             Players may leave for good before busting
           </label>
+        </section>
+
+        <section className="tn-card">
+          <h2>Bounties, invites and check-in</h2>
+          <FormatsEditor value={formats} onChange={setFormats} scheduled={startKind === 'scheduled'} sng={startKind === 'sng'} />
         </section>
 
         <section className="tn-card">
