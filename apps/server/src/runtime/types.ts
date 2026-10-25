@@ -35,6 +35,8 @@ export interface SeatState {
   straddle: boolean;
   /** Player preference: take part in Nit game rounds (absent in older snapshots). */
   nitOptIn?: boolean;
+  /** Emoji shown by the seat (absent in older snapshots). */
+  mood?: string | null;
   /** Turns in a row the clock ran out. */
   timeouts: number;
   /** Seconds left in this player's time bank. */

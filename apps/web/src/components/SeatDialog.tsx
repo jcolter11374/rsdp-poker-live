@@ -115,7 +115,7 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
 }
 
 /** What the host can do to a seated player. */
-export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void }) {
+export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void; children?: ReactNode }) {
   const cents = view.settings.stakes.centsMode;
   const [stack, setStack] = useState(toInput(cents, seat.stack));
   const [error, setError] = useState('');
@@ -178,6 +178,7 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
           )}
         </div>
         {error && <p className="error">{error}</p>}
+        {children}
         <button onClick={onClose}>Close</button>
       </div>
     </Modal>

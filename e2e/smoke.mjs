@@ -87,6 +87,22 @@ try {
     await host.waitForSelector('.seat:not(.me) .note-badge.has-note');
     if (await guest.locator('.note-badge.has-note').count()) throw new Error('Bob can see a note');
     await host.screenshot({ path: path.join(OUT, 'notes.png') });
+
+    // Bob picks a picture and a mood from his own seat; Ann sees both and throws him a gesture.
+    await guest.click('.seat.me .nameplate');
+    await guest.click('.avatar-pick[aria-label="fox"]');
+    await guest.click('.mood-pick:has-text("🤠")');
+    await guest.click('.modal button:has-text("Close")');
+    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar');
+    await host.waitForSelector('.seat:not(.me) .seat-mood:has-text("🤠")');
+    await host.click('.seat:not(.me) .nameplate');
+    await host.click('.gesture-grid button[aria-label^="Fish"]');
+    await guest.waitForSelector('.gesture-flight');
+    await guest.screenshot({ path: path.join(OUT, 'gesture.png') });
+    // B shows the felt in big blinds.
+    await host.keyboard.press('b');
+    await host.waitForSelector('.seat.me .stack:has-text("BB")');
+    await host.keyboard.press('b');
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {

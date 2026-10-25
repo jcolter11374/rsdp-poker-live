@@ -1,9 +1,10 @@
+import { readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { closeDb, createDb, queryRows, type Db } from '../src/db/client';
+import { closeDb, createDb, MIGRATIONS_DIR, queryRows, type Db } from '../src/db/client';
 import { createTestDb } from '../src/db/testing';
 
 let db: Db | undefined;
@@ -24,6 +25,7 @@ describe('createDb', () => {
       'chip_movements',
       'hands',
       'jobs',
+      'player_avatars',
       'player_notes',
       'player_tokens',
       'players',
@@ -74,7 +76,7 @@ describe('createDb', () => {
       db = await createDb({ pgliteDir: dir, ignoreEnv: true });
       expect(await queryRows(db, sql`select id, display_name from players`)).toEqual([{ id: 'kept', display_name: 'Kept' }]);
       const migrations = await queryRows<{ n: number }>(db, sql`select count(*)::int as n from drizzle.__drizzle_migrations`);
-      expect(migrations[0].n).toBe(5);
+      expect(migrations[0].n).toBe(readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).length);
       await closeDb(db);
       db = undefined;
     } finally {

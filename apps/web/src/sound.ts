@@ -1,5 +1,9 @@
 /** Tiny synthesized sound effects, so the app ships no audio files. */
 
+import { useSyncExternalStore } from 'react';
+import type { GestureKind } from '@rsdp/engine/wire';
+import { getPrefs } from './prefs';
+
 const VOLUME_KEY = 'rsdp.volume';
 /** Where the first version kept a plain on/off switch. */
 const MUTE_KEY = 'rsdp.muted';
@@ -25,8 +29,19 @@ export function getVolume(): Volume {
   return volume;
 }
 
+const volumeListeners = new Set<() => void>();
+
+/** The volume, kept current across every control that changes it. */
+export function useVolume(): Volume {
+  return useSyncExternalStore((cb) => {
+    volumeListeners.add(cb);
+    return () => volumeListeners.delete(cb);
+  }, getVolume);
+}
+
 export function setVolume(value: Volume) {
   volume = value;
+  volumeListeners.forEach((cb) => cb());
   if (master) master.gain.value = value;
   try {
     localStorage.setItem(VOLUME_KEY, String(value));
@@ -98,11 +113,14 @@ function noise(start: number, dur: number, gain = 0.2, filter = 2000) {
   src.start(t);
 }
 
-/** Table noises are skipped in a background tab, so they don't pile up; alerts always play. */
+/**
+ * Table noises are skipped in a background tab, so they don't pile up, and
+ * when the player turned table sounds off; alerts always play.
+ */
 const quietWhenHidden =
   (fn: () => void) =>
   (): void => {
-    if (!document.hidden) fn();
+    if (!document.hidden && getPrefs().tableSounds) fn();
   };
 
 export const sounds = {
@@ -131,7 +149,14 @@ export const sounds = {
     noise(0.12, 0.04, 0.5, 400);
   }),
   fold: quietWhenHidden(() => noise(0, 0.15, 0.15, 1200)),
-  chat: quietWhenHidden(() => tone(1560, 0, 0.08, 'sine', 0.06)),
+  chat: () => {
+    if (!document.hidden && getPrefs().chatSound) tone(1560, 0, 0.08, 'sine', 0.06);
+  },
+  /** A gesture landing on a seat. */
+  gesture: (kind: GestureKind) => {
+    if (document.hidden || getPrefs().gestures !== 'sound') return;
+    GESTURE_SOUNDS[kind]();
+  },
   turn: () => {
     tone(880, 0, 0.12, 'sine', 0.12);
     tone(1320, 0.12, 0.18, 'sine', 0.12);
@@ -152,4 +177,27 @@ export const sounds = {
     tone(880, 0.1, 0.12, 'triangle');
     tone(1100, 0.2, 0.25, 'triangle');
   }),
+};
+
+const chime = (notes: number[], gap = 0.08, type: OscillatorType = 'sine', gain = 0.08) => () => notes.forEach((f, i) => tone(f, i * gap, 0.14, type, gain));
+
+const GESTURE_SOUNDS: Record<GestureKind, () => void> = {
+  heart: chime([784, 988, 1175]),
+  clap: () => [0, 0.11, 0.22, 0.33].forEach((t) => noise(t, 0.035, 0.35, 1800)),
+  cheers: chime([1568, 2093], 0.09, 'triangle', 0.07),
+  fire: () => noise(0, 0.4, 0.18, 600),
+  laugh: chime([660, 590, 660, 590, 660], 0.07, 'triangle', 0.06),
+  cry: () => {
+    tone(520, 0, 0.3, 'sine', 0.07);
+    tone(440, 0.25, 0.4, 'sine', 0.07);
+  },
+  money: chime([2637, 3136, 2637, 3520], 0.05, 'triangle', 0.06),
+  fish: chime([392, 330, 262], 0.1, 'sine', 0.08),
+  shark: () => {
+    tone(82, 0, 0.25, 'sawtooth', 0.06);
+    tone(87, 0.3, 0.25, 'sawtooth', 0.06);
+  },
+  clown: chime([523, 659, 784, 659, 523], 0.06, 'square', 0.04),
+  tomato: () => noise(0, 0.12, 0.4, 300),
+  rose: chime([1047, 1319, 1568, 2093], 0.1, 'sine', 0.06),
 };
