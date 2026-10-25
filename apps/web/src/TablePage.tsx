@@ -4,6 +4,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
 import { getVolume, nextVolume, setVolume, sounds, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
+import { notify } from './notify';
 import { usePortrait } from './layout';
 import { chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { Table, useNow } from './components/Table';
@@ -51,6 +52,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     if (myTurn && !wasMyTurn && !preQueued.current) {
       sounds.turn();
       buzz();
+      notify('Your turn', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
     }
   }, [view]);
 

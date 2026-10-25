@@ -15,6 +15,7 @@ import { navigate, useFollowSeat, useNow, useSession, useTournament } from './ho
 import { savedName } from '../socket';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
+import { AlertsToggle } from './TournamentAlerts';
 
 type Tab = 'players' | 'tables' | 'structure' | 'payouts' | 'host';
 
@@ -81,7 +82,10 @@ export function TournamentLobby({ id }: { id: string }) {
           {state.settings.games.map(gameName).join(' / ')} · {chips(state.settings.startingStack)} chips · {state.settings.seatsPerTable}-max
           {state.settings.start.kind === 'sng' ? ' · Sit & Go' : ''}
         </p>
-        <ShareLink />
+        <div className="tn-header-actions">
+          <ShareLink />
+          <AlertsToggle />
+        </div>
       </header>
 
       <Hero state={state} now={now} />

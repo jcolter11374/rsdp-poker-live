@@ -171,3 +171,10 @@
 .tn-list-running, .tn-list-seating { color: var(--good); }
 .tn-list-paused { color: var(--accent-2); }
 .tn-list-cancelled { color: var(--bad); }
+
+/* Background alerts switch. */
+.tn-header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.tn-header-actions .tn-share { margin-top: 0; }
+.tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
+.tn-alerts.on { border-color: var(--good); color: var(--good); }
+.tn-list-head .tn-alerts { margin-left: auto; }

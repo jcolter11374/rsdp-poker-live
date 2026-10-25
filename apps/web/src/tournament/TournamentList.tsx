@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { isLive, type TournamentListing } from '@rsdp/tournament';
 import { socket } from '../socket';
 import { tournamentClient } from './client';
+import { AlertsToggle } from './TournamentAlerts';
 import { countdown, gameName, localTime, ordinal } from './format';
 import { navigate, useNow } from './hooks';
 
@@ -64,6 +65,7 @@ export function TournamentList() {
     <section className="card-panel tn-list" aria-label="Tournaments">
       <div className="tn-list-head">
         <h2>Tournaments</h2>
+        <AlertsToggle />
         <a
           href="/tn/new"
           onClick={(e) => {

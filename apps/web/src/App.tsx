@@ -3,10 +3,20 @@ import { Home } from './Home';
 import { RulesPage } from './rules/RulesPage';
 import { TablePage } from './TablePage';
 import { TournamentCreate } from './tournament/TournamentCreate';
+import { TournamentAlerts } from './tournament/TournamentAlerts';
 import { TournamentLobby } from './tournament/TournamentLobby';
 import './tournament/tournament.css';
 
 export function App() {
+  return (
+    <>
+      <TournamentAlerts />
+      <Page />
+    </>
+  );
+}
+
+function Page() {
   const [path, setPath] = useState(location.pathname);
 
   useEffect(() => {
