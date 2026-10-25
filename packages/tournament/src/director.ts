@@ -14,10 +14,11 @@
 // scheduled starts and offer expiries only take effect in tick, so the server
 // must wake at nextWakeAt (a 1 s tick is a fine fallback).
 
-import { placePrizes, prizePool, prizesForPlaces, validatePayoutStructure } from './payouts';
-import { nextOccurrence } from './recurrence';
+import { placePrizes, prizePool, prizesForPlaces, validatePayoutStructure, type PrizeMoney } from './payouts';
+import { nextOccurrence, validateSchedule } from './recurrence';
 import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
-import { clockAt, levelEndMs, presetStructure, rowStartMs, validateStructure, type LevelRow } from './structure';
+import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type LevelRow } from './structure';
+import { cleanText, hasUnstorableText, isId } from './text';
 import {
   STATE_VERSION,
   type Command,
@@ -71,30 +72,105 @@ export function defaultSettings(overrides: Partial<TournamentSettings> = {}): To
   };
 }
 
+const NAME_MAX = 40;
+/** The latest instant a Date can hold; later start times break the time-zone maths. */
+const MAX_DATE_MS = 8.64e15;
+const CHIPS_LABEL = MAX_CHIPS.toLocaleString('en-US');
+/** Most chips the whole field may hold, so any stack or pot the engine adds up stays a safe integer. */
+export const MAX_CHIPS_IN_PLAY = Math.floor(Number.MAX_SAFE_INTEGER / 4);
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isWhole = (n: unknown, min: number, max: number) => Number.isSafeInteger(n) && (n as number) >= min && (n as number) <= max;
+/** A level number or count of at least 1, or null for no limit. */
+const isLimit = (n: unknown) => n === null || isWhole(n, 1, Number.MAX_SAFE_INTEGER);
+
+/** Every setting, so unknown keys never reach the saved state. */
+const SETTINGS_KEYS: Record<keyof TournamentSettings, true> = {
+  name: true,
+  start: true,
+  games: true,
+  stopRotationAtLevel: true,
+  structure: true,
+  startingStack: true,
+  seatsPerTable: true,
+  maxEntrants: true,
+  seatLeadSeconds: true,
+  graceMinutes: true,
+  registrationApproval: true,
+  lateRegistration: true,
+  reEntry: true,
+  rebuy: true,
+  addOn: true,
+  allowQuit: true,
+  payouts: true,
+  handForHand: true,
+};
+
+/** Only the known settings, with the free text cleaned (names are cut by whole characters). */
+function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSettings> {
+  const out: Partial<TournamentSettings> = Object.fromEntries(Object.entries(raw ?? {}).filter(([k]) => Object.hasOwn(SETTINGS_KEYS, k)));
+  if (typeof out.name === 'string') out.name = cleanText(out.name);
+  const payoutName = out.payouts?.structure?.name;
+  if (typeof payoutName === 'string') {
+    const name = Array.from(cleanText(payoutName)).slice(0, NAME_MAX).join('');
+    out.payouts = { ...out.payouts!, structure: { ...out.payouts!.structure, name } };
+  }
+  return out;
+}
+
 export function validateSettings(s: TournamentSettings): string[] {
+  if (!isObject(s)) return ['The settings are missing'];
+  const missing = (['start', 'lateRegistration', 'reEntry', 'rebuy', 'addOn'] as const).filter((k) => !isObject(s[k]));
+  if (missing.length) return [`Missing settings: ${missing.join(', ')}`];
+  const { start, lateRegistration: late, reEntry, rebuy, addOn } = s;
   const errors: string[] = [];
-  const name = s.name.trim();
-  if (name.length < 1 || name.length > 40) errors.push('Name must be 1-40 characters');
-  if (!Number.isInteger(s.seatsPerTable) || s.seatsPerTable < 2 || s.seatsPerTable > 10) errors.push('Seats per table must be 2-10');
-  if (!Number.isInteger(s.maxEntrants) || s.maxEntrants < 2 || s.maxEntrants > 600) errors.push('Max entrants must be 2-600');
-  if (!Number.isSafeInteger(s.startingStack) || s.startingStack < 1) errors.push('Starting stack must be a whole number above 0');
-  if (!s.games.length) errors.push('Pick at least one game');
-  errors.push(...validateStructure(s.structure, { maxRebuys: s.rebuy.max }).errors);
-  if (s.rebuy.max > 0 && !(s.rebuy.chips > 0)) errors.push('Rebuy chips must be above 0');
-  if (!Number.isInteger(s.rebuy.offerSeconds) || s.rebuy.offerSeconds < 1 || s.rebuy.offerSeconds > 300) errors.push('Rebuy offer window must be 1-300 seconds');
-  if (s.addOn.max > 0) {
-    if (!(s.addOn.chips > 0)) errors.push('Add-on chips must be above 0');
-    if (!s.structure.some((r) => r.kind === 'break' && r.addOn)) errors.push('Add-ons are on, but no break offers them');
+  const nameLength = typeof s.name === 'string' ? Array.from(cleanText(s.name)).length : 0;
+  if (nameLength < 1 || nameLength > NAME_MAX) errors.push(`Name must be 1-${NAME_MAX} characters`);
+  if (!isWhole(s.seatsPerTable, 2, 10)) errors.push('Seats per table must be 2-10');
+  if (!isWhole(s.maxEntrants, 2, 600)) errors.push('Max entrants must be 2-600');
+  if (!isWhole(s.startingStack, 1, MAX_CHIPS)) errors.push(`Starting stack must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (!Array.isArray(s.games) || !s.games.length) errors.push('Pick at least one game');
+  else if (!s.games.every(isId)) errors.push('Every game must be a game id');
+  if (s.stopRotationAtLevel != null && !isLimit(s.stopRotationAtLevel)) errors.push('Rotation must stop at level 1 or later');
+  errors.push(...validateStructure(s.structure, { maxRebuys: rebuy.max }).errors);
+  if (!isWhole(rebuy.max, 0, Number.MAX_SAFE_INTEGER)) errors.push('Rebuys per player must be a whole number');
+  // Checked even while off: an open rebuy offer or a pending request still pays these out.
+  if (!isWhole(rebuy.chips, 1, MAX_CHIPS)) errors.push(`Rebuy chips must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (!isWhole(addOn.chips, 1, MAX_CHIPS)) errors.push(`Add-on chips must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (!isWhole(rebuy.offerSeconds, 1, 300)) errors.push('Rebuy offer window must be 1-300 seconds');
+  if (!isWhole(addOn.max, 0, Number.MAX_SAFE_INTEGER)) errors.push('Add-ons per player must be a whole number');
+  if (addOn.max > 0 && (!Array.isArray(s.structure) || !s.structure.some((r) => r?.kind === 'break' && r.addOn)))
+    errors.push('Add-ons are on, but no break offers them');
+  // All the chips one entry can be given, so stacks stay safe integers in the engine.
+  const extra = (b: { max: number; chips: number }) => (b.max > 0 && isWhole(b.max, 0, Number.MAX_SAFE_INTEGER) && isWhole(b.chips, 1, MAX_CHIPS) ? b.max * b.chips : 0);
+  if (isWhole(s.startingStack, 1, MAX_CHIPS) && s.startingStack + extra(rebuy) + extra(addOn) > MAX_CHIPS)
+    errors.push(`The starting stack plus every rebuy and add-on must be at most ${CHIPS_LABEL} chips`);
+  if (!isWhole(s.graceMinutes, 0, 24 * 60)) errors.push('Grace period must be 0-1440 minutes');
+  if (!isWhole(s.seatLeadSeconds, 0, 3600)) errors.push('Seating lead must be 0-3600 seconds');
+  if (!isLimit(late.throughLevel)) errors.push('Late registration must close at level 1 or later');
+  if (!isLimit(reEntry.throughLevel)) errors.push('Re-entry must close at level 1 or later');
+  if (!isLimit(reEntry.max)) errors.push('Re-entries per player must be at least 1');
+  const flags = [s.registrationApproval, s.allowQuit, s.handForHand, late.enabled, reEntry.enabled, reEntry.approval, rebuy.approval, addOn.approval];
+  if (start.kind === 'sng') flags.push(start.autoSpawn);
+  if (!flags.every((f) => typeof f === 'boolean')) errors.push('On/off settings must be true or false');
+  if (start.kind === 'sng') {
+    const { playersNeeded, startDelaySeconds } = start;
+    if (!isWhole(playersNeeded, 2, s.maxEntrants)) errors.push('Players needed must be 2 up to max entrants');
+    if (!isWhole(startDelaySeconds, 0, 900)) errors.push('Start delay must be 0-900 seconds');
+  } else if (start.kind === 'scheduled') {
+    if (!isWhole(start.startAt, 0, MAX_DATE_MS)) errors.push('Pick a start time');
+    if (start.schedule != null) errors.push(...validateSchedule(start.schedule));
+  } else if (start.kind !== 'manual') errors.push('Pick how the tournament starts');
+  if (s.payouts) {
+    errors.push(...validatePayoutStructure(s.payouts.structure, s.maxEntrants));
+    // Standings read these on every finish, so they must be usable numbers.
+    const m: Partial<PrizeMoney> = isObject(s.payouts.money) ? s.payouts.money : {};
+    if (![m.buyIn, m.rebuy ?? 0, m.addOn ?? 0, m.added ?? 0].every((n) => isWhole(n, 0, Number.MAX_SAFE_INTEGER)))
+      errors.push('Prize money must be whole amounts of 0 or more');
+    if (m.feePercent !== undefined && !(typeof m.feePercent === 'number' && m.feePercent >= 0 && m.feePercent <= 100)) errors.push('The fee must be 0-100%');
   }
-  if (s.graceMinutes < 0 || s.graceMinutes > 24 * 60) errors.push('Grace period must be 0-1440 minutes');
-  if (s.seatLeadSeconds < 0 || s.seatLeadSeconds > 3600) errors.push('Seating lead must be 0-3600 seconds');
-  if (s.start.kind === 'sng') {
-    const { playersNeeded, startDelaySeconds } = s.start;
-    if (!Number.isInteger(playersNeeded) || playersNeeded < 2 || playersNeeded > s.maxEntrants) errors.push('Players needed must be 2 up to max entrants');
-    if (startDelaySeconds < 0 || startDelaySeconds > 900) errors.push('Start delay must be 0-900 seconds');
-  }
-  if (s.start.kind === 'scheduled' && !Number.isFinite(s.start.startAt)) errors.push('Pick a start time');
-  if (s.payouts) errors.push(...validatePayoutStructure(s.payouts.structure, s.maxEntrants));
+  // The structure checks its own rows.
+  if (hasUnstorableText({ ...s, structure: null })) errors.push('Settings contain characters that cannot be saved');
   return errors;
 }
 
@@ -107,9 +183,10 @@ export interface CreateInput {
   seed: number;
 }
 
-export function createTournament({ id, hostId, settings, now, seed }: CreateInput): TournamentState {
+export function createTournament({ id, hostId, settings: raw, now, seed }: CreateInput): TournamentState {
+  const settings = cleanSettings(raw) as TournamentSettings;
   const errors = validateSettings(settings);
-  if (settings.start.kind === 'scheduled' && settings.start.startAt <= now) errors.push('The start time has already passed');
+  if (settings.start?.kind === 'scheduled' && settings.start.startAt <= now) errors.push('The start time has already passed');
   if (errors.length) fail(errors.join('; '));
   return {
     version: STATE_VERSION,
@@ -342,7 +419,14 @@ function seatInfo(c: Ctx, e: Entry): SeatInfo {
   return { tableId: e.tableId!, seat: e.seat!, entryId: e.id, playerId: e.playerId, displayName: e.displayName, stack: e.stack };
 }
 
+/** Each entry is capped, but unlimited re-entries are not, and their chips can all end up in one stack. */
+function checkChipsInPlay(s: TournamentState, chips: number) {
+  const inPlay = aliveEntries(s).reduce((sum, e) => sum + e.stack, 0);
+  if (inPlay + chips > MAX_CHIPS_IN_PLAY) fail('The tournament cannot hold any more chips');
+}
+
 function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number): Entry {
+  checkChipsInPlay(c.s, c.s.settings.startingStack);
   const e: Entry = {
     id: `${c.s.id}:e${++c.s.counters.entry}`,
     playerId,
@@ -499,6 +583,7 @@ function canRebuy(s: TournamentState, e: Entry): boolean {
 }
 
 function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
+  checkChipsInPlay(c.s, chips);
   e.stack += chips;
   if (reason === 'rebuy') {
     e.rebuys++;
@@ -830,19 +915,24 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         break;
       }
       case 'updateSettings': {
-        const next = { ...s.settings, ...structuredClone(cmd.settings) };
+        const changes = cleanSettings(cmd.settings);
+        const next = { ...s.settings, ...structuredClone(changes) };
         const locked: (keyof TournamentSettings)[] = s.tables.length
           ? ['start', 'games', 'stopRotationAtLevel', 'startingStack', 'seatsPerTable', 'structure']
           : ['structure'];
         for (const k of locked) {
-          if (k in cmd.settings && JSON.stringify(next[k]) !== JSON.stringify(s.settings[k]))
+          if (k in changes && JSON.stringify(next[k]) !== JSON.stringify(s.settings[k]))
             fail(k === 'structure' ? 'Use editStructure to change levels' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next);
         if (next.maxEntrants < rankedEntries(s).length) errors.push('Max entrants is below the current field');
         if (errors.length) fail(errors.join('; '));
         s.settings = next;
-        if (next.start.kind === 'scheduled' && s.status === 'registering') s.startAt = next.start.startAt;
+        if (next.start.kind === 'scheduled' && s.status === 'registering') {
+          // A new start time ends the grace period the old one began.
+          if (next.start.startAt !== s.startAt) s.graceUntil = null;
+          s.startAt = next.start.startAt;
+        }
         emit(c, { type: 'settingsUpdated' });
         break;
       }

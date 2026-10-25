@@ -48,7 +48,7 @@ const cents = (n: number) => Math.round(n * 100);
  */
 export function validatePayoutStructure(s: PayoutStructure, maxEntries: number): string[] {
   const errors: string[] = [];
-  if (!s.ranges.length) return ['Add at least one range'];
+  if (!Array.isArray(s?.ranges) || !s.ranges.length) return ['Add at least one range'];
   let expectedMin = 2;
   s.ranges.forEach((r, i) => {
     const label = `Range ${r.minEntries}-${r.maxEntries}`;
