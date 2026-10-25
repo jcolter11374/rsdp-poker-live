@@ -165,6 +165,7 @@ describe('7-2 bounty', () => {
     expect(transfers).toHaveLength(2);
     expect(rt.state.seats[first]!.stack).toBe(200 + 3 + 30);
     expect(total(rt)).toBe(600);
+    expect(rt.state.log.filter((l) => /wins with 7-2 and collects 30 in bounties/.test(l.text))).toHaveLength(1);
   });
 
   it('without auto-show the winner claims it by showing after the hand', () => {
@@ -179,6 +180,7 @@ describe('7-2 bounty', () => {
     rt.show(idAt(rt, first), [0, 1]);
     expect(rt.state.seats[first]!.stack).toBe(233);
     expect(total(rt)).toBe(600);
+    expect(rt.state.log.filter((l) => /wins with 7-2 and collects 30 in bounties/.test(l.text))).toHaveLength(1);
   });
 
   it('a late claim takes only what a payer has now, and creates no chips', () => {

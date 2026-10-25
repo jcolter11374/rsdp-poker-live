@@ -209,6 +209,10 @@ describe('clocks', () => {
     clock.advance(13_000);
     expect(hand(rt).phase).toBe('complete');
     expect(hand(rt).runs).toHaveLength(1);
+    // A vote that arrives after the vote closed is ignored rather than refused.
+    const other = hand(rt).seats.find((x) => rt.state.seats[x.seat]!.playerId !== a)!;
+    expect(() => rt.voteRunItTwice(rt.state.seats[other.seat]!.playerId, true)).not.toThrow();
+    expect(hand(rt).runs).toHaveLength(1);
   });
 });
 

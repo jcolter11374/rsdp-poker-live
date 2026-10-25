@@ -72,6 +72,28 @@ describe('Nit game', () => {
     expect(rt.state.ledger[holder].cashOut).toBe(before - 40);
     expect(rt.state.sideGames?.nit).toBeNull();
   });
+  it('a last nit short of chips still pays the full prize; the rest goes on their buy-in', () => {
+    const { rt } = table(nitOn);
+    for (const id of IDS) rt.setPreferences(id, { nitGame: true });
+    rt.start('host');
+    winOutright(rt);
+    // Both remaining holders are nearly broke, so whoever is left holding can't cover 2 x 20.
+    for (const id of rt.state.sideGames!.nit!.holders) rt.setStack('host', id, 15);
+    const net = () => IDS.reduce((n, id) => n + rt.state.ledger[id].buyIn - rt.state.ledger[id].cashOut, 0);
+    const buyInBefore = Object.fromEntries(IDS.map((id) => [id, rt.state.ledger[id].buyIn]));
+    rt.dealNext('host');
+    winOutright(rt);
+    expect(rt.state.sideGames?.nit).toBeNull();
+    const loser = IDS.find((id) => rt.seatOf(id)!.stack === 0)!;
+    expect(loser).toBeDefined();
+    expect(rt.seatOf(loser)!.sitOutReason).toBe('busted');
+    const shortfall = rt.state.ledger[loser].buyIn - buyInBefore[loser];
+    expect(shortfall).toBeGreaterThan(0);
+    const line = rt.state.log.find((l) => /last nit/.test(l.text))!.text;
+    expect(line).toContain(`pays 40 in all (${shortfall} of it added to their buy-in)`);
+    // Every chip on the table is accounted for in the ledger.
+    expect(total(rt)).toBe(net());
+  });
 });
 
 describe('Nit game edge cases', () => {

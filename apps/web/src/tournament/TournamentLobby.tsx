@@ -191,11 +191,14 @@ function Hero({ state, now }: { state: TournamentState; now: number }) {
 
 function Stats({ state, now }: { state: TournamentState; now: number }) {
   const sum = summarize(state, now);
-  const items: [string, string][] = [
-    ['Players', sum.clock ? `${sum.playersLeft} / ${sum.entrants}` : `${sum.entrants}${state.settings.maxEntrants < 600 ? ` / ${state.settings.maxEntrants}` : ''}`],
-    ['Average stack', sum.clock ? chips(sum.averageStack) : '–'],
-    ['Chip leader', sum.chipLeader ? `${sum.chipLeader.displayName} ${chips(sum.chipLeader.stack)}` : '–'],
-  ];
+  // A finished tournament has no stacks left to compare; the hero shows the winner.
+  const items: [string, string][] = state.status === 'finished'
+    ? [['Players', `${sum.entrants}`]]
+    : [
+        ['Players', sum.clock ? `${sum.playersLeft} / ${sum.entrants}` : `${sum.entrants}${state.settings.maxEntrants < 600 ? ` / ${state.settings.maxEntrants}` : ''}`],
+        ['Average stack', sum.clock ? chips(sum.averageStack) : '–'],
+        ['Chip leader', sum.chipLeader ? `${sum.chipLeader.displayName} ${chips(sum.chipLeader.stack)}` : '–'],
+      ];
   if (state.settings.payouts) items.push(['Prize pool', money(sum.prizePool)], ['Paid', `${sum.paidPlaces}`]);
   if (sum.totalRebuys) items.push(['Rebuys', `${sum.totalRebuys}`]);
   if (sum.totalAddOns) items.push(['Add-ons', `${sum.totalAddOns}`]);
