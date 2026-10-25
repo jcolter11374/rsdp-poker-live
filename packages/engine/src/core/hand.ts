@@ -1,4 +1,5 @@
 import type { Card } from '../cards';
+import { drawReplacements } from '../variants/draw';
 import { classifyRaise, computeLegal, type BettingContext } from './betting';
 import { computePots, uncalledBet } from './pots';
 import { modifierRegistry, variants } from './registry';
@@ -109,8 +110,13 @@ export function startHand(input: HandInput): HandState {
 function checkDeckCapacity(input: HandInput) {
   if (input.game.family === 'draw') return; // draws reshuffle the muck
   const players = input.seats.length;
+  const streets = input.game.streets;
   let needed = 0;
-  for (const st of input.game.streets) needed += (st.dealDown + st.dealUp) * players + st.dealBoard * input.options.boards;
+  streets.forEach((st, i) => {
+    // Stud's last card becomes one shared card if the deck runs short.
+    const studShortcut = input.game.family === 'stud' && i === streets.length - 1;
+    needed += studShortcut ? 1 : (st.dealDown + st.dealUp) * players + st.dealBoard * input.options.boards;
+  });
   if (needed > input.deck.length) {
     throw new ActionError(`not enough cards: ${players} players need ${needed}`);
   }
@@ -130,26 +136,34 @@ function postForced(state: HandState, post: PlannedPost) {
 // ---------------------------------------------------------------- dealing
 
 function drawCard(state: HandState): Card {
-  if (state.deckPos >= state.input.deck.length) reshuffleMuck(state);
+  if (state.deckPos >= state.input.deck.length) throw new ActionError('the deck ran out of cards');
   return state.input.deck[state.deckPos++];
 }
 
-/** Draw games: when the stub runs out, the muck is shuffled (deterministically from the hand's seed) and appended. */
-function reshuffleMuck(state: HandState) {
-  if (state.muck.length === 0) throw new ActionError('the deck ran out of cards');
-  let seed = (state.input.reshuffleSeed ^ state.deckPos) >>> 0 || 1;
-  const rand = (n: number) => {
+/**
+ * Draw games: replacements come off the stub; when it runs short, its last card
+ * and the muck (not this player's discards) are reshuffled, deterministically
+ * from the hand's seed so a replayed hand deals the same cards.
+ */
+function dealReplacements(state: HandState, thrown: Card[]): Card[] {
+  let seed = (state.input.reshuffleSeed ^ (state.deckPos * 2654435761)) >>> 0 || 1;
+  const rng = (n: number) => {
     seed ^= seed << 13;
     seed ^= seed >>> 17;
     seed ^= seed << 5;
     return (seed >>> 0) % n;
   };
-  const cards = state.muck.splice(0);
-  for (let i = cards.length - 1; i > 0; i--) {
-    const j = rand(i + 1);
-    [cards[i], cards[j]] = [cards[j], cards[i]];
-  }
-  state.input.deck.push(...cards);
+  const { deck } = state.input;
+  const result = drawReplacements({ discards: thrown, stub: deck.slice(state.deckPos), muck: state.muck, rng });
+  state.input.deck = [...deck.slice(0, state.deckPos), ...result.cards, ...result.stub];
+  state.deckPos += result.cards.length;
+  state.muck = result.muck;
+  return result.cards;
+}
+
+/** Draw games: a folded hand goes to the muck and can be reshuffled for later draws. */
+function muckHand(state: HandState, s: HandSeat) {
+  if (state.input.game.family === 'draw') state.muck.push(...s.cards.map((c) => c.card));
 }
 
 /** Seats from the first one clockwise after `from`, wrapping around. */
@@ -161,7 +175,14 @@ function clockwiseFrom(state: HandState, from: SeatIndex): HandSeat[] {
 function dealStreet(state: HandState) {
   const st = state.input.game.streets[state.street];
   const live = clockwiseFrom(state, state.input.button).filter((s) => !s.folded);
-  if (st.dealDown || st.dealUp) {
+  const perPlayer = st.dealDown + st.dealUp;
+  if (state.input.game.family === 'stud' && perPlayer * live.length > state.input.deck.length - state.deckPos) {
+    // Not enough cards left for everyone: one shared card face up in the middle.
+    if (perPlayer !== 1) throw new ActionError('the deck ran out of cards');
+    const card = drawCard(state);
+    state.runs[0][0].push(card);
+    emit(state, { t: 'board', run: 0, board: 0, cards: [card] });
+  } else if (perPlayer) {
     // One card at a time around the table, down cards before up cards.
     const pattern: boolean[] = [...Array(st.dealDown).fill(false), ...Array(st.dealUp).fill(true)];
     const dealt = new Map<SeatIndex, DealtCard[]>(live.map((s) => [s.seat, []]));
@@ -225,7 +246,8 @@ function beginBetting(state: HandState, firstRound: boolean) {
       first = rules.bringInSeat(game, upCards(state));
     } else {
       if (!rules.firstToActSeat) throw new Error(`${game.id} has no firstToActSeat rule`);
-      first = rules.firstToActSeat(game, upCards(state));
+      const order = clockwiseFrom(state, state.input.button).filter((s) => !s.folded).map((s) => s.seat);
+      first = rules.firstToActSeat(game, upCards(state), order);
     }
     // Starts at the chosen seat, or the next one with chips if it is all in from the ante.
     state.toAct = nextToAct(state, first, true);
@@ -266,8 +288,7 @@ function settleAutomatic(state: HandState) {
     }
     const s = seatAt(state, state.toAct)!;
     if (!s.away) return;
-    const legal = legalActions(state, s.seat)!;
-    applyAction(state, s, legal.canCheck ? { type: 'check' } : { type: 'fold' }, true);
+    applyAction(state, s, autoAction(legalActions(state, s.seat)!), true);
   }
 }
 
@@ -335,6 +356,7 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
     case 'fold':
       s.folded = true;
       s.lastAction = 'Fold';
+      muckHand(state, s);
       kind = 'fold';
       break;
     case 'check':
@@ -403,14 +425,21 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
   state.toAct = nextToAct(state, s.seat, false);
 }
 
+/** What the engine does for a player who is away or out of time: check, post a stud bring-in, or fold. */
+function autoAction(legal: LegalActions): Action {
+  if (legal.canCheck) return { type: 'check' };
+  if (legal.canBringIn) return { type: 'bring-in' };
+  return { type: 'fold' };
+}
+
 export function timeout(state: HandState, seat: SeatIndex) {
-  const legal = legalActions(state, seat);
   if (state.phase === 'drawing' && state.toAct === seat) {
     draw(state, seat, []);
     return;
   }
+  const legal = legalActions(state, seat);
   if (!legal) return;
-  act(state, seat, legal.canCheck ? { type: 'check' } : { type: 'fold' }, { auto: true });
+  act(state, seat, autoAction(legal), { auto: true });
 }
 
 export function foldOutOfTurn(state: HandState, seat: SeatIndex) {
@@ -422,27 +451,37 @@ export function foldOutOfTurn(state: HandState, seat: SeatIndex) {
   }
   s.folded = true;
   s.lastAction = 'Fold';
+  muckHand(state, s);
   emit(state, { t: 'action', seat, action: 'fold', amount: 0, to: s.bet, allIn: false, auto: true });
   if (live(state).length === 1) {
     finish(state);
     return;
   }
-  if (state.phase === 'drawing' && state.toAct === seat) state.toAct = nextDrawer(state, seat);
+  if (state.phase === 'drawing' && state.toAct === seat) {
+    state.toAct = nextDrawer(state, seat);
+    if (state.toAct === null) beginBetting(state, false);
+    else if (seatAt(state, state.toAct)!.away) draw(state, state.toAct, []);
+  }
   if (state.phase === 'rit-vote') resolveVotes(state);
 }
 
 // ---------------------------------------------------------------- round transitions
 
-function endRound(state: HandState) {
+/** The unmatched part of the round's top bet goes back, unless its owner folded (a player who left: it stays in as dead money). */
+function returnUncalled(state: HandState) {
   const back = uncalledBet(state.seats.map((s) => ({ seat: s.seat, bet: s.bet })));
-  if (back) {
-    const s = seatAt(state, back.seat)!;
-    s.bet -= back.amount;
-    s.total -= back.amount;
-    s.stack += back.amount;
-    if (s.allIn && s.stack > 0) s.allIn = false;
-    emit(state, { t: 'uncalled', seat: s.seat, amount: back.amount });
-  }
+  if (!back) return;
+  const s = seatAt(state, back.seat)!;
+  if (s.folded) return;
+  s.bet -= back.amount;
+  s.total -= back.amount;
+  s.stack += back.amount;
+  if (s.allIn && s.stack > 0) s.allIn = false;
+  emit(state, { t: 'uncalled', seat: s.seat, amount: back.amount });
+}
+
+function endRound(state: HandState) {
+  returnUncalled(state);
   if (live(state).length === 1) {
     finish(state);
     return;
@@ -472,7 +511,7 @@ function endRound(state: HandState) {
     revealLive(state);
     const ritMode = state.input.options.runItTwice;
     const boardGame = state.input.game.family === 'flop';
-    if (boardGame && ritMode !== 'off' && live(state).length >= 2) {
+    if (boardGame && ritMode !== 'off' && live(state).length >= 2 && cardsForSecondRun(state)) {
       if (ritMode === 'always') {
         runOut(state, 2);
         return;
@@ -481,7 +520,7 @@ function endRound(state: HandState) {
       for (const s of live(state)) s.ritVote = null;
       emit(state, { t: 'rit-offer', seats: live(state).map((s) => s.seat) });
       // Away players decline automatically.
-      for (const s of live(state)) if (s.away) voteRunItTwice(state, s.seat, false);
+      for (const s of live(state)) if (s.away && state.phase === 'rit-vote') voteRunItTwice(state, s.seat, false);
       return;
     }
     runOut(state, 1);
@@ -494,6 +533,13 @@ function endRound(state: HandState) {
     return;
   }
   beginBetting(state, false);
+}
+
+/** Whether the deck still holds enough cards to run the rest of the board twice. */
+function cardsForSecondRun(state: HandState) {
+  const streets = state.input.game.streets.slice(state.street + 1);
+  const perRun = streets.reduce((n, st) => n + st.dealBoard, 0) * state.input.options.boards;
+  return perRun > 0 && state.input.deck.length - state.deckPos >= perRun * 2;
 }
 
 /** Deals every remaining street with no betting, once or twice, then settles. */
@@ -579,8 +625,8 @@ export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
   const unique = [...new Set(discard)].sort((a, b) => b - a);
   if (unique.length > max) throw new ActionError(`discard at most ${max}`);
   if (unique.some((i) => i < 0 || i >= s.cards.length)) throw new ActionError('no such card');
-  for (const i of unique) state.muck.push(s.cards.splice(i, 1)[0].card);
-  const fresh = unique.map(() => ({ card: drawCard(state), up: false }));
+  const thrown = unique.map((i) => s.cards.splice(i, 1)[0].card);
+  const fresh = dealReplacements(state, thrown).map((card) => ({ card, up: false }));
   s.cards.push(...fresh);
   s.lastAction = unique.length === 0 ? 'Stand pat' : `Draw ${unique.length}`;
   emit(state, { t: 'draw', seat, discarded: unique.length, cards: fresh.map((c) => c.card) });
@@ -609,15 +655,7 @@ function finish(state: HandState) {
   const { spec, rules } = variants.get(input.game.id);
   state.toAct = null;
   // Return anything unmatched in the final round before building pots.
-  const back = uncalledBet(state.seats.map((s) => ({ seat: s.seat, bet: s.bet })));
-  if (back) {
-    const s = seatAt(state, back.seat)!;
-    s.bet -= back.amount;
-    s.total -= back.amount;
-    s.stack += back.amount;
-    if (s.allIn && s.stack > 0) s.allIn = false;
-    emit(state, { t: 'uncalled', seat: s.seat, amount: back.amount });
-  }
+  returnUncalled(state);
   const contested = live(state).length > 1;
   state.showdown = contested;
 
@@ -691,6 +729,8 @@ export function show(state: HandState, seat: SeatIndex, cardIndexes: number[]) {
   if (state.phase !== 'complete') throw new ActionError('you can show after the hand');
   const s = seatAt(state, seat);
   if (!s) throw new ActionError('not in this hand');
+  // Folded draw hands may have been reshuffled and dealt to someone else.
+  if (s.folded && state.input.game.family === 'draw') throw new ActionError('folded cards went back into the deck');
   const fresh = [...new Set(cardIndexes)].filter((i) => i >= 0 && i < s.cards.length && !s.shown.includes(i));
   if (!fresh.length) return;
   s.shown.push(...fresh);

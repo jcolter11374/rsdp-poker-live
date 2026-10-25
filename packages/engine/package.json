@@ -17,6 +17,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./core": "./src/core/index.ts"
+    "./core": "./src/core/index.ts",
+    "./variants": "./src/variants/index.ts"
   }
 }

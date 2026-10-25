@@ -70,7 +70,7 @@ export function settle(args: SettleArgs): Award[] {
       return;
     }
 
-    const order = oddChipOrder(pot.eligible, button, maxSeats);
+    const order = rules.oddChipOrder ? rules.oddChipOrder(pot.eligible, holeBySeat) : oddChipOrder(pot.eligible, button, maxSeats);
     split(amount, runs.length).forEach((runShare, r) => {
       split(runShare, runs[r].length).forEach((portion, b) => {
         if (portion === 0) return;

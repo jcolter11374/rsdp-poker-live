@@ -2,7 +2,7 @@ import type { VariantRegistry } from '../core/api';
 import type { VariantRules } from '../core/types';
 import { awardPortion } from './showdown';
 import { VARIANT_LIST } from './specs';
-import { bringInSeat, firstToActSeat } from './stud';
+import { bringInSeat, firstToActSeat, studOddChipOrder } from './stud';
 
 export * from './types';
 export * from './specs';
@@ -12,7 +12,7 @@ export { bringInSeat, firstToActSeat, studOddChipOrder } from './stud';
 export { drawReplacements, type DrawResult } from './draw';
 
 const FLOP_OR_DRAW: VariantRules = { awardPortion };
-const STUD: VariantRules = { awardPortion, bringInSeat, firstToActSeat };
+const STUD: VariantRules = { awardPortion, bringInSeat, firstToActSeat, oddChipOrder: studOddChipOrder };
 
 /** Registers every game. The engine calls this once at startup. */
 export function registerAllVariants(registry: Pick<VariantRegistry, 'register'>) {

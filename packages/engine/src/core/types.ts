@@ -99,8 +99,10 @@ export interface VariantRules {
   awardPortion: AwardPortion;
   /** Stud: seat that must bring in, from each live seat's up cards. */
   bringInSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
-  /** Stud: seat that acts first on later streets, from up cards. */
-  firstToActSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
+  /** Stud: seat that acts first on later streets, from up cards. Exact ties go to the seat earliest in `order` (clockwise from the dealer's left). */
+  firstToActSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>, order?: SeatIndex[]): SeatIndex;
+  /** Odd-chip order when it is not clockwise from the button (stud: by cards). */
+  oddChipOrder?(eligible: SeatIndex[], holeBySeat: Record<SeatIndex, Card[]>): SeatIndex[];
 }
 
 // ---------------------------------------------------------------- stakes and forced bets
