@@ -155,3 +155,14 @@ describe('socket server', () => {
     expect(host.view().id).toBe(tableId);
   });
 });
+
+describe('operator cleanup', () => {
+  it('answers only a shell on the server, never a request through the proxy', async () => {
+    expect((await fetch(`${url}/api/admin/tournaments`)).status).toBe(200);
+    expect((await fetch(`${url}/api/admin/tournaments`, { headers: { 'Fly-Client-IP': '203.0.113.9' } })).status).toBe(404);
+    expect((await fetch(`${url}/api/admin/tournaments`, { headers: { 'X-Forwarded-For': '203.0.113.9' } })).status).toBe(404);
+    const missing = await fetch(`${url}/api/admin/tournaments/0123456789abcdef/archive`, { method: 'POST', headers: { 'X-Forwarded-For': '203.0.113.9' } });
+    expect(missing.status).toBe(404);
+    expect((await fetch(`${url}/api/admin/tournaments/0123456789abcdef/archive`, { method: 'POST' })).status).toBe(400);
+  });
+});

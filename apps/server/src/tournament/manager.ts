@@ -274,6 +274,37 @@ export class TournamentManager {
     this.dispatch(live, (s, now) => apply(s, command, now));
   }
 
+  /** Operator cleanup: every event this server holds, so test events can be picked out by name and players. */
+  adminList() {
+    return [...this.live.values()].map(({ state: s }) => ({
+      id: s.id,
+      name: s.settings.name,
+      status: s.status,
+      archived: !!s.archivedAt,
+      createdAt: new Date(s.createdAt).toISOString(),
+      players: s.entries.map((e) => e.displayName),
+    }));
+  }
+
+  /**
+   * Operator cleanup: stops an event the way its host would (pause, let the hands in progress
+   * finish, end) and archives it, which hides it from every list. Results are kept.
+   */
+  async adminArchive(id: string, waitMs = 5 * 60_000) {
+    const live = await this.get(id);
+    if (!live) throw new ActionError('tournament not found');
+    const host = live.state.hostId;
+    const send = (command: Partial<Command>) => this.command(id, host, '', command as Command);
+    if (live.state.status === 'running') await send({ type: 'pause' });
+    for (let waited = 0; live.state.status === 'paused' && live.state.tables.some((t) => t.inHand); waited += 500) {
+      if (waited >= waitMs) throw new ActionError('a hand is still being played; try again');
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (live.state.status === 'paused') await send({ type: 'end' });
+    if (!live.state.archivedAt) await send({ type: 'archive' });
+    return { id, status: live.state.status, archived: !!live.state.archivedAt };
+  }
+
   /** A season's leaderboard, with live events as they stand now. */
   async season(id: string): Promise<SeasonBoard | null> {
     const saved = await this.deps.store.listSeason(id);

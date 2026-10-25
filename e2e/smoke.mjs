@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
+// It creates tables and a tournament with made-up players, so it never runs against the live site.
+if (/fly\.dev/.test(BASE)) {
+  console.error('smoke test refused: it would leave test tables and tournaments on the live site');
+  process.exit(1);
+}
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
