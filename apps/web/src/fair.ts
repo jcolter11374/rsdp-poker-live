@@ -9,9 +9,12 @@ import { socket } from './socket';
 const SEEDS = 'rsdp.fairSeeds';
 const SENT = 'rsdp.fairSent';
 const LIVE = 'rsdp.fairLive';
+const NEXT = 'rsdp.fairNextSeen';
 const KEEP = 300;
 /** A seed sent this long before the deal had plenty of time to arrive; leaving it out is not an accident. */
-const IN_TIME_MS = 3000;
+const IN_TIME_MS = 1500;
+/** The server waits 2.5 s between showing a commitment and dealing from it (FAIR_LEAD_MS); this leaves room for lag. */
+const LEAD_MS = 2000;
 
 type Store = Record<string, string>;
 
@@ -101,6 +104,8 @@ let sending = '';
 export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
+  // When I first saw this commitment as next while seated: the deal from it should come well after.
+  if (commit && view.me.seat !== null && !load(NEXT)[commit]) save(NEXT, commit, String(Date.now()));
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;
@@ -140,6 +145,11 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   const inTime = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS;
   if (!under && dealtIn && (accepted || inTime)) {
     return `your browser sent its seed (${accepted ?? sentSeed!.seed}) in good time, but the hand was dealt without it`;
+  }
+  // Nor may the server show a commitment only at the last moment, so that every seed is "late".
+  const nextSeen = Number(load(NEXT)[commit] ?? NaN);
+  if (!under && dealtIn && sentSeed && dealtAt !== null && dealtAt - nextSeen < LEAD_MS) {
+    return `the hand was dealt too soon after its commitment appeared for your browser's seed (${sentSeed.seed}) to count`;
   }
   return null;
 }

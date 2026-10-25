@@ -51,6 +51,8 @@ const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
 /** Hands become checkable this long after they end, if the host hasn't stopped the game sooner (docs/FAIRNESS.md). */
 export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
+/** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
+export const FAIR_LEAD_MS = 2500;
 const RIT_VOTE_SECONDS = 12;
 const NAME_MAX = 20;
 /** How long a cash table waits for an offline host before handing the table to a seated player. */
@@ -69,6 +71,12 @@ export interface RuntimeDeps {
   tournament?: TournamentHooks;
   /** Failures nobody is there to be told about (timers, a level that can't be dealt). Default console.error. */
   log?: (message: string, err?: unknown) => void;
+  /**
+   * Fair dealing: the least time between publishing a hand's commitment and
+   * dealing from it, so every browser's seed can arrive (FAIR_LEAD_MS in
+   * production; tests that deal at once leave it 0).
+   */
+  fairLeadMs?: number;
 }
 
 /** The game, betting and stakes the next hand is dealt with. */
@@ -92,6 +100,7 @@ export class TableRuntime {
 
   private readonly clock: Clock;
   private readonly rng: Rng;
+  private readonly fairLeadMs: number;
   readonly tournament: TournamentHooks | null;
   private readonly logError: (message: string, err?: unknown) => void;
   private readonly connections = new Map<PlayerId, number>();
@@ -110,6 +119,7 @@ export class TableRuntime {
     this.state = state;
     this.clock = deps.clock ?? systemClock;
     this.rng = deps.rng ?? cryptoRng;
+    this.fairLeadMs = deps.fairLeadMs ?? 0;
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
@@ -523,13 +533,14 @@ export class TableRuntime {
 
   /** The next hand's seed and who has sent a client seed for it; made on first use. */
   private fairState() {
-    this.state.fair ??= { next: this.newServerSeed(), clientSeeds: {}, revealedThrough: 0 };
+    this.state.fair ??= { next: this.newServerSeed(), clientSeeds: {}, revealedThrough: 0, committedAt: this.clock.now() };
     return this.state.fair;
   }
 
   private newServerSeed() {
     const bytes = Array.from({ length: 32 }, () => this.rng(256));
     const serverSeed = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (this.state.fair) this.state.fair.committedAt = this.clock.now();
     return { serverSeed, commit: commitmentOf(serverSeed) };
   }
 
@@ -1878,14 +1889,21 @@ export class TableRuntime {
       }
       return false;
     }
+    // Browsers warn about a hand dealt too soon after its commitment appeared (docs/FAIRNESS.md).
+    const ready = (s.fair?.committedAt ?? 0) + this.fairLeadMs;
     if (s.nextHandAt !== null && now >= s.nextHandAt) {
-      this.deal();
+      if (now < ready) s.nextHandAt = ready;
+      else this.deal();
       return true;
     }
     // Nothing scheduled: a tournament table deals when its gate opens, a running cash
     // table when enough players are back. A failed attempt leaves things as they were.
     if (s.nextHandAt === null && (!hand || hand.phase === 'complete')) {
       const auto = this.tournament || (s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand);
+      if (auto && now < ready) {
+        s.nextHandAt = ready;
+        return true;
+      }
       if (auto) return this.deal();
     }
     return false;

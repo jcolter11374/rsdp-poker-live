@@ -36,7 +36,8 @@ describe('the seed under my name', () => {
     // No answer at all, then dealt 10 s later.
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
     // Sent just before the deal: it could honestly miss.
-    expect(seedProblem(C, listed(), 'me', true, 2_000)).toBeNull();
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '-5000' }));
+    expect(seedProblem(C, listed(), 'me', true, 1_000)).toBeNull();
     // Not dealt in: nothing to say.
     expect(seedProblem(C, listed(), 'me', false, 10_000)).toBeNull();
   });
@@ -47,7 +48,15 @@ describe('the seed under my name', () => {
     // Refused at once, whatever the reason given, yet the hand came seconds later: the seed was there in time.
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
     // Refused because the hand had just been dealt: this browser sees that hand right away.
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '-5000' }));
     expect(seedProblem(C, listed(), 'me', true, 400)).toBeNull();
     expect(seedProblem(C, listed(), 'me', true, -200)).toBeNull();
+  });
+
+  it('catches a commitment shown only at the last moment, so every seed is late', () => {
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '0' }));
+    sent({ seed: 'aa', at: 0, rejected: { after: 50 } });
+    expect(seedProblem(C, listed(), 'me', true, 1_000)).toMatch(/too soon/);
+    expect(seedProblem(C, listed('aa'), 'me', true, 1_000)).toMatch(/but used it/);
   });
 });

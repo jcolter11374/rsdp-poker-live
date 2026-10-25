@@ -96,6 +96,8 @@ export interface AppDeps {
   shared?: SharedHandStore;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
+  /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
+  fairLeadMs?: number;
   /** Built web client to serve (production). */
   webDist?: string | null;
   log?: (message: string, err?: unknown) => void;
@@ -360,6 +362,7 @@ export function createApp(deps: AppDeps = {}) {
   const tournaments = new TournamentManager({
     clock,
     rng: deps.rng,
+    fairLeadMs: deps.fairLeadMs,
     store: deps.tournaments ?? memoryTournamentStore(),
     tables: {
       createTable: (state) => store.createTable(state),
@@ -416,7 +419,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!saved || saved.settings.table.mode === 'tournament') return null;
     // Another join may have loaded it while we waited.
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs }));
     rt.resume();
     return rt;
   }
@@ -521,7 +524,7 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
             try {

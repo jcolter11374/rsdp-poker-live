@@ -142,6 +142,31 @@ describe('provably fair dealing', () => {
     expect(handRecordView(rt, record, 'a').fair!.serverSeed).toBe(record.hand.input.fair!.serverSeed);
   });
 
+  it('never deals sooner than the lead time after the commitment appeared', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.timing.nextHandDelaySeconds = 0;
+    const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(), fairLeadMs: 2500 });
+    for (const p of IDS) rt.connect(p);
+    const first = rt.nextCommit();
+    IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+    rt.start('host');
+    expect(rt.state.hand).toBeNull();
+    clock.advance(2500);
+    expect(hand(rt).input.fair!.commit).toBe(first);
+    // A hand over at once: the next one still waits for its own commitment to age.
+    const dealtAt = clock.t;
+    rt.act(toActId(rt), { type: 'fold' });
+    rt.act(toActId(rt), { type: 'fold' });
+    clock.advance(100);
+    expect(hand(rt).phase).toBe('complete');
+    clock.advance(2500 - (clock.t - dealtAt) - 1);
+    expect(hand(rt).input.handNumber).toBe(1);
+    clock.advance(1);
+    expect(hand(rt).input.handNumber).toBe(2);
+  });
+
   it('commits to a fresh seed after a restart, so a deal lost in a crash is never dealt again', () => {
     const { rt, clock } = table();
     const commit = rt.nextCommit();

@@ -135,6 +135,8 @@ export interface FairState {
   clientSeeds: Record<PlayerId, string>;
   /** Hands up to this number are revealed (the host stopped the game after it). */
   revealedThrough: number;
+  /** When `next` was committed to. Missing in snapshots from before it existed. */
+  committedAt?: number;
 }
 
 /** A finished hand kept in memory for the hand log and replayer; the server also stores it. */

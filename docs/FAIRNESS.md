@@ -112,14 +112,16 @@ Limits, stated plainly:
 
 - A dishonest server could list a made-up seed under a player's name, or drop
   a real one, to steer the deck. Each browser checks its own entry, live and
-  in "Check this hand": it warns if a seed it never sent is listed, if its
-  seed was left out although sent more than 3 seconds before the deal (even
-  if the server turned it down, whatever reason it gave: an honest server only
-  turns down a seed that arrived after the deal, and then the browser sees that
-  hand right away), and if the server uses a seed it said it turned down. So
-  this is caught unless the affected player never looks (say they left right
-  after the hand, or play with browser storage blocked), and except for seeds
-  sent in the last 3 seconds before a deal, which can honestly miss it.
+  in "Check this hand". The server never deals sooner than 2.5 seconds after
+  showing a hand's commitment, and browsers send their seed the moment they
+  see it. A browser warns if a seed it never sent is listed under its name; if
+  its seed was left out although sent more than 1.5 seconds before the deal
+  (whatever the server answered: an honest server only turns down a seed that
+  arrived after the deal); if its seed was left out of a hand dealt less than
+  2 seconds after the commitment first appeared; and if the server uses a seed
+  it said it turned down. So this is caught unless the affected player never
+  looks (say they left right after the hand, or play with browser storage
+  blocked), or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
