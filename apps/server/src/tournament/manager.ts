@@ -341,6 +341,11 @@ export class TournamentManager {
       live.applying = false;
     }
     if (missed.length) this.scheduleSave(live);
+    // Catch up on anything that came due while the server was down before any table deals, so a level or
+    // break that started in the meantime applies to the first hand.
+    const at = nextWakeAt(live.state);
+    if (at !== null && at <= this.clock.now()) this.dispatchQuietly(live, (s, now) => tick(s, now), 'catch-up tick');
+    else this.arm(live);
     for (const [tableId, rt] of live.tables) {
       try {
         rt.resume();
@@ -348,10 +353,6 @@ export class TournamentManager {
         this.deps.log(`tournament ${state.id}: resuming table ${tableId} failed`, e);
       }
     }
-    // Catch up on anything that came due while the server was down.
-    const at = nextWakeAt(live.state);
-    if (at !== null && at <= this.clock.now()) this.dispatchQuietly(live, (s, now) => tick(s, now), 'catch-up tick');
-    else this.arm(live);
     return live;
   }
 

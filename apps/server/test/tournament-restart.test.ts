@@ -352,6 +352,32 @@ describe('tournaments after a crash', () => {
     expect(now().status).toBe('finished');
   });
 
+  it.each([
+    ['a break', [{ kind: 'break', minutes: 5 }], null],
+    ['a new level', [], 100],
+  ] as const)('a table between hands waits for %s that started while the server was down', async (_, next, bigBlind) => {
+    const level = (sb: number, minutes: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes });
+    const { env, id } = await started(2, { structure: [level(10, 1), ...next, level(50, 20)] });
+    const [rt] = env.tables.values();
+    for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    while (rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null) {
+      const hand = rt.state.hand;
+      const seat = hand.seats.find((x) => x.seat === hand.toAct)!;
+      rt.act(seat.playerId, engine.legalActions(hand, seat.seat)!.canCheck ? { type: 'check' } : { type: 'fold' });
+    }
+    env.clock.advance(0);
+    expect(rt.state.handStartedAt).toBeNull();
+    await env.manager.flush();
+
+    // Back two minutes later: the first level ended a minute ago.
+    const after = await restart(env.store, new Map(env.snapshots), env.clock.t + 2 * MIN);
+    const [table] = after.tables.values();
+    expect(after.manager.view(id)!.state.clock.rowIndex).toBe(1);
+    if (bigBlind === null) expect(table.state.handStartedAt).toBeNull();
+    else expect(table.state.hand?.input.stakes.bigBlind).toBe(bigBlind);
+    expect(after.errors).toEqual([]);
+  });
+
   it('seats players where the director has them when their tables were saved before a move', async () => {
     const env = setup();
     const startAt = env.clock.now() + 5 * MIN;
