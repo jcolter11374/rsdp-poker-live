@@ -33,6 +33,9 @@ async function restart(store: Env['store'], snapshots: Map<string, string>, now:
   return env;
 }
 
+/** Lets saves and other promise chains that need no timers finish. */
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+
 /** A store holding just this director state, as the last save left it. */
 async function savedAs(state: TournamentState) {
   const store = memoryTournamentStore();
@@ -185,5 +188,30 @@ describe('tournament ids', () => {
     expect((await env.store.load(first))!.state).toMatchObject({ hostId: 'host', settings: { name: 'First' } });
     expect((await env.store.load(second))!.state).toMatchObject({ hostId: 'other', settings: { name: 'Second' } });
     expect(env.manager.view(first)!.state.settings.name).toBe('First');
+  });
+});
+
+describe('the next event', () => {
+  it('a Sit & Go that fills just before a crash opens one next Sit & Go, not two', async () => {
+    const first = setup();
+    const id = await first.manager.create('host', defaultSettings({ name: 'Turbo', startingStack: 1000, start: { kind: 'sng', playersNeeded: 3, startDelaySeconds: 60, autoSpawn: true } }));
+    await registerAll(first, id, 2);
+    await first.manager.flush();
+    // The third player fills it: the next one is saved at once, but this one's own save is still 300 ms away.
+    const third = { type: 'register', playerId: 'p3', displayName: 'Player 3' } as const;
+    await first.manager.command(id, 'p3', 'Player 3', third);
+    await settled();
+    const next = first.manager.view(id)!.nextId;
+    expect(next).not.toBeNull();
+    expect((await first.store.load(id))!.state.status).toBe('registering');
+
+    const after = await restart(first.store, first.snapshots, first.clock.t);
+    await after.manager.command(id, 'p3', 'Player 3', third);
+    await settled();
+    after.clock.advance(1000);
+    expect(after.manager.view(id)!.nextId).toBe(next);
+    const open = (await after.store.listLive()).filter((t) => t.state.status === 'registering').map((t) => t.state.id);
+    expect(open).toEqual([next]);
+    expect(after.errors).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { cryptoRng, type Rng } from '@rsdp/engine';
 import { ActionError, variants, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, parseSettings } from '@rsdp/engine/settings';
@@ -85,6 +85,8 @@ const NAME_MAX = 20;
 const newTournamentId = () => randomBytes(8).toString('hex');
 /** Fresh ids to try before giving up; a taken one is all but impossible. */
 const ID_TRIES = 5;
+/** The event after this one: its id comes from this one's, so a step replayed after a crash finds the event it made before. */
+const nextTournamentId = (id: string) => createHash('sha256').update(`${id}:next`).digest('hex').slice(0, 16);
 
 /** Seconds between tournament hands; keeps director updates ahead of the next deal. */
 const TOURNAMENT_NEXT_HAND_SECONDS = 2;
@@ -536,13 +538,18 @@ export class TournamentManager {
 
   /** The next event of a series, or a fresh Sit & Go. */
   private spawn(live: Live, settings: TournamentSettings) {
-    const hostId = live.state.hostId;
-    this.create(hostId, settings)
-      .then((id) => {
-        live.nextId = id;
-        this.changed(live);
-      })
-      .catch((e) => this.deps.log(`tournament ${live.state.id}: creating the next one failed`, e));
+    this.openNext(live, settings).catch((e) => this.deps.log(`tournament ${live.state.id}: creating the next one failed`, e));
+  }
+
+  private async openNext(live: Live, settings: TournamentSettings) {
+    checkGames(settings);
+    const id = nextTournamentId(live.state.id);
+    const state = this.newState(id, live.state.hostId, settings);
+    // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
+    if (await this.deps.store.create(state)) await this.adopt(state, null);
+    else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);
+    live.nextId = id;
+    this.changed(live);
   }
 }
 
