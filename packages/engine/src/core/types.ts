@@ -370,7 +370,7 @@ export interface Modifier<Settings = unknown> {
   /** Fee taken from each pot before it is awarded (simulated rake). */
   potFee?(pot: Pot, state: HandState, settings: Settings): Chips;
   /** Side transfers after the pots are awarded (7-2 bounty, nit game). */
-  afterSettle?(state: HandState, settings: Settings): Extract<HandEvent, { t: 'transfer' }>[];
+  afterSettle?(state: HandState, settings: Settings): Omit<Extract<HandEvent, { t: 'transfer' }>, 'seq'>[];
 }
 
 export class ActionError extends Error {}
