@@ -34,7 +34,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     prev.current = view;
     if (!view || !before) return;
     if (view.chat.length > before.chat.length && view.chat.at(-1)?.playerId && view.chat.at(-1)?.playerId !== view.me.playerId) sounds.chat();
-    if (view.isHost && view.requests.length > before.requests.length) sounds.request();
+    if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     const hand = view.hand;
     if (!hand) return;
     const fresh = hand.handNumber !== before.hand?.handNumber;
@@ -219,18 +219,18 @@ export function TablePage({ tableId }: { tableId: string }) {
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
-  const pending = view.isHost ? view.requests.length : 0;
+  const pending = view.powers.includes('approve') ? view.requests.length : 0;
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
   // A player sees only their own bots' requests; the host sees everyone's and never has to ask.
-  const myBotRequests = view.isHost ? [] : view.requests.filter((r) => r.bot);
+  const myBotRequests = view.powers.includes('approve') ? [] : view.requests.filter((r) => r.bot);
   const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
-  const canAddBot = cash && (view.isHost || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
+  const canAddBot = cash && (view.powers.includes('players') || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
   const addBot = (seat: number) =>
     call('bot:add', { seat })
       .then(() => {
-        if (view.settings.seating.requireApproval && !view.isHost) alert('Your bot is waiting for the host to approve it.');
+        if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
       })
       .catch((e: Error) => alert(e.message));
   const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
@@ -298,7 +298,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
     </div>
   );
-  const hostPanel = view.isHost && cash && (
+  const hostPanel = (view.isHost || view.coHosts.some((c) => c.playerId === view.me.playerId)) && cash && (
     <HostPanel
       view={view}
       fmt={fmt}
@@ -390,10 +390,10 @@ export function TablePage({ tableId }: { tableId: string }) {
           {cash && !view.started && (
             <div className="banner">
               {view.history.length > 0
-                ? view.isHost
+                ? view.powers.includes('run')
                   ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : 'Press Start game to deal again'}.`
                   : 'The game is stopped. Waiting for the host to start it again.'
-                : view.isHost
+                : view.powers.includes('run')
                   ? portrait
                     ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
                     : 'Take a seat, send friends the invite link, then press Start game.'
@@ -518,7 +518,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'player' &&
-        (view.isHost && cash ? (
+        (view.powers.length > 0 && cash ? (
           <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)}>
             <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
           </PlayerDialog>

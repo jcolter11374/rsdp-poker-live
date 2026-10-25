@@ -38,8 +38,8 @@ export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { vie
   const [stack, setStack] = useState(toInput(cents, defaultStack(view)));
   const [error, setError] = useState('');
   const hint = buyInHint(view, fmt);
-  const approval = view.settings.seating.requireApproval && !view.isHost;
-  const random = !!view.settings.seating.randomSeats && !view.isHost && !view.offers.some((o) => o.playerId === view.me.playerId);
+  const approval = view.settings.seating.requireApproval && !view.powers.includes('approve');
+  const random = !!view.settings.seating.randomSeats && !view.powers.includes('players') && !view.offers.some((o) => o.playerId === view.me.playerId);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +81,7 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
   const cents = view.settings.stakes.centsMode;
   const [amount, setAmount] = useState(toInput(cents, defaultStack(view)));
   const [error, setError] = useState('');
-  const approval = view.settings.seating.rebuyRequiresApproval && !view.isHost;
+  const approval = view.settings.seating.rebuyRequiresApproval && !view.powers.includes('approve');
   const maxBuyIn = view.settings.seating.maxBuyIn;
 
   const submit = (e: React.FormEvent) => {
@@ -127,6 +127,9 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
   const empty = view.seats.flatMap((s, i) => (s || held.has(i) ? [] : [i]));
   const inHand = seat.inHand && handLive;
   const muted = view.muted.includes(seat.playerId);
+  const can = (p: (typeof view.powers)[number]) => view.powers.includes(p);
+  // Co-hosts act on players, not on the host or other co-hosts.
+  const onHost = !view.isHost && !isMe && (seat.playerId === view.hostId || view.coHosts.some((c) => c.playerId === seat.playerId));
   const bot = !!seat.bot;
 
   return (
@@ -136,7 +139,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
           {seat.bot && ` · ${seat.bot.ownerName}'s practice bot`}
         </p>
-        {!tournament && (
+        {!tournament && can('chips') && !onHost && (
           <form
             className="row"
             onSubmit={(e) => {
@@ -151,7 +154,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
             <button>{handLive ? 'Set after this hand' : 'Set stack'}</button>
           </form>
         )}
-        {!tournament && empty.length > 0 && (
+        {!tournament && can('players') && !onHost && empty.length > 0 && (
           <label>
             Move to
             <select
@@ -170,15 +173,17 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
           </label>
         )}
         <div className="row wrap">
-          {!seat.sittingOut && !bot && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
-          {!isMe && !bot && <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>}
-          {!isMe && !tournament && !bot && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
-          {bot && (
+          {can('players') && !onHost && !seat.sittingOut && !bot && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
+          {can('players') && !onHost && !isMe && !bot && (
+            <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>
+          )}
+          {view.isHost && !isMe && !tournament && !bot && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
+          {bot && (can('players') || seat.bot?.ownerId === view.me.playerId) && (
             <button className="danger" onClick={() => act(call('bot:remove', { playerId: seat.playerId }))}>
               Remove bot
             </button>
           )}
-          {!isMe && !tournament && !bot && (
+          {can('players') && !onHost && !isMe && !tournament && !bot && (
             <button className="danger" onClick={() => confirm(`Remove ${seat.name} from the table?`) && act(call('host:kick', { playerId: seat.playerId }))}>
               Remove
             </button>

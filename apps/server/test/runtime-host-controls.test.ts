@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { SEAT_OFFER_MS, TableRuntime } from '../src/runtime/table';
+import { HOST_HANDOFF_MS, SEAT_OFFER_MS, TableRuntime } from '../src/runtime/table';
 import { tableView } from '../src/runtime/view';
 import { maskProfanity } from '../src/runtime/profanity';
 import { FakeClock, seeded } from './fake-clock';
@@ -313,5 +313,124 @@ describe('trimming excess bets', () => {
     PEOPLE.slice(0, 3).forEach((id, seat) => rt.requestSeat(id, { seat, name: id, stack: seat === 0 ? 1000 : 100 }));
     rt.start('host');
     expect(rt.state.hand!.input.options.trimExcessBets).toBe(true);
+  });
+});
+
+describe('co-hosts', () => {
+  const withCoHost = (powers: string[] = ['approve', 'run']) => {
+    const r = table((s) => (s.seating.requireApproval = true));
+    r.rt.setCoHost('host', 'a', powers);
+    return r;
+  };
+
+  it('lets only the host name co-hosts, and only people at the table', () => {
+    const { rt } = withCoHost();
+    expect(rt.state.coHosts).toEqual([{ playerId: 'a', name: 'Guest', powers: ['approve', 'run'] }]);
+    expect(() => rt.setCoHost('a', 'b', ['run'])).toThrow(/only the host/);
+    expect(() => rt.setCoHost('host', 'stranger', ['run'])).toThrow(/not at the table/);
+    expect(() => rt.setCoHost('host', 'b', ['bogus'])).toThrow();
+    expect(rt.state.log.some((l) => /made Guest a co-host/.test(l.text))).toBe(true);
+  });
+
+  it('gives co-hosts exactly the powers the host ticked', () => {
+    const { rt } = withCoHost(['approve']);
+    rt.requestSeat('b', { seat: 1, name: 'Bea', stack: 100 });
+    const req = rt.state.requests[0]!;
+    // The co-host can approve but not start the game or change settings.
+    rt.approve('a', req.id);
+    expect(seatOf(rt, 'b')).toBe(1);
+    expect(() => rt.start('a')).toThrow(/hasn't given you that power/);
+    expect(() => rt.setStack('a', 'b', 50)).toThrow(/hasn't given you that power/);
+    expect(() => rt.start('c')).toThrow(/only the host/);
+
+    rt.setCoHost('host', 'a', ['run', 'chips', 'players']);
+    expect(() => rt.approve('a', 'nope')).toThrow(/hasn't given you that power/);
+    rt.setStack('a', 'b', 50);
+    expect(rt.seatOf('b')!.stack).toBe(50);
+    rt.mute('a', 'b', true);
+    expect(rt.state.muted).toEqual(['b']);
+  });
+
+  it('never lets a co-host act on the host', () => {
+    const { rt } = withCoHost(['players', 'chips']);
+    rt.requestSeat('host', { seat: 0, name: 'Hal', stack: 100 });
+    expect(() => rt.kick('a', 'host')).toThrow(/to the host/);
+    expect(() => rt.mute('a', 'host', true)).toThrow(/to the host/);
+    expect(() => rt.setStack('a', 'host', 1)).toThrow(/to the host/);
+    expect(() => rt.hostSitOut('a', 'host')).toThrow(/to the host/);
+    // Nor on another co-host.
+    rt.setCoHost('host', 'b', ['run']);
+    expect(() => rt.mute('a', 'b', true)).toThrow(/co-host/);
+    expect(() => rt.kick('a', 'b')).toThrow(/co-host/);
+  });
+
+  it("doesn't let a co-host remove the host's bots", () => {
+    const { rt } = withCoHost(['players']);
+    const bot = rt.addBot('host', { seat: 3 });
+    expect(() => rt.removeBot('a', bot)).toThrow(/only the host/);
+    rt.removeBot('host', bot);
+    expect(rt.seatOf(bot)).toBeNull();
+  });
+
+  it('takes co-host powers away from someone the host removes', () => {
+    const { rt } = withCoHost(['players']);
+    rt.kick('host', 'a');
+    expect(rt.state.coHosts ?? []).toEqual([]);
+    expect(rt.isStaff('a')).toBe(false);
+    expect(() => rt.mute('a', 'b', true)).toThrow(/only the host/);
+  });
+
+  it('seats co-hosts with the approve power without asking', () => {
+    const { rt } = withCoHost(['approve']);
+    rt.requestSeat('a', { seat: 2, name: 'Ann', stack: 100 });
+    expect(seatOf(rt, 'a')).toBe(2);
+    expect(rt.state.requests).toEqual([]);
+  });
+
+  it('shows co-hosts their powers and the requests they can approve', () => {
+    const { rt, clock } = withCoHost(['approve']);
+    rt.requestSeat('b', { seat: 1, name: 'Bea', stack: 100 });
+    const a = tableView(rt, 'a', clock.now());
+    expect(a.powers).toEqual(['approve']);
+    expect(a.coHosts.map((c) => c.playerId)).toEqual(['a']);
+    expect(a.requests).toHaveLength(1);
+    expect(tableView(rt, 'c', clock.now()).requests).toHaveLength(0);
+    expect(tableView(rt, 'c', clock.now()).powers).toEqual([]);
+    expect(tableView(rt, 'host', clock.now()).powers.length).toBeGreaterThan(1);
+  });
+
+  it('lets a co-host step down, and only the host remove someone else', () => {
+    const { rt } = withCoHost();
+    rt.setCoHost('host', 'b', ['run']);
+    expect(() => rt.removeCoHost('a', 'b')).toThrow(/only the host/);
+    rt.removeCoHost('a', 'a');
+    rt.removeCoHost('host', 'b');
+    expect(rt.state.coHosts ?? []).toEqual([]);
+    expect(rt.state.log.some((l) => /stepped down as co-host/.test(l.text))).toBe(true);
+  });
+
+  it('keeps the old host on as a full co-host after handing over', () => {
+    const { rt } = withCoHost();
+    rt.requestSeat('host', { seat: 0, name: 'Hal', stack: 100 });
+    rt.transferHost('host', 'a');
+    expect(rt.state.hostId).toBe('a');
+    expect(rt.state.coHosts!.map((c) => c.playerId)).toEqual(['host']);
+    expect(rt.powersOf('host')).toEqual(expect.arrayContaining(['approve', 'chips', 'run', 'players', 'settings']));
+    // And the new host can hand it straight back.
+    rt.transferHost('a', 'host');
+    expect(rt.state.hostId).toBe('host');
+  });
+
+  it('hands an abandoned table to an online co-host before any seated player', () => {
+    const { rt, clock } = withCoHost();
+    // The host seats themselves (no request needed) and B asks for the seat after.
+    rt.requestSeat('host', { seat: 0, name: 'Hal', stack: 100 });
+    rt.requestSeat('b', { seat: 1, name: 'Bea', stack: 100 });
+    rt.approve('host', rt.state.requests[0]!.id);
+    rt.disconnect('host');
+    clock.advance(HOST_HANDOFF_MS);
+    // B sits next to the host, but A is a co-host (watching, not seated).
+    expect(rt.state.hostId).toBe('a');
+    expect(rt.state.coHosts!.map((c) => c.playerId)).toEqual(['host']);
   });
 });

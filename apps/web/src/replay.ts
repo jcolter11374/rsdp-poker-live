@@ -323,6 +323,8 @@ export function frameView(
     mode: 'cash',
     tournamentId: null,
     isHost: false,
+    powers: [],
+    coHosts: [],
     settings,
     pendingSettings: null,
     serverNow: Date.now(),

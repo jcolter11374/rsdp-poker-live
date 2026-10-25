@@ -529,6 +529,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .person { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 .person .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person button { padding: 2px 8px; font-size: 0.8rem; }
+.cohost { background: var(--panel-2); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.cohost .check { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dot.on { background: var(--good); }
 .dot.off { background: var(--bad); }

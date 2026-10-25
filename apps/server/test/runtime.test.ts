@@ -460,3 +460,19 @@ describe('ledger', () => {
     expect(rt.state.ledger.a).toMatchObject({ buyIn: 350, cashOut: 50 });
   });
 });
+
+describe('late shows', () => {
+  it('stores the hand again when someone shows after it', () => {
+    const { rt } = table();
+    seatPlayers(rt, 2);
+    const saved: { handNumber: number; shown: boolean }[] = [];
+    rt.start('host');
+    const folder = toActId(rt);
+    rt.act(folder, { type: 'fold' });
+    rt.onHandFinished = (r) => saved.push({ handNumber: r.handNumber, shown: r.hand.seats.some((x) => x.playerId === folder && x.shown?.length) });
+    expect(hand(rt).phase).toBe('complete');
+    rt.show(folder, [0, 1]);
+    expect(saved).toEqual([{ handNumber: 1, shown: true }]);
+    expect(rt.state.history.at(-1)!.hand.seats.find((x) => x.playerId === folder)!.shown?.length).toBe(2);
+  });
+});
