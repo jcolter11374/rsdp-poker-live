@@ -120,12 +120,15 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
     case 'street':
       gather();
       f.street = e.street;
-      for (const s of f.seats.values()) if (!s.folded) s.action = null;
+      for (const s of f.seats.values()) if (!s.folded && !s.allIn) s.action = null;
+      break;
+    case 'run-it':
+      // The second run starts from the cards the boards had in common.
+      if (e.times === 2 && f.boards.length === 1) f.boards.push(f.boards[0].map((b) => [...b]));
       break;
     case 'board': {
       gather();
-      while (f.boards.length <= e.run) f.boards.push(f.boards[0].map(() => []));
-      // A second run starts from the cards the boards had in common.
+      while (f.boards.length <= e.run) f.boards.push(f.boards[0].map((b) => [...b]));
       f.boards[e.run][e.board].push(...e.cards);
       break;
     }
@@ -140,7 +143,7 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
     case 'draw':
       if (!seat) break;
       if (e.positions) for (const p of e.positions) seat.cards.splice(p, 1);
-      else seat.cards.splice(seat.cards.length - e.discarded, e.discarded);
+      else discardUnknown(seat, e.discarded);
       for (const c of e.cards) seat.cards.push({ card: c, up: false, shown: e.seat === mySeat });
       seat.action = e.discarded ? `Draw ${e.discarded}` : 'Stand pat';
       break;
@@ -168,6 +171,8 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
       const to = e.to === 'house' ? undefined : f.seats.get(e.to);
       if (from) from.stack -= e.amount;
       if (to) to.stack += e.amount;
+      // The house's cut comes out of the middle.
+      if (e.kind === 'rake' && e.from === 'house') f.pot -= e.amount;
       break;
     }
     case 'hand-end':
@@ -182,6 +187,66 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
     default:
       break;
   }
+}
+
+/**
+ * Another player's draw, where only the count is known. At a showdown every
+ * card they kept is shown, so the ones still face down are the ones they
+ * threw: take those first, then the newest cards.
+ */
+function discardUnknown(seat: ReplaySeat, count: number) {
+  for (let i = seat.cards.length - 1; i >= 0 && count > 0; i--) {
+    if (seat.cards[i].card === '??') {
+      seat.cards.splice(i, 1);
+      count--;
+    }
+  }
+  if (count > 0) seat.cards.splice(seat.cards.length - count, count);
+}
+
+const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+const isSeat = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) < 10;
+
+/**
+ * Whether a hand read from a file has the shape the replayer draws from.
+ * Files are hand-editable, so this checks before anything renders.
+ */
+export function isReplayable(h: unknown, fmt: Fmt): h is HandRecordView {
+  const x = h as HandRecordView;
+  if (!x || typeof x !== 'object' || !isNum(x.handNumber) || !isNum(x.startedAt) || typeof x.gameName !== 'string') return false;
+  if (!x.stakes || typeof x.stakes !== 'object' || !Object.values(x.stakes).every((v) => isNum(v) || typeof v === 'boolean' || typeof v === 'string')) return false;
+  if (!isSeat(x.button) || !Array.isArray(x.seats) || !x.seats.length || x.seats.length > 10) return false;
+  if (!x.seats.every((s) => s && isSeat(s.seat) && typeof s.playerId === 'string' && typeof s.name === 'string' && isNum(s.stack))) return false;
+  if (!Array.isArray(x.events) || !x.events.every((e) => e && typeof e === 'object' && typeof e.t === 'string' && (!('seat' in e) || isSeat(e.seat))))
+    return false;
+  try {
+    const frames = replayFrames(x, null, fmt);
+    for (const f of frames) frameView('', 0, x, f, null);
+    return frames.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Stacks once the hand is fully settled, including bounties claimed by showing after it ended. */
+export function finalStacks(h: HandRecordView): Record<number, number> | null {
+  let end: Record<number, number> | null = null;
+  for (const e of h.events) {
+    if (e.t === 'hand-end') end = { ...e.stacks };
+    else if (e.t === 'transfer' && end) {
+      if (e.from !== 'house' && end[e.from] !== undefined) end[e.from] -= e.amount;
+      if (e.to !== 'house' && end[e.to] !== undefined) end[e.to] += e.amount;
+    }
+  }
+  return end;
+}
+
+/** What a player's stack did over one hand. */
+export function handNet(h: HandRecordView, playerId: string): number | null {
+  const seat = h.seats.find((s) => s.playerId === playerId);
+  const end = finalStacks(h);
+  if (!seat || !end || end[seat.seat] === undefined) return null;
+  return end[seat.seat] - seat.stack;
 }
 
 /** A TableView for one frame, so the replay is drawn by the same table as live play. */
@@ -295,6 +360,8 @@ export interface PlayerStats {
   playerId: string;
   name: string;
   hands: number;
+  /** Hands with a normal first betting round (bomb pots have none): what VPIP and PFR count over. */
+  counted: number;
   /** Put money in voluntarily on the first betting round. */
   vpip: number;
   /** Raised (or bet, or completed) on the first betting round. */
@@ -312,21 +379,22 @@ export function playerStats(hands: HandRecordView[]): PlayerStats[] {
     const voluntary = new Set<number>();
     const raised = new Set<number>();
     const winners = new Map<number, number>();
+    const bomb = h.events.some((e) => e.t === 'hand-start' && e.bombPot);
     let street = 0;
-    let end: Record<number, number> | null = null;
     for (const e of h.events) {
       if (e.t === 'street') street = e.street;
-      if (e.t === 'action' && street === 0) {
+      if (e.t === 'action' && street === 0 && !bomb) {
         if (e.action === 'call' || e.action === 'bet' || e.action === 'raise' || e.action === 'complete') voluntary.add(e.seat);
         if (e.action === 'bet' || e.action === 'raise' || e.action === 'complete') raised.add(e.seat);
       }
       if (e.t === 'award') winners.set(e.seat, (winners.get(e.seat) ?? 0) + e.amount);
-      if (e.t === 'hand-end') end = e.stacks;
     }
+    const end = finalStacks(h);
     for (const s of h.seats) {
-      const row = by.get(s.playerId) ?? { playerId: s.playerId, name: s.name, hands: 0, vpip: 0, pfr: 0, won: 0, net: 0, biggestPot: 0 };
+      const row = by.get(s.playerId) ?? { playerId: s.playerId, name: s.name, hands: 0, counted: 0, vpip: 0, pfr: 0, won: 0, net: 0, biggestPot: 0 };
       row.name = s.name;
       row.hands++;
+      if (!bomb) row.counted++;
       if (voluntary.has(s.seat)) row.vpip++;
       if (raised.has(s.seat)) row.pfr++;
       const w = winners.get(s.seat) ?? 0;

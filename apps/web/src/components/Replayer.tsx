@@ -1,18 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { gameLabel, stakesLabel, type Fmt } from '../format';
-import { frameView, replayFrames } from '../replay';
+import { frameView, handNet, replayFrames } from '../replay';
 import { Table } from './Table';
 import { LogText } from './PlayingCard';
 import { usePortrait } from '../layout';
 
 const SPEEDS = [1, 2, 4];
 
+/** A hand the replayer can't draw shows a note instead of taking the table page down with it. */
+class ReplayBoundary extends Component<{ onClose: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="replayer-backdrop" onClick={this.props.onClose}>
+        <div className="replayer" role="dialog" aria-label="Hand replay">
+          <p>This hand can’t be replayed.</p>
+          <button onClick={this.props.onClose}>Close</button>
+        </div>
+      </div>
+    );
+  }
+}
+
+export function Replayer(props: Parameters<typeof ReplayerView>[0]) {
+  return (
+    <ReplayBoundary onClose={props.onClose}>
+      <ReplayerView {...props} />
+    </ReplayBoundary>
+  );
+}
+
 /**
  * Plays finished hands back on the table, step by step or on its own, with
  * the log line for each step. Cards show only as the viewer could see them.
  */
-export function Replayer({
+function ReplayerView({
   hands,
   start,
   tableName,
@@ -39,10 +66,11 @@ export function Replayer({
   const frames = useMemo(() => (hand ? replayFrames(hand, myId, fmt) : []), [hand, myId, fmt]);
   const last = frames.length - 1;
 
-  useEffect(() => {
+  const goTo = (i: number) => {
+    setIndex(i);
     setStep(0);
     setPlaying(true);
-  }, [index]);
+  };
 
   useEffect(() => {
     if (!playing) return;
@@ -57,12 +85,12 @@ export function Replayer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      else if (e.key === 'ArrowRight') setStep((s) => Math.min(last, s + 1));
-      else if (e.key === 'ArrowLeft') setStep((s) => Math.max(0, s - 1));
-      else if (e.key === 'Home') setStep(0);
-      else if (e.key === 'End') {
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End') {
+        // Moving by hand stops the autoplay.
         setPlaying(false);
-        setStep(last);
+        if (e.key === 'ArrowRight') setStep((s) => Math.min(last, s + 1));
+        else if (e.key === 'ArrowLeft') setStep((s) => Math.max(0, s - 1));
+        else setStep(e.key === 'Home' ? 0 : last);
       } else if (e.key === ' ') setPlaying((p) => !p);
       else return;
       // The replayer sits on top: keep these keys from the slider, the sheet or the table underneath.
@@ -77,11 +105,7 @@ export function Replayer({
   const frame = frames[Math.min(step, last)];
   const view = frameView(tableName, seatCount, hand, frame, myId);
   const family = view.hand!.family;
-  const net = (() => {
-    const me = hand.seats.find((s) => s.playerId === myId);
-    if (!me || !frames[last].done) return null;
-    return frames[last].seats.get(me.seat)!.stack - me.stack;
-  })();
+  const net = myId ? handNet(hand, myId) : null;
 
   return (
     <div className="replayer-backdrop">
@@ -115,10 +139,10 @@ export function Replayer({
           }}
         />
         <div className="replayer-controls">
-          <button disabled={index === 0} onClick={() => setIndex(index - 1)} title="Previous hand">
+          <button disabled={index === 0} onClick={() => goTo(index - 1)} title="Previous hand">
             ⏮
           </button>
-          <button disabled={step === 0} onClick={() => setStep(step - 1)} title="Back a step (←)">
+          <button disabled={step === 0} onClick={() => (setPlaying(false), setStep(step - 1))} title="Back a step (←)">
             ◀
           </button>
           <button
@@ -131,10 +155,10 @@ export function Replayer({
           >
             {playing ? '❚❚' : step >= last ? '↺' : '▶'}
           </button>
-          <button disabled={step >= last} onClick={() => setStep(step + 1)} title="Forward a step (→)">
+          <button disabled={step >= last} onClick={() => (setPlaying(false), setStep(step + 1))} title="Forward a step (→)">
             ▶
           </button>
-          <button disabled={index >= hands.length - 1} onClick={() => setIndex(index + 1)} title="Next hand">
+          <button disabled={index >= hands.length - 1} onClick={() => goTo(index + 1)} title="Next hand">
             ⏭
           </button>
           <button onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])} title="Speed">

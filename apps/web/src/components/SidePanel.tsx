@@ -4,7 +4,7 @@ import { call, socket } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
-import { playerStats, replayFrames } from '../replay';
+import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 
 export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
@@ -224,25 +224,28 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   );
 }
 
-/** Every finished hand at the table, fetched once and again only when new hands have finished. */
 const handCache = new Map<string, HandRecordView[]>();
 const loading = new Map<string, Promise<HandRecordView[]>>();
 /**
  * Every finished hand at the table: the full download once, then each new
- * hand on its own as it finishes. One request at a time per table.
+ * hand on its own as it finishes. One request at a time per table. The last
+ * hand is fetched again too, since cards shown and bounties claimed after a
+ * hand ends are added to it until the next one starts.
  */
 function allHands(view: TableView): Promise<HandRecordView[]> {
   const pending = loading.get(view.id);
   // Wait for the request in flight, then pick up anything it missed.
-  if (pending) return pending.then(() => allHands(view));
+  if (pending) return pending.catch(() => undefined).then(() => allHands(view));
   const job = (async () => {
     let hands = handCache.get(view.id);
     if (!hands) hands = (await call<{ hands: HandRecordView[] }>('table:export')).hands;
-    const have = new Set(hands.map((h) => h.handNumber));
+    const last = hands.at(-1)?.handNumber;
+    const have = new Set(hands.filter((h) => h.handNumber !== last).map((h) => h.handNumber));
     const missing = view.history.filter((h) => !have.has(h.handNumber));
     if (missing.length) {
       const more = await Promise.all(missing.map((h) => call<{ hand: HandRecordView }>('table:history', { handNumber: h.handNumber }).then((r) => r.hand)));
-      hands = [...hands, ...more].sort((a, b) => a.handNumber - b.handNumber);
+      const fresh = new Set(more.map((h) => h.handNumber));
+      hands = [...hands.filter((h) => !fresh.has(h.handNumber)), ...more].sort((a, b) => a.handNumber - b.handNumber);
     }
     handCache.set(view.id, hands);
     return hands;
@@ -251,11 +254,13 @@ function allHands(view: TableView): Promise<HandRecordView[]> {
   return job;
 }
 
-/** All hands, loading while `active`, refreshed as hands finish. */
+/** All hands, loading while `active`, refreshed as hands finish and as the next one starts. */
 function useAllHands(view: TableView, active: boolean) {
   const [hands, setHands] = useState<HandRecordView[] | null>(() => handCache.get(view.id) ?? null);
   const [error, setError] = useState('');
+  const [tries, setTries] = useState(0);
   const latest = view.history.at(-1)?.handNumber ?? 0;
+  const dealing = view.hand?.handNumber ?? 0;
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
@@ -265,22 +270,14 @@ function useAllHands(view: TableView, active: boolean) {
     return () => {
       live = false;
     };
-  }, [active, latest]);
-  return { hands, error };
-}
-
-/** What a player's stack did over one hand. */
-function handNet(h: HandRecordView, playerId: string): number | null {
-  const seat = h.seats.find((s) => s.playerId === playerId);
-  const end = h.events.find((e) => e.t === 'hand-end');
-  if (!seat || !end || end.t !== 'hand-end' || end.stacks[seat.seat] === undefined) return null;
-  return end.stacks[seat.seat] - seat.stack;
+  }, [active, latest, dealing, tries]);
+  return { hands, error, retry: () => setTries((t) => t + 1), setHands };
 }
 
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [open, setOpen] = useState<HandRecordView | null>(null);
   const [replay, setReplay] = useState<number | null>(null);
-  const { hands, error: loadError } = useAllHands(view, true);
+  const { hands, error: loadError, retry, setHands } = useAllHands(view, true);
   const [error, setError] = useState('');
   const [fromFile, setFromFile] = useState<HandRecordView[] | null>(null);
   const opener = (
@@ -315,22 +312,34 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   if (!view.history.length || !hands)
     return (
       <>
-        <p className="muted">{!view.history.length ? 'Finished hands show up here.' : loadError || 'Loading hands…'}</p>
+        <p className="muted">
+          {!view.history.length ? 'Finished hands show up here.' : loadError || 'Loading hands…'}
+          {loadError && <button onClick={retry}>Try again</button>}
+        </p>
         <div className="row wrap ledger-actions">{opener}</div>
         {error && <p className="error">{error}</p>}
         {fileReplay}
       </>
     );
-  const exportAll = (kind: 'txt' | 'json') => {
+  const exportAll = async (kind: 'txt' | 'json') => {
+    // A fresh copy, with anything shown since; the list on screen if the server says to wait.
+    let all = hands;
+    try {
+      all = (await call<{ hands: HandRecordView[] }>('table:export')).hands;
+      handCache.set(view.id, all);
+      setHands(all);
+    } catch {
+      /* use what's loaded */
+    }
     const stem = `${fileStem(view.name)}-hands`;
-    if (kind === 'json') download(`${stem}.json`, JSON.stringify({ format: 'rsdp-hands', version: 1, table: view.name, exportedAt: new Date().toISOString(), centsMode: view.settings.stakes.centsMode, hands }, null, 1), 'application/json');
-    else download(`${stem}.txt`, handHistoryText(view.name, hands, view.me.playerId, fmt));
+    if (kind === 'json') download(`${stem}.json`, JSON.stringify({ format: 'rsdp-hands', version: 1, table: view.name, exportedAt: new Date().toISOString(), centsMode: view.settings.stakes.centsMode, hands: all }, null, 1), 'application/json');
+    else download(`${stem}.txt`, handHistoryText(view.name, all, view.me.playerId, fmt));
   };
   return (
     <>
       <div className="row wrap ledger-actions">
-        <button onClick={() => exportAll('txt')}>Download all hands</button>
-        <button onClick={() => exportAll('json')}>JSON</button>
+        <button onClick={() => void exportAll('txt')}>Download all hands</button>
+        <button onClick={() => void exportAll('json')}>JSON</button>
         {opener}
       </div>
       {(error || loadError) && <p className="error">{error || loadError}</p>}
@@ -366,14 +375,8 @@ function OpenHandsFile({ fmt, onOpen, onError }: { fmt: Fmt; onOpen: (hands: Han
     try {
       const data = JSON.parse(await file.text());
       if (data?.format !== 'rsdp-hands' || !Array.isArray(data.hands)) throw new Error();
-      // Keep only hands the replayer can step through, so one bad entry doesn't stop the rest.
-      const hands = (data.hands as HandRecordView[]).filter((h) => {
-        try {
-          return replayFrames(h, null, fmt).length > 0;
-        } catch {
-          return false;
-        }
-      });
+      // Keep only hands the replayer can draw, so one bad entry doesn't stop the rest.
+      const hands = (data.hands as unknown[]).filter((h): h is HandRecordView => isReplayable(h, fmt));
       if (!hands.length) throw new Error();
       onOpen(hands);
     } catch {
@@ -424,8 +427,8 @@ function Stats({ view, fmt }: { view: TableView; fmt: Fmt }) {
             <tr key={r.playerId}>
               <td>{r.name}</td>
               <td>{r.hands}</td>
-              <td>{pct(r.vpip, r.hands)}</td>
-              <td>{pct(r.pfr, r.hands)}</td>
+              <td>{pct(r.vpip, r.counted)}</td>
+              <td>{pct(r.pfr, r.counted)}</td>
               <td>{r.won}</td>
               <td className={r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}>{r.net > 0 ? `+${fmt(r.net)}` : fmt(r.net)}</td>
             </tr>
