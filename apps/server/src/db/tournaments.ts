@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { tournaments, type TournamentStatus } from './schema';
 
@@ -47,5 +47,17 @@ export async function listLiveTournaments<S = unknown>(db: Db): Promise<Tourname
     .select()
     .from(tournaments)
     .where(inArray(tournaments.status, ['registering', 'seating', 'running', 'paused']));
+  return rows as TournamentRecord<S>[];
+}
+
+/** Tournaments a player hosted or holds an entry in, changed since `since`, newest first. */
+export async function listPlayerTournaments<S = unknown>(db: Db, playerId: string, since: Date, limit = 50): Promise<TournamentRecord<S>[]> {
+  const entered = sql`${tournaments.state} -> 'entries' @> ${JSON.stringify([{ playerId }])}::jsonb`;
+  const rows = await db
+    .select()
+    .from(tournaments)
+    .where(and(gt(tournaments.updatedAt, since), or(eq(tournaments.hostPlayerId, playerId), entered)))
+    .orderBy(desc(tournaments.updatedAt))
+    .limit(limit);
   return rows as TournamentRecord<S>[];
 }
