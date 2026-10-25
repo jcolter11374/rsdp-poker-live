@@ -12,6 +12,7 @@ import {
   tournamentListing,
   sortListings,
   type Command,
+  type LobbyItem,
   type TournamentListing,
   type TournamentSettings,
   type TournamentState,
@@ -38,11 +39,16 @@ export interface TournamentClient {
   create(settings: TournamentSettings): Promise<string>;
   /** Upcoming and running events, and the viewer's own. */
   list(): Promise<TournamentList>;
+  /** Lobby chat and events of a tournament being followed (see subscribe): now and on every change. */
+  onLog(id: string, cb: (items: LobbyItem[]) => void): () => void;
+  chat(id: string, text: string): Promise<void>;
 }
 
 /** Tournaments run on the server; this tab follows the ones on screen. */
 export class SocketTournamentClient implements TournamentClient {
   private watchers = new Map<string, { onView: Set<(v: TournamentView) => void>; onError: Set<(m: string) => void>; last: TournamentView | null }>();
+  /** Lobby items per followed tournament, and who wants them. */
+  private logs = new Map<string, { items: LobbyItem[]; listeners: Set<(items: LobbyItem[]) => void> }>();
 
   constructor() {
     socket.on('tournament:state', ({ id, view }) => {
@@ -50,6 +56,19 @@ export class SocketTournamentClient implements TournamentClient {
       if (!w) return;
       w.last = view;
       w.onView.forEach((cb) => cb(view));
+    });
+    socket.on('tournament:log', ({ id, items, append }) => {
+      const log = this.logs.get(id);
+      if (!log) return;
+      if (append) {
+        const have = new Set(log.items.map((x) => x.id));
+        log.items = [...log.items, ...items.filter((x) => !have.has(x.id))];
+      } else {
+        // The full list may be older than appends that beat it here.
+        const fresh = new Set(items.map((x) => x.id));
+        log.items = [...items, ...log.items.filter((x) => !fresh.has(x.id) && x.at >= (items.at(-1)?.at ?? 0))];
+      }
+      log.listeners.forEach((cb) => cb(log.items));
     });
     // The server forgets what a socket followed when it drops.
     socket.on('connect', () => {
@@ -74,6 +93,8 @@ export class SocketTournamentClient implements TournamentClient {
     if (!w) {
       w = { onView: new Set(), onError: new Set(), last: null };
       this.watchers.set(id, w);
+      // The server sends the lobby log right after the first view.
+      if (!this.logs.has(id)) this.logs.set(id, { items: [], listeners: new Set() });
       if (socket.connected) this.follow(id);
     } else if (w.last) onView(w.last);
     w.onView.add(onView);
@@ -100,6 +121,24 @@ export class SocketTournamentClient implements TournamentClient {
 
   list() {
     return call<TournamentList>('tournament:list');
+  }
+
+  onLog(id: string, cb: (items: LobbyItem[]) => void) {
+    let log = this.logs.get(id);
+    if (!log) {
+      log = { items: [], listeners: new Set() };
+      this.logs.set(id, log);
+    }
+    const mine = log;
+    mine.listeners.add(cb);
+    cb(mine.items);
+    return () => {
+      mine.listeners.delete(cb);
+    };
+  }
+
+  async chat(id: string, text: string) {
+    await call('tournament:chat', { id, text });
   }
 
   private follow(id: string) {
@@ -254,6 +293,16 @@ export class LocalTournamentClient implements TournamentClient {
   remove(id: string) {
     this.states.delete(id);
     this.save();
+  }
+
+  onLog(_id: string, cb: (items: LobbyItem[]) => void) {
+    // Test mode has no lobby chat or log.
+    cb([]);
+    return () => {};
+  }
+
+  async chat() {
+    throw new Error('Chat needs the server');
   }
 
   async list(): Promise<TournamentList> {

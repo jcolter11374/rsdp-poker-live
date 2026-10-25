@@ -29,6 +29,13 @@
       "when": 1792933856978,
       "tag": "0003_player_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792952116735,
+      "tag": "0004_tournament_log",
+      "breakpoints": true
     }
   ]
 }
