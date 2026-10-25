@@ -9,14 +9,22 @@ import {
   nextWakeAt,
   tableGate,
   tick,
+  tournamentListing,
+  sortListings,
   type Command,
+  type TournamentListing,
   type TournamentSettings,
   type TournamentState,
   type TournamentView,
 } from '@rsdp/tournament';
 import { call, currentSession, onSession, setName, socket, type Session } from '../socket';
 
-export type { Session, TournamentView };
+export type { Session, TournamentListing, TournamentView };
+
+export interface TournamentList {
+  tournaments: TournamentListing[];
+  serverNow: number;
+}
 
 export interface TournamentClient {
   session(): Session | null;
@@ -28,6 +36,8 @@ export interface TournamentClient {
   /** Rejects with the server's message when the command is refused. */
   send(id: string, command: Command): Promise<void>;
   create(settings: TournamentSettings): Promise<string>;
+  /** Upcoming and running events, and the viewer's own. */
+  list(): Promise<TournamentList>;
 }
 
 /** Tournaments run on the server; this tab follows the ones on screen. */
@@ -86,6 +96,10 @@ export class SocketTournamentClient implements TournamentClient {
   async create(settings: TournamentSettings) {
     const { id } = await call<{ id: string }>('tournament:create', { settings });
     return id;
+  }
+
+  list() {
+    return call<TournamentList>('tournament:list');
   }
 
   private follow(id: string) {
@@ -242,8 +256,9 @@ export class LocalTournamentClient implements TournamentClient {
     this.save();
   }
 
-  list(): TournamentState[] {
-    return [...this.states.values()].sort((a, b) => b.createdAt - a.createdAt);
+  async list(): Promise<TournamentList> {
+    const now = Date.now();
+    return { tournaments: sortListings([...this.states.values()].map((s) => tournamentListing(s, this.me.playerId, now))), serverNow: now };
   }
 
   private random() {
