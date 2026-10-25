@@ -21,10 +21,12 @@ import {
   playersForAccount,
   resetPassword,
   setPassword,
+  signInMethods,
   whoIs,
   type Identity,
 } from './identity';
 import { clientAddress, limiter, type AdminCheck } from './admin';
+import type { GoogleConfirmations } from './google';
 
 /** Wrong passwords one address, or one username, may try per window before sign-in pauses. */
 const SIGN_IN_TRIES = 10;
@@ -65,8 +67,12 @@ const MESSAGE: Partial<Record<IdentityError['code'], string>> = {
   'account-not-found': 'No account has that username.',
 };
 
-export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks: AccountHooks; isAdmin: AdminCheck; now: () => number; log: (message: string, err?: unknown) => void }) {
-  const { hooks, isAdmin, now, log } = opts;
+export function accountRoutes(
+  app: express.Express,
+  db: Db | null,
+  opts: { hooks: AccountHooks; isAdmin: AdminCheck; confirmations: GoogleConfirmations; now: () => number; log: (message: string, err?: unknown) => void },
+) {
+  const { hooks, isAdmin, confirmations, now, log } = opts;
   const json = express.json({ limit: '4kb' });
   const failuresByAddress = limiter(SIGN_IN_TRIES, SIGN_IN_WINDOW_MS, now);
   const failuresByName = limiter(SIGN_IN_TRIES, SIGN_IN_WINDOW_MS, now);
@@ -167,11 +173,15 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       if (!who) return;
       const address = clientAddress(req);
       if (!failuresByAddress(address, false)) return void tooMany(res);
-      if (!(await checkPassword(db, who.account.id, req.body?.current))) {
+      // An account made with Google has no password yet: its owner confirms with Google instead of the current one.
+      const { hasPassword } = await signInMethods(db, who.account.id);
+      if (!hasPassword && !confirmations.fresh(who.account.id, who.guest.id)) return void res.status(403).json({ error: 'Confirm with Google first.', code: 'confirm-google' });
+      if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.current))) {
         failuresByAddress(address);
         return void res.status(401).json({ error: 'Your current password is not right.' });
       }
       await setPassword(db, who.account.id, str(req.body?.password));
+      confirmations.use(who.account.id, who.guest.id);
       // Other devices have to sign in again with the new password, this one excepted.
       const guestToken = req.get('x-guest-token') ?? '';
       await logoutOthers(db, who.account.id, req.get('x-session-token'));
@@ -189,10 +199,17 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       if (!who) return;
       const address = clientAddress(req);
       if (!failuresByAddress(address, false)) return void tooMany(res);
-      if (!(await checkPassword(db, who.account.id, req.body?.password))) {
+      // Without a password (a Google account): a fresh confirm with Google, and the username typed.
+      const { hasPassword } = await signInMethods(db, who.account.id);
+      if (!hasPassword && !confirmations.fresh(who.account.id, who.guest.id)) return void res.status(403).json({ error: 'Confirm with Google first.', code: 'confirm-google' });
+      const confirmed = hasPassword
+        ? await checkPassword(db, who.account.id, req.body?.password)
+        : str(req.body?.username).trim().toLowerCase() === who.account.username.toLowerCase();
+      if (!confirmed) {
         failuresByAddress(address);
-        return void res.status(401).json({ error: 'That password is not right.' });
+        return void res.status(401).json({ error: hasPassword ? 'That password is not right.' : 'Type your username exactly to confirm.' });
       }
+      confirmations.use(who.account.id, who.guest.id);
       const ids = await deleteAccount(db, who.account.id);
       hooks.deleted(ids);
       res.json({ ok: true });
@@ -243,7 +260,7 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       res.json({
         playerId: who.player.id,
         displayName: who.player.displayName,
-        account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length },
+        account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length, ...(await signInMethods(db, who.account.id)) },
         tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
         tournaments: tournaments.flatMap((row) => {
           const s = row.state;

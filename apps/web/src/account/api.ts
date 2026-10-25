@@ -28,7 +28,7 @@ export interface TournamentRow {
 export interface Profile {
   playerId: string;
   displayName: string;
-  account: { username: string; createdAt: string; devices: number } | null;
+  account: { username: string; createdAt: string; devices: number; hasPassword: boolean; google: boolean } | null;
   tables: TableRow[];
   tournaments: TournamentRow[];
 }
@@ -86,8 +86,9 @@ export async function signOut() {
 
 export const changePassword = (current: string, password: string) => request('POST', '/api/account/password', { current, password });
 
-export async function deleteAccount(password: string) {
-  await request('POST', '/api/account/delete', { password });
+/** `password`, or for an account without one, its username typed to confirm. */
+export async function deleteAccount(confirm: { password?: string; username?: string }) {
+  await request('POST', '/api/account/delete', confirm);
   startOverAsGuest();
 }
 
@@ -96,3 +97,18 @@ export const resetPassword = (username: string, code: string, password: string) 
 /** The admin's side of a reset: a one-time code to send to the player. */
 export const issueResetCode = (adminKey: string, username: string) =>
   request<{ username: string; code: string; expiresAt: string }>('POST', '/api/admin/accounts/reset-code', { username }, { 'x-admin-key': adminKey });
+
+/** Whether this server offers "Sign in with Google". */
+export const fetchAuthConfig = () => request<{ google: boolean }>('GET', '/api/auth/config');
+
+/** Off to Google; it sends the browser back to /auth/done. `link` adds Google to the signed-in account; `confirm` re-checks it's you. */
+export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver = true, password?: string) {
+  const { url } = await request<{ url: string }>('POST', '/api/auth/google/begin', { mode, bringOver, password });
+  location.assign(url);
+}
+
+/** Back from Google: trades the one-time ticket (only this browser can) for the result. */
+export const finishGoogle = (ticket: string) =>
+  request<{ session?: string; welcome?: boolean; merged?: boolean; linked?: boolean; confirmed?: boolean }>('POST', '/api/auth/google/finish', { ticket });
+
+export const unlinkGoogle = (password: string) => request('POST', '/api/account/google/unlink', { password });

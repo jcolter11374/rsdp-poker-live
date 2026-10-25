@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -100,8 +101,15 @@ export const accounts = pgTable(
     /** A one-time password reset code from the admin, stored as a sha256 hash. Null when none is open. */
     resetCodeHash: text('reset_code_hash'),
     resetCodeExpiresAt: at('reset_code_expires_at'),
+    /** The Google account ("sub") this account signs in with, if linked. */
+    googleSub: text('google_sub'),
+    /** False for accounts made with Google until a password is set; their password hash is random. */
+    hasPassword: boolean('has_password').notNull().default(true),
   },
-  (t) => [uniqueIndex('accounts_username_lower_idx').on(sql`lower(${t.username})`)],
+  (t) => [
+    uniqueIndex('accounts_username_lower_idx').on(sql`lower(${t.username})`),
+    uniqueIndex('accounts_google_sub_idx').on(t.googleSub),
+  ],
 );
 
 /** Logged-in sessions, so an account works across devices. */
