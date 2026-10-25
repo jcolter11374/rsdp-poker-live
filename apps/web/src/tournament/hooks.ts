@@ -51,6 +51,8 @@ export function useTournament(id: string) {
 
 /** Changes page without reloading; App follows popstate. */
 export function navigate(to: string) {
+  // Two signals can send a tab to the same seat; keep one history entry.
+  if (location.pathname === to) return;
   history.pushState(null, '', to);
   dispatchEvent(new PopStateEvent('popstate'));
 }
@@ -88,4 +90,20 @@ export function useFollowSeat(currentTable: string | null, seatedHere = false): 
     };
   }, [currentTable, seatedHere]);
   return ready;
+}
+
+/**
+ * Whether the strip should take this tab to the player's seat (a table
+ * address, or null when not seated) rather than only link to it: when the
+ * tournament moved them off the table on screen and this table no longer
+ * seats them, i.e. the tab missed table:moved. Someone who opened another
+ * table to watch it stays there.
+ */
+export function followMissedMove(seat: string | null, here: string, wasHere: boolean, seatedHere: boolean): boolean {
+  return seat !== null && seat !== here && wasHere && !seatedHere;
+}
+
+/** The tournament a table address (`abc-t3`) belongs to, or null for a cash table. */
+export function tournamentOfTable(address: string): string | null {
+  return address.match(/^([0-9a-f]+)-t\d+$/)?.[1] ?? null;
 }

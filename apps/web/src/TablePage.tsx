@@ -12,7 +12,7 @@ import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { TableStrip } from './tournament/TableStrip';
-import { navigate, useFollowSeat } from './tournament/hooks';
+import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
 /** Plays sounds and flashes the tab title for what changed between two views. */
 function useTableEffects(view: TableView | null) {
@@ -106,12 +106,19 @@ export function TablePage({ tableId }: { tableId: string }) {
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
 
   if (error) {
+    // A tournament table closes when it breaks; the lobby knows the new seat.
+    const tournament = error === 'table not found' ? tournamentOfTable(tableId) : null;
     return (
       <main className="home">
         <h1 className="logo">
           RSDP Poker <span>Live!</span>
         </h1>
         <p className="error">{error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
+        {tournament && (
+          <p>
+            <a href={`/tn/${tournament}`}>Back to the tournament lobby</a>
+          </p>
+        )}
         <a href="/">Start a new table</a>
       </main>
     );
@@ -202,7 +209,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} />}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
