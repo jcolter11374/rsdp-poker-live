@@ -4,7 +4,11 @@ import { ActionError, variants, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
 import {
   apply,
+  autoArchive,
   createTournament,
+  isStaffCommand,
+  lastActivityAt,
+  mayCommand,
   DirectorError,
   levelFor,
   nextOccurrence,
@@ -75,14 +79,18 @@ interface Live {
   replay: Command[] | null;
 }
 
-/** Commands only the host may send; the director trusts the server to check. */
-const HOST_COMMANDS = new Set<Command['type']>(['approve', 'reject', 'remove', 'pause', 'resume', 'startNow', 'editStructure', 'updateSettings', 'end']);
 /** Commands that come from tables, never from a browser. */
 const TABLE_COMMANDS = new Set<Command['type']>(['handStarted', 'handResult']);
 const SAVE_DEBOUNCE_MS = 300;
 /** Long sleeps are re-armed in steps, so a far-off scheduled start never overflows a timer. */
 const MAX_SLEEP_MS = 60 * 60 * 1000;
 const NAME_MAX = 20;
+/** How often cleanup looks for events to archive or let go of. */
+const SWEEP_MS = 60 * 60 * 1000;
+/** An event nobody started (manual or Sit & Go) with nothing happening for this long is cancelled and archived. */
+export const IDLE_ARCHIVE_MS = 30 * 24 * 60 * 60 * 1000;
+/** A finished event stays in memory this long, then is loaded again from storage when someone asks for it. */
+export const FINISHED_KEEP_MS = 60 * 60 * 1000;
 
 /** Hex, so a table address `<tournament>-t<n>` still leads back to its tournament. */
 const newTournamentId = () => randomBytes(8).toString('hex');
@@ -106,6 +114,7 @@ export class TournamentManager {
   private readonly clock: Clock;
   /** Shutting down: tables deal no more hands and browsers' commands are refused. */
   private closed = false;
+  private sweepTimer: unknown = null;
 
   constructor(private readonly deps: ManagerDeps) {
     this.clock = deps.clock;
@@ -121,6 +130,52 @@ export class TournamentManager {
         this.deps.log(`resuming tournament ${saved.state.id} failed`, e);
       }
     }
+    this.armSweep();
+  }
+
+  /**
+   * Cleanup (TRN-54): archives events nobody started that have sat untouched
+   * for IDLE_ARCHIVE_MS, and lets go of finished events after FINISHED_KEEP_MS.
+   * Scheduled events cancel themselves after their grace period. Results are
+   * never deleted.
+   */
+  sweep() {
+    const now = this.clock.now();
+    for (const live of [...this.live.values()]) {
+      const s = live.state;
+      const over = s.status === 'finished' || s.status === 'cancelled';
+      if (!over && s.status === 'registering' && s.settings.start.kind !== 'scheduled' && now - lastActivityAt(s) >= IDLE_ARCHIVE_MS) {
+        this.dispatchQuietly(live, (st, t) => autoArchive(st, t), 'archiving an idle event');
+      } else if (over && now - (s.finishedAt ?? s.createdAt) >= FINISHED_KEEP_MS && !live.reports.size) {
+        this.evict(live);
+      }
+    }
+  }
+
+  private armSweep() {
+    if (this.closed) return;
+    this.clock.clearTimeout(this.sweepTimer);
+    this.sweepTimer = this.clock.setTimeout(() => {
+      this.sweepTimer = null;
+      try {
+        this.sweep();
+      } catch (e) {
+        this.deps.log('tournament cleanup failed', e);
+      }
+      this.armSweep();
+    }, SWEEP_MS);
+  }
+
+  /** Saves a finished event and forgets it here; get() loads it again. */
+  private evict(live: Live) {
+    const id = live.state.id;
+    this.clock.clearTimeout(live.timer);
+    this.clock.clearTimeout(live.saveTimer);
+    live.timer = live.saveTimer = null;
+    this.deps.store.save(live.state, live.nextId).catch((e) => this.deps.log(`saving tournament ${id} failed`, e));
+    for (const rt of live.tables.values()) this.unmount(rt);
+    live.tables.clear();
+    this.live.delete(id);
   }
 
   async create(hostId: PlayerId, settings: TournamentSettings): Promise<string> {
@@ -188,6 +243,8 @@ export class TournamentManager {
       this.clock.clearTimeout(live.saveTimer);
       live.timer = live.saveTimer = null;
     }
+    this.clock.clearTimeout(this.sweepTimer);
+    this.sweepTimer = null;
   }
 
   /** Saves every tournament now (shutdown). */
@@ -200,12 +257,14 @@ export class TournamentManager {
   private fromBrowser(live: Live, me: PlayerId, myName: string, cmd: Command): Command {
     if (!cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string') throw new ActionError('unknown command');
     if (TABLE_COMMANDS.has(cmd.type)) throw new ActionError('unknown command');
-    if (HOST_COMMANDS.has(cmd.type)) {
-      if (me !== live.state.hostId) throw new ActionError('only the host can do that');
+    if (isStaffCommand(cmd.type)) {
+      const command = { ...cmd, by: me } as Command;
+      if (!mayCommand(live.state, me, command)) throw new ActionError(me === live.state.hostId || live.state.coHosts?.some((c) => c.playerId === me) ? 'the host has not given you that power' : 'only the host can do that');
       // The director checks the shape; the games must also be ones this server can deal.
       if (cmd.type === 'editStructure') checkGames({ ...live.state.settings, structure: cmd.structure });
       if (cmd.type === 'updateSettings') checkGames({ ...live.state.settings, ...cmd.settings });
-      return { ...cmd, by: me } as Command;
+      if (command.type === 'transferHost') command.byName = cleanName(myName);
+      return command;
     }
     switch (cmd.type) {
       case 'register': {
@@ -335,6 +394,7 @@ export class TournamentManager {
       }
       // Every missed report is in, so a hand that bringing the seats in line ends reports as usual.
       live.replay = null;
+      this.alignTables(live);
       this.reconcileSeats(live);
     } finally {
       live.replay = null;
@@ -420,6 +480,49 @@ export class TournamentManager {
     this.tableOwners.delete(rt.state.id);
     this.deps.tables.detach(rt);
     rt.dispose();
+  }
+
+  /**
+   * After a restart, once missed reports are replayed: a table whose snapshot is behind the director
+   * (issue #5) is brought in line instead of replaying a hand the director already closed. A hand the
+   * director heard start but the table never saved is closed with no chips changing hands.
+   */
+  private alignTables(live: Live) {
+    for (const t of live.state.tables) {
+      const rt = live.tables.get(t.id);
+      if (!rt) continue;
+      const playingSameHand = rt.handInProgress && rt.state.handNumber === t.lastHandNumber;
+      if (playingSameHand && t.inHand) continue;
+      const stacksAt = (table: typeof t) =>
+        Object.fromEntries(
+          table.seats.flatMap((entryId) => {
+            const e = entryId ? live.state.entries.find((x) => x.id === entryId) : undefined;
+            return e ? [[e.playerId, e.stack] as const] : [];
+          }),
+        );
+      if (t.inHand) {
+        const stacks = stacksAt(t);
+        try {
+          const result = this.guard(() =>
+            apply(live.state, { type: 'handResult', result: { tableId: t.id, handNumber: t.lastHandNumber, startStacks: stacks, endStacks: stacks } }, this.clock.now()),
+          );
+          live.state = result.state;
+          for (const e of result.events) this.handleQuietly(live, e);
+        } catch (e) {
+          this.deps.log(`tournament ${live.state.id}: closing a hand table ${t.id} never saved failed`, e);
+        }
+      }
+      // The director's view of the table after any close above.
+      const now = live.state.tables.find((x) => x.id === t.id);
+      if (!now) continue;
+      const behind = rt.handInProgress || rt.state.handNumber !== now.lastHandNumber;
+      try {
+        if (behind) this.deps.log(`tournament ${live.state.id}: table ${t.id} was saved behind the director; bringing it in line`);
+        rt.alignWithDirector({ handNumber: now.lastHandNumber, button: now.button, stacks: stacksAt(now) });
+      } catch (e) {
+        this.deps.log(`tournament ${live.state.id}: bringing table ${t.id} in line failed`, e);
+      }
+    }
   }
 
   /** After a restart: each table seats exactly the players the director seats there. */
@@ -535,6 +638,23 @@ export class TournamentManager {
         this.deps.onMoved(e.playerId, tableAddress(e.from.tableId), to.state.id);
         break;
       }
+      case 'seatsSwapped': {
+        // Both seats are emptied before either is filled, so neither lands on the other.
+        for (const m of e.moves) this.table(live, m.from.tableId)?.unseatPlayer(m.playerId);
+        for (const m of e.moves) {
+          const to = this.table(live, m.to.tableId);
+          if (!to) continue;
+          place(to, { seat: m.to.seat, playerId: m.playerId, name: name(m.playerId), stack: m.stack });
+          this.deps.onMoved(m.playerId, tableAddress(m.from.tableId), to.state.id);
+        }
+        break;
+      }
+      case 'stackSet':
+        if (e.applied) this.table(live, e.tableId)?.tournamentSetStack(e.playerId, e.stack);
+        break;
+      case 'hostChanged':
+        for (const rt of live.tables.values()) rt.state.hostId = e.hostId;
+        break;
       case 'tableBroken': {
         const rt = this.table(live, e.tableId);
         if (rt) {

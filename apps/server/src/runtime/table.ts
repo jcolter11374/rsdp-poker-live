@@ -801,6 +801,48 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Tournament: a host stack edit. The director sends it between this player's hands; during one it waits for the end. */
+  tournamentSetStack(playerId: PlayerId, stack: number) {
+    const seat = this.seatOf(playerId);
+    if (!seat) return;
+    if (this.inHand(playerId)) seat.pendingStack = stack;
+    else seat.stack = stack;
+    this.log(`${seat.name}'s stack was set to ${stack}`);
+    this.sync();
+  }
+
+  /** A hand is being played here. */
+  get handInProgress() {
+    return this.handLive();
+  }
+
+  /**
+   * Tournament, after a crash: this snapshot is behind the director, which has
+   * already closed the hand saved here as in progress (or later ones). Drops
+   * that hand without playing it again and takes the hand number, button and
+   * every stack from the director. Call before resume().
+   */
+  alignWithDirector(input: { handNumber: number; button: number | null; stacks: Record<PlayerId, number> }) {
+    const s = this.state;
+    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    if (this.handLive()) {
+      s.hand = null;
+      s.handStartedAt = null;
+      s.turn = null;
+      s.ritDeadline = null;
+    }
+    s.handNumber = input.handNumber;
+    if (input.button !== null && s.positions?.button !== input.button) s.positions = { button: input.button, smallBlind: null, bigBlind: null };
+    for (const seat of s.seats) {
+      const stack = seat ? input.stacks[seat.playerId] : undefined;
+      if (!seat || stack === undefined) continue;
+      seat.stack = stack;
+      seat.pendingChips = 0;
+      seat.pendingStack = null;
+      seat.leaveAfterHand = false;
+    }
+  }
+
   /** Tournament: the director may now let this table deal. */
   poke() {
     this.sync();

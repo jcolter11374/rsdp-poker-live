@@ -7,3 +7,5 @@ export * from './seating';
 export * from './tz';
 export * from './summary';
 export * from './wire';
+export * from './roles';
+export * from './copy';
