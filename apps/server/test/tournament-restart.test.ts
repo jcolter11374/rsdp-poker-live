@@ -155,7 +155,7 @@ describe('tournaments after a crash', () => {
     expect(standings(now())[0].stack).toBe(4000);
   }, 60_000);
 
-  it('a table break the director never saved is replayed, and its players reach the table they moved to', async () => {
+  it.each(['before', 'after'] as const)('a table break the director never saved is replayed, and its players reach the table they moved to (saved %s the move)', async (when) => {
     const { env, id, state } = await started(4, { seatsPerTable: 3 });
     expect(state().tables).toHaveLength(2);
     const unreported = () =>
@@ -169,8 +169,8 @@ describe('tournaments after a crash', () => {
     // The report lands: somebody is out, a table breaks and its players move.
     env.clock.advance(0);
     expect(state().tables).toHaveLength(1);
-    // The broken table was saved at once; the one its players moved to had not been saved since.
-    const snapshots = new Map(before);
+    // The broken table was saved at once; the one its players moved to may not have been saved since.
+    const snapshots = new Map(when === 'after' ? env.snapshots : before);
     for (const [address, json] of env.snapshots) if (!env.tables.has(address)) snapshots.set(address, json);
 
     const after = await restart(await savedAs(saved), snapshots, env.clock.t);

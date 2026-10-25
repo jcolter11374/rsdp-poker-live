@@ -487,6 +487,10 @@ export class TournamentManager {
 
   private handleOne(live: Live, e: DirectorEvent) {
     const name = (playerId: PlayerId) => live.state.entries.find((x) => x.playerId === playerId)?.displayName ?? 'Player';
+    // A table saved after this event (replayed after a restart) may already have the player there.
+    const place = (rt: TableRuntime, seat: Parameters<TableRuntime['placePlayer']>[0]) => {
+      if (rt.seatOf(seat.playerId)?.seat !== seat.seat) rt.placePlayer(seat);
+    };
     switch (e.type) {
       case 'tablesCreated':
         for (const t of e.tables) {
@@ -500,7 +504,7 @@ export class TournamentManager {
         break;
       case 'seatPlayer': {
         const rt = this.table(live, e.seat.tableId) ?? this.openTable(live, e.seat.tableId, []);
-        rt.placePlayer({ seat: e.seat.seat, playerId: e.seat.playerId, name: e.seat.displayName, stack: e.seat.stack });
+        place(rt, { seat: e.seat.seat, playerId: e.seat.playerId, name: e.seat.displayName, stack: e.seat.stack });
         this.deps.onMoved(e.seat.playerId, '', rt.state.id);
         break;
       }
@@ -508,7 +512,7 @@ export class TournamentManager {
         const from = this.table(live, e.from.tableId);
         const to = this.table(live, e.to.tableId) ?? this.openTable(live, e.to.tableId, []);
         from?.unseatPlayer(e.playerId);
-        to.placePlayer({ seat: e.to.seat, playerId: e.playerId, name: name(e.playerId), stack: e.stack });
+        place(to, { seat: e.to.seat, playerId: e.playerId, name: name(e.playerId), stack: e.stack });
         this.deps.onMoved(e.playerId, tableAddress(e.from.tableId), to.state.id);
         break;
       }
