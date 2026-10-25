@@ -149,6 +149,11 @@ export interface RuntimeState {
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */
 export interface TournamentHooks {
+  /**
+   * The director is still delivering a batch of events to its tables. Until it pokes, this table runs
+   * nothing on its own (turn clocks, deals), so no hand ends before chips or seats on their way arrive.
+   */
+  busy(): boolean;
   gate(now: number): 'deal' | 'hold';
   level(): { gameId: string; betting?: BettingKind; stakes: Stakes };
   handStarted(handNumber: number): void;

@@ -221,6 +221,62 @@ describe('tournament manager guards', () => {
     expect(env.errors).toEqual([]);
   });
 
+  it('a table whose clock ran out a moment ago waits for the add-on on its way before ending the hand', async () => {
+    const env = setup();
+    const structure: StructureRow[] = [
+      { kind: 'level', sb: 10, bb: 20, ante: 0, anteType: 'none', minutes: 1 },
+      { kind: 'break', minutes: 5, addOn: true },
+      { kind: 'level', sb: 20, bb: 40, ante: 0, anteType: 'none', minutes: 20 },
+    ];
+    const settings = defaultSettings({
+      name: 'Add-on lag',
+      startingStack: 1000,
+      seatsPerTable: 3,
+      structure,
+      addOn: { max: 1, chips: 1500, approval: false },
+      lateRegistration: { enabled: false, throughLevel: null },
+    });
+    const id = await env.manager.create('host', settings);
+    await registerAll(env, id, 4);
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    const [t1, t2] = state().tables.map((t) => env.tables.get(tableAddress(t.id))!);
+    for (const rt of [t1, t2]) for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    const toAct = (rt: TableRuntime) => {
+      const hand = rt.state.hand;
+      return hand?.phase === 'betting' && hand.toAct !== null ? hand.seats.find((x) => x.seat === hand.toAct)! : null;
+    };
+    const passive = (rt: TableRuntime) => {
+      const seat = toAct(rt);
+      if (seat) rt.act(seat.playerId, engine.legalActions(rt.state.hand!, seat.seat)!.canCheck ? { type: 'check' } : { type: 'call' });
+    };
+    for (let i = 0; i < 20 && !addOnsOpen(state()); i++) {
+      passive(t1);
+      passive(t2);
+      env.clock.advance(20_000);
+    }
+    expect(addOnsOpen(state())).toBe(true);
+
+    // At the first table one player bets and the next one lets their clock run.
+    const bettor = toAct(t1)!;
+    t1.act(bettor.playerId, { type: engine.legalActions(t1.state.hand!, bettor.seat)!.raiseKind, to: engine.legalActions(t1.state.hand!, bettor.seat)!.minTo });
+    env.clock.advance(1000);
+    // At the other table someone moves all in, which a call will end in a bust and a table break.
+    const shover = toAct(t2)!;
+    const legal = engine.legalActions(t2.state.hand!, shover.seat)!;
+    t2.act(shover.playerId, { type: legal.raiseKind, to: legal.maxTo });
+    const caller = toAct(t2)!;
+    for (let i = 0; i < 200 && !t1.state.turn?.usingBank; i++) env.clock.advance(1000);
+    // Just past the first table's deadline, before its timer runs: the call and the bettor's add-on arrive.
+    env.clock.t = t1.turnDeadline()! + 1;
+    t2.act(caller.playerId, { type: 'call' });
+    await env.manager.command(id, bettor.playerId, '', { type: 'addOn', playerId: bettor.playerId });
+    env.clock.advance(0);
+    expect(t1.seatOf(bettor.playerId)!.stack).toBe(state().entries.find((e) => e.playerId === bettor.playerId)!.stack);
+    expect(state().entries.filter((e) => e.status === 'seated').reduce((n, e) => n + e.stack, 0)).toBe(chipsInPlay(env));
+    expect(env.errors).toEqual([]);
+  });
+
   it('names each table after its tournament within the table-name limit, even with emoji', async () => {
     expect(tableName('Friday Game', 2)).toBe('Friday Game · Table 2');
     for (const name of ['🏆🏆🏆 Sunday Major Championship', '😀'.repeat(20), '𠀀'.repeat(28), 'x'.repeat(40)]) {

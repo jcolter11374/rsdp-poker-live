@@ -327,6 +327,31 @@ describe('tournaments after a crash', () => {
     expect(now().status).toBe('finished');
   });
 
+  it('a hand that ends as a restart brings a table\'s seats in line reaches the director', async () => {
+    const { env, id } = await started(2, { lateRegistration: { enabled: true, throughLevel: 4 } });
+    const [rt] = env.tables.values();
+    expect(rt.state.hand?.phase).toBe('betting');
+    await env.manager.command(id, 'host', '', { type: 'pause', by: 'host' });
+    // The table was last saved mid-hand; then a late registrant is seated there and only the director is saved.
+    const lagging = new Map(env.snapshots);
+    await env.manager.command(id, 'p3', 'Player 3', { type: 'register', playerId: 'p3', displayName: 'Player 3' });
+    expect(rt.seatOf('p3')).not.toBeNull();
+    await env.manager.flush();
+
+    // Back after the player to act ran out of time: once the late registrant is seated, that player is folded and the hand ends.
+    const after = await restart(env.store, lagging, env.clock.t + 10 * MIN);
+    after.clock.advance(0);
+    const now = () => after.manager.view(id)!.state;
+    const [table] = after.tables.values();
+    expect(table.state.history.map((h) => h.handNumber)).toEqual([1]);
+    expect(now().tables[0]).toMatchObject({ inHand: false, lastHandNumber: 1 });
+    for (const e of now().entries) expect(e.stack, e.playerId).toBe(table.seatOf(e.playerId)!.stack);
+    expect(after.errors).toEqual([]);
+    // Nothing waits on the hand that is over, so the host can end the paused event.
+    await after.manager.command(id, 'host', '', { type: 'end', by: 'host' });
+    expect(now().status).toBe('finished');
+  });
+
   it('seats players where the director has them when their tables were saved before a move', async () => {
     const env = setup();
     const startAt = env.clock.now() + 5 * MIN;

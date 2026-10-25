@@ -20,6 +20,7 @@ function tournamentTable(n: number, opts: { gameId?: string } = {}) {
     onHandEnded: (r: HandResult) => void ended.push(r),
   };
   const hooks: TournamentHooks = {
+    busy: () => false,
     gate: () => 'deal',
     level: () => ({
       gameId: director.gameId,

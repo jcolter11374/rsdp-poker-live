@@ -1007,7 +1007,7 @@ export class TableRuntime {
   /** Does one due thing. True if something changed and another pass is needed. */
   private step(): boolean {
     const s = this.state;
-    if (s.paused) return false;
+    if (s.paused || this.tournament?.busy()) return false;
     const now = this.clock.now();
     const hand = s.hand;
     if (hand && hand.phase !== 'complete') {

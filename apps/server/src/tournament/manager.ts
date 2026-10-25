@@ -333,6 +333,8 @@ export class TournamentManager {
           this.deps.log(`tournament ${state.id}: replaying a hand report failed`, e);
         }
       }
+      // Every missed report is in, so a hand that bringing the seats in line ends reports as usual.
+      live.replay = null;
       this.reconcileSeats(live);
     } finally {
       live.replay = null;
@@ -382,6 +384,7 @@ export class TournamentManager {
       });
     };
     return {
+      busy: () => live.applying,
       // Tables hold while the director's events are still reaching them, so nobody is dealt in at a seat they are leaving.
       gate: (now) => (this.closed || live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
       level: () => {
