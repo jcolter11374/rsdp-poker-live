@@ -1,6 +1,6 @@
-// How tournament pages talk to the server. The socket implementation lives
-// with the server runtime; LocalTournamentClient runs the same director in
-// the browser so the pages work (and can be demoed) before that lands.
+// How tournament pages talk to the server. SocketTournamentClient is the real
+// one; LocalTournamentClient runs the same director in this tab so the pages
+// can be tried on their own (open any page with ?demo).
 
 import {
   apply,
@@ -12,24 +12,17 @@ import {
   type Command,
   type TournamentSettings,
   type TournamentState,
+  type TournamentView,
 } from '@rsdp/tournament';
+import { call, currentSession, onSession, setName, socket, type Session } from '../socket';
 
-export interface Session {
-  playerId: string;
-  displayName: string;
-  /** Null for a guest; registering for a tournament needs an account. */
-  account: { username: string } | null;
-}
-
-export interface TournamentView {
-  state: TournamentState;
-  /** Server clock when the view was sent, to correct for clock skew. */
-  serverNow: number;
-}
+export type { Session, TournamentView };
 
 export interface TournamentClient {
   session(): Session | null;
   onSession(cb: (s: Session | null) => void): () => void;
+  /** The name other players see; registering needs one. */
+  setName(name: string): Promise<void>;
   /** Calls onView with the current view and again on every change. */
   subscribe(id: string, onView: (v: TournamentView) => void, onError: (message: string) => void): () => void;
   /** Rejects with the server's message when the command is refused. */
@@ -37,10 +30,73 @@ export interface TournamentClient {
   create(settings: TournamentSettings): Promise<string>;
 }
 
+/** Tournaments run on the server; this tab follows the ones on screen. */
+export class SocketTournamentClient implements TournamentClient {
+  private watchers = new Map<string, { onView: Set<(v: TournamentView) => void>; onError: Set<(m: string) => void>; last: TournamentView | null }>();
+
+  constructor() {
+    socket.on('tournament:state', ({ id, view }) => {
+      const w = this.watchers.get(id);
+      if (!w) return;
+      w.last = view;
+      w.onView.forEach((cb) => cb(view));
+    });
+    // The server forgets what a socket followed when it drops.
+    socket.on('connect', () => {
+      for (const id of this.watchers.keys()) this.follow(id);
+    });
+  }
+
+  session() {
+    return currentSession();
+  }
+
+  onSession(cb: (s: Session | null) => void) {
+    return onSession(cb);
+  }
+
+  setName(name: string) {
+    return setName(name);
+  }
+
+  subscribe(id: string, onView: (v: TournamentView) => void, onError: (message: string) => void) {
+    let w = this.watchers.get(id);
+    if (!w) {
+      w = { onView: new Set(), onError: new Set(), last: null };
+      this.watchers.set(id, w);
+      if (socket.connected) this.follow(id);
+    } else if (w.last) onView(w.last);
+    w.onView.add(onView);
+    w.onError.add(onError);
+    const mine = w;
+    return () => {
+      mine.onView.delete(onView);
+      mine.onError.delete(onError);
+      if (mine.onView.size === 0 && this.watchers.get(id) === mine) {
+        this.watchers.delete(id);
+        socket.emit('tournament:unsubscribe', { id });
+      }
+    };
+  }
+
+  async send(id: string, command: Command) {
+    await call('tournament:command', { id, command });
+  }
+
+  async create(settings: TournamentSettings) {
+    const { id } = await call<{ id: string }>('tournament:create', { settings });
+    return id;
+  }
+
+  private follow(id: string) {
+    call('tournament:subscribe', { id }).catch((e: Error) => this.watchers.get(id)?.onError.forEach((cb) => cb(e.message === 'tournament not found' ? 'Tournament not found' : e.message)));
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 const STORE_KEY = 'rsdp.localTournaments';
-const GUEST_KEY = 'rsdp.guestId';
+const GUEST_KEY = 'rsdp.demoPlayer';
 
 function storage(): Storage | null {
   try {
@@ -79,9 +135,7 @@ export class LocalTournamentClient implements TournamentClient {
       guest = randomId();
       store?.setItem(GUEST_KEY, guest);
     }
-    const name = store?.getItem('rsdp.name') || 'You';
-    // Local mode pretends you are signed in so registration can be tried.
-    this.me = { playerId: guest, displayName: name, account: { username: name } };
+    this.me = { playerId: guest, displayName: store?.getItem('rsdp.name') || 'You', account: null };
     setInterval(() => this.wake(), 1000);
   }
 
@@ -94,9 +148,13 @@ export class LocalTournamentClient implements TournamentClient {
     return () => this.sessionListeners.delete(cb);
   }
 
+  async setName(name: string) {
+    this.actAs(this.me.playerId, name.trim());
+  }
+
   /** Demo: act as another player (or the host) in this tab. */
   actAs(playerId: string, displayName: string) {
-    this.me = { playerId, displayName, account: { username: displayName } };
+    this.me = { playerId, displayName, account: null };
     this.sessionListeners.forEach((cb) => cb(this.me));
     this.states.forEach((_, id) => this.emit(id));
   }
@@ -226,8 +284,18 @@ export class LocalTournamentClient implements TournamentClient {
 
 let client: TournamentClient | null = null;
 
-/** The client the pages use. Swap in the socket client once the server adapter is on develop. */
+/** Test mode (?demo) keeps tournaments in this browser; it sticks for the tab. */
+function demoMode(): boolean {
+  try {
+    if (new URLSearchParams(location.search).has('demo')) sessionStorage.setItem('rsdp.demo', '1');
+    return sessionStorage.getItem('rsdp.demo') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** The client the pages use. */
 export function tournamentClient(): TournamentClient {
-  client ??= new LocalTournamentClient();
+  client ??= demoMode() ? new LocalTournamentClient() : new SocketTournamentClient();
   return client;
 }

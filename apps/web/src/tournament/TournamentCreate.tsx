@@ -138,13 +138,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
   const toggleGame = (id: string) => setGames(games.includes(id) ? games.filter((g) => g !== id) : [...games, id]);
   const expectedEntrants = startKind === 'sng' ? sng.playersNeeded : Math.min(maxEntrants, 30);
 
-  if (!session?.account) {
-    return (
-      <main className="tn-page">
-        <p>Sign in to host a tournament.</p>
-      </main>
-    );
-  }
+  if (!session) return <main className="tn-page"><p className="muted">Connecting…</p></main>;
 
   return (
     <main className="tn-page">

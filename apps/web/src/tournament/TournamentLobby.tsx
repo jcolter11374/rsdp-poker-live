@@ -4,13 +4,15 @@ import {
   playerOptions,
   standings,
   summarize,
+  tableAddress,
   type Command,
   type StructureRow,
   type TournamentState,
 } from '@rsdp/tournament';
 import { LocalTournamentClient, tournamentClient, type Session } from './client';
 import { blinds, chips, countdown, gameName, localTime, money, ordinal } from './format';
-import { useNow, useSession, useTournament } from './hooks';
+import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
+import { savedName } from '../socket';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
 
@@ -34,19 +36,23 @@ function useSend(id: string) {
       await tournamentClient().send(id, command);
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      setError(sentence((e as Error).message));
       return false;
     }
   };
   return { send, error, clear: () => setError('') };
 }
 
+/** Server messages are lower case; show them as sentences. */
+const sentence = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
+
 export function TournamentLobby({ id }: { id: string }) {
-  const { state, skew, error } = useTournament(id);
+  const { state, skew, nextId, error } = useTournament(id);
   const session = useSession();
   const now = useNow() + skew;
   const [tab, setTab] = useState<Tab>('players');
   const { send, error: sendError } = useSend(id);
+  useFollowSeat(null);
 
   if (error) return <main className="tn-page"><p className="error">{error}</p><a href="/">Home</a></main>;
   if (!state) return <main className="tn-page"><p className="muted">Loading…</p></main>;
@@ -79,6 +85,11 @@ export function TournamentLobby({ id }: { id: string }) {
       </header>
 
       <Hero state={state} now={now} />
+      {nextId && (
+        <p className="tn-windows">
+          <a href={`/tn/${nextId}`}>{state.settings.start.kind === 'sng' ? 'The next Sit & Go is open' : 'The next one in this series is open'} →</a>
+        </p>
+      )}
       <Stats state={state} now={now} />
       <MyPanel state={state} session={session} send={send} />
       {sendError && <p className="error tn-toast">{sendError}</p>}
@@ -205,18 +216,27 @@ function Stats({ state, now }: { state: TournamentState; now: number }) {
 }
 
 /** What the viewer can do: register, rebuy, add on, re-enter, quit. */
-function MyPanel({ state, session, send }: { state: TournamentState; session: Session | null; send: (c: Command) => void }) {
+function MyPanel({ state, session, send }: { state: TournamentState; session: Session | null; send: (c: Command) => Promise<boolean> }) {
   const now = useNow(500);
+  const [name, setName] = useState(() => session?.displayName || savedName());
+  const [nameError, setNameError] = useState('');
   if (state.status === 'cancelled') return null;
   if (!session) return null;
-  if (!session.account) {
-    return (
-      <div className="tn-card tn-me">
-        <p>Sign in to register for this tournament.</p>
-      </div>
-    );
-  }
   const o = playerOptions(state, session.playerId);
+  // Guests register under the name they pick here; it is also their name at the tables.
+  const needsName = o.canRegister && !session.displayName;
+  const register = async () => {
+    setNameError('');
+    if (needsName) {
+      if (!name.trim()) return setNameError('Pick the name other players will see.');
+      try {
+        await tournamentClient().setName(name);
+      } catch (e) {
+        return setNameError(sentence((e as Error).message));
+      }
+    }
+    await send({ type: 'register', playerId: session.playerId, displayName: (needsName ? name : session.displayName).trim() });
+  };
   const me = { playerId: session.playerId, displayName: session.displayName };
   const place = o.entry && !['registered', 'seated', 'rebuy-offer'].includes(o.entry.status) ? standings(state).find((s) => s.entryId === o.entry!.id)?.place : null;
   const table = o.entry?.tableId ? state.tables.findIndex((t) => t.id === o.entry!.tableId) + 1 : 0;
@@ -229,7 +249,10 @@ function MyPanel({ state, session, send }: { state: TournamentState; session: Se
         {o.entry?.status === 'registered' && <span>You're registered. {state.settings.start.kind === 'scheduled' ? 'Your seat is drawn a minute before the start.' : ''}</span>}
         {o.entry?.status === 'seated' && (
           <span>
-            Table {table}, seat {o.entry.seat! + 1} · <b>{chips(o.entry.stack)}</b> chips
+            <a href={`/t/${tableAddress(o.entry.tableId!)}`}>
+              Table {table}, seat {o.entry.seat! + 1}
+            </a>{' '}
+            · <b>{chips(o.entry.stack)}</b> chips
           </span>
         )}
         {o.entry?.status === 'rebuy-offer' && (
@@ -244,8 +267,20 @@ function MyPanel({ state, session, send }: { state: TournamentState; session: Se
           </span>
         ))}
       </div>
+      {needsName && (
+        <label className="tn-name">
+          Your name
+          <input value={name} maxLength={20} placeholder="The name others see" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && register()} />
+        </label>
+      )}
+      {nameError && <p className="error">{nameError}</p>}
       <div className="tn-actions">
-        {o.canRegister && <button className="primary big" onClick={() => send({ type: 'register', ...me })}>Register</button>}
+        {o.entry?.status === 'seated' && (
+          <button className="primary big" onClick={() => navigate(`/t/${tableAddress(o.entry!.tableId!)}`)}>
+            Go to my table
+          </button>
+        )}
+        {o.canRegister && <button className="primary big" onClick={register}>Register{session.displayName ? ` as ${session.displayName}` : ''}</button>}
         {o.canRebuy && <button className="primary big" onClick={() => send({ type: 'rebuy', playerId: me.playerId })}>Rebuy</button>}
         {o.canDeclineRebuy && <button onClick={() => send({ type: 'declineRebuy', playerId: me.playerId })}>No thanks</button>}
         {o.canAddOn && <button className="primary" onClick={() => send({ type: 'addOn', playerId: me.playerId })}>Add on {chips(state.settings.addOn.chips)}</button>}
@@ -320,7 +355,7 @@ function Tables({ state }: { state: TournamentState }) {
         return (
           <div className="tn-table-card" key={t.id}>
             <h3>
-              Table {i + 1} <span className="muted">· {players.length} players{t.inHand ? ' · in a hand' : ''}</span>
+              <a href={`/t/${tableAddress(t.id)}`}>Table {i + 1}</a> <span className="muted">· {players.length} players{t.inHand ? ' · in a hand' : ''}</span>
             </h3>
             <ul>
               {players.map(({ seat, e }) => (

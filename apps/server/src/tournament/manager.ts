@@ -309,10 +309,11 @@ export class TournamentManager {
       }).settings,
     );
     const rt = TableRuntime.create({ id: tableAddress(tableId), hostId: s.hostId, settings }, this.runtimeDeps(live, tableId));
+    // Seat everyone before the table may deal, so the first hand has them all.
+    for (const seat of seats) rt.placePlayer({ seat: seat.seat, playerId: seat.playerId, name: seat.displayName, stack: seat.stack });
     rt.state.started = true;
     const created = this.deps.tables.createTable(rt.state).catch((e) => this.deps.log(`creating table ${rt.state.id} failed`, e));
     this.mount(live, tableId, rt, created);
-    for (const seat of seats) rt.placePlayer({ seat: seat.seat, playerId: seat.playerId, name: seat.displayName, stack: seat.stack });
     return rt;
   }
 
@@ -336,7 +337,11 @@ export class TournamentManager {
     const name = (playerId: PlayerId) => live.state.entries.find((x) => x.playerId === playerId)?.displayName ?? 'Player';
     switch (e.type) {
       case 'tablesCreated':
-        for (const t of e.tables) this.openTable(live, t.tableId, t.seats);
+        for (const t of e.tables) {
+          const rt = this.openTable(live, t.tableId, t.seats);
+          // The draw: send everyone to their table.
+          for (const seat of t.seats) this.deps.onMoved(seat.playerId, '', rt.state.id);
+        }
         break;
       case 'tableOpened':
         if (!live.tables.has(e.tableId)) this.openTable(live, e.tableId, []);

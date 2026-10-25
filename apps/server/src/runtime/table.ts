@@ -74,6 +74,8 @@ export class TableRuntime {
   readonly tournament: TournamentHooks | null;
   private readonly connections = new Map<PlayerId, number>();
   private readonly offlineSince = new Map<PlayerId, number>();
+  /** When this runtime came up: players it has never seen get their grace from here. */
+  private readonly upSince: number;
   private timers: Record<'turn' | 'next' | 'rit', unknown> = { turn: null, next: null, rit: null };
 
   constructor(state: RuntimeState, deps: RuntimeDeps = {}) {
@@ -81,6 +83,7 @@ export class TableRuntime {
     this.clock = deps.clock ?? systemClock;
     this.rng = deps.rng ?? cryptoRng;
     this.tournament = deps.tournament ?? null;
+    this.upSince = this.clock.now();
   }
 
   static create(args: { id?: string; hostId: PlayerId; hostName?: string; settings: TableSettings }, deps: RuntimeDeps = {}) {
@@ -356,6 +359,7 @@ export class TableRuntime {
   /** Cash tables: no new hands after the current one. */
   stop(by: PlayerId) {
     this.requireHost(by);
+    if (this.isTournament) throw new ActionError('the tournament runs this table');
     this.state.stopAfterHand = true;
     if (!this.handLive()) this.state.started = false;
     this.state.nextHandAt = null;
@@ -366,6 +370,7 @@ export class TableRuntime {
   /** Deal now (when the next hand doesn't start by itself). */
   dealNext(by: PlayerId) {
     this.requireHost(by);
+    if (this.isTournament) throw new ActionError('the tournament runs this table');
     if (this.handLive()) throw new ActionError('a hand is still being played');
     this.state.started = true;
     this.state.nextHandAt = this.clock.now();
@@ -373,7 +378,9 @@ export class TableRuntime {
   }
 
   pause(by: PlayerId, value: boolean) {
-    if (!this.isTournament) this.requireHost(by);
+    this.requireHost(by);
+    // Tournament tables hold through the director's gate when the tournament pauses.
+    if (this.isTournament) throw new ActionError('pause the tournament from its lobby');
     this.setPaused(value);
   }
 
@@ -414,6 +421,7 @@ export class TableRuntime {
   /** Host edit: some fields apply now, the rest at the next hand. */
   updateSettings(by: PlayerId, patch: SettingsPatch) {
     this.requireHost(by);
+    if (this.isTournament) throw new ActionError('change tournament settings in its lobby');
     const s = this.state;
     const merged = s.pendingSettings ? mergePatches(s.pendingSettings, patch) : patch;
     let result;
@@ -559,6 +567,8 @@ export class TableRuntime {
       pendingChips: 0,
       pendingStack: null,
     };
+    // A moved or newly seated player is still on their way to the table.
+    if (!this.isOnline(input.playerId)) this.offlineSince.set(input.playerId, this.clock.now());
     this.sync();
   }
 
@@ -748,9 +758,9 @@ export class TableRuntime {
     s.nextHandAt = null;
     this.applyPendingSettings();
     if (s.paused) return false;
-    if (this.tournament) {
-      if (this.tournament.gate(now) !== 'deal') return false;
-    } else if (!s.started) return false;
+    // Tournament tables also wait for their director (start time, breaks, hand-for-hand).
+    if (!s.started) return false;
+    if (this.tournament && this.tournament.gate(now) !== 'deal') return false;
 
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
     for (const seat of s.seats) {
@@ -879,7 +889,8 @@ export class TableRuntime {
 
   private offlineFor(seat: SeatState) {
     const since = this.offlineSince.get(seat.playerId);
-    return since === undefined ? (this.isOnline(seat.playerId) ? 0 : Infinity) : this.clock.now() - since;
+    if (since !== undefined) return this.clock.now() - since;
+    return this.isOnline(seat.playerId) ? 0 : this.clock.now() - this.upSince;
   }
 
   /** Game, betting and stakes for the next hand: tournament level, rotation step or table settings, with the blind schedule. */

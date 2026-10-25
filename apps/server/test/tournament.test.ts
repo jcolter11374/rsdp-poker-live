@@ -115,6 +115,8 @@ describe('tournaments on the server', () => {
     expect(state().status).toBe('seating');
     expect(env.tables.size).toBe(3);
     expect([...env.tables.values()].every((rt) => !rt.state.hand)).toBe(true);
+    // Each player is told where they sit.
+    expect(env.moves.filter((m) => m.from === '').map((m) => m.playerId).sort()).toEqual(players(14).map((p) => p.id).sort());
     env.clock.advance(MIN);
     expect(state().status).toBe('running');
     expect([...env.tables.values()].every((rt) => rt.state.hand)).toBe(true);
@@ -130,7 +132,7 @@ describe('tournaments on the server', () => {
     expect(standings(state())[0].stack).toBe(14 * 1000);
     // Tables broke as players busted, and players were moved to keep them balanced.
     expect(env.tables.size).toBe(1);
-    expect(env.moves.length).toBeGreaterThan(0);
+    expect(env.moves.filter((m) => m.from !== '').length).toBeGreaterThan(0);
   }, 60_000);
 
   it('plays a mixed-game tournament (Hold\'em, Omaha, Stud, Triple Draw, Badugi) to the end', async () => {
@@ -166,6 +168,26 @@ describe('tournaments on the server', () => {
     await env.manager.command(id, 'host', '', { type: 'startNow', by: 'someone-else' });
     expect(env.manager.view(id)!.state.status).toBe('running');
     expect(env.manager.view(id)!.state.rng).toBe(0);
+  });
+
+  it('deals the first hand to everyone at the table and gives players time to get there', async () => {
+    const env = setup();
+    const id = await env.manager.create('host', defaultSettings({ name: 'Arrivals', startingStack: 1000 }));
+    for (const p of players(3)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const [rt] = env.tables.values();
+    expect(rt.state.hand!.input.seats).toHaveLength(3);
+    // Nobody has opened the table yet; the first player gets the offline grace, not an instant fold.
+    const first = rt.state.hand!.toAct;
+    env.clock.advance(10_000);
+    expect(rt.state.hand!.toAct).toBe(first);
+    env.clock.advance(6_000);
+    expect(rt.state.hand!.phase === 'complete' || rt.state.hand!.toAct !== first).toBe(true);
+    // The tournament runs its tables: not even its host pauses, stops or changes one directly.
+    expect(() => rt.pause('host', true)).toThrow(/lobby/);
+    expect(() => rt.updateSettings('host', {})).toThrow(/lobby/);
+    expect(() => rt.stop('host')).toThrow(/tournament/);
+    expect(() => rt.dealNext('host')).toThrow();
   });
 
   it('carries on after a restart: a scheduled start still happens and tables come back', async () => {

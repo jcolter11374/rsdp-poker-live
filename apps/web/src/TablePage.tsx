@@ -11,6 +11,8 @@ import { SidePanel } from './components/SidePanel';
 import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
+import { TableStrip } from './tournament/TableStrip';
+import { useFollowSeat } from './tournament/hooks';
 
 /** Plays sounds and flashes the tab title for what changed between two views. */
 function useTableEffects(view: TableView | null) {
@@ -70,6 +72,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [muted, setMutedState] = useState(isMuted);
   const [discard, setDiscard] = useState<number[]>([]);
   useTableEffects(view);
+  useFollowSeat(tableId);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
@@ -199,11 +202,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && (
-            <div className="banner">
-              Tournament table · <a href={`/tn/${view.tournamentId}`}>Lobby and standings</a>
-            </div>
-          )}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} />}
           {cash && !view.started && (
             <div className="banner">
               {view.isHost ? 'Take a seat, send friends the invite link, then press Start game.' : 'Waiting for the host to start the game.'}
@@ -250,7 +249,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             skew={skew}
             fmt={fmt}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
-            onSeatClick={view.isHost ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
+            onSeatClick={view.isHost && cash ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
           <ActionBar view={view} fmt={fmt} skew={skew} discard={discard} clearDiscard={() => setDiscard([])} />
@@ -272,7 +271,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </section>
         <aside className="side">
-          {view.isHost && <HostPanel view={view} fmt={fmt} onSettings={() => setDialog({ kind: 'settings' })} />}
+          {view.isHost && cash && <HostPanel view={view} fmt={fmt} onSettings={() => setDialog({ kind: 'settings' })} />}
           <SidePanel view={view} fmt={fmt} />
         </aside>
       </div>
