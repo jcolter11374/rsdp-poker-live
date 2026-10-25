@@ -42,6 +42,8 @@ export interface SeatState {
   handsSinceRefill: number;
   /** Stand up once the current hand ends. */
   leaveAfterHand: boolean;
+  /** leaveAfterHand was set because the player was offline too long; coming back undoes it. */
+  released?: boolean;
   /** Chips approved to add before the next hand (rebuys, host top-ups). */
   pendingChips: number;
   /** Host set the stack to this before the next hand. */
@@ -58,6 +60,22 @@ export interface SeatRequest {
   /** Buy-in or rebuy amount. */
   amount: number;
   at: number;
+}
+
+/** Someone queued for a seat at a full table. */
+export interface WaitlistEntry {
+  playerId: PlayerId;
+  name: string;
+  /** The buy-in they will sit with. */
+  stack: number;
+  at: number;
+}
+
+/** A free seat held for the next person on the waitlist until they take it or time runs out. */
+export interface SeatOffer {
+  seat: number;
+  playerId: PlayerId;
+  expiresAt: number;
 }
 
 export interface LedgerRow {
@@ -187,6 +205,12 @@ export interface RuntimeState {
   sideGames?: SideGameState;
   /** Who rabbit hunted the last hand (they alone see its undealt cards). */
   rabbit?: { handNumber: number; playerIds: PlayerId[] };
+  /** Players queued for a seat, first come first served. Absent in older snapshots. */
+  waitlist?: WaitlistEntry[];
+  /** Free seats held for waitlisted players. */
+  offers?: SeatOffer[];
+  /** Players the host has muted in chat. */
+  muted?: PlayerId[];
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

@@ -9,8 +9,9 @@ import { BETTING_NAME, fromInput, toInput } from '../format';
 import { Modal } from './SeatDialog';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
+import { PresetsTab } from './settings/PresetsTab';
 
-type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side';
+type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'stakes', label: 'Stakes' },
@@ -18,6 +19,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'seats', label: 'Seats' },
   { id: 'rules', label: 'Rules' },
   { id: 'side', label: 'Side games' },
+  { id: 'chat', label: 'Chat & watching' },
+  { id: 'presets', label: 'Presets' },
 ];
 const BETTINGS: BettingKind[] = ['no-limit', 'pot-limit', 'fixed-limit'];
 
@@ -320,6 +323,11 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                   {chipsField('Maximum buy-in', draft.seating.maxBuyIn, (v) => set('seating', { maxBuyIn: v }), '0 = none')}
                 </div>
                 {numberField('Return with your old stack within (minutes)', draft.seating.ratholeMinutes, (v) => set('seating', { ratholeMinutes: v }), 0, 1440, '0 = off')}
+                {toggle('Waitlist when the table is full', draft.seating.waitlist, (waitlist) => set('seating', { waitlist }))}
+                <span className="hint">When a seat comes free it is held for the next person in line for a minute.</span>
+                {toggle('Seat new players at random', !!draft.seating.randomSeats, (randomSeats) => set('seating', { randomSeats }))}
+                <span className="hint">Players who sit down get a random open seat instead of the one they clicked.</span>
+                {numberField('Free the seat of a player offline for (minutes)', draft.seating.releaseOfflineSeatMinutes, (v) => set('seating', { releaseOfflineSeatMinutes: v }), 0, 1440, '0 = never. Their chips go back to the ledger.')}
               </>
             )}
             <div className="row">
@@ -329,6 +337,22 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             {toggle('Keep dealing to away players (they check or fold)', draft.seating.dealToAway, (dealToAway) => set('seating', { dealToAway }))}
           </>
         )}
+
+        {tab === 'chat' && (
+          <>
+            {toggle('Spectators can chat', draft.chat.guestChat, (guestChat) => set('chat', { guestChat }))}
+            <span className="hint">Off: only seated players and the host can chat.</span>
+            {toggle('Hide swear words in chat', draft.chat.profanityFilter, (profanityFilter) => set('chat', { profanityFilter }))}
+            <h4>Watching</h4>
+            {toggle('Let people watch', draft.spectators.allowed, (allowed) => set('spectators', { allowed }))}
+            <span className="hint">Off: people who aren't seated see the seats but not the hand.</span>
+            {toggle('Spectators see every hole card', draft.spectators.seeAllCards, (seeAllCards) => set('spectators', { seeAllCards }), !draft.spectators.allowed)}
+            {numberField('Spectators run behind by (seconds)', draft.spectators.delaySeconds, (v) => set('spectators', { delaySeconds: v }), 0, 600, 'A delay stops anyone passing on what they see. 0 = live.')}
+            {draft.spectators.seeAllCards && draft.spectators.delaySeconds === 0 && <p className="error">With no delay, anyone watching can tell a player what everyone holds.</p>}
+          </>
+        )}
+
+        {tab === 'presets' && <PresetsTab draft={draft} onApply={(next) => setDraft(next)} tournament={tournament} />}
 
         {tab === 'side' && tournament && <p className="muted">Side games are for cash tables.</p>}
         {tab === 'side' && !tournament && <SideGamesTab draft={draft} cents={cents} setModifier={setModifier} />}
@@ -355,6 +379,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             {toggle('No cap when heads up', draft.play.uncappedHeadsUp, (uncappedHeadsUp) => set('play', { uncappedHeadsUp }))}
             {toggle('Show every hand at showdown', draft.play.revealAllAtShowdown, (revealAllAtShowdown) => set('play', { revealAllAtShowdown }))}
             <span className="hint">Off: the last bettor shows first and hands that can't win are mucked. Hands are always shown when everyone is all in.</span>
+            {toggle('Trim bets nobody can call', draft.play.trimExcessBets, (trimExcessBets) => set('play', { trimExcessBets }))}
+            <span className="hint">A bet or all-in is capped at the most anyone left in the hand can put in.</span>
             {toggle('Rabbit hunting', draft.play.rabbitHunt, (rabbitHunt) => set('play', { rabbitHunt }))}
             <span className="hint">After a hand ends early, anyone can peek at the cards that would have come. Only they see them.</span>
           </>

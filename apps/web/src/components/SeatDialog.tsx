@@ -31,24 +31,27 @@ function buyInHint(view: TableView, fmt: Fmt) {
   return null;
 }
 
-export function SeatDialog({ view, seat, fmt, onClose }: { view: TableView; seat: number; fmt: Fmt; onClose: () => void }) {
+/** Sit down (or ask to) in a seat; with `waitlist`, queue for the next free seat instead. */
+export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { view: TableView; seat: number; fmt: Fmt; onClose: () => void; waitlist?: boolean }) {
   const cents = view.settings.stakes.centsMode;
   const [name, setName] = useState(savedName);
   const [stack, setStack] = useState(toInput(cents, defaultStack(view)));
   const [error, setError] = useState('');
   const hint = buyInHint(view, fmt);
   const approval = view.settings.seating.requireApproval && !view.isHost;
+  const random = !!view.settings.seating.randomSeats && !view.isHost && !view.offers.some((o) => o.playerId === view.me.playerId);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     saveName(name);
-    call('seat:request', { seat, name, stack: fromInput(cents, stack) })
+    const amount = fromInput(cents, stack);
+    (waitlist ? call('waitlist:join', { name, stack: amount }) : call('seat:request', { seat, name, stack: amount }))
       .then(onClose)
       .catch((err: Error) => setError(err.message));
   };
 
   return (
-    <Modal title={`Take seat ${seat + 1}`} onClose={onClose}>
+    <Modal title={waitlist ? 'Join the waitlist' : random ? 'Take a seat' : `Take seat ${seat + 1}`} onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <label>
           Name
@@ -59,13 +62,15 @@ export function SeatDialog({ view, seat, fmt, onClose }: { view: TableView; seat
           <input type="number" min={0} step={cents ? 0.01 : 1} value={stack} onChange={(e) => setStack(+e.target.value)} />
         </label>
         {hint && <p className="muted">{hint}</p>}
+        {waitlist && <p className="muted">When a seat comes free it is held for you for a minute. You'll see a Take it button.</p>}
+        {random && !waitlist && <p className="muted">This table seats new players at random.</p>}
         {approval && <p className="muted">The host approves new players.</p>}
         {error && <p className="error">{error}</p>}
         <div className="row">
           <button type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="primary">{approval ? 'Ask to sit' : 'Sit down'}</button>
+          <button className="primary">{waitlist ? 'Join' : approval ? 'Ask to sit' : 'Sit down'}</button>
         </div>
       </form>
     </Modal>
@@ -118,6 +123,10 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const tournament = view.mode === 'tournament';
   const act = (p: Promise<unknown>) => p.then(onClose).catch((err: Error) => setError(err.message));
+  const held = new Set([...view.offers.map((o) => o.seat), ...view.requests.filter((r) => r.kind === 'seat').map((r) => r.seat)]);
+  const empty = view.seats.flatMap((s, i) => (s || held.has(i) ? [] : [i]));
+  const inHand = seat.inHand && handLive;
+  const muted = view.muted.includes(seat.playerId);
 
   return (
     <Modal title={seat.name} onClose={onClose}>
@@ -140,8 +149,27 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
             <button>{handLive ? 'Set after this hand' : 'Set stack'}</button>
           </form>
         )}
+        {!tournament && empty.length > 0 && (
+          <label>
+            Move to
+            <select
+              value=""
+              disabled={inHand}
+              onChange={(e) => e.target.value !== '' && act(call('host:move', { playerId: seat.playerId, seat: Number(e.target.value) }))}
+            >
+              <option value="">{inHand ? 'After this hand…' : 'Pick an empty seat'}</option>
+              {empty.map((i) => (
+                <option key={i} value={i}>
+                  Seat {i + 1}
+                </option>
+              ))}
+            </select>
+            {inHand && <span className="hint">Players can move once the hand they're in is over.</span>}
+          </label>
+        )}
         <div className="row wrap">
           {!seat.sittingOut && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
+          {!isMe && <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>}
           {!isMe && !tournament && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
           {!isMe && !tournament && (
             <button className="danger" onClick={() => confirm(`Remove ${seat.name} from the table?`) && act(call('host:kick', { playerId: seat.playerId }))}>

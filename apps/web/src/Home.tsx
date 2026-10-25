@@ -4,6 +4,7 @@ import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
+import { presetSettings, usePresets } from './presets';
 import { TournamentList } from './tournament/TournamentList';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
@@ -16,6 +17,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [turnSeconds, setTurnSeconds] = useState(30);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const presets = usePresets();
+  const [presetName, setPresetName] = useState('');
+  const preset = presets.find((p) => p.name === presetName) ?? null;
   const spec = getVariant(gameId);
   const stud = spec.family === 'stud';
 
@@ -28,7 +32,14 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
     e.preventDefault();
     setBusy(true);
     saveName(name);
-    const settings: SettingsPatch = {
+    let fromPreset: SettingsPatch | null = null;
+    try {
+      fromPreset = preset && (presetSettings(preset) as SettingsPatch);
+    } catch (err) {
+      setBusy(false);
+      return setError((err as Error).message);
+    }
+    const quick: SettingsPatch = {
       table: { name: `${name.trim() || 'Friends'}'s table`, maxSeats: Math.min(9, spec.maxPlayers) },
       game: { gameId, betting },
       // Stud has no blinds: the ante and bring-in start the pot. Limit bets are the big blind and twice it.
@@ -38,6 +49,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       },
       timing: { decisionSeconds: turnSeconds },
     };
+    const settings: SettingsPatch = fromPreset ? { ...fromPreset, table: { ...fromPreset.table, name: quick.table!.name, mode: 'cash' } } : quick;
     call<{ tableId: string }>('table:create', { settings })
       .then((res) => onCreated(res.tableId))
       .catch((err: Error) => setError(err.message))
@@ -56,50 +68,67 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
           Your name
           <input value={name} maxLength={20} required onChange={(e) => setName(e.target.value)} />
         </label>
-        <div className="row">
+        {presets.length > 0 && (
           <label>
-            Game
-            <select value={gameId} onChange={(e) => pickGame(e.target.value)}>
-              {VARIANT_LIST.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
+            Start from
+            <select value={presetName} onChange={(e) => setPresetName(e.target.value)}>
+              <option value="">A quick setup (below)</option>
+              {presets.map((p) => (
+                <option key={p.name} value={p.name}>
+                  Preset: {p.name}
                 </option>
               ))}
             </select>
           </label>
-          <label>
-            Betting
-            <select value={betting} onChange={(e) => setBetting(e.target.value as BettingKind)}>
-              {(['no-limit', 'pot-limit', 'fixed-limit'] as const).map((b) => (
-                <option key={b} value={b}>
-                  {BETTING_NAME[b]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="row">
-          {stud ? (
+        )}
+        {!preset && (
+          <>
+            <div className="row">
+              <label>
+                Game
+                <select value={gameId} onChange={(e) => pickGame(e.target.value)}>
+                  {VARIANT_LIST.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Betting
+                <select value={betting} onChange={(e) => setBetting(e.target.value as BettingKind)}>
+                  {(['no-limit', 'pot-limit', 'fixed-limit'] as const).map((b) => (
+                    <option key={b} value={b}>
+                      {BETTING_NAME[b]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="row">
+              {stud ? (
+                <label>
+                  Ante
+                  <input type="number" min={0} value={ante} onChange={(e) => setAnte(+e.target.value)} />
+                </label>
+              ) : (
+                <label>
+                  Small blind
+                  <input type="number" min={0} value={smallBlind} onChange={(e) => setSmallBlind(+e.target.value)} />
+                </label>
+              )}
+              <label>
+                {stud ? 'Small bet' : 'Big blind'}
+                <input type="number" min={1} value={bigBlind} onChange={(e) => setBigBlind(+e.target.value)} />
+              </label>
+            </div>
             <label>
-              Ante
-              <input type="number" min={0} value={ante} onChange={(e) => setAnte(+e.target.value)} />
+              Seconds to act (0 for no clock)
+              <input type="number" min={0} max={600} value={turnSeconds} onChange={(e) => setTurnSeconds(+e.target.value)} />
             </label>
-          ) : (
-            <label>
-              Small blind
-              <input type="number" min={0} value={smallBlind} onChange={(e) => setSmallBlind(+e.target.value)} />
-            </label>
-          )}
-          <label>
-            {stud ? 'Small bet' : 'Big blind'}
-            <input type="number" min={1} value={bigBlind} onChange={(e) => setBigBlind(+e.target.value)} />
-          </label>
-        </div>
-        <label>
-          Seconds to act (0 for no clock)
-          <input type="number" min={0} max={600} value={turnSeconds} onChange={(e) => setTurnSeconds(+e.target.value)} />
-        </label>
-        <p className="muted">{spec.rules}</p>
+            <p className="muted">{spec.rules}</p>
+          </>
+        )}
         {error && <p className="error">{error}</p>}
         <button className="primary big" disabled={busy}>
           Create table

@@ -9,6 +9,7 @@ import { usePortrait } from './layout';
 import { chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { Table, useNow } from './components/Table';
 import { HandExtras } from './components/table/HandExtras';
+import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
@@ -95,7 +96,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -358,6 +359,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
+          <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">
@@ -453,7 +455,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </Sheet>
       )}
 
-      {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'player' && <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
