@@ -38,6 +38,9 @@ function diff(prev: unknown, next: unknown): unknown {
 
 const maxSeatsFor = (gameIds: string[]) => Math.min(...gameIds.map((id) => getVariant(id).maxPlayers));
 
+/** A stud ante of about a quarter of the small bet (1 at 1/2 limit, the same as a new table), never below one chip. */
+export const defaultStudAnte = (stakes: TableSettings['stakes']) => Math.max(1, Math.round((stakes.smallBet || stakes.bigBlind) / 4));
+
 export function SettingsDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
   const [draft, setDraft] = useState<TableSettings>(() => structuredClone(view.settings));
   const [tab, setTab] = useState<Tab>('game');
@@ -63,11 +66,16 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
 
   const pickGame = (gameId: string) => {
     const spec = getVariant(gameId);
-    setDraft((d) => ({
-      ...d,
-      game: { ...d.game, gameId, betting: spec.defaultBetting },
-      table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
-    }));
+    setDraft((d) => {
+      // Stud is meant to be played with antes; without one the pot starts with the bring-in alone.
+      const needsAnte = spec.forcedBets === 'ante-bring-in' && d.stakes.ante === 0;
+      return {
+        ...d,
+        game: { ...d.game, gameId, betting: spec.defaultBetting },
+        table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
+        stakes: needsAnte ? { ...d.stakes, ante: defaultStudAnte(d.stakes), anteType: 'per-player' } : d.stakes,
+      };
+    });
   };
 
   const save = () => {

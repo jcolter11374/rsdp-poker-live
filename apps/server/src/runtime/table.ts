@@ -422,6 +422,7 @@ export class TableRuntime {
     const sg = this.sideGames();
     const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
     if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
+    this.logBounty(hand, 0);
 
     const round = sg.nit;
     if (!round || !this.nitStillOn()) return;
@@ -432,6 +433,18 @@ export class TableRuntime {
     round.holders = round.holders.filter((id) => !cleared.has(id));
     for (const id of cleared) this.log(`${this.nameOf(id)} is off the nit`);
     if (round.holders.length === 1) this.nitPays(round.holders[0], 'is the last nit');
+  }
+
+  /** A line in the table log for each 7-2 bounty paid, so the whole table sees it. */
+  private logBounty(hand: HandState, fromEvent: number) {
+    const collected = new Map<number, number>();
+    for (const e of hand.events.slice(fromEvent)) {
+      if (e.t === 'transfer' && e.kind === 'bounty-72' && e.to !== 'house') collected.set(e.to, (collected.get(e.to) ?? 0) + e.amount);
+    }
+    for (const [seatNo, amount] of collected) {
+      const playerId = hand.seats.find((x) => x.seat === seatNo)?.playerId;
+      if (playerId && amount > 0) this.log(`${this.nameOf(playerId)} wins with 7-2 and collects ${amount} in bounties`);
+    }
   }
 
   /** Starts a Nit game round when enough opted-in players are dealt in. */
@@ -479,36 +492,39 @@ export class TableRuntime {
     return false;
   }
 
-  /** The loser pays the prize to every other participant (as far as their stack goes) and the round ends. */
+  /**
+   * The loser pays the full prize to every other participant and the round ends.
+   * The prize is guaranteed, as PokerNow's escrow guarantees it: what their
+   * stack can't cover is added to their buy-in, as chips brought from outside
+   * and paid straight on, so settle-up collects it.
+   */
   private nitPays(loserId: PlayerId, why: string) {
     const sg = this.sideGames();
     const round = sg.nit!;
     sg.nit = null;
     const loser = this.seatOf(loserId);
-    const payees = loser ? round.participants.filter((id) => id !== loserId).flatMap((id) => this.seatOf(id) ?? []) : [];
-    // Short of the full prize, the loser's stack is split evenly (odd chips to the first payees).
-    const share = payees.length ? Math.min(round.prize, Math.floor(loser!.stack / payees.length)) : 0;
-    let odd = share < round.prize ? loser!.stack - share * payees.length : 0;
-    let paidTotal = 0;
+    if (!loser) return;
+    const payees = round.participants.filter((id) => id !== loserId).flatMap((id) => this.seatOf(id) ?? []);
+    const owed = round.prize * payees.length;
+    const fromStack = Math.min(loser.stack, owed);
+    const shortfall = owed - fromStack;
+    loser.stack -= fromStack;
+    if (shortfall > 0) this.ledgerEdit(loserId, shortfall);
     for (const to of payees) {
-      const amount = share + (odd > 0 ? 1 : 0);
-      if (odd > 0) odd--;
-      if (amount <= 0) continue;
-      loser!.stack -= amount;
       // A payee in a live hand gets the chips when it ends, or finishing the hand would overwrite them.
-      if (this.inHand(to.playerId)) to.pendingChips += amount;
-      else to.stack += amount;
+      if (this.inHand(to.playerId)) to.pendingChips += round.prize;
+      else to.stack += round.prize;
       if (to.sitOutReason === 'busted') {
         to.sittingOut = false;
         to.sitOutReason = null;
       }
-      paidTotal += amount;
     }
-    if (loser && loser.stack === 0 && loser.pendingChips === 0 && !loser.leaveAfterHand) {
+    if (loser.stack === 0 && loser.pendingChips === 0 && !loser.leaveAfterHand) {
       loser.sittingOut = true;
       loser.sitOutReason = 'busted';
     }
-    this.log(`${this.nameOf(loserId)} ${why} and pays ${paidTotal} in all (Nit game)`);
+    const extra = shortfall > 0 ? ` (${shortfall} of it added to their buy-in)` : '';
+    this.log(`${this.nameOf(loserId)} ${why} and pays ${owed} in all${extra} (Nit game)`);
   }
 
   pause(by: PlayerId, value: boolean) {
@@ -811,6 +827,9 @@ export class TableRuntime {
   }
 
   voteRunItTwice(playerId: PlayerId, yes: boolean) {
+    // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change.
+    const current = this.state.hand;
+    if (!current || current.phase !== 'rit-vote') return;
     const hand = this.liveHandFor(playerId);
     engine.voteRunItTwice(hand, this.seatOf(playerId)!.seat, yes);
     this.afterEngine();
@@ -822,7 +841,10 @@ export class TableRuntime {
     if (!hand || !seat || !hand.seats.some((x) => x.seat === seat.seat)) throw new ActionError('you were not in the last hand');
     const from = hand.events.length;
     engine.show(hand, seat.seat, cardIndexes);
-    if (hand.phase === 'complete' && this.state.handStartedAt === null) this.applyLateTransfers(hand, from);
+    if (hand.phase === 'complete' && this.state.handStartedAt === null) {
+      this.applyLateTransfers(hand, from);
+      this.logBounty(hand, from);
+    }
     this.onChange();
   }
 
