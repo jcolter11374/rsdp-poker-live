@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, foundation]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rsdp
+          POSTGRES_PASSWORD: rsdp
+          POSTGRES_DB: rsdp_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U rsdp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Engine (including the hand fuzzer), tournament director, and server.
+      # The Postgres tests run against the service above; the rest use PGlite.
+      - run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://rsdp:rsdp@localhost:5432/rsdp_test
+      - run: npm run build
+
+  smoke:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start the server
+        run: |
+          PGLITE_DIR="$RUNNER_TEMP/pglite" PORT=3001 npm start > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:3001/api/health && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/server.log"; exit 1
+      - run: node e2e/smoke.mjs
+        env:
+          BASE_URL: http://localhost:3001
+      - name: Server log
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshots
+          path: e2e/out/
+          if-no-files-found: ignore

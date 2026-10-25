@@ -4,3 +4,4 @@ dist
 *.log
 .claude/
 .data/
+e2e/out/
