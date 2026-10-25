@@ -7,7 +7,9 @@ import {
   MAX_CHIPS,
   payoutPreset,
   presetStructure,
+  tick,
   validateStructure,
+  type Command,
   type StructureRow,
   type TournamentSettings,
   type TournamentState,
@@ -30,6 +32,26 @@ const create = (overrides: Record<string, unknown> = {}) => createTournament({ i
 
 const update = (state: TournamentState, changes: Record<string, unknown>) =>
   apply(state, { type: 'updateSettings', by: 'host', settings: changes as Partial<TournamentSettings> }, T0).state;
+
+const act = (state: TournamentState, cmd: Command) => apply(state, cmd, T0);
+const entryOf = (state: TournamentState, playerId: string) => state.entries.find((e) => e.playerId === playerId)!;
+
+/** Three players at one table, started at T0. */
+function running(overrides: Record<string, unknown> = {}) {
+  let state = create(overrides);
+  for (const p of ['p0', 'p1', 'p2']) state = act(state, { type: 'register', playerId: p, displayName: p }).state;
+  return act(state, { type: 'startNow', by: 'host' }).state;
+}
+
+/** Plays one hand in which `loser` loses their whole stack to `winner`. */
+function bust(state: TournamentState, loser: string, winner: string) {
+  const t = state.tables[0];
+  const start = Object.fromEntries(state.entries.map((e) => [e.playerId, e.stack]));
+  const end = { ...start, [winner]: start[winner] + start[loser], [loser]: 0 };
+  const handNumber = t.lastHandNumber + 1;
+  state = act(state, { type: 'handStarted', tableId: t.id, handNumber }).state;
+  return act(state, { type: 'handResult', result: { tableId: t.id, handNumber, startStacks: start, endStacks: end, knockedOutBy: { [loser]: [winner] } } }).state;
+}
 
 /** The director's refusal, or null when it accepted. Anything other than a DirectorError fails the test. */
 function refusal(fn: () => unknown): string | null {
@@ -105,8 +127,33 @@ describe('rebuy and add-on chips', () => {
     }
   });
 
-  it('ignores the chip amount while rebuys and add-ons are off', () => {
-    expect(refusal(() => create({ ...rebuy(0.5, 0), ...addOn(0.5, 0) }))).toBeNull();
+  it('checks the chip amount even while rebuys and add-ons are off', () => {
+    expect(refusal(() => create(rebuy(0.5, 0)))).toMatch('Rebuy chips');
+    expect(refusal(() => create(addOn(1e300, 0)))).toMatch('Add-on chips');
+    expect(refusal(() => create({ ...rebuy(1000, 0), ...addOn(1000, 0) }))).toBeNull();
+  });
+
+  // Turning rebuys or add-ons off leaves an open offer or a pending request that still pays out.
+  it('keeps chip amounts whole when the host turns rebuys off with an offer open', () => {
+    let state = running(rebuy(1000, 2));
+    state = bust(state, 'p1', 'p0');
+    expect(entryOf(state, 'p1').status).toBe('rebuy-offer');
+    expect(refusal(() => update(state, rebuy(0.5, 0)))).toMatch('Rebuy chips');
+    state = update(state, rebuy(500, 0));
+    state = act(state, { type: 'rebuy', playerId: 'p1' }).state;
+    expect(entryOf(state, 'p1').stack).toBe(500);
+  });
+
+  it('keeps chip amounts whole when the host turns add-ons off with a request pending', () => {
+    let state = running({ addOn: { max: 1, chips: 1000, approval: true } });
+    state = tick(state, T0 + 10 * MIN).state;
+    const asked = act(state, { type: 'addOn', playerId: 'p1' });
+    expect(asked.events.map((e) => e.type)).toContain('requestPending');
+    state = asked.state;
+    expect(refusal(() => update(state, addOn(1e300, 0)))).toMatch('Add-on chips');
+    state = update(state, addOn(250, 0));
+    state = act(state, { type: 'approve', by: 'host', requestId: state.requests[0].id }).state;
+    expect(entryOf(state, 'p1').stack).toBe(1250);
   });
 
   it('refuses fractional chips through updateSettings too', () => {

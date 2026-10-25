@@ -132,13 +132,13 @@ export function validateSettings(s: TournamentSettings): string[] {
   if (s.stopRotationAtLevel != null && !isLimit(s.stopRotationAtLevel)) errors.push('Rotation must stop at level 1 or later');
   errors.push(...validateStructure(s.structure, { maxRebuys: rebuy.max }).errors);
   if (!isWhole(rebuy.max, 0, Number.MAX_SAFE_INTEGER)) errors.push('Rebuys per player must be a whole number');
-  if (rebuy.max > 0 && !isWhole(rebuy.chips, 1, MAX_CHIPS)) errors.push(`Rebuy chips must be a whole number from 1 to ${CHIPS_LABEL}`);
+  // Checked even while off: an open rebuy offer or a pending request still pays these out.
+  if (!isWhole(rebuy.chips, 1, MAX_CHIPS)) errors.push(`Rebuy chips must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (!isWhole(addOn.chips, 1, MAX_CHIPS)) errors.push(`Add-on chips must be a whole number from 1 to ${CHIPS_LABEL}`);
   if (!isWhole(rebuy.offerSeconds, 1, 300)) errors.push('Rebuy offer window must be 1-300 seconds');
   if (!isWhole(addOn.max, 0, Number.MAX_SAFE_INTEGER)) errors.push('Add-ons per player must be a whole number');
-  if (addOn.max > 0) {
-    if (!isWhole(addOn.chips, 1, MAX_CHIPS)) errors.push(`Add-on chips must be a whole number from 1 to ${CHIPS_LABEL}`);
-    if (!Array.isArray(s.structure) || !s.structure.some((r) => r?.kind === 'break' && r.addOn)) errors.push('Add-ons are on, but no break offers them');
-  }
+  if (addOn.max > 0 && (!Array.isArray(s.structure) || !s.structure.some((r) => r?.kind === 'break' && r.addOn)))
+    errors.push('Add-ons are on, but no break offers them');
   // All the chips one entry can be given, so stacks stay safe integers in the engine.
   const extra = (b: { max: number; chips: number }) => (b.max > 0 && isWhole(b.max, 0, Number.MAX_SAFE_INTEGER) && isWhole(b.chips, 1, MAX_CHIPS) ? b.max * b.chips : 0);
   if (isWhole(s.startingStack, 1, MAX_CHIPS) && s.startingStack + extra(rebuy) + extra(addOn) > MAX_CHIPS)
