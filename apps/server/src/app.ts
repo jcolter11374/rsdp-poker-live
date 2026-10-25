@@ -502,9 +502,17 @@ export function createApp(deps: AppDeps = {}) {
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
+          // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
+          if (input?.practice) {
+            try {
+              await startPractice(rt, input.practice);
+            } catch (e) {
+              rt.dispose();
+              throw e;
+            }
+          }
           await store.createTable(rt.state);
           attach(rt);
-          if (input?.practice) await startPractice(rt, input.practice);
           return { tableId: rt.state.id };
         },
         log,

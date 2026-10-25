@@ -391,7 +391,7 @@ export class TableRuntime {
       row.buyIn += r.amount;
       row.name = r.name;
     } else {
-      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0 };
+      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(this.isBot(r.playerId) ? { bot: true as const } : {}) };
     }
     delete this.state.departures[r.playerId];
     this.log(`${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
@@ -808,6 +808,7 @@ export class TableRuntime {
     this.requireHost(by);
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
+    if (this.isBot(playerId)) throw new ActionError('remove the bot instead');
     seat.sittingOut = true;
     seat.sitOutReason = 'host';
     this.sync();
@@ -1487,6 +1488,10 @@ export class TableRuntime {
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
     for (const seat of s.seats) {
       if (seat && seat.stack === 0 && !this.isTournament && !seat.sittingOut) {
+        if (this.isBot(seat.playerId)) {
+          this.botBusted(seat);
+          continue;
+        }
         seat.sittingOut = true;
         seat.sitOutReason = 'busted';
       }
@@ -1503,7 +1508,7 @@ export class TableRuntime {
     if (candidates.length < 2) return false;
     // Bots don't play on by themselves at a cash table: someone has to be there.
     const here = (x: SeatState) => !this.isBot(x.playerId) && !(offline(x) && this.offlineFor(x) > s.settings.seating.offlineGraceSeconds * 1000);
-    if (!this.isTournament && !candidates.some(here)) return false;
+    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return false;
     // Nobody has played yet (or a game is restarting): deal everyone in free.
     if (candidates.filter((x) => !x.isNew).length < 2) for (const x of candidates) x.isNew = false;
 

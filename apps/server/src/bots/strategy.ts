@@ -38,8 +38,10 @@ export const botTuning = {
   /** ...once at least this many are done. */
   minSims: 20,
   maxSims: 400,
-  /** Deals tried for each way of drawing. */
-  drawSims: 24,
+  /** Deals tried for each way of drawing... */
+  drawSims: 16,
+  /** ...and when it only sizes up the hand for a bet. */
+  drawBetSims: 8,
 };
 
 export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand): BotMove {
@@ -50,7 +52,7 @@ export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand): BotMov
   }
   const legal = engine.legalActions(hand, seat);
   if (!legal) throw new Error('not the bot’s turn');
-  const equity = view.drawsLeft > 0 ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand).equity, DRAW_OPPONENTS, view.opponents.length) : estimateEquity(view, rand);
+  const equity = view.drawsLeft > 0 ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, botTuning.drawBetSims).equity, DRAW_OPPONENTS, view.opponents.length) : estimateEquity(view, rand);
   return { kind: 'act', action: decide(hand, seat, legal, equity, view.opponents.length, rand) };
 }
 
@@ -216,10 +218,10 @@ function scaleToField(equity: number, from: number, to: number) {
  * Draw games: tries every allowed set of cards to throw away (with the same
  * random deals for each, so they compare fairly) and keeps the best.
  */
-export function bestDraw(view: Situation, maxDiscard: number, rand: Rand): { discard: number[]; equity: number } {
+export function bestDraw(view: Situation, maxDiscard: number, rand: Rand, sims = botTuning.drawSims): { discard: number[]; equity: number } {
   const cards = view.mine.length;
   const opponents = view.opponents.slice(0, DRAW_OPPONENTS);
-  const seeds = Array.from({ length: botTuning.drawSims }, () => Math.floor(rand() * 2 ** 31));
+  const seeds = Array.from({ length: sims }, () => Math.floor(rand() * 2 ** 31));
   let best = { discard: [] as number[], equity: -1 };
   for (let mask = 0; mask < 1 << cards; mask++) {
     const discard = [...Array(cards).keys()].filter((i) => mask & (1 << i));
@@ -273,7 +275,7 @@ function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: n
 
   const odds = legal.callAmount / (pot + legal.callAmount);
   const margin = legal.callAmount >= me.stack * 0.5 ? 0.08 : 0.03;
-  if (mayRaise && (equity >= 0.7 || strength >= 2.2) && rand() < 0.8) return raise(0.75);
+  if (mayRaise && (equity >= 0.8 || ((equity >= 0.7 || strength >= 2.2) && rand() < 0.8))) return raise(0.75);
   if (equity >= odds + margin) return { type: 'call' };
   return { type: 'fold' };
 }

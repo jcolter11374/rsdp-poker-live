@@ -47,7 +47,7 @@ function play(rt: TableRuntime, clock: FakeClock, hands: number) {
 describe('practice bots', () => {
   // Quick, rough bots: these tests are about the table, not how well they play.
   const tuning = { ...botTuning };
-  beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 3 }));
+  beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 3, drawBetSims: 2 }));
   afterAll(() => Object.assign(botTuning, tuning));
 
   it('are named after their owner, marked in the view, and seated in the first free seat', () => {
@@ -228,5 +228,42 @@ describe('bot strategy', () => {
     const pat = chooseMove(bd, bd.toAct!, seededRand(3));
     expect(bd.toAct).toBe(0);
     expect(pat).toEqual({ kind: 'draw', discard: [] });
+  });
+});
+
+describe('bots and the money', () => {
+  it('stay out of the ledger players see, and the host cannot sit one out', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    const rt = TableRuntime.create({ id: 't3', hostId: 'host', settings }, { clock, rng: seeded() });
+    rt.connect('host');
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const bot = rt.addBot('host', { ownerName: 'Host' });
+    expect(rt.state.ledger[bot]?.bot).toBe(true);
+    expect(tableView(rt, 'host', 0).ledger.map((r) => r.playerId)).toEqual(['host']);
+    expect(() => rt.hostSitOut('host', bot)).toThrow(/remove the bot/);
+    // A bot set to nothing buys back in at the next deal instead of sitting out for good.
+    rt.addBot('host', { ownerName: 'Host' });
+    rt.setStack('host', bot, 0);
+    rt.start('host');
+    expect(rt.seatOf(bot)).toMatchObject({ stack: expect.any(Number), sittingOut: false });
+    expect(rt.state.hand?.seats.some((x) => x.playerId === bot)).toBe(true);
+  });
+
+  it('a table of people only still deals to everyone away when it deals to away players', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.seating.dealToAway = true;
+    const rt = TableRuntime.create({ id: 't4', hostId: 'host', settings }, { clock, rng: seeded() });
+    rt.connect('host');
+    rt.connect('a');
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    rt.disconnect('host');
+    rt.disconnect('a');
+    clock.advance(60_000);
+    rt.start('host');
+    expect(rt.state.handNumber).toBe(1);
   });
 });

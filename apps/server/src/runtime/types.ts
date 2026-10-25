@@ -87,6 +87,8 @@ export interface LedgerRow {
   buyIn: number;
   /** Everything taken away when leaving. */
   cashOut: number;
+  /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
+  bot?: true;
 }
 
 export interface ChatMessage {
