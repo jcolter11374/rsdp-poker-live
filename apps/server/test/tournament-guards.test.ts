@@ -57,6 +57,22 @@ function shoveAndCall(rt: TableRuntime) {
   }
 }
 
+/** A scheduled event with its seats drawn at two tables, saved and stopped as a server would on shutdown. */
+async function seatedThenStopped() {
+  const first = setup();
+  const startAt = first.clock.now() + 5 * MIN;
+  const id = await first.manager.create('host', defaultSettings({ name: 'Reload', start: { kind: 'scheduled', startAt }, startingStack: 1000, seatsPerTable: 6 }));
+  await registerAll(first, id, 8);
+  first.clock.advance(4 * MIN + 1000);
+  const state = first.manager.view(id)!.state;
+  expect(state.status).toBe('seating');
+  expect(first.tables.size).toBe(2);
+  await first.manager.flush();
+  first.manager.dispose();
+  for (const rt of first.tables.values()) rt.dispose();
+  return { first, id, addresses: state.tables.map((t) => tableAddress(t.id)) };
+}
+
 describe('tournament manager guards', () => {
   it('refuses host edits naming a game it cannot deal at this table size', async () => {
     const env = setup();
@@ -182,4 +198,71 @@ describe('tournament manager guards', () => {
     expect(env.errors).toEqual([]);
     expect(standings(state())[0].stack).toBe(7000);
   }, 60_000);
+
+  it('a restart that fails to load a table leaves nothing half-loaded, and the next visit loads it whole', async () => {
+    const { first, id, addresses } = await seatedThenStopped();
+    // The second table's snapshot fails to load once (the database was briefly unreachable).
+    const snapshots = new Map(first.snapshots);
+    const get = snapshots.get.bind(snapshots);
+    let failures = 1;
+    snapshots.get = (key: string) => {
+      if (key === addresses[1] && failures-- > 0) throw new Error('storage is down');
+      return get(key);
+    };
+    const second = setup({ store: first.store, snapshots, clock: first.clock });
+    await second.manager.resumeAll();
+    expect(second.errors).toHaveLength(1);
+    expect(second.manager.view(id)).toBeNull();
+    expect(second.tables.size).toBe(0);
+    expect(second.manager.tournamentOf(addresses[0])).toBeNull();
+
+    expect(await second.manager.loadTableOwner(addresses[1])).toBe(id);
+    expect([...second.tables.keys()].sort()).toEqual([...addresses].sort());
+    second.clock.advance(MIN);
+    expect(second.manager.view(id)!.state.status).toBe('running');
+    expect([...second.tables.values()].every((rt) => rt.state.hand)).toBe(true);
+    expect(chipsInPlay(second)).toBe(8000);
+  });
+
+  it('a table that fails to resume does not stop the others or the tournament clock', async () => {
+    const { first, id, addresses } = await seatedThenStopped();
+    // The first table's first save after the restart fails, so its resume throws.
+    const snapshots = new Map(first.snapshots);
+    const set = snapshots.set.bind(snapshots);
+    let failures = 1;
+    snapshots.set = (key: string, value: string) => {
+      if (key === addresses[0] && failures-- > 0) throw new Error('disk full');
+      return set(key, value);
+    };
+    const second = setup({ store: first.store, snapshots, clock: first.clock });
+    await second.manager.resumeAll();
+    expect(second.errors.map((x) => (x as [string])[0])).toEqual([expect.stringMatching(/resum/)]);
+    expect(second.tables.size).toBe(2);
+    second.clock.advance(MIN);
+    expect(second.manager.view(id)!.state.status).toBe('running');
+    expect([...second.tables.values()].every((rt) => rt.state.hand)).toBe(true);
+  });
+
+  it('never arms a timer for a wake time that is not a number', async () => {
+    const first = setup();
+    const id = await first.manager.create('host', defaultSettings({ name: 'Wake', start: { kind: 'scheduled', startAt: first.clock.now() + 10 * MIN } }));
+    await registerAll(first, id, 2);
+    await first.manager.flush();
+    first.manager.dispose();
+    // A saved setting the director cannot do arithmetic with.
+    const saved = (await first.store.load(id))!;
+    await first.store.save({ ...saved.state, settings: { ...saved.state.settings, seatLeadSeconds: 'soon' as unknown as number } }, saved.nextId);
+
+    const second = setup({ store: first.store, snapshots: first.snapshots, clock: first.clock });
+    const delays: number[] = [];
+    const arm = second.clock.setTimeout;
+    second.clock.setTimeout = (fn, ms) => {
+      delays.push(ms);
+      return arm(fn, ms);
+    };
+    await second.manager.resumeAll();
+    expect(delays.filter((ms) => !Number.isFinite(ms))).toEqual([]);
+    expect(second.errors.map((x) => (x as [string])[0])).toEqual([expect.stringMatching(/wake/)]);
+    expect(second.manager.view(id)!.state.status).toBe('registering');
+  });
 });

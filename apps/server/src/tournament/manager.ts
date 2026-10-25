@@ -246,6 +246,11 @@ export class TournamentManager {
     live.timer = null;
     const at = nextWakeAt(live.state);
     if (at === null) return;
+    // A setting that is not a number would make a timer that fires at once and re-arms forever.
+    if (!Number.isFinite(at)) {
+      this.deps.log(`tournament ${live.state.id}: next wake time is ${at}, so its clock is not armed`);
+      return;
+    }
     const wait = Math.min(Math.max(0, at - this.clock.now()), MAX_SLEEP_MS);
     live.timer = this.clock.setTimeout(() => {
       live.timer = null;
@@ -256,21 +261,36 @@ export class TournamentManager {
 
   /** Takes a tournament into memory: its tables come back from their snapshots. */
   private async adopt(state: TournamentState, nextId: string | null): Promise<Live> {
+    // Every snapshot loads before anything is mounted, so a failed load leaves nothing half-built to be found later.
+    const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
+    const already = this.live.get(state.id);
+    if (already) return already;
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [] };
+    try {
+      state.tables.forEach((t, i) => {
+        const saved = snapshots[i];
+        if (saved) this.mount(live, t.id, new TableRuntime(saved, this.runtimeDeps(live, t.id)), Promise.resolve());
+        else {
+          // No snapshot yet (the server stopped right after seating): rebuild the seats from the director.
+          const seats = t.seats.flatMap((entryId, seat) => {
+            const e = entryId ? state.entries.find((x) => x.id === entryId) : undefined;
+            return e ? [{ tableId: t.id, seat, entryId: e.id, playerId: e.playerId, displayName: e.displayName, stack: e.stack }] : [];
+          });
+          this.openTable(live, t.id, seats);
+        }
+      });
+    } catch (e) {
+      for (const rt of live.tables.values()) this.unmount(rt);
+      throw e;
+    }
     this.live.set(state.id, live);
-    for (const t of state.tables) {
-      const saved = await this.deps.tables.loadTable(tableAddress(t.id));
-      if (saved) this.mount(live, t.id, new TableRuntime(saved, this.runtimeDeps(live, t.id)), Promise.resolve());
-      else {
-        // No snapshot yet (the server stopped right after seating): rebuild the seats from the director.
-        const seats = t.seats.flatMap((entryId, seat) => {
-          const e = entryId ? state.entries.find((x) => x.id === entryId) : undefined;
-          return e ? [{ tableId: t.id, seat, entryId: e.id, playerId: e.playerId, displayName: e.displayName, stack: e.stack }] : [];
-        });
-        this.openTable(live, t.id, seats);
+    for (const [tableId, rt] of live.tables) {
+      try {
+        rt.resume();
+      } catch (e) {
+        this.deps.log(`tournament ${state.id}: resuming table ${tableId} failed`, e);
       }
     }
-    for (const rt of live.tables.values()) rt.resume();
     // Catch up on anything that came due while the server was down.
     const at = nextWakeAt(live.state);
     if (at !== null && at <= this.clock.now()) this.dispatchQuietly(live, (s, now) => tick(s, now), 'catch-up tick');
@@ -318,6 +338,12 @@ export class TournamentManager {
     live.tables.set(tableId, rt);
     this.tableOwners.set(rt.state.id, live.state.id);
     this.deps.tables.attach(rt, live.state.id, created);
+  }
+
+  private unmount(rt: TableRuntime) {
+    this.tableOwners.delete(rt.state.id);
+    this.deps.tables.detach(rt);
+    rt.dispose();
   }
 
   private openTable(live: Live, tableId: TableId, seats: SeatInfo[]) {
