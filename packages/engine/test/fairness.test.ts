@@ -141,6 +141,9 @@ describe('verifyHand', () => {
     const show = events.find((e) => e.t === 'show')!;
     const other = flop.cards![0] as string;
     expect(failing(events.map((e) => (e === show ? { ...e, cards: [other, ...show.cards!.slice(1)] } : e)))).toContain('Every card is the one at its place in the deck');
+    // A deal that leaves out a seat that was dealt in.
+    expect(verifyHand({ ...args(events), seats: [0, 1, 2, 3] }).ok).toBe(false);
+    expect(verifyHand({ ...args(events), seats: [0, 1, 2] }).ok).toBe(true);
     expect(verifyHand({ ...args(events), clientSeeds: [] }).ok).toBe(false);
     expect(verifyHand({ ...args(events), commit: commitmentOf('aa'.repeat(32)) }).ok).toBe(false);
   });

@@ -94,6 +94,13 @@ function check(proof, say) {
   const clockwise = (seat) => (seat > proof.button ? seat - proof.button : seat + 1000 - proof.button);
 
   const events = proof.events;
+  if (proof.seats) {
+    const first = events.findIndex((e) => e.t === 'deal');
+    let end = first;
+    while (end >= 0 && end < events.length && events[end].t === 'deal') end++;
+    const got = first < 0 ? [] : events.slice(first, end).map((e) => e.seat).sort((a, b) => a - b);
+    if (got.join() !== [...proof.seats].sort((a, b) => a - b).join()) problems.push('the first cards did not go to exactly the seats dealt in');
+  }
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
     if (e.t === 'deal') {

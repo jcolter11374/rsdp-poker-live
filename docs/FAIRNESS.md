@@ -21,15 +21,18 @@ first, details after.
   steer the result; players never see the server's secret until later, so they
   can't predict it either.
 - **Your browser keeps the server honest during play.** When a hand is dealt,
-  everyone sees which seeds went into it. If the server accepted your seed and
-  then left it out, the table shows a warning straight away. Your browser also
-  remembers the hole cards it was shown.
+  everyone sees which seeds went into it. If your browser's seed was left out
+  although it was sent in good time, or a seed your browser never sent is
+  listed under your name, the table shows a warning straight away. Your browser
+  also writes down what it saw during the hand: the button, who was dealt in,
+  the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
   **🔒 Check this hand**. Once the hand is revealed, your browser rebuilds the
   deck from the seeds and *deals the hand again* by the rules: hole cards one
   at a time clockwise from the left of the button, then the board, draws and
-  reshuffles. Every card dealt, shown or won with must match, and your own
-  cards must be the ones you saw at the table. **Download proof** saves a file
+  reshuffles. Every card dealt, shown or won with must match, the record must
+  match the hand's history, and it must agree with what your browser wrote
+  down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's
   built-in OpenSSL SHA-256 and none of the app's code.
 - **When hands are revealed** (John's decision, 2026-10-25): when the host stops
@@ -103,13 +106,18 @@ came from its place in that deck. It rules out a rigged shuffle, a card
 swapped mid-hand, and "dealing seconds" (skipping a card to give someone a
 better one).
 
-Two limits remain. A dishonest server could list a made-up seed under the
-name of a player and use it to steer the deck. Every browser checks the seed
-listed under its own name, live and in "Check this hand", and warns if it
-isn't the one it sent, so this is caught unless that player never looks
-(for example someone who left right after the hand). And nothing can stop
-someone who runs the server from *reading* the deck of a live hand out of
-the server's memory or database. That is true of every online
+Limits, stated plainly:
+
+- A dishonest server could list a made-up seed under a player's name, or drop
+  a real one, to steer the deck. Each browser checks its own entry, live and
+  in "Check this hand", so this is caught unless the affected player never
+  looks (say they left right after the hand, or play with browser storage
+  blocked). "Check this hand" also lists who sent no seed.
+- The checker trusts the server's account of the betting. It doesn't
+  re-evaluate who won each pot; everyone sees that live.
+- Nothing can stop someone who runs the server from *reading* the deck of a
+  live hand out of the server's memory or database. Every online poker site
+  has this limit. That is true of every online
 poker site; the defence is that only the operator can do it, and the code does
 not expose it. It also does nothing about players sharing their cards with
 each other off the table.
@@ -129,7 +137,7 @@ each other off the table.
 | After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers; a restart keeps the same commitment. | OK |
 | Host setting "Spectators see every hole card" | With no delay, anyone with the table link sees all hole cards live and could relay them. The host is warned and seated players see a banner. | Use it with a spectator delay. |
 | Practice bots (not built yet) | Must decide from a player's own view, never from the hand state. | Requirement passed on. |
-| Independent review of this scheme | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. |
+| Independent review of this scheme | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. A second review then found that a server could still drop or invent seeds, and that the checker compared the server's revealed record with nothing players saw live: both closed with the browser's own records above. |
 
 ## Statistical tests
 

@@ -7,8 +7,11 @@ import { socket } from './socket';
 // dealt, so it can tell later if either was tampered with.
 
 const SEEDS = 'rsdp.fairSeeds';
-const CARDS = 'rsdp.fairCards';
+const SENT = 'rsdp.fairSent';
+const LIVE = 'rsdp.fairLive';
 const KEEP = 300;
+/** A seed sent this long before the deal had plenty of time to arrive; leaving it out is not an accident. */
+const IN_TIME_MS = 3000;
 
 type Store = Record<string, string>;
 
@@ -38,43 +41,101 @@ export function mySeedFor(commit: string): string | null {
   return load(SEEDS)[commit] ?? null;
 }
 
-/** My hole cards as the table showed them during the hand dealt from this commitment. */
-export function myCardsFor(commit: string): string[] {
-  return load(CARDS)[commit]?.split(' ').filter(Boolean) ?? [];
+/** A seed this browser sent against a commitment, and when, whether or not the server answered. */
+interface Sent {
+  seed: string;
+  at: number;
+  /** The server turned it down this many milliseconds after it was sent. */
+  rejectedAfter?: number;
+}
+
+function sentFor(commit: string): Sent | null {
+  const raw = load(SENT)[commit];
+  return raw ? (JSON.parse(raw) as Sent) : null;
+}
+
+/** What this browser saw at the table during the hand dealt from a commitment. */
+export interface LiveRecord {
+  /** First seen dealt, by this browser's clock. */
+  at: number;
+  button: number;
+  /** Seats dealt in. */
+  seats: number[];
+  /** Board cards, every run and board. */
+  board: string[];
+  /** Face-up and shown cards by seat, my own hole cards included. */
+  cards: Record<number, string[]>;
+}
+
+export function liveRecordFor(commit: string): LiveRecord | null {
+  const raw = load(LIVE)[commit];
+  return raw ? (JSON.parse(raw) as LiveRecord) : null;
+}
+
+function recordLive(view: TableView) {
+  const hand = view.hand;
+  if (!hand?.fair || view.spectator) return;
+  const old = liveRecordFor(hand.fair.commit);
+  const cards: Record<number, string[]> = { ...old?.cards };
+  for (const seat of view.seats) {
+    if (!seat?.inHand) continue;
+    const seen = seat.cards.map((c) => c.card).filter((c) => c !== '??');
+    // Cards only accumulate: a draw replaces some, a mucked hand turns them over.
+    cards[seat.seat] = [...new Set([...(cards[seat.seat] ?? []), ...seen])];
+  }
+  const record: LiveRecord = {
+    at: old?.at ?? Date.now(),
+    button: hand.button,
+    seats: Object.keys(hand.names).map(Number),
+    board: [...new Set([...(old?.board ?? []), ...hand.boards.flat(2)])],
+    cards,
+  };
+  save(LIVE, hand.fair.commit, JSON.stringify(record));
 }
 
 let sent = '';
 let sending = '';
 
-/** Call with every table view: sends a fresh seed once per published commitment while seated, and notes my cards. */
+/** Call with every table view: sends a fresh seed once per published commitment while seated, and notes what the hand showed. */
 export function contributeSeed(view: TableView) {
-  const fair = view.hand?.fair;
-  const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
-  const cards = me?.cards.map((c) => c.card).filter((c) => c !== '??') ?? [];
-  if (fair && cards.length) save(CARDS, fair.commit, cards.join(' '));
-
+  recordLive(view);
   const commit = view.fair?.nextCommit;
-  if (!commit || view.me.seat === null || commit === sent || commit === sending) return;
+  // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
+  if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;
   const seed = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.
+  const at = Date.now();
+  save(SENT, commit, JSON.stringify({ seed, at } satisfies Sent));
   socket.emit('fair:seed', { commit, seed }, (res) => {
     if (sending === commit) sending = '';
-    if (!res.ok) return;
+    if (!res.ok) {
+      save(SENT, commit, JSON.stringify({ seed, at, rejectedAfter: Date.now() - at } satisfies Sent));
+      return;
+    }
     sent = commit;
     save(SEEDS, commit, seed);
   });
 }
 
 /**
- * What's wrong with the seed listed under my name for a hand, if anything:
- * the server accepted mine and left it out, or listed one this browser never
- * sent (which would let a server steer the deck). Null when all is well.
+ * What's wrong with the seed listed under my name for a hand, if anything: a
+ * seed this browser sent in good time was left out, or one it never sent was
+ * listed (either would let a server steer the deck). Null when all is well.
+ * `dealtAt` is when the hand was dealt, by this browser's clock if known.
  */
-export function seedProblem(commit: string, listed: { playerId: string; seed: string }[], myId: string, dealtIn: boolean): string | null {
-  const mine = mySeedFor(commit);
+export function seedProblem(commit: string, listed: { playerId: string; seed: string }[], myId: string, dealtIn: boolean, dealtAt: number | null): string | null {
+  const accepted = mySeedFor(commit);
+  const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;
-  if (under && under !== mine) return `a seed (${under}) was listed under your name that this browser didn't send. That's fine only if you played this hand on another device`;
-  if (mine && dealtIn && !under) return `the server accepted your browser's seed (${mine}) but left it out`;
+  if (under && under !== accepted && under !== sentSeed?.seed) {
+    return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
+  }
+  // A seed turned down at once was honestly too late; one left hanging, or turned down slowly, was not.
+  const heldBack = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS && !(sentSeed.rejectedAfter !== undefined && sentSeed.rejectedAfter < 1000);
+  if (!under && dealtIn && (accepted || heldBack)) {
+    return `your browser sent its seed (${accepted ?? sentSeed!.seed}) in good time, but the hand was dealt without it`;
+  }
   return null;
 }
 
@@ -82,5 +143,5 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
 export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
   if (!fair || view.me.seat === null) return null;
-  return seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names);
+  return seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
 }

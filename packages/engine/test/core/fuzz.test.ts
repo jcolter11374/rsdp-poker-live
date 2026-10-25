@@ -189,7 +189,7 @@ describe('fuzz: random hands in every game', () => {
       expect(end_.t, ctx).toBe('hand-end');
       // Every card dealt checks out against the deck rebuilt from the seed.
       const fair = state.input.fair!;
-      const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, button: state.input.button, events: state.events };
+      const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, button: state.input.button, seats: state.input.seats.map((x) => x.seat), events: state.events };
       const check = verifyHand(proof);
       expect(check.checks.filter((c) => !c.ok), ctx).toEqual([]);
       expect(check.ok, ctx).toBe(true);

@@ -178,6 +178,8 @@ export function verifyHand(args: {
   /** The hand seed the server says it used, if given; it must match. */
   handSeed?: string | null;
   button: number;
+  /** Seats dealt in, if known: the first deal must go to exactly these. */
+  seats?: number[];
   events: CardEvent[];
 }): FairCheck {
   const checks: FairCheck['checks'] = [];
@@ -213,6 +215,14 @@ export function verifyHand(args: {
   const clockwise = (seat: number) => (seat > args.button ? seat - args.button : seat + 1000 - args.button);
 
   const events = args.events;
+  if (args.seats) {
+    const first = events.findIndex((e) => e.t === 'deal');
+    let end = first;
+    while (end >= 0 && end < events.length && events[end].t === 'deal') end++;
+    const got = first < 0 ? [] : events.slice(first, end).map((e) => e.seat!);
+    const want = [...args.seats].sort((a, b) => a - b);
+    if (got.slice().sort((a, b) => a - b).join() !== want.join()) order.push(`the first cards went to seats ${got.map((x) => x + 1).join(', ') || 'none'}, not to the seats dealt in`);
+  }
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
     if (e.t === 'deal') {
