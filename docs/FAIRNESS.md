@@ -37,7 +37,7 @@ first, details after.
   down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's
   built-in OpenSSL SHA-256 and none of the app's code.
-- **When hands are revealed** (John's decision, 2026-10-25): when the host stops
+- **When hands are revealed** (decided 25 October 2026): when the host stops
   the game, or 12 hours after the hand, whichever comes first. The reveal shows
   the whole deck, including folded and mucked hands, so it waits until the
   game is over.
@@ -95,6 +95,9 @@ shown card nobody was dealt are all caught.
 
 ### Checking a hand by hand
 
+With a copy of the code (`git clone https://github.com/jcolter11374/rsdp-poker-live`)
+and Node 20 or later, take the file from **Download proof** and run:
+
 ```sh
 printf %s <serverSeed> | sha256sum        # must equal the commitment
 node scripts/verify-hand.mjs hand-12-proof.json
@@ -150,7 +153,7 @@ Limits, stated plainly:
 
 ## Statistical tests
 
-`npx tsx scripts/fairness/stats.ts 2000000` shuffles two million decks with the
+[`npx tsx scripts/fairness/stats.ts 2000000`](../scripts/fairness/stats.ts) shuffles two million decks with the
 seeded scheme that deals every hand now, and two million with the direct
 CSPRNG shuffle (what dealt hands before this change, and still shuffles seats),
 and compares them with the exact theory. A p-value is the chance of seeing a deviation that large from a
