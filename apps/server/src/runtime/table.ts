@@ -37,6 +37,7 @@ import {
   type SeatState,
   type TournamentHooks,
 } from './types';
+import { cleanName as cleanDisplayName } from '../names';
 
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
@@ -1114,10 +1115,7 @@ export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
 }
 
 function cleanName(name: string) {
-  const clean = String(name ?? '')
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .trim()
-    .slice(0, NAME_MAX);
+  const clean = cleanDisplayName(name, NAME_MAX);
   if (!clean) throw new ActionError('pick a name');
   return clean;
 }

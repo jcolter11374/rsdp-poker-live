@@ -20,6 +20,7 @@ import {
   type TournamentState,
   type TournamentView,
 } from '@rsdp/tournament';
+import { cleanName as cleanDisplayName } from '../names';
 import { TableRuntime } from '../runtime/table';
 import type { Clock, RuntimeState, TournamentHooks } from '../runtime/types';
 
@@ -414,8 +415,5 @@ function checkGames(settings: TournamentSettings) {
 }
 
 function cleanName(name: string) {
-  return name
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .trim()
-    .slice(0, NAME_MAX);
+  return cleanDisplayName(name, NAME_MAX);
 }

@@ -12,6 +12,7 @@ import type { TournamentClientToServer, TournamentServerToClient } from '@rsdp/t
 import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type RuntimeState } from './runtime/types';
+import { cleanName } from './names';
 import { handRecordView, tableView } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
@@ -246,10 +247,7 @@ export function createApp(deps: AppDeps = {}) {
     };
     /** Remembers a name for every tab of this player. */
     const rename = async (value: unknown) => {
-      const name = String(value ?? '')
-        .replace(/[\u0000-\u001f\u007f]/g, '')
-        .trim()
-        .slice(0, NAME_MAX);
+      const name = cleanName(value, NAME_MAX);
       if (!name) throw new ActionError('pick a name');
       if (name === socket.data.session.displayName) return;
       await identity.rename(me, name);
