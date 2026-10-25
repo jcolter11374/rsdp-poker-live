@@ -1,0 +1,162 @@
+import type { BettingKind, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
+import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
+
+/** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
+export const RUNTIME_VERSION = 1;
+
+/** Time and timers, injected so tests can run a table on a fake clock. */
+export interface Clock {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+export const systemClock: Clock = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
+};
+
+export interface SeatState {
+  seat: number;
+  playerId: PlayerId;
+  name: string;
+  stack: number;
+  /** Not dealt in (cash) or auto-folded (tournament). */
+  sittingOut: boolean;
+  sitOutReason: 'player' | 'timeouts' | 'busted' | 'host' | null;
+  /** Joined since the last hand and has not posted yet. */
+  isNew: boolean;
+  missedSmallBlind: boolean;
+  missedBigBlind: boolean;
+  /** Player preference: wait for the big blind instead of posting to play. */
+  waitForBigBlind: boolean;
+  /** Player preference: straddle when under the gun (or on the button). */
+  straddle: boolean;
+  /** Turns in a row the clock ran out. */
+  timeouts: number;
+  /** Seconds left in this player's time bank. */
+  timeBank: number;
+  handsSinceRefill: number;
+  /** Stand up once the current hand ends. */
+  leaveAfterHand: boolean;
+  /** Chips approved to add before the next hand (rebuys, host top-ups). */
+  pendingChips: number;
+  /** Host set the stack to this before the next hand. */
+  pendingStack: number | null;
+}
+
+export interface SeatRequest {
+  id: string;
+  kind: 'seat' | 'rebuy';
+  playerId: PlayerId;
+  name: string;
+  /** Seat asked for (seat requests). */
+  seat: number | null;
+  /** Buy-in or rebuy amount. */
+  amount: number;
+  at: number;
+}
+
+export interface LedgerRow {
+  playerId: PlayerId;
+  name: string;
+  /** Everything brought to the table: buy-ins, rebuys and host top-ups. */
+  buyIn: number;
+  /** Everything taken away when leaving. */
+  cashOut: number;
+}
+
+export interface ChatMessage {
+  at: number;
+  playerId: PlayerId | null;
+  name: string;
+  text: string;
+}
+
+/** One line in the table's activity log (joins, settings changes, host actions). */
+export interface TableLogEntry {
+  at: number;
+  text: string;
+}
+
+export interface SettingsLogEntry {
+  at: number;
+  by: PlayerId;
+  /** Applied now, or waiting for the next hand. */
+  when: 'now' | 'next-hand';
+  changes: SettingsChange[];
+}
+
+/** A finished hand kept in memory for the hand log and replayer; the server also stores it. */
+export interface HandRecord {
+  handNumber: number;
+  startedAt: number;
+  endedAt: number;
+  hand: HandState;
+}
+
+export interface TurnClock {
+  /** Hand number and event count when the turn started, so a stale timer never fires on a later turn. */
+  key: string;
+  seat: number;
+  startedAt: number;
+  deadline: number | null;
+  /** True once the time bank is running. */
+  usingBank: boolean;
+  /** Deadline before the time bank kicked in. */
+  bankFrom: number | null;
+}
+
+/** Everything about one table. Plain JSON, so it can be snapshotted and restored. */
+export interface RuntimeState {
+  version: typeof RUNTIME_VERSION;
+  id: string;
+  hostId: PlayerId;
+  createdAt: number;
+  settings: TableSettings;
+  /** Host edits waiting for the next hand. */
+  pendingSettings: SettingsPatch | null;
+  settingsLog: SettingsLogEntry[];
+  seats: (SeatState | null)[];
+  requests: SeatRequest[];
+  ledger: Record<PlayerId, LedgerRow>;
+  /** Players who left, for the rathole rule. */
+  departures: Record<PlayerId, { stack: number; at: number }>;
+  /** The host started the game; hands deal automatically while this is true. */
+  started: boolean;
+  /** Stop after the current hand. */
+  stopAfterHand: boolean;
+  paused: boolean;
+  /** While paused: how long was left on each clock. */
+  pausedLeft: { turn: number | null; nextHand: number | null; rit: number | null } | null;
+  handNumber: number;
+  hand: HandState | null;
+  handStartedAt: number | null;
+  /** Blind positions of the last hand, for the dead-button rule. */
+  positions: { button: number; smallBlind: number | null; bigBlind: number | null } | null;
+  turn: TurnClock | null;
+  nextHandAt: number | null;
+  ritDeadline: number | null;
+  /** Cash blind schedule progress. */
+  level: { index: number; elapsedMs: number; runningSince: number | null; hands: number };
+  /** Mixed-game rotation progress. */
+  rotation: { step: number; hands: number; orbits: number; anchor: number | null };
+  chat: ChatMessage[];
+  log: TableLogEntry[];
+  history: HandRecord[];
+}
+
+/** What a tournament table needs from the tournament runtime. Cash tables have none. */
+export interface TournamentHooks {
+  gate(now: number): 'deal' | 'hold';
+  level(): { gameId: string; betting?: BettingKind; stakes: Stakes };
+  handStarted(handNumber: number): void;
+  handEnded(result: {
+    handNumber: number;
+    startStacks: Record<PlayerId, number>;
+    endStacks: Record<PlayerId, number>;
+    knockedOutBy: Record<PlayerId, PlayerId[]>;
+    button: number;
+  }): void;
+}
