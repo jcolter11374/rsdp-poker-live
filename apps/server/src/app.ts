@@ -137,8 +137,16 @@ export function createApp(deps: AppDeps = {}) {
       pendingBroadcast.delete(id);
       const now = clock.now();
       const tournamentId = tournaments.tournamentOf(id);
-      for (const s of watchers.get(id) ?? []) s.emit('table:state', tableView(rt, s.data.playerId, now, tournamentId));
+      const people = audience(id);
+      for (const s of watchers.get(id) ?? []) s.emit('table:state', tableView(rt, s.data.playerId, now, tournamentId, people));
     });
+  }
+
+  /** Everyone with a table open, once each, by the name they go by. */
+  function audience(id: string) {
+    const seen = new Map<PlayerId, string>();
+    for (const s of watchers.get(id) ?? []) if (!seen.has(s.data.playerId)) seen.set(s.data.playerId, s.data.session.displayName || 'Guest');
+    return [...seen].map(([playerId, name]) => ({ playerId, name }));
   }
 
   function scheduleSave(rt: TableRuntime) {
@@ -254,6 +262,9 @@ export function createApp(deps: AppDeps = {}) {
       for (const s of playerSockets.get(me) ?? []) {
         s.data.session = { ...s.data.session, displayName: name };
         s.emit('session', s.data.session);
+        // Watchers are listed by this name.
+        const rt = s.data.tableId ? tables.get(s.data.tableId) : undefined;
+        if (rt) broadcast(rt);
       }
     };
     const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
@@ -290,7 +301,7 @@ export function createApp(deps: AppDeps = {}) {
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
           }
-          socket.emit('table:state', tableView(rt, me, clock.now(), tournaments.tournamentOf(rt.state.id)));
+          socket.emit('table:state', tableView(rt, me, clock.now(), tournaments.tournamentOf(rt.state.id), audience(rt.state.id)));
         },
         log,
       ),

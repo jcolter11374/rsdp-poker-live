@@ -157,6 +157,8 @@ export interface TableView {
   settingsLog: { at: number; by: string; when: 'now' | 'next-hand'; changes: SettingsChange[] }[];
   /** Finished hands available to replay, newest last. */
   history: { handNumber: number; endedAt: number; gameName: string }[];
+  /** People with the table open who are not seated (spectators). */
+  watchers: { playerId: PlayerId; name: string }[];
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */

@@ -449,3 +449,13 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .portrait .sizing input[type='number'] { width: 84px; padding: 6px; }
 .portrait .strength { font-size: 0.8rem; }
 .portrait .seat-options { justify-content: flex-start; }
+
+/* ---- people */
+.people { display: flex; flex-direction: column; gap: 6px; }
+.people h3 { margin: 8px 0 0; font-size: 0.95rem; }
+.person { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
+.person .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person button { padding: 2px 8px; font-size: 0.8rem; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.on { background: var(--good); }
+.dot.off { background: var(--bad); }

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { TableRuntime } from '../src/runtime/table';
+import { HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -393,5 +393,55 @@ describe('snapshots', () => {
     const seat = restored.state.hand!.toAct!;
     clock.advance(25_000);
     expect(restored.state.hand!.seats.find((s) => s.seat === seat)!.folded || restored.state.turn?.usingBank).toBeTruthy();
+  });
+});
+
+describe('host handoff', () => {
+  it('passes the table to the next online seated player after the host is offline a while', () => {
+    const { rt, clock } = table();
+    seatPlayers(rt, 4);
+    rt.sitOut('a', true);
+    rt.disconnect('host');
+    clock.advance(HOST_HANDOFF_MS - 1000);
+    expect(rt.state.hostId).toBe('host');
+    clock.advance(1000);
+    // Seat 1 is sitting out, so seat 2 takes over.
+    expect(rt.state.hostId).toBe('b');
+    expect(rt.state.log.at(-1)?.text).toMatch(/B is now the host/);
+  });
+
+  it('does nothing if the host comes back in time', () => {
+    const { rt, clock } = table();
+    seatPlayers(rt, 3);
+    rt.disconnect('host');
+    clock.advance(HOST_HANDOFF_MS / 2);
+    rt.connect('host');
+    clock.advance(HOST_HANDOFF_MS * 2);
+    expect(rt.state.hostId).toBe('host');
+  });
+
+  it('waits for someone to be online to take over', () => {
+    const { rt, clock } = table();
+    seatPlayers(rt, 2);
+    rt.disconnect('a');
+    rt.disconnect('host');
+    clock.advance(HOST_HANDOFF_MS * 2);
+    expect(rt.state.hostId).toBe('host');
+    // Someone to take over arriving hands the table on straight away.
+    rt.connect('a');
+    clock.advance(0);
+    expect(rt.state.hostId).toBe('a');
+  });
+
+  it('lets the host hand over by hand, but only to someone at the table', () => {
+    const { rt } = table();
+    seatPlayers(rt, 2);
+    expect(() => rt.transferHost('host', 'stranger')).toThrow(/not at the table/);
+    rt.disconnect('a');
+    expect(() => rt.transferHost('host', 'a')).toThrow(/offline/);
+    rt.connect('a');
+    rt.transferHost('host', 'a');
+    expect(rt.state.hostId).toBe('a');
+    expect(() => rt.transferHost('host', 'a')).toThrow(/host/);
   });
 });
