@@ -13,6 +13,7 @@ import {
   tick,
   type Command,
   type DirectorEvent,
+  type HandResult,
   type Result,
   type SeatInfo,
   type TableId,
@@ -22,7 +23,7 @@ import {
 } from '@rsdp/tournament';
 import { cleanName as cleanDisplayName } from '../names';
 import { TableRuntime } from '../runtime/table';
-import type { Clock, RuntimeState, TournamentHooks } from '../runtime/types';
+import type { Clock, HandRecord, RuntimeState, TournamentHooks } from '../runtime/types';
 
 /** Where tournament director state is kept. */
 export interface TournamentStore {
@@ -284,6 +285,25 @@ export class TournamentManager {
       throw e;
     }
     this.live.set(state.id, live);
+    // The director and its tables are saved on timers of their own, so after a crash either may be behind.
+    // Tables hold while they are brought in line, then deal as the director says.
+    const missed = missedReports(state, snapshots);
+    live.applying = true;
+    try {
+      for (const command of missed) {
+        try {
+          const result = this.guard(() => apply(live.state, command, this.clock.now()));
+          live.state = result.state;
+          for (const e of result.events) this.handleQuietly(live, e);
+        } catch (e) {
+          this.deps.log(`tournament ${state.id}: replaying a hand report failed`, e);
+        }
+      }
+      this.reconcileSeats(live);
+    } finally {
+      live.applying = false;
+    }
+    if (missed.length) this.scheduleSave(live);
     for (const [tableId, rt] of live.tables) {
       try {
         rt.resume();
@@ -346,6 +366,38 @@ export class TournamentManager {
     rt.dispose();
   }
 
+  /** After a restart: each table seats exactly the players the director seats there. */
+  private reconcileSeats(live: Live) {
+    const s = live.state;
+    for (const t of s.tables) {
+      const rt = live.tables.get(t.id);
+      if (!rt) continue;
+      const here = new Map(
+        t.seats.flatMap((entryId, seat) => {
+          const e = entryId ? s.entries.find((x) => x.id === entryId) : undefined;
+          return e ? [[e.playerId, { seat, e }] as const] : [];
+        }),
+      );
+      const fix = (what: string, fn: () => void) => {
+        try {
+          fn();
+        } catch (err) {
+          this.deps.log(`tournament ${s.id}: ${what} at table ${t.id} failed`, err);
+        }
+      };
+      // Moved on or knocked out after this table was last saved.
+      for (const x of [...rt.state.seats]) if (x && !here.has(x.playerId)) fix('unseating a player', () => rt.unseatPlayer(x.playerId));
+      // Seated here after this table was last saved.
+      for (const [playerId, { seat, e }] of here) {
+        if (rt.seatOf(playerId)) continue;
+        fix('seating a player', () => {
+          rt.placePlayer({ seat, playerId, name: e.displayName, stack: e.stack });
+          this.deps.onMoved(playerId, '', rt.state.id);
+        });
+      }
+    }
+  }
+
   private openTable(live: Live, tableId: TableId, seats: SeatInfo[]) {
     const s = live.state;
     const number = s.tables.findIndex((t) => t.id === tableId) + 1;
@@ -374,13 +426,7 @@ export class TournamentManager {
     const all = [...live.deferred.splice(0), ...events];
     live.applying = true;
     try {
-      for (const e of all) {
-        try {
-          this.handleOne(live, e);
-        } catch (err) {
-          this.deps.log(`tournament ${live.state.id}: handling ${e.type} failed`, err);
-        }
-      }
+      for (const e of all) this.handleQuietly(live, e);
     } finally {
       live.applying = false;
     }
@@ -391,6 +437,14 @@ export class TournamentManager {
       } catch (err) {
         this.deps.log(`tournament ${live.state.id}: dealing at table ${tableId} failed`, err);
       }
+    }
+  }
+
+  private handleQuietly(live: Live, e: DirectorEvent) {
+    try {
+      this.handleOne(live, e);
+    } catch (err) {
+      this.deps.log(`tournament ${live.state.id}: handling ${e.type} failed`, err);
     }
   }
 
@@ -457,6 +511,43 @@ export class TournamentManager {
       })
       .catch((e) => this.deps.log(`tournament ${live.state.id}: creating the next one failed`, e));
   }
+}
+
+/**
+ * The hand starts and results a table's snapshot shows that the director's
+ * saved state never heard of, in the order they happened.
+ */
+function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[]): Command[] {
+  const missed: { at: number; command: Command }[] = [];
+  state.tables.forEach((t, i) => {
+    const saved = snapshots[i];
+    if (!saved) return;
+    for (const record of saved.history) {
+      if (record.handNumber < t.lastHandNumber || (record.handNumber === t.lastHandNumber && !t.inHand)) continue;
+      if (record.handNumber > t.lastHandNumber) missed.push({ at: record.startedAt, command: { type: 'handStarted', tableId: t.id, handNumber: record.handNumber } });
+      missed.push({ at: record.endedAt, command: { type: 'handResult', result: { ...handResultOf(record), tableId: t.id } } });
+    }
+    // A hand still being played that the director never heard start.
+    if (saved.handStartedAt !== null && saved.handNumber > t.lastHandNumber)
+      missed.push({ at: saved.handStartedAt, command: { type: 'handStarted', tableId: t.id, handNumber: saved.handNumber } });
+  });
+  return missed.sort((a, b) => a.at - b.at).map((m) => m.command);
+}
+
+/** The report a table makes when a hand ends (TableRuntime.finishHand), rebuilt from the hand's record. */
+function handResultOf(record: HandRecord): Omit<HandResult, 'tableId'> {
+  const { hand } = record;
+  const startStacks: Record<PlayerId, number> = {};
+  const endStacks: Record<PlayerId, number> = {};
+  const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+  for (const x of hand.seats) {
+    startStacks[x.playerId] = x.startStack;
+    endStacks[x.playerId] = x.stack;
+    if (x.stack > 0) continue;
+    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== x.seat));
+    knockedOutBy[x.playerId] = hand.seats.filter((y) => winners.has(y.seat)).map((y) => y.playerId);
+  }
+  return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
 
 /** Every game must exist and seat a full table. */
