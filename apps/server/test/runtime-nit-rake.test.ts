@@ -100,6 +100,7 @@ describe('Nit game edge cases', () => {
     for (const id of IDS) rt.setPreferences(id, { nitGame: true });
     rt.start('host');
     rt.updateSettings('host', { modifiers: { nit: { enabled: false } } } as never);
+    expect(rt.state.sideGames?.nit ?? null).toBeNull();
     winOutright(rt);
     expect(rt.state.sideGames?.nit ?? null).toBeNull();
     expect(rt.state.log.some((l) => /pays .* \(Nit game\)/.test(l.text))).toBe(false);
