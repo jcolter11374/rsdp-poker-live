@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { engine, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings, standings, tableAddress, type TournamentSettings, type TournamentState } from '@rsdp/tournament';
@@ -9,6 +9,18 @@ import { FakeClock, seeded } from './fake-clock';
 import { chipsInPlay, players, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
+
+// Tests can make the next few random draws come out the same, as if two new tournaments drew one id.
+const draws = vi.hoisted(() => ({ fixed: 0 }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:crypto')>();
+  const randomBytes = (n: number) => {
+    if (draws.fixed <= 0) return real.randomBytes(n);
+    draws.fixed--;
+    return Buffer.alloc(n, 0xab);
+  };
+  return { ...real, randomBytes };
+});
 
 const MIN = 60_000;
 
@@ -158,4 +170,20 @@ describe('tournaments after a crash', () => {
     expect(after.errors).toEqual([]);
     expect(standings(now())[0].stack).toBe(8000);
   }, 60_000);
+});
+
+describe('tournament ids', () => {
+  it('a new tournament never takes over one whose id it happens to draw', async () => {
+    const env = setup();
+    draws.fixed = 1;
+    const first = await env.manager.create('host', defaultSettings({ name: 'First' }));
+    draws.fixed = 1;
+    const second = await env.manager.create('other', defaultSettings({ name: 'Second' }));
+    expect(first).toMatch(/^[0-9a-f]{16}$/);
+    expect(second).toMatch(/^[0-9a-f]{16}$/);
+    expect(second).not.toBe(first);
+    expect((await env.store.load(first))!.state).toMatchObject({ hostId: 'host', settings: { name: 'First' } });
+    expect((await env.store.load(second))!.state).toMatchObject({ hostId: 'other', settings: { name: 'Second' } });
+    expect(env.manager.view(first)!.state.settings.name).toBe('First');
+  });
 });

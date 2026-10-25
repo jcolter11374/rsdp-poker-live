@@ -7,7 +7,7 @@ import { closeDb, listHandsByTable, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { dbIdentity, dbStore } from '../src/storage';
 import { dbTournamentStore } from '../src/tournament/store';
-import { defaultSettings as tournamentDefaults } from '@rsdp/tournament';
+import { createTournament, defaultSettings as tournamentDefaults } from '@rsdp/tournament';
 import { socketClient, type Client } from './socket-client';
 
 let db: Db;
@@ -103,5 +103,17 @@ describe('database storage', () => {
     expect(again.tables.get(tableId)?.state.seats.filter(Boolean)).toHaveLength(2);
     again.tournaments.dispose();
     for (const rt of again.tables.values()) rt.dispose();
+  });
+
+  it('never saves a new tournament over one with the same id', async () => {
+    const store = dbTournamentStore(db);
+    const [host, other] = await Promise.all(['db-tn-same-id-host-0123456789', 'db-tn-same-id-other-0123456789'].map((t) => dbIdentity(db).resolve(t)));
+    const state = createTournament({ id: 'feedfacecafebeef', hostId: host.playerId, settings: tournamentDefaults({ name: 'First' }), now: Date.now(), seed: 1 });
+    expect(await store.create(state)).toBe(true);
+    expect(await store.create({ ...state, hostId: other.playerId, settings: { ...state.settings, name: 'Second' } })).toBe(false);
+    expect((await store.load(state.id))!.state).toMatchObject({ hostId: host.playerId, settings: { name: 'First' } });
+    // Later saves still replace it.
+    await store.save({ ...state, status: 'cancelled' }, null);
+    expect((await store.load(state.id))!.state.status).toBe('cancelled');
   });
 });

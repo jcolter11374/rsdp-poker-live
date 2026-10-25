@@ -27,6 +27,8 @@ import type { Clock, HandRecord, RuntimeState, TournamentHooks } from '../runtim
 
 /** Where tournament director state is kept. */
 export interface TournamentStore {
+  /** Saves a new tournament. False when its id is taken: an existing tournament is never written over. */
+  create(state: TournamentState): Promise<boolean>;
   save(state: TournamentState, nextId: string | null): Promise<void>;
   load(id: string): Promise<{ state: TournamentState; nextId: string | null } | null>;
   /** Tournaments that are not finished or cancelled, to resume after a restart. */
@@ -79,7 +81,10 @@ const SAVE_DEBOUNCE_MS = 300;
 const MAX_SLEEP_MS = 60 * 60 * 1000;
 const NAME_MAX = 20;
 
-const newTournamentId = () => randomBytes(4).toString('hex');
+/** Hex, so a table address `<tournament>-t<n>` still leads back to its tournament. */
+const newTournamentId = () => randomBytes(8).toString('hex');
+/** Fresh ids to try before giving up; a taken one is all but impossible. */
+const ID_TRIES = 5;
 
 /** Seconds between tournament hands; keeps director updates ahead of the next deal. */
 const TOURNAMENT_NEXT_HAND_SECONDS = 2;
@@ -115,13 +120,14 @@ export class TournamentManager {
 
   async create(hostId: PlayerId, settings: TournamentSettings): Promise<string> {
     checkGames(settings);
-    const id = newTournamentId();
-    const state = this.guard(() =>
-      createTournament({ id, hostId, settings, now: this.clock.now(), seed: randomBytes(4).readUInt32LE(0) }),
-    );
-    await this.deps.store.save(state, null);
-    await this.adopt(state, null);
-    return id;
+    for (let i = 0; i < ID_TRIES; i++) {
+      const state = this.newState(newTournamentId(), hostId, settings);
+      // A taken id is never saved over: another one is drawn.
+      if (!(await this.deps.store.create(state))) continue;
+      await this.adopt(state, null);
+      return state.id;
+    }
+    throw new Error('no free tournament id');
   }
 
   /** The tournament, loading it from storage if this server has not got it yet. */
@@ -212,6 +218,10 @@ export class TournamentManager {
       default:
         throw new ActionError('unknown command');
     }
+  }
+
+  private newState(id: string, hostId: PlayerId, settings: TournamentSettings) {
+    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed: randomBytes(4).readUInt32LE(0) }));
   }
 
   private guard<T>(fn: () => T): T {
