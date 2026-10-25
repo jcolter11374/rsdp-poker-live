@@ -128,8 +128,8 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
   const inHand = seat.inHand && handLive;
   const muted = view.muted.includes(seat.playerId);
   const can = (p: (typeof view.powers)[number]) => view.powers.includes(p);
-  // Co-hosts act on players, not on the host.
-  const onHost = seat.playerId === view.hostId && !view.isHost;
+  // Co-hosts act on players, not on the host or other co-hosts.
+  const onHost = !view.isHost && !isMe && (seat.playerId === view.hostId || view.coHosts.some((c) => c.playerId === seat.playerId));
 
   return (
     <Modal title={seat.name} onClose={onClose}>

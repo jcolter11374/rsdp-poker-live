@@ -488,9 +488,9 @@ export class TableRuntime {
     if (!this.can(by, power)) throw new ActionError(this.isStaff(by) ? "the host hasn't given you that power" : 'only the host can do that');
   }
 
-  /** Co-hosts act on players, never on the host. */
+  /** Co-hosts act on players, never on the host or another co-host. */
   private notTheHost(by: PlayerId, playerId: PlayerId) {
-    if (playerId === this.state.hostId && by !== this.state.hostId) throw new ActionError('only the host can do that to the host');
+    if (by !== this.state.hostId && by !== playerId && this.isStaff(playerId)) throw new ActionError('only the host can do that to the host or a co-host');
   }
 
   /** The host names a co-host (or changes one's powers). Cash tables; tournaments have their own. */
@@ -828,6 +828,8 @@ export class TableRuntime {
     if (this.isTournament) throw new ActionError('remove players through the tournament');
     const seat = this.seatOf(playerId);
     this.state.requests = this.state.requests.filter((r) => r.playerId !== playerId);
+    // Someone removed from the table stops helping run it.
+    if (this.state.coHosts?.some((c) => c.playerId === playerId)) this.state.coHosts = this.roles(() => withoutCoHost(this.staff(), playerId));
     if (!seat) {
       const waiting = this.state.waitlist?.find((w) => w.playerId === playerId);
       if (waiting) this.log(`The host took ${waiting.name} off the waitlist`);

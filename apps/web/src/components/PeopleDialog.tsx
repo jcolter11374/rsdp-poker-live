@@ -51,7 +51,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
         >
           {mine.includes(playerId) ? 'Unhide chat' : 'Hide chat'}
         </button>
-        {view.powers.includes('players') && playerId !== view.hostId && (
+        {view.powers.includes('players') && (view.isHost || (playerId !== view.hostId && !coHost(playerId))) && (
           <button
             className="link"
             title={view.muted.includes(playerId) ? 'Let them chat again' : 'Stop them chatting at this table'}

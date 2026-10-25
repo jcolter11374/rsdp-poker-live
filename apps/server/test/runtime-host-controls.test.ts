@@ -358,6 +358,18 @@ describe('co-hosts', () => {
     expect(() => rt.mute('a', 'host', true)).toThrow(/to the host/);
     expect(() => rt.setStack('a', 'host', 1)).toThrow(/to the host/);
     expect(() => rt.hostSitOut('a', 'host')).toThrow(/to the host/);
+    // Nor on another co-host.
+    rt.setCoHost('host', 'b', ['run']);
+    expect(() => rt.mute('a', 'b', true)).toThrow(/co-host/);
+    expect(() => rt.kick('a', 'b')).toThrow(/co-host/);
+  });
+
+  it('takes co-host powers away from someone the host removes', () => {
+    const { rt } = withCoHost(['players']);
+    rt.kick('host', 'a');
+    expect(rt.state.coHosts ?? []).toEqual([]);
+    expect(rt.isStaff('a')).toBe(false);
+    expect(() => rt.mute('a', 'b', true)).toThrow(/only the host/);
   });
 
   it('seats co-hosts with the approve power without asking', () => {

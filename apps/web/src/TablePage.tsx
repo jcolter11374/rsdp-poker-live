@@ -255,7 +255,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
     </div>
   );
-  const hostPanel = view.powers.length > 0 && cash && (
+  const hostPanel = (view.isHost || view.coHosts.some((c) => c.playerId === view.me.playerId)) && cash && (
     <HostPanel
       view={view}
       fmt={fmt}

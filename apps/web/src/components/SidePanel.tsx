@@ -126,7 +126,7 @@ function ChatNotes({ view, mutes, error }: { view: TableView; mutes: string[]; e
   const name = (id: string) => [...view.chat].reverse().find((m) => m.playerId === id)?.name ?? view.seats.find((s) => s?.playerId === id)?.name ?? view.watchers.find((w) => w.playerId === id)?.name ?? 'Guest';
   const shown = mutes.filter((id) => view.chat.some((m) => m.playerId === id) || view.seats.some((s) => s?.playerId === id) || view.watchers.some((w) => w.playerId === id));
   const mutedByHost = view.muted.includes(view.me.playerId);
-  const quiet = !view.settings.chat.guestChat && view.me.seat === null && view.powers.length === 0;
+  const quiet = !view.settings.chat.guestChat && view.me.seat === null && !view.isHost && !view.coHosts.some((c) => c.playerId === view.me.playerId);
   if (!shown.length && !mutedByHost && !quiet && !error) return null;
   return (
     <div className="chat-notes muted">
