@@ -1,0 +1,51 @@
+# Fly.io config for RSDP Poker Live! See docs/DEPLOY.md.
+# One always-on machine: live tables and tournaments run in a single process,
+# so never scale this app past one machine.
+
+app = "rsdp-poker-live"
+primary_region = "iad"
+# The server saves every table on SIGTERM within 10 s.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # With a volume attached, the old machine stops before the new one starts,
+  # so two copies never run at once.
+  strategy = "rolling"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  PGLITE_DIR = "/data/pglite"
+
+[[mounts]]
+  source = "rsdp_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scheduled tournaments must start with nobody online: never sleep.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 500
+    hard_limit = 1000
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "60s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

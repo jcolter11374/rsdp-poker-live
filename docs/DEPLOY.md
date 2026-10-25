@@ -48,4 +48,11 @@ docker run --rm -p 3001:8080 -v rsdp-data:/data rsdp-poker
 BASE_URL=http://localhost:3001 npm run smoke
 ```
 
-Host-specific steps go below once a host is chosen.
+## Fly.io (production)
+
+The live site is the Fly app `rsdp-poker-live`, at https://rsdp-poker-live.fly.dev. `fly.toml` holds its settings: one `shared-cpu-1x` machine with 1 GB of memory in `iad`, never auto-stopped, with a 1 GB volume `rsdp_data` mounted at `/data` and a 30 s stop timeout. Fly takes a daily snapshot of the volume and keeps it for 5 days.
+
+- **Deploys are automatic.** Every push to `main` runs CI, and when CI passes `.github/workflows/deploy.yml` deploys that commit with `flyctl`. Because the machine has a volume, Fly stops the old copy before it starts the new one. You can also run the Deploy workflow by hand from the Actions tab.
+- **Setup.** The deploy uses the GitHub Actions secret `FLY_API_TOKEN`, a Fly access token. `scripts/fly-provision.sh` creates the app and the volume if they are missing. The Fly setup workflow runs it whenever the Fly files change, so the app exists before the first deploy.
+- **Keep it at one machine.** Don't run `fly scale count 2` and don't add a second volume. Two copies would each run their own tables.
+- **Useful commands** (with `flyctl` signed in): `fly logs -a rsdp-poker-live`, `fly status -a rsdp-poker-live`, `fly volumes snapshots list <volume-id>`.
