@@ -3,6 +3,7 @@ import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import type { Fmt } from '../format';
 import { Modal } from './SeatDialog';
+import { setChatMuted, useChatMutes } from '../chatMutes';
 
 /** Who is at the table: seated players and everyone watching. The host can hand the table over. */
 export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt; onClose: () => void }) {
@@ -15,6 +16,29 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
       .catch((e: Error) => setError(e.message));
   };
   const seated = view.seats.filter((s) => s !== null);
+  const mine = useChatMutes();
+  /** Chat mutes: mine (only I stop seeing them) and, for the host, the table's. */
+  const mutes = (playerId: string) =>
+    playerId === view.me.playerId ? null : (
+      <>
+        <button className="link" title={mine.includes(playerId) ? 'See their chat again' : 'Hide their chat from you'} onClick={() => setChatMuted(playerId, !mine.includes(playerId))}>
+          {mine.includes(playerId) ? 'Unhide chat' : 'Hide chat'}
+        </button>
+        {view.isHost && (
+          <button
+            className="link"
+            title={view.muted.includes(playerId) ? 'Let them chat again' : 'Stop them chatting at this table'}
+            onClick={() =>
+              call('host:mute', { playerId, value: !view.muted.includes(playerId) })
+                .then(() => setError(''))
+                .catch((e: Error) => setError(e.message))
+            }
+          >
+            {view.muted.includes(playerId) ? 'Unmute' : 'Mute'}
+          </button>
+        )}
+      </>
+    );
   return (
     <Modal title="People" onClose={onClose}>
       <div className="people">
@@ -28,6 +52,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
               {s.playerId === view.me.playerId && <span className="muted"> (you)</span>}
             </span>
             <span className="muted">{s.sittingOut ? 'away' : fmt(s.stack)}</span>
+            {mutes(s.playerId)}
             {canHandOff && s.online && s.playerId !== view.me.playerId && <button onClick={() => handOff(s.playerId, s.name)}>Make host</button>}
           </div>
         ))}
@@ -41,6 +66,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
               {w.playerId === view.hostId && <span className="tag">host</span>}
               {w.playerId === view.me.playerId && <span className="muted"> (you)</span>}
             </span>
+            {mutes(w.playerId)}
             {canHandOff && w.playerId !== view.me.playerId && <button onClick={() => handOff(w.playerId, w.name)}>Make host</button>}
           </div>
         ))}

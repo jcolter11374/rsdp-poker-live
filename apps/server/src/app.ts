@@ -14,7 +14,7 @@ import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
-import { handRecordView, pastHand, tableView } from './runtime/view';
+import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
 
@@ -130,6 +130,8 @@ export function createApp(deps: AppDeps = {}) {
   const tournamentWatchers = new Map<string, Set<Sock>>();
   const playerSockets = new Map<PlayerId, Set<Sock>>();
   const pendingBroadcast = new Set<string>();
+  /** Spectator delay: what each table looked like to spectators, oldest first. */
+  const feeds = new Map<string, { at: number; part: DelayedPart }[]>();
   const saveTimers = new Map<string, NodeJS.Timeout>();
   /** Saves wait for the table's row to exist. */
   const created = new Map<string, Promise<void>>();
@@ -151,10 +153,36 @@ export function createApp(deps: AppDeps = {}) {
     queueMicrotask(() => {
       pendingBroadcast.delete(id);
       const now = clock.now();
-      const tournamentId = tournaments.tournamentOf(id);
-      const people = audience(id);
-      for (const s of watchers.get(id) ?? []) s.emit('table:state', tableView(rt, s.data.playerId, now, tournamentId, people));
+      const delayMs = rt.settings.spectators.delaySeconds * 1000;
+      if (delayMs > 0) {
+        // Remember what spectators would see now, and show it to them once the delay has passed.
+        const feed = feeds.get(id) ?? [];
+        feeds.set(id, feed);
+        feed.push({ at: now, part: delayedPart(tableView(rt, '', now)) });
+        clock.setTimeout(() => {
+          if (tables.get(id) !== rt) return;
+          const later = clock.now();
+          for (const s of watchers.get(id) ?? []) if (isSpectator(rt, s)) s.emit('table:state', viewFor(rt, s, later));
+        }, delayMs);
+      } else feeds.delete(id);
+      for (const s of watchers.get(id) ?? []) s.emit('table:state', viewFor(rt, s, now));
     });
+  }
+
+  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isHost(s.data.playerId);
+
+  /** One person's view; a spectator at a table with a delay sees the hand as it was that long ago. */
+  function viewFor(rt: TableRuntime, s: Sock, now: number) {
+    const id = rt.state.id;
+    const live = tableView(rt, s.data.playerId, now, tournaments.tournamentOf(id), audience(id));
+    const delayMs = rt.settings.spectators.delaySeconds * 1000;
+    if (delayMs <= 0 || !isSpectator(rt, s)) return live;
+    const feed = feeds.get(id) ?? [];
+    // The newest snapshot old enough to show; anything older than it is no longer needed.
+    let i = -1;
+    while (i + 1 < feed.length && feed[i + 1].at <= now - delayMs) i++;
+    if (i > 0) feed.splice(0, i);
+    return behind(live, i >= 0 ? feed[0].part : null, delayMs);
   }
 
   /** Everyone with a table open, once each, by the name they go by. */
@@ -279,6 +307,7 @@ export function createApp(deps: AppDeps = {}) {
         s.emit('session', s.data.session);
         // Watchers are listed by this name.
         const rt = s.data.tableId ? tables.get(s.data.tableId) : undefined;
+        rt?.guestNames.set(me, name);
         if (rt) broadcast(rt);
       }
     };
@@ -316,7 +345,8 @@ export function createApp(deps: AppDeps = {}) {
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
           }
-          socket.emit('table:state', tableView(rt, me, clock.now(), tournaments.tournamentOf(rt.state.id), audience(rt.state.id)));
+          rt.guestNames.set(me, socket.data.session.displayName || 'Guest');
+          socket.emit('table:state', viewFor(rt, socket, clock.now()));
         },
         log,
       ),
@@ -371,6 +401,17 @@ export function createApp(deps: AppDeps = {}) {
     on('seat:sitOut', ({ value }, ack) => guarded(ack, () => current().sitOut(me, !!value), log));
     on('seat:prefs', (prefs, ack) => guarded(ack, () => current().setPreferences(me, prefs ?? {}), log));
     on('seat:rebuy', ({ amount }, ack) => guarded(ack, () => current().rebuy(me, Number(amount)), log));
+    on('waitlist:join', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          current().joinWaitlist(me, { name: String(input?.name ?? ''), stack: Number(input?.stack) });
+          if (!socket.data.session.displayName) await rename(input?.name).catch(() => {});
+        },
+        log,
+      ),
+    );
+    on('waitlist:leave', (ack) => guarded(ack, () => current().leaveWaitlist(me), log));
 
     on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action)), log));
     on('hand:draw', ({ discard }, ack) => guarded(ack, () => current().draw(me, toIndexes(discard)), log));
@@ -392,9 +433,11 @@ export function createApp(deps: AppDeps = {}) {
         log,
       ),
     );
-    on('chat:send', ({ text }) => guarded(undefined, () => current().chat(me, String(text ?? '')), log));
+    on('chat:send', (input, ack) => guarded(ack, () => current().chat(me, String(input?.text ?? '')), log));
 
-    on('host:approve', ({ requestId }, ack) => guarded(ack, () => current().approve(me, String(requestId)), log));
+    on('host:approve', ({ requestId, seat }, ack) =>
+      guarded(ack, () => current().approve(me, String(requestId), seat === undefined || seat === null ? undefined : Number(seat)), log),
+    );
     on('host:reject', ({ requestId }) => guarded(undefined, () => current().reject(me, String(requestId)), log));
     on('host:start', (ack) => guarded(ack, () => current().start(me), log));
     on('host:stop', (ack) => guarded(ack, () => current().stop(me), log));
@@ -406,6 +449,9 @@ export function createApp(deps: AppDeps = {}) {
     on('host:kick', ({ playerId }, ack) => guarded(ack, () => current().kick(me, String(playerId)), log));
     on('host:sitOut', ({ playerId }, ack) => guarded(ack, () => current().hostSitOut(me, String(playerId)), log));
     on('host:transfer', ({ playerId }, ack) => guarded(ack, () => current().transferHost(me, String(playerId)), log));
+    on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
+    on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
+    on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
     on('tournament:subscribe', (input, ack) =>

@@ -3,3 +3,11 @@
 .settings-body h4 { margin: 10px 0 -4px; font-size: 0.95rem; }
 .settings-body h4:first-child { margin-top: 0; }
 .settings-body > p.hint { margin: 0; }
+
+/* Eight tabs don't fit one row in the dialog: let them wrap. */
+.modal .tabs {
+  flex-wrap: wrap;
+}
+.modal .tabs button {
+  flex: 1 0 auto;
+}

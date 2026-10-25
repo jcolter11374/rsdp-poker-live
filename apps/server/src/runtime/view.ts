@@ -20,7 +20,10 @@ export function tableView(
   const mySeat = rt.seatOf(playerId);
   const isHost = rt.isHost(playerId);
   const hand = s.hand;
-  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: false };
+  // The host keeps the live table whether seated or not; everyone else unseated is a spectator.
+  const isSpectator = !mySeat && !isHost;
+  const blocked = isSpectator && !s.settings.spectators.allowed;
+  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && s.settings.spectators.seeAllCards };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
   const won = new Map<number, number>();
   const handNames = new Map<number, string>();
@@ -41,7 +44,7 @@ export function tableView(
     const hs = hand ? handSeats.get(seat.seat) : undefined;
     // A seat taken by someone new since the hand began has no part in it.
     const inThisHand = !!hs && hs.playerId === seat.playerId;
-    const cards = inThisHand ? hs!.cards.map((c, i) => visibleCard(hand!, viewer, seat.seat, c.card, c.up, hs!.shown.includes(i))) : [];
+    const cards = inThisHand && !blocked ? hs!.cards.map((c, i) => visibleCard(hand!, viewer, seat.seat, c.card, c.up, hs!.shown.includes(i))) : [];
     return {
       seat: seat.seat,
       playerId: seat.playerId,
@@ -97,7 +100,7 @@ export function tableView(
     paused: s.paused,
     stopAfterHand: s.stopAfterHand,
     seats,
-    hand: hand ? handView(rt, hand, viewer) : null,
+    hand: hand && !blocked ? handView(rt, hand, viewer) : null,
     legal: myTurn && hand!.phase === 'betting' ? engine.legalActions(hand!, mine!.seat) : null,
     canDraw: myTurn && hand!.phase === 'drawing' ? { max: hand!.input.game.streets[hand!.street].drawMaxDiscard ?? 0 } : null,
     canVoteRunItTwice: live && hand!.phase === 'rit-vote' && !!mine && !mine.folded && mine.ritVote === null,
@@ -122,7 +125,40 @@ export function tableView(
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
     history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
     watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
+    waitlist: (s.waitlist ?? []).map((w) => ({ playerId: w.playerId, name: w.name })),
+    offers: (s.offers ?? []).map((o) => ({ ...o, name: s.waitlist?.find((w) => w.playerId === o.playerId)?.name ?? rt.nameOf(o.playerId) })),
+    muted: [...(s.muted ?? [])],
+    spectator: isSpectator ? { delaySeconds: s.settings.spectators.delaySeconds, seeAll: viewer.seeAll, blocked } : null,
   };
+}
+
+/** The part of a spectator's view that runs behind the table. */
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history'>;
+
+/** The ledger and the list of finished hands run behind too, or they would give away how a hand ends. */
+export const delayedPart = (view: TableView): DelayedPart => ({ seats: view.seats, hand: view.hand, turn: view.turn, ledger: view.ledger, history: view.history });
+
+/**
+ * A spectator's view with the table as it was `delayMs` ago: seats, cards,
+ * bets and the clock come from `past` (null when nothing is that old yet,
+ * which shows the seats with no hand). Clocks move forward by the delay so
+ * they count down in step with the live server clock. Chat, the log and
+ * everything else stay live.
+ */
+export function behind(live: TableView, past: DelayedPart | null, delayMs: number): TableView {
+  if (!past) {
+    const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
+    return { ...live, seats, hand: null, turn: null };
+  }
+  const later = (t: number | null) => (t === null ? null : t + delayMs);
+  const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + delayMs, deadline: later(past.turn.deadline) };
+  const hand = past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
+  // Whoever has sat down since still shows in their seat, without cards.
+  const seats = live.seats.map((x, i) => {
+    const then = past.seats[i];
+    return then && x && then.playerId === x.playerId ? then : x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null };
+  });
+  return { ...live, seats, hand, turn, ledger: past.ledger, history: past.history };
 }
 
 function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {

@@ -66,6 +66,38 @@ describe('socket server', () => {
     await host.until((x) => x.watchers.length === 0);
   });
 
+  it('shows spectators every card, a delay behind the table', async () => {
+    const host = client('delay-host-0123456789');
+    const guest = client('delay-guest-0123456789');
+    const fan = client('delay-fan-0123456789');
+    const settings = { seating: { requireApproval: false }, spectators: { seeAllCards: true, delaySeconds: 2 }, timing: { decisionSeconds: 0 } };
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings });
+    for (const c of [host, guest, fan]) await c.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
+    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100 });
+    await host.call('host:start');
+    const started = Date.now();
+    await host.until((x) => !!x.hand);
+    // The players have a hand; the spectator doesn't yet.
+    expect(fan.view().hand).toBeNull();
+    expect(fan.view().spectator).toEqual({ delaySeconds: 2, seeAll: true, blocked: false });
+    const later = await fan.until((x) => !!x.hand);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1900);
+    expect(later.seats.filter(Boolean).every((s) => s!.cards.length === 2 && s!.cards.every((c) => c.card !== '??'))).toBe(true);
+    // Chat stays live for everyone.
+    await guest.call('chat:send', { text: 'gl' });
+    await fan.until((x) => x.chat.some((m) => m.text === 'gl'));
+  }, 15_000);
+
+  it('acks a chat message the table refuses', async () => {
+    const host = client('chat-host-0123456789');
+    const fan = client('chat-fan-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { chat: { guestChat: false } } });
+    await host.call('table:join', { tableId });
+    await fan.call('table:join', { tableId });
+    await expect(fan.call('chat:send', { text: 'hi' })).rejects.toThrow(/only players/);
+  });
+
   it('rejects connections without a browser secret', async () => {
     const c: Client = connect(url, { auth: {}, transports: ['websocket'], forceNew: true });
     clients.push(c);
