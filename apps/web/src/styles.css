@@ -141,6 +141,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .nameplate .stack { font-variant-numeric: tabular-nums; color: var(--accent-2); }
 .nameplate .clock { font-size: 0.75rem; color: var(--bad); }
 .tag { font-size: 0.65rem; background: var(--accent); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: middle; }
+.tag.bot { background: #6b5bd6; color: #fff; }
+.seat.empty .add-bot { font-size: 0.7rem; padding: 2px 6px; opacity: 0.75; }
+.seat.empty .add-bot:hover { opacity: 1; }
 .seat.acting .nameplate { border-color: var(--accent-2); box-shadow: 0 0 12px var(--accent-2); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 12px var(--good); }
 .seat.folded .hole { opacity: 0.25; }

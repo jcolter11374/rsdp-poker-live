@@ -397,6 +397,16 @@ export function createApp(deps: AppDeps = {}) {
         if (rt) broadcast(rt);
       }
     };
+    /** A practice table: sits me in the first seat, adds the bots and deals. */
+    const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown }) => {
+      const name = cleanName(practice.name, NAME_MAX) || socket.data.session.displayName;
+      if (!name) throw new ActionError('pick a name');
+      if (!socket.data.session.displayName) await rename(name).catch(() => {});
+      const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
+      rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
+      for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
+      rt.start(me);
+    };
     const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
@@ -412,6 +422,7 @@ export function createApp(deps: AppDeps = {}) {
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
           await store.createTable(rt.state);
           attach(rt);
+          if (input?.practice) await startPractice(rt, input.practice);
           return { tableId: rt.state.id };
         },
         log,
@@ -540,6 +551,17 @@ export function createApp(deps: AppDeps = {}) {
     on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
     on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
     on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
+    on('bot:add', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const seat = input?.seat === undefined || input?.seat === null ? undefined : Number(input.seat);
+          return { playerId: current().addBot(me, { ownerName: socket.data.session.displayName, seat }) };
+        },
+        log,
+      ),
+    );
+    on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
     on('tournament:subscribe', (input, ack) =>

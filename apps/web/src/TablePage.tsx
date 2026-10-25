@@ -14,7 +14,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { Sheet } from './components/Sheet';
-import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
+import { BotDialog, PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
@@ -96,7 +96,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'bot'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -189,6 +189,14 @@ export function TablePage({ tableId }: { tableId: string }) {
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
+  const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length;
+  const canAddBot = cash && (view.isHost || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
+  const addBot = (seat: number) =>
+    call('bot:add', { seat })
+      .then(() => {
+        if (view.settings.seating.requireApproval && !view.isHost) alert('Your bot is waiting for the host to approve it.');
+      })
+      .catch((e: Error) => alert(e.message));
   const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
   const close = () => setSheet(null);
 
@@ -390,7 +398,9 @@ export function TablePage({ tableId }: { tableId: string }) {
             fmt={fmt}
             compact={portrait}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
-            onSeatClick={view.isHost && cash ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
+            onAddBot={canAddBot ? addBot : undefined}
+            onSeatClick={cash ? (seat) => setDialog(view.isHost ? { kind: 'player', seat } : { kind: 'bot', seat }) : undefined}
+            clickable={(seat) => view.isHost || seat.bot?.ownerId === view.me.playerId}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
           <ActionBar
@@ -457,6 +467,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'player' && <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'bot' && <BotDialog seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}

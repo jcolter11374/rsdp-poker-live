@@ -226,6 +226,8 @@ const SeatingSection = z
     waitlist: z.boolean(),
     /** New players get a random open seat instead of the one they picked (false when left out). */
     randomSeats: z.boolean().optional(),
+    /** Seated players may add practice bots; the host always can (true when left out). */
+    allowPlayerBots: z.boolean().optional(),
     /** Keep dealing to away players (they auto check or fold). */
     dealToAway: z.boolean(),
     /** Consecutive timeouts before a player is marked away, 0-10 (0 = never). */

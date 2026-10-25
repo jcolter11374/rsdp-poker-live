@@ -46,6 +46,8 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
 - Identity: a persistent guest id per browser; optional username and password accounts link guest ids. Tournament registration needs an account.
 
+- Practice bots (cash tables): `addBot`/`removeBot` on the runtime (`bot:add`, `bot:remove` sockets). A bot is a seat whose player id is in `state.bots` (owner, buy-in); it counts as always online, can never be host, rebuys for its buy-in when it busts (or leaves when rebuys are off), and acts a moment after its turn starts through the `bot` timer. Its play lives in `apps/server/src/bots/strategy.ts`: Monte Carlo equity against random hands with the variant evaluators, using only what its seat can see, then pot-odds betting; draw games try every discard set. A cash table deals only while at least one person is dealt in. The host can stop players adding bots with `seating.allowPlayerBots`. `table:create` with `practice: { name, bots }` seats the creator, adds the bots and deals. Bots are not in tournaments yet.
+
 ## Tournament integration (packages/tournament <-> apps/server)
 
 - The director is pure: `apply(state, command, now)` and `tick(state, now)` return `{ state, events }`. `nextWakeAt(state)` tells the scheduler when to call `tick`.

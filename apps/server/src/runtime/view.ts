@@ -69,6 +69,7 @@ export function tableView(
       nit: nitRound?.participants.includes(seat.playerId) ? (nitRound.holders.includes(seat.playerId) ? 'holder' : 'clear') : null,
       won: inThisHand ? (won.get(seat.seat) ?? 0) : 0,
       handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
+      ...botTag(rt, seat.playerId),
     };
   });
 
@@ -179,6 +180,11 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     nextHandAt: later(past.nextHandAt),
     upcoming: past.upcoming,
   };
+}
+
+function botTag(rt: TableRuntime, playerId: PlayerId): Pick<SeatView, 'bot'> {
+  const bot = rt.botInfo(playerId);
+  return bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName } } : {};
 }
 
 function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {

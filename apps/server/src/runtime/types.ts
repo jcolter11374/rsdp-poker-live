@@ -211,6 +211,15 @@ export interface RuntimeState {
   offers?: SeatOffer[];
   /** Players the host has muted in chat. */
   muted?: PlayerId[];
+  /** Practice bots at this table (seated or asking for a seat), by their player id. */
+  bots?: Record<PlayerId, BotInfo>;
+}
+
+/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+export interface BotInfo {
+  ownerId: PlayerId;
+  ownerName: string;
+  buyIn: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

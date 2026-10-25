@@ -57,6 +57,8 @@ export interface SeatView {
   won: number;
   /** Best hand name at showdown. */
   handName: string | null;
+  /** A practice bot, and who added it (absent for people). */
+  bot?: { ownerId: PlayerId; ownerName: string };
 }
 
 export interface HandView {
@@ -208,6 +210,8 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
+  /** A practice table: seat me with this name and deal straight away against this many bots (1-9). */
+  practice?: { name: string; bots: number };
 }
 
 export interface ClientToServer {
@@ -262,6 +266,10 @@ export interface ClientToServer {
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
+  /** Add a practice bot named after me, in this seat or the first free one. */
+  'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
+  /** Take away a bot I added (the host can take away any). */
+  'bot:remove': (input: { playerId: string }, ack: Ack) => void;
 }
 
 export interface ServerToClient {

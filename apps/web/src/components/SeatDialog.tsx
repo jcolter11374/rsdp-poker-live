@@ -127,12 +127,14 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
   const empty = view.seats.flatMap((s, i) => (s || held.has(i) ? [] : [i]));
   const inHand = seat.inHand && handLive;
   const muted = view.muted.includes(seat.playerId);
+  const bot = !!seat.bot;
 
   return (
     <Modal title={seat.name} onClose={onClose}>
       <div className="form">
         <p className="muted">
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
+          {seat.bot && ` · practice bot added by ${seat.bot.ownerName}`}
         </p>
         {!tournament && (
           <form
@@ -168,10 +170,15 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
           </label>
         )}
         <div className="row wrap">
-          {!seat.sittingOut && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
-          {!isMe && <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>}
-          {!isMe && !tournament && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
-          {!isMe && !tournament && (
+          {!seat.sittingOut && !bot && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
+          {!isMe && !bot && <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>}
+          {!isMe && !tournament && !bot && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
+          {bot && (
+            <button className="danger" onClick={() => act(call('bot:remove', { playerId: seat.playerId }))}>
+              Remove bot
+            </button>
+          )}
+          {!isMe && !tournament && !bot && (
             <button className="danger" onClick={() => confirm(`Remove ${seat.name} from the table?`) && act(call('host:kick', { playerId: seat.playerId }))}>
               Remove
             </button>
@@ -179,6 +186,35 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
         </div>
         {error && <p className="error">{error}</p>}
         <button onClick={onClose}>Close</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** A player's own practice bot: they can take it away. */
+export function BotDialog({ seat, fmt, onClose }: { seat: SeatView; fmt: Fmt; onClose: () => void }) {
+  const [error, setError] = useState('');
+  return (
+    <Modal title={seat.name} onClose={onClose}>
+      <div className="form">
+        <p className="muted">
+          Your practice bot in seat {seat.seat + 1}, with {fmt(seat.stack)} chips. It plays simple, steady poker.
+          {seat.inHand ? ' Removing it now folds its hand.' : ''}
+        </p>
+        {error && <p className="error">{error}</p>}
+        <div className="row">
+          <button onClick={onClose}>Close</button>
+          <button
+            className="danger"
+            onClick={() =>
+              call('bot:remove', { playerId: seat.playerId })
+                .then(onClose)
+                .catch((err: Error) => setError(err.message))
+            }
+          >
+            Remove bot
+          </button>
+        </div>
       </div>
     </Modal>
   );
