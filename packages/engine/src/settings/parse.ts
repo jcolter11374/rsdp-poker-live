@@ -93,6 +93,7 @@ export function defaultSettings(mode: TableMode): TableSettings {
       ratholeMinutes: 0,
       waitlist: false,
       randomSeats: false,
+      allowPlayerBots: true,
       dealToAway: tournament,
       awayAfterTimeouts: 2,
       offlineGraceSeconds: 15,

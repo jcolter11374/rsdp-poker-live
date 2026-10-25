@@ -115,7 +115,7 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
 }
 
 /** What the host can do to a seated player. */
-export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void }) {
+export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void; children?: ReactNode }) {
   const cents = view.settings.stakes.centsMode;
   const [stack, setStack] = useState(toInput(cents, seat.stack));
   const [error, setError] = useState('');
@@ -130,12 +130,14 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
   const can = (p: (typeof view.powers)[number]) => view.powers.includes(p);
   // Co-hosts act on players, not on the host or other co-hosts.
   const onHost = !view.isHost && !isMe && (seat.playerId === view.hostId || view.coHosts.some((c) => c.playerId === seat.playerId));
+  const bot = !!seat.bot;
 
   return (
     <Modal title={seat.name} onClose={onClose}>
       <div className="form">
         <p className="muted">
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
+          {seat.bot && ` · practice bot added by ${seat.bot.ownerName}`}
         </p>
         {!tournament && can('chips') && !onHost && (
           <form
@@ -171,18 +173,47 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
           </label>
         )}
         <div className="row wrap">
-          {can('players') && !onHost && !seat.sittingOut && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
-          {can('players') && !onHost && !isMe && <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>}
-          {view.isHost && !isMe && !tournament && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
-          {can('players') && !onHost && !isMe && !tournament && (
+          {can('players') && !onHost && !seat.sittingOut && !bot && <button onClick={() => act(call('host:sitOut', { playerId: seat.playerId }))}>Sit out</button>}
+          {can('players') && !onHost && !isMe && !bot && (
+            <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>
+          )}
+          {view.isHost && !isMe && !tournament && !bot && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
+          {bot && (can('players') || seat.bot?.ownerId === view.me.playerId) && (
+            <button className="danger" onClick={() => act(call('bot:remove', { playerId: seat.playerId }))}>
+              Remove bot
+            </button>
+          )}
+          {can('players') && !onHost && !isMe && !tournament && !bot && (
             <button className="danger" onClick={() => confirm(`Remove ${seat.name} from the table?`) && act(call('host:kick', { playerId: seat.playerId }))}>
               Remove
             </button>
           )}
         </div>
         {error && <p className="error">{error}</p>}
+        {children}
         <button onClick={onClose}>Close</button>
       </div>
     </Modal>
+  );
+}
+
+/** A player's own practice bot: they can take it away. */
+export function RemoveBot({ seat, onDone }: { seat: SeatView; onDone: () => void }) {
+  const [error, setError] = useState('');
+  return (
+    <div className="form">
+      <p className="muted">Your practice bot. It plays simple, steady poker.{seat.inHand ? ' Removing it now folds its hand.' : ''}</p>
+      {error && <p className="error">{error}</p>}
+      <button
+        className="danger"
+        onClick={() =>
+          call('bot:remove', { playerId: seat.playerId })
+            .then(onDone)
+            .catch((err: Error) => setError(err.message))
+        }
+      >
+        Remove bot
+      </button>
+    </div>
   );
 }

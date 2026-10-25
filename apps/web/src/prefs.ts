@@ -4,6 +4,8 @@ import { FELTS } from '@rsdp/engine/settings';
 export type Felt = (typeof FELTS)[number];
 export type Deck = 'two' | 'four';
 export type Back = 'red' | 'blue' | 'green' | 'black';
+export type Units = 'chips' | 'bb';
+export type GestureMode = 'sound' | 'silent' | 'off';
 
 /** How the table looks to this browser. Nobody else sees these. */
 export interface Prefs {
@@ -12,21 +14,50 @@ export interface Prefs {
   /** Four-colour deck: clubs green, diamonds blue. */
   deck: Deck;
   back: Back;
+  /** Stacks, bets and pots in chips or in big blinds (B switches). */
+  units: Units;
+  /** Fold, check, bet and deal noises; the turn and time alerts always play. */
+  tableSounds: boolean;
+  /** A beep for new chat messages. */
+  chatSound: boolean;
+  /** Gestures thrown at the table: with sound, silent, or not shown. */
+  gestures: GestureMode;
+  /** Show players' pictures. */
+  avatars: boolean;
+  /** Show players' mood emoji. */
+  moods: boolean;
+  /** Players whose picture this viewer hid. */
+  hiddenAvatars: string[];
+  /** Keep the screen on while seated at a table. */
+  wakeLock: boolean;
 }
 
 export const FELT_COLORS: Record<Felt, { name: string; light: string; felt: string; edge: string }> = {
-  green: { name: 'Green', light: '#2a8a5d', felt: '#1f6f4a', edge: '#0f3d28' },
-  blue: { name: 'Blue', light: '#2f6fa8', felt: '#1f527f', edge: '#0f2b45' },
-  red: { name: 'Red', light: '#a83a3a', felt: '#7f2525', edge: '#431111' },
-  purple: { name: 'Purple', light: '#6f4ba8', felt: '#51357f', edge: '#2a1a45' },
-  charcoal: { name: 'Charcoal', light: '#4a5058', felt: '#33383f', edge: '#16191d' },
-  teal: { name: 'Teal', light: '#2a8a8a', felt: '#1f6a6f', edge: '#0f383d' },
+  green: { name: 'Green', light: '#3a8f5f', felt: '#2d7b4f', edge: '#23603e' },
+  blue: { name: 'Blue', light: '#3a77a8', felt: '#2c6491', edge: '#214d70' },
+  red: { name: 'Red', light: '#a84444', felt: '#8f3434', edge: '#6e2828' },
+  purple: { name: 'Purple', light: '#7055a8', felt: '#5d4591', edge: '#473570' },
+  charcoal: { name: 'Charcoal', light: '#4f555e', felt: '#3e434a', edge: '#2c3036' },
+  teal: { name: 'Teal', light: '#2f8f8c', felt: '#257a77', edge: '#1c5e5c' },
 };
 
 export const BACKS: Record<Back, string> = { red: 'Red', blue: 'Blue', green: 'Green', black: 'Black' };
 
 const KEY = 'rsdp.prefs';
-const DEFAULTS: Prefs = { felt: 'table', deck: 'two', back: 'red' };
+const DEFAULTS: Prefs = {
+  felt: 'table',
+  deck: 'two',
+  back: 'red',
+  units: 'chips',
+  tableSounds: true,
+  chatSound: true,
+  gestures: 'sound',
+  avatars: true,
+  moods: true,
+  hiddenAvatars: [],
+  wakeLock: true,
+};
+const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
 function load(): Prefs {
   try {
@@ -35,6 +66,14 @@ function load(): Prefs {
       felt: raw.felt === 'table' || (FELTS as readonly string[]).includes(raw.felt) ? raw.felt : DEFAULTS.felt,
       deck: raw.deck === 'four' ? 'four' : 'two',
       back: typeof raw.back === 'string' && Object.hasOwn(BACKS, raw.back) ? raw.back : DEFAULTS.back,
+      units: raw.units === 'bb' ? 'bb' : 'chips',
+      tableSounds: flag(raw.tableSounds, DEFAULTS.tableSounds),
+      chatSound: flag(raw.chatSound, DEFAULTS.chatSound),
+      gestures: raw.gestures === 'silent' || raw.gestures === 'off' ? raw.gestures : 'sound',
+      avatars: flag(raw.avatars, DEFAULTS.avatars),
+      moods: flag(raw.moods, DEFAULTS.moods),
+      hiddenAvatars: Array.isArray(raw.hiddenAvatars) ? raw.hiddenAvatars.filter((x: unknown) => typeof x === 'string').slice(0, 500) : [],
+      wakeLock: flag(raw.wakeLock, DEFAULTS.wakeLock),
     };
   } catch {
     return DEFAULTS;
@@ -78,6 +117,9 @@ window.addEventListener('storage', (e) => {
   listeners.forEach((l) => l());
 });
 
+/** The current choices, outside React (sounds read them as they play). */
+export const getPrefs = (): Prefs => current;
+
 export function usePrefs(): Prefs {
   return useSyncExternalStore(subscribe, snapshot);
 }
@@ -85,5 +127,5 @@ export function usePrefs(): Prefs {
 /** The felt this viewer sees: their own pick, else the host's, else green. */
 export function feltStyle(prefs: Prefs, hostFelt: Felt | undefined): CSSProperties {
   const c = FELT_COLORS[prefs.felt === 'table' ? (hostFelt ?? 'green') : prefs.felt];
-  return { '--felt-light': c.light, '--felt': c.felt, '--felt-edge': c.edge } as CSSProperties;
+  return { '--felt': c.felt, '--felt-edge': c.edge } as CSSProperties;
 }

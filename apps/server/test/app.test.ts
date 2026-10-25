@@ -28,6 +28,18 @@ afterAll(async () => {
 const client = (token: string) => socketClient(url, token, clients);
 
 describe('socket server', () => {
+  it('shrugs off malformed messages instead of crashing (one bad client must not restart every table)', async () => {
+    const c = client('malformed-0123456789');
+    const { tableId } = await c.call<{ tableId: string }>('table:create', {});
+    await c.call('table:join', { tableId });
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('seat:sitOut');
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('hand:draw');
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('seat:prefs', null, null);
+    // Still connected and answering.
+    await c.call('seat:request', { seat: 0, name: 'Still here', stack: 100 });
+    expect((await c.until((v) => !!v.seats[0])).seats[0]?.name).toBe('Still here');
+  });
+
   it('exports every finished hand, hiding cards the viewer never saw', async () => {
     const host = client('export-host-0123456789');
     const guest = client('export-guest-0123456789');
@@ -50,6 +62,26 @@ describe('socket server', () => {
     const hostSeat = v.me.seat!;
     expect(deals.find((d) => d.seat === hostSeat)!.cards.every((c) => c.card === '??')).toBe(true);
     expect(deals.find((d) => d.seat !== hostSeat)!.cards.every((c) => c.card !== '??')).toBe(true);
+  });
+
+  it('starts a practice table against bots, and lets a seated player add and remove their own', async () => {
+    const host = client('practice-host-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { seating: { requireApproval: false } }, practice: { name: 'John', bots: 2 } });
+    await host.call('table:join', { tableId });
+    const v = await host.until((x) => !!x.hand);
+    expect(v.seats.filter(Boolean).map((s) => s!.name)).toEqual(['John', "John's Poker Bot", "John's Poker Bot 2"]);
+    expect(v.seats[1]!.bot).toEqual({ ownerId: v.me.playerId, ownerName: 'John' });
+
+    const ann = client('practice-ann-0123456789');
+    await ann.call('table:join', { tableId });
+    await expect(ann.call('bot:add', {})).rejects.toThrow(/take a seat/);
+    await ann.call('seat:request', { seat: 5, name: 'Ann', stack: 100 });
+    const { playerId } = await ann.call<{ playerId: string }>('bot:add', {});
+    const seated = await ann.until((x) => x.seats.some((s) => s?.playerId === playerId));
+    expect(seated.seats.find((s) => s?.playerId === playerId)!.name).toBe("Ann's Poker Bot");
+    await expect(host.call('bot:remove', { playerId: v.seats[1]!.playerId })).resolves.toBeTruthy();
+    await ann.call('bot:remove', { playerId });
+    await ann.until((x) => !x.seats.some((s) => s?.playerId === playerId && !s.leaving));
   });
 
   it('lists people watching the table by name, but not seated players', async () => {
@@ -153,5 +185,16 @@ describe('socket server', () => {
     await new Promise((r) => setTimeout(r, 700));
     await host.call('table:join', { tableId });
     expect(host.view().id).toBe(tableId);
+  });
+});
+
+describe('operator cleanup', () => {
+  it('answers only a shell on the server, never a request through the proxy', async () => {
+    expect((await fetch(`${url}/api/admin/tournaments`)).status).toBe(200);
+    expect((await fetch(`${url}/api/admin/tournaments`, { headers: { 'Fly-Client-IP': '203.0.113.9' } })).status).toBe(404);
+    expect((await fetch(`${url}/api/admin/tournaments`, { headers: { 'X-Forwarded-For': '203.0.113.9' } })).status).toBe(404);
+    const missing = await fetch(`${url}/api/admin/tournaments/0123456789abcdef/archive`, { method: 'POST', headers: { 'X-Forwarded-For': '203.0.113.9' } });
+    expect(missing.status).toBe(404);
+    expect((await fetch(`${url}/api/admin/tournaments/0123456789abcdef/archive`, { method: 'POST' })).status).toBe(400);
   });
 });

@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
+// It creates tables and a tournament with made-up players, so it never runs against the live site.
+if (/fly\.dev/.test(BASE)) {
+  console.error('smoke test refused: it would leave test tables and tournaments on the live site');
+  process.exit(1);
+}
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
@@ -87,6 +92,56 @@ try {
     await host.waitForSelector('.seat:not(.me) .note-badge.has-note');
     if (await guest.locator('.note-badge.has-note').count()) throw new Error('Bob can see a note');
     await host.screenshot({ path: path.join(OUT, 'notes.png') });
+
+    // Bob picks a picture and a mood from his own seat; Ann sees both and throws him a gesture.
+    await guest.click('.seat.me .nameplate');
+    await guest.click('.avatar-pick[aria-label="fox"]');
+    await guest.click('.mood-pick:has-text("🤠")');
+    await guest.click('.modal button:has-text("Close")');
+    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar:not(.initials)');
+    await host.waitForSelector('.seat:not(.me) .seat-mood:has-text("🤠")');
+    await host.click('.seat:not(.me) .nameplate');
+    await host.click('.gesture-grid button[aria-label^="Fish"]');
+    await guest.waitForSelector('.gesture-flight');
+    await guest.screenshot({ path: path.join(OUT, 'gesture.png') });
+    // B shows the felt in big blinds.
+    await host.keyboard.press('b');
+    await host.waitForSelector('.seat.me .stack:has-text("BB")');
+    await host.keyboard.press('b');
+
+    // Records: share the hand as a link anyone can open, and download the full log and tracker file.
+    await host.click('.side-panel .tabs button:has-text("Hands")');
+    await host.click('.hand-row .hand-text:has-text("Share")');
+    await host.click('.modal button:has-text("Make a link")');
+    const link = await host.locator('.share-hand input[readonly]').inputValue();
+    await host.click('.modal button:has-text("Close")');
+    const viewer = await open('shared hand viewer', { width: 390, height: 844 });
+    await viewer.goto(link);
+    await viewer.waitForSelector('.replayer .felt');
+    await viewer.screenshot({ path: path.join(OUT, 'shared-hand.png') });
+    await viewer.close();
+    const ohh = host.waitForEvent('download');
+    await host.click('button:has-text("Tracker (OHH)")');
+    if (!(await ohh).suggestedFilename().endsWith('.ohh')) throw new Error('no OHH file');
+    await host.click('.side-panel .tabs button:has-text("Log")');
+    const log = host.waitForEvent('download');
+    await host.click('button:has-text("Download full log")');
+    if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
+
+    // Fair dealing: the hand is sealed while the game runs, and checks out once the host stops it.
+    await guest.click('.side-panel .tabs button:has-text("Hands")');
+    await guest.locator('.hand-open').first().click();
+    await guest.click('.replayer button:has-text("Check this hand")');
+    await guest.waitForSelector('.fair-check:has-text("Sealed")');
+    await guest.click('.replayer button[aria-label="Close"]');
+    await host.click('button:has-text("Stop game")');
+    await host.waitForSelector('button:has-text("Start game")');
+    await guest.waitForTimeout(500);
+    await guest.locator('.hand-open').first().click();
+    await guest.click('.replayer button:has-text("Check this hand")');
+    await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
+    await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
+    await guest.click('.replayer button[aria-label="Close"]');
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {

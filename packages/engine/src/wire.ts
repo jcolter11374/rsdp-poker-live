@@ -58,10 +58,22 @@ export interface SeatView {
   won: number;
   /** Best hand name at showdown. */
   handName: string | null;
+  /** The player's picture: 'lib:<id>' from AVATARS, 'up:<version>' for an upload served at /api/avatars/<playerId>, or null. */
+  avatar: string | null;
+  /** An emoji the player shows by their seat, or null. */
+  mood: string | null;
+  /** A practice bot, and who added it (absent for people). */
+  bot?: { ownerId: PlayerId; ownerName: string };
 }
 
 export interface HandView {
   handNumber: number;
+  /**
+   * Provably fair dealing: the commitment this hand was dealt from and the
+   * players' seeds mixed in, so each browser can see its own seed was used.
+   * Missing on hands dealt before it existed.
+   */
+  fair?: { commit: string; clientSeeds: { playerId: PlayerId; seed: string }[] };
   gameId: string;
   gameName: string;
   shortName: string;
@@ -99,6 +111,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
+  /** A practice bot asking for a seat (its owner sees it too). */
+  bot?: true;
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -114,6 +128,8 @@ export interface LedgerView {
   /** Current chips if still seated. */
   stack: number;
   net: number;
+  /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
+  bot?: true;
 }
 
 export interface ChatView {
@@ -194,6 +210,12 @@ export interface TableView {
    * has turned watching off: the hand is hidden until you sit.
    */
   spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
+  /**
+   * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
+   * next hand's server seed (seated browsers answer with fair:seed), and the
+   * one the hand in progress was dealt from.
+   */
+  fair: { nextCommit: string; handCommit: string | null };
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */
@@ -207,6 +229,37 @@ export interface HandRecordView {
   button: number;
   seats: { seat: number; playerId: PlayerId; name: string; stack: number }[];
   events: HandEvent[];
+  /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
+  fair?: FairRecordView | null;
+}
+
+/**
+ * A finished hand's fairness record. serverSeed and handSeed are null until the
+ * hand is revealed (the host stopped the game, or at revealsAt): they give away
+ * every card in the deck, folded hands included.
+ */
+export interface FairRecordView {
+  version: string;
+  handId: string;
+  commit: string;
+  clientSeeds: { playerId: PlayerId; name: string; seed: string }[];
+  serverSeed: string | null;
+  handSeed: string | null;
+  revealsAt: number | null;
+  /** Once revealed: every event with every card, so the checker can deal the hand again. */
+  events: HandEvent[] | null;
+}
+
+/** A hand shared as a link: frozen as the sharer saw it (or with their own cards hidden). */
+export interface SharedHandView {
+  id: string;
+  tableName: string;
+  centsMode: boolean;
+  seatCount: number;
+  felt: string | null;
+  sharedBy: string;
+  createdAt: number;
+  hand: HandRecordView;
 }
 
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -214,6 +267,8 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
+  /** A practice table: seat me with this name and deal straight away against this many bots (1-9). */
+  practice?: { name: string; bots: number };
 }
 
 export interface ClientToServer {
@@ -225,11 +280,17 @@ export interface ClientToServer {
   'table:history': (input: { handNumber: number }, ack: Ack<{ hand: HandRecordView }>) => void;
   /** Every finished hand at the table as you may see it, oldest first, for downloads and the replayer. */
   'table:export': (ack: Ack<{ hands: HandRecordView[] }>) => void;
+  /** The whole table log and chat (the view carries only the latest lines) and every finished hand, for the full log download. */
+  'table:fullLog': (ack: Ack<{ log: { at: number; text: string }[]; chat: ChatView[]; hands: HandRecordView[] }>) => void;
+  /** Freeze a finished hand as I saw it behind a link anyone can open; hideMine leaves out my cards unless I showed them. */
+  'hand:share': (input: { handNumber: number; hideMine?: boolean }, ack: Ack<{ id: string }>) => void;
+  /** Stop a link I made from working. */
+  'hand:unshare': (input: { id: string }, ack: Ack) => void;
   'seat:request': (input: { seat: number; name: string; stack: number }, ack: Ack) => void;
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;
-  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }, ack: Ack) => void;
+  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean; mood?: string | null }, ack: Ack) => void;
   'seat:rebuy': (input: { amount: number }, ack: Ack) => void;
   /** Queue for a seat at a full table, with the stack to sit with. */
   'waitlist:join': (input: { name: string; stack: number }, ack: Ack) => void;
@@ -243,7 +304,13 @@ export interface ClientToServer {
   'hand:timeBank': (ack: Ack) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
+  /** Add my browser's randomness to the next hand, answering the commitment I was shown (seated players). */
+  'fair:seed': (input: { commit: string; seed: string }, ack: Ack) => void;
   'chat:send': (input: { text: string }, ack?: Ack) => void;
+  /** Throw a gesture at a player at my table. */
+  'table:gesture': (input: { to: PlayerId; kind: GestureKind }, ack: Ack) => void;
+  /** My picture everywhere: one from the library, an uploaded image (a small data: URL), or none. */
+  'avatar:set': (input: { library?: string; image?: string } | null, ack: Ack<{ avatar: string | null }>) => void;
   /** My private notes on other players. */
   'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
   /** Saves (or, with no text and no colour, deletes) my note on a player. */
@@ -272,16 +339,60 @@ export interface ClientToServer {
   'host:removeCoHost': (input: { playerId: string }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
+  /** Add a practice bot named after me, in this seat or the first free one. */
+  'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
+  /** Take away a bot I added (the host can take away any). */
+  'bot:remove': (input: { playerId: string }, ack: Ack) => void;
 }
 
 export interface ServerToClient {
-  session: (session: { playerId: string; displayName: string; account: { username: string } | null }) => void;
+  session: (session: { playerId: string; displayName: string; account: { username: string } | null; avatar?: string | null }) => void;
   'table:state': (view: TableView) => void;
   /** A tournament moved you to another table (balancing or a broken table). */
   'table:moved': (input: { from: string; to: string }) => void;
+  /** Someone at the table threw a gesture. */
+  'table:gesture': (input: { from: PlayerId; to: PlayerId; kind: GestureKind; at: number }) => void;
   /** All my notes again, after one changed in any of my tabs. */
   notes: (notes: PlayerNote[]) => void;
 }
+
+/** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */
+export const GESTURES = ['heart', 'clap', 'cheers', 'fire', 'laugh', 'cry', 'money', 'fish', 'shark', 'clown', 'tomato', 'rose'] as const;
+export type GestureKind = (typeof GESTURES)[number];
+
+/** The built-in avatar library: id → emoji and background colour. All our own picks, free for everyone. */
+export const AVATARS: Record<string, { emoji: string; bg: string }> = {
+  fox: { emoji: '🦊', bg: '#f2994a' },
+  owl: { emoji: '🦉', bg: '#8d6e63' },
+  cat: { emoji: '🐱', bg: '#f6c344' },
+  bear: { emoji: '🐻', bg: '#a1887f' },
+  frog: { emoji: '🐸', bg: '#66bb6a' },
+  octopus: { emoji: '🐙', bg: '#ec6fa8' },
+  tiger: { emoji: '🐯', bg: '#ffa726' },
+  panda: { emoji: '🐼', bg: '#cfd8dc' },
+  unicorn: { emoji: '🦄', bg: '#b39ddb' },
+  robot: { emoji: '🤖', bg: '#90a4ae' },
+  alien: { emoji: '👽', bg: '#7cb342' },
+  ghost: { emoji: '👻', bg: '#9fa8da' },
+  cowboy: { emoji: '🤠', bg: '#d4a373' },
+  shark: { emoji: '🦈', bg: '#4fc3f7' },
+  dragon: { emoji: '🐲', bg: '#43a047' },
+  penguin: { emoji: '🐧', bg: '#4dd0e1' },
+  koala: { emoji: '🐨', bg: '#b0bec5' },
+  lion: { emoji: '🦁', bg: '#fbc02d' },
+  monkey: { emoji: '🐵', bg: '#bcaaa4' },
+  wolf: { emoji: '🐺', bg: '#78909c' },
+  crown: { emoji: '👑', bg: '#7e57c2' },
+  rocket: { emoji: '🚀', bg: '#5c6bc0' },
+  cactus: { emoji: '🌵', bg: '#9ccc65' },
+  pizza: { emoji: '🍕', bg: '#ef5350' },
+  sunglasses: { emoji: '😎', bg: '#26a69a' },
+  wizard: { emoji: '🧙', bg: '#5e35b1' },
+  ninja: { emoji: '🥷', bg: '#455a64' },
+  diamond: { emoji: '💎', bg: '#29b6f6' },
+};
+/** Largest uploaded avatar accepted, as a data: URL (the web client shrinks pictures well under this). */
+export const AVATAR_MAX_CHARS = 60_000;
 
 export const NOTE_COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type NoteColor = (typeof NOTE_COLORS)[number];

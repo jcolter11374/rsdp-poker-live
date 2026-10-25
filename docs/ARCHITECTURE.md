@@ -46,6 +46,13 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
 - Identity: a persistent guest id per browser; optional username and password accounts link guest ids. Tournament registration needs an account.
 
+## Players at the table (pictures, moods, gestures)
+
+- A player's picture is per player, not per seat: `avatar:set` stores a library id (`AVATARS` in wire.ts) or a small uploaded data: URL in `player_avatars`. Seats show it as `SeatView.avatar`: `lib:<id>`, or `up:<version>` for an upload served at `GET /api/avatars/:playerId` (cacheable; a new upload is a new version). The server keeps a playerId → token map in memory and loads missing ones when a table is shown.
+- `SeatView.mood` is an emoji kept on the seat (`seat:prefs { mood }`). Gestures are not stored: `table:gesture { to, kind }` is checked (host switch `chat.gestures`, target seated, a few per 10 s per tab) and relayed to everyone with the table open.
+- Per-viewer choices (chips or big blinds on the felt, table sounds, chat beep, gesture visibility, hiding pictures and moods, keeping the screen on) live in `rsdp.prefs` with the look prefs.
+- Practice bots (cash tables): `addBot`/`removeBot` on the runtime (`bot:add`, `bot:remove` sockets). A bot is a seat whose player id is in `state.bots` (owner, buy-in); it counts as always online, can never be host, rebuys for its buy-in when it busts (or leaves when rebuys are off), and acts a moment after its turn starts through the `bot` timer. Its play lives in `apps/server/src/bots/strategy.ts`: Monte Carlo equity against random hands with the variant evaluators, using only what its seat can see, then pot-odds betting; draw games try every discard set. Bot ledger rows are flagged `bot`: the ledger shows them tagged, and settle-up pays only between people and says what the bots won or lost. A cash table with bots deals only while at least one person is dealt in. The host can stop players adding bots with `seating.allowPlayerBots`. `table:create` with `practice: { name, bots }` seats the creator and adds the bots; the first deal waits until the creator joins the table. Bots are not in tournaments yet.
+
 ## Tournament integration (packages/tournament <-> apps/server)
 
 - The director is pure: `apply(state, command, now)` and `tick(state, now)` return `{ state, events }`. `nextWakeAt(state)` tells the scheduler when to call `tick`.
@@ -64,3 +71,13 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 ## Changing contracts
 
 Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging, and a version bump of the snapshot format if stored state changes shape.
+
+## Fair dealing
+
+Decks come from `deckFromSeed(handSeed)` (`@rsdp/engine`, `fairness.ts`), never
+from `shuffle(freshDeck(), …)`. The runtime commits to each hand's server seed a
+hand ahead (`view.fair.nextCommit`), seated browsers add seeds with `fair:seed`,
+and `HandInput.fair` carries the record into history. `fair.serverSeed` and
+`fair.handSeed` give away the whole deck: only `handRecordView` may show them,
+and only once `fairRevealed()` says so. Every card-dealing event carries `pos`.
+See docs/FAIRNESS.md.

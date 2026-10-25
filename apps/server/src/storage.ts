@@ -2,6 +2,7 @@ import type { Db } from './db';
 import { allHandsOfTable, createTable, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
 import { resolveToken, setDisplayName } from './identity';
 import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
+import { gameTitle } from '@rsdp/engine/variants';
 import type { IdentityService, TableStore } from './app';
 
 /** Browser secrets map to persistent guest players; accounts come with the account pages. */
@@ -57,12 +58,14 @@ export function dbStore(db: Db): TableStore {
         handNumber: r.number,
         startedAt: r.startedAt.getTime(),
         endedAt: (r.endedAt ?? r.startedAt).getTime(),
-        gameName: r.header.input.game.name,
+        gameName: gameTitle(r.header.input.game.id, r.header.input.betting),
         betting: r.header.input.betting,
         stakes: r.header.input.stakes,
         button: r.header.input.button,
         seats: r.header.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
         events: r.events,
+        handId: r.header.input.handId,
+        fair: r.header.input.fair,
       }));
     },
   };

@@ -3,8 +3,8 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
-import { BoardExtras, SeatExtras } from './table/slots';
+import { fromVars, lerp, px, seatFractions, stadiumPoint, type Point } from './geometry';
+import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -73,6 +73,7 @@ export function Table({
   fmt,
   compact = false,
   onPickSeat,
+  onAddBot,
   onSeatClick,
   discard,
 }: {
@@ -83,6 +84,8 @@ export function Table({
   /** Phone layout: a tall table and smaller seats. */
   compact?: boolean;
   onPickSeat?: (seat: number) => void;
+  /** Put a practice bot in this empty seat. */
+  onAddBot?: (seat: number) => void;
   onSeatClick?: (seat: SeatView) => void;
   discard?: DiscardPick | null;
 }) {
@@ -103,8 +106,16 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  const seatPoint = (seat: number) => stadiumPoint(((seat - offset + n) % n) / n, w, h);
-  const betPoint = (seat: number) => lerp(seatPoint(seat), center, compact ? 0.36 : 0.4);
+  // Empty seats keep half a nameplate plus half a seat button clear of players, and some room between each other.
+  const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
+  const fractions = seatFractions(
+    view.seats.map((s) => !!s),
+    offset,
+    { clear: (compact ? 80 : 115) / perimeter, minGap: (compact ? 44 : 60) / perimeter },
+  );
+  const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
+  // Your own bet sits further in, clear of your bigger cards.
+  const betPoint = (seat: number) => lerp(seatPoint(seat), center, seat === view.me.seat ? (compact ? 0.48 : 0.56) : compact ? 0.36 : 0.4);
   const buttonPoint = (seat: number) => {
     const p = seatPoint(seat);
     // Beside the nameplate, square to the line to the middle: clear of the
@@ -116,7 +127,8 @@ export function Table({
     let sx = -dy / len;
     let sy = dx / len;
     if (sy < 0) (sx = -sx), (sy = -sy);
-    const reach = Math.abs(sx) * (compact ? 46 : 62) + Math.abs(sy) * (compact ? 34 : 42);
+    // Clear of the nameplate, which is wider now that it carries the picture.
+    const reach = Math.abs(sx) * (compact ? 58 : 88) + Math.abs(sy) * (compact ? 36 : 44);
     const inward = compact ? 22 : 10;
     return { x: p.x + sx * reach + (dx / len) * inward, y: p.y + sy * reach + (dy / len) * inward };
   };
@@ -196,7 +208,7 @@ export function Table({
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
-      <div className="board">
+      <div className={`board${multiRun || multiBoard ? ' multi' : ''}`}>
         {runs.map((run, r) =>
           run.map(
             (cards, b) =>
@@ -245,7 +257,12 @@ export function Table({
         if (!s) {
           return (
             <div className="seat empty" style={px(pos)} key={seat}>
-              {onPickSeat ? <button onClick={() => onPickSeat(seat)}>Sit</button> : <span>{seat + 1}</span>}
+              {onPickSeat ? <button onClick={() => onPickSeat(seat)}>Sit</button> : !onAddBot && <span>{seat + 1}</span>}
+              {onAddBot && (
+                <button className="add-bot" onClick={() => onAddBot(seat)} title="Add a practice bot to this seat">
+                  + Bot
+                </button>
+              )}
             </div>
           );
         }
@@ -309,6 +326,11 @@ export function Table({
                 <div className="name">
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
+                  {s.bot && (
+                    <span className="tag bot" title={`A practice bot added by ${s.bot.ownerName}`}>
+                      bot
+                    </span>
+                  )}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
@@ -340,6 +362,8 @@ export function Table({
       })}
 
       {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+
+      <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 
       {flights.map((f) => (
         <div key={f.id} className={`chip-flight ${f.kind}`} style={{ ...px(f.to), ...fromVars(f.from, f.to), animationDelay: `${f.delay}ms` }}>

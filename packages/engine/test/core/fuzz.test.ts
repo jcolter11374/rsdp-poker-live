@@ -1,6 +1,11 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { freshDeck, shuffle } from '../../src/cards';
+import { shuffle } from '../../src/cards';
 import { ActionError, engine, modifierRegistry, planForcedBets, variants, type HandInput, type HandState, type PlannerSeat } from '../../src/core';
+import { commitmentOf, deckFromSeed, handSeedOf, verifyHand } from '../../src/fairness';
 import './harness';
 
 /** mulberry32: small seeded RNG so failures can be replayed by seed. */
@@ -73,8 +78,7 @@ function randomHand(seed: number): HandInput {
     button: plan.button,
     buttonDead: plan.buttonDead,
     posts: plan.posts,
-    deck: shuffle(freshDeck(), r.int),
-    reshuffleSeed: seed,
+    ...fairDeal(seed),
     options: {
       boards,
       bombPot: !!bombPot,
@@ -83,6 +87,17 @@ function randomHand(seed: number): HandInput {
       uncappedHeadsUp: r.next() < 0.5,
     },
     modifiers: r.next() < 0.3 ? [{ id: 'fuzz-rake', settings: {} }] : [],
+  };
+}
+
+/** A provably fair deck, seeded from the fuzz seed so failures replay. */
+function fairDeal(seed: number) {
+  const serverSeed = seed.toString(16).padStart(64, '0');
+  const handSeed = handSeedOf(serverSeed, []);
+  return {
+    deck: deckFromSeed(handSeed),
+    reshuffleSeed: 0,
+    fair: { version: 'rsdp-fair-v1' as const, commit: commitmentOf(serverSeed), serverSeed, clientSeeds: [], handSeed },
   };
 }
 
@@ -142,6 +157,8 @@ function play(seed: number): HandState {
 describe('fuzz: random hands in every game', () => {
   it('always finishes, conserves chips and never duplicates a card', () => {
     let played = 0;
+    let reshuffles = 0;
+    const proofs: object[] = [];
     const byGame = new Map<string, number>();
     const hands = Number(process.env.FUZZ_HANDS ?? 3000);
     for (let seed = 1; seed <= hands; seed++) {
@@ -170,8 +187,23 @@ describe('fuzz: random hands in every game', () => {
       // The event log replays to the same final stacks.
       const end_ = state.events.at(-1)!;
       expect(end_.t, ctx).toBe('hand-end');
+      // Every card dealt checks out against the deck rebuilt from the seed.
+      const fair = state.input.fair!;
+      const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, button: state.input.button, seats: state.input.seats.map((x) => x.seat), events: state.events };
+      const check = verifyHand(proof);
+      expect(check.checks.filter((c) => !c.ok), ctx).toEqual([]);
+      expect(check.ok, ctx).toBe(true);
+      proofs.push(proof);
+      if (state.reshuffled) reshuffles++;
     }
     expect(played).toBeGreaterThan(hands * 0.8);
+    expect(reshuffles, 'draw-game reshuffles get checked too').toBeGreaterThan(0);
+    // The standalone checker (Node's own SHA-256, no app code) agrees on every hand.
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'proofs-')), 'proofs.json');
+    writeFileSync(file, JSON.stringify(proofs));
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../../../../scripts/verify-hand.mjs'), file], { encoding: 'utf8' });
+    expect(run.stdout.trim().split('\n').at(-1)).toBe(`All ${proofs.length} hands check out.`);
+    expect(run.status).toBe(0);
     for (const id of GAMES) expect(byGame.get(id) ?? 0, id).toBeGreaterThan(50);
   });
 });

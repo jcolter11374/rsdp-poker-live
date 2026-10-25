@@ -165,7 +165,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                           <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
                             {VARIANT_LIST.map((v) => (
                               <option key={v.id} value={v.id}>
-                                {v.shortName}
+                                {v.name}
                               </option>
                             ))}
                           </select>
@@ -327,6 +327,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                 <span className="hint">When a seat comes free it is held for the next person in line for a minute.</span>
                 {toggle('Seat new players at random', !!draft.seating.randomSeats, (randomSeats) => set('seating', { randomSeats }))}
                 <span className="hint">Players who sit down get a random open seat instead of the one they clicked.</span>
+                {toggle('Players can add practice bots', draft.seating.allowPlayerBots !== false, (allowPlayerBots) => set('seating', { allowPlayerBots }))}
+                <span className="hint">Anyone seated can add a bot to practice against (up to three each). You can always add and remove bots.</span>
                 {numberField('Free the seat of a player offline for (minutes)', draft.seating.releaseOfflineSeatMinutes, (v) => set('seating', { releaseOfflineSeatMinutes: v }), 0, 1440, '0 = never. Their chips go back to the ledger.')}
               </>
             )}
@@ -335,6 +337,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               {numberField('Disconnect grace (s)', draft.seating.offlineGraceSeconds, (v) => set('seating', { offlineGraceSeconds: v }), 0, 300)}
             </div>
             {toggle('Keep dealing to away players (they check or fold)', draft.seating.dealToAway, (dealToAway) => set('seating', { dealToAway }))}
+            {toggle('Players can throw gestures at each other', draft.chat.gestures !== false, (gestures) => set('chat', { gestures }))}
           </>
         )}
 

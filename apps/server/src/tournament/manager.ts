@@ -27,6 +27,8 @@ import {
   type DirectorEvent,
   type HandResult,
   type Result,
+  seasonBoard,
+  type SeasonBoard,
   type SeatInfo,
   type TableId,
   type TournamentListing,
@@ -48,6 +50,10 @@ export interface TournamentStore {
   listLive(): Promise<{ state: TournamentState; nextId: string | null }[]>;
   /** Tournaments a player hosted or entered that were still going at `since` (ms), the most recent first. */
   listForPlayer(playerId: PlayerId, since: number): Promise<{ state: TournamentState; nextId: string | null }[]>;
+  /** Every tournament in a season. */
+  listSeason(seasonId: string): Promise<TournamentState[]>;
+  /** Seasons a host's tournaments belong to, newest first. */
+  hostSeasons(hostId: PlayerId): Promise<{ id: string; name: string; events: number }[]>;
 }
 
 /** The server side of the tables a tournament runs: storage, broadcasting and links. */
@@ -72,6 +78,8 @@ export interface ManagerDeps {
   onEvents?: (state: TournamentState, before: TournamentState | null, events: DirectorEvent[]) => void;
   log: (message: string, err?: unknown) => void;
   rng?: Rng;
+  /** Passed on to the tables (RuntimeDeps.fairLeadMs). */
+  fairLeadMs?: number;
 }
 
 interface Live {
@@ -203,6 +211,7 @@ export class TournamentManager {
 
   async create(hostId: PlayerId, settings: TournamentSettings): Promise<string> {
     checkGames(settings);
+    settings = await this.checkSeason(hostId, settings);
     for (let i = 0; i < ID_TRIES; i++) {
       const state = this.newState(newTournamentId(), hostId, settings);
       // A taken id is never saved over: another one is drawn.
@@ -222,6 +231,11 @@ export class TournamentManager {
     const saved = await this.deps.store.load(id);
     if (!saved) return null;
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
+  }
+
+  /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
+  async peek(id: string): Promise<TournamentState | null> {
+    return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;
   }
 
   /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
@@ -260,6 +274,60 @@ export class TournamentManager {
     if (this.closed) throw new ActionError('the server is restarting');
     const command = this.fromBrowser(live, me, myName, raw);
     this.dispatch(live, (s, now) => apply(s, command, now));
+  }
+
+  /** Operator cleanup: every event this server holds, so test events can be picked out by name and players. */
+  adminList() {
+    return [...this.live.values()].map(({ state: s }) => ({
+      id: s.id,
+      name: s.settings.name,
+      status: s.status,
+      archived: !!s.archivedAt,
+      createdAt: new Date(s.createdAt).toISOString(),
+      players: s.entries.map((e) => e.displayName),
+    }));
+  }
+
+  /**
+   * Operator cleanup: stops an event the way its host would (pause, let the hands in progress
+   * finish, end) and archives it, which hides it from every list. Results are kept.
+   */
+  async adminArchive(id: string, waitMs = 5 * 60_000) {
+    const live = await this.get(id);
+    if (!live) throw new ActionError('tournament not found');
+    const host = live.state.hostId;
+    const send = (command: Partial<Command>) => this.command(id, host, '', command as Command);
+    if (live.state.status === 'running') await send({ type: 'pause' });
+    for (let waited = 0; live.state.status === 'paused' && live.state.tables.some((t) => t.inHand); waited += 500) {
+      if (waited >= waitMs) throw new ActionError('a hand is still being played; try again');
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (live.state.status === 'paused') await send({ type: 'end' });
+    if (!live.state.archivedAt) await send({ type: 'archive' });
+    return { id, status: live.state.status, archived: !!live.state.archivedAt };
+  }
+
+  /** A season's leaderboard, with live events as they stand now. */
+  async season(id: string): Promise<SeasonBoard | null> {
+    const saved = await this.deps.store.listSeason(id);
+    if (!saved.length) return null;
+    const states = saved.map((s) => this.live.get(s.id)?.state ?? s);
+    return seasonBoard(id, states);
+  }
+
+  hostSeasons(hostId: PlayerId) {
+    return this.deps.store.hostSeasons(hostId);
+  }
+
+  /** Only a season's host adds events to it; it keeps the name it already has. */
+  private async checkSeason(hostId: PlayerId, settings: TournamentSettings): Promise<TournamentSettings> {
+    const season = settings?.season;
+    if (!season || typeof season !== 'object' || !season.id) return settings;
+    const events = await this.deps.store.listSeason(String(season.id));
+    if (!events.length) throw new ActionError('that season was not found');
+    if (events.some((s) => s.hostId !== hostId)) throw new ActionError('only the host of that season can add events to it');
+    const latest = events.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+    return { ...settings, season: { id: season.id, name: latest.settings.season!.name } };
   }
 
   /** The tournament a runtime table belongs to (by its runtime id), if any. */
@@ -477,7 +545,7 @@ export class TournamentManager {
 
   private runtimeDeps(live: Live, tableId: TableId) {
     // `log`: failures a table catches itself go to the server log too.
-    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log };
+    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log, fairLeadMs: this.deps.fairLeadMs };
   }
 
   /**

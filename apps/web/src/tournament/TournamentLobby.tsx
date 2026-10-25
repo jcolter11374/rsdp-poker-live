@@ -21,6 +21,7 @@ import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
 import { AlertsToggle } from './TournamentAlerts';
+import { downloadResults } from './results';
 import { Activity, LobbyChat, useLobbyLog, useUnreadChat } from './LobbyLog';
 
 type Tab = 'players' | 'tables' | 'chat' | 'activity' | 'structure' | 'payouts' | 'host';
@@ -102,6 +103,11 @@ export function TournamentLobby({ id }: { id: string }) {
       </header>
 
       <Hero state={state} now={now} />
+      {state.settings.season && !(tournamentClient() instanceof LocalTournamentClient) && (
+        <p className="tn-windows">
+          <a href={`/season/${state.settings.season.id}`}>{state.settings.season.name}: season standings →</a>
+        </p>
+      )}
       {nextId && (
         <p className="tn-windows">
           <a href={`/tn/${nextId}`}>{state.settings.start.kind === 'sng' ? 'The next Sit & Go is open' : 'The next one in this series is open'} →</a>
@@ -417,6 +423,11 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
         </tbody>
       </table>
       {pending.length > 0 && <p className="muted">{pending.length} waiting for approval.</p>}
+      {rows.length > 0 && started && (
+        <button className="tn-csv" onClick={() => downloadResults(state)}>
+          Download results (CSV)
+        </button>
+      )}
     </>
   );
 }

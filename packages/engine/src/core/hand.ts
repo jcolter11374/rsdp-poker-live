@@ -1,4 +1,5 @@
 import type { Card } from '../cards';
+import { reshuffleRng } from '../fairness';
 import { drawReplacements } from '../variants/draw';
 import { classifyRaise, computeLegal, type BettingContext } from './betting';
 import { computePots, uncalledBet } from './pots';
@@ -140,25 +141,40 @@ function drawCard(state: HandState): Card {
   return state.input.deck[state.deckPos++];
 }
 
+/** Draws n cards in a row and says where they sat in the deck. */
+function drawCards(state: HandState, n: number): { cards: Card[]; pos: number[] } {
+  const pos = Array.from({ length: n }, (_, i) => state.deckPos + i);
+  return { cards: Array.from({ length: n }, () => drawCard(state)), pos };
+}
+
 /**
  * Draw games: replacements come off the stub; when it runs short, its last card
  * and the muck (not this player's discards) are reshuffled, deterministically
  * from the hand's seed so a replayed hand deals the same cards.
  */
-function dealReplacements(state: HandState, thrown: Card[]): Card[] {
-  let seed = (state.input.reshuffleSeed ^ (state.deckPos * 2654435761)) >>> 0 || 1;
-  const rng = (n: number) => {
+function dealReplacements(state: HandState, thrown: Card[]): { cards: Card[]; pos: number[] | undefined; reshuffled: boolean } {
+  const { deck, fair } = state.input;
+  const from = state.deckPos;
+  const rng = fair ? reshuffleRng(fair.handSeed, from) : legacyReshuffleRng(state.input.reshuffleSeed, from);
+  const result = drawReplacements({ discards: thrown, stub: deck.slice(from), muck: state.muck, rng });
+  state.input.deck = [...deck.slice(0, from), ...result.cards, ...result.stub];
+  state.deckPos += result.cards.length;
+  state.muck = result.muck;
+  if (result.reshuffled) state.reshuffled = true;
+  // After a reshuffle the deck no longer matches the seed's, so positions would mislead.
+  const pos = state.reshuffled ? undefined : result.cards.map((_, i) => from + i);
+  return { cards: result.cards, pos, reshuffled: result.reshuffled };
+}
+
+/** Hands dealt before provably fair dealing (still in progress across an upgrade) reshuffle the old way. */
+function legacyReshuffleRng(reshuffleSeed: number, deckPos: number) {
+  let seed = (reshuffleSeed ^ (deckPos * 2654435761)) >>> 0 || 1;
+  return (n: number) => {
     seed ^= seed << 13;
     seed ^= seed >>> 17;
     seed ^= seed << 5;
     return (seed >>> 0) % n;
   };
-  const { deck } = state.input;
-  const result = drawReplacements({ discards: thrown, stub: deck.slice(state.deckPos), muck: state.muck, rng });
-  state.input.deck = [...deck.slice(0, state.deckPos), ...result.cards, ...result.stub];
-  state.deckPos += result.cards.length;
-  state.muck = result.muck;
-  return result.cards;
 }
 
 /** Draw games: a folded hand goes to the muck and can be reshuffled for later draws. */
@@ -179,27 +195,29 @@ function dealStreet(state: HandState) {
   if (state.input.game.family === 'stud' && perPlayer * live.length > state.input.deck.length - state.deckPos) {
     // Not enough cards left for everyone: one shared card face up in the middle.
     if (perPlayer !== 1) throw new ActionError('the deck ran out of cards');
-    const card = drawCard(state);
-    state.runs[0][0].push(card);
-    emit(state, { t: 'board', run: 0, board: 0, cards: [card] });
+    const { cards, pos } = drawCards(state, 1);
+    state.runs[0][0].push(...cards);
+    emit(state, { t: 'board', run: 0, board: 0, cards, pos });
   } else if (perPlayer) {
     // One card at a time around the table, down cards before up cards.
     const pattern: boolean[] = [...Array(st.dealDown).fill(false), ...Array(st.dealUp).fill(true)];
-    const dealt = new Map<SeatIndex, DealtCard[]>(live.map((s) => [s.seat, []]));
+    const dealt = new Map<SeatIndex, { cards: DealtCard[]; pos: number[] }>(live.map((s) => [s.seat, { cards: [], pos: [] }]));
     for (const up of pattern) {
       for (const s of live) {
+        const d = dealt.get(s.seat)!;
+        d.pos.push(state.deckPos);
         const card = { card: drawCard(state), up };
         s.cards.push(card);
-        dealt.get(s.seat)!.push(card);
+        d.cards.push(card);
       }
     }
-    for (const s of live) emit(state, { t: 'deal', seat: s.seat, cards: dealt.get(s.seat)! });
+    for (const s of live) emit(state, { t: 'deal', seat: s.seat, ...dealt.get(s.seat)! });
   }
   if (st.dealBoard) {
     state.runs[0].forEach((board, b) => {
-      const cards = Array.from({ length: st.dealBoard }, () => drawCard(state));
+      const { cards, pos } = drawCards(state, st.dealBoard);
       board.push(...cards);
-      emit(state, { t: 'board', run: 0, board: b, cards });
+      emit(state, { t: 'board', run: 0, board: b, cards, pos });
     });
   }
   if (state.street > 0 || st.dealBoard) emit(state, { t: 'street', street: state.street, name: st.name });
@@ -557,9 +575,9 @@ function runOut(state: HandState, times: 1 | 2) {
       const n = streets[st].dealBoard;
       if (!n) continue;
       state.runs[run].forEach((board, b) => {
-        const cards = Array.from({ length: n }, () => drawCard(state));
+        const { cards, pos } = drawCards(state, n);
         board.push(...cards);
-        emit(state, { t: 'board', run, board: b, cards });
+        emit(state, { t: 'board', run, board: b, cards, pos });
       });
     }
   }
@@ -627,10 +645,19 @@ export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
   if (unique.length > max) throw new ActionError(`discard at most ${max}`);
   if (unique.some((i) => i < 0 || i >= s.cards.length)) throw new ActionError('no such card');
   const thrown = unique.map((i) => s.cards.splice(i, 1)[0].card);
-  const fresh = dealReplacements(state, thrown).map((card) => ({ card, up: false }));
+  const replaced = dealReplacements(state, thrown);
+  const fresh = replaced.cards.map((card) => ({ card, up: false }));
   s.cards.push(...fresh);
   s.lastAction = unique.length === 0 ? 'Stand pat' : `Draw ${unique.length}`;
-  emit(state, { t: 'draw', seat, discarded: unique.length, cards: fresh.map((c) => c.card), positions: unique });
+  emit(state, {
+    t: 'draw',
+    seat,
+    discarded: unique.length,
+    cards: replaced.cards,
+    positions: unique,
+    ...(replaced.pos ? { pos: replaced.pos } : {}),
+    ...(replaced.reshuffled ? { reshuffled: true as const } : {}),
+  });
   state.toAct = nextDrawer(state, seat);
   if (state.toAct === null) {
     beginBetting(state, false);

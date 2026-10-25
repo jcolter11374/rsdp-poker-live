@@ -1,5 +1,5 @@
 import type { BettingKind, HandEvent, PostKind, Stakes } from '@rsdp/engine/core';
-import { getVariant } from '@rsdp/engine/variants';
+import { gameCode, getVariant } from '@rsdp/engine/variants';
 
 export type Fmt = (chips: number) => string;
 
@@ -9,26 +9,24 @@ export function chipFormat(centsMode: boolean): Fmt {
   return (n) => (n / 100).toLocaleString(undefined, { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
+/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. */
+export function bbFormat(bigBlind: number): Fmt {
+  return (n) => {
+    const bb = n / bigBlind;
+    // Under one big blind, keep enough digits that an ante never shows as 0.
+    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(bb)) + 1)) : 1;
+    return `${bb.toLocaleString(undefined, { maximumFractionDigits: digits })} BB`;
+  };
+}
+
 /** Chips to the number typed in an input, and back (cents mode types dollars). */
 export const toInput = (centsMode: boolean, chips: number) => (centsMode ? chips / 100 : chips);
 export const fromInput = (centsMode: boolean, value: number) => Math.round(centsMode ? value * 100 : value);
 
-const BETTING_PREFIX: Record<BettingKind, string> = { 'no-limit': 'NL', 'pot-limit': 'PL', 'fixed-limit': 'FL' };
-export const BETTING_NAME: Record<BettingKind, string> = { 'no-limit': 'No limit', 'pot-limit': 'Pot limit', 'fixed-limit': 'Fixed limit' };
+export const BETTING_NAME: Record<BettingKind, string> = { 'no-limit': 'No Limit', 'pot-limit': 'Pot Limit', 'fixed-limit': 'Limit' };
 
 /** Short label for the felt and top bar: NLH, PLO8, Stud, NL Badugi. */
-export function gameLabel(gameId: string, betting: BettingKind): string {
-  let spec;
-  try {
-    spec = getVariant(gameId);
-  } catch {
-    return gameId;
-  }
-  if (betting === spec.defaultBetting) return spec.shortName;
-  if (spec.id === 'nlhe') return `${BETTING_PREFIX[betting]}H`;
-  if (spec.shortName.startsWith('PLO')) return BETTING_PREFIX[betting] + spec.shortName.slice(2);
-  return `${BETTING_PREFIX[betting]} ${spec.shortName}`;
-}
+export const gameLabel = (gameId: string, betting: BettingKind): string => gameCode(gameId, betting);
 
 /** "1/2", "1/2 ante 1", or "ante 1 · bring-in 2 · 4/8" for stud. */
 export function stakesLabel(stakes: Stakes, family: string, betting: BettingKind, fmt: Fmt): string {

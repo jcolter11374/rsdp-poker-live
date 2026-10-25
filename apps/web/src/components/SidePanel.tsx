@@ -7,6 +7,7 @@ import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../rec
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { setChatMuted, useChatMutes } from '../chatMutes';
+import { FullLogDownload, Highlights, ohhDownload, ShareHandDialog } from './table/Records';
 
 export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -63,6 +64,7 @@ export function SidePanel({
       <div className="scroll" ref={scroller}>
         {tab === 'log' && (
           <>
+            <FullLogDownload view={view} fmt={fmt} />
             {view.log.map((l, i) => (
               <div key={`t${i}`} className="log-table">
                 {l.text}
@@ -182,7 +184,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
     </th>
   );
   const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : fmt(n));
-  const { transfers, off } = settleUp(view.ledger);
+  const { transfers, off, bots } = settleUp(view.ledger);
   const summary = [
     `${view.name}: settle up`,
     ...transfers.map((t) => `${t.from} pays ${t.to} ${fmt(t.amount)}`),
@@ -209,6 +211,11 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
             ))
           )}
           {off !== 0 && <p className="error">The books are off by {signed(off)}; check the buy-ins.</p>}
+          {bots !== 0 && (
+            <p className="hint">
+              Practice bots {bots > 0 ? 'won' : 'lost'} {fmt(Math.abs(bots))} here. Bots play for nothing, so those chips aren't paid to or from anyone.
+            </p>
+          )}
           <p className="hint">Counts chips still on the table as if everyone cashed out now.</p>
           <button
             onClick={() =>
@@ -240,6 +247,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
               <tr key={e.playerId} className={seated.has(e.playerId) ? '' : 'departed'}>
                 <td>
                   {e.name}
+                  {e.bot && <span className="tag bot">bot</span>}
                   {!seated.has(e.playerId) && <span className="muted"> · left</span>}
                 </td>
                 <td>{fmt(e.buyIn)}</td>
@@ -301,6 +309,7 @@ function useAllHands(view: TableView, active: boolean) {
   const [tries, setTries] = useState(0);
   const latest = view.history.at(-1)?.handNumber ?? 0;
   const dealing = view.hand?.handNumber ?? 0;
+  // Stopping the game reveals its hands for checking (docs/FAIRNESS.md), so that fetches them again too.
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
@@ -310,13 +319,14 @@ function useAllHands(view: TableView, active: boolean) {
     return () => {
       live = false;
     };
-  }, [active, latest, dealing, tries]);
+  }, [active, latest, dealing, tries, view.started]);
   return { hands, error, retry: () => setTries((t) => t + 1), setHands };
 }
 
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [open, setOpen] = useState<HandRecordView | null>(null);
   const [replay, setReplay] = useState<number | null>(null);
+  const [sharing, setSharing] = useState<HandRecordView | null>(null);
   const { hands, error: loadError, retry, setHands } = useAllHands(view, true);
   const [error, setError] = useState('');
   const [fromFile, setFromFile] = useState<HandRecordView[] | null>(null);
@@ -380,9 +390,13 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
       <div className="row wrap ledger-actions">
         <button onClick={() => void exportAll('txt')}>Download all hands</button>
         <button onClick={() => void exportAll('json')}>JSON</button>
+        <button onClick={() => setError(ohhDownload(view, hands) ?? '')} title="Open Hand History, for PokerTracker, Holdem Manager and other trackers (Hold'em and Omaha)">
+          Tracker (OHH)
+        </button>
         {opener}
       </div>
       {(error || loadError) && <p className="error">{error || loadError}</p>}
+      <Highlights view={view} hands={hands} fmt={fmt} onReplay={setReplay} onShare={setSharing} />
       {hands
         .map((h, i) => ({ h, i, net: handNet(h, view.me.playerId) }))
         .reverse()
@@ -398,12 +412,16 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
             <button className="hand-text" onClick={() => (setOpen(h), setError(''))} title="Read the log">
               Log
             </button>
+            <button className="hand-text" onClick={() => setSharing(h)} title="Share a link to this hand">
+              Share
+            </button>
           </div>
         ))}
       {replay !== null && (
         <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setReplay(null)} />
       )}
       {fileReplay}
+      {sharing && <ShareHandDialog hand={sharing} onClose={() => setSharing(null)} />}
     </>
   );
 }

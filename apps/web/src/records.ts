@@ -46,12 +46,17 @@ export interface Transfer {
  * Who pays whom so everyone ends up square, in as few payments as the simple
  * method gives: the biggest loser pays the biggest winner until one is even.
  * `off` is what the nets fail to add up to (0 when the books balance).
+ * Practice bots play for nothing: nobody pays them or is paid by them, and
+ * `bots` is what they won (or, below 0, lost) in all. Those chips are left
+ * out, so some people stay up or down by them.
  */
-export function settleUp(rows: { playerId: string; name: string; net: number }[]): { transfers: Transfer[]; off: number } {
+export function settleUp(rows: { playerId: string; name: string; net: number; bot?: boolean }[]): { transfers: Transfer[]; off: number; bots: number } {
+  const people = rows.filter((r) => !r.bot);
   // Kept per player (two people can share a name); names are only for showing.
-  const owe = rows.filter((r) => r.net < 0).map((r) => ({ id: r.playerId, name: r.name, left: -r.net }));
-  const get = rows.filter((r) => r.net > 0).map((r) => ({ id: r.playerId, name: r.name, left: r.net }));
+  const owe = people.filter((r) => r.net < 0).map((r) => ({ id: r.playerId, name: r.name, left: -r.net }));
+  const get = people.filter((r) => r.net > 0).map((r) => ({ id: r.playerId, name: r.name, left: r.net }));
   const off = rows.reduce((a, r) => a + r.net, 0);
+  const bots = rows.reduce((a, r) => a + (r.bot ? r.net : 0), 0);
   const transfers: Transfer[] = [];
   for (;;) {
     owe.sort((a, b) => b.left - a.left);
@@ -64,7 +69,7 @@ export function settleUp(rows: { playerId: string; name: string; net: number }[]
     d.left -= amount;
     c.left -= amount;
   }
-  return { transfers, off };
+  return { transfers, off, bots };
 }
 
 /** Every hand as a readable text log, the same lines as the table's log. */
@@ -81,4 +86,51 @@ export function handHistoryText(tableName: string, hands: HandRecordView[], myId
     out.push('');
   }
   return out.join('\n');
+}
+
+/** One line of the full table log: when, what kind, and the text. */
+export interface FullLogLine {
+  at: number;
+  kind: 'table' | 'chat' | 'hand';
+  text: string;
+}
+
+const SUIT_SYMBOL: Record<string, string> = { c: '♣', d: '♦', h: '♥', s: '♠' };
+const plainCards = (line: string) => line.replace(/\[([2-9TJQKA])([cdhs])\]/g, (_, r: string, s: string) => (r === 'T' ? '10' : r) + SUIT_SYMBOL[s]);
+
+/**
+ * Everything that happened at the table in time order: joins and host
+ * actions, chat, and every hand's lines (placed at the hand's start).
+ */
+export function fullLogLines(
+  log: { at: number; text: string }[],
+  chat: { at: number; playerId: string | null; name: string; text: string }[],
+  hands: HandRecordView[],
+  myId: string,
+  fmt: Fmt,
+): FullLogLine[] {
+  const lines: (FullLogLine & { order: number })[] = [];
+  let order = 0;
+  for (const l of log) lines.push({ at: l.at, kind: 'table', text: l.text, order: order++ });
+  for (const m of chat) lines.push({ at: m.at, kind: 'chat', text: m.playerId ? `${m.name}: ${m.text}` : m.text, order: order++ });
+  for (const h of hands) {
+    const names = new Map(h.seats.map((s) => [s.seat, s.name]));
+    const mySeat = h.seats.find((s) => s.playerId === myId)?.seat ?? null;
+    lines.push({ at: h.startedAt, kind: 'hand', text: `Seats: ${h.seats.map((s) => `${s.seat + 1}. ${s.name} (${fmt(s.stack)})`).join(', ')}`, order: order++ });
+    for (const line of eventLines(h.events, (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat))
+      lines.push({ at: h.startedAt, kind: 'hand', text: plainCards(line.replace(/^--- /, '')), order: order++ });
+  }
+  return lines.sort((a, b) => a.at - b.at || a.order - b.order).map(({ order: _o, ...l }) => l);
+}
+
+export function fullLogText(tableName: string, lines: FullLogLine[]): string {
+  const out = [`${tableName}: full log (${lines.length} lines)`, ''];
+  for (const l of lines) out.push(`${new Date(l.at).toLocaleString()}  ${l.kind === 'chat' ? '[chat] ' : ''}${l.text}`);
+  return out.join('\n') + '\n';
+}
+
+export function fullLogCsv(lines: FullLogLine[]): string {
+  const rows = [['at', 'kind', 'entry'].join(',')];
+  for (const l of lines) rows.push([new Date(l.at).toISOString(), l.kind, csvCell(l.text)].join(','));
+  return rows.join('\r\n') + '\r\n';
 }
