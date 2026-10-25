@@ -168,7 +168,7 @@ export function playerOptions(s: TournamentState, playerId: PlayerId): PlayerOpt
       (reEntry.max === null || entry.entryNo - 1 < reEntry.max) &&
       !pending.some((r) => r.kind === 're-entry'),
     canQuit: !over && allowQuit && alive && entry!.status !== 'registered',
-    canCheckIn: !over && !!entry && mayCheckIn(s, entry),
+    canCheckIn: !over && !!entry && mayCheckIn(s, entry) && checkedInCount(s) < s.settings.maxEntrants,
     checkedIn: entry?.checkedInAt !== undefined && entry.status === 'registered',
     checkInOpensAt: myGroupOpensAt(s, entry),
   };

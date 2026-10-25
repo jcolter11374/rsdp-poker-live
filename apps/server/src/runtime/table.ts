@@ -1511,13 +1511,18 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   const startStacks: Record<PlayerId, number> = {};
   const endStacks: Record<PlayerId, number> = {};
   const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+  const potList = engine.pots(hand);
   for (const hs of hand.seats) {
     startStacks[hs.playerId] = hs.startStack;
     const seat = seats?.[hs.seat];
     const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
     endStacks[hs.playerId] = end;
     if (end > 0) continue;
-    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
+    // Whoever won a pot the busted player was in knocked them out; a side pot they had no part in does not count.
+    // A player who folded their last chips in had no pot to lose, so anyone who won counts.
+    const awards = hand.awards.filter((a) => a.seat !== hs.seat);
+    const theirs = awards.filter((a) => potList[a.pot]?.eligible.includes(hs.seat));
+    const winners = new Set((theirs.length ? theirs : awards).map((a) => a.seat));
     knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };

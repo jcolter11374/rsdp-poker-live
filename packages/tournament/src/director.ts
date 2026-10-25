@@ -346,6 +346,8 @@ export function standings(s: TournamentState): Standing[] {
   const placeOf = places(s);
   const prizes = s.settings.payouts ? placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length) : [];
   const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
+  // Bounties and knockouts follow the player through re-entries.
+  const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
   return s.entries
     .filter((e) => !e.supersededBy)
     .map((e) => ({
@@ -359,8 +361,8 @@ export function standings(s: TournamentState): Standing[] {
       addOns: e.addOns,
       prize: prizeOf[e.id] ?? 0,
       eliminatedBy: e.bust?.by ?? [],
-      bounties: e.bountiesWon ?? 0,
-      knockouts: e.knockouts ?? 0,
+      bounties: ofPlayer(e.playerId, (x) => x.bountiesWon ?? 0),
+      knockouts: ofPlayer(e.playerId, (x) => x.knockouts ?? 0),
       bounty: isAlive(e) ? (e.bounty ?? 0) : 0,
     }))
     .sort((a, b) => (a.place ?? 0) - (b.place ?? 0) || b.stack - a.stack);
@@ -605,6 +607,14 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
   if (existing) existing.members.push(...groupMembers);
   else s.eliminations.push({ members: groupMembers, at: c.now, ...(hfhRound !== undefined ? { hfhRound } : {}) });
   const seats = members.map((e) => ({ tableId: e.tableId, seat: e.seat }));
+  // Leaving with a bounty nobody won: it stays the player's own, as it does for whoever is left at the end.
+  if (reason !== 'busted') {
+    for (const e of members) {
+      if (!e.bounty) continue;
+      e.bountiesWon = (e.bountiesWon ?? 0) + e.bounty;
+      e.bounty = 0;
+    }
+  }
   for (const e of members) {
     unseat(c, e);
     e.status = reason === 'busted' ? 'busted' : reason;
@@ -1079,7 +1089,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
             fail(k === 'structure' ? 'Use editStructure to change levels' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next);
-        if (next.maxEntrants < (checkInActive(s) ? readyEntries(s) : rankedEntries(s)).length) errors.push('Max entrants is below the current field');
+        if (next.maxEntrants < (next.checkIn && checkInActive(s) ? readyEntries(s) : rankedEntries(s)).length) errors.push('Max entrants is below the current field');
         if (errors.length) fail(errors.join('; '));
         s.settings = next;
         if (next.start.kind === 'scheduled' && s.status === 'registering') {
@@ -1131,6 +1141,12 @@ function handResult(c: Ctx, r: HandResult) {
     if (end !== undefined && e.status === 'seated') e.stack = end;
   }
   const leavers = players.filter((e) => e.leaveRequested);
+  // A leaver who lost every chip in the hand was knocked out first: their bounty goes to whoever did it.
+  for (const e of leavers) {
+    if (e.stack > 0 || e.status !== 'seated') continue;
+    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
+    payBounty(c, e);
+  }
   for (const reason of ['quit', 'removed'] as const) eliminate(c, leavers.filter((e) => e.leaveRequested === reason), reason, hfhRound);
 
   const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0);

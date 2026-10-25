@@ -40,8 +40,12 @@ export function validateFormats(s: TournamentSettings): string[] {
       if (!c.groups.every((g) => isObject(g) && isWhole(g.waitMinutes, 1, 599))) errors.push('The wait before the next check-in group must be 1-599 minutes');
     }
     if (!isWhole(c.opensMinutesBefore, 1, 7 * 24 * 60)) errors.push('Check-in must open 1 minute to 7 days before the start');
-    else if (s.start?.kind === 'scheduled' && isWhole(s.seatLeadSeconds, 0, 3600) && c.opensMinutesBefore! * 60 <= s.seatLeadSeconds)
-      errors.push('Check-in must open before the seats are drawn');
+    else if (s.start?.kind === 'scheduled' && isWhole(s.seatLeadSeconds, 0, 3600)) {
+      if (c.opensMinutesBefore! * 60 <= s.seatLeadSeconds) errors.push('Check-in must open before the seats are drawn');
+      // Every group must open before the draw, or its players are dropped without a chance to check in.
+      const waits = Array.isArray(c.groups) ? c.groups.slice(0, -1).reduce((sum, g) => sum + (isObject(g) && isWhole(g.waitMinutes, 1, 599) ? g.waitMinutes : 0), 0) : 0;
+      if (waits * 60 >= c.opensMinutesBefore! * 60 - s.seatLeadSeconds) errors.push('Every check-in group must open before the seats are drawn');
+    }
   }
   return errors;
 }

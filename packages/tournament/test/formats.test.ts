@@ -133,13 +133,48 @@ describe('bounties', () => {
     expect(sim.entry('p2')).toMatchObject({ status: 'seated', bounty: 1001 });
   });
 
-  it('nobody collects the bounty of a player who quits', () => {
+  it('nobody else collects the bounty of a player who quits', () => {
     const sim = new Sim({ bounty: { amount: 500, progressivePercent: 0 }, allowQuit: true });
     sim.register(3);
     sim.do({ type: 'startNow', by: 'host' });
     sim.do({ type: 'quit', playerId: 'p1' });
     expect(sim.of('bountyWon')).toEqual([]);
-    expect(standings(sim.state).reduce((a, s) => a + s.bounties, 0)).toBe(0);
+    expect(standings(sim.state).find((s) => s.playerId === 'p1')!.bounties).toBe(500);
+    expect(standings(sim.state).filter((s) => s.playerId !== 'p1').every((s) => s.bounties === 0)).toBe(true);
+  });
+
+  it('a player who quits keeps their own bounty; one who quits mid-hand and busts pays it to the winner', () => {
+    const sim = new Sim({ bounty: { amount: 1000, progressivePercent: 50 }, allowQuit: true });
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.do({ type: 'quit', playerId: 'p3' });
+    expect(sim.entry('p3')).toMatchObject({ status: 'quit', bounty: 0, bountiesWon: 1000 });
+    const hand = sim.state.tables[0].lastHandNumber + 1;
+    sim.do({ type: 'handStarted', tableId: t, handNumber: hand });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({
+      type: 'handResult',
+      result: { tableId: t, handNumber: hand, startStacks: { p0: 1000, p1: 1000, p2: 1000 }, endStacks: { p0: 0, p1: 2000, p2: 1000 }, knockedOutBy: { p0: ['p1'] } },
+    });
+    expect(sim.entry('p0').status).toBe('quit');
+    expect(sim.entry('p1')).toMatchObject({ bountiesWon: 500, bounty: 1500, knockouts: 1 });
+    sim.hand(t, { p2: ['p1'] });
+    expect(sim.state.status).toBe('finished');
+    // Every cent of the four bounties ends with someone.
+    expect(standings(sim.state).reduce((a, s) => a + s.bounties, 0)).toBe(4000);
+  });
+
+  it('bounties won before a re-entry stay with the player', () => {
+    const sim = new Sim({ bounty: { amount: 1000, progressivePercent: 0 }, reEntry: { enabled: true, throughLevel: null, max: null, approval: false } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, { p1: ['p0'] });
+    sim.hand(t, { p0: ['p2'] });
+    sim.do({ type: 'reEnter', playerId: 'p0' });
+    const p0 = standings(sim.state).find((s) => s.playerId === 'p0')!;
+    expect(p0).toMatchObject({ bounties: 1000, knockouts: 1, bounty: 1000, entryNo: 2 });
   });
 
   it('validates the bounty settings', () => {
@@ -235,6 +270,7 @@ describe('check-in groups', () => {
     sim.do({ type: 'checkIn', playerId: 'p4' });
     sim.do({ type: 'checkIn', playerId: 'p2' });
     // Three seats, three checked in: the rest wait in vain.
+    expect(playerOptions(sim.state, 'p1').canCheckIn).toBe(false);
     expect(() => sim.do({ type: 'checkIn', playerId: 'p1' })).toThrow('Every seat is taken');
 
     sim.at(START - 60_000);
@@ -288,6 +324,9 @@ describe('check-in groups', () => {
     expect(
       validateSettings({ ...base, start: { kind: 'sng', playersNeeded: 2, startDelaySeconds: 0, autoSpawn: false }, checkIn: { groups: [{ firstN: null, waitMinutes: 5 }], opensMinutesBefore: 10 } }),
     ).toContain('Sit & Go events have no check-in');
+    expect(validateSettings({ ...base, checkIn: { groups: [{ firstN: 5, waitMinutes: 30 }, { firstN: null, waitMinutes: 5 }], opensMinutesBefore: 30 } })).toContain(
+      'Every check-in group must open before the seats are drawn',
+    );
     expect(validateSettings({ ...base, checkIn })).toEqual([]);
   });
 });
