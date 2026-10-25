@@ -1,4 +1,4 @@
-import { VARIANT_LIST } from '@rsdp/engine/variants';
+import { gameTitle, VARIANT_LIST } from '@rsdp/engine/variants';
 
 export const chips = (n: number) => n.toLocaleString();
 
@@ -27,7 +27,8 @@ export function ordinal(n: number): string {
 
 export const GAMES: { id: string; name: string }[] = VARIANT_LIST.map((v) => ({ id: v.id, name: v.name }));
 
-export const gameName = (id: string) => GAMES.find((g) => g.id === id)?.name ?? id;
+/** The game with its usual betting: "No-Limit Hold'em", "Pot-Limit Omaha". */
+export const gameName = (id: string) => gameTitle(id);
 
 /** Money in the smallest unit (cents) shown as dollars. */
 export const money = (cents: number) =>

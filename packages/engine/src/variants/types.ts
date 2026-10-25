@@ -22,7 +22,7 @@ export type LowRule = 'ace-to-five' | 'eight-or-better' | 'omaha-eight-or-better
 /** Everything the engine, the lobby and the rules panel need about one game. Plain JSON. */
 export interface VariantSpec extends GameSpec {
   id: VariantId;
-  /** Felt and lobby label, e.g. "PLO8". */
+  /** Stem of the short label without the betting, e.g. "O8" (PLO8); see gameCode. */
   shortName: string;
   /** Private plus face-up cards each player ends with (2 Hold'em, 7 stud, 5 triple draw). */
   cardsPerPlayer: number;

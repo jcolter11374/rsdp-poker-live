@@ -28,6 +28,7 @@ import {
   type TableSettings,
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
+import { gameTitle } from '@rsdp/engine/variants';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -660,7 +661,7 @@ export class TableRuntime {
         if (s.turn.bankFrom !== null) s.turn.bankFrom = banked ? s.turn.deadline - banked.timeBank * 1000 : now;
       }
       if (left?.nextHand != null) s.nextHandAt = now + left.nextHand;
-      if (left?.rit != null) s.ritDeadline = now + left.rit;
+      if (left?.rit != null && s.hand?.phase === 'rit-vote') s.ritDeadline = now + left.rit;
       s.pausedLeft = null;
       s.paused = false;
       for (const id of this.offlineSince.keys()) this.offlineSince.set(id, now);
@@ -1574,7 +1575,7 @@ export class TableRuntime {
     r.hands = 0;
     r.orbits = 0;
     r.anchor = button;
-    this.log(`Switching to ${variants.get(rot.steps[r.step].gameId).spec.name}`);
+    this.log(`Switching to ${gameTitle(rot.steps[r.step].gameId, rot.steps[r.step].betting)}`);
     return true;
   }
 
@@ -1601,6 +1602,8 @@ export class TableRuntime {
     if (s.paused || this.tournament?.busy()) return false;
     const now = this.clock.now();
     const hand = s.hand;
+    // A vote clock with no vote left to run (the hand ended while the game was paused) would fire forever.
+    if (s.ritDeadline !== null && hand?.phase !== 'rit-vote') s.ritDeadline = null;
     if (hand && hand.phase !== 'complete') {
       if (hand.phase === 'rit-vote') {
         if (s.ritDeadline === null) s.ritDeadline = now + RIT_VOTE_SECONDS * 1000;

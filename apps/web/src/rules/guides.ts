@@ -178,7 +178,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'stud8',
-    name: 'Seven Card Stud Hi-Lo',
+    name: 'Stud Hi-Lo (8 or better)',
     games: ['stud8'],
     idea: 'Seven Card Stud where the pot is split: half for the best high hand and half for the best low hand, if anyone has a low.',
     steps: [
@@ -329,7 +329,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'omaha',
-    name: 'Pot-Limit Omaha',
+    name: 'Omaha',
     games: ['plo4', 'plo5', 'plo6'],
     idea: "Like Hold'em with more private cards (four, or five or six in the bigger versions), but your hand must use exactly two of them and exactly three cards from the board.",
     steps: [
@@ -371,11 +371,11 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'omaha8',
-    name: 'Pot-Limit Omaha Hi-Lo',
+    name: 'Omaha Hi-Lo (8 or better)',
     games: ['plo8', 'plo5-8', 'plo6-8'],
     idea: 'Omaha with the pot split: half to the best high hand and half to the best low hand. Each half uses exactly two of your cards and three board cards.',
     steps: [
-      'The deal and betting are exactly like Pot-Limit Omaha: blinds, your private cards, then the flop, turn and river with a round of betting after each.',
+      'The deal and betting are exactly like Omaha: blinds, your private cards, then the flop, turn and river with a round of betting after each.',
       'At the showdown the high half and the low half are worked out separately. You can use different cards from your hand for each.',
     ],
     goal: 'High half: best poker hand. Low half: five different cards all 8 or lower (aces low, straights and flushes do not matter), compared highest card first. A low needs two different low cards from your hand and three from the board, so it is only possible when the board shows at least three different cards of 8 or lower. If nobody has a low, the high hand wins it all.',
@@ -428,7 +428,7 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'holdem',
-    name: "Texas Hold'em",
+    name: "Hold'em",
     games: ['nlhe'],
     idea: 'Two private cards each and five shared cards in the middle. Make the best five-card hand from any mix of the seven.',
     steps: [

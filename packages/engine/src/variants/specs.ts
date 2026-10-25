@@ -1,4 +1,4 @@
-import type { StreetSpec } from '../core/types';
+import type { BettingKind, StreetSpec } from '../core/types';
 import type { VariantId, VariantSpec } from './types';
 
 function flopStreets(holeCards: number): StreetSpec[] {
@@ -39,11 +39,12 @@ const STUD_DEAL =
   'Each player gets two cards down and one up, then three more up cards one at a time, then a last card down. There are no blinds: everyone antes and the bring-in starts the betting. Make your best five-card hand from your seven cards.';
 
 function omaha(id: VariantId, holeCards: number, hiLo: boolean): VariantSpec {
-  const name = `${hiLo ? 'Pot-Limit Omaha Hi-Lo' : 'Pot-Limit Omaha'}${holeCards === 4 ? '' : ` (${holeCards}-card)`}`;
+  // The name leaves the betting out: any game can be played no limit, pot limit or limit (see gameTitle).
+  const name = `${holeCards === 4 ? '' : `${holeCards}-Card `}Omaha${hiLo ? ' Hi-Lo (8 or better)' : ''}`;
   return {
     id,
     name,
-    shortName: `PLO${holeCards === 4 ? '' : holeCards}${hiLo ? (holeCards === 4 ? '8' : ' Hi-Lo') : ''}`,
+    shortName: `O${holeCards === 4 ? '' : holeCards}${hiLo ? (holeCards === 4 ? '8' : ' Hi-Lo') : ''}`,
     family: 'flop',
     streets: flopStreets(holeCards),
     maxPlayers: flopMax(holeCards),
@@ -59,8 +60,8 @@ function omaha(id: VariantId, holeCards: number, hiLo: boolean): VariantSpec {
 const LIST: VariantSpec[] = [
   {
     id: 'nlhe',
-    name: "No-Limit Texas Hold'em",
-    shortName: 'NLH',
+    name: "Hold'em",
+    shortName: 'H',
     family: 'flop',
     streets: flopStreets(2),
     maxPlayers: 10,
@@ -112,7 +113,7 @@ const LIST: VariantSpec[] = [
   },
   {
     id: 'stud8',
-    name: 'Seven Card Stud Hi-Lo',
+    name: 'Stud Hi-Lo (8 or better)',
     shortName: 'Stud 8',
     family: 'stud',
     streets: STUD_STREETS,
@@ -169,4 +170,39 @@ export function getVariant(id: string): VariantSpec {
   const spec = (VARIANTS as Record<string, VariantSpec>)[id];
   if (!spec) throw new Error(`unknown game: ${id}`);
   return spec;
+}
+
+const BETTING_TITLE: Record<BettingKind, string> = { 'no-limit': 'No-Limit', 'pot-limit': 'Pot-Limit', 'fixed-limit': 'Limit' };
+const BETTING_CODE: Record<BettingKind, string> = { 'no-limit': 'NL', 'pot-limit': 'PL', 'fixed-limit': 'L' };
+
+/**
+ * The game's full name with its betting: "No-Limit Hold'em", "Pot-Limit Omaha",
+ * "Limit Omaha Hi-Lo (8 or better)". Flop games always name the betting; stud
+ * and draw games are limit games by nature, so they name it only when it is
+ * something else ("No-Limit Badugi").
+ */
+export function gameTitle(gameId: string, betting?: BettingKind): string {
+  let spec: VariantSpec;
+  try {
+    spec = getVariant(gameId);
+  } catch {
+    return gameId;
+  }
+  const b = betting ?? spec.defaultBetting;
+  if (spec.family !== 'flop' && b === spec.defaultBetting) return spec.name;
+  return `${BETTING_TITLE[b]} ${spec.name}`;
+}
+
+/** Short label for the felt and lists: NLH, LHE, PLO, PLO8, LO, Stud, NL Badugi. */
+export function gameCode(gameId: string, betting?: BettingKind): string {
+  let spec: VariantSpec;
+  try {
+    spec = getVariant(gameId);
+  } catch {
+    return gameId;
+  }
+  const b = betting ?? spec.defaultBetting;
+  if (spec.id === 'nlhe') return b === 'fixed-limit' ? 'LHE' : `${BETTING_CODE[b]}H`;
+  if (spec.family === 'flop') return BETTING_CODE[b] + spec.shortName;
+  return b === spec.defaultBetting ? spec.shortName : `${BETTING_CODE[b]} ${spec.shortName}`;
 }

@@ -165,7 +165,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                           <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
                             {VARIANT_LIST.map((v) => (
                               <option key={v.id} value={v.id}>
-                                {v.shortName}
+                                {v.name}
                               </option>
                             ))}
                           </select>

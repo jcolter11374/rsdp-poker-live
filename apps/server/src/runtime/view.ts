@@ -3,6 +3,7 @@ import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand } from './types';
+import { gameCode, gameTitle } from '@rsdp/engine/variants';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -127,7 +128,7 @@ export function tableView(
     chat: s.chat.slice(-CHAT_SHOWN),
     log: s.log.slice(-LOG_SHOWN),
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
-    history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
+    history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: gameTitle(h.hand.input.game.id, h.hand.input.betting) })),
     watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
     waitlist: (s.waitlist ?? []).map((w) => ({ playerId: w.playerId, name: w.name })),
     offers: (s.offers ?? []).map((o) => ({ ...o, name: s.waitlist?.find((w) => w.playerId === o.playerId)?.name ?? rt.nameOf(o.playerId) })),
@@ -208,20 +209,14 @@ function showable(hand: HandState, seat: number) {
 function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
   const s = rt.state;
   const { input } = hand;
-  let shortName = input.game.name;
-  try {
-    shortName = (variants.get(input.game.id).spec as { shortName?: string }).shortName ?? input.game.name;
-  } catch {
-    /* unregistered game: keep the full name */
-  }
   const runItTwiceEvent = [...hand.events].reverse().find((e) => e.t === 'run-it');
   const offered = hand.events.some((e) => e.t === 'rit-offer');
   const street = input.game.streets[hand.street];
   return {
     handNumber: input.handNumber,
     gameId: input.game.id,
-    gameName: input.game.name,
-    shortName,
+    gameName: gameTitle(input.game.id, input.betting),
+    shortName: gameCode(input.game.id, input.betting),
     family: input.game.family,
     betting: input.betting,
     stakes: input.stakes,
@@ -264,7 +259,8 @@ function previewSetup(rt: TableRuntime): TableView['upcoming'] {
     const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
     Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
   }
-  return { gameId: game.id, gameName: game.name, betting: step?.betting ?? settings.game.betting, stakes: fillStakes(stakes, game) };
+  const betting = step?.betting ?? settings.game.betting;
+  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes: fillStakes(stakes, game) };
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {
@@ -287,7 +283,7 @@ export function pastHand(record: HandRecord): PastHand {
     handNumber: record.handNumber,
     startedAt: record.startedAt,
     endedAt: record.endedAt,
-    gameName: hand.input.game.name,
+    gameName: gameTitle(hand.input.game.id, hand.input.betting),
     betting: hand.input.betting,
     stakes: hand.input.stakes,
     button: hand.input.button,
