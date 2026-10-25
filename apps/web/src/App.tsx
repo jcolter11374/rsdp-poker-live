@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Home } from './Home';
+import { ProfilePage, ResetPage, SignInPage, SignUpPage } from './account/AccountPages';
 import { RoadmapAdminPage } from './roadmap/AdminPage';
 import { RoadmapPage } from './roadmap/RoadmapPage';
 import { WhatsNewPage } from './roadmap/WhatsNewPage';
@@ -42,6 +43,10 @@ function Page() {
   if (/^\/roadmap\/admin\/?$/.test(path)) return <RoadmapAdminPage />;
   if (/^\/whats-new\/?$/.test(path)) return <WhatsNewPage />;
   if (/^\/fairness\/?$/.test(path)) return <FairnessPage />;
+  if (/^\/signin\/?$/.test(path)) return <SignInPage />;
+  if (/^\/signup\/?$/.test(path)) return <SignUpPage />;
+  if (/^\/reset\/?$/.test(path)) return <ResetPage />;
+  if (/^\/profile\/?$/.test(path)) return <ProfilePage />;
   if (path === '/tn/new') return <TournamentCreatePage from={new URLSearchParams(location.search).get('from')} onCreated={(id) => go(`/tn/${id}`)} />;
   const season = path.match(/^\/season\/([\w-]+)/);
   if (season) return <SeasonPage key={season[1]} id={season[1]} />;

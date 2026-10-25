@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { StatusPill } from './Suggestions';
 import { ApiError, checkAdminKey, deleteSuggestion, fetchSuggestions, logOrder, shortDate, STATUS_LABEL, STATUSES, updateSuggestion, type Suggestion } from './suggestions';
+import { issueResetCode } from '../account/api';
 import './roadmap.css';
 
 const KEY = 'rsdp.adminKey';
@@ -73,7 +74,7 @@ export function RoadmapAdminPage() {
         </a>
         <a href="/roadmap">Back to the roadmap</a>
       </header>
-      <h1>Suggestions admin</h1>
+      <h1>Admin</h1>
       {!ok ? (
         <form className="suggest-form" onSubmit={signIn}>
           <label>
@@ -90,6 +91,8 @@ export function RoadmapAdminPage() {
           <p className="muted">
             Changes show on the public log right away. <button onClick={signOut}>Sign out</button>
           </p>
+          <ResetCodeForm adminKey={key} />
+          <h2>Suggestions</h2>
           {error && <p className="error">{error}</p>}
           {list.length === 0 && <p className="muted">No suggestions yet.</p>}
           <ul className="admin-list">
@@ -165,5 +168,46 @@ function AdminRow(props: { s: Suggestion; adminKey: string; onSaved: (s: Suggest
         </div>
       </div>
     </li>
+  );
+}
+
+/** Someone forgot their password: make them a one-time code to send in WhatsApp. */
+function ResetCodeForm({ adminKey }: { adminKey: string }) {
+  const [username, setUsername] = useState('');
+  const [issued, setIssued] = useState<{ username: string; code: string; expiresAt: string } | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    setIssued(null);
+    try {
+      setIssued(await issueResetCode(adminKey, username.trim()));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="suggest-form" onSubmit={submit}>
+      <strong>Password reset code</strong>
+      <span className="muted">For a player who forgot their password. Send them the code; they enter it on the Forgot password page. It works once, for 24 hours.</span>
+      <label>
+        Their username
+        <input value={username} maxLength={24} autoCapitalize="none" spellCheck={false} required onChange={(e) => setUsername(e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      {issued && (
+        <p className="suggest-thanks">
+          Code for {issued.username}: <strong className="reset-code">{issued.code}</strong> (until {new Date(issued.expiresAt).toLocaleString()}). They go to{' '}
+          {location.origin}/reset.
+        </p>
+      )}
+      <button disabled={busy || !username.trim()}>Make a code</button>
+    </form>
   );
 }
