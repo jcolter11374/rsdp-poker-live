@@ -21,8 +21,9 @@ import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
 import { AlertsToggle } from './TournamentAlerts';
+import { Activity, LobbyChat, useLobbyLog, useUnreadChat } from './LobbyLog';
 
-type Tab = 'players' | 'tables' | 'structure' | 'payouts' | 'host';
+type Tab = 'players' | 'tables' | 'chat' | 'activity' | 'structure' | 'payouts' | 'host';
 
 const STATUS_LABEL: Record<TournamentState['status'], string> = {
   registering: 'Registering',
@@ -59,6 +60,8 @@ export function TournamentLobby({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>('players');
   const { send, error: sendError } = useSend(id);
   useFollowSeat(null);
+  const log = useLobbyLog(id);
+  const unread = useUnreadChat(log, tab === 'chat', session?.playerId, skew);
 
   if (error) return <main className="tn-page"><p className="error">{error}</p><a href="/">Home</a></main>;
   if (!state) return <main className="tn-page"><p className="muted">Loading…</p></main>;
@@ -70,6 +73,8 @@ export function TournamentLobby({ id }: { id: string }) {
   const tabs: [Tab, string][] = [
     ['players', `Players (${sum.entrants})`],
     ['tables', `Tables${sum.tables ? ` (${sum.tables})` : ''}`],
+    ['chat', `Chat${unread ? ` (${unread})` : ''}`],
+    ['activity', 'Activity'],
     ['structure', 'Structure'],
     ...(state.settings.payouts ? ([['payouts', 'Payouts']] as [Tab, string][]) : []),
     ...(isHost ? ([['host', `Host${state.requests.length ? ` (${state.requests.length})` : ''}`]] as [Tab, string][]) : []),
@@ -116,6 +121,8 @@ export function TournamentLobby({ id }: { id: string }) {
       <section className="tn-card">
         {tab === 'players' && <Players state={state} me={session?.playerId} />}
         {tab === 'tables' && <Tables state={state} />}
+        {tab === 'chat' && <LobbyChat id={id} items={log} session={session} />}
+        {tab === 'activity' && <Activity items={log} />}
         {tab === 'structure' && (
           <>
             <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />
