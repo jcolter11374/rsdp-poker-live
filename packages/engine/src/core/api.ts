@@ -21,9 +21,19 @@ import type {
   Viewer,
 } from './types';
 
+/**
+ * Games register once at startup; the engine looks rules up by `input.game.id`,
+ * so hand state stays plain JSON (no functions inside).
+ */
+export interface VariantRegistry {
+  register(spec: GameSpec, rules: VariantRules): void;
+  get(id: string): { spec: GameSpec; rules: VariantRules };
+  list(): GameSpec[];
+}
+
 export interface EngineApi {
-  /** Posts forced bets, deals the first street and finds the first player to act. */
-  startHand(input: HandInput, rules: VariantRules): HandState;
+  /** Posts forced bets, deals the first street and finds the first player to act. Rules come from the registry. */
+  startHand(input: HandInput): HandState;
   /** Null when it is not this seat's turn. */
   legalActions(state: HandState, seat: SeatIndex): LegalActions | null;
   /** Throws ActionError for anything illegal. `auto` marks actions taken for away or timed-out players. */
