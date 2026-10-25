@@ -9,7 +9,7 @@ flyctl auth whoami
 if ! flyctl status --app "$APP" >/dev/null 2>&1; then
   flyctl apps create "$APP" --org personal
 fi
-if ! flyctl volumes list --app "$APP" --json | grep -q '"name": *"rsdp_data"'; then
+if ! flyctl volumes list --app "$APP" --json | jq -e 'any(.[]; (.name // .Name) == "rsdp_data")' >/dev/null; then
   flyctl volumes create rsdp_data --app "$APP" --region "$REGION" --size 1 --yes
 fi
 flyctl volumes list --app "$APP"
