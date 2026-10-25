@@ -2,6 +2,7 @@
 
 import type { TournamentListing } from './listing';
 import type { SeasonBoard } from './season';
+import type { LobbyItem } from './log';
 import type { Command, TournamentSettings, TournamentState } from './types';
 
 type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -21,6 +22,8 @@ export interface TournamentClientToServer {
   'tournament:unsubscribe': (input: { id: string }) => void;
   /** Player and host commands. The server fills in who is acting from the connection. */
   'tournament:command': (input: { id: string; command: Command }, ack: Ack) => void;
+  /** Lobby chat; needs a display name and the tournament followed (subscribe). */
+  'tournament:chat': (input: { id: string; text: string }, ack: Ack) => void;
   /** Home page: every upcoming and running event, plus the viewer's own (hosted or played) from the last 30 days. */
   'tournament:list': (ack: Ack<{ tournaments: TournamentListing[]; serverNow: number }>) => void;
   /** A season's leaderboard; anyone with the link may look. */
@@ -31,6 +34,8 @@ export interface TournamentClientToServer {
 
 export interface TournamentServerToClient {
   'tournament:state': (input: { id: string; view: TournamentView }) => void;
+  /** Lobby chat and events: the recent ones after subscribing (`append` false), then each new one. */
+  'tournament:log': (input: { id: string; items: LobbyItem[]; append: boolean }) => void;
 }
 
 /** A director table id (`abc:t3`) as the table's address in links (`abc-t3`). */

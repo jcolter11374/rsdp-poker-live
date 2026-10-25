@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "@rsdp/engine": "*"
   }
 }
