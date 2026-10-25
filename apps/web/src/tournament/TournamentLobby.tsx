@@ -91,7 +91,7 @@ export function TournamentLobby({ id }: { id: string }) {
         </p>
       )}
       <Stats state={state} now={now} />
-      <MyPanel state={state} session={session} send={send} />
+      <MyPanel state={state} session={session} skew={skew} send={send} />
       {sendError && <p className="error tn-toast">{sendError}</p>}
 
       <nav className="tn-tabs" role="tablist">
@@ -216,8 +216,9 @@ function Stats({ state, now }: { state: TournamentState; now: number }) {
 }
 
 /** What the viewer can do: register, rebuy, add on, re-enter, quit. */
-function MyPanel({ state, session, send }: { state: TournamentState; session: Session | null; send: (c: Command) => Promise<boolean> }) {
-  const now = useNow(500);
+function MyPanel({ state, session, skew, send }: { state: TournamentState; session: Session | null; skew: number; send: (c: Command) => Promise<boolean> }) {
+  // The rebuy offer expires on the server's clock.
+  const now = useNow(500) + skew;
   const [name, setName] = useState(() => session?.displayName || savedName());
   const [nameError, setNameError] = useState('');
   if (state.status === 'cancelled') return null;
