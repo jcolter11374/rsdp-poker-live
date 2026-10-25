@@ -113,10 +113,10 @@ Limits, stated plainly:
 - A dishonest server could list a made-up seed under a player's name, or drop
   a real one, to steer the deck. Each browser checks its own entry, live and
   in "Check this hand": it warns if a seed it never sent is listed, if its
-  seed was left out although sent more than 3 seconds before the deal, and if
-  the server turns a seed down for any reason while the player is seated and
-  that hand's commitment is still current (an honest server only turns down a
-  seed that arrived after the deal). So
+  seed was left out although sent more than 3 seconds before the deal (even
+  if the server turned it down, whatever reason it gave: an honest server only
+  turns down a seed that arrived after the deal, and then the browser sees that
+  hand right away), and if the server uses a seed it said it turned down. So
   this is caught unless the affected player never looks (say they left right
   after the hand, or play with browser storage blocked), and except for seeds
   sent in the last 3 seconds before a deal, which can honestly miss it.

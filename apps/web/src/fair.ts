@@ -45,13 +45,8 @@ export function mySeedFor(commit: string): string | null {
 interface Sent {
   seed: string;
   at: number;
-  /** The server turned it down. */
-  rejected?: {
-    /** How long after sending. */
-    after: number;
-    /** The commitment was still the one the table showed as next: an honest server only turns down seeds that came after the deal. */
-    whileCurrent: boolean;
-  };
+  /** The server turned it down this long after it was sent. */
+  rejected?: { after: number };
 }
 
 function sentFor(commit: string): Sent | null {
@@ -100,16 +95,12 @@ function recordLive(view: TableView) {
 
 let sent = '';
 let sending = '';
-/** The commitment the table shows as next, and whether I'm seated, as of the latest view. */
-let current = '';
-let seated = false;
+
 
 /** Call with every table view: sends a fresh seed once per published commitment while seated, and notes what the hand showed. */
 export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
-  current = commit ?? '';
-  seated = view.me.seat !== null;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;
@@ -122,9 +113,7 @@ export function contributeSeed(view: TableView) {
     // One seed per commitment, accepted or not: a fresh one after a refusal would let a server pick and choose.
     sent = commit;
     if (!res.ok) {
-      // Seated, against the commitment still showing as next, an honest server has no reason to refuse, whatever it says.
-      const whileCurrent = current === commit && seated;
-      save(SENT, commit, JSON.stringify({ seed, at, rejected: { after: Date.now() - at, whileCurrent } } satisfies Sent));
+      save(SENT, commit, JSON.stringify({ seed, at, rejected: { after: Date.now() - at } } satisfies Sent));
       return;
     }
     save(SEEDS, commit, seed);
@@ -146,10 +135,10 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
     return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
   }
   if (rejected && under === sentSeed!.seed) return `the server turned down your browser's seed (${under}) but used it anyway`;
-  if (rejected?.whileCurrent && dealtIn) return `the server turned down your browser's seed (${sentSeed!.seed}) before this hand was dealt`;
-  // A seed turned down at once was honestly too late; one left hanging, or turned down slowly, was not.
-  const heldBack = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS && !(rejected && rejected.after < 1000);
-  if (!under && dealtIn && (accepted || heldBack)) {
+  // Whatever the server answered, it saw the seed: an honest server only refuses one that arrived after the deal, and
+  // then this browser sees the hand at about the time it sent it. Seen much later means the seed was there in time.
+  const inTime = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS;
+  if (!under && dealtIn && (accepted || inTime)) {
     return `your browser sent its seed (${accepted ?? sentSeed!.seed}) in good time, but the hand was dealt without it`;
   }
   return null;

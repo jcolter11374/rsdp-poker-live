@@ -42,15 +42,12 @@ describe('the seed under my name', () => {
   });
 
   it('catches a server that turns seeds down and then picks which to use', () => {
-    sent({ seed: 'aa', at: 0, rejected: { after: 50, whileCurrent: false } });
+    sent({ seed: 'aa', at: 0, rejected: { after: 50 } });
     expect(seedProblem(C, listed('aa'), 'me', true, 10_000)).toMatch(/turned down .* but used it/);
-    sent({ seed: 'aa', at: 0, rejected: { after: 50, whileCurrent: true } });
-    expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/before this hand was dealt/);
-    // A prompt "too late" after the deal had moved on is honest.
-    sent({ seed: 'aa', at: 0, rejected: { after: 50, whileCurrent: false } });
-    expect(seedProblem(C, listed(), 'me', true, 10_000)).toBeNull();
-    // A slow refusal is not.
-    sent({ seed: 'aa', at: 0, rejected: { after: 5_000, whileCurrent: false } });
+    // Refused at once, whatever the reason given, yet the hand came seconds later: the seed was there in time.
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
+    // Refused because the hand had just been dealt: this browser sees that hand right away.
+    expect(seedProblem(C, listed(), 'me', true, 400)).toBeNull();
+    expect(seedProblem(C, listed(), 'me', true, -200)).toBeNull();
   });
 });
