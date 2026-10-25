@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Action } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
+import './action-bar.css';
 import { fromInput, toInput, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { suitSymbol } from './PlayingCard';
@@ -10,6 +11,9 @@ import { useNow } from './Table';
 const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}` : '');
 
 type PreAction = { kind: 'checkFold' } | { kind: 'check' } | { kind: 'fold' } | { kind: 'call'; amount: number } | { kind: 'callAny' };
+
+/** How long a move waits for the server before the buttons come back. */
+const SEND_TIMEOUT_MS = 8_000;
 
 export function ActionBar({
   view,
@@ -45,8 +49,44 @@ export function ActionBar({
   const ritDeadline = view.canVoteRunItTwice ? hand?.runItTwice.deadline ?? null : null;
   const now = useNow(ritDeadline !== null, 500) + skew;
 
-  const run = (p: Promise<unknown>) => p.then(() => setError('')).catch((e: Error) => setError(e.message));
-  const send = (action: Action) => run(call('hand:act', action));
+  // One move at a time: a double tap must not send a second move, which could land on the next street
+  // (the big blind checking preflop and then first to act on the flop) or queue a pre-move.
+  const inFlight = useRef(false);
+  const lastSent = useRef(0);
+  const [sending, setSending] = useState(false);
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!sending) return setSlow(false);
+    const t = setTimeout(() => setSlow(true), 2500);
+    return () => clearTimeout(t);
+  }, [sending]);
+  const release = () => {
+    inFlight.current = false;
+    setSending(false);
+  };
+  const run = (p: () => Promise<unknown>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    lastSent.current = Date.now();
+    setSending(true);
+    // An answer lost to a dropped connection never comes: give the buttons back rather than lock them for good.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const noAnswer = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('No answer from the table. Check your connection and try again.')), SEND_TIMEOUT_MS);
+    });
+    Promise.race([p(), noAnswer])
+      .then(() => setError(''))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => {
+        clearTimeout(timer);
+        release();
+      });
+  };
+  // A new turn (or hand) means the last move was dealt with, answered or not.
+  useEffect(release, [legal, hand?.handNumber]);
+  const send = (action: Action) => run(() => call('hand:act', action));
+  /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
+  const settled = () => !inFlight.current && Date.now() - lastSent.current > 500;
 
   useEffect(() => {
     if (legal) setAmount(legal.minTo);
@@ -104,7 +144,11 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
-  const errorLine = error && <div className="error">{error}</div>;
+  const errorLine = slow ? (
+    <div className="muted sending-note">Sending… your connection seems slow.</div>
+  ) : (
+    error && <div className="error">{error}</div>
+  );
 
   // After the hand: show cards you were not made to show.
   if (hand?.phase === 'complete' || !hand) {
@@ -114,10 +158,10 @@ export function ActionBar({
         {hint}
         {errorLine}
         <div className="buttons small">
-          <button onClick={() => run(call('hand:show', { cards: view.canShow }))}>Show cards</button>
+          <button onClick={() => run(() => call('hand:show', { cards: view.canShow }))}>Show cards</button>
           {view.canShow.length > 1 &&
             view.canShow.map((i) => (
-              <button key={i} onClick={() => run(call('hand:show', { cards: [i] }))}>
+              <button key={i} onClick={() => run(() => call('hand:show', { cards: [i] }))}>
                 Show {cardName(myCards[i])}
               </button>
             ))}
@@ -129,13 +173,13 @@ export function ActionBar({
   if (view.canVoteRunItTwice) {
     const left = ritDeadline ? Math.max(0, Math.ceil((ritDeadline - now) / 1000)) : null;
     return (
-      <div className="action-bar my-turn">
+      <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
         {hint}
         {errorLine}
         <div className="prompt">Everyone is all in. Run it twice?{left !== null && <span className="muted"> {left}s</span>}</div>
         <div className="buttons">
-          <button onClick={() => run(call('hand:runItTwice', { yes: false }))}>Run it once</button>
-          <button className="primary" onClick={() => run(call('hand:runItTwice', { yes: true }))}>
+          <button onClick={() => run(() => call('hand:runItTwice', { yes: false }))}>Run it once</button>
+          <button className="primary" onClick={() => run(() => call('hand:runItTwice', { yes: true }))}>
             Run it twice
           </button>
         </div>
@@ -146,7 +190,7 @@ export function ActionBar({
   if (view.canDraw) {
     const n = discard.length;
     return (
-      <div className="action-bar my-turn">
+      <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
         {hint}
         {errorLine}
         <div className="prompt">
@@ -159,7 +203,7 @@ export function ActionBar({
           <button
             className="primary"
             disabled={n > view.canDraw.max}
-            onClick={() => run(call('hand:draw', { discard }).then(clearDiscard))}
+            onClick={() => run(() => call('hand:draw', { discard }).then(clearDiscard))}
           >
             {n === 0 ? 'Stand pat' : `Draw ${n}`}
           </button>
@@ -199,7 +243,7 @@ export function ActionBar({
           {opts.map((o) => {
             const on = pre && JSON.stringify(pre) === JSON.stringify(o.value);
             return (
-              <button key={o.label} className={on ? 'queued' : ''} onClick={() => setPre(on ? null : o.value)}>
+              <button key={o.label} className={on ? 'queued' : ''} onClick={() => settled() && setPre(on ? null : o.value)}>
                 <span className="box">{on ? '✓' : ''}</span> {o.label}
               </button>
             );
@@ -220,7 +264,7 @@ export function ActionBar({
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
   return (
-    <div className="action-bar my-turn">
+    <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
       {hint}
       {errorLine}
       {sized && (
