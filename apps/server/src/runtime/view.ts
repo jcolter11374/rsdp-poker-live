@@ -1,4 +1,5 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
+import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand } from './types';
@@ -33,6 +34,8 @@ export function tableView(
   const waiting = new Set<number>();
   if (live) for (const seat of s.seats) if (seat && !handSeats.has(seat.seat) && !seat.sittingOut && seat.stack > 0) waiting.add(seat.seat);
 
+  const nitRound = s.sideGames?.nit ?? null;
+  const rake = rakeSchema.get(s.settings);
   const seats: (SeatView | null)[] = s.seats.map((seat) => {
     if (!seat) return null;
     const hs = hand ? handSeats.get(seat.seat) : undefined;
@@ -59,6 +62,8 @@ export function tableView(
       waiting: waiting.has(seat.seat) || (seat.isNew && !inThisHand),
       waitForBigBlind: seat.waitForBigBlind,
       straddle: seat.straddle,
+      nitOptIn: !!seat.nitOptIn,
+      nit: nitRound?.participants.includes(seat.playerId) ? (nitRound.holders.includes(seat.playerId) ? 'holder' : 'clear') : null,
       won: inThisHand ? (won.get(seat.seat) ?? 0) : 0,
       handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
     };
@@ -102,6 +107,8 @@ export function tableView(
     serverNow: now,
     bombPotNext: !!s.sideGames?.bombPotNext,
     rabbit: rabbitView(rt, playerId),
+    nit: nitRound ? { prize: nitRound.prize, participants: nitRound.participants.length, holders: nitRound.holders.length } : null,
+    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
     level: levelView(rt, now),
     requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),

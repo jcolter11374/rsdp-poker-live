@@ -14,6 +14,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -313,5 +314,28 @@ export const jobs = pgTable(
     uniqueIndex('jobs_dedupe_key_idx').on(t.dedupeKey),
     index('jobs_status_run_at_idx').on(t.status, t.runAt),
     check('jobs_status_check', sql`${t.status} in (${oneOf(JOB_STATUSES)})`),
+  ],
+);
+
+// ---------------------------------------------------------------- player notes
+
+export const NOTE_COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type NoteColor = (typeof NOTE_COLORS)[number];
+
+/** Private notes one player keeps on another, with a colour tag. Only the owner ever reads them. */
+export const playerNotes = pgTable(
+  'player_notes',
+  {
+    ownerPlayerId: text('owner_player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    targetPlayerId: text('target_player_id').notNull(),
+    text: text('text').notNull().default(''),
+    color: text('color').notNull().default('none'),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ownerPlayerId, t.targetPlayerId] }),
+    check('player_notes_color_check', sql`${t.color} in (${oneOf(NOTE_COLORS)})`),
   ],
 );

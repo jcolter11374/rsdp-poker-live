@@ -13,6 +13,7 @@ import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
+import { cleanNote, memoryNotes, type NotesStore } from './notes';
 import { handRecordView, pastHand, tableView } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
@@ -81,6 +82,7 @@ export interface AppDeps {
   identity?: IdentityService;
   store?: TableStore;
   tournaments?: TournamentStore;
+  notes?: NotesStore;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
   /** Built web client to serve (production). */
@@ -114,6 +116,7 @@ export function createApp(deps: AppDeps = {}) {
   const clock = deps.clock ?? systemClock;
   const identity = deps.identity ?? memoryIdentity();
   const store = deps.store ?? memoryStore();
+  const notes = deps.notes ?? memoryNotes();
   const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
 
   const app = express();
@@ -375,6 +378,20 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
     on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('notes:list', (ack) => guarded(ack, async () => ({ notes: await notes.list(me) }), log));
+    on('notes:set', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const note = await notes.set(me, cleanNote(input));
+          // Every tab of mine gets the new list; nobody else ever sees it.
+          const all = await notes.list(me);
+          for (const s of playerSockets.get(me) ?? []) s.emit('notes', all);
+          return { note };
+        },
+        log,
+      ),
+    );
     on('chat:send', ({ text }) => guarded(undefined, () => current().chat(me, String(text ?? '')), log));
 
     on('host:approve', ({ requestId }, ack) => guarded(ack, () => current().approve(me, String(requestId)), log));

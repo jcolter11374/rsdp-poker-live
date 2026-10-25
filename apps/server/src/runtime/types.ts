@@ -33,6 +33,8 @@ export interface SeatState {
   waitForBigBlind: boolean;
   /** Player preference: straddle when under the gun (or on the button). */
   straddle: boolean;
+  /** Player preference: take part in Nit game rounds (absent in older snapshots). */
+  nitOptIn?: boolean;
   /** Turns in a row the clock ran out. */
   timeouts: number;
   /** Seconds left in this player's time bank. */
@@ -127,6 +129,19 @@ export interface SideGameState {
   handsSinceBombPot: number;
   /** The host asked for a bomb pot next hand. */
   bombPotNext: boolean;
+  /** Simulated rake taken so far. */
+  rakeTotal?: number;
+  /** The Nit game round in progress. */
+  nit?: NitRound | null;
+}
+
+export interface NitRound {
+  /** Who started the round; they share the prize. */
+  participants: PlayerId[];
+  /** Participants who have not won a pot outright yet. */
+  holders: PlayerId[];
+  /** Chips the last holder pays each other participant. */
+  prize: number;
 }
 
 /** Everything about one table. Plain JSON, so it can be snapshotted and restored. */

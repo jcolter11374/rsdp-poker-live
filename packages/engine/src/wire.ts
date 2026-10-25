@@ -49,6 +49,10 @@ export interface SeatView {
   waiting: boolean;
   waitForBigBlind: boolean;
   straddle: boolean;
+  /** Opted in to the Nit game. */
+  nitOptIn: boolean;
+  /** In the current Nit game round: still holding the nit, or off it. */
+  nit: 'holder' | 'clear' | null;
   /** Chips this seat won in the finished hand. */
   won: number;
   /** Best hand name at showdown. */
@@ -149,6 +153,10 @@ export interface TableView {
    * who asked.
    */
   rabbit: { available: boolean; cards: string[][] | null };
+  /** The Nit game round in progress. */
+  nit: { prize: number; participants: number; holders: number } | null;
+  /** Simulated rake collected so far, for whoever the host lets see it. */
+  rakeTotal: number | null;
   /** The host made the next hand a bomb pot. */
   bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
@@ -200,7 +208,7 @@ export interface ClientToServer {
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;
-  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean }, ack: Ack) => void;
+  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }, ack: Ack) => void;
   'seat:rebuy': (input: { amount: number }, ack: Ack) => void;
   'hand:act': (action: Action, ack: Ack) => void;
   'hand:draw': (input: { discard: number[] }, ack: Ack) => void;
@@ -211,6 +219,10 @@ export interface ClientToServer {
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
   'chat:send': (input: { text: string }) => void;
+  /** My private notes on other players. */
+  'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
+  /** Saves (or, with no text and no colour, deletes) my note on a player. */
+  'notes:set': (input: PlayerNote, ack: Ack<{ note: PlayerNote | null }>) => void;
   'host:approve': (input: { requestId: string }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;
   'host:start': (ack: Ack) => void;
@@ -231,6 +243,19 @@ export interface ServerToClient {
   'table:state': (view: TableView) => void;
   /** A tournament moved you to another table (balancing or a broken table). */
   'table:moved': (input: { from: string; to: string }) => void;
+  /** All my notes again, after one changed in any of my tabs. */
+  notes: (notes: PlayerNote[]) => void;
+}
+
+export const NOTE_COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type NoteColor = (typeof NOTE_COLORS)[number];
+export const NOTE_MAX = 500;
+
+/** A private note one player keeps on another. Only its owner ever receives it. */
+export interface PlayerNote {
+  targetPlayerId: string;
+  text: string;
+  color: NoteColor;
 }
 
 export interface HandshakeAuth {
