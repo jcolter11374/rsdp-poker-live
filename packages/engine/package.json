@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "pokersolver": "^2.1.4",
     "vitest": "^2.1.4"
   }
 }

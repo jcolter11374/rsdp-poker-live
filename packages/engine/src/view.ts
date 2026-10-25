@@ -49,7 +49,7 @@ export function viewFor(table: PokerTable, playerId: string): TableView {
         sittingOut: s.sittingOut,
         inHand: !!hp,
         folded: hp?.folded ?? false,
-        allIn: hp?.allIn ?? false,
+        allIn: !!hp?.allIn && hand!.street !== 'complete',
         bet: hp?.bet ?? 0,
         cards: hp ? (reveal ? hp.cards : [null, null]) : [],
       };
