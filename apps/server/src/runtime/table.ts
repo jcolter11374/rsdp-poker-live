@@ -30,6 +30,7 @@ import {
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import { gameTitle } from '@rsdp/engine/variants';
+import { BOT_LOOKS } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -168,6 +169,7 @@ export class TableRuntime {
       this.state.fair.next = this.newServerSeed();
       this.state.fair.clientSeeds = {};
     }
+    this.giveBotsLooks();
     this.watchHost();
     this.sync();
   }
@@ -435,7 +437,8 @@ export class TableRuntime {
       this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(this.isBot(r.playerId) ? { bot: true as const } : {}) };
     }
     delete this.state.departures[r.playerId];
-    this.log(`${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
+    const bot = this.botInfo(r.playerId);
+    this.log(`${bot ? `${bot.ownerName}'s practice bot ` : ''}${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
   }
 
   /** Leave the table: folds a live hand now, or with `afterHand` plays it out first. */
@@ -1066,8 +1069,8 @@ export class TableRuntime {
   // ---------------------------------------------------------------- practice bots
 
   /**
-   * Seats a practice bot named after whoever added it ("Ann's Poker Bot").
-   * The host can always add one; seated players can unless the host turned
+   * Seats a practice bot with a short name and picture of its own ("Ace",
+   * "Chip"), so bots are easy to tell apart. The host can always add one; seated players can unless the host turned
    * that off, and they wait for approval like anyone else when the table
    * approves seats. Cash tables only.
    */
@@ -1096,12 +1099,13 @@ export class TableRuntime {
     const ownerName = cleanDisplayName(input.ownerName ?? '', NAME_MAX) || this.nameOf(by);
     const playerId = `bot-${randomUUID().slice(0, 8)}`;
     this.checkBuyIn(playerId, stack);
-    (this.state.bots ??= {})[playerId] = { ownerId: by, ownerName, buyIn: stack };
-    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name: this.botName(ownerName), seat, amount: stack, at: this.clock.now() };
+    const { look, name } = this.botLook();
+    (this.state.bots ??= {})[playerId] = { ownerId: by, ownerName, buyIn: stack, look };
+    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
     if (!this.settings.seating.requireApproval || host) this.seatPlayer(request);
     else {
       this.state.requests.push(request);
-      this.log(`${ownerName} asked to add ${request.name} in seat ${seat + 1}`);
+      this.log(`${ownerName} asked to add a practice bot, ${name}, in seat ${seat + 1}`);
     }
     this.sync();
     return playerId;
@@ -1135,16 +1139,36 @@ export class TableRuntime {
     return maxBuyIn > 0 ? Math.min(maxBuyIn, Math.max(base, minBuyIn)) : Math.max(base, minBuyIn);
   }
 
-  /** "Ann's Poker Bot", then "Ann's Poker Bot 2"; shortened to fit a nameplate. */
-  private botName(owner: string) {
-    const taken = new Set([...this.state.seats.flatMap((x) => (x ? [x.name] : [])), ...this.state.requests.map((r) => r.name)]);
+  /**
+   * The first of BOT_LOOKS that no other bot here has and nobody here goes by.
+   * With all of them taken (a full table and people named like bots), names get a number: "Ace 2".
+   */
+  private botLook() {
+    const taken = new Set([...this.state.seats.flatMap((x) => (x ? [x.name] : [])), ...this.state.requests.map((r) => r.name)].map((n) => n.toLowerCase()));
+    const used = new Set(Object.values(this.state.bots ?? {}).map((b) => b.look));
     for (let n = 1; ; n++) {
-      const suffix = n === 1 ? '' : ` ${n}`;
-      const full = `${owner}'s Poker Bot${suffix}`;
-      // By whole characters, so an emoji in the owner's name is never split.
-      const short = Array.from(owner).slice(0, Math.max(1, NAME_MAX - 6 - suffix.length)).join('');
-      const name = Array.from(full).length <= NAME_MAX ? full : `${short}'s Bot${suffix}`;
-      if (!taken.has(name)) return name;
+      for (let look = 0; look < BOT_LOOKS.length; look++) {
+        if (n === 1 && used.has(look)) continue;
+        const name = n === 1 ? BOT_LOOKS[look].name : `${BOT_LOOKS[look].name} ${n}`;
+        if (!taken.has(name.toLowerCase())) return { look, name };
+      }
+    }
+  }
+
+  /** Bots saved before bots had looks were all "Ann's Poker Bot": each gets its own name and picture. */
+  private giveBotsLooks() {
+    for (const [playerId, bot] of Object.entries(this.state.bots ?? {})) {
+      if (bot.look !== undefined) continue;
+      const { look, name } = this.botLook();
+      bot.look = look;
+      const seat = this.seatOf(playerId);
+      const request = this.state.requests.find((r) => r.playerId === playerId);
+      const old = seat?.name ?? request?.name;
+      if (seat) seat.name = name;
+      if (request) request.name = name;
+      const row = this.state.ledger[playerId];
+      if (row) row.name = name;
+      if (old) this.log(`${old} is now ${name}`);
     }
   }
 

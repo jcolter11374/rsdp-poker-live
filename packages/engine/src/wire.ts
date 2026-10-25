@@ -61,8 +61,8 @@ export interface SeatView {
   avatar: string | null;
   /** An emoji the player shows by their seat, or null. */
   mood: string | null;
-  /** A practice bot, and who added it (absent for people). */
-  bot?: { ownerId: PlayerId; ownerName: string };
+  /** A practice bot: who added it, and its look (an index into BOT_LOOKS). Absent for people. */
+  bot?: { ownerId: PlayerId; ownerName: string; look: number };
 }
 
 export interface HandView {
@@ -110,8 +110,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
-  /** A practice bot asking for a seat (its owner sees it too). */
-  bot?: true;
+  /** A practice bot asking for a seat, and who added it (its owner sees the request too). */
+  bot?: { ownerId: PlayerId; ownerName: string };
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -349,6 +349,27 @@ export interface ServerToClient {
 /** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */
 export const GESTURES = ['heart', 'clap', 'cheers', 'fire', 'laugh', 'cry', 'money', 'fish', 'shark', 'clown', 'tomato', 'rose'] as const;
 export type GestureKind = (typeof GESTURES)[number];
+
+/**
+ * Practice bots' names and pictures. Each bot at a table takes the first one no
+ * other bot there has, so bots are easy to tell apart at a glance. The order
+ * puts the most different colours first. The web client draws the robot from
+ * `color` and `face` (0-3).
+ */
+export const BOT_LOOKS: readonly { name: string; color: string; face: number }[] = [
+  { name: 'Ace', color: '#e5484d', face: 0 },
+  { name: 'Chip', color: '#2f8ee8', face: 1 },
+  { name: 'Lucky', color: '#2f9e5b', face: 2 },
+  { name: 'Ducky', color: '#f2b705', face: 3 },
+  { name: 'Slick', color: '#9b4dca', face: 1 },
+  { name: 'Rocky', color: '#f76b15', face: 2 },
+  { name: 'Deuce', color: '#0f9f95', face: 0 },
+  { name: 'Hooks', color: '#e0457b', face: 3 },
+  { name: 'Cowboy', color: '#9a6a3c', face: 2 },
+  { name: 'Sharky', color: '#5b5bd6', face: 0 },
+  { name: 'Kicker', color: '#7cab1f', face: 1 },
+  { name: 'Trips', color: '#7d8a99', face: 3 },
+];
 
 /** The built-in avatar library: id → emoji and background colour. All our own picks, free for everyone. */
 export const AVATARS: Record<string, { emoji: string; bg: string }> = {

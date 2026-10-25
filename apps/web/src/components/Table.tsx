@@ -326,11 +326,8 @@ export function Table({
                 <div className="name">
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
-                  {s.bot && (
-                    <span className="tag bot" title={`A practice bot added by ${s.bot.ownerName}`}>
-                      bot
-                    </span>
-                  )}
+                  {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
+                  {s.bot && <span className="bot-owner">· {s.bot.ownerName}&rsquo;s bot</span>}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}

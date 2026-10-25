@@ -134,7 +134,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
       <div className="form">
         <p className="muted">
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
-          {seat.bot && ` · practice bot added by ${seat.bot.ownerName}`}
+          {seat.bot && ` · ${seat.bot.ownerName}'s practice bot`}
         </p>
         {!tournament && (
           <form

@@ -69,8 +69,8 @@ describe('socket server', () => {
     const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { seating: { requireApproval: false } }, practice: { name: 'John', bots: 2 } });
     await host.call('table:join', { tableId });
     const v = await host.until((x) => !!x.hand);
-    expect(v.seats.filter(Boolean).map((s) => s!.name)).toEqual(['John', "John's Poker Bot", "John's Poker Bot 2"]);
-    expect(v.seats[1]!.bot).toEqual({ ownerId: v.me.playerId, ownerName: 'John' });
+    expect(v.seats.filter(Boolean).map((s) => s!.name)).toEqual(['John', 'Ace', 'Chip']);
+    expect(v.seats[1]!.bot).toEqual({ ownerId: v.me.playerId, ownerName: 'John', look: 0 });
 
     const ann = client('practice-ann-0123456789');
     await ann.call('table:join', { tableId });
@@ -78,7 +78,7 @@ describe('socket server', () => {
     await ann.call('seat:request', { seat: 5, name: 'Ann', stack: 100 });
     const { playerId } = await ann.call<{ playerId: string }>('bot:add', {});
     const seated = await ann.until((x) => x.seats.some((s) => s?.playerId === playerId));
-    expect(seated.seats.find((s) => s?.playerId === playerId)!.name).toBe("Ann's Poker Bot");
+    expect(seated.seats.find((s) => s?.playerId === playerId)!.name).toBe('Lucky');
     await expect(host.call('bot:remove', { playerId: v.seats[1]!.playerId })).resolves.toBeTruthy();
     await ann.call('bot:remove', { playerId });
     await ann.until((x) => !x.seats.some((s) => s?.playerId === playerId && !s.leaving));

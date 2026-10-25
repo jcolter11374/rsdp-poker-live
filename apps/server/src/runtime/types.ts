@@ -235,11 +235,13 @@ export interface RuntimeState {
   bots?: Record<PlayerId, BotInfo>;
 }
 
-/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+/** A practice bot: who added it, what it buys in (and rebuys) for, and how it looks. */
 export interface BotInfo {
   ownerId: PlayerId;
   ownerName: string;
   buyIn: number;
+  /** Index into BOT_LOOKS: its name and picture. Missing for bots saved before bots had looks. */
+  look?: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */
