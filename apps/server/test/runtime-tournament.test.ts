@@ -3,6 +3,7 @@ import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { TableRuntime } from '../src/runtime/table';
+import { handRecordView, tableView } from '../src/runtime/view';
 import type { TournamentHooks } from '../src/runtime/types';
 import { FakeClock, seeded } from './fake-clock';
 
@@ -61,6 +62,16 @@ function foldDown(rt: TableRuntime) {
 }
 
 describe('tournament tables', () => {
+  it('keeps the names of players who have left the table in the hand log and history', () => {
+    const { rt, ids } = tournamentTable(3);
+    foldDown(rt);
+    const record = rt.state.history.at(-1)!;
+    rt.unseatPlayer('p2');
+    expect(rt.seatOf('p2')).toBeNull();
+    expect(tableView(rt, 'p1', 0).hand!.names).toEqual({ 0: 'P1', 1: 'P2', 2: 'P3' });
+    expect(handRecordView(rt, record, 'p1').seats.map((x) => x.name)).toEqual(ids.map((id) => id.toUpperCase()));
+  });
+
   it('reports add-ons bought during a hand in the end stacks, and nobody they cover is knocked out', () => {
     const { rt, ended, ids } = tournamentTable(2);
     expect(live(rt)).toBe(true);

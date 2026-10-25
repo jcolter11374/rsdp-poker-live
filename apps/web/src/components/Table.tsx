@@ -228,7 +228,7 @@ export function Table({
         {done &&
           [...results.entries()].map(([seat, w]) => (
             <div className="pot result" key={seat}>
-              {view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
+              {view.hand?.names[seat] ?? view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
               {w.handName ? ` · ${w.handName}` : ''}
             </div>
           ))}

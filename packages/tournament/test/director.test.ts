@@ -337,18 +337,31 @@ describe('busts, rebuys and re-entry', () => {
     ]);
   });
 
-  it('a lone survivor waits while late registration is open', () => {
+  it('late registration is open until it closes', () => {
     const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 1 } });
-    sim.register(2);
+    sim.register(3);
     sim.do({ type: 'startNow', by: 'host' });
     sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
     expect(sim.state.status).toBe('running');
-    sim.register(1, 2);
+    sim.register(1, 3);
     expect(sim.of('seatPlayer')[0].reason).toBe('late-registration');
     expect(tableGate(sim.state, sim.state.tables[0].id, sim.now)).toBe('deal');
     sim.at(T0 + 10 * MIN);
     expect(sim.of('lateRegistrationClosed')).toHaveLength(1);
-    expect(() => sim.register(1, 3)).toThrow('Registration is closed');
+    expect(() => sim.register(1, 4)).toThrow('Registration is closed');
+  });
+
+  it('a lone survivor wins even while late registration is open', () => {
+    const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 4 } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.place])).toEqual([
+      ['p0', 1],
+      ['p1', 2],
+    ]);
+    expect(() => sim.register(1, 2)).toThrow();
   });
 
   it('a quit during a hand takes effect when the hand ends', () => {
