@@ -10,7 +10,7 @@
     "dev": "concurrently -n server,web -c blue,green \"npm run dev -w @rsdp/server\" \"npm run dev -w @rsdp/web\"",
     "build": "npm run build -w @rsdp/web",
     "start": "npm run start -w @rsdp/server",
-    "test": "npm test -w @rsdp/engine && npm test -w @rsdp/tournament && npm test -w @rsdp/server",
+    "test": "npm test -w @rsdp/engine && npm test -w @rsdp/tournament && npm test -w @rsdp/server && npm test -w @rsdp/web",
     "typecheck": "tsc -p packages/engine && tsc -p packages/tournament && tsc -p apps/server && tsc -p apps/web",
     "smoke": "node e2e/smoke.mjs"
   },

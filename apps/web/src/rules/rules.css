@@ -1,0 +1,34 @@
+/* ---- game guides (rules dialog and the /rules page) */
+.modal:has(.guide) { width: min(640px, 100%); }
+.guide { display: flex; flex-direction: column; gap: 12px; }
+.guide-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.guide-group { width: 100%; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: 2px; }
+.guide-chip { padding: 4px 10px; font-size: 0.85rem; border-radius: 999px; }
+.guide-chip.on { background: var(--accent-2); border-color: var(--accent-2); color: #1a1205; }
+.guide-chip .tag { margin-left: 6px; }
+.guide-body h3 { margin: 4px 0; font-size: 1.1rem; }
+.guide-body h4 { margin: 10px 0 4px; font-size: 0.9rem; color: var(--muted); }
+.guide-body p, .guide-body li { line-height: 1.45; }
+.guide-idea { font-size: 1rem; }
+.guide-body details { border-top: 1px solid #33414f; padding: 6px 0; }
+.guide-body summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.guide-body ol, .guide-body ul { margin: 6px 0; padding-left: 22px; }
+.guide-body li + li { margin-top: 4px; }
+.guide-cards { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.guide-cards .playing-card.small { width: 26px; height: 37px; }
+.guide-cards .playing-card.small .rank, .guide-cards .playing-card.small .suit { font-size: 0.8rem; }
+.guide-ladder li { display: flex; align-items: center; gap: 10px; }
+.guide-ladder li::marker { color: var(--muted); }
+.guide-showdown { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.guide-showdown p { margin: 6px 0 0; }
+.guide-hand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0; opacity: 0.75; }
+.guide-hand.won { opacity: 1; }
+.guide-hand .who { width: 44px; font-size: 0.85rem; color: var(--muted); }
+.guide-hand.won .who { color: var(--text); font-weight: 700; }
+.rules-page { max-width: 720px; margin: 0 auto; padding: 16px; }
+.rules-page header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.rules-page h1 { margin: 0; font-size: 1.4rem; }
+@media (max-width: 480px) {
+  .guide-ladder li { flex-direction: column; align-items: flex-start; gap: 2px; }
+}
+.guide-hand .tag { background: var(--good); color: #062814; }
