@@ -208,7 +208,7 @@ export function reEntryOpen(s: TournamentState): boolean {
   return s.settings.reEntry.enabled && started(s) && withinLevel(s, s.settings.reEntry.throughLevel);
 }
 
-function paidPlaces(s: TournamentState): number {
+export function paidPlaces(s: TournamentState): number {
   if (!s.settings.payouts) return 0;
   const range = s.settings.payouts.structure.ranges.find((r) => s.entries.length >= r.minEntries && s.entries.length <= r.maxEntries);
   return range?.percents.length ?? 0;
