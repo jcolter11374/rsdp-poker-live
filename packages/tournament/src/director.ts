@@ -14,6 +14,24 @@
 // scheduled starts and offer expiries only take effect in tick, so the server
 // must wake at nextWakeAt (a 1 s tick is a fine fallback).
 
+import { handOver, RoleError, withCoHost, withoutCoHost } from '@rsdp/engine/roles';
+import {
+  checkInActive,
+  checkInGroupOf,
+  checkInScheduledAt,
+  drawCodes,
+  groupOpensAt,
+  isCodeFormat,
+  MAX_INVITE_CODES,
+  MAX_INVITES_PER_BATCH,
+  MAX_REGISTRATION_LIST,
+  mayCheckIn,
+  normalizeCode,
+  readyEntries,
+  splitBounty,
+  usableCode,
+  validateFormats,
+} from './formats';
 import { placePrizes, prizePool, prizesForPlaces, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
 import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
@@ -104,6 +122,9 @@ const SETTINGS_KEYS: Record<keyof TournamentSettings, true> = {
   allowQuit: true,
   payouts: true,
   handForHand: true,
+  bounty: true,
+  invites: true,
+  checkIn: true,
 };
 
 /** Only the known settings, with the free text cleaned (names are cut by whole characters). */
@@ -169,6 +190,7 @@ export function validateSettings(s: TournamentSettings): string[] {
       errors.push('Prize money must be whole amounts of 0 or more');
     if (m.feePercent !== undefined && !(typeof m.feePercent === 'number' && m.feePercent >= 0 && m.feePercent <= 100)) errors.push('The fee must be 0-100%');
   }
+  errors.push(...validateFormats(s));
   // The structure checks its own rows.
   if (hasUnstorableText({ ...s, structure: null })) errors.push('Settings contain characters that cannot be saved');
   return errors;
@@ -257,7 +279,9 @@ function withinLevel(s: TournamentState, through: number | null): boolean {
   return p.levelNumber < through || (p.levelNumber === through && !p.onBreak);
 }
 
-const hasRoom = (s: TournamentState) => rankedEntries(s).length < s.settings.maxEntrants;
+/** Room on the list: with check-in it can run past max entrants, since seats go to whoever checks in first. */
+const hasRoom = (s: TournamentState) =>
+  checkInActive(s) ? aliveEntries(s).length < MAX_REGISTRATION_LIST : rankedEntries(s).length < s.settings.maxEntrants;
 
 export function registrationOpen(s: TournamentState): boolean {
   if (!hasRoom(s)) return false;
@@ -323,6 +347,8 @@ export function standings(s: TournamentState): Standing[] {
   const placeOf = places(s);
   const prizes = s.settings.payouts ? placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length) : [];
   const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
+  // Bounties and knockouts follow the player through re-entries.
+  const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
   return s.entries
     .filter((e) => !e.supersededBy)
     .map((e) => ({
@@ -336,6 +362,9 @@ export function standings(s: TournamentState): Standing[] {
       addOns: e.addOns,
       prize: prizeOf[e.id] ?? 0,
       eliminatedBy: e.bust?.by ?? [],
+      bounties: ofPlayer(e.playerId, (x) => x.bountiesWon ?? 0),
+      knockouts: ofPlayer(e.playerId, (x) => x.knockouts ?? 0),
+      bounty: isAlive(e) ? (e.bounty ?? 0) : 0,
     }))
     .sort((a, b) => (a.place ?? 0) - (b.place ?? 0) || b.stack - a.stack);
 }
@@ -381,10 +410,15 @@ export function nextWakeAt(s: TournamentState): number | null {
   const { start } = s.settings;
   if (s.status === 'registering' && start.kind === 'scheduled' && s.startAt !== null) {
     if (s.graceUntil !== null) times.push(s.graceUntil);
-    else if (aliveEntries(s).length >= 2) times.push(s.startAt - s.settings.seatLeadSeconds * 1000);
+    else if (readyEntries(s).length >= 2) times.push(s.startAt - s.settings.seatLeadSeconds * 1000);
     else times.push(s.startAt);
   }
   if (s.status === 'seating' && s.startAt !== null) times.push(s.startAt);
+  if (s.status === 'registering' && s.settings.checkIn) {
+    const open = s.checkIn?.groupsOpen ?? 0;
+    const at = open === 0 ? checkInScheduledAt(s) : open < s.settings.checkIn.groups.length ? groupOpensAt(s, open) : null;
+    if (at !== null) times.push(at);
+  }
   if (started(s)) {
     for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined) times.push(e.rebuyOfferExpiresAt);
     if (s.status === 'running' && s.clock.runningSince !== null) {
@@ -425,20 +459,21 @@ function checkChipsInPlay(s: TournamentState, chips: number) {
   if (inPlay + chips > MAX_CHIPS_IN_PLAY) fail('The tournament cannot hold any more chips');
 }
 
-function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number): Entry {
-  checkChipsInPlay(c.s, c.s.settings.startingStack);
+function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number, stack = c.s.settings.startingStack): Entry {
+  checkChipsInPlay(c.s, stack);
   const e: Entry = {
     id: `${c.s.id}:e${++c.s.counters.entry}`,
     playerId,
     displayName,
     entryNo,
     status: 'registered',
-    stack: c.s.settings.startingStack,
+    stack,
     tableId: null,
     seat: null,
     rebuys: 0,
     addOns: 0,
     registeredAt: c.now,
+    ...(c.s.settings.bounty ? { bounty: c.s.settings.bounty.amount, bountiesWon: 0, knockouts: 0 } : {}),
   };
   c.s.entries.push(e);
   return e;
@@ -458,11 +493,14 @@ function newTable(c: Ctx): TableState {
   return t;
 }
 
-function register(c: Ctx, playerId: PlayerId, displayName: string) {
+/** A stack the host approves in place of the starting stack. */
+const customStack = (s: TournamentState, stack: number | undefined) => (stack === undefined || stack === s.settings.startingStack ? {} : { stack });
+
+function register(c: Ctx, playerId: PlayerId, displayName: string, stack?: number) {
   const s = c.s;
   const late = started(s);
-  const e = newEntry(c, playerId, displayName, 1);
-  emit(c, { type: 'registered', entryId: e.id, playerId, displayName, late, entryNo: 1 });
+  const e = newEntry(c, playerId, displayName, 1, stack);
+  emit(c, { type: 'registered', entryId: e.id, playerId, displayName, late, entryNo: 1, ...customStack(s, stack) });
   if (s.tables.length) seatLate(c, e, 'late-registration');
   afterRegistration(c);
 }
@@ -471,7 +509,7 @@ function register(c: Ctx, playerId: PlayerId, displayName: string) {
 function afterRegistration(c: Ctx) {
   const s = c.s;
   if (s.status !== 'registering') return;
-  const count = aliveEntries(s).length;
+  const count = readyEntries(s).length;
   if (s.settings.start.kind === 'scheduled' && s.graceUntil !== null && count >= 2) {
     seatAll(c);
     begin(c);
@@ -485,6 +523,10 @@ function afterRegistration(c: Ctx) {
 
 function seatAll(c: Ctx) {
   const s = c.s;
+  // Anyone who did not check in loses their place on the list.
+  if (checkInActive(s)) {
+    for (const e of s.entries.filter((x) => x.status === 'registered' && x.checkedInAt === undefined)) dropEntry(c, e, 'not-checked-in');
+  }
   const waiting = s.entries.filter((e) => e.status === 'registered');
   const [draw, rng] = drawSeats(waiting.map((e) => e.id), s.settings.seatsPerTable, s.rng);
   s.rng = rng;
@@ -541,6 +583,14 @@ function seatLate(c: Ctx, e: Entry, reason: 'late-registration' | 're-entry') {
   rebalance(c);
 }
 
+/** Takes a registration back before the draw, freeing any invite code it used. */
+function dropEntry(c: Ctx, e: Entry, reason?: 'not-checked-in') {
+  const s = c.s;
+  s.entries = s.entries.filter((x) => x !== e);
+  for (const code of s.invites ?? []) code.usedBy = code.usedBy.filter((u) => u.playerId !== e.playerId);
+  emit(c, { type: 'unregistered', playerId: e.playerId, ...(reason ? { reason } : {}) });
+}
+
 function unseat(c: Ctx, e: Entry) {
   if (e.tableId) {
     const t = table(c.s, e.tableId);
@@ -561,6 +611,14 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
   if (existing) existing.members.push(...groupMembers);
   else s.eliminations.push({ members: groupMembers, at: c.now, ...(hfhRound !== undefined ? { hfhRound } : {}) });
   const seats = members.map((e) => ({ tableId: e.tableId, seat: e.seat }));
+  // Leaving with a bounty nobody won: it stays the player's own, as it does for whoever is left at the end.
+  if (reason !== 'busted') {
+    for (const e of members) {
+      if (!e.bounty) continue;
+      e.bountiesWon = (e.bountiesWon ?? 0) + e.bounty;
+      e.bounty = 0;
+    }
+  }
   for (const e of members) {
     unseat(c, e);
     e.status = reason === 'busted' ? 'busted' : reason;
@@ -570,6 +628,8 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
     e.seat = null;
     delete e.rebuyOfferExpiresAt;
     delete e.leaveRequested;
+    delete e.pendingStack;
+    delete e.pendingStackBy;
   }
   const placeOf = places(s);
   members.forEach((e, i) =>
@@ -585,26 +645,78 @@ function canRebuy(s: TournamentState, e: Entry): boolean {
 function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
   checkChipsInPlay(c.s, chips);
   e.stack += chips;
+  // An add-on bought after a pending stack edit counts on top of it.
+  if (e.pendingStack !== undefined) e.pendingStack += chips;
   if (reason === 'rebuy') {
     e.rebuys++;
     e.status = 'seated';
     delete e.rebuyOfferExpiresAt;
     delete e.bust;
+    // A rebuy buys a fresh bounty; the old one went to whoever busted them.
+    if (c.s.settings.bounty) e.bounty = c.s.settings.bounty.amount;
   } else e.addOns++;
   emit(c, { type: 'stackAdded', entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, chips, reason });
 }
 
-function reEnter(c: Ctx, old: Entry) {
-  const e = newEntry(c, old.playerId, old.displayName, old.entryNo + 1);
+function reEnter(c: Ctx, old: Entry, stack?: number) {
+  const e = newEntry(c, old.playerId, old.displayName, old.entryNo + 1, stack);
   old.supersededBy = e.id;
-  emit(c, { type: 'registered', entryId: e.id, playerId: e.playerId, displayName: e.displayName, late: true, entryNo: e.entryNo });
+  emit(c, { type: 'registered', entryId: e.id, playerId: e.playerId, displayName: e.displayName, late: true, entryNo: e.entryNo, ...customStack(c.s, stack) });
   seatLate(c, e, 're-entry');
 }
 
-function request(c: Ctx, kind: RequestKind, e: { playerId: PlayerId; displayName: string }, entryId?: EntryId) {
-  const r: PendingRequest = { id: `${c.s.id}:r${++c.s.counters.request}`, kind, playerId: e.playerId, displayName: e.displayName, at: c.now, ...(entryId ? { entryId } : {}) };
+function request(c: Ctx, kind: RequestKind, e: { playerId: PlayerId; displayName: string }, entryId?: EntryId, code?: string) {
+  const r: PendingRequest = {
+    id: `${c.s.id}:r${++c.s.counters.request}`,
+    kind,
+    playerId: e.playerId,
+    displayName: e.displayName,
+    at: c.now,
+    ...(entryId ? { entryId } : {}),
+    ...(code ? { code } : {}),
+  };
   c.s.requests.push(r);
   emit(c, { type: 'requestPending', request: r });
+}
+
+/** Notes who used a code. The host approving a registration lets it through even if the code was cancelled meanwhile. */
+function useCode(c: Ctx, code: string, who: { playerId: PlayerId; displayName: string }) {
+  c.s.invites?.find((x) => x.code === code)?.usedBy.push({ playerId: who.playerId, displayName: who.displayName, at: c.now });
+}
+
+/** Opens the check-in groups whose time has come, telling each newly eligible player once. */
+function openCheckInGroups(c: Ctx) {
+  const s = c.s;
+  const groups = s.settings.checkIn?.groups;
+  if (!groups || s.status !== 'registering') return;
+  if (s.checkIn?.openedAt == null) {
+    const at = checkInScheduledAt(s);
+    if (at === null || c.now < at) return;
+    s.checkIn = { openedAt: at, groupsOpen: 0 };
+  }
+  const state = s.checkIn!;
+  while (state.groupsOpen < groups.length && c.now >= groupOpensAt(s, state.groupsOpen)!) {
+    const group = state.groupsOpen++;
+    const playerIds = s.entries.filter((e) => e.status === 'registered' && e.checkedInAt === undefined && checkInGroupOf(s, e) === group).map((e) => e.playerId);
+    emit(c, { type: 'checkInOpened', group: group + 1, playerIds });
+  }
+}
+
+/** Pays the bounty on a busted entry to the players who won the busting pot. */
+function payBounty(c: Ctx, e: Entry) {
+  const s = c.s;
+  const head = e.bounty ?? 0;
+  if (!s.settings.bounty || head <= 0) return;
+  const winners = (e.bust?.by ?? []).map((id) => activeEntry(s, id)).filter((w): w is Entry => !!w && w !== e);
+  if (!winners.length) return;
+  e.bounty = 0;
+  splitBounty(head, winners.length, s.settings.bounty.progressivePercent).forEach(({ cash, headAdded }, i) => {
+    const w = winners[i];
+    w.bountiesWon = (w.bountiesWon ?? 0) + cash;
+    w.bounty = (w.bounty ?? 0) + headAdded;
+    w.knockouts = (w.knockouts ?? 0) + 1;
+    emit(c, { type: 'bountyWon', entryId: w.id, playerId: w.playerId, fromEntryId: e.id, fromPlayerId: e.playerId, cash, headAdded });
+  });
 }
 
 function loads(s: TournamentState): TableLoad[] {
@@ -693,6 +805,13 @@ function checkFinish(c: Ctx) {
 function finish(c: Ctx) {
   const s = c.s;
   const alive = aliveEntries(s);
+  // Whoever is still in keeps the bounty on their own head.
+  for (const e of alive) {
+    if (e.bounty) {
+      e.bountiesWon = (e.bountiesWon ?? 0) + e.bounty;
+      e.bounty = 0;
+    }
+  }
   if (alive.length) {
     s.eliminations.push({ members: alive.map((e) => ({ entryId: e.id, startStack: e.stack, tableId: null })), at: c.now });
   }
@@ -756,7 +875,8 @@ export function tick(state: TournamentState, now: number): Result {
     const s = c.s;
     const { start } = s.settings;
     if (s.status === 'registering' && start.kind === 'scheduled' && s.startAt !== null) {
-      const count = aliveEntries(s).length;
+      openCheckInGroups(c);
+      const count = readyEntries(s).length;
       if (count >= 2 && now >= s.startAt - s.settings.seatLeadSeconds * 1000) seatAll(c);
       else if (now >= s.startAt) {
         if (s.graceUntil === null) {
@@ -766,6 +886,7 @@ export function tick(state: TournamentState, now: number): Result {
         if (now >= s.graceUntil) cancel(c, 'not-enough-players');
       }
     }
+    else if (s.status === 'registering') openCheckInGroups(c);
     if (s.status === 'seating' && s.startAt !== null && now >= s.startAt) begin(c);
     if (started(s)) {
       advanceClock(c);
@@ -776,6 +897,7 @@ export function tick(state: TournamentState, now: number): Result {
 }
 
 export function apply(state: TournamentState, cmd: Command, now: number): Result {
+  if (cmd.type === 'archive') return archive(state, cmd.by, now);
   if (state.status === 'finished' || state.status === 'cancelled') fail('This tournament is over');
   return run(state, now, (c) => {
     const s = c.s;
@@ -789,10 +911,57 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         if (activeEntry(s, cmd.playerId)) fail('Already registered');
         if (latestEntry(s, cmd.playerId)) fail('Already played this event; use re-entry');
         if (!registrationOpen(s)) fail(hasRoom(s) ? 'Registration is closed' : 'The tournament is full');
-        if (s.settings.registrationApproval) {
-          if (s.requests.some((r) => r.kind === 'register' && r.playerId === cmd.playerId)) fail('Already requested');
-          request(c, 'register', cmd);
-        } else register(c, cmd.playerId, cmd.displayName);
+        if (s.requests.some((r) => r.kind === 'register' && r.playerId === cmd.playerId)) fail('Already requested');
+        const code = normalizeCode(cmd.code);
+        if (code && !usableCode(s, code)) fail('That invite code is not valid');
+        if (!code && s.settings.invites?.required) fail('You need an invite code to register');
+        const skipApproval = !!code && !!s.settings.invites?.autoApprove;
+        if (s.settings.registrationApproval && !skipApproval) request(c, 'register', cmd, undefined, code || undefined);
+        else {
+          if (code) useCode(c, code, cmd);
+          register(c, cmd.playerId, cmd.displayName);
+        }
+        break;
+      }
+      case 'checkIn': {
+        const e = activeEntry(s, cmd.playerId) ?? fail('Not registered');
+        if (!checkInActive(s)) fail('Check-in is closed');
+        if (e.checkedInAt !== undefined) fail('Already checked in');
+        if (!mayCheckIn(s, e)) fail("Your check-in group isn't open yet");
+        const checkedIn = s.entries.filter((x) => x.status === 'registered' && x.checkedInAt !== undefined).length;
+        if (checkedIn >= s.settings.maxEntrants) fail('Every seat is taken');
+        e.checkedInAt = now;
+        emit(c, { type: 'checkedIn', playerId: e.playerId });
+        afterRegistration(c);
+        break;
+      }
+      case 'openCheckIn': {
+        if (!s.settings.checkIn) fail('Check-in is off');
+        if (s.status !== 'registering') fail('Seats are already drawn');
+        if (s.checkIn?.openedAt != null) fail('Check-in is already open');
+        s.checkIn = { openedAt: now, groupsOpen: 0 };
+        openCheckInGroups(c);
+        break;
+      }
+      case 'createInvites': {
+        const { count, maxUses } = cmd;
+        if (!Number.isSafeInteger(count) || count < 1 || count > MAX_INVITES_PER_BATCH) fail(`Make 1-${MAX_INVITES_PER_BATCH} codes at a time`);
+        if (!(maxUses === null || (Number.isSafeInteger(maxUses) && maxUses >= 1 && maxUses <= MAX_INVITE_CODES))) fail('Uses per code must be 1 or more, or no limit');
+        const invites = (s.invites ??= []);
+        if (invites.length + count > MAX_INVITE_CODES) fail(`A tournament can have at most ${MAX_INVITE_CODES} codes`);
+        const taken = new Set(invites.map((x) => x.code));
+        let codes: string[];
+        if (cmd.codes) {
+          codes = cmd.codes.map(normalizeCode);
+          if (codes.length !== count || !codes.every(isCodeFormat) || new Set([...taken, ...codes]).size !== taken.size + count) fail('Those codes are not usable');
+        } else [codes, s.rng] = drawCodes(s.rng, count, taken);
+        for (const code of codes) invites.push({ code, maxUses, createdAt: now, cancelled: false, usedBy: [] });
+        emit(c, { type: 'invitesCreated', codes });
+        break;
+      }
+      case 'cancelInvite': {
+        const code = s.invites?.find((x) => x.code === normalizeCode(cmd.code)) ?? fail('No such code');
+        code.cancelled = true;
         break;
       }
       case 'unregister': {
@@ -804,8 +973,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         }
         const e = activeEntry(s, cmd.playerId) ?? fail('Not registered');
         if (e.status !== 'registered' || s.status !== 'registering') fail('Seats are drawn; you can only quit now');
-        s.entries = s.entries.filter((x) => x !== e);
-        emit(c, { type: 'unregistered', playerId: cmd.playerId });
+        dropEntry(c, e);
         break;
       }
       case 'rebuy': {
@@ -851,8 +1019,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         const e = activeEntry(s, cmd.playerId) ?? fail('Not playing');
         if (e.status === 'registered') {
           if (s.status !== 'registering') fail('Not seated yet');
-          s.entries = s.entries.filter((x) => x !== e);
-          emit(c, { type: 'unregistered', playerId: e.playerId });
+          dropEntry(c, e);
         } else if (e.status === 'seated' && e.tableId && table(s, e.tableId).inHand) {
           e.leaveRequested = reason;
         } else eliminate(c, [e], reason);
@@ -863,6 +1030,11 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         const r = s.requests.find((x) => x.id === cmd.requestId) ?? fail('Request not found');
         s.requests = s.requests.filter((x) => x !== r);
         const e = r.entryId ? entry(s, r.entryId) : undefined;
+        const stack = cmd.type === 'approve' ? cmd.stack : undefined;
+        if (stack !== undefined) {
+          if (r.kind !== 'register' && r.kind !== 're-entry') fail('Only registrations and re-entries take a starting stack');
+          if (!isWhole(stack, 1, MAX_CHIPS)) fail(`The stack must be a whole number from 1 to ${CHIPS_LABEL}`);
+        }
         if (cmd.type === 'reject') {
           emit(c, { type: 'requestRejected', request: r });
           if (r.kind === 'rebuy' && e?.status === 'rebuy-offer') eliminate(c, [e], 'busted');
@@ -871,7 +1043,8 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         if (r.kind === 'register') {
           if (activeEntry(s, r.playerId)) fail('Already registered');
           if (!hasRoom(s)) fail('The tournament is full');
-          register(c, r.playerId, r.displayName);
+          if (r.code) useCode(c, r.code, r);
+          register(c, r.playerId, r.displayName, stack);
         } else if (r.kind === 'rebuy') {
           if (e?.status !== 'rebuy-offer') fail('The rebuy offer has expired');
           addChips(c, e!, s.settings.rebuy.chips, 'rebuy');
@@ -880,7 +1053,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           addChips(c, e!, s.settings.addOn.chips, 'add-on');
         } else {
           if (!e || e.status !== 'busted' || e.supersededBy || activeEntry(s, r.playerId)) fail('Nothing to re-enter');
-          reEnter(c, e!);
+          reEnter(c, e!, stack);
         }
         break;
       }
@@ -900,7 +1073,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
       }
       case 'startNow': {
         if (s.status === 'registering') {
-          if (aliveEntries(s).length < 2) fail('Need at least 2 players');
+          if (readyEntries(s).length < 2) fail(s.settings.checkIn ? 'Need at least 2 checked-in players' : 'Need at least 2 players');
           seatAll(c);
         }
         if (s.status !== 'seating') fail('Already started');
@@ -930,7 +1103,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
             fail(k === 'structure' ? 'Use editStructure to change levels' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next);
-        if (next.maxEntrants < rankedEntries(s).length) errors.push('Max entrants is below the current field');
+        if (next.maxEntrants < (next.checkIn && checkInActive(s) ? readyEntries(s) : rankedEntries(s)).length) errors.push('Max entrants is below the current field');
         if (errors.length) fail(errors.join('; '));
         s.settings = next;
         if (next.start.kind === 'scheduled' && s.status === 'registering') {
@@ -951,6 +1124,17 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         }
         break;
       }
+      case 'setCoHost':
+      case 'removeCoHost':
+      case 'transferHost':
+        staffCommand(c, cmd);
+        break;
+      case 'setStack':
+        setStack(c, cmd.by, cmd.playerId, cmd.stack);
+        break;
+      case 'movePlayer':
+        movePlayer(c, cmd.by, cmd.playerId, cmd.tableId, cmd.seat);
+        break;
       case 'handStarted': {
         const t = table(s, cmd.tableId);
         t.inHand = true;
@@ -970,6 +1154,8 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
 function handResult(c: Ctx, r: HandResult) {
   const s = c.s;
   const t = table(s, r.tableId);
+  // A hand this table already reported: a table restored from an older snapshot played it again.
+  if (r.handNumber < t.lastHandNumber || (r.handNumber === t.lastHandNumber && !t.inHand && t.lastHandNumber > 0)) return;
   t.inHand = false;
   t.lastHandNumber = r.handNumber;
   if (r.button !== undefined) t.button = r.button;
@@ -981,13 +1167,32 @@ function handResult(c: Ctx, r: HandResult) {
     const end = r.endStacks[e.playerId];
     if (end !== undefined && e.status === 'seated') e.stack = end;
   }
+  // Host stack edits made during the hand land now, before anyone is counted out.
+  for (const e of players) {
+    if (e.pendingStack === undefined) continue;
+    const stack = e.pendingStack;
+    const by = e.pendingStackBy ?? s.hostId;
+    delete e.pendingStack;
+    delete e.pendingStackBy;
+    if (e.status !== 'seated' || e.leaveRequested) continue;
+    const previous = e.stack;
+    e.stack = stack;
+    emit(c, { type: 'stackSet', by, entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, stack, previous, applied: true });
+  }
   const leavers = players.filter((e) => e.leaveRequested);
+  // A leaver who lost every chip in the hand was knocked out first: their bounty goes to whoever did it.
+  for (const e of leavers) {
+    if (e.stack > 0 || e.status !== 'seated') continue;
+    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
+    payBounty(c, e);
+  }
   for (const reason of ['quit', 'removed'] as const) eliminate(c, leavers.filter((e) => e.leaveRequested === reason), reason, hfhRound);
 
   const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0);
   const out: Entry[] = [];
   for (const e of busted) {
     e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
+    payBounty(c, e);
     if (canRebuy(s, e)) {
       e.status = 'rebuy-offer';
       e.rebuyOfferExpiresAt = c.now + s.settings.rebuy.offerSeconds * 1000;
@@ -996,4 +1201,133 @@ function handResult(c: Ctx, r: HandResult) {
   }
   eliminate(c, out, 'busted', hfhRound);
   advanceHandForHand(s);
+}
+
+// ---------------------------------------------------------------------------
+// Host tools: co-hosts, stack edits, seat moves, archive
+
+function roles<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof RoleError) fail(e.message.charAt(0).toUpperCase() + e.message.slice(1));
+    throw e;
+  }
+}
+
+/** A name for someone the event knows: an entry, a pending request, or a co-host. */
+function knownName(s: TournamentState, playerId: PlayerId): string | null {
+  return (
+    latestEntry(s, playerId)?.displayName ??
+    s.requests.find((r) => r.playerId === playerId)?.displayName ??
+    s.coHosts?.find((x) => x.playerId === playerId)?.name ??
+    null
+  );
+}
+
+function staffCommand(c: Ctx, cmd: Extract<Command, { type: 'setCoHost' | 'removeCoHost' | 'transferHost' }>) {
+  const s = c.s;
+  if (cmd.type === 'setCoHost') {
+    const name = knownName(s, cmd.playerId) ?? fail('Only players in this event can be co-hosts');
+    s.coHosts = roles(() => withCoHost(s, { playerId: cmd.playerId, name, powers: cmd.powers }));
+    emit(c, { type: 'coHostsChanged', by: cmd.by });
+  } else if (cmd.type === 'removeCoHost') {
+    s.coHosts = roles(() => withoutCoHost(s, cmd.playerId));
+    emit(c, { type: 'coHostsChanged', by: cmd.by });
+  } else {
+    if (knownName(s, cmd.to) === null) fail('Only players in this event can be the host');
+    const oldName = knownName(s, s.hostId) ?? (cleanText(cmd.byName ?? '').slice(0, NAME_MAX) || 'Host');
+    const next = roles(() => handOver(s, cmd.to, oldName));
+    s.hostId = next.hostId;
+    s.coHosts = next.coHosts;
+    emit(c, { type: 'hostChanged', by: cmd.by, hostId: next.hostId });
+  }
+}
+
+function setStack(c: Ctx, by: PlayerId, playerId: PlayerId, stack: number) {
+  const s = c.s;
+  const e = activeEntry(s, playerId) ?? fail('Not playing');
+  if (!isWhole(stack, 1, MAX_CHIPS)) fail(`The stack must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (e.status === 'rebuy-offer') fail('They are deciding on a rebuy; wait for that first');
+  if (stack > e.stack) checkChipsInPlay(s, stack - e.stack);
+  const inHand = e.status === 'seated' && !!e.tableId && table(s, e.tableId).inHand;
+  const info = { by, entryId: e.id, playerId, tableId: e.tableId, seat: e.seat, stack, previous: e.stack };
+  if (inHand) {
+    e.pendingStack = stack;
+    e.pendingStackBy = by;
+    emit(c, { type: 'stackSet', ...info, applied: false });
+  } else {
+    delete e.pendingStack;
+    delete e.pendingStackBy;
+    e.stack = stack;
+    emit(c, { type: 'stackSet', ...info, applied: true });
+  }
+}
+
+function movePlayer(c: Ctx, by: PlayerId, playerId: PlayerId, tableId: TableId, seat: number) {
+  const s = c.s;
+  if (!(s.status === 'seating' || started(s))) fail('Seats are not drawn yet');
+  const e = activeEntry(s, playerId) ?? fail('Not playing');
+  if (e.status !== 'seated' || !e.tableId) fail('Only seated players can move');
+  const from = table(s, e.tableId!);
+  const to = s.tables.find((t) => t.id === tableId) ?? fail('No such table');
+  if (!isWhole(seat, 0, to.seats.length - 1)) fail('No such seat');
+  if (from.inHand || to.inHand) fail('Wait for the hand in progress to finish');
+  if (to === from && seat === e.seat) fail('They are already in that seat');
+  const otherId = to.seats[seat];
+  const fromSeat = e.seat!;
+  const move = (x: Entry, dest: TableState, destSeat: number) => {
+    const ev = { type: 'moveSeat' as const, entryId: x.id, playerId: x.playerId, from: { tableId: x.tableId!, seat: x.seat! }, to: { tableId: dest.id, seat: destSeat }, stack: x.stack, by };
+    x.tableId = dest.id;
+    x.seat = destSeat;
+    return ev;
+  };
+  if (otherId) {
+    const other = entry(s, otherId);
+    if (other.status !== 'seated') fail('That player is deciding on a rebuy; wait for that first');
+    from.seats[fromSeat] = otherId;
+    to.seats[seat] = e.id;
+    const moves = [move(e, to, seat), move(other, from, fromSeat)];
+    emit(c, { type: 'seatsSwapped', by, moves });
+    return;
+  }
+  if (to !== from) {
+    const counts = s.tables.map((t) => tablePlayers(s, t).length);
+    const spread = (n: number[]) => Math.max(...n) - Math.min(...n);
+    const after = s.tables.map((t, i) => counts[i] + (t === to ? 1 : t === from ? -1 : 0));
+    if (spread(after) > 1 && spread(after) > spread(counts)) fail('That would leave the tables uneven; pick a taken seat to swap two players');
+  }
+  from.seats[fromSeat] = null;
+  to.seats[seat] = e.id;
+  emit(c, move(e, to, seat));
+}
+
+function archive(state: TournamentState, by: PlayerId, now: number): Result {
+  return run(state, now, (c) => {
+    const s = c.s;
+    if (s.archivedAt) fail('Already archived');
+    if (started(s)) fail('End the tournament first');
+    if (s.status === 'registering' || s.status === 'seating') cancel(c, 'host');
+    s.archivedAt = now;
+    emit(c, { type: 'archived', by });
+  });
+}
+
+/**
+ * Cleanup (TRN-54): the newest thing that happened in an event nobody started,
+ * so the server can archive one that has sat untouched for weeks.
+ */
+export function lastActivityAt(s: TournamentState): number {
+  return Math.max(s.createdAt, ...s.entries.map((e) => e.registeredAt), ...s.requests.map((r) => r.at));
+}
+
+/** The server's cleanup: cancels an event that never started and archives it (or archives one that is over). */
+export function autoArchive(state: TournamentState, now: number): Result {
+  return run(state, now, (c) => {
+    const s = c.s;
+    if (s.archivedAt || started(s)) return;
+    if (s.status === 'registering' || s.status === 'seating') cancel(c, 'host');
+    s.archivedAt = now;
+    emit(c, { type: 'archived', by: null });
+  });
 }

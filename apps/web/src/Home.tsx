@@ -5,6 +5,7 @@ import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
 import { presetSettings, usePresets } from './presets';
+import { TournamentList } from './tournament/TournamentList';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [name, setName] = useState(savedName);
@@ -61,6 +62,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         RSDP Poker <span>Live!</span>
       </h1>
       <p className="tagline">Start a table, send the link, and play with friends. No sign-up.</p>
+      <TournamentList />
       <form className="card-panel" onSubmit={create}>
         <label>
           Your name

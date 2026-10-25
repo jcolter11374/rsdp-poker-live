@@ -979,6 +979,48 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Tournament: a host stack edit. The director sends it between this player's hands; during one it waits for the end. */
+  tournamentSetStack(playerId: PlayerId, stack: number) {
+    const seat = this.seatOf(playerId);
+    if (!seat) return;
+    if (this.inHand(playerId)) seat.pendingStack = stack;
+    else seat.stack = stack;
+    this.log(`${seat.name}'s stack was set to ${stack}`);
+    this.sync();
+  }
+
+  /** A hand is being played here. */
+  get handInProgress() {
+    return this.handLive();
+  }
+
+  /**
+   * Tournament, after a crash: this snapshot is behind the director, which has
+   * already closed the hand saved here as in progress (or later ones). Drops
+   * that hand without playing it again and takes the hand number, button and
+   * every stack from the director. Call before resume().
+   */
+  alignWithDirector(input: { handNumber: number; button: number | null; stacks: Record<PlayerId, number> }) {
+    const s = this.state;
+    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    if (this.handLive()) {
+      s.hand = null;
+      s.handStartedAt = null;
+      s.turn = null;
+      s.ritDeadline = null;
+    }
+    s.handNumber = input.handNumber;
+    if (input.button !== null && s.positions?.button !== input.button) s.positions = { button: input.button, smallBlind: null, bigBlind: null };
+    for (const seat of s.seats) {
+      const stack = seat ? input.stacks[seat.playerId] : undefined;
+      if (!seat || stack === undefined) continue;
+      seat.stack = stack;
+      seat.pendingChips = 0;
+      seat.pendingStack = null;
+      seat.leaveAfterHand = false;
+    }
+  }
+
   /** Tournament: the director may now let this table deal. */
   poke() {
     this.sync();
@@ -1756,13 +1798,18 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   const startStacks: Record<PlayerId, number> = {};
   const endStacks: Record<PlayerId, number> = {};
   const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+  const potList = engine.pots(hand);
   for (const hs of hand.seats) {
     startStacks[hs.playerId] = hs.startStack;
     const seat = seats?.[hs.seat];
     const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
     endStacks[hs.playerId] = end;
     if (end > 0) continue;
-    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
+    // Whoever won a pot the busted player was in knocked them out; a side pot they had no part in does not count.
+    // A player who folded their last chips in had no pot to lose, so anyone who won counts.
+    const awards = hand.awards.filter((a) => a.seat !== hs.seat);
+    const theirs = awards.filter((a) => potList[a.pot]?.eligible.includes(hs.seat));
+    const winners = new Set((theirs.length ? theirs : awards).map((a) => a.seat));
     knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };

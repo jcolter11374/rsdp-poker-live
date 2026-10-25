@@ -7,6 +7,7 @@ import { closeDb, createDb } from './db';
 import { dbNotes } from './notes';
 import { dbIdentity, dbStore } from './storage';
 import { dbTournamentStore } from './tournament/store';
+import { dbLobbyStore } from './tournament/lobby';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +17,7 @@ registerAllVariants(variants);
 // Postgres with DATABASE_URL; otherwise an on-disk PGlite under apps/server/.data so local tables survive a restart.
 const db = await createDb({ pgliteDir: process.env.DATABASE_URL ? undefined : (process.env.PGLITE_DIR ?? path.resolve(here, '../.data/pglite')) });
 const webDist = path.resolve(here, '../../web/dist');
-const server = createApp({ webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db) });
+const server = createApp({ webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db), lobby: dbLobbyStore(db) });
 // Unfinished tournaments carry on, and scheduled ones keep their start time.
 await server.resume();
 

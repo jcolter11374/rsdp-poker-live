@@ -21,6 +21,7 @@
     "./variants": "./src/variants/index.ts",
     "./settings": "./src/settings/index.ts",
     "./modifiers": "./src/modifiers/index.ts",
-    "./wire": "./src/wire.ts"
+    "./wire": "./src/wire.ts",
+    "./roles": "./src/roles.ts"
   }
 }

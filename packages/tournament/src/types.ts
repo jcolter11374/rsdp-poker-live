@@ -1,6 +1,7 @@
 // Tournament director contracts. State is plain JSON and is snapshotted by the
 // server; bump STATE_VERSION when its shape changes.
 
+import type { CoHost, HostPower } from '@rsdp/engine/roles';
 import type { PayoutStructure, PrizeMoney } from './payouts';
 import type { Schedule } from './recurrence';
 import type { AnteType, StructureRow } from './structure';
@@ -54,6 +55,49 @@ export interface TournamentSettings {
   payouts?: { structure: PayoutStructure; money: PrizeMoney };
   /** Play hand-for-hand on the bubble when payouts are set. */
   handForHand: boolean;
+  /** Display-only bounty on every entry; absent = no bounties. */
+  bounty?: BountySettings;
+  /** Invite codes; absent = codes are optional and only skip approval when a code is used. */
+  invites?: InviteSettings;
+  /** Check-in groups (not for Sit & Go); absent = registering holds a seat. */
+  checkIn?: CheckInSettings;
+}
+
+export interface BountySettings {
+  /** Money (cents) on each entry's head, paid to whoever knocks it out. Each rebuy and re-entry buys a fresh one. */
+  amount: number;
+  /** Progressive knockout: this share (0-100) of each bounty won goes onto the winner's own head. 0 = a regular bounty. */
+  progressivePercent: number;
+}
+
+export interface InviteSettings {
+  /** Registering needs a valid code. */
+  required: boolean;
+  /** A valid code skips host approval of the registration. */
+  autoApprove: boolean;
+}
+
+export interface CheckInGroup {
+  /** Who may check in: the first N on the registration list, or null for everyone registered. */
+  firstN: number | null;
+  /** Minutes after this group opens that the next one opens. */
+  waitMinutes: number;
+}
+
+export interface CheckInSettings {
+  /** 1-15 groups, opened in order; once open a group stays open. */
+  groups: CheckInGroup[];
+  /** Scheduled start: the first group opens this long before startAt. Other starts open check-in by host command. */
+  opensMinutesBefore: number;
+}
+
+export interface InviteCode {
+  code: string;
+  /** null = any number of players (a code to share in a group chat). */
+  maxUses: number | null;
+  createdAt: number;
+  cancelled: boolean;
+  usedBy: { playerId: PlayerId; displayName: string; at: number }[];
 }
 
 export type TournamentStatus = 'registering' | 'seating' | 'running' | 'paused' | 'finished' | 'cancelled';
@@ -86,7 +130,18 @@ export interface Entry {
   rebuyOfferExpiresAt?: number;
   /** Quit or host removal waiting for the current hand to end. */
   leaveRequested?: 'quit' | 'removed';
+  /** A host stack edit waiting for the current hand to end, and who made it. */
+  pendingStack?: number;
+  pendingStackBy?: PlayerId;
   bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[] };
+  /** Bounty tournaments: money (cents) on this entry's head now. */
+  bounty?: number;
+  /** Bounty money (cents) this entry has collected. */
+  bountiesWon?: number;
+  /** Players this entry has knocked out (a split pot counts for every winner). */
+  knockouts?: number;
+  /** Check-in tournaments: when this entry checked in. */
+  checkedInAt?: number;
 }
 
 export interface TableState {
@@ -113,6 +168,8 @@ export interface PendingRequest {
   /** For rebuy, add-on and re-entry: the entry it applies to. */
   entryId?: EntryId;
   at: number;
+  /** Invite code given with a registration; used when the host approves. */
+  code?: string;
 }
 
 export interface EliminationGroup {
@@ -127,6 +184,10 @@ export interface TournamentState {
   version: typeof STATE_VERSION;
   id: string;
   hostId: PlayerId;
+  /** Players the host shares some powers with. Missing in state saved before co-hosts. */
+  coHosts?: CoHost[];
+  /** Hidden from lists; set by the host or by cleanup. Missing or null: not archived. */
+  archivedAt?: number | null;
   settings: TournamentSettings;
   status: TournamentStatus;
   createdAt: number;
@@ -152,6 +213,10 @@ export interface TournamentState {
   counters: { entry: number; table: number; request: number };
   /** mulberry32 state for seating draws. */
   rng: number;
+  /** Invite codes the host has made. Only the host is sent these. */
+  invites?: InviteCode[];
+  /** Check-in progress: when the first group opened, and how many groups are open. */
+  checkIn?: { openedAt: number | null; groupsOpen: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,14 +235,16 @@ export interface HandResult {
 }
 
 export type Command =
-  | { type: 'register'; playerId: PlayerId; displayName: string }
+  | { type: 'register'; playerId: PlayerId; displayName: string; code?: string }
+  | { type: 'checkIn'; playerId: PlayerId }
   | { type: 'unregister'; playerId: PlayerId }
   | { type: 'rebuy'; playerId: PlayerId }
   | { type: 'declineRebuy'; playerId: PlayerId }
   | { type: 'addOn'; playerId: PlayerId }
   | { type: 'reEnter'; playerId: PlayerId }
   | { type: 'quit'; playerId: PlayerId }
-  | { type: 'approve'; by: PlayerId; requestId: string }
+  /** `stack` seats a registration or re-entry with other than the starting stack (a handicap). */
+  | { type: 'approve'; by: PlayerId; requestId: string; stack?: number }
   | { type: 'reject'; by: PlayerId; requestId: string }
   | { type: 'remove'; by: PlayerId; playerId: PlayerId }
   | { type: 'pause'; by: PlayerId }
@@ -187,6 +254,23 @@ export type Command =
   | { type: 'updateSettings'; by: PlayerId; settings: Partial<TournamentSettings> }
   /** Before the start: cancel. Paused with no hand running: end and rank the rest by chips. */
   | { type: 'end'; by: PlayerId }
+  /** Adds a co-host or changes their powers. Only someone already in the event can be one. */
+  | { type: 'setCoHost'; by: PlayerId; playerId: PlayerId; powers: HostPower[] }
+  /** The host removes a co-host, or a co-host steps down. */
+  | { type: 'removeCoHost'; by: PlayerId; playerId: PlayerId }
+  /** Hands the host role on; the old host stays as a co-host with every power. */
+  | { type: 'transferHost'; by: PlayerId; to: PlayerId; byName?: string }
+  /** Sets a player's stack; during their hand it applies when the hand ends. Not a rebuy. */
+  | { type: 'setStack'; by: PlayerId; playerId: PlayerId; stack: number }
+  /** Moves a seated player to a seat between hands; a taken seat swaps the two players. */
+  | { type: 'movePlayer'; by: PlayerId; playerId: PlayerId; tableId: TableId; seat: number }
+  /** Hides the tournament from lists. Before the start it cancels it too; once started, end it first. */
+  | { type: 'archive'; by: PlayerId }
+  /** Makes `count` codes. The server fills in `codes` from a secure source; without them the director draws its own. */
+  | { type: 'createInvites'; by: PlayerId; count: number; maxUses: number | null; codes?: string[] }
+  | { type: 'cancelInvite'; by: PlayerId; code: string }
+  /** Opens check-in now (events that do not open it on a schedule). */
+  | { type: 'openCheckIn'; by: PlayerId }
   | { type: 'handStarted'; tableId: TableId; handNumber: number }
   | { type: 'handResult'; result: HandResult };
 
@@ -203,8 +287,15 @@ export interface SeatInfo {
 }
 
 export type DirectorEvent =
-  | { type: 'registered'; entryId: EntryId; playerId: PlayerId; displayName: string; late: boolean; entryNo: number }
-  | { type: 'unregistered'; playerId: PlayerId }
+  /** `stack` is set when the host approved a stack other than the starting stack. */
+  | { type: 'registered'; entryId: EntryId; playerId: PlayerId; displayName: string; late: boolean; entryNo: number; stack?: number }
+  | { type: 'unregistered'; playerId: PlayerId; reason?: 'not-checked-in' }
+  /** A check-in group opened; `playerIds` may check in from now (nobody is told twice). */
+  | { type: 'checkInOpened'; group: number; playerIds: PlayerId[] }
+  | { type: 'checkedIn'; playerId: PlayerId }
+  /** A knockout paid a bounty: `cash` to the winner, `headAdded` onto their own head (progressive). */
+  | { type: 'bountyWon'; entryId: EntryId; playerId: PlayerId; fromEntryId: EntryId; fromPlayerId: PlayerId; cash: number; headAdded: number }
+  | { type: 'invitesCreated'; codes: string[] }
   | { type: 'requestPending'; request: PendingRequest }
   | { type: 'requestRejected'; request: PendingRequest }
   | { type: 'tablesCreated'; tables: { tableId: TableId; seats: SeatInfo[] }[] }
@@ -221,7 +312,14 @@ export type DirectorEvent =
   /** Seat a player at a table before its next hand. */
   | { type: 'seatPlayer'; seat: SeatInfo; reason: 'late-registration' | 're-entry' }
   /** Move between hands of the source table; the player is dealt in at the destination's next hand. */
-  | { type: 'moveSeat'; entryId: EntryId; playerId: PlayerId; from: { tableId: TableId; seat: number }; to: { tableId: TableId; seat: number }; stack: number }
+  | { type: 'moveSeat'; entryId: EntryId; playerId: PlayerId; from: { tableId: TableId; seat: number }; to: { tableId: TableId; seat: number }; stack: number; by?: PlayerId }
+  /** Two players trade seats between hands (a host move onto a taken seat). Unseat both, then seat both. */
+  | { type: 'seatsSwapped'; by: PlayerId; moves: Extract<DirectorEvent, { type: 'moveSeat' }>[] }
+  /** A host stack edit. `applied` false: it waits for the player's hand to end, and comes again once it lands. */
+  | { type: 'stackSet'; by: PlayerId; entryId: EntryId; playerId: PlayerId; tableId: TableId | null; seat: number | null; stack: number; previous: number; applied: boolean }
+  | { type: 'coHostsChanged'; by: PlayerId }
+  | { type: 'hostChanged'; by: PlayerId; hostId: PlayerId }
+  | { type: 'archived'; by: PlayerId | null }
   | { type: 'tableBroken'; tableId: TableId }
   | { type: 'rebuyOffered'; entryId: EntryId; playerId: PlayerId; expiresAt: number; chips: number }
   /** Add chips to a seated player's stack before their next hand. */
@@ -253,6 +351,11 @@ export interface Standing {
   /** Display-only prize for a finished place (0 when out of the money or no payouts set). */
   prize: number;
   eliminatedBy: PlayerId[];
+  /** Bounty money (cents) collected; 0 without bounties. */
+  bounties: number;
+  knockouts: number;
+  /** Bounty still on this entry's head; 0 once knocked out. */
+  bounty: number;
 }
 
 export interface Result {
