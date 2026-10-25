@@ -1,10 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { variants } from '@rsdp/engine/core';
+import { engine, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings, standings, tableAddress, type TournamentSettings, type TournamentState } from '@rsdp/tournament';
+import { createApp, memoryStore } from '../src/app';
+import type { TableRuntime } from '../src/runtime/table';
 import { memoryTournamentStore } from '../src/tournament/store';
-import { FakeClock } from './fake-clock';
-import { chipsInPlay, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
+import { FakeClock, seeded } from './fake-clock';
+import { chipsInPlay, players, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
@@ -34,6 +36,43 @@ async function started(n: number, overrides: Partial<TournamentSettings> = {}) {
   await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
   return { env, id, state: () => env.manager.view(id)!.state };
 }
+
+/** The first player to act moves all in and everyone calls (or checks) it down. */
+function allIn(rt: TableRuntime) {
+  while (rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null) {
+    const hand = rt.state.hand;
+    const seat = hand.seats.find((x) => x.seat === hand.toAct)!;
+    const legal = engine.legalActions(hand, seat.seat)!;
+    rt.act(seat.playerId, legal.canRaise ? { type: legal.raiseKind, to: legal.maxTo } : legal.canCheck ? { type: 'check' } : { type: 'call' });
+  }
+}
+
+describe('shutting down', () => {
+  it('a hand that ends as the server stops is saved by both the director and its table', async () => {
+    const clock = new FakeClock();
+    const tables = memoryStore();
+    const tournaments = memoryTournamentStore();
+    const errors: unknown[] = [];
+    const server = createApp({ clock, rng: seeded(3), store: tables, tournaments, log: (m, e) => errors.push([m, e]) });
+    const id = await server.tournaments.create('host', defaultSettings({ name: 'Shutdown', startingStack: 1500 }));
+    for (const p of players(2)) await server.tournaments.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await server.tournaments.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const [rt] = server.tables.values();
+    // The hand is over and the table has reported it, but the director acts on that a moment later.
+    allIn(rt);
+    expect(rt.state.handStartedAt).toBeNull();
+    await server.close();
+
+    const director = (await tournaments.load(id))!.state;
+    const table = (await tables.loadTable(rt.state.id))!;
+    expect(director.tables[0]).toMatchObject({ inHand: false, lastHandNumber: table.handNumber });
+    for (const e of director.entries) expect(table.seats.find((x) => x?.playerId === e.playerId)?.stack ?? 0, e.playerId).toBe(e.stack);
+    // Nothing moves once the server has stopped.
+    clock.advance(10 * MIN);
+    expect(rt.state).toEqual(table);
+    expect(errors).toEqual([]);
+  });
+});
 
 describe('tournaments after a crash', () => {
   it.each(['during', 'before'] as const)('a bust the director never saved is replayed from the table (director saved %s the hand)', async (when) => {

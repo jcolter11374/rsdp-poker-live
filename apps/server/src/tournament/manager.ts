@@ -66,6 +66,8 @@ interface Live {
   applying: boolean;
   /** Events from a hand start, waiting for that table to finish its step. */
   deferred: DirectorEvent[];
+  /** What the tables have reported and the director is yet to act on, by its 0 ms timer. */
+  reports: Map<unknown, () => void>;
 }
 
 /** Commands only the host may send; the director trusts the server to check. */
@@ -92,6 +94,8 @@ export class TournamentManager {
   /** Runtime table id -> tournament id. */
   private readonly tableOwners = new Map<string, string>();
   private readonly clock: Clock;
+  /** Shutting down: tables deal no more hands and browsers' commands are refused. */
+  private closed = false;
 
   constructor(private readonly deps: ManagerDeps) {
     this.clock = deps.clock;
@@ -140,6 +144,7 @@ export class TournamentManager {
   async command(id: string, me: PlayerId, myName: string, raw: Command) {
     const live = await this.get(id);
     if (!live) throw new ActionError('tournament not found');
+    if (this.closed) throw new ActionError('the server is restarting');
     const command = this.fromBrowser(live, me, myName, raw);
     this.dispatch(live, (s, now) => apply(s, command, now));
   }
@@ -157,10 +162,20 @@ export class TournamentManager {
     return this.tableOwners.get(tableId) ?? null;
   }
 
+  /** Stops for good (shutdown): the director acts on every hand the tables have reported, no table deals again, and the clocks stop. */
   dispose() {
+    this.closed = true;
     for (const live of this.live.values()) {
+      // Acting on a report can end another hand (a player out of time), which reports in turn.
+      for (let guard = 0; live.reports.size && guard < 100; guard++) {
+        const [timer, report] = live.reports.entries().next().value!;
+        this.clock.clearTimeout(timer);
+        live.reports.delete(timer);
+        report();
+      }
       this.clock.clearTimeout(live.timer);
       this.clock.clearTimeout(live.saveTimer);
+      live.timer = live.saveTimer = null;
     }
   }
 
@@ -266,7 +281,7 @@ export class TournamentManager {
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [] };
+    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map() };
     try {
       state.tables.forEach((t, i) => {
         const saved = snapshots[i];
@@ -324,11 +339,10 @@ export class TournamentManager {
 
   /** What a tournament table asks of the director. Acting on its reports waits for a 0 ms timer, so the table finishes its own step first. */
   private hooks(live: Live, tableId: TableId): TournamentHooks {
-    const later = (what: string, step: (s: TournamentState, now: number) => Result) =>
-      this.clock.setTimeout(() => this.dispatchQuietly(live, step, what), 0);
+    const later = (what: string, step: (s: TournamentState, now: number) => Result) => this.soon(live, () => this.dispatchQuietly(live, step, what));
     return {
       // Tables hold while the director's events are still reaching them, so nobody is dealt in at a seat they are leaving.
-      gate: (now) => (live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
+      gate: (now) => (this.closed || live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
       level: () => {
         const l = levelFor(live.state, tableId);
         return {
@@ -345,13 +359,22 @@ export class TournamentManager {
         } catch (e) {
           this.deps.log(`tournament ${live.state.id}: hand start failed`, e);
         }
-        this.clock.setTimeout(() => {
+        this.soon(live, () => {
           this.handle(live, []);
           this.changed(live);
-        }, 0);
+        });
       },
       handEnded: (r) => later('hand result', (s, now) => apply(s, { type: 'handResult', result: { ...r, tableId } }, now)),
     };
+  }
+
+  /** Acts on a table's report once the table has finished its step; a shutdown acts on it at once. */
+  private soon(live: Live, report: () => void) {
+    const timer = this.clock.setTimeout(() => {
+      live.reports.delete(timer);
+      report();
+    }, 0);
+    live.reports.set(timer, report);
   }
 
   private mount(live: Live, tableId: TableId, rt: TableRuntime, created: Promise<void>) {
