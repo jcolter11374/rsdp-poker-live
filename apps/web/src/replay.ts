@@ -254,6 +254,16 @@ export function handNet(h: HandRecordView, playerId: string): number | null {
 }
 
 /** A TableView for one frame, so the replay is drawn by the same table as live play. */
+/** A practice bot keeps its robot in replays. Hands saved before bots had looks only have the bot- id to go on. */
+function replayBot(seat: HandRecordView['seats'][number] | undefined): Pick<SeatView, 'bot'> {
+  if (!seat) return {};
+  const b = seat.bot as { ownerName?: unknown; look?: unknown } | undefined;
+  if (b && typeof b === 'object') {
+    return { bot: { ownerId: '', ownerName: typeof b.ownerName === 'string' ? b.ownerName : '', look: Number.isInteger(b.look) ? (b.look as number) : 0 } };
+  }
+  return seat.playerId.startsWith('bot-') ? { bot: { ownerId: '', ownerName: '', look: 0 } } : {};
+}
+
 export function frameView(
   tableName: string,
   seatCount: number,
@@ -301,6 +311,7 @@ export function frameView(
       handName: null,
       avatar: null,
       mood: null,
+      ...replayBot(hand.seats.find((x) => x.seat === i && x.playerId === s.playerId)),
     };
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);

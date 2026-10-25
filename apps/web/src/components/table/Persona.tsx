@@ -90,7 +90,8 @@ function BotFace({ face, color }: { face: number; color: string }) {
 
 /** A practice bot's picture: a robot in its own colour and face (BOT_LOOKS), drawn here so it's the same on every device. */
 export function BotAvatar({ look, title, size = 36 }: { look: number; title: string; size?: number }) {
-  const { color, face } = BOT_LOOKS[look % BOT_LOOKS.length];
+  const n = BOT_LOOKS.length;
+  const { color, face } = BOT_LOOKS[((Math.trunc(look) % n) + n) % n] ?? BOT_LOOKS[0];
   return (
     <span className="avatar bot-avatar" style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
       <svg viewBox="0 0 36 36" width="100%" height="100%" aria-hidden="true">
@@ -126,7 +127,7 @@ export function SeatPersona({ seat }: { seat: SeatView }) {
         {seat.bot ? (
           // Practice bots always show their robot, so nobody mistakes one for a person or for another bot.
           <>
-            <BotAvatar look={seat.bot.look} title={`${seat.name}, ${seat.bot.ownerName}'s practice bot`} />
+            <BotAvatar look={seat.bot.look} title={seat.bot.ownerName ? `${seat.name}, ${seat.bot.ownerName}'s practice bot` : `${seat.name}, a practice bot`} />
             <span className="bot-badge">bot</span>
           </>
         ) : showAvatar ? (

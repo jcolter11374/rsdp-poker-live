@@ -3,7 +3,7 @@ import { engine, variants, type BettingKind } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_THINK_MS, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
-import { tableView } from '../src/runtime/view';
+import { handRecordView, tableView } from '../src/runtime/view';
 import { BOT_LOOKS } from '@rsdp/engine/wire';
 import { botTuning, chooseMove, seededRand } from '../src/bots/strategy';
 import { FakeClock, seeded } from './fake-clock';
@@ -67,10 +67,69 @@ describe('practice bots', () => {
     rt.requestSeat('a', { seat: 5, name: 'lucky', stack: 200 });
     rt.addBot('a', { ownerName: 'Bartholomew-Maximus' });
     expect(rt.state.seats[3]?.name).toBe('Ducky');
-    // A bot that leaves frees its look for the next one.
+    // A bot that leaves keeps its name in the ledger, so the next one is called something else.
     rt.removeBot('host', id);
     rt.addBot('host', { ownerName: 'John' });
-    expect(rt.state.seats[1]?.name).toBe('Ace');
+    expect(rt.state.seats[1]?.name).toBe('Slick');
+    expect(rt.state.ledger[id]).toMatchObject({ name: 'Ace', bot: true, owner: 'John', look: 0 });
+  });
+
+  it('give way when a person sits down under a bot\'s name, and get numbers once every name is used', () => {
+    const { rt } = table((s) => (s.seating.requireApproval = true));
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const seated = rt.addBot('host', { ownerName: 'Host' });
+    rt.requestSeat('a', { seat: 3, name: 'Ann', stack: 200 });
+    rt.approve('host', rt.state.requests.find((r) => r.playerId === 'a')!.id);
+    const waiting = rt.addBot('a', { ownerName: 'Ann' });
+    expect([rt.seatOf(seated)?.name, rt.state.requests.find((r) => r.playerId === waiting)?.name]).toEqual(['Ace', 'Chip']);
+    // Bo asks to sit as "ace": the seated bot takes another name, and so does the waiting one when Cy wants "Chip".
+    rt.requestSeat('b', { seat: 6, name: 'ace', stack: 200 });
+    expect(rt.seatOf(seated)?.name).toBe('Lucky');
+    expect(rt.state.log.at(-1)?.text).toBe('Ace is now Lucky');
+    rt.connect('c');
+    rt.requestSeat('c', { seat: 7, name: 'CHIP', stack: 200 });
+    expect(rt.state.requests.find((r) => r.playerId === waiting)?.name).toBe('Ducky');
+
+    // Someone on the waitlist keeps their name too.
+    const { rt: full } = table((s) => {
+      s.table.maxSeats = 3;
+      s.seating.waitlist = true;
+    });
+    full.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    full.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    full.requestSeat('b', { seat: 2, name: 'Bo', stack: 200 });
+    full.connect('c');
+    full.joinWaitlist('c', { name: 'Ace', stack: 200 });
+    // Bo's seat is held for Ace on the waitlist; Ann's is free for a bot.
+    full.stand('b');
+    full.stand('a');
+    expect(full.seatOf(full.addBot('host', { ownerName: 'Host' }))?.name).toBe('Chip');
+
+    const { rt: busy } = table((s) => (s.table.maxSeats = 2));
+    busy.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    for (const look of BOT_LOOKS) {
+      const id = busy.addBot('host', { ownerName: 'Host' });
+      expect(busy.seatOf(id)?.name).toBe(look.name);
+      busy.removeBot('host', id);
+    }
+    const again = busy.addBot('host', { ownerName: 'Host' });
+    expect(busy.seatOf(again)?.name).toBe('Ace 2');
+    expect(busy.botInfo(again)?.look).toBe(0);
+  });
+
+  it('keep their robot in the hands they played, after they leave', () => {
+    const { rt, clock } = table((s) => (s.timing.decisionSeconds = 0));
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.addBot('host', { ownerName: 'Host' });
+    const bot = rt.addBot('host', { ownerName: 'Host' });
+    rt.start('host');
+    play(rt, clock, 1);
+    rt.removeBot('host', bot);
+    play(rt, clock, 1);
+    expect(rt.seatOf(bot)).toBeNull();
+    const record = handRecordView(rt, rt.state.history[0], 'host');
+    expect(record.seats.find((x) => x.playerId === bot)).toMatchObject({ name: 'Chip', bot: { ownerName: 'Host', look: 1 } });
+    expect(record.seats.find((x) => x.playerId === 'host')?.bot).toBeUndefined();
   });
 
   it('fill a whole table with no two bots alike', () => {
@@ -83,23 +142,37 @@ describe('practice bots', () => {
   });
 
   it('saved before bots had looks get a name and picture of their own when the table comes back', () => {
-    const { rt } = table();
+    // Ann is offline here and runs out of time on her turns, so the hand moves on without her.
+    const { rt } = table((s) => (s.seating.requireApproval = true));
     rt.requestSeat('host', { seat: 0, name: 'Beth', stack: 200 });
+    rt.requestSeat('a', { seat: 5, name: 'Ann', stack: 200 });
+    rt.approve('host', rt.state.requests[0].id);
     const one = rt.addBot('host', { ownerName: 'Beth' });
     const two = rt.addBot('host', { ownerName: 'Beth' });
-    // What an older server saved: no looks, and every bot named after its owner.
+    rt.start('host');
+    const three = rt.addBot('a', { ownerName: 'Ann' });
+    // What an older server saved mid-hand: no looks, and every bot named after its owner.
     const saved = structuredClone(rt.state);
-    for (const [id, name] of [[one, "Beth's Poker Bot"], [two, "Beth's Poker Bot 2"]]) {
+    for (const [id, name] of [[one, "Beth's Poker Bot"], [two, "Beth's Poker Bot 2"], [three, "Ann's Poker Bot"]]) {
       delete saved.bots![id].look;
-      saved.seats.find((x) => x?.playerId === id)!.name = name;
-      saved.ledger[id].name = name;
+      const seat = saved.seats.find((x) => x?.playerId === id);
+      if (seat) seat.name = name;
+      const request = saved.requests.find((r) => r.playerId === id);
+      if (request) request.name = name;
+      if (saved.ledger[id]) saved.ledger[id] = { playerId: id, name, buyIn: saved.ledger[id].buyIn, cashOut: 0, bot: true };
     }
-    const back = new TableRuntime(saved, { clock: new FakeClock(), rng: seeded() });
+    const clock = new FakeClock();
+    const back = new TableRuntime(saved, { clock, rng: seeded() });
+    back.connect('host');
     back.resume();
     expect([back.seatOf(one)?.name, back.seatOf(two)?.name]).toEqual(['Ace', 'Chip']);
-    expect(back.state.ledger[two].name).toBe('Chip');
+    expect(back.state.ledger[two]).toMatchObject({ name: 'Chip', owner: 'Beth', look: 1 });
     expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1 });
-    expect(back.state.log.slice(-2).map((l) => l.text)).toEqual(["Beth's Poker Bot is now Ace", "Beth's Poker Bot 2 is now Chip"]);
+    expect(back.state.log.slice(-3).map((l) => l.text)).toEqual(["Beth's Poker Bot is now Ace", "Beth's Poker Bot 2 is now Chip", "Ann's Poker Bot is now Lucky"]);
+    // The waiting bot sits under its new name, and the hand in progress plays on.
+    back.approve('host', back.state.requests.find((r) => r.playerId === three)!.id);
+    expect(back.seatOf(three)?.name).toBe('Lucky');
+    play(back, clock, 2);
     back.dispose();
   });
 

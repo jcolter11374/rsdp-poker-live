@@ -268,6 +268,11 @@ export class TableRuntime {
       this.state.requests.push(request);
       this.log(`${name} asked for seat ${seat + 1} with ${stack}`);
     }
+    // A person keeps their name; a bot that had it takes another, so nobody gets mixed up.
+    for (const botId of Object.keys(this.state.bots ?? {})) {
+      const botName = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name;
+      if (botName?.toLowerCase() === name.toLowerCase()) this.relookBot(botId);
+    }
     this.sync();
   }
 
@@ -434,7 +439,8 @@ export class TableRuntime {
       row.buyIn += r.amount;
       row.name = r.name;
     } else {
-      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(this.isBot(r.playerId) ? { bot: true as const } : {}) };
+      const bot = this.botInfo(r.playerId);
+      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(bot ? { bot: true as const, owner: bot.ownerName, look: bot.look } : {}) };
     }
     delete this.state.departures[r.playerId];
     const bot = this.botInfo(r.playerId);
@@ -1140,11 +1146,18 @@ export class TableRuntime {
   }
 
   /**
-   * The first of BOT_LOOKS that no other bot here has and nobody here goes by.
-   * With all of them taken (a full table and people named like bots), names get a number: "Ace 2".
+   * The first of BOT_LOOKS that no other bot here has and nobody here goes by, now or
+   * earlier (the ledger keeps everyone who played, so old hands stay clear too). Once
+   * every name has been used at this table, names get a number: "Ace 2".
    */
   private botLook() {
-    const taken = new Set([...this.state.seats.flatMap((x) => (x ? [x.name] : [])), ...this.state.requests.map((r) => r.name)].map((n) => n.toLowerCase()));
+    const names = [
+      ...this.state.seats.flatMap((x) => (x ? [x.name] : [])),
+      ...this.state.requests.map((r) => r.name),
+      ...(this.state.waitlist ?? []).map((w) => w.name),
+      ...Object.values(this.state.ledger).map((row) => row.name),
+    ];
+    const taken = new Set(names.map((n) => n.toLowerCase()));
     const used = new Set(Object.values(this.state.bots ?? {}).map((b) => b.look));
     for (let n = 1; ; n++) {
       for (let look = 0; look < BOT_LOOKS.length; look++) {
@@ -1158,18 +1171,32 @@ export class TableRuntime {
   /** Bots saved before bots had looks were all "Ann's Poker Bot": each gets its own name and picture. */
   private giveBotsLooks() {
     for (const [playerId, bot] of Object.entries(this.state.bots ?? {})) {
-      if (bot.look !== undefined) continue;
-      const { look, name } = this.botLook();
-      bot.look = look;
-      const seat = this.seatOf(playerId);
-      const request = this.state.requests.find((r) => r.playerId === playerId);
-      const old = seat?.name ?? request?.name;
-      if (seat) seat.name = name;
-      if (request) request.name = name;
-      const row = this.state.ledger[playerId];
-      if (row) row.name = name;
-      if (old) this.log(`${old} is now ${name}`);
+      if (bot.look === undefined) this.relookBot(playerId);
     }
+  }
+
+  /** Gives a bot a fresh name and picture, everywhere its name shows. */
+  private relookBot(playerId: PlayerId) {
+    const bot = this.botInfo(playerId)!;
+    delete bot.look;
+    const { look, name } = this.botLook();
+    bot.look = look;
+    const seat = this.seatOf(playerId);
+    const request = this.state.requests.find((r) => r.playerId === playerId);
+    const row = this.state.ledger[playerId];
+    const old = seat?.name ?? request?.name;
+    if (seat) seat.name = name;
+    if (request) request.name = name;
+    if (row) Object.assign(row, { name, owner: bot.ownerName, look });
+    if (old) this.log(`${old} is now ${name}`);
+  }
+
+  /** A bot's owner and look, for its live seat or for hands it played before it left. */
+  botBadge(playerId: PlayerId): { ownerName: string; look: number } | null {
+    const bot = this.botInfo(playerId);
+    if (bot) return { ownerName: bot.ownerName, look: bot.look ?? 0 };
+    const row = this.state.ledger[playerId];
+    return row?.bot ? { ownerName: row.owner ?? '', look: row.look ?? 0 } : null;
   }
 
   /** A bot gone from the table entirely leaves no trace but its ledger row. */

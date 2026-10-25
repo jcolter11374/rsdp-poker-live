@@ -221,7 +221,8 @@ export interface HandRecordView {
   betting: BettingKind;
   stakes: Stakes;
   button: number;
-  seats: { seat: number; playerId: PlayerId; name: string; stack: number }[];
+  /** `bot` marks a practice bot: whose it was and its look (BOT_LOOKS). */
+  seats: { seat: number; playerId: PlayerId; name: string; stack: number; bot?: { ownerName: string; look: number } }[];
   events: HandEvent[];
   /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
   fair?: FairRecordView | null;
@@ -329,7 +330,7 @@ export interface ClientToServer {
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
-  /** Add a practice bot named after me, in this seat or the first free one. */
+  /** Add a practice bot of mine (it gets its own short name and robot), in this seat or the first free one. */
   'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
   /** Take away a bot I added (the host can take away any). */
   'bot:remove': (input: { playerId: string }, ack: Ack) => void;
@@ -353,8 +354,9 @@ export type GestureKind = (typeof GESTURES)[number];
 /**
  * Practice bots' names and pictures. Each bot at a table takes the first one no
  * other bot there has, so bots are easy to tell apart at a glance. The order
- * puts the most different colours first. The web client draws the robot from
- * `color` and `face` (0-3).
+ * puts the most different colours first. Names stay at five letters or fewer
+ * so they fit a phone nameplate. The web client draws the robot from `color`
+ * and `face` (0-3).
  */
 export const BOT_LOOKS: readonly { name: string; color: string; face: number }[] = [
   { name: 'Ace', color: '#e5484d', face: 0 },
@@ -365,9 +367,9 @@ export const BOT_LOOKS: readonly { name: string; color: string; face: number }[]
   { name: 'Rocky', color: '#f76b15', face: 2 },
   { name: 'Deuce', color: '#0f9f95', face: 0 },
   { name: 'Hooks', color: '#e0457b', face: 3 },
-  { name: 'Cowboy', color: '#9a6a3c', face: 2 },
-  { name: 'Sharky', color: '#5b5bd6', face: 0 },
-  { name: 'Kicker', color: '#7cab1f', face: 1 },
+  { name: 'Quads', color: '#9a6a3c', face: 2 },
+  { name: 'Shark', color: '#5b5bd6', face: 0 },
+  { name: 'Spike', color: '#7cab1f', face: 1 },
   { name: 'Trips', color: '#7d8a99', face: 3 },
 ];
 

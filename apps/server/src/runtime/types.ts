@@ -89,6 +89,9 @@ export interface LedgerRow {
   cashOut: number;
   /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
   bot?: true;
+  /** A bot's owner and look (BOT_LOOKS), kept so its old hands still show whose robot it was. */
+  owner?: string;
+  look?: number;
 }
 
 export interface ChatMessage {

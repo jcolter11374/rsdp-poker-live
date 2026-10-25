@@ -23,7 +23,7 @@
       "blurb": "Built and being tested now.",
       "items": [
         { "title": "Clean felt look", "detail": "A cleaner, flatter table: green felt, crisp cards with big corner letters, and round player badges." },
-        { "title": "Practice bots", "detail": "Add a bot to an empty seat (it's named after you, like \"John's Poker Bot\") to practice a new game risk-free. Bots only sit where a player puts them, never in tournaments." },
+        { "title": "Practice bots", "detail": "Add a bot to an empty seat to practice a new game risk-free. Each bot gets its own name and robot, like \"Ace · John's bot\". Bots only sit where a player puts them, never in tournaments." },
         { "title": "Clearer game names", "detail": "Pick the game and the betting limit separately, so tables read like \"Hold'em · Pot Limit\"." },
         { "title": "8-or-better labels", "detail": "High-low games say plainly when there's a qualifying low and who won each half." },
         { "title": "Cash game reliability", "detail": "A round of fixes so cash games run smoothly from first hand to settle-up." },

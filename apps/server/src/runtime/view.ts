@@ -320,7 +320,10 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     betting: past.betting,
     stakes: past.stakes,
     button: past.button,
-    seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
+    seats: past.seats.map((x) => {
+      const bot = rt.botBadge(x.playerId);
+      return { seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack, ...(bot ? { bot } : {}) };
+    }),
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.

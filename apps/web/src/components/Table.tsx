@@ -323,11 +323,11 @@ export function Table({
               </div>
               <div className="nameplate" onClick={onSeatClick ? () => onSeatClick(s) : undefined}>
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
-                <div className="name">
+                <div className="name" title={s.bot ? (s.bot.ownerName ? `${s.name}, ${s.bot.ownerName}'s practice bot` : `${s.name}, a practice bot`) : undefined}>
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
                   {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
-                  {s.bot && <span className="bot-owner">· {s.bot.ownerName}&rsquo;s bot</span>}
+                  {s.bot && <span className="bot-owner">· {s.bot.ownerName ? <>{s.bot.ownerName}&rsquo;s bot</> : 'bot'}</span>}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
