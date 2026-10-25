@@ -128,6 +128,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     socket.on('table:state', onState);
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    // The socket may have connected after the first render but before this ran, so its connect event is gone.
+    setConnected(socket.connected);
     if (socket.connected) join();
     return () => {
       socket.off('table:state', onState);
