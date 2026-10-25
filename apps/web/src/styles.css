@@ -122,6 +122,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   align-items: center;
   min-width: 96px;
   width: max-content;
+  /* Seats glide when someone sits down or leaves and the table re-spreads. */
+  transition: left 0.4s ease, top 0.4s ease;
 }
 .seat.empty button, .seat.empty span {
   background: rgba(0, 0, 0, 0.12);
@@ -426,7 +428,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .action-bar .fold.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
 @media (prefers-reduced-motion: reduce) {
   .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
-  .dealer, .seat .hole { transition: none; }
+  .dealer, .seat, .seat .hole { transition: none; }
   .chip-flight { display: none; }
 }
 
@@ -496,8 +498,13 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .board .cards { gap: 3px; }
 .felt.compact .board .playing-card { --cw: 40px; }
 .felt.compact .board-label { width: 34px; font-size: 0.6rem; }
+/* Two runs or two boards on a phone: smaller cards so the boards stay clear of the side seats. */
+.felt.compact .board.multi .playing-card { --cw: 30px; }
+.felt.compact .board.multi .cards { gap: 2px; }
+.felt.compact .board.multi .board-label { width: 26px; font-size: 0.55rem; margin-right: 2px; }
+.felt.compact .board.multi .pot.result { max-width: 190px; }
 .felt.compact .pot { font-size: 0.85rem; padding: 2px 10px; }
-.felt.compact .pot.result { font-size: 0.8rem; max-width: 220px; }
+.felt.compact .pot.result { font-size: 0.8rem; max-width: 200px; }
 .felt.compact .bet { font-size: 0.75rem; padding: 1px 7px 1px 2px; }
 .felt.compact .chip { width: 13px; height: 13px; }
 .felt.compact .win-float { left: 50%; bottom: auto; top: -18px; margin: 0; transform: translateX(-50%); font-size: 0.8rem; }
