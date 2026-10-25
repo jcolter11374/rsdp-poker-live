@@ -3,6 +3,7 @@ import { Home } from './Home';
 import { RulesPage } from './rules/RulesPage';
 import { TablePage } from './TablePage';
 import { SeasonPage } from './tournament/SeasonPage';
+import { SharedHandPage } from './components/table/Records';
 import { TournamentAlerts } from './tournament/TournamentAlerts';
 import { TournamentCreatePage } from './tournament/TournamentCreate';
 import { TournamentLobby } from './tournament/TournamentLobby';
@@ -38,6 +39,8 @@ function Page() {
   if (season) return <SeasonPage key={season[1]} id={season[1]} />;
   const tournament = path.match(/^\/tn\/([\w-]+)/);
   if (tournament) return <TournamentLobby id={tournament[1]} />;
+  const shared = path.match(/^\/h\/([\w-]+)/);
+  if (shared) return <SharedHandPage id={shared[1]} />;
   const table = path.match(/^\/t\/([\w-]+)/);
   return table ? <TablePage key={table[1]} tableId={table[1]} /> : <Home onCreated={(id) => go(`/t/${id}`)} />;
 }

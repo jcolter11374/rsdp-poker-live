@@ -4,7 +4,7 @@ import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
-import { BoardExtras, SeatExtras } from './table/slots';
+import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -69,7 +69,6 @@ let flightId = 0;
 
 export function Table({
   view,
-  clickable,
   skew,
   fmt,
   compact = false,
@@ -87,9 +86,7 @@ export function Table({
   onPickSeat?: (seat: number) => void;
   /** Put a practice bot in this empty seat. */
   onAddBot?: (seat: number) => void;
-  /** Open a seat's dialog; seats it returns false for (`clickable`) can't be opened. */
   onSeatClick?: (seat: SeatView) => void;
-  clickable?: (seat: SeatView) => boolean;
   discard?: DiscardPick | null;
 }) {
   const felt = useRef<HTMLDivElement>(null);
@@ -271,7 +268,6 @@ export function Table({
           secondsLeft = Math.max(0, Math.ceil((view.turn.deadline - now) / 1000));
         }
         const badge = seatBadge(s);
-        const openable = !!onSeatClick && (!clickable || clickable(s));
         const classes = [
           'seat',
           pos.x < w * 0.18 ? 'edge-left' : pos.x > w * 0.82 ? 'edge-right' : '',
@@ -280,7 +276,7 @@ export function Table({
           (s.sittingOut || !s.online) && 'away',
           won && 'winner',
           isMe && 'me',
-          openable && 'host-click',
+          onSeatClick && 'host-click',
         ]
           .filter(Boolean)
           .join(' ');
@@ -316,7 +312,7 @@ export function Table({
                   );
                 })}
               </div>
-              <div className="nameplate" onClick={openable ? () => onSeatClick!(s) : undefined}>
+              <div className="nameplate" onClick={onSeatClick ? () => onSeatClick(s) : undefined}>
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name">
                   {s.name}
@@ -357,6 +353,8 @@ export function Table({
       })}
 
       {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+
+      <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 
       {flights.map((f) => (
         <div key={f.id} className={`chip-flight ${f.kind}`} style={{ ...px(f.to), ...fromVars(f.from, f.to), animationDelay: `${f.delay}ms` }}>

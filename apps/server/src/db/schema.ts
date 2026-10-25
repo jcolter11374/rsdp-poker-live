@@ -357,3 +357,41 @@ export const playerNotes = pgTable(
     check('player_notes_color_check', sql`${t.color} in (${oneOf(NOTE_COLORS)})`),
   ],
 );
+
+// ---------------------------------------------------------------- avatars
+
+export const AVATAR_KINDS = ['library', 'upload'] as const;
+export type AvatarKind = (typeof AVATAR_KINDS)[number];
+
+/** Each player's picture: a library id, or an uploaded image kept as a small data: URL. */
+export const playerAvatars = pgTable(
+  'player_avatars',
+  {
+    playerId: text('player_id')
+      .primaryKey()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    value: text('value').notNull(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [check('player_avatars_kind_check', sql`${t.kind} in (${oneOf(AVATAR_KINDS)})`)],
+);
+
+// ---------------------------------------------------------------- shared hands
+
+/** A finished hand frozen as one player saw it, for a link anyone can open. Deleting the row stops the link. */
+export const sharedHands = pgTable(
+  'shared_hands',
+  {
+    id: text('id').primaryKey(),
+    tableId: text('table_id').notNull(),
+    handNumber: integer('hand_number').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    /** Table name, cents mode, seat count and the hand as the sharer saw it (a HandRecordView). */
+    snapshot: jsonb('snapshot').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('shared_hands_created_by_idx').on(t.createdBy)],
+);

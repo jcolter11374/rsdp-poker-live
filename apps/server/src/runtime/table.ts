@@ -433,9 +433,10 @@ export class TableRuntime {
     this.sync();
   }
 
-  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }) {
+  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean; mood?: string | null }) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
+    if (prefs.mood !== undefined) seat.mood = cleanMood(prefs.mood);
     if (prefs.nitGame !== undefined) seat.nitOptIn = !!prefs.nitGame;
     if (prefs.waitForBigBlind !== undefined) seat.waitForBigBlind = !!prefs.waitForBigBlind;
     if (prefs.straddle !== undefined) seat.straddle = !!prefs.straddle;
@@ -949,6 +950,13 @@ export class TableRuntime {
       this.guestNames.get(playerId) ??
       'Guest'
     );
+  }
+
+  /** Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. */
+  checkGesture(from: PlayerId, to: PlayerId) {
+    if (this.state.settings.chat.gestures === false) throw new ActionError('the host has turned gestures off');
+    if (from === to) throw new ActionError('pick another player');
+    if (!this.seatOf(to)) throw new ActionError('that player is not seated');
   }
 
   // ---------------------------------------------------------------- practice bots
@@ -2017,4 +2025,27 @@ export function rabbitCards(hand: HandState, enabled: boolean): string[][] | nul
   }
   if (pos > hand.input.deck.length) return null;
   return boards;
+}
+
+/** Longest mood, in UTF-16 units: room for one emoji with skin tone and joiners, not a sentence. */
+const MOOD_MAX = 16;
+
+/** A mood emoji from a client: emoji only (no letters or digits), short, or null to clear it. */
+export function cleanMood(raw: unknown): string | null {
+  if (raw === null || raw === '') return null;
+  if (typeof raw !== 'string') throw new ActionError('pick an emoji');
+  const mood = raw.replace(/\p{Cs}/gu, '').trim();
+  if (!mood) return null;
+  // Keycaps (1️⃣, #️⃣) are the one place a digit belongs; joiners and variation selectors are the only invisible characters allowed.
+  const rest = mood.replace(/[0-9#*]\uFE0F?\u20E3/gu, '🔢');
+  const marks = (rest.match(/\p{M}/gu) ?? []).length;
+  if (
+    mood.length > MOOD_MAX ||
+    !/\p{Extended_Pictographic}/u.test(rest) ||
+    /[\p{L}\p{N}\p{Cc}\s]/u.test(rest) ||
+    /\p{Cf}/u.test(rest.replace(/[\u200D\uFE0F]/g, '')) ||
+    marks > 2
+  )
+    throw new ActionError('pick one emoji');
+  return mood;
 }

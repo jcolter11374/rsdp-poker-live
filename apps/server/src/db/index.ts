@@ -3,9 +3,11 @@ export { isUniqueViolation, StorageError, type StorageErrorCode } from './errors
 export { newHandId, newId, newTableId } from './ids';
 export * from './hands';
 export * from './ledger';
+export * from './avatars';
 export * from './notes';
+export * from './shared';
 export * from './tables';
 export * as schema from './schema';
-export type { JobStatus, MovementKind, NoteColor, TableMode, TableStatus } from './schema';
+export type { AvatarKind, JobStatus, MovementKind, NoteColor, TableMode, TableStatus } from './schema';
 export * from './tournaments';
 export * from './tournamentLog';

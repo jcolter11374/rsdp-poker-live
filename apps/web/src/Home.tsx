@@ -4,6 +4,7 @@ import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
+import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
 import { TournamentList } from './tournament/TournamentList';
 
@@ -166,6 +167,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       <p className="tagline">
         New to Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
       </p>
+      <InstallApp />
     </main>
   );
 }

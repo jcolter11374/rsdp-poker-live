@@ -15,6 +15,8 @@ export function tableView(
   tournamentId: string | null = null,
   /** Everyone with the table open, seated or not. */
   audience: { playerId: PlayerId; name: string }[] = [],
+  /** Each player's picture, as SeatView.avatar has it. */
+  avatarOf: (playerId: PlayerId) => string | null = () => null,
 ): TableView {
   const s = rt.state;
   const mySeat = rt.seatOf(playerId);
@@ -69,6 +71,8 @@ export function tableView(
       nit: nitRound?.participants.includes(seat.playerId) ? (nitRound.holders.includes(seat.playerId) ? 'holder' : 'clear') : null,
       won: inThisHand ? (won.get(seat.seat) ?? 0) : 0,
       handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
+      avatar: avatarOf(seat.playerId),
+      mood: seat.mood ?? null,
       ...botTag(rt, seat.playerId),
     };
   });
@@ -299,9 +303,10 @@ export function pastHand(record: HandRecord): PastHand {
 }
 
 /** A finished hand as one person may see it (their own cards, and whatever was shown). */
-export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId): HandRecordView {
+export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId, opts: { hideMine?: boolean } = {}): HandRecordView {
   const past = 'hand' in record ? pastHand(record) : record;
-  const seat = past.seats.find((x) => x.playerId === playerId)?.seat ?? null;
+  // hideMine: as someone who wasn't in the hand sees it, so only shown cards are face up.
+  const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
   return {
     handNumber: past.handNumber,
     startedAt: past.startedAt,

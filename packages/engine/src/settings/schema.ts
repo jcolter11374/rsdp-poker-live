@@ -269,6 +269,8 @@ const ChatSection = z
     guestChat: z.boolean(),
     /** Mask common profanity in chat. */
     profanityFilter: z.boolean(),
+    /** Players may throw gestures at each other (on when left out). */
+    gestures: z.boolean().optional(),
   })
   .strict();
 

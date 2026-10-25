@@ -337,6 +337,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               {numberField('Disconnect grace (s)', draft.seating.offlineGraceSeconds, (v) => set('seating', { offlineGraceSeconds: v }), 0, 300)}
             </div>
             {toggle('Keep dealing to away players (they check or fold)', draft.seating.dealToAway, (dealToAway) => set('seating', { dealToAway }))}
+            {toggle('Players can throw gestures at each other', draft.chat.gestures !== false, (gestures) => set('chat', { gestures }))}
           </>
         )}
 

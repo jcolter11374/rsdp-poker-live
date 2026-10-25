@@ -115,7 +115,7 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
 }
 
 /** What the host can do to a seated player. */
-export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void }) {
+export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: TableView; seat: SeatView; fmt: Fmt; onClose: () => void; children?: ReactNode }) {
   const cents = view.settings.stakes.centsMode;
   const [stack, setStack] = useState(toInput(cents, seat.stack));
   const [error, setError] = useState('');
@@ -185,6 +185,7 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
           )}
         </div>
         {error && <p className="error">{error}</p>}
+        {children}
         <button onClick={onClose}>Close</button>
       </div>
     </Modal>
@@ -192,30 +193,22 @@ export function PlayerDialog({ view, seat, fmt, onClose }: { view: TableView; se
 }
 
 /** A player's own practice bot: they can take it away. */
-export function BotDialog({ seat, fmt, onClose }: { seat: SeatView; fmt: Fmt; onClose: () => void }) {
+export function RemoveBot({ seat, onDone }: { seat: SeatView; onDone: () => void }) {
   const [error, setError] = useState('');
   return (
-    <Modal title={seat.name} onClose={onClose}>
-      <div className="form">
-        <p className="muted">
-          Your practice bot in seat {seat.seat + 1}, with {fmt(seat.stack)} chips. It plays simple, steady poker.
-          {seat.inHand ? ' Removing it now folds its hand.' : ''}
-        </p>
-        {error && <p className="error">{error}</p>}
-        <div className="row">
-          <button onClick={onClose}>Close</button>
-          <button
-            className="danger"
-            onClick={() =>
-              call('bot:remove', { playerId: seat.playerId })
-                .then(onClose)
-                .catch((err: Error) => setError(err.message))
-            }
-          >
-            Remove bot
-          </button>
-        </div>
-      </div>
-    </Modal>
+    <div className="form">
+      <p className="muted">Your practice bot. It plays simple, steady poker.{seat.inHand ? ' Removing it now folds its hand.' : ''}</p>
+      {error && <p className="error">{error}</p>}
+      <button
+        className="danger"
+        onClick={() =>
+          call('bot:remove', { playerId: seat.playerId })
+            .then(onDone)
+            .catch((err: Error) => setError(err.message))
+        }
+      >
+        Remove bot
+      </button>
+    </div>
   );
 }
