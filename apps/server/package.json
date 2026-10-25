@@ -1,0 +1,21 @@
+{
+  "name": "@rsdp/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "NODE_ENV=production tsx src/index.ts"
+  },
+  "dependencies": {
+    "@rsdp/engine": "*",
+    "express": "^4.21.1",
+    "nanoid": "^5.0.8",
+    "socket.io": "^4.8.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0"
+  }
+}
