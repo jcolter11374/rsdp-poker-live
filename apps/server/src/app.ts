@@ -330,6 +330,8 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:draw', ({ discard }, ack) => guarded(ack, () => current().draw(me, toIndexes(discard)), log));
     on('hand:runItTwice', ({ yes }, ack) => guarded(ack, () => current().voteRunItTwice(me, !!yes), log));
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
+    on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
+    on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
     on('chat:send', ({ text }) => guarded(undefined, () => current().chat(me, String(text ?? '')), log));
 
     on('host:approve', ({ requestId }, ack) => guarded(ack, () => current().approve(me, String(requestId)), log));

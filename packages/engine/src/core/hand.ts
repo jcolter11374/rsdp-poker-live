@@ -665,8 +665,9 @@ function finish(state: HandState) {
     active.reduce((sum, { mod, settings }) => sum + (mod?.potFee?.(pot, state, settings) ?? 0), 0),
   );
 
-  // Every live hand is shown at showdown.
-  if (contested) revealLive(state);
+  const muckLosers = contested && input.options.showdown === 'muck-losers';
+  // Every live hand is shown at showdown, unless losing hands may muck (decided once the awards are known).
+  if (contested && !muckLosers) revealLive(state);
 
   const holeBySeat: Record<SeatIndex, Card[]> = {};
   for (const s of state.seats) holeBySeat[s.seat] = s.cards.map((c) => c.card);
@@ -680,6 +681,7 @@ function finish(state: HandState) {
     rules,
     fee: (_pot, i) => fees[i],
   });
+  if (muckLosers) showInOrder(state, holeBySeat);
   const rake = fees.reduce((sum, f) => sum + f, 0);
   // Pot fees leave the table: recorded as a transfer to the house.
   if (rake > 0) emit(state, { t: 'transfer', kind: 'rake', from: 'house', to: 'house', amount: rake });
@@ -706,6 +708,51 @@ function finish(state: HandState) {
     }
   }
   emit(state, { t: 'hand-end', stacks: Object.fromEntries(state.seats.map((s) => [s.seat, s.stack])) });
+}
+
+/**
+ * Showdown with mucking: the last aggressor of the final round shows first
+ * (or, if it was checked through, the first live player after the button).
+ * Going clockwise, a hand is shown if it wins chips or beats or ties every
+ * hand shown so far on some board or half; the rest are mucked unseen.
+ */
+function showInOrder(state: HandState, holeBySeat: Record<SeatIndex, Card[]>) {
+  const { spec, rules } = variants.get(state.input.game.id);
+  const contenders = live(state);
+  let lastStreet = -1;
+  for (const e of state.events) if (e.t === 'street') lastStreet = e.seq;
+  let aggressor: SeatIndex | null = null;
+  for (const e of state.events) {
+    if (e.seq > lastStreet && e.t === 'action' && (e.action === 'bet' || e.action === 'raise' || e.action === 'complete')) aggressor = e.seat;
+  }
+  const first = aggressor !== null && contenders.some((s) => s.seat === aggressor) ? aggressor : null;
+  const order = first !== null ? clockwiseFrom(state, first - 1).filter((s) => !s.folded) : clockwiseFrom(state, state.input.button).filter((s) => !s.folded);
+  const winners = new Set(state.awards.map((a) => a.seat));
+  const runs = state.runs.length > 0 ? state.runs : [[[]]];
+  const shown: SeatIndex[] = [];
+  const beatsShown = (seat: SeatIndex) =>
+    runs.some((run) =>
+      run.some((board) => {
+        const eligible = [...shown, seat];
+        return rules.awardPortion(spec, 1000 * eligible.length, eligible, holeBySeat, board).some((a) => a.seat === seat && a.amount > 0);
+      }),
+    );
+  for (const s of order) {
+    const faceUp = s.cards.every((c, i) => c.up || s.shown.includes(i));
+    if (shown.length === 0 || faceUp || winners.has(s.seat) || beatsShown(s.seat)) {
+      shown.push(s.seat);
+      revealSeat(state, s);
+    } else {
+      emit(state, { t: 'muck', seat: s.seat });
+    }
+  }
+}
+
+function revealSeat(state: HandState, s: HandSeat) {
+  const fresh = s.cards.map((_, i) => i).filter((i) => !s.shown.includes(i) && !s.cards[i].up);
+  if (!fresh.length) return;
+  s.shown.push(...fresh);
+  emit(state, { t: 'show', seat: s.seat, cards: fresh.map((i) => s.cards[i].card) });
 }
 
 /** Shows every card of every live hand that is not already face up. */
