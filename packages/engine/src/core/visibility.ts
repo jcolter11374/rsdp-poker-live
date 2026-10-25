@@ -22,7 +22,10 @@ export function visibleEvents(state: HandState, viewer: Viewer, fromSeq = 0): Ha
     if (e.t === 'deal') {
       out.push({ ...e, cards: e.cards.map((c) => (c.up || sees(e.seat, c.card) ? c : { card: HIDDEN_CARD, up: false })) });
     } else if (e.t === 'draw') {
-      out.push({ ...e, cards: e.cards.map((c) => (sees(e.seat, c) ? c : HIDDEN_CARD)) });
+      const { positions, ...rest } = e;
+      // Which slots were thrown is the drawer's own business, like the cards.
+      const own = viewer.seeAll || viewer.seat === e.seat;
+      out.push({ ...rest, cards: e.cards.map((c) => (sees(e.seat, c) ? c : HIDDEN_CARD)), ...(own && positions ? { positions } : {}) });
     } else {
       out.push(e);
     }

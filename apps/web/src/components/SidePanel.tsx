@@ -4,9 +4,11 @@ import { call, socket } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
+import { playerStats, replayFrames } from '../replay';
+import { Replayer } from './Replayer';
 
-export type Tab = 'log' | 'chat' | 'ledger' | 'hands';
-const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands' };
+export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
+const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
 
 export function SidePanel({
   view,
@@ -83,6 +85,7 @@ export function SidePanel({
           ))}
         {tab === 'ledger' && <Ledger view={view} fmt={fmt} />}
         {tab === 'hands' && <Hands view={view} fmt={fmt} />}
+        {tab === 'stats' && <Stats view={view} fmt={fmt} />}
       </div>
       {tab === 'chat' && (
         <form
@@ -221,9 +224,75 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   );
 }
 
+/** Every finished hand at the table, fetched once and again only when new hands have finished. */
+const handCache = new Map<string, HandRecordView[]>();
+const loading = new Map<string, Promise<HandRecordView[]>>();
+/**
+ * Every finished hand at the table: the full download once, then each new
+ * hand on its own as it finishes. One request at a time per table.
+ */
+function allHands(view: TableView): Promise<HandRecordView[]> {
+  const pending = loading.get(view.id);
+  // Wait for the request in flight, then pick up anything it missed.
+  if (pending) return pending.then(() => allHands(view));
+  const job = (async () => {
+    let hands = handCache.get(view.id);
+    if (!hands) hands = (await call<{ hands: HandRecordView[] }>('table:export')).hands;
+    const have = new Set(hands.map((h) => h.handNumber));
+    const missing = view.history.filter((h) => !have.has(h.handNumber));
+    if (missing.length) {
+      const more = await Promise.all(missing.map((h) => call<{ hand: HandRecordView }>('table:history', { handNumber: h.handNumber }).then((r) => r.hand)));
+      hands = [...hands, ...more].sort((a, b) => a.handNumber - b.handNumber);
+    }
+    handCache.set(view.id, hands);
+    return hands;
+  })().finally(() => loading.delete(view.id));
+  loading.set(view.id, job);
+  return job;
+}
+
+/** All hands, loading while `active`, refreshed as hands finish. */
+function useAllHands(view: TableView, active: boolean) {
+  const [hands, setHands] = useState<HandRecordView[] | null>(() => handCache.get(view.id) ?? null);
+  const [error, setError] = useState('');
+  const latest = view.history.at(-1)?.handNumber ?? 0;
+  useEffect(() => {
+    if (!active || !latest) return;
+    let live = true;
+    allHands(view)
+      .then((h) => live && (setHands(h), setError('')))
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [active, latest]);
+  return { hands, error };
+}
+
+/** What a player's stack did over one hand. */
+function handNet(h: HandRecordView, playerId: string): number | null {
+  const seat = h.seats.find((s) => s.playerId === playerId);
+  const end = h.events.find((e) => e.t === 'hand-end');
+  if (!seat || !end || end.t !== 'hand-end' || end.stacks[seat.seat] === undefined) return null;
+  return end.stacks[seat.seat] - seat.stack;
+}
+
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [open, setOpen] = useState<HandRecordView | null>(null);
+  const [replay, setReplay] = useState<number | null>(null);
+  const { hands, error: loadError } = useAllHands(view, true);
   const [error, setError] = useState('');
+  const [fromFile, setFromFile] = useState<HandRecordView[] | null>(null);
+  const opener = (
+    <OpenHandsFile
+      fmt={fmt}
+      onOpen={(h) => (setFromFile(h), setError(''))}
+      onError={setError}
+    />
+  );
+  const fileReplay = fromFile && (
+    <Replayer hands={fromFile} start={0} tableName={view.name} seatCount={Math.max(view.seats.length, ...fromFile.flatMap((h) => h.seats.map((s) => s.seat + 1)))} myId={view.me.playerId} fmt={fmt} onClose={() => setFromFile(null)} />
+  );
 
   if (open) {
     const names = new Map(open.seats.map((s) => [s.seat, s.name]));
@@ -243,36 +312,129 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
       </div>
     );
   }
-  if (!view.history.length) return <p className="muted">Finished hands show up here.</p>;
-  const exportAll = (kind: 'txt' | 'json') =>
-    call<{ hands: HandRecordView[] }>('table:export')
-      .then(({ hands }) => {
-        const stem = `${fileStem(view.name)}-hands`;
-        if (kind === 'json') download(`${stem}.json`, JSON.stringify({ format: 'rsdp-hands', version: 1, table: view.name, exportedAt: new Date().toISOString(), centsMode: view.settings.stakes.centsMode, hands }, null, 1), 'application/json');
-        else download(`${stem}.txt`, handHistoryText(view.name, hands, view.me.playerId, fmt));
-      })
-      .catch((e: Error) => setError(e.message));
+  if (!view.history.length || !hands)
+    return (
+      <>
+        <p className="muted">{!view.history.length ? 'Finished hands show up here.' : loadError || 'Loading hands…'}</p>
+        <div className="row wrap ledger-actions">{opener}</div>
+        {error && <p className="error">{error}</p>}
+        {fileReplay}
+      </>
+    );
+  const exportAll = (kind: 'txt' | 'json') => {
+    const stem = `${fileStem(view.name)}-hands`;
+    if (kind === 'json') download(`${stem}.json`, JSON.stringify({ format: 'rsdp-hands', version: 1, table: view.name, exportedAt: new Date().toISOString(), centsMode: view.settings.stakes.centsMode, hands }, null, 1), 'application/json');
+    else download(`${stem}.txt`, handHistoryText(view.name, hands, view.me.playerId, fmt));
+  };
   return (
     <>
       <div className="row wrap ledger-actions">
         <button onClick={() => exportAll('txt')}>Download all hands</button>
         <button onClick={() => exportAll('json')}>JSON</button>
+        {opener}
       </div>
-      {error && <p className="error">{error}</p>}
-      {[...view.history].reverse().map((h) => (
-        <button
-          key={h.handNumber}
-          className="hand-row"
-          onClick={() =>
-            call<{ hand: HandRecordView }>('table:history', { handNumber: h.handNumber })
-              .then((r) => setOpen(r.hand))
-              .catch((e: Error) => setError(e.message))
-          }
-        >
-          <b>#{h.handNumber}</b> {h.gameName}
-          <span className="muted"> {new Date(h.endedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-        </button>
-      ))}
+      {(error || loadError) && <p className="error">{error || loadError}</p>}
+      {hands
+        .map((h, i) => ({ h, i, net: handNet(h, view.me.playerId) }))
+        .reverse()
+        .map(({ h, i, net }) => (
+          <div key={h.handNumber} className="hand-row">
+            <button className="hand-open" onClick={() => setReplay(i)} title="Replay this hand">
+              <span className="hand-name">
+                ▶ <b>#{h.handNumber}</b> {h.gameName}
+              </span>
+              <span className="muted">{new Date(h.endedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+              {net !== null && net !== 0 && <span className={net > 0 ? 'up' : 'down'}>{net > 0 ? `+${fmt(net)}` : fmt(net)}</span>}
+            </button>
+            <button className="hand-text" onClick={() => (setOpen(h), setError(''))} title="Read the log">
+              Log
+            </button>
+          </div>
+        ))}
+      {replay !== null && (
+        <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} fmt={fmt} onClose={() => setReplay(null)} />
+      )}
+      {fileReplay}
+    </>
+  );
+}
+
+/** Loads a hands file saved from the Hands tab (JSON) and hands it to the replayer. */
+function OpenHandsFile({ fmt, onOpen, onError }: { fmt: Fmt; onOpen: (hands: HandRecordView[]) => void; onError: (msg: string) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const read = async (file: File) => {
+    try {
+      const data = JSON.parse(await file.text());
+      if (data?.format !== 'rsdp-hands' || !Array.isArray(data.hands)) throw new Error();
+      // Keep only hands the replayer can step through, so one bad entry doesn't stop the rest.
+      const hands = (data.hands as HandRecordView[]).filter((h) => {
+        try {
+          return replayFrames(h, null, fmt).length > 0;
+        } catch {
+          return false;
+        }
+      });
+      if (!hands.length) throw new Error();
+      onOpen(hands);
+    } catch {
+      onError('That isn’t a hands file saved from this site (use the JSON download).');
+    }
+  };
+  return (
+    <>
+      <button onClick={() => input.current?.click()} title="Replay a JSON file saved from the Hands tab">
+        Open file
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void read(f);
+        }}
+      />
+    </>
+  );
+}
+
+function Stats({ view, fmt }: { view: TableView; fmt: Fmt }) {
+  const { hands, error } = useAllHands(view, true);
+  if (!view.history.length) return <p className="muted">Stats show up once hands are played.</p>;
+  if (!hands) return <p className="muted">{error || 'Loading…'}</p>;
+  const rows = playerStats(hands);
+  const pct = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '');
+  return (
+    <>
+      <table className="ledger stats">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th title="Hands dealt">Hands</th>
+            <th title="Put money in voluntarily before the flop (or on the first round)">VPIP</th>
+            <th title="Raised before the flop (or on the first round)">PFR</th>
+            <th title="Pots won">Won</th>
+            <th>Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.playerId}>
+              <td>{r.name}</td>
+              <td>{r.hands}</td>
+              <td>{pct(r.vpip, r.hands)}</td>
+              <td>{pct(r.pfr, r.hands)}</td>
+              <td>{r.won}</td>
+              <td className={r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}>{r.net > 0 ? `+${fmt(r.net)}` : fmt(r.net)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="hint">
+        Over {hands.length} {hands.length === 1 ? 'hand' : 'hands'} at this table. VPIP: how often a player puts chips in by choice on the first betting round; PFR: how often they raise it.
+      </p>
     </>
   );
 }

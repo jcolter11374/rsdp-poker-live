@@ -105,13 +105,18 @@ export function Table({
   const betPoint = (seat: number) => lerp(seatPoint(seat), center, compact ? 0.36 : 0.4);
   const buttonPoint = (seat: number) => {
     const p = seatPoint(seat);
-    const toward = lerp(p, center, compact ? 0.3 : 0.26);
-    // Off to one side of the line to the middle, so it never covers the bet.
+    // Beside the nameplate, square to the line to the middle: clear of the
+    // cards above the plate and the bet in front of it. Downward when that
+    // line is mostly sideways, since the cards sit above.
     const dx = center.x - p.x;
     const dy = center.y - p.y;
     const len = Math.hypot(dx, dy) || 1;
-    const side = compact ? 22 : 30;
-    return { x: toward.x - (dy / len) * side, y: toward.y + (dx / len) * side };
+    let sx = -dy / len;
+    let sy = dx / len;
+    if (sy < 0) (sx = -sx), (sy = -sy);
+    const reach = Math.abs(sx) * (compact ? 46 : 62) + Math.abs(sy) * (compact ? 34 : 42);
+    const inward = compact ? 22 : 10;
+    return { x: p.x + sx * reach + (dx / len) * inward, y: p.y + sy * reach + (dy / len) * inward };
   };
 
   // Winning cards, per board, and every card any winner used.

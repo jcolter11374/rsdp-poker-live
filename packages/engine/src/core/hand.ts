@@ -629,7 +629,7 @@ export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
   const fresh = dealReplacements(state, thrown).map((card) => ({ card, up: false }));
   s.cards.push(...fresh);
   s.lastAction = unique.length === 0 ? 'Stand pat' : `Draw ${unique.length}`;
-  emit(state, { t: 'draw', seat, discarded: unique.length, cards: fresh.map((c) => c.card) });
+  emit(state, { t: 'draw', seat, discarded: unique.length, cards: fresh.map((c) => c.card), positions: unique });
   state.toAct = nextDrawer(state, seat);
   if (state.toAct === null) {
     beginBetting(state, false);

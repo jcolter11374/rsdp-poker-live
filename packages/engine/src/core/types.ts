@@ -340,8 +340,11 @@ export type HandEvent = { seq: number } & (
       /** Engine acted for an away or timed-out player. */
       auto: boolean;
     }
-  /** Draw games. `cards` (the replacements) are private. */
-  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[] }
+  /**
+   * Draw games. `cards` (the replacements) are private and go on the end of the hand.
+   * `positions` are the indexes thrown away, highest first (hands saved before it was added lack it).
+   */
+  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[]; positions?: number[] }
   | { t: 'uncalled'; seat: SeatIndex; amount: Chips }
   | { t: 'rit-offer'; seats: SeatIndex[] }
   | { t: 'rit-vote'; seat: SeatIndex; yes: boolean }
