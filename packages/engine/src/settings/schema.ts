@@ -224,6 +224,8 @@ const SeatingSection = z
     ratholeMinutes: int(L.ratholeMinutes),
     /** Queue players for full tables. */
     waitlist: z.boolean(),
+    /** New players get a random open seat instead of the one they picked (false when left out). */
+    randomSeats: z.boolean().optional(),
     /** Keep dealing to away players (they auto check or fold). */
     dealToAway: z.boolean(),
     /** Consecutive timeouts before a player is marked away, 0-10 (0 = never). */
@@ -261,10 +263,12 @@ const PlaySection = z
 
 const ChatSection = z
   .object({
-    /** Players without an account may chat. */
+    /** People who are not seated (spectators, players waiting for a seat) may chat. The host always can. */
     guestChat: z.boolean(),
     /** Mask common profanity in chat. */
     profanityFilter: z.boolean(),
+    /** Players may throw gestures at each other (on when left out). */
+    gestures: z.boolean().optional(),
   })
   .strict();
 

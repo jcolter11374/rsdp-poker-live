@@ -46,12 +46,21 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
 - Identity: a persistent guest id per browser; optional username and password accounts link guest ids. Tournament registration needs an account.
 
+## Players at the table (pictures, moods, gestures)
+
+- A player's picture is per player, not per seat: `avatar:set` stores a library id (`AVATARS` in wire.ts) or a small uploaded data: URL in `player_avatars`. Seats show it as `SeatView.avatar`: `lib:<id>`, or `up:<version>` for an upload served at `GET /api/avatars/:playerId` (cacheable; a new upload is a new version). The server keeps a playerId → token map in memory and loads missing ones when a table is shown.
+- `SeatView.mood` is an emoji kept on the seat (`seat:prefs { mood }`). Gestures are not stored: `table:gesture { to, kind }` is checked (host switch `chat.gestures`, target seated, a few per 10 s per tab) and relayed to everyone with the table open.
+- Per-viewer choices (chips or big blinds on the felt, table sounds, chat beep, gesture visibility, hiding pictures and moods, keeping the screen on) live in `rsdp.prefs` with the look prefs.
+
 ## Tournament integration (packages/tournament <-> apps/server)
 
 - The director is pure: `apply(state, command, now)` and `tick(state, now)` return `{ state, events }`. `nextWakeAt(state)` tells the scheduler when to call `tick`.
 - The server translates socket calls into commands, runs the hands, and reports each hand's `startStacks`, `endStacks` and knockouts per table.
 - Before dealing on a tournament table, the runtime asks `tableGate(state, tableId, now)` and reads `levelFor(state, tableId)` for game and blinds.
 - Director events such as `moveSeat` and `tableBroken` are applied between hands.
+- Host and co-hosts: `@rsdp/engine/roles` is the one co-host model for cash tables and tournaments. A host names co-hosts and gives each some powers (`approve`, `chips`, `run`, `players`, `settings`); managing co-hosts, handing over the host role and archiving stay with the host. Tournaments keep them in `state.coHosts`; the server checks every staff command with `mayCommand(state, playerId, command)` from `@rsdp/tournament` before the director sees it.
+- Host tools in the director: `approve` takes an optional `stack` (a handicap), `setStack` (waits for the player's hand to end; not a rebuy), `movePlayer` (between hands; a taken seat swaps the two players), `archive` (`state.archivedAt`; before the start it also cancels). Lists should skip archived events. The server's hourly cleanup archives manual and Sit & Go events left untouched for 30 days and drops finished events from memory an hour after they end; results are never deleted.
+- After a crash, a table saved behind its director is brought in line (`alignTables` in the manager): a hand the director already closed is dropped rather than played again, and a hand the director heard start but the table never saved is closed with no chips moving. The director also ignores a result for a hand it has already closed.
 
 ## Branches and ownership
 

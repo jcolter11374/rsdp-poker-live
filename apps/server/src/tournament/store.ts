@@ -1,8 +1,10 @@
 import { STATE_VERSION, type TournamentState } from '@rsdp/tournament';
-import { insertTournament, listLiveTournaments, loadTournament, saveTournament, type Db } from '../db';
+import { insertTournament, listHostSeasons, listLiveTournaments, listPlayerTournaments, listSeasonTournaments, loadTournament, saveTournament, type Db } from '../db';
 import type { TournamentStore } from './manager';
 
 const LIVE = new Set(['registering', 'seating', 'running', 'paused']);
+/** Most of a player's own tournaments the home page shows. */
+const PLAYER_LIST_MAX = 50;
 
 export function memoryTournamentStore(): TournamentStore {
   const rows = new Map<string, string>();
@@ -23,6 +25,26 @@ export function memoryTournamentStore(): TournamentStore {
     },
     async listLive() {
       return [...rows.values()].map(read).filter((r) => LIVE.has(r.state.status));
+    },
+    async listForPlayer(playerId, since) {
+      return [...rows.values()]
+        .map(read)
+        .filter((r) => (r.state.hostId === playerId || r.state.entries.some((e) => e.playerId === playerId)) && (r.state.finishedAt ?? Infinity) > since)
+        .slice(-PLAYER_LIST_MAX);
+    },
+    async listSeason(seasonId) {
+      return [...rows.values()].map((json) => read(json).state).filter((s) => s.settings.season?.id === seasonId);
+    },
+    async hostSeasons(hostId) {
+      const seasons = new Map<string, { id: string; name: string; events: number }>();
+      const mine = [...rows.values()].map((json) => read(json).state).filter((s) => s.hostId === hostId && s.settings.season);
+      for (const s of mine.sort((a, b) => b.createdAt - a.createdAt)) {
+        const { id, name } = s.settings.season!;
+        const seen = seasons.get(id);
+        if (seen) seen.events++;
+        else seasons.set(id, { id, name, events: 1 });
+      }
+      return [...seasons.values()];
     },
   };
 }
@@ -46,5 +68,12 @@ export function dbTournamentStore(db: Db): TournamentStore {
     async listLive() {
       return (await listLiveTournaments<TournamentState>(db)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
     },
+    async listForPlayer(playerId, since) {
+      return (await listPlayerTournaments<TournamentState>(db, playerId, new Date(since), PLAYER_LIST_MAX)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
+    },
+    async listSeason(seasonId) {
+      return (await listSeasonTournaments<TournamentState>(db, seasonId)).map((row) => row.state).filter((s) => s.version === STATE_VERSION);
+    },
+    hostSeasons: (hostId) => listHostSeasons(db, hostId),
   };
 }

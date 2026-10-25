@@ -1,0 +1,32 @@
+.banner.spectating {
+  background: #4a1f2a;
+  color: #ffc9d2;
+}
+.chat-name {
+  cursor: pointer;
+}
+.chat-name:hover {
+  text-decoration: underline;
+}
+.chat-notes {
+  font-size: 0.85em;
+  padding: 4px 8px;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.waitlist ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.waitlist li {
+  margin: 2px 0;
+}
+.preset .who {
+  flex: 1;
+}

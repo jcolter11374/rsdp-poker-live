@@ -10,3 +10,28 @@
 .note-swatch.none { background: repeating-linear-gradient(45deg, #555 0 3px, #333 3px 6px) !important; }
 .note-swatch.picked { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .note-text { width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 8px; }
+/* Pictures, moods and gestures (Persona.tsx). */
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; line-height: 1; box-sizing: border-box; border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
+.nameplate .seat-avatar { position: absolute; left: -24px; top: 50%; translate: 0 -50%; display: flex; pointer-events: none; }
+.felt.compact .nameplate .seat-avatar { left: -16px; }
+.felt.compact .nameplate .seat-avatar .avatar { width: 26px !important; height: 26px !important; font-size: 15px !important; }
+.nameplate .seat-mood { position: absolute; right: -10px; bottom: -10px; font-size: 18px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); pointer-events: none; }
+.felt.compact .nameplate .seat-mood { font-size: 14px; right: -7px; bottom: -8px; }
+.my-profile .row { align-items: center; flex-wrap: wrap; }
+.avatar-grid, .mood-grid, .gesture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin: 8px 0; }
+.avatar-pick, .mood-pick, .gesture-grid button { min-height: 0; padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 24px; line-height: 1; }
+.avatar-pick.active, .mood-pick.active { outline: 2px solid var(--accent-2); }
+.gesture-grid button { font-size: 28px; padding: 6px; }
+.gesture-flight { position: absolute; z-index: 6; font-size: 34px; line-height: 1; pointer-events: none; transform: translate(-50%, -50%); animation: gesture-fly 0.7s cubic-bezier(0.3, 0.1, 0.3, 1) both, gesture-land 1.5s 0.7s ease-out both; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5)); }
+@keyframes gesture-fly { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.6) rotate(-25deg); } to { transform: translate(-50%, -50%) scale(1) rotate(0); } }
+@keyframes gesture-land { 0% { transform: translate(-50%, -50%) scale(1); } 20% { transform: translate(-50%, -50%) scale(1.6); } 40% { transform: translate(-50%, -50%) scale(1.25); } 80% { opacity: 1; } 100% { transform: translate(-50%, -80%) scale(1.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .gesture-flight { animation: gesture-land 1.5s ease-out both; }
+}
+.nameplate .equity-tag { position: absolute; left: 50%; bottom: -15px; translate: -50% 0; font-size: 0.72rem; font-weight: 700; padding: 0 7px; border-radius: 999px; background: #22303d; border: 1px solid rgba(255, 255, 255, 0.25); color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; z-index: 3; }
+.nameplate .equity-tag.ahead { background: var(--good); color: #0b1a10; border-color: transparent; }
+.highlights { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.highlights h4 { margin: 4px 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-2); }
+.hand-row.highlight .hand-name { white-space: normal; }
+.share-hand .row input { flex: 1; min-width: 0; }
+.shared-hand { max-width: none; }

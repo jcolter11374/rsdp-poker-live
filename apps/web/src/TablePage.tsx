@@ -2,17 +2,22 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
-import { getVolume, nextVolume, setVolume, sounds, VOLUME_NAME } from './sound';
+import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
+import { closeNotifications, notify } from './notify';
 import { usePortrait } from './layout';
-import { chipFormat, clock, gameLabel, stakesLabel } from './format';
+import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
+import { getPrefs, setPrefs, usePrefs } from './prefs';
+import { useWakeLock } from './wakeLock';
 import { Table, useNow } from './components/Table';
 import { HandExtras } from './components/table/HandExtras';
+import { PlayerExtras } from './components/table/Persona';
+import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { Sheet } from './components/Sheet';
-import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
+import { Modal, PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
@@ -51,6 +56,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     if (myTurn && !wasMyTurn && !preQueued.current) {
       sounds.turn();
       buzz();
+      notify('Your turn', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
     }
   }, [view]);
 
@@ -85,13 +91,15 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
       clearInterval(t);
       document.title = original;
       badgeFavicon(false);
+      // Acted (here or in another tab): the alert is out of date.
+      closeNotifications('turn:');
     };
   }, [myTurn]);
 }
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -101,7 +109,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [sheet, setSheet] = useState<'menu' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
-  const [volume, setVolumeState] = useState(getVolume);
+  const volume = useVolume();
   const [discard, setDiscard] = useState<number[]>([]);
   const [chatSeen, setChatSeen] = useState(0);
   const preQueued = useRef(false);
@@ -144,6 +152,22 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => setDiscard([]), [drawKey]);
 
   const fmt = useMemo(() => chipFormat(!!view?.settings.stakes.centsMode), [view?.settings.stakes.centsMode]);
+  // The felt can show amounts in big blinds; buy-ins, the ledger and the bet box stay in chips.
+  const prefs = usePrefs();
+  const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
+  const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
+  const feltFmt = useMemo(() => (prefs.units === 'bb' && bigBlind > 0 ? bbFormat(bigBlind) : fmt), [prefs.units, bigBlind, fmt]);
+  useWakeLock(prefs.wakeLock && view?.me.seat != null);
+  // B switches between chips and big blinds.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'b' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      setPrefs({ units: getPrefs().units === 'bb' ? 'chips' : 'bb' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
 
   if (error) {
@@ -210,7 +234,6 @@ export function TablePage({ tableId }: { tableId: string }) {
       onClick={() => {
         const v = nextVolume(volume);
         setVolume(v);
-        setVolumeState(v);
         if (v > 0) sounds.chips();
       }}
     >
@@ -354,6 +377,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
+          <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">
@@ -381,10 +405,10 @@ export function TablePage({ tableId }: { tableId: string }) {
           <Table
             view={view}
             skew={skew}
-            fmt={fmt}
+            fmt={feltFmt}
             compact={portrait}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
-            onSeatClick={view.isHost && cash ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
+            onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
           <ActionBar
@@ -436,7 +460,7 @@ export function TablePage({ tableId }: { tableId: string }) {
                 setDialog({ kind: 'look' });
               }}
             >
-              🎨 Table look
+              🎨 Look, sound and me
             </button>
             {volumeButton}
           </div>
@@ -449,8 +473,20 @@ export function TablePage({ tableId }: { tableId: string }) {
         </Sheet>
       )}
 
-      {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'player' && <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'player' &&
+        (view.isHost && cash ? (
+          <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)}>
+            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
+          </PlayerDialog>
+        ) : (
+          <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
+            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
+            <div className="row">
+              <button onClick={() => setDialog(null)}>Close</button>
+            </div>
+          </Modal>
+        ))}
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}

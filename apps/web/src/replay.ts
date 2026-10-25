@@ -16,6 +16,8 @@ export interface Frame {
   awards: Award[];
   done: boolean;
   caption: string;
+  /** How many of the hand's events this frame has played. */
+  upTo: number;
 }
 
 interface ReplaySeat {
@@ -66,6 +68,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     awards: [],
     done: false,
     caption: '',
+    upTo: 0,
   };
   const lines = (upTo: number) => eventLines(hand.events.slice(0, upTo), (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat);
   const gather = () => {
@@ -82,6 +85,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     const merge = e.t === 'deal' && prev?.t === 'deal' && frames.length > 0;
     f = merge ? f : clone(f);
     apply(f, e, gather, mySeat);
+    f.upTo = i + 1;
     const all = lines(i + 1);
     const fresh = all.slice(lineCount).map((l) => l.replace(/^--- /, ''));
     lineCount = all.length;
@@ -295,6 +299,8 @@ export function frameView(
       straddle: false,
       won: 0,
       handName: null,
+      avatar: null,
+      mood: null,
     };
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);
@@ -315,6 +321,10 @@ export function frameView(
     settingsLog: [],
     history: [],
     watchers: [],
+    waitlist: [],
+    offers: [],
+    muted: [],
+    spectator: null,
     bombPotNext: false,
     rabbit: { available: false, cards: null },
     nit: null,
@@ -359,7 +369,8 @@ export function frameView(
       runItTwice: { offered: false, votes: {}, deadline: null, times: null },
       showdown: frame.done,
       awards: frame.done ? frame.awards : [],
-      events: [],
+      // Played so far, so the table can tell what has happened (the equity waits for the hands to be shown).
+      events: hand.events.slice(0, frame.upTo),
       bombPot: !!start?.bombPot,
     },
   } satisfies TableView;

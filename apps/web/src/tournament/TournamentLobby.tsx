@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import type { HostPower } from '@rsdp/engine/roles';
 import {
+  isTournamentStaff,
   placePrizes,
   playerOptions,
   standings,
   summarize,
   tableAddress,
+  tournamentPowers,
   type Command,
   type StructureRow,
   type TournamentState,
@@ -13,10 +16,15 @@ import { LocalTournamentClient, tournamentClient, type Session } from './client'
 import { blinds, chips, countdown, gameName, localTime, money, ordinal } from './format';
 import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
 import { savedName } from '../socket';
+import { CoHostPanel, EventPanel, PlayerManager, RequestRow } from './HostPanels';
+import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
+import { AlertsToggle } from './TournamentAlerts';
+import { downloadResults } from './results';
+import { Activity, LobbyChat, useLobbyLog, useUnreadChat } from './LobbyLog';
 
-type Tab = 'players' | 'tables' | 'structure' | 'payouts' | 'host';
+type Tab = 'players' | 'tables' | 'chat' | 'activity' | 'structure' | 'payouts' | 'host';
 
 const STATUS_LABEL: Record<TournamentState['status'], string> = {
   registering: 'Registering',
@@ -53,15 +61,21 @@ export function TournamentLobby({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>('players');
   const { send, error: sendError } = useSend(id);
   useFollowSeat(null);
+  const log = useLobbyLog(id);
+  const unread = useUnreadChat(log, tab === 'chat', session?.playerId, skew);
 
   if (error) return <main className="tn-page"><p className="error">{error}</p><a href="/">Home</a></main>;
   if (!state) return <main className="tn-page"><p className="muted">Loading…</p></main>;
 
-  const isHost = session?.playerId === state.hostId;
+  // The host and co-hosts see the host tools, each with their own powers.
+  const isHost = isTournamentStaff(state, session?.playerId);
+  const powers = tournamentPowers(state, session?.playerId);
   const sum = summarize(state, now);
   const tabs: [Tab, string][] = [
     ['players', `Players (${sum.entrants})`],
     ['tables', `Tables${sum.tables ? ` (${sum.tables})` : ''}`],
+    ['chat', `Chat${unread ? ` (${unread})` : ''}`],
+    ['activity', 'Activity'],
     ['structure', 'Structure'],
     ...(state.settings.payouts ? ([['payouts', 'Payouts']] as [Tab, string][]) : []),
     ...(isHost ? ([['host', `Host${state.requests.length ? ` (${state.requests.length})` : ''}`]] as [Tab, string][]) : []),
@@ -80,11 +94,20 @@ export function TournamentLobby({ id }: { id: string }) {
         <p className="muted">
           {state.settings.games.map(gameName).join(' / ')} · {chips(state.settings.startingStack)} chips · {state.settings.seatsPerTable}-max
           {state.settings.start.kind === 'sng' ? ' · Sit & Go' : ''}
+          {state.settings.bounty ? ` · ${money(state.settings.bounty.amount)} ${state.settings.bounty.progressivePercent > 0 ? 'progressive bounty' : 'bounty'}` : ''}
         </p>
-        <ShareLink />
+        <div className="tn-header-actions">
+          <ShareLink />
+          <AlertsToggle />
+        </div>
       </header>
 
       <Hero state={state} now={now} />
+      {state.settings.season && !(tournamentClient() instanceof LocalTournamentClient) && (
+        <p className="tn-windows">
+          <a href={`/season/${state.settings.season.id}`}>{state.settings.season.name}: season standings →</a>
+        </p>
+      )}
       {nextId && (
         <p className="tn-windows">
           <a href={`/tn/${nextId}`}>{state.settings.start.kind === 'sng' ? 'The next Sit & Go is open' : 'The next one in this series is open'} →</a>
@@ -104,9 +127,18 @@ export function TournamentLobby({ id }: { id: string }) {
       <section className="tn-card">
         {tab === 'players' && <Players state={state} me={session?.playerId} />}
         {tab === 'tables' && <Tables state={state} />}
-        {tab === 'structure' && <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />}
+        {tab === 'chat' && <LobbyChat id={id} items={log} session={session} />}
+        {tab === 'activity' && <Activity items={log} />}
+        {tab === 'structure' && (
+          <>
+            <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />
+            <p className="muted">
+              <a href={`/tn/new?from=${state.id}`}>Copy these settings into a new tournament</a>
+            </p>
+          </>
+        )}
         {tab === 'payouts' && <Payouts state={state} now={now} />}
-        {tab === 'host' && isHost && <HostTools state={state} send={send} />}
+        {tab === 'host' && isHost && session && <HostTools state={state} me={session.playerId} powers={powers} send={send} />}
       </section>
       {tournamentClient() instanceof LocalTournamentClient && <DemoTools state={state} />}
     </main>
@@ -202,7 +234,17 @@ function Stats({ state, now }: { state: TournamentState; now: number }) {
   if (state.settings.payouts) items.push(['Prize pool', money(sum.prizePool)], ['Paid', `${sum.paidPlaces}`]);
   if (sum.totalRebuys) items.push(['Rebuys', `${sum.totalRebuys}`]);
   if (sum.totalAddOns) items.push(['Add-ons', `${sum.totalAddOns}`]);
-  const windows = [sum.registrationOpen && sum.clock ? 'Late registration open' : '', sum.rebuysOpen ? 'Rebuys open' : '', sum.addOnsOpen ? 'Add-ons open' : '', sum.reEntryOpen ? 'Re-entry open' : ''].filter(Boolean);
+  if (state.settings.bounty && sum.clock) items.push(['Bounties in play', money(sum.bountiesInPlay)]);
+  if (sum.checkIn) items.push(['Checked in', `${sum.checkIn.checkedIn} / ${Math.min(state.settings.maxEntrants, sum.checkIn.checkedIn + sum.checkIn.notCheckedIn)}`]);
+  const checkIn = sum.checkIn;
+  const checkInNote = !checkIn
+    ? ''
+    : checkIn.msToOpen !== null
+      ? `Check-in opens in ${countdown(checkIn.msToOpen)}`
+      : checkIn.groupsOpen === 0
+        ? 'Check-in opens when the host opens it'
+        : `Check-in open${checkIn.groups > 1 ? ` for group ${checkIn.groupsOpen} of ${checkIn.groups}` : ''}${checkIn.msToNextGroup !== null ? `; next group in ${countdown(checkIn.msToNextGroup)}` : ''}`;
+  const windows = [checkInNote, sum.registrationOpen && sum.clock ? 'Late registration open' : '', sum.rebuysOpen ? 'Rebuys open' : '', sum.addOnsOpen ? 'Add-ons open' : '', sum.reEntryOpen ? 'Re-entry open' : ''].filter(Boolean);
   return (
     <>
       <dl className="tn-stats">
@@ -224,6 +266,8 @@ function MyPanel({ state, session, skew, send }: { state: TournamentState; sessi
   const now = useNow(500) + skew;
   const [name, setName] = useState(() => session?.displayName || savedName());
   const [nameError, setNameError] = useState('');
+  // An invite link carries its code.
+  const [code, setCode] = useState(() => new URLSearchParams(location.search).get('code') ?? '');
   if (state.status === 'cancelled') return null;
   if (!session) return null;
   const o = playerOptions(state, session.playerId);
@@ -239,8 +283,10 @@ function MyPanel({ state, session, skew, send }: { state: TournamentState; sessi
         return setNameError(sentence((e as Error).message));
       }
     }
-    await send({ type: 'register', playerId: session.playerId, displayName: (needsName ? name : session.displayName).trim() });
+    if (state.settings.invites?.required && !code.trim()) return setNameError('Enter your invite code.');
+    await send({ type: 'register', playerId: session.playerId, displayName: (needsName ? name : session.displayName).trim(), ...(code.trim() ? { code: code.trim() } : {}) });
   };
+  const askCode = o.canRegister && (!!state.settings.invites || !!code);
   const me = { playerId: session.playerId, displayName: session.displayName };
   const place = o.entry && !['registered', 'seated', 'rebuy-offer'].includes(o.entry.status) ? standings(state).find((s) => s.entryId === o.entry!.id)?.place : null;
   const table = o.entry?.tableId ? state.tables.findIndex((t) => t.id === o.entry!.tableId) + 1 : 0;
@@ -250,7 +296,20 @@ function MyPanel({ state, session, skew, send }: { state: TournamentState; sessi
     <div className="tn-card tn-me">
       <div className="tn-me-status">
         {!o.entry && !o.pending.length && <span>You're not registered.</span>}
-        {o.entry?.status === 'registered' && <span>You're registered. {state.settings.start.kind === 'scheduled' ? 'Your seat is drawn a minute before the start.' : ''}</span>}
+        {o.entry?.status === 'registered' && !state.settings.checkIn && (
+          <span>You're registered. {state.settings.start.kind === 'scheduled' ? 'Your seat is drawn a minute before the start.' : ''}</span>
+        )}
+        {o.entry?.status === 'registered' && state.settings.checkIn && (
+          <span className={o.canCheckIn ? 'tn-alert' : ''}>
+            {o.checkedIn
+              ? "You're checked in. Your seat is drawn when the tournament starts."
+              : o.canCheckIn
+                ? 'Check-in is open: check in to keep your seat.'
+                : o.checkInOpensAt !== null
+                  ? `You're registered. You can check in from ${localTime(o.checkInOpensAt)} (in ${countdown(o.checkInOpensAt - now)}).`
+                  : "You're registered. Check in when check-in opens, or you lose your place."}
+          </span>
+        )}
         {o.entry?.status === 'seated' && (
           <span>
             <a href={`/t/${tableAddress(o.entry.tableId!)}`}>
@@ -277,8 +336,19 @@ function MyPanel({ state, session, skew, send }: { state: TournamentState; sessi
           <input value={name} maxLength={20} placeholder="The name others see" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && register()} />
         </label>
       )}
+      {askCode && (
+        <label className="tn-name">
+          Invite code{state.settings.invites?.required ? '' : ' (if you have one)'}
+          <input value={code} maxLength={40} autoCapitalize="characters" placeholder="ABCD2345" onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && register()} />
+        </label>
+      )}
       {nameError && <p className="error">{nameError}</p>}
       <div className="tn-actions">
+        {o.canCheckIn && (
+          <button className="primary big" onClick={() => send({ type: 'checkIn', playerId: me.playerId })}>
+            Check in
+          </button>
+        )}
         {o.entry?.status === 'seated' && (
           <button className="primary big" onClick={() => navigate(`/t/${tableAddress(o.entry!.tableId!)}`)}>
             Go to my table
@@ -311,6 +381,8 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
   const [q, setQ] = useState('');
   const shown = q ? rows.filter((r) => r.displayName.toLowerCase().includes(q.toLowerCase())) : rows;
   const pending = state.requests.filter((r) => r.kind === 'register');
+  const bounty = !!state.settings.bounty;
+  const checkIn = !!state.settings.checkIn && !state.tables.length;
   if (!rows.length && !pending.length) return <p className="muted">No one has registered yet.</p>;
   return (
     <>
@@ -321,6 +393,8 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
             <th>#</th>
             <th>Player</th>
             <th className="num">{started ? 'Chips' : ''}</th>
+            {bounty && <th className="num">Bounty</th>}
+            {bounty && <th className="num">KOs</th>}
             {state.settings.payouts && <th className="num">Prize</th>}
           </tr>
         </thead>
@@ -336,9 +410,12 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
                   {r.rebuys > 0 && <span className="tn-tag">R{r.rebuys}</span>}
                   {r.addOns > 0 && <span className="tn-tag">A</span>}
                   {e.status === 'rebuy-offer' && <span className="tn-tag tn-tag-warn">rebuy?</span>}
+                  {checkIn && <span className={`tn-tag ${e.checkedInAt === undefined ? '' : 'tn-tag-good'}`}>{e.checkedInAt === undefined ? 'not checked in' : 'checked in'}</span>}
                   {e.tableId && started && <span className="muted"> · T{tableNo(e.tableId)}</span>}
                 </td>
                 <td className="num">{started && !r.place ? chips(r.stack) : ''}</td>
+                {bounty && <td className="num" title={r.bounties ? `${money(r.bounties)} won` : undefined}>{r.place ? (r.bounties ? `won ${money(r.bounties)}` : '') : money(r.bounty)}</td>}
+                {bounty && <td className="num">{r.knockouts || ''}</td>}
                 {state.settings.payouts && <td className="num">{r.prize ? money(r.prize) : ''}</td>}
               </tr>
             );
@@ -346,6 +423,11 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
         </tbody>
       </table>
       {pending.length > 0 && <p className="muted">{pending.length} waiting for approval.</p>}
+      {rows.length > 0 && started && (
+        <button className="tn-csv" onClick={() => downloadResults(state)}>
+          Download results (CSV)
+        </button>
+      )}
     </>
   );
 }
@@ -391,42 +473,39 @@ function Payouts({ state, now }: { state: TournamentState; now: number }) {
   );
 }
 
-function HostTools({ state, send }: { state: TournamentState; send: (c: Command) => Promise<boolean> }) {
-  const by = state.hostId;
+function HostTools({ state, me, powers, send }: { state: TournamentState; me: string; powers: HostPower[]; send: (c: Command) => Promise<boolean> }) {
+  const by = me;
+  const can = (p: HostPower) => powers.includes(p);
   const started = state.status === 'running' || state.status === 'paused';
   const [rows, setRows] = useState<StructureRow[]>(state.settings.structure);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
     if (!dirty) setRows(state.settings.structure);
   }, [state.settings.structure, dirty]);
-  const kindLabel: Record<string, string> = { register: 'wants to register', rebuy: 'wants to rebuy', 'add-on': 'wants an add-on', 're-entry': 'wants to re-enter' };
   const s = state.settings;
   const over = state.status === 'finished' || state.status === 'cancelled';
 
   return (
     <div className="tn-host">
-      {state.requests.length > 0 && (
+      {can('approve') && state.requests.length > 0 && (
         <div className="tn-requests">
           <h3>Requests</h3>
           {state.requests.map((r) => (
-            <div className="tn-request" key={r.id}>
-              <span>
-                <b>{r.displayName}</b> {kindLabel[r.kind]}
-              </span>
-              <button className="primary" onClick={() => send({ type: 'approve', by, requestId: r.id })}>
-                Approve
-              </button>
-              <button onClick={() => send({ type: 'reject', by, requestId: r.id })}>Reject</button>
-            </div>
+            <RequestRow key={r.id} state={state} r={r} by={by} powers={powers} send={send} />
           ))}
         </div>
       )}
 
-      {!over && (
+      {!over && can('run') && (
         <div className="tn-actions">
           {(state.status === 'registering' || state.status === 'seating') && (
             <button className="primary" onClick={() => send({ type: 'startNow', by })}>
               Start now
+            </button>
+          )}
+          {s.checkIn && state.status === 'registering' && state.checkIn?.openedAt == null && (
+            <button className="primary" onClick={() => send({ type: 'openCheckIn', by })}>
+              Open check-in now
             </button>
           )}
           {state.status === 'running' && <button onClick={() => send({ type: 'pause', by })}>Pause</button>}
@@ -445,9 +524,13 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
           </button>
         </div>
       )}
-      {state.status === 'running' && <p className="muted">To end early, pause first and let running hands finish.</p>}
+      {state.status === 'running' && can('run') && <p className="muted">To end early, pause first and let running hands finish.</p>}
 
-      {!over && (
+      {!over && can('approve') && <InvitesPanel state={state} send={send} />}
+
+      {!over && (can('chips') || can('players')) && <PlayerManager state={state} by={by} powers={powers} send={send} />}
+
+      {!over && can('settings') && (
         <>
           <h3>Settings</h3>
           <div className="tn-toggles">
@@ -458,6 +541,18 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
             <Toggle label="Re-entry" on={s.reEntry.enabled} set={(v) => send({ type: 'updateSettings', by, settings: { reEntry: { ...s.reEntry, enabled: v } } })} />
             <Toggle label="Players may leave" on={s.allowQuit} set={(v) => send({ type: 'updateSettings', by, settings: { allowQuit: v } })} />
             {s.payouts && <Toggle label="Hand-for-hand on the bubble" on={s.handForHand} set={(v) => send({ type: 'updateSettings', by, settings: { handForHand: v } })} />}
+            <Toggle
+              label="Invite code needed to register"
+              on={!!s.invites?.required}
+              set={(v) => send({ type: 'updateSettings', by, settings: { invites: { autoApprove: s.invites?.autoApprove ?? true, required: v } } })}
+            />
+            {(s.invites || s.registrationApproval) && (
+              <Toggle
+                label="A valid code skips my approval"
+                on={!!s.invites?.autoApprove}
+                set={(v) => send({ type: 'updateSettings', by, settings: { invites: { required: s.invites?.required ?? false, autoApprove: v } } })}
+              />
+            )}
           </div>
 
           <h3>Blind levels</h3>
@@ -489,27 +584,11 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
             </div>
           )}
 
-          {state.entries.some((e) => ['registered', 'seated', 'rebuy-offer'].includes(e.status)) && (
-            <details className="tn-details">
-              <summary>Remove a player</summary>
-              {state.entries
-                .filter((e) => ['registered', 'seated', 'rebuy-offer'].includes(e.status))
-                .map((e) => (
-                  <div className="tn-request" key={e.id}>
-                    <span>{e.displayName}</span>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Remove ${e.displayName}? Their chips leave play.`)) send({ type: 'remove', by, playerId: e.playerId });
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-            </details>
-          )}
         </>
       )}
+
+      <CoHostPanel state={state} me={me} send={send} />
+      <EventPanel state={state} me={me} send={send} />
     </div>
   );
 }

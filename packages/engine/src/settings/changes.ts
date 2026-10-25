@@ -45,6 +45,7 @@ export const IMMEDIATE_FIELDS = [
   'seating.maxBuyIn',
   'seating.ratholeMinutes',
   'seating.waitlist',
+  'seating.randomSeats',
 ] as const;
 
 export function isImmediateField(path: string): boolean {

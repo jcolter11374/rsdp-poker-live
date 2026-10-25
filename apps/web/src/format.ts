@@ -9,6 +9,16 @@ export function chipFormat(centsMode: boolean): Fmt {
   return (n) => (n / 100).toLocaleString(undefined, { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
+/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. */
+export function bbFormat(bigBlind: number): Fmt {
+  return (n) => {
+    const bb = n / bigBlind;
+    // Under one big blind, keep enough digits that an ante never shows as 0.
+    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(bb)) + 1)) : 1;
+    return `${bb.toLocaleString(undefined, { maximumFractionDigits: digits })} BB`;
+  };
+}
+
 /** Chips to the number typed in an input, and back (cents mode types dollars). */
 export const toInput = (centsMode: boolean, chips: number) => (centsMode ? chips / 100 : chips);
 export const fromInput = (centsMode: boolean, value: number) => Math.round(centsMode ? value * 100 : value);

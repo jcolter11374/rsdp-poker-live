@@ -38,8 +38,10 @@ import {
   type SideGameState,
   type SeatState,
   type TournamentHooks,
+  type WaitlistEntry,
 } from './types';
 import { cleanName as cleanDisplayName } from '../names';
+import { maskProfanity } from './profanity';
 
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
@@ -48,6 +50,8 @@ const RIT_VOTE_SECONDS = 12;
 const NAME_MAX = 20;
 /** How long a cash table waits for an offline host before handing the table to a seated player. */
 export const HOST_HANDOFF_MS = 3 * 60_000;
+/** How long a free seat is held for the next person on the waitlist. */
+export const SEAT_OFFER_MS = 60_000;
 
 export interface RuntimeDeps {
   clock?: Clock;
@@ -81,10 +85,12 @@ export class TableRuntime {
   readonly tournament: TournamentHooks | null;
   private readonly logError: (message: string, err?: unknown) => void;
   private readonly connections = new Map<PlayerId, number>();
+  /** Names people go by before they sit (their session name), for chat. Set by the server. */
+  readonly guestNames = new Map<PlayerId, string>();
   private readonly offlineSince = new Map<PlayerId, number>();
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
-  private timers: Record<'turn' | 'next' | 'rit', unknown> = { turn: null, next: null, rit: null };
+  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
@@ -141,7 +147,7 @@ export class TableRuntime {
   }
 
   dispose() {
-    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    for (const key of TIMER_KEYS) this.clearTimer(key);
     this.clock.clearTimeout(this.hostTimer);
     this.hostTimer = null;
   }
@@ -171,6 +177,12 @@ export class TableRuntime {
   connect(playerId: PlayerId) {
     this.connections.set(playerId, (this.connections.get(playerId) ?? 0) + 1);
     this.offlineSince.delete(playerId);
+    // Back before the hand ended: the seat release that was waiting for it is off.
+    const seat = this.seatOf(playerId);
+    if (seat?.released) {
+      seat.leaveAfterHand = false;
+      seat.released = false;
+    }
     // The host back stops the handoff; anyone else arriving may be the one to take over.
     if (this.isHost(playerId) || this.hostTimer !== null) this.watchHost();
     this.sync();
@@ -193,12 +205,24 @@ export class TableRuntime {
   requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
     const name = cleanName(input.name);
-    const { seat, stack } = input;
+    let { seat } = input;
+    const { stack } = input;
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
-    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    const offered = this.offers().find((o) => o.playerId === playerId);
+    if (offered) seat = offered.seat;
+    else if (this.settings.seating.randomSeats && !this.isHost(playerId)) {
+      const open = this.openSeats(playerId);
+      if (!open.length) throw new ActionError('every seat is taken');
+      seat = open[this.rng(open.length)];
+    }
+    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
+    this.checkSeatFree(playerId, seat);
     this.checkBuyIn(playerId, stack);
+    // A new request replaces your earlier one (which never holds a seat against you).
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
+    // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
+    this.leaveQueue(playerId);
     const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
     if (!this.settings.seating.requireApproval || this.isHost(playerId)) {
       this.seatPlayer(request);
@@ -214,16 +238,28 @@ export class TableRuntime {
     this.sync();
   }
 
-  approve(by: PlayerId, requestId: string) {
+  /** Approves a request; for a seat request the host may put the player in another open seat. */
+  approve(by: PlayerId, requestId: string, seat?: number) {
     this.requireHost(by);
     const r = this.state.requests.find((x) => x.id === requestId);
     if (!r) throw new ActionError('request not found');
-    this.state.requests = this.state.requests.filter((x) => x !== r);
     if (r.kind === 'seat') {
-      if (this.state.seats[r.seat!]) throw new ActionError('that seat has been taken');
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
-      this.seatPlayer(r);
+      let target = seat ?? r.seat!;
+      if (seat !== undefined) {
+        if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+        if (this.state.seats[seat]) throw new ActionError('that seat is taken');
+        this.checkSeatFree(r.playerId, seat);
+      } else if (this.state.seats[target]) {
+        // Random seating: any open seat will do.
+        const open = this.settings.seating.randomSeats ? this.openSeats(r.playerId) : [];
+        if (!open.length) throw new ActionError('that seat has been taken');
+        target = open[this.rng(open.length)];
+      }
+      this.state.requests = this.state.requests.filter((x) => x !== r);
+      this.seatPlayer({ ...r, seat: target });
     } else {
+      this.state.requests = this.state.requests.filter((x) => x !== r);
       this.addChips(r.playerId, r.amount, 'rebuy');
     }
     this.sync();
@@ -246,6 +282,69 @@ export class TableRuntime {
     if (ratholeMinutes > 0 && left && this.clock.now() - left.at < ratholeMinutes * 60_000 && stack < left.stack) {
       throw new ActionError(`you left with ${left.stack} less than ${ratholeMinutes} minutes ago; come back with at least that`);
     }
+  }
+
+  /** A seat someone else is waiting on: held for a waitlisted player, or asked for and awaiting the host. */
+  private checkSeatFree(playerId: PlayerId, seat: number) {
+    const offer = this.offers().find((o) => o.seat === seat);
+    if (offer && offer.playerId !== playerId) throw new ActionError(`that seat is being held for ${this.queueName(offer.playerId)} from the waitlist`);
+    const asked = this.state.requests.find((r) => r.kind === 'seat' && r.seat === seat && r.playerId !== playerId);
+    if (asked) throw new ActionError(`${asked.name} has asked for that seat`);
+  }
+
+  /** Empty seats nobody else is waiting on. */
+  private openSeats(playerId: PlayerId | null = null): number[] {
+    const held = new Set([
+      ...this.offers().filter((o) => o.playerId !== playerId).map((o) => o.seat),
+      ...this.state.requests.filter((r) => r.kind === 'seat' && r.playerId !== playerId).map((r) => r.seat!),
+    ]);
+    return this.state.seats.flatMap((x, i) => (x || held.has(i) ? [] : [i]));
+  }
+
+  private queue(): WaitlistEntry[] {
+    return (this.state.waitlist ??= []);
+  }
+
+  private offers() {
+    return (this.state.offers ??= []);
+  }
+
+  private queueName(playerId: PlayerId) {
+    return this.state.waitlist?.find((w) => w.playerId === playerId)?.name ?? this.nameOf(playerId);
+  }
+
+  /** Takes a player off the waitlist and lets go of any seat held for them. */
+  private leaveQueue(playerId: PlayerId) {
+    if (this.state.waitlist?.some((w) => w.playerId === playerId)) this.state.waitlist = this.state.waitlist.filter((w) => w.playerId !== playerId);
+    if (this.state.offers?.some((o) => o.playerId === playerId)) this.state.offers = this.state.offers.filter((o) => o.playerId !== playerId);
+  }
+
+  /** Join the waitlist of a full cash table, with the buy-in to sit with when a seat comes up. */
+  joinWaitlist(playerId: PlayerId, input: { name: string; stack: number }) {
+    if (this.isTournament) throw new ActionError('the tournament seats players');
+    if (!this.settings.seating.waitlist) throw new ActionError('this table has no waitlist');
+    const name = cleanName(input.name);
+    if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    if (this.queue().some((w) => w.playerId === playerId)) throw new ActionError("you're already on the waitlist");
+    if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
+    if (this.openSeats(playerId).length) throw new ActionError('there is a free seat: take it');
+    this.checkBuyIn(playerId, input.stack);
+    this.queue().push({ playerId, name, stack: input.stack, at: this.clock.now() });
+    this.log(`${name} joined the waitlist`);
+    this.sync();
+  }
+
+  leaveWaitlist(playerId: PlayerId) {
+    const entry = this.state.waitlist?.find((w) => w.playerId === playerId);
+    if (!entry) return;
+    this.leaveQueue(playerId);
+    this.log(`${entry.name} left the waitlist`);
+    this.sync();
+  }
+
+  /** Turns down a held seat: off the waitlist, and the seat goes to the next person. */
+  declineOffer(playerId: PlayerId) {
+    this.leaveWaitlist(playerId);
   }
 
   private seatPlayer(r: SeatRequest) {
@@ -316,9 +415,10 @@ export class TableRuntime {
     this.sync();
   }
 
-  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }) {
+  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean; mood?: string | null }) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
+    if (prefs.mood !== undefined) seat.mood = cleanMood(prefs.mood);
     if (prefs.nitGame !== undefined) seat.nitOptIn = !!prefs.nitGame;
     if (prefs.waitForBigBlind !== undefined) seat.waitForBigBlind = !!prefs.waitForBigBlind;
     if (prefs.straddle !== undefined) seat.straddle = !!prefs.straddle;
@@ -671,7 +771,12 @@ export class TableRuntime {
     if (this.isTournament) throw new ActionError('remove players through the tournament');
     const seat = this.seatOf(playerId);
     this.state.requests = this.state.requests.filter((r) => r.playerId !== playerId);
-    if (!seat) return this.sync();
+    if (!seat) {
+      const waiting = this.state.waitlist?.find((w) => w.playerId === playerId);
+      if (waiting) this.log(`The host took ${waiting.name} off the waitlist`);
+      this.leaveQueue(playerId);
+      return this.sync();
+    }
     this.log(`The host removed ${seat.name}`);
     if (this.inHand(playerId)) {
       seat.leaveAfterHand = true;
@@ -686,6 +791,68 @@ export class TableRuntime {
     if (!seat) throw new ActionError('that player is not seated');
     seat.sittingOut = true;
     seat.sitOutReason = 'host';
+    this.sync();
+  }
+
+  /**
+   * Cash tables, between hands: deals everyone seated a random seat among the
+   * seats already taken. The button is drawn again and missed blinds are
+   * forgiven, as when a game starts.
+   */
+  shuffleSeats(by: PlayerId) {
+    this.requireHost(by);
+    if (this.isTournament) throw new ActionError('the tournament seats players');
+    if (this.handLive()) throw new ActionError('shuffle between hands');
+    const s = this.state;
+    const taken = s.seats.flatMap((x, i) => (x ? [i] : []));
+    if (taken.length < 2) throw new ActionError('need at least two players to shuffle');
+    const players = shuffle(taken.map((i) => s.seats[i]!), this.rng);
+    taken.forEach((seatNo, i) => {
+      const seat = players[i];
+      seat.seat = seatNo;
+      seat.isNew = false;
+      seat.missedBigBlind = false;
+      seat.missedSmallBlind = false;
+      s.seats[seatNo] = seat;
+    });
+    for (const r of s.requests) if (r.kind === 'rebuy') r.seat = this.seatOf(r.playerId)?.seat ?? r.seat;
+    s.positions = null;
+    s.rotation.anchor = null;
+    this.log('The host shuffled the seats');
+    this.sync();
+  }
+
+  /** Cash tables: the host moves a player who is not in the hand to an empty seat. */
+  moveSeat(by: PlayerId, playerId: PlayerId, to: number) {
+    this.requireHost(by);
+    if (this.isTournament) throw new ActionError('the tournament seats players');
+    const seat = this.seatOf(playerId);
+    if (!seat) throw new ActionError('that player is not seated');
+    if (!Number.isInteger(to) || to < 0 || to >= this.state.seats.length) throw new ActionError('no such seat');
+    if (this.state.seats[to]) throw new ActionError('that seat is taken');
+    this.checkSeatFree(playerId, to);
+    if (this.inHand(playerId)) throw new ActionError('move them once this hand is over');
+    const from = seat.seat;
+    this.state.seats[from] = null;
+    seat.seat = to;
+    // A new place at the table: like someone sitting down, they post or wait for the big blind.
+    if (this.activePlayers().length >= 2 && this.state.handNumber > 0) seat.isNew = true;
+    seat.missedBigBlind = false;
+    seat.missedSmallBlind = false;
+    this.state.seats[to] = seat;
+    for (const r of this.state.requests) if (r.playerId === playerId) r.seat = to;
+    this.log(`The host moved ${seat.name} from seat ${from + 1} to seat ${to + 1}`);
+    this.sync();
+  }
+
+  /** The host mutes (or unmutes) someone's chat for the whole table. */
+  mute(by: PlayerId, playerId: PlayerId, value: boolean) {
+    this.requireHost(by);
+    if (playerId === by) throw new ActionError("you can't mute yourself");
+    const muted = (this.state.muted ??= []);
+    if (muted.includes(playerId) === value) return;
+    this.state.muted = value ? [...muted, playerId] : muted.filter((id) => id !== playerId);
+    this.log(`The host ${value ? 'muted' : 'unmuted'} ${this.queueName(playerId)} in chat`);
     this.sync();
   }
 
@@ -741,15 +908,34 @@ export class TableRuntime {
   }
 
   chat(playerId: PlayerId | null, text: string) {
-    const clean = text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
+    let clean = text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
     if (!clean) return;
+    if (playerId) {
+      if (this.state.muted?.includes(playerId)) throw new ActionError('the host has muted you');
+      if (!this.settings.chat.guestChat && !this.seatOf(playerId) && !this.isHost(playerId)) throw new ActionError('only players at the table can chat here');
+      if (this.settings.chat.profanityFilter) clean = maskProfanity(clean);
+    }
     this.state.chat.push({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
     if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
     this.onChange();
   }
 
   nameOf(playerId: PlayerId) {
-    return this.seatOf(playerId)?.name ?? this.state.ledger[playerId]?.name ?? this.state.handNames?.[playerId] ?? 'Guest';
+    return (
+      this.seatOf(playerId)?.name ??
+      this.state.ledger[playerId]?.name ??
+      this.state.handNames?.[playerId] ??
+      this.state.waitlist?.find((w) => w.playerId === playerId)?.name ??
+      this.guestNames.get(playerId) ??
+      'Guest'
+    );
+  }
+
+  /** Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. */
+  checkGesture(from: PlayerId, to: PlayerId) {
+    if (this.state.settings.chat.gestures === false) throw new ActionError('the host has turned gestures off');
+    if (from === to) throw new ActionError('pick another player');
+    if (!this.seatOf(to)) throw new ActionError('that player is not seated');
   }
 
   // ---------------------------------------------------------------- tournament seating
@@ -801,6 +987,48 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Tournament: a host stack edit. The director sends it between this player's hands; during one it waits for the end. */
+  tournamentSetStack(playerId: PlayerId, stack: number) {
+    const seat = this.seatOf(playerId);
+    if (!seat) return;
+    if (this.inHand(playerId)) seat.pendingStack = stack;
+    else seat.stack = stack;
+    this.log(`${seat.name}'s stack was set to ${stack}`);
+    this.sync();
+  }
+
+  /** A hand is being played here. */
+  get handInProgress() {
+    return this.handLive();
+  }
+
+  /**
+   * Tournament, after a crash: this snapshot is behind the director, which has
+   * already closed the hand saved here as in progress (or later ones). Drops
+   * that hand without playing it again and takes the hand number, button and
+   * every stack from the director. Call before resume().
+   */
+  alignWithDirector(input: { handNumber: number; button: number | null; stacks: Record<PlayerId, number> }) {
+    const s = this.state;
+    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    if (this.handLive()) {
+      s.hand = null;
+      s.handStartedAt = null;
+      s.turn = null;
+      s.ritDeadline = null;
+    }
+    s.handNumber = input.handNumber;
+    if (input.button !== null && s.positions?.button !== input.button) s.positions = { button: input.button, smallBlind: null, bigBlind: null };
+    for (const seat of s.seats) {
+      const stack = seat ? input.stacks[seat.playerId] : undefined;
+      if (!seat || stack === undefined) continue;
+      seat.stack = stack;
+      seat.pendingChips = 0;
+      seat.pendingStack = null;
+      seat.leaveAfterHand = false;
+    }
+  }
+
   /** Tournament: the director may now let this table deal. */
   poke() {
     this.sync();
@@ -837,10 +1065,11 @@ export class TableRuntime {
 
   show(playerId: PlayerId, cardIndexes: number[]) {
     const hand = this.state.hand;
-    const seat = this.seatOf(playerId);
-    if (!hand || !seat || !hand.seats.some((x) => x.seat === seat.seat)) throw new ActionError('you were not in the last hand');
+    // By player, not seat: seats may have been shuffled since the hand.
+    const hs = this.seatOf(playerId) ? hand?.seats.find((x) => x.playerId === playerId) : undefined;
+    if (!hand || !hs) throw new ActionError('you were not in the last hand');
     const from = hand.events.length;
-    engine.show(hand, seat.seat, cardIndexes);
+    engine.show(hand, hs.seat, cardIndexes);
     if (hand.phase === 'complete' && this.state.handStartedAt === null) {
       this.applyLateTransfers(hand, from);
       this.logBounty(hand, from);
@@ -1211,6 +1440,7 @@ export class TableRuntime {
         showdown: s.settings.play.revealAllAtShowdown ? 'show-all' : 'muck-losers',
         fixedLimitCap: s.settings.play.fixedLimitCap,
         uncappedHeadsUp: s.settings.play.uncappedHeadsUp,
+        trimExcessBets: s.settings.play.trimExcessBets,
       },
       modifiers: this.isTournament ? [] : enabledModifiers(s.settings),
     };
@@ -1355,9 +1585,12 @@ export class TableRuntime {
    * tells listeners. Every public mutation ends here.
    */
   private sync() {
+    this.upkeep();
     for (let guard = 0; guard < 20; guard++) {
       if (!this.step()) break;
     }
+    // A hand that just ended may have freed seats.
+    this.upkeep();
     this.armTimers();
     this.onChange();
   }
@@ -1412,6 +1645,63 @@ export class TableRuntime {
     return false;
   }
 
+  /**
+   * Cash table housekeeping between and around hands: frees the seats of
+   * players offline too long, lets lapsed seat offers go, and holds each
+   * free seat for the next waitlisted player who is online.
+   */
+  private upkeep() {
+    if (this.isTournament) return;
+    const s = this.state;
+    const now = this.clock.now();
+    const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
+    if (releaseMs > 0 && !s.paused) {
+      for (const seat of s.seats) {
+        if (!seat || seat.leaveAfterHand || this.isOnline(seat.playerId) || this.offlineFor(seat) < releaseMs) continue;
+        this.log(`${seat.name} has been offline for ${s.settings.seating.releaseOfflineSeatMinutes} minutes, so their seat is released`);
+        if (this.inHand(seat.playerId)) {
+          seat.leaveAfterHand = true;
+          seat.released = true;
+        } else this.removeSeat(seat);
+      }
+    }
+    if (!s.settings.seating.waitlist) {
+      if (s.waitlist?.length) this.log('The waitlist is off; everyone waiting was taken off it');
+      s.waitlist = [];
+      s.offers = [];
+      return;
+    }
+    for (const o of this.offers().filter((x) => x.expiresAt <= now)) {
+      this.log(`${this.queueName(o.playerId)} didn't take seat ${o.seat + 1} in time and left the waitlist`);
+      this.leaveQueue(o.playerId);
+    }
+    // Seats taken some other way (the host moved someone in) are no longer on offer.
+    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < s.seats.length);
+    const open = this.openSeats();
+    for (const entry of this.queue()) {
+      if (!open.length) break;
+      if (this.offers().some((o) => o.playerId === entry.playerId) || !this.isOnline(entry.playerId)) continue;
+      const seat = open.shift()!;
+      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
+      this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
+    }
+  }
+
+  /** When upkeep next has something to do: an offer running out, or an offline seat to release. */
+  private upkeepDue(): number | null {
+    if (this.isTournament) return null;
+    const s = this.state;
+    const times = this.offers().map((o) => o.expiresAt);
+    const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
+    if (releaseMs > 0 && !s.paused) {
+      const now = this.clock.now();
+      for (const seat of s.seats) {
+        if (seat && !seat.leaveAfterHand && !this.isOnline(seat.playerId)) times.push(now + releaseMs - this.offlineFor(seat));
+      }
+    }
+    return times.length ? Math.min(...times) : null;
+  }
+
   private newTurn(key: string, seatNo: number) {
     const now = this.clock.now();
     const clock = this.state.settings.timing.decisionSeconds;
@@ -1460,10 +1750,9 @@ export class TableRuntime {
 
   private armTimers() {
     const s = this.state;
-    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
-    if (s.paused) return;
+    for (const key of TIMER_KEYS) this.clearTimer(key);
     const now = this.clock.now();
-    const at = (key: 'turn' | 'next' | 'rit', when: number | null | undefined) => {
+    const at = (key: TimerKey, when: number | null | undefined) => {
       if (when == null) return;
       this.timers[key] = this.clock.setTimeout(() => {
         this.timers[key] = null;
@@ -1475,12 +1764,15 @@ export class TableRuntime {
         }
       }, Math.max(0, when - now));
     };
+    // Seat offers run out even while the game is paused.
+    at('upkeep', this.upkeepDue());
+    if (s.paused) return;
     at('turn', this.turnDeadline());
     at('next', s.nextHandAt);
     at('rit', s.ritDeadline);
   }
 
-  private clearTimer(key: 'turn' | 'next' | 'rit') {
+  private clearTimer(key: TimerKey) {
     if (this.timers[key] !== null) this.clock.clearTimeout(this.timers[key]);
     this.timers[key] = null;
   }
@@ -1490,6 +1782,9 @@ export class TableRuntime {
     if (this.state.log.length > LOG_LIMIT) this.state.log.splice(0, this.state.log.length - LOG_LIMIT);
   }
 }
+
+const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep'] as const;
+type TimerKey = (typeof TIMER_KEYS)[number];
 
 /** Fills in limit sizes and the bring-in when the settings leave them at 0. */
 export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
@@ -1511,13 +1806,18 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   const startStacks: Record<PlayerId, number> = {};
   const endStacks: Record<PlayerId, number> = {};
   const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+  const potList = engine.pots(hand);
   for (const hs of hand.seats) {
     startStacks[hs.playerId] = hs.startStack;
     const seat = seats?.[hs.seat];
     const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
     endStacks[hs.playerId] = end;
     if (end > 0) continue;
-    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
+    // Whoever won a pot the busted player was in knocked them out; a side pot they had no part in does not count.
+    // A player who folded their last chips in had no pot to lose, so anyone who won counts.
+    const awards = hand.awards.filter((a) => a.seat !== hs.seat);
+    const theirs = awards.filter((a) => potList[a.pot]?.eligible.includes(hs.seat));
+    const winners = new Set((theirs.length ? theirs : awards).map((a) => a.seat));
     knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
@@ -1554,4 +1854,27 @@ export function rabbitCards(hand: HandState, enabled: boolean): string[][] | nul
   }
   if (pos > hand.input.deck.length) return null;
   return boards;
+}
+
+/** Longest mood, in UTF-16 units: room for one emoji with skin tone and joiners, not a sentence. */
+const MOOD_MAX = 16;
+
+/** A mood emoji from a client: emoji only (no letters or digits), short, or null to clear it. */
+export function cleanMood(raw: unknown): string | null {
+  if (raw === null || raw === '') return null;
+  if (typeof raw !== 'string') throw new ActionError('pick an emoji');
+  const mood = raw.replace(/\p{Cs}/gu, '').trim();
+  if (!mood) return null;
+  // Keycaps (1️⃣, #️⃣) are the one place a digit belongs; joiners and variation selectors are the only invisible characters allowed.
+  const rest = mood.replace(/[0-9#*]\uFE0F?\u20E3/gu, '🔢');
+  const marks = (rest.match(/\p{M}/gu) ?? []).length;
+  if (
+    mood.length > MOOD_MAX ||
+    !/\p{Extended_Pictographic}/u.test(rest) ||
+    /[\p{L}\p{N}\p{Cc}\s]/u.test(rest) ||
+    /\p{Cf}/u.test(rest.replace(/[\u200D\uFE0F]/g, '')) ||
+    marks > 2
+  )
+    throw new ActionError('pick one emoji');
+  return mood;
 }

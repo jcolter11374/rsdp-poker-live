@@ -307,3 +307,24 @@ describe('modifiers', () => {
     ]);
   });
 });
+
+describe('trimming excess bets', () => {
+  it('caps the big stack at the deepest opponent, so nothing comes back uncalled', () => {
+    // Seat 3 (UTG) has 500; the others have 100, 60 and 80.
+    const s = start({ stacks: [100, 60, 80, 500], options: { trimExcessBets: true } });
+    expect(s.toAct).toBe(3);
+    expect(legalActions(s, 3)).toMatchObject({ maxTo: 100 });
+    act(s, 3, { type: 'raise', to: 100 });
+    expect(s.seats.find((x) => x.seat === 3)!.stack).toBe(400);
+    expect(() => act(s, 0, { type: 'raise', to: 101 })).toThrow(ActionError);
+    act(s, 0, { type: 'call' });
+    act(s, 1, { type: 'fold' });
+    act(s, 2, { type: 'fold' });
+    expect(eventsOf(s, 'uncalled')).toHaveLength(0);
+  });
+
+  it('is off by default', () => {
+    const s = start({ stacks: [100, 60, 80, 500] });
+    expect(legalActions(s, 3)).toMatchObject({ maxTo: 500 });
+  });
+});
