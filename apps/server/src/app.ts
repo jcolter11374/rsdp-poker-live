@@ -427,6 +427,7 @@ export function createApp(deps: AppDeps = {}) {
       tournamentWatchers.get(id)?.delete(socket);
       socket.data.tournaments.delete(id);
     });
+    on('tournament:list', (ack) => guarded(ack, async () => ({ tournaments: await tournaments.list(me), serverNow: clock.now() }), log));
     on('tournament:command', (input, ack) =>
       guarded(ack, () => tournaments.command(String(input?.id ?? ''), me, socket.data.session.displayName, input?.command), log),
     );
