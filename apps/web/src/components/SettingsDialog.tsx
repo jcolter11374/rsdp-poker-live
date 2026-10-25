@@ -345,6 +345,10 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               {numberField('Limit bets per round', draft.play.fixedLimitCap, (v) => set('play', { fixedLimitCap: v }), 2, 10, 'The bet plus raises')}
             </div>
             {toggle('No cap when heads up', draft.play.uncappedHeadsUp, (uncappedHeadsUp) => set('play', { uncappedHeadsUp }))}
+            {toggle('Show every hand at showdown', draft.play.revealAllAtShowdown, (revealAllAtShowdown) => set('play', { revealAllAtShowdown }))}
+            <span className="hint">Off: the last bettor shows first and hands that can't win are mucked. Hands are always shown when everyone is all in.</span>
+            {toggle('Rabbit hunting', draft.play.rabbitHunt, (rabbitHunt) => set('play', { rabbitHunt }))}
+            <span className="hint">After a hand ends early, anyone can peek at the cards that would have come. Only they see them.</span>
           </>
         )}
       </div>

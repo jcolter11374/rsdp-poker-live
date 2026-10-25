@@ -143,6 +143,12 @@ export interface TableView {
   nextHandAt: number | null;
   /** Server clock when the view was built, to correct for skew. */
   serverNow: number;
+  /**
+   * Rabbit hunting after a hand that ended early: `available` when there are
+   * undealt board cards to see; `cards` (one list per board) only for a viewer
+   * who asked.
+   */
+  rabbit: { available: boolean; cards: string[][] | null };
   /** The host made the next hand a bomb pot. */
   bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
@@ -198,6 +204,10 @@ export interface ClientToServer {
   'hand:draw': (input: { discard: number[] }, ack: Ack) => void;
   'hand:runItTwice': (input: { yes: boolean }, ack: Ack) => void;
   'hand:show': (input: { cards: number[] }, ack: Ack) => void;
+  /** Add my time bank to my clock now. */
+  'hand:timeBank': (ack: Ack) => void;
+  /** See the cards that would have come (only I see them). */
+  'hand:rabbit': (ack: Ack) => void;
   'chat:send': (input: { text: string }) => void;
   'host:approve': (input: { requestId: string }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;

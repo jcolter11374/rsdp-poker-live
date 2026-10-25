@@ -164,6 +164,11 @@ export interface HandOptions {
   fixedLimitCap: number;
   /** No cap heads-up in fixed limit. */
   uncappedHeadsUp: boolean;
+  /**
+   * At showdown: turn every live hand up, or show in order (last aggressor
+   * first) and muck hands that can't win anything. Absent means show-all.
+   */
+  showdown?: 'show-all' | 'muck-losers';
 }
 
 export interface HandInput {
