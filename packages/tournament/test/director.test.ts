@@ -517,3 +517,25 @@ describe('multi-table', () => {
     expect(sim.of('tableBroken').length).toBe(sim.state.counters.table - 1);
   });
 });
+
+describe('summaries', () => {
+  it('reports the live clock, field stats and player options', async () => {
+    const { summarize, playerOptions } = await import('../src');
+    const sim = new Sim({
+      start: { kind: 'scheduled', startAt: START },
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 },
+      payouts: { structure: payoutPreset('standard', 600), money: { buyIn: 500, rebuy: 500 } },
+    });
+    sim.register(3);
+    expect(summarize(sim.state, T0)).toMatchObject({ status: 'registering', msToStart: 60 * MIN, playersLeft: 3, registrationOpen: true, clock: null });
+    expect(playerOptions(sim.state, 'p9').canRegister).toBe(true);
+    expect(playerOptions(sim.state, 'p0')).toMatchObject({ canRegister: false, canUnregister: true });
+    sim.at(START);
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    sim.now = START + 4 * MIN;
+    const sum = summarize(sim.state, sim.now);
+    expect(sum.clock).toMatchObject({ levelNumber: 1, msLeft: 6 * MIN, msToBreak: 16 * MIN, running: true });
+    expect(sum).toMatchObject({ playersLeft: 3, averageStack: 1000, chipLeader: { playerId: 'p0', stack: 2000 }, prizePool: 1500, rebuysOpen: true });
+    expect(playerOptions(sim.state, 'p1')).toMatchObject({ canRebuy: true, canDeclineRebuy: true, canQuit: false });
+  });
+});

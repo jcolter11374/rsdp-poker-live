@@ -50,6 +50,9 @@ export function Home({ onCreated }: { onCreated: (roomId: string) => void }) {
           Create table
         </button>
       </form>
+      <p className="tagline">
+        Or <a href="/tn/new">host a tournament</a>: schedule it and it starts on its own.
+      </p>
     </main>
   );
 }
