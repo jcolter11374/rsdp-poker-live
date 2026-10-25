@@ -101,3 +101,54 @@ export const px = (p: Point) => ({ left: `${p.x}px`, top: `${p.y}px` });
 /** CSS variables for an animation that starts at `from` and ends where the element is (`to`). */
 export const fromVars = (from: Point, to: Point) =>
   ({ '--dx': `${from.x - to.x}px`, '--dy': `${from.y - to.y}px` }) as CSSProperties;
+
+/**
+ * On a tall (phone) table, keeps a band of `band` pixels clear of seats in the
+ * middle of each long side, so the board and pot have the full width of the
+ * felt. Fractions from `seatFractions` are spread over what is left of the way
+ * round. Wide tables, and bands that don't fit, are returned unchanged.
+ */
+export function clearSideBands(fractions: readonly number[], w: number, h: number, band: number): number[] {
+  const straight = h - w;
+  const b = Math.min(band, straight * 0.9);
+  if (straight <= 0 || b <= 0) return [...fractions];
+  const r = w / 2;
+  const total = 2 * straight + 2 * Math.PI * r;
+  // Where the bands start, measured round from the bottom centre.
+  const quarter = (Math.PI * r) / 2;
+  const left = quarter + (straight - b) / 2;
+  const right = quarter + straight + Math.PI * r + (straight - b) / 2;
+  const usable = total - 2 * b;
+  return fractions.map((f) => {
+    let d = (((f % 1) + 1) % 1) * usable;
+    if (d >= left) d += b;
+    if (d >= right) d += b;
+    return d / total;
+  });
+}
+
+/** A box around a point: how far it reaches left, right, up and down. */
+export interface Reach {
+  l: number;
+  r: number;
+  u: number;
+  d: number;
+}
+
+/**
+ * Where something of half-size `half` sits just outside `box` (around `from`),
+ * on the way towards `to`, with `gap` pixels to spare. It never goes more than
+ * `most` of the way.
+ */
+export function pastBox(from: Point, to: Point, box: Reach, half: { w: number; h: number }, gap: number, most = 0.8): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return from;
+  const ux = dx / len;
+  const uy = dy / len;
+  const sideX = (ux >= 0 ? box.r : box.l) + half.w + gap;
+  const sideY = (uy >= 0 ? box.d : box.u) + half.h + gap;
+  const t = Math.min(Math.abs(ux) > 1e-6 ? sideX / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-6 ? sideY / Math.abs(uy) : Infinity);
+  return lerp(from, to, Math.min(t / len, most));
+}

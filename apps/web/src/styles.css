@@ -88,6 +88,15 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 .felt-area { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Desktop: the table fills the window height, so every seat, the board and the
+   action bar are on one screen. The side column scrolls on its own. */
+.table-page:not(.portrait) { height: 100dvh; min-height: 600px; }
+.table-page:not(.portrait) .layout { grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.table-page:not(.portrait) .felt-area { min-height: 0; }
+.table-page:not(.portrait) .side { min-height: 0; overflow-y: auto; }
+.table-page:not(.portrait) .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 70px 100px 40px; }
+.table-page:not(.portrait) .felt-area > :not(.felt) { flex-shrink: 0; }
+@media (max-width: 900px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt { aspect-ratio: 16 / 10; flex: none; } }
 .banner { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; text-align: center; }
 
 .felt {
@@ -475,7 +484,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   flex: 1;
   min-height: 0;
   aspect-ratio: auto;
-  margin: 54px 40px 26px;
+  margin: 54px 50px 26px;
   border-width: 10px;
 }
 .felt.compact .felt-brand { top: 64%; font-size: 1rem; }
@@ -581,3 +590,88 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .fair-facts { margin: 6px 0; }
 .fair-facts dt { font-weight: 600; margin-top: 4px; }
 .fair-facts dd { margin: 0; }
+
+/* ---- table look: a lit felt in a thick dark rail, the pot above the board, big cards */
+.felt {
+  border: 16px solid #191c21;
+  background: radial-gradient(120% 90% at 50% 38%, color-mix(in srgb, var(--felt) 84%, #fff) 0%, var(--felt) 52%, color-mix(in srgb, var(--felt) 78%, #000) 100%);
+  box-shadow: inset 0 0 0 3px var(--felt-edge), inset 0 14px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px #2c3138, 0 22px 48px rgba(0, 0, 0, 0.45);
+}
+.felt.my-turn { box-shadow: inset 0 0 0 3px var(--felt-edge), inset 0 0 60px rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.55), 0 22px 48px rgba(0, 0, 0, 0.45); }
+.felt.compact { border-width: 11px; }
+.board { gap: 10px; }
+.board .pots, .board .next-hand { order: -1; }
+.next-hand { background: rgba(0, 0, 0, 0.22); padding: 4px 14px; border-radius: 999px; }
+.pot.result { max-width: min(440px, 80%); }
+.felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }
+.pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
+.board .playing-card { --cw: 62px; }
+.board .cards { gap: 6px; }
+.board.multi .playing-card { --cw: 50px; }
+.felt-brand { font-size: 1.5rem; color: rgba(255, 255, 255, 0.07); }
+.seat.empty button, .seat.empty span { border-radius: 12px; min-width: 110px; padding: 12px 18px; background: rgba(0, 0, 0, 0.18); border-color: rgba(255, 255, 255, 0.22); }
+.felt.compact .seat.empty button, .felt.compact .seat.empty span { min-width: 64px; padding: 6px 10px; }
+
+/* Cards: a jumbo index (big rank, suit under it) that reads at a glance. */
+.playing-card .rank { font-size: calc(var(--cw) * 0.58); top: calc(var(--cw) * 0.05); }
+.playing-card .suit { top: calc(var(--cw) * 0.66); width: calc(var(--cw) * 0.34); height: calc(var(--cw) * 0.34); }
+.playing-card { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
+
+/* Phones: bigger cards for everyone, your own the biggest. */
+.felt.compact .playing-card.small { --cw: 30px; }
+.felt.compact .seat .hole { height: 42px; }
+.felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -10px; }
+.felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -16px; }
+.felt.compact .seat.me .playing-card { --cw: 56px; }
+.felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -10px; }
+.felt.compact .seat.me .hole.n4 .playing-card + .playing-card { margin-left: -24px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 42px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -20px; }
+.felt.compact .board .playing-card { --cw: 46px; }
+.felt.compact .board .cards { gap: 4px; }
+.felt.compact .board.multi .playing-card { --cw: 34px; }
+
+/* Desktop seats: wide dark nameplates with the cards tucked in on the left. */
+.table-page:not(.portrait) .felt { margin-left: clamp(110px, 8vw, 150px); margin-right: clamp(110px, 8vw, 150px); }
+.felt:not(.compact) .seat { scale: var(--seat-scale, 1); }
+.felt:not(.compact) {
+  .nameplate { grid-template-columns: minmax(0, 1fr) auto; min-width: 200px; max-width: 290px; min-height: 60px; padding: 9px 12px 9px 16px; border-radius: 12px; background: #23282f; border-color: #343a43; }
+  .nameplate > :not(.seat-avatar, .timer, .equity-tag, .note-badge, .seat-mood) { grid-column: 1; }
+  .nameplate .seat-avatar { grid-column: 2; }
+  .nameplate .name { font-size: 0.9rem; color: #d3d9e0; }
+  .nameplate .stack { font-size: 1.2rem; }
+  .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seat.me .nameplate { background: #2a3038; }
+  /* Hold'em and Omaha: cards tucked into the left of the nameplate, fanned a little. */
+  .seat.has-cards:not(.long-hand) {
+    --cw: 54px;
+    --tuck: 112px;
+    .nameplate { padding-left: var(--tuck); min-width: calc(var(--tuck) + 150px); }
+    .hole { left: 10px; right: auto; translate: none; bottom: 8px; height: auto; z-index: 3; }
+    .playing-card.small { --cw: inherit; }
+    .playing-card.small .pip { display: block; }
+    .playing-card.small .rank { left: calc(var(--cw) * 0.1); font-size: calc(var(--cw) * 0.58); }
+    .playing-card.small .suit { left: calc(var(--cw) * 0.12); top: calc(var(--cw) * 0.66); width: calc(var(--cw) * 0.34); height: calc(var(--cw) * 0.34); }
+    .hole .playing-card + .playing-card { margin-left: -14px; }
+    .hole.n2 .playing-card:first-child { rotate: -4deg; }
+    .hole.n2 .playing-card + .playing-card { rotate: 4deg; }
+    .hole.n3 { --cw: 50px; }
+    .hole.n3 .playing-card + .playing-card { margin-left: -22px; }
+    .hole.n4 { --cw: 48px; }
+    .hole.n4 .playing-card + .playing-card { margin-left: -26px; }
+    .hole:is(.n3, .n4) .playing-card:not(:last-child) .pip { display: none; }
+  }
+  .seat.has-cards:not(.long-hand):has(.hole.n3) { --tuck: 136px; }
+  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 140px; }
+  .seat.me.has-cards:not(.long-hand) { --cw: 62px; --tuck: 128px; }
+  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 150px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 { --cw: 54px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 .playing-card + .playing-card { margin-left: -28px; }
+  /* Stud and draw: a row of cards over the nameplate. */
+  .seat.long-hand .hole { height: auto; bottom: calc(100% - 6px); }
+  .seat.long-hand .playing-card.small { --cw: 44px; }
+  .seat.long-hand .hole .playing-card + .playing-card { margin-left: -17px; }
+  .seat.long-hand.me .playing-card.small { --cw: 54px; }
+  .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -22px; }
+  .seat.long-hand.me .nameplate { min-width: 230px; }
+}
