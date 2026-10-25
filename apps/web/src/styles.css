@@ -408,7 +408,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .portrait .banner.warn { margin: 0; }
 .felt.compact {
   flex: 1;
-  min-height: 300px;
+  min-height: 0;
   aspect-ratio: auto;
   margin: 54px 40px 26px;
   border-width: 8px;
@@ -438,7 +438,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .bet { font-size: 0.75rem; padding: 0 6px; }
 .felt.compact .win-float { left: 50%; bottom: auto; top: -18px; margin: 0; transform: translateX(-50%); font-size: 0.8rem; }
 .felt.compact .seat.empty button, .felt.compact .seat.empty span { padding: 4px 10px; font-size: 0.75rem; }
-.portrait .action-bar { border-radius: 14px 14px 0 0; padding: 10px 10px max(10px, env(safe-area-inset-bottom)); min-height: 56px; gap: 8px; }
+.portrait .action-bar { flex-shrink: 0; border-radius: 14px 14px 0 0; padding: 10px 10px max(10px, env(safe-area-inset-bottom)); min-height: 56px; gap: 8px; }
 .portrait .action-bar.idle { background: var(--panel); }
 .portrait .action-bar .buttons button { padding: 14px 6px; font-size: 1rem; }
 .portrait .action-bar.pre .buttons button { padding: 10px 4px; font-size: 0.85rem; }

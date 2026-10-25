@@ -138,18 +138,21 @@ export function Table({
 
   // Chip flights: bets swept in when a betting round ends, the pot pushed to the winners.
   const [flights, setFlights] = useState<Flight[]>([]);
-  const lastRound = useRef<{ key: string; hand: number; bets: number[] } | null>(null);
+  const lastRound = useRef<{ key: string; hand: number } | null>(null);
+  const lastBets = useRef<number[]>([]);
+  const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
   const geometry = useRef({ betPoint, seatPoint, center });
   geometry.current = { betPoint, seatPoint, center };
   const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';
+  // Runs before the effect below stores this view's bets, so lastBets holds the round that just ended.
   useEffect(() => {
     const before = lastRound.current;
-    const bets = view.seats.map((s) => s?.bet ?? 0);
-    lastRound.current = hand ? { key: roundKey, hand: hand.handNumber, bets } : null;
+    lastRound.current = hand ? { key: roundKey, hand: hand.handNumber } : null;
     if (!hand || !before || before.key === roundKey || before.hand !== hand.handNumber || document.hidden) return;
     const g = geometry.current;
     const next: Flight[] = [];
-    before.bets.forEach((amount, seat) => {
+    lastBets.current.forEach((amount, seat) => {
       if (amount > 0) next.push({ id: ++flightId, from: g.betPoint(seat), to: g.center, delay: 0, kind: 'sweep' });
     });
     if (done) {
@@ -159,9 +162,15 @@ export function Table({
     if (!next.length) return;
     setFlights((f) => [...f, ...next]);
     const ids = new Set(next.map((f) => f.id));
-    const t = setTimeout(() => setFlights((f) => f.filter((x) => !ids.has(x.id))), 1400);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => {
+      flightTimers.current.delete(t);
+      setFlights((f) => f.filter((x) => !ids.has(x.id)));
+    }, 1400);
+    flightTimers.current.add(t);
   }, [roundKey]);
+  useEffect(() => {
+    lastBets.current = view.seats.map((s) => s?.bet ?? 0);
+  }, [view]);
 
   const bets = view.seats.reduce((s, x) => s + (x?.bet ?? 0), 0);
   const runs = hand?.boards ?? [];
@@ -277,7 +286,7 @@ export function Table({
                       ]
                         .filter(Boolean)
                         .join(' ')}
-                      style={{ ...toMiddle, animationDelay: flip ? `${i * 80}ms` : `${(i * n + dealOrder(seat)) * 45}ms` }}
+                      style={{ ...toMiddle, animationDelay: flip ? `${i * 80}ms` : hand?.street === 0 ? `${(i * n + dealOrder(seat)) * 45}ms` : '0ms' }}
                       onClick={pickable ? () => discard!.toggle(i) : undefined}
                       title={pickable ? 'Tap to throw this card away' : undefined}
                     />

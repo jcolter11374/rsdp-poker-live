@@ -71,7 +71,8 @@ export function ActionBar({
   keys.current = (e) => {
     if (!legal || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
-    if (typing) return;
+    // Keys never act behind an open dialog or sheet.
+    if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
     const k = e.key.toLowerCase();
     if (k === 'f' && legal.canFold) fold();
     else if (k === 'k' && legal.canCheck) send({ type: 'check' });
@@ -87,13 +88,17 @@ export function ActionBar({
   useEffect(() => {
     if (!legal || !pre) return;
     setPre(null);
-    if (pre.kind === 'checkFold') send(legal.canCheck ? { type: 'check' } : { type: 'fold' });
-    else if (pre.kind === 'fold') send({ type: 'fold' });
-    else if (pre.kind === 'check' && legal.canCheck) send({ type: 'check' });
-    else if (pre.kind === 'callAny') send(legal.canCheck ? { type: 'check' } : { type: 'call' });
-    else if (pre.kind === 'call' && legal.canCheck) send({ type: 'check' });
-    else if (pre.kind === 'call' && legal.callAmount === pre.amount) send({ type: 'call' });
-    // A "call 20" that now faces a bigger bet is dropped so you can decide again.
+    let move: Action | null = null;
+    if (pre.kind === 'checkFold') move = legal.canCheck ? { type: 'check' } : { type: 'fold' };
+    else if (pre.kind === 'fold') move = { type: 'fold' };
+    else if (pre.kind === 'check' && legal.canCheck) move = { type: 'check' };
+    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : { type: 'call' };
+    else if (pre.kind === 'call' && legal.canCheck) move = { type: 'check' };
+    else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
+    // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can
+    // decide again; say so now, before the page decides whether to call you with the turn sound.
+    if (move) send(move);
+    else onPreAction?.(false);
   }, [legal]);
 
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
