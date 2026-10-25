@@ -37,8 +37,11 @@ describe('socket server', () => {
     await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
     await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100 });
     await host.call('host:start');
-    const v = await host.until((x) => !!x.hand && x.legal !== null);
-    await host.call('hand:act', { type: 'fold' });
+    const v = await host.until((x) => !!x.hand);
+    // Whoever acts first folds, which ends the hand.
+    const first = v.hand!.toAct === v.me.seat ? host : guest;
+    await first.until((x) => x.legal !== null);
+    await first.call('hand:act', { type: 'fold' });
     await host.until((x) => x.history.length === 1);
     const { hands } = await guest.call<{ hands: import('@rsdp/engine/wire').HandRecordView[] }>('table:export');
     expect(hands).toHaveLength(1);
