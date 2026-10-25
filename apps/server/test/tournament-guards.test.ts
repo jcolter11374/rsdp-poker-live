@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { variants } from '@rsdp/engine/core';
+import { engine, variants, type Action, type PlayerId } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
-import { players, setup } from './tournament-helpers';
+import { defaultSettings, standings, tableAddress, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
+import type { TableRuntime } from '../src/runtime/table';
+import { players, playUntil, setup } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
@@ -12,6 +13,48 @@ type Env = ReturnType<typeof setup>;
 
 async function registerAll(env: Env, id: string, n: number) {
   for (const p of players(n)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+}
+
+/** Chips at every table; a live hand counts what its players started it with. */
+function chipsInPlay(env: Env) {
+  let total = 0;
+  for (const rt of env.tables.values()) {
+    const hand = rt.state.hand?.phase === 'complete' ? null : rt.state.hand;
+    for (const seat of rt.state.seats) if (seat) total += seat.pendingChips + (hand?.seats.some((x) => x.playerId === seat.playerId) ? 0 : seat.stack);
+    for (const x of hand?.seats ?? []) total += x.startStack;
+  }
+  return total;
+}
+
+/** Every player sits at one table at most, and where the director says they sit. */
+function seatsAgree(env: Env, id: string) {
+  const at = new Map<PlayerId, string[]>();
+  for (const rt of env.tables.values()) {
+    for (const seat of rt.state.seats) if (seat) at.set(seat.playerId, [...(at.get(seat.playerId) ?? []), rt.state.id]);
+  }
+  const state = env.manager.view(id)!.state;
+  for (const e of state.entries) {
+    if (e.status !== 'seated' && e.status !== 'rebuy-offer') continue;
+    expect(at.get(e.playerId), e.playerId).toEqual([tableAddress(e.tableId!)]);
+  }
+  for (const [playerId, tables] of at) expect(tables, playerId).toHaveLength(1);
+}
+
+/** Plays one hand at a table: the first player to act shoves, the next one calls, everyone else folds. */
+function shoveAndCall(rt: TableRuntime) {
+  let caller = false;
+  for (let shoved = false; rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null; ) {
+    const hand = rt.state.hand;
+    const seat = hand.seats.find((x) => x.seat === hand.toAct)!;
+    const legal = engine.legalActions(hand, seat.seat)!;
+    let action: Action;
+    if (!shoved && legal.canRaise) action = { type: legal.raiseKind, to: legal.maxTo };
+    else if (shoved && !caller && !legal.canCheck) action = { type: 'call' };
+    else action = legal.canCheck ? { type: 'check' } : { type: 'fold' };
+    if (action.type === 'call') caller = true;
+    shoved ||= action.type === legal.raiseKind;
+    rt.act(seat.playerId, action);
+  }
 }
 
 describe('tournament manager guards', () => {
@@ -62,4 +105,81 @@ describe('tournament manager guards', () => {
     env.clock.advance(env.manager.view(id)!.state.settings.structure[0].minutes * MIN);
     expect(env.manager.view(id)!.state.clock.rowIndex).toBe(1);
   });
+
+  it('a rebuy that frees a held table for a balance move deals after the move, so no chips appear', async () => {
+    const env = setup();
+    const structure = defaultSettings({ startingStack: 1000 }).structure.map((r, i) => (r.kind === 'level' && i < 3 ? { ...r, rebuy: true } : r));
+    const id = await env.manager.create(
+      'host',
+      defaultSettings({
+        name: 'Rebalance',
+        startingStack: 1000,
+        seatsPerTable: 6,
+        structure,
+        rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 300 },
+        lateRegistration: { enabled: false, throughLevel: null },
+      }),
+    );
+    await registerAll(env, id, 10);
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    const [held, other] = state().tables.map((t) => t.id);
+    const rt = env.tables.get(tableAddress(held))!;
+    const count = (tableId: string) => state().tables.find((t) => t.id === tableId)!.seats.filter(Boolean).length;
+    expect([count(held), count(other)]).toEqual([5, 5]);
+    // The held table's players are at their browsers, so its hands wait for them.
+    for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+
+    // Heads-up all-ins at one table until somebody busts there and is offered a rebuy.
+    for (let i = 0; i < 50 && !state().entries.some((e) => e.status === 'rebuy-offer'); i++) {
+      shoveAndCall(rt);
+      env.clock.advance(10_000);
+    }
+    const offered = state().entries.find((e) => e.status === 'rebuy-offer')!;
+    expect(offered.tableId).toBe(held);
+
+    // Thin the other table: the held table now has to give up a player, which waits for the offer.
+    const removed = state().entries.filter((e) => e.tableId === other && e.status === 'seated').slice(0, 2);
+    for (const e of removed) await env.manager.command(id, 'host', '', { type: 'remove', by: 'host', playerId: e.playerId });
+    const otherRt = env.tables.get(tableAddress(other))!;
+    const between = (x: TableRuntime) => (x.state.hand?.phase ?? 'complete') === 'complete';
+    for (let i = 0; i < 300 && (count(other) > 3 || !between(otherRt)); i++) env.clock.advance(1000);
+    expect([count(held), count(other)]).toEqual([5, 3]);
+    // The held table already tried to deal and is waiting on the director.
+    expect(rt.state.nextHandAt).toBeNull();
+    expect(between(rt)).toBe(true);
+    const before = chipsInPlay(env);
+    expect(state().entries.reduce((a, e) => a + e.stack, 0)).toBe(before);
+
+    const moves = env.moves.length;
+    await env.manager.command(id, offered.playerId, offered.displayName, { type: 'rebuy', playerId: offered.playerId });
+    // The rebuy and the move it allows land together; the held table deals only once the moved player has gone.
+    expect(env.moves.slice(moves).map((m) => m.from)).toEqual([tableAddress(held)]);
+    expect(rt.state.hand && rt.state.hand.phase !== 'complete').toBe(true);
+    seatsAgree(env, id);
+    expect(chipsInPlay(env)).toBe(before + 1000);
+
+    playUntil(env, () => state().status === 'finished');
+    expect(env.errors).toEqual([]);
+    expect(standings(state())[0].stack).toBe(before + 1000);
+  }, 60_000);
+
+  it('the director hears of a deal at once, so a command in the same moment cannot move a player out of the hand', async () => {
+    const env = setup();
+    const settings = defaultSettings({ name: 'Same moment', startingStack: 1000, seatsPerTable: 3, lateRegistration: { enabled: true, throughLevel: 4 } });
+    const id = await env.manager.create('host', settings);
+    await registerAll(env, id, 6);
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    expect(state().tables.map((t) => t.inHand)).toEqual([true, true]);
+    // A late registration handled before any timer runs opens a third table that needs players.
+    await env.manager.command(id, 'p7', 'Player 7', { type: 'register', playerId: 'p7', displayName: 'Player 7' });
+    expect(state().tables).toHaveLength(3);
+    seatsAgree(env, id);
+    expect(chipsInPlay(env)).toBe(7000);
+
+    playUntil(env, () => state().status === 'finished');
+    expect(env.errors).toEqual([]);
+    expect(standings(state())[0].stack).toBe(7000);
+  }, 60_000);
 });

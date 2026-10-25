@@ -61,6 +61,10 @@ interface Live {
   tables: Map<TableId, TableRuntime>;
   timer: unknown;
   saveTimer: unknown;
+  /** Director events are being applied to the tables: none may deal until they all have been. */
+  applying: boolean;
+  /** Events from a hand start, waiting for that table to finish its step. */
+  deferred: DirectorEvent[];
 }
 
 /** Commands only the host may send; the director trusts the server to check. */
@@ -252,7 +256,7 @@ export class TournamentManager {
 
   /** Takes a tournament into memory: its tables come back from their snapshots. */
   private async adopt(state: TournamentState, nextId: string | null): Promise<Live> {
-    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null };
+    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [] };
     this.live.set(state.id, live);
     for (const t of state.tables) {
       const saved = await this.deps.tables.loadTable(tableAddress(t.id));
@@ -278,12 +282,13 @@ export class TournamentManager {
     return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId) };
   }
 
-  /** What a tournament table asks of the director. Reports go through a 0 ms timer so the table finishes its own step first. */
+  /** What a tournament table asks of the director. Acting on its reports waits for a 0 ms timer, so the table finishes its own step first. */
   private hooks(live: Live, tableId: TableId): TournamentHooks {
     const later = (what: string, step: (s: TournamentState, now: number) => Result) =>
       this.clock.setTimeout(() => this.dispatchQuietly(live, step, what), 0);
     return {
-      gate: (now) => tableGate(live.state, tableId, now),
+      // Tables hold while the director's events are still reaching them, so nobody is dealt in at a seat they are leaving.
+      gate: (now) => (live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
       level: () => {
         const l = levelFor(live.state, tableId);
         return {
@@ -291,7 +296,20 @@ export class TournamentManager {
           stakes: { smallBlind: l.sb, bigBlind: l.bb, ante: l.ante, anteType: l.anteType, bringIn: l.bringIn, smallBet: l.smallBet, bigBet: l.bigBet },
         };
       },
-      handStarted: (handNumber) => later('hand start', (s, now) => apply(s, { type: 'handStarted', tableId, handNumber }, now)),
+      handStarted: (handNumber) => {
+        // The director hears of the deal at once, so no command in the meantime moves a player out of this hand.
+        try {
+          const result = this.guard(() => apply(live.state, { type: 'handStarted', tableId, handNumber }, this.clock.now()));
+          live.state = result.state;
+          live.deferred.push(...result.events);
+        } catch (e) {
+          this.deps.log(`tournament ${live.state.id}: hand start failed`, e);
+        }
+        this.clock.setTimeout(() => {
+          this.handle(live, []);
+          this.changed(live);
+        }, 0);
+      },
       handEnded: (r) => later('hand result', (s, now) => apply(s, { type: 'handResult', result: { ...r, tableId } }, now)),
     };
   }
@@ -326,12 +344,19 @@ export class TournamentManager {
   }
 
   private handle(live: Live, events: DirectorEvent[]) {
-    for (const e of events) {
-      try {
-        this.handleOne(live, e);
-      } catch (err) {
-        this.deps.log(`tournament ${live.state.id}: handling ${e.type} failed`, err);
+    // Events a hand start left waiting came from an earlier state, so they go first.
+    const all = [...live.deferred.splice(0), ...events];
+    live.applying = true;
+    try {
+      for (const e of all) {
+        try {
+          this.handleOne(live, e);
+        } catch (err) {
+          this.deps.log(`tournament ${live.state.id}: handling ${e.type} failed`, err);
+        }
       }
+    } finally {
+      live.applying = false;
     }
     // Starts, levels, breaks, rebuys and moves all change which tables may deal.
     for (const [tableId, rt] of live.tables) {
