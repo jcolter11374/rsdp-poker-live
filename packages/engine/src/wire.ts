@@ -82,6 +82,8 @@ export interface HandView {
   drawMax: number | null;
   runItTwice: { offered: boolean; votes: Record<number, boolean | null>; deadline: number | null; times: 1 | 2 | null };
   showdown: boolean;
+  /** Everyone posted and the first betting round was skipped. */
+  bombPot: boolean;
   awards: Award[];
   /** Events this viewer may see, for the hand log and animations. */
   events: HandEvent[];
@@ -141,6 +143,8 @@ export interface TableView {
   nextHandAt: number | null;
   /** Server clock when the view was built, to correct for skew. */
   serverNow: number;
+  /** The host made the next hand a bomb pot. */
+  bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
   upcoming: { gameId: string; gameName: string; betting: BettingKind; stakes: Stakes } | null;
   /** Blind schedule: current level and when it ends. */
@@ -199,6 +203,8 @@ export interface ClientToServer {
   'host:stop': (ack: Ack) => void;
   'host:deal': (ack: Ack) => void;
   'host:pause': (input: { value: boolean }, ack: Ack) => void;
+  /** Make the next hand a bomb pot (value false takes it back). */
+  'host:bombPot': (input: { value: boolean }, ack: Ack) => void;
   'host:settings': (input: { patch: SettingsPatch }, ack: Ack) => void;
   'host:setStack': (input: { playerId: string; stack: number }, ack: Ack) => void;
   'host:kick': (input: { playerId: string }, ack: Ack) => void;

@@ -20,6 +20,7 @@
     "./core": "./src/core/index.ts",
     "./variants": "./src/variants/index.ts",
     "./settings": "./src/settings/index.ts",
+    "./modifiers": "./src/modifiers/index.ts",
     "./wire": "./src/wire.ts"
   }
 }

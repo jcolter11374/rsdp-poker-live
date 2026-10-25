@@ -1,0 +1,5 @@
+/* Long settings tabs scroll inside the modal instead of sliding under its buttons. */
+.settings-body { flex-shrink: 0; }
+.settings-body h4 { margin: 10px 0 -4px; font-size: 0.95rem; }
+.settings-body h4:first-child { margin-top: 0; }
+.settings-body > p.hint { margin: 0; }

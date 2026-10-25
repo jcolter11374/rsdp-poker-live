@@ -338,6 +338,7 @@ export function createApp(deps: AppDeps = {}) {
     on('host:stop', (ack) => guarded(ack, () => current().stop(me), log));
     on('host:deal', (ack) => guarded(ack, () => current().dealNext(me), log));
     on('host:pause', ({ value }, ack) => guarded(ack, () => current().pause(me, !!value), log));
+    on('host:bombPot', ({ value }, ack) => guarded(ack, () => current().requestBombPot(me, !!value), log));
     on('host:settings', ({ patch }, ack) => guarded(ack, () => current().updateSettings(me, patch ?? {}), log));
     on('host:setStack', ({ playerId, stack }, ack) => guarded(ack, () => current().setStack(me, String(playerId), Number(stack)), log));
     on('host:kick', ({ playerId }, ack) => guarded(ack, () => current().kick(me, String(playerId)), log));
