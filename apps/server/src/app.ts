@@ -170,7 +170,8 @@ export function createApp(deps: AppDeps = {}) {
         if (old > 0) feed.splice(0, old);
         clock.setTimeout(() => {
           if (tables.get(id) !== rt) return;
-          const later = clock.now();
+          // Timers can fire a millisecond early; the snapshot taken now must count as old enough.
+          const later = Math.max(clock.now(), now + delayMs);
           for (const s of watchers.get(id) ?? []) if (isSpectator(rt, s)) s.emit('table:state', viewFor(rt, s, later));
         }, delayMs);
       } else feeds.delete(id);

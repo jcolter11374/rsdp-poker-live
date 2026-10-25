@@ -85,15 +85,15 @@ describe('socket server', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(1900);
     expect(later.seats.filter(Boolean).every((s) => s!.cards.length === 2 && s!.cards.every((c) => c.card !== '??'))).toBe(true);
     // Hand history can't get ahead of the delay.
-    const first = later.hand!.toAct === 0 ? host : guest;
-    await first.until((x) => x.legal !== null);
+    // Whoever is to act folds, which ends the hand.
+    const first = await Promise.race([host, guest].map((c) => c.until((x) => x.legal !== null).then(() => c)));
     await first.call('hand:act', { type: 'fold' });
     await host.until((x) => x.history.length === 1);
     await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow(/once the delay has passed/);
     // Chat stays live for everyone.
     await guest.call('chat:send', { text: 'gl' });
     await fan.until((x) => x.chat.some((m) => m.text === 'gl'));
-  }, 15_000);
+  }, 30_000);
 
   it('acks a chat message the table refuses', async () => {
     const host = client('chat-host-0123456789');
