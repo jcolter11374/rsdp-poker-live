@@ -673,35 +673,61 @@ export class TableRuntime {
 
   /**
    * Transfers a show earned after the hand was settled (a 7-2 bounty claimed
-   * late) move chips between seats; a player who has left pays out of what
-   * they cashed out.
+   * late) move chips between the table's stacks as they are now: a payer
+   * whose stack changed since the hand pays at most what they have, a player
+   * who has left pays out of what they cashed out, and the winner gets only
+   * what was collected.
    */
   private applyLateTransfers(hand: HandState, fromEvent: number) {
     const s = this.state;
+    const playerAt = (seatNo: number) => hand.seats.find((x) => x.seat === seatNo)?.playerId;
+    const take = (seatNo: number, amount: number): number => {
+      const playerId = playerAt(seatNo);
+      if (!playerId) return 0;
+      const seat = this.seatOf(playerId);
+      if (seat) {
+        const paid = Math.min(amount, seat.stack);
+        seat.stack -= paid;
+        if (seat.stack === 0 && seat.pendingChips === 0 && !seat.sittingOut) {
+          seat.sittingOut = true;
+          seat.sitOutReason = 'busted';
+        }
+        return paid;
+      }
+      const row = s.ledger[playerId];
+      const gone = s.departures[playerId];
+      if (!row || !gone) return 0;
+      const paid = Math.min(amount, gone.stack, row.cashOut);
+      row.cashOut -= paid;
+      gone.stack -= paid;
+      return paid;
+    };
+    const give = (seatNo: number, amount: number) => {
+      const playerId = playerAt(seatNo);
+      if (!playerId || amount <= 0) return;
+      const seat = this.seatOf(playerId);
+      if (seat) {
+        seat.stack += amount;
+        if (seat.sitOutReason === 'busted') {
+          seat.sittingOut = false;
+          seat.sitOutReason = null;
+        }
+      } else if (s.ledger[playerId]) {
+        s.ledger[playerId].cashOut += amount;
+        const gone = s.departures[playerId];
+        if (gone) gone.stack += amount;
+      }
+    };
+    let changed = false;
     for (const e of hand.events.slice(fromEvent)) {
       if (e.t !== 'transfer') continue;
-      for (const [seatNo, sign] of [
-        [e.from, -1],
-        [e.to, 1],
-      ] as const) {
-        if (seatNo === 'house') continue;
-        const hs = hand.seats.find((x) => x.seat === seatNo);
-        if (!hs) continue;
-        const seat = s.seats[seatNo];
-        if (seat && seat.playerId === hs.playerId) {
-          seat.stack = Math.max(0, seat.stack + sign * e.amount);
-          if (seat.stack > 0 && seat.sitOutReason === 'busted') {
-            seat.sittingOut = false;
-            seat.sitOutReason = null;
-          } else if (seat.stack === 0 && seat.pendingChips === 0 && !seat.sittingOut) {
-            seat.sittingOut = true;
-            seat.sitOutReason = 'busted';
-          }
-        } else if (s.ledger[hs.playerId]) {
-          s.ledger[hs.playerId].cashOut += sign * e.amount;
-        }
-      }
+      const paid = e.from === 'house' ? e.amount : take(e.from, e.amount);
+      if (e.to !== 'house') give(e.to, paid);
+      changed = true;
     }
+    // Store the hand again so its history has the claim.
+    const record = s.history.find((r) => r.handNumber === hand.input.handNumber);
+    if (changed && record) this.onHandFinished({ ...record, hand });
   }
 
   private liveHandFor(playerId: PlayerId): HandState {
@@ -758,13 +784,13 @@ export class TableRuntime {
     const s = this.state;
     const hand = s.hand!;
     const now = this.clock.now();
+    this.autoShowBounty(hand);
     const record = { handNumber: s.handNumber, startedAt: s.handStartedAt!, endedAt: now, hand };
     s.history.push(record);
     if (s.history.length > HISTORY_LIMIT) s.history.splice(0, s.history.length - HISTORY_LIMIT);
     s.handStartedAt = null;
     s.turn = null;
     s.ritDeadline = null;
-    this.autoShowBounty(hand);
 
     for (const hs of hand.seats) {
       const seat = s.seats[hs.seat];
@@ -931,13 +957,15 @@ export class TableRuntime {
     }
 
     // Players sitting out whom the blinds passed now owe them.
-    if (!this.isTournament && s.positions) {
+    // A bomb pot takes no blinds, so nobody misses one, and debts stay owed until a normal hand.
+    // The blind positions still move on one seat, as after any hand.
+    if (!this.isTournament && s.positions && !bombPot) {
       const sittingOut = s.seats.filter((x): x is SeatState => !!x && !plan.dealtIn.includes(x.seat) && !plan.waiting.includes(x.seat)).map((x) => x.seat);
       const passed = blindsPassed(plan, s.positions.bigBlind, sittingOut, maxSeats);
       for (const seat of passed.missedBig) s.seats[seat]!.missedBigBlind = true;
       for (const seat of passed.missedSmall) s.seats[seat]!.missedSmallBlind = true;
     }
-    for (const seatNo of plan.dealtIn) {
+    for (const seatNo of bombPot ? [] : plan.dealtIn) {
       const seat = s.seats[seatNo]!;
       seat.isNew = false;
       seat.missedBigBlind = false;

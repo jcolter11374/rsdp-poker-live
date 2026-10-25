@@ -88,6 +88,25 @@ describe('bomb pots', () => {
     expect(hand(rt).runs[0]).toHaveLength(1);
   });
 
+  it('keeps blinds a player owes through a bomb pot', () => {
+    const { rt } = table();
+    rt.start('host');
+    rt.sitOut('b', true);
+    for (let i = 0; i < 3; i++) {
+      finish(rt, 'fold');
+      rt.dealNext('host');
+    }
+    finish(rt, 'fold');
+    const b = rt.seatOf('b')!;
+    expect(b.missedBigBlind).toBe(true);
+    rt.sitOut('b', false);
+    rt.requestBombPot('host', true);
+    rt.dealNext('host');
+    expect(hand(rt).input.options.bombPot).toBe(true);
+    expect(hand(rt).seats.some((x) => x.playerId === 'b')).toBe(true);
+    expect(b.missedBigBlind).toBe(true);
+  });
+
   it('refuses a bomb pot game without a flop, and bomb pots in tournaments', () => {
     const { rt } = table();
     expect(() => rt.updateSettings('host', { modifiers: { 'bomb-pot': { gameId: 'stud' } } })).toThrow(/flop/);
@@ -160,6 +179,20 @@ describe('7-2 bounty', () => {
     rt.show(idAt(rt, first), [0, 1]);
     expect(rt.state.seats[first]!.stack).toBe(233);
     expect(total(rt)).toBe(600);
+  });
+
+  it('a late claim takes only what a payer has now, and creates no chips', () => {
+    const { rt } = table(on(false));
+    rt.start('host');
+    const first = hand(rt).toAct!;
+    giveSevenDeuce(rt, first);
+    foldToFirst(rt);
+    const poor = [0, 1, 2].find((x) => x !== first)!;
+    rt.setStack('host', idAt(rt, poor), 4);
+    const before = total(rt);
+    rt.show(idAt(rt, first), [0, 1]);
+    expect(rt.state.seats[poor]!.stack).toBe(0);
+    expect(total(rt)).toBe(before);
   });
 
   it('a payer who already left pays from their cash-out', () => {
