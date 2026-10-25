@@ -414,7 +414,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
           {myBotRequests.map((r) => (
             <div className="banner" key={r.id}>
-              {r.name} is waiting for the host to let it sit…{' '}
+              Your bot {r.name} is waiting for the host to let it sit…{' '}
               <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
             </div>
           ))}
@@ -524,6 +524,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           </PlayerDialog>
         ) : (
           <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
+            {dialog.seat.bot && dialog.seat.bot.ownerId !== view.me.playerId && <p className="muted">{dialog.seat.bot.ownerName}&rsquo;s practice bot.</p>}
             <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
             {dialog.seat.bot?.ownerId === view.me.playerId && <RemoveBot seat={dialog.seat} onDone={() => setDialog(null)} />}
             <div className="row">

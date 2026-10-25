@@ -3,7 +3,8 @@ import { engine, variants, type BettingKind } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_THINK_MS, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
-import { tableView } from '../src/runtime/view';
+import { handRecordView, tableView } from '../src/runtime/view';
+import { BOT_LOOKS } from '@rsdp/engine/wire';
 import { botTuning, chooseMove, seededRand } from '../src/bots/strategy';
 import { FakeClock, seeded } from './fake-clock';
 
@@ -50,20 +51,152 @@ describe('practice bots', () => {
   beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 2, drawFinalSims: 3, drawBetSims: 2, drawBetFinalSims: 2 }));
   afterAll(() => Object.assign(botTuning, tuning));
 
-  it('are named after their owner, marked in the view, and seated in the first free seat', () => {
+  it('each get a short name and look of their own, are marked in the view, and sit in the first free seat', () => {
     const { rt } = table();
     rt.requestSeat('host', { seat: 0, name: 'John', stack: 200 });
     const id = rt.addBot('host', { ownerName: 'John' });
     rt.addBot('host', { ownerName: 'John' });
-    expect(rt.state.seats[1]).toMatchObject({ playerId: id, name: "John's Poker Bot" });
-    expect(rt.state.seats[2]?.name).toBe("John's Poker Bot 2");
+    expect(rt.state.seats[1]).toMatchObject({ playerId: id, name: 'Ace' });
+    expect(rt.state.seats[2]?.name).toBe('Chip');
     const view = tableView(rt, 'a', 0);
-    expect(view.seats[1]).toMatchObject({ online: true, bot: { ownerId: 'host', ownerName: 'John' } });
+    expect(view.seats[1]).toMatchObject({ online: true, bot: { ownerId: 'host', ownerName: 'John', look: 0 } });
+    expect(view.seats[2]?.bot?.look).toBe(1);
     expect(view.seats[0]?.bot).toBeUndefined();
-    // Long names still fit a nameplate.
-    rt.requestSeat('a', { seat: 5, name: 'Bartholomew-Maximus', stack: 200 });
+    expect(rt.state.log.at(-1)?.text).toBe("John's practice bot Chip sat down in seat 3 with 200");
+    // Nobody shares a name with a bot: a player called Lucky means the next bot is the one after.
+    rt.requestSeat('a', { seat: 5, name: 'lucky', stack: 200 });
     rt.addBot('a', { ownerName: 'Bartholomew-Maximus' });
-    expect(rt.state.seats[3]?.name).toBe("Bartholomew-Ma's Bot");
+    expect(rt.state.seats[3]?.name).toBe('Ducky');
+    // A bot that leaves keeps its name in the ledger, so the next one is called something else.
+    rt.removeBot('host', id);
+    rt.addBot('host', { ownerName: 'John' });
+    expect(rt.state.seats[1]?.name).toBe('Slick');
+    expect(rt.state.ledger[id]).toMatchObject({ name: 'Ace', bot: true, owner: 'John', look: 0 });
+  });
+
+  it('give way when a person sits down under a bot\'s name, and get numbers once every name is used', () => {
+    const { rt } = table((s) => (s.seating.requireApproval = true));
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const seated = rt.addBot('host', { ownerName: 'Host' });
+    rt.requestSeat('a', { seat: 3, name: 'Ann', stack: 200 });
+    rt.approve('host', rt.state.requests.find((r) => r.playerId === 'a')!.id);
+    const waiting = rt.addBot('a', { ownerName: 'Ann' });
+    expect([rt.seatOf(seated)?.name, rt.state.requests.find((r) => r.playerId === waiting)?.name]).toEqual(['Ace', 'Chip']);
+    // Asking for a seat as "ace" renames nobody: anyone could ask, and the host may say no.
+    rt.connect('c');
+    rt.requestSeat('c', { seat: 7, name: 'Ace', stack: 200 });
+    rt.reject('host', rt.state.requests.find((r) => r.playerId === 'c')!.id);
+    expect(rt.seatOf(seated)?.name).toBe('Ace');
+    // Bo sits down as "ace": the seated bot takes another name, and so does the waiting one when Cy sits as "Chip".
+    rt.requestSeat('b', { seat: 6, name: 'ace', stack: 200 });
+    expect(rt.seatOf(seated)?.name).toBe('Ace');
+    rt.approve('host', rt.state.requests.find((r) => r.playerId === 'b')!.id);
+    expect(rt.seatOf(seated)?.name).toBe('Lucky');
+    expect(rt.state.log.at(-1)?.text).toBe('Ace is now Lucky');
+    rt.requestSeat('c', { seat: 7, name: 'CHIP', stack: 200 });
+    rt.approve('host', rt.state.requests.find((r) => r.playerId === 'c')!.id);
+    expect(rt.state.requests.find((r) => r.playerId === waiting)?.name).toBe('Ducky');
+
+    // A bot that has left gives way too, so the ledger never shows two players called Ace.
+    const { rt: gone } = table();
+    gone.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const left = gone.addBot('host', { ownerName: 'Host' });
+    gone.removeBot('host', left);
+    gone.requestSeat('a', { seat: 3, name: 'Ace', stack: 200 });
+    expect(gone.state.ledger[left]).toMatchObject({ name: 'Chip', bot: true });
+    expect(Object.values(gone.state.ledger).map((row) => row.name)).toEqual(['Host', 'Chip', 'Ace']);
+
+    // Someone on the waitlist keeps their name too.
+    const { rt: full } = table((s) => {
+      s.table.maxSeats = 3;
+      s.seating.waitlist = true;
+    });
+    full.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    full.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    full.requestSeat('b', { seat: 2, name: 'Bo', stack: 200 });
+    full.connect('c');
+    full.joinWaitlist('c', { name: 'Ace', stack: 200 });
+    // Bo's seat is held for Ace on the waitlist; Ann's is free for a bot.
+    full.stand('b');
+    full.stand('a');
+    expect(full.seatOf(full.addBot('host', { ownerName: 'Host' }))?.name).toBe('Chip');
+
+    const { rt: busy } = table((s) => (s.table.maxSeats = 2));
+    busy.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    for (const look of BOT_LOOKS) {
+      const id = busy.addBot('host', { ownerName: 'Host' });
+      expect(busy.seatOf(id)?.name).toBe(look.name);
+      busy.removeBot('host', id);
+    }
+    const again = busy.addBot('host', { ownerName: 'Host' });
+    expect(busy.seatOf(again)?.name).toBe('Ace 2');
+    expect(busy.botInfo(again)?.look).toBe(0);
+    // Numbered names still get a robot no bot here has: with Ace still seated, the next one is Chip 2, not Ace 2.
+    const { rt: long } = table((s) => (s.table.maxSeats = 3));
+    long.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    const ace = long.addBot('host', { ownerName: 'Host' });
+    for (let i = 1; i < BOT_LOOKS.length; i++) long.removeBot('host', long.addBot('host', { ownerName: 'Host' }));
+    const next = long.addBot('host', { ownerName: 'Host' });
+    expect([long.seatOf(ace)?.name, long.seatOf(next)?.name, long.botInfo(next)?.look]).toEqual(['Ace', 'Chip 2', 1]);
+  });
+
+  it('keep their robot in the hands they played, after they leave', () => {
+    const { rt, clock } = table((s) => (s.timing.decisionSeconds = 0));
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.addBot('host', { ownerName: 'Host' });
+    const bot = rt.addBot('host', { ownerName: 'Host' });
+    rt.start('host');
+    play(rt, clock, 1);
+    rt.removeBot('host', bot);
+    play(rt, clock, 1);
+    expect(rt.seatOf(bot)).toBeNull();
+    const record = handRecordView(rt, rt.state.history[0], 'host');
+    expect(record.seats.find((x) => x.playerId === bot)).toMatchObject({ name: 'Chip', bot: { ownerName: 'Host', look: 1 } });
+    expect(record.seats.find((x) => x.playerId === 'host')?.bot).toBeUndefined();
+  });
+
+  it('fill a whole table with no two bots alike', () => {
+    const { rt } = table((s) => (s.table.maxSeats = 10));
+    for (let i = 0; i < 10; i++) rt.addBot('host', { ownerName: 'Host' });
+    const bots = rt.state.seats.map((x) => rt.botInfo(x!.playerId)!);
+    expect(new Set(bots.map((b) => b.look)).size).toBe(10);
+    expect(new Set(rt.state.seats.map((x) => x!.name)).size).toBe(10);
+    expect(rt.state.seats.every((x) => BOT_LOOKS[rt.botInfo(x!.playerId)!.look!].name === x!.name)).toBe(true);
+  });
+
+  it('saved before bots had looks get a name and picture of their own when the table comes back', () => {
+    // Ann is offline here and runs out of time on her turns, so the hand moves on without her.
+    const { rt } = table((s) => (s.seating.requireApproval = true));
+    rt.requestSeat('host', { seat: 0, name: 'Beth', stack: 200 });
+    rt.requestSeat('a', { seat: 5, name: 'Ann', stack: 200 });
+    rt.approve('host', rt.state.requests[0].id);
+    const one = rt.addBot('host', { ownerName: 'Beth' });
+    const two = rt.addBot('host', { ownerName: 'Beth' });
+    rt.start('host');
+    const three = rt.addBot('a', { ownerName: 'Ann' });
+    // What an older server saved mid-hand: no looks, and every bot named after its owner.
+    const saved = structuredClone(rt.state);
+    for (const [id, name] of [[one, "Beth's Poker Bot"], [two, "Beth's Poker Bot 2"], [three, "Ann's Poker Bot"]]) {
+      delete saved.bots![id].look;
+      const seat = saved.seats.find((x) => x?.playerId === id);
+      if (seat) seat.name = name;
+      const request = saved.requests.find((r) => r.playerId === id);
+      if (request) request.name = name;
+      if (saved.ledger[id]) saved.ledger[id] = { playerId: id, name, buyIn: saved.ledger[id].buyIn, cashOut: 0, bot: true };
+    }
+    const clock = new FakeClock();
+    const back = new TableRuntime(saved, { clock, rng: seeded() });
+    back.connect('host');
+    back.resume();
+    expect([back.seatOf(one)?.name, back.seatOf(two)?.name]).toEqual(['Ace', 'Chip']);
+    expect(back.state.ledger[two]).toMatchObject({ name: 'Chip', owner: 'Beth', look: 1 });
+    expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1 });
+    expect(back.state.log.slice(-3).map((l) => l.text)).toEqual(["Beth's Poker Bot is now Ace", "Beth's Poker Bot 2 is now Chip", "Ann's Poker Bot is now Lucky"]);
+    // The waiting bot sits under its new name, and the hand in progress plays on.
+    back.approve('host', back.state.requests.find((r) => r.playerId === three)!.id);
+    expect(back.seatOf(three)?.name).toBe('Lucky');
+    play(back, clock, 2);
+    back.dispose();
   });
 
   it('players must be seated, the host can turn them off for players, and players have a limit', () => {
@@ -87,7 +220,9 @@ describe('practice bots', () => {
     const bot = rt.addBot('a', { ownerName: 'Ann', seat: 4 });
     expect(rt.state.seats[4]).toBeNull();
     const req = rt.state.requests.find((r) => r.playerId === bot)!;
-    expect(req.name).toBe("Ann's Poker Bot");
+    expect(req.name).toBe('Ace');
+    expect(rt.state.log.at(-1)?.text).toBe('Ann asked to add a practice bot, Ace, in seat 5');
+    expect(tableView(rt, 'host', 0).requests).toMatchObject([{ playerId: bot, name: 'Ace', bot: { ownerId: 'a', ownerName: 'Ann' } }]);
     rt.approve('host', req.id);
     expect(rt.state.seats[4]?.playerId).toBe(bot);
 
@@ -108,7 +243,7 @@ describe('practice bots', () => {
     rt.removeBot('a', annBot);
     expect(rt.seatOf(annBot)).toBeNull();
     expect(rt.isBot(annBot)).toBe(false);
-    expect(rt.state.ledger[annBot]).toMatchObject({ name: "Ann's Poker Bot", cashOut: 200 });
+    expect(rt.state.ledger[annBot]).toMatchObject({ name: 'Ace', cashOut: 200 });
     // Mid-hand, the bot folds and goes when the hand ends.
     rt.start('host');
     rt.removeBot('host', hostBot);
@@ -299,7 +434,7 @@ describe('bots keep playing', () => {
     rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
     rt.approve('host', rt.state.requests[0].id);
     const bot = rt.addBot('a', { ownerName: 'Ann' });
-    expect(tableView(rt, 'a', 0).requests).toMatchObject([{ playerId: bot, bot: true, name: "Ann's Poker Bot" }]);
+    expect(tableView(rt, 'a', 0).requests).toMatchObject([{ playerId: bot, bot: { ownerId: 'a', ownerName: 'Ann' }, name: 'Ace' }]);
     expect(tableView(rt, 'b', 0).requests).toEqual([]);
     rt.removeBot('a', bot);
     expect(rt.state.requests).toEqual([]);

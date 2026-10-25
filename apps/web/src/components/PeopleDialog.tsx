@@ -72,7 +72,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
             <span className="who">
               {s.name}
               {tags(s.playerId)}
-              {s.bot && <span className="tag bot">bot</span>}
+              {s.bot && <span className="muted"> · {s.bot.ownerName}&rsquo;s bot</span>}
             </span>
             <span className="muted">{s.sittingOut ? 'away' : fmt(s.stack)}</span>
             {!s.bot && mutes(s.playerId)}

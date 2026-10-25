@@ -33,7 +33,8 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
           {view.requests.map((r) => (
             <div className="request" key={r.id}>
               <span>
-                <b>{r.name}</b> {r.kind === 'seat' ? `wants seat ${(r.seat ?? 0) + 1} with ${fmt(r.amount)}` : `wants to add ${fmt(r.amount)}`}
+                <b>{r.name}</b>
+                {r.bot && ` (${r.bot.ownerName}'s practice bot)`} {r.kind === 'seat' ? `wants seat ${(r.seat ?? 0) + 1} with ${fmt(r.amount)}` : `wants to add ${fmt(r.amount)}`}
               </span>
               <button className="primary" onClick={() => run(call('host:approve', { requestId: r.id }))}>
                 Approve

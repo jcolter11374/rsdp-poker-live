@@ -90,6 +90,9 @@ export interface LedgerRow {
   cashOut: number;
   /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
   bot?: true;
+  /** A bot's owner and look (BOT_LOOKS), kept so its old hands still show whose robot it was. */
+  owner?: string;
+  look?: number;
 }
 
 export interface ChatMessage {
@@ -238,11 +241,13 @@ export interface RuntimeState {
   bots?: Record<PlayerId, BotInfo>;
 }
 
-/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+/** A practice bot: who added it, what it buys in (and rebuys) for, and how it looks. */
 export interface BotInfo {
   ownerId: PlayerId;
   ownerName: string;
   buyIn: number;
+  /** Index into BOT_LOOKS: its name and picture. Missing for bots saved before bots had looks. */
+  look?: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

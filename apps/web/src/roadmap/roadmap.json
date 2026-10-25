@@ -15,7 +15,7 @@
         { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, spectators with a delay, chat settings and saved table presets." },
         { "title": "Records", "detail": "Ledger with settle-up, hand replayer, your stats, player notes, hand highlights, shareable hand links and full log downloads." },
         { "title": "Table extras", "detail": "Avatars, emotes, show stacks in big blinds, all-in odds, sounds, keep-screen-awake, and install it on your phone like an app." },
-        { "title": "Practice bots", "detail": "Add a bot to an empty cash seat (it's named after you, like \"John's Poker Bot\") to practice any game risk-free. A player's bot needs the host's OK, and bots never play in tournaments." },
+        { "title": "Practice bots", "detail": "Add a bot to an empty cash seat to practice any game risk-free. Each bot gets its own name and robot, like \"Ace · John's bot\". A player's bot needs the host's OK, and bots never play in tournaments." },
         { "title": "Clean felt look", "detail": "A cleaner, flatter table with crisp cards and seats with pictures. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
         { "title": "Clearer game names", "detail": "Tables name the game without the betting clutter, and high-low games are labelled 8 or better." },
         { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, tables shrinking, phones dropping out and double taps." },

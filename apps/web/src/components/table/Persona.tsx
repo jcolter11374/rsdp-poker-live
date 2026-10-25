@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AVATARS, GESTURES, type GestureKind, type SeatView, type TableView } from '@rsdp/engine/wire';
+import { AVATARS, BOT_LOOKS, GESTURES, type GestureKind, type SeatView, type TableView } from '@rsdp/engine/wire';
 import { call, currentSession, onSession, socket } from '../../socket';
 import { setPrefs, usePrefs } from '../../prefs';
 import { sounds } from '../../sound';
@@ -46,6 +46,67 @@ export function Avatar({ playerId, avatar, name, size = 36 }: { playerId: string
   return null;
 }
 
+const BOT_INK = '#1f2630';
+
+/** The eyes and mouth that, with the colour, tell one practice bot from another. */
+function BotFace({ face, color }: { face: number; color: string }) {
+  switch (face % 4) {
+    case 1: // visor
+      return (
+        <>
+          <rect x="11" y="16" width="14" height="4.4" rx="2.2" fill={BOT_INK} />
+          <circle cx="14.6" cy="18.2" r="1.2" fill={color} />
+          <circle cx="21.4" cy="18.2" r="1.2" fill={color} />
+          <rect x="15" y="23" width="6" height="1.7" rx="0.85" fill={BOT_INK} />
+        </>
+      );
+    case 2: // square eyes and a smile
+      return (
+        <>
+          <rect x="12" y="15.8" width="4.2" height="4.2" rx="1" fill={BOT_INK} />
+          <rect x="19.8" y="15.8" width="4.2" height="4.2" rx="1" fill={BOT_INK} />
+          <path d="M14 22.4 Q18 25.6 22 22.4" fill="none" stroke={BOT_INK} strokeWidth="1.7" strokeLinecap="round" />
+        </>
+      );
+    case 3: // one big eye
+      return (
+        <>
+          <circle cx="18" cy="18.2" r="3.6" fill={BOT_INK} />
+          <circle cx="18" cy="18.2" r="1.5" fill={color} />
+          <rect x="13.5" y="23" width="9" height="1.7" rx="0.85" fill={BOT_INK} />
+        </>
+      );
+    default: // round eyes and a grille
+      return (
+        <>
+          <circle cx="14" cy="18" r="2.2" fill={BOT_INK} />
+          <circle cx="22" cy="18" r="2.2" fill={BOT_INK} />
+          <rect x="13" y="22.4" width="10" height="2.4" rx="1.2" fill={BOT_INK} />
+          <path d="M16.3 22.4v2.4M19.7 22.4v2.4" stroke="#f4f6f8" strokeWidth="0.8" />
+        </>
+      );
+  }
+}
+
+/** A practice bot's picture: a robot in its own colour and face (BOT_LOOKS), drawn here so it's the same on every device. */
+export function BotAvatar({ look, title, size = 36 }: { look: number; title: string; size?: number }) {
+  const n = BOT_LOOKS.length;
+  const { color, face } = BOT_LOOKS[((Math.trunc(look) % n) + n) % n] ?? BOT_LOOKS[0];
+  return (
+    <span className="avatar bot-avatar" style={{ width: size, height: size }} role="img" aria-label={title} title={title}>
+      <svg viewBox="0 0 36 36" width="100%" height="100%" aria-hidden="true">
+        <circle cx="18" cy="18" r="18" fill={color} />
+        <path d="M18 7.5v4" stroke="#f4f6f8" strokeWidth="1.6" />
+        <circle cx="18" cy="6.6" r="1.9" fill="#f4f6f8" />
+        <rect x="6.2" y="15.5" width="2.6" height="6" rx="1.2" fill="#f4f6f8" />
+        <rect x="27.2" y="15.5" width="2.6" height="6" rx="1.2" fill="#f4f6f8" />
+        <rect x="8.5" y="11" width="19" height="16.5" rx="4.5" fill="#f4f6f8" />
+        <BotFace face={face} color={color} />
+      </svg>
+    </span>
+  );
+}
+
 const INITIALS_COLORS = ['#e5574b', '#3b82f6', '#e39a1c', '#14a06f', '#8b5cf6', '#e0558f', '#0f9fae', '#6b7a8f'];
 
 /** A steady colour per player for the initials shown when there's no picture. */
@@ -64,10 +125,11 @@ export function SeatPersona({ seat }: { seat: SeatView }) {
     <>
       <span className="seat-avatar">
         {seat.bot ? (
-          // Practice bots always show the robot, so nobody mistakes one for a person (their names get cut short).
-          <span className="avatar bot-avatar" role="img" aria-label="Practice bot" title={`A practice bot added by ${seat.bot.ownerName}`}>
-            🤖
-          </span>
+          // Practice bots always show their robot, so nobody mistakes one for a person or for another bot.
+          <>
+            <BotAvatar look={seat.bot.look} title={seat.bot.ownerName ? `${seat.name}, ${seat.bot.ownerName}'s practice bot` : `${seat.name}, a practice bot`} />
+            <span className="bot-badge">bot</span>
+          </>
         ) : showAvatar ? (
           <Avatar playerId={seat.playerId} avatar={seat.avatar} name={seat.name} />
         ) : (
