@@ -44,6 +44,8 @@ const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
 const RIT_VOTE_SECONDS = 12;
 const NAME_MAX = 20;
+/** How long a cash table waits for an offline host before handing the table to a seated player. */
+export const HOST_HANDOFF_MS = 3 * 60_000;
 
 export interface RuntimeDeps {
   clock?: Clock;
@@ -81,6 +83,8 @@ export class TableRuntime {
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
   private timers: Record<'turn' | 'next' | 'rit', unknown> = { turn: null, next: null, rit: null };
+  /** Hands the table to someone else when the host has been gone a while. */
+  private hostTimer: unknown = null;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
 
@@ -130,11 +134,14 @@ export class TableRuntime {
 
   /** Re-arms clocks after construction from a snapshot. */
   resume() {
+    this.watchHost();
     this.sync();
   }
 
   dispose() {
     for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    this.clock.clearTimeout(this.hostTimer);
+    this.hostTimer = null;
   }
 
   get settings() {
@@ -162,6 +169,7 @@ export class TableRuntime {
   connect(playerId: PlayerId) {
     this.connections.set(playerId, (this.connections.get(playerId) ?? 0) + 1);
     this.offlineSince.delete(playerId);
+    if (this.isHost(playerId)) this.watchHost();
     this.sync();
   }
 
@@ -173,6 +181,7 @@ export class TableRuntime {
     }
     this.connections.delete(playerId);
     this.offlineSince.set(playerId, this.clock.now());
+    if (this.isHost(playerId)) this.watchHost();
     this.sync();
   }
 
@@ -535,9 +544,44 @@ export class TableRuntime {
 
   transferHost(by: PlayerId, to: PlayerId) {
     this.requireHost(by);
+    if (to === by) throw new ActionError('you are already the host');
+    if (!this.seatOf(to) && !this.isOnline(to)) throw new ActionError('that player is not at the table');
     this.state.hostId = to;
-    this.log(`${this.nameOf(to)} is now the host`);
+    this.log(`${this.nameOf(by)} made ${this.nameOf(to)} the host`);
+    this.watchHost();
     this.sync();
+  }
+
+  /**
+   * A cash table whose host has been offline for HOST_HANDOFF_MS passes to a
+   * seated player who is online and playing, starting from the seat after the
+   * host's, so nobody is stuck waiting for approvals. Tournament tables are run
+   * by the lobby and have no host to hand off.
+   */
+  private watchHost() {
+    this.clock.clearTimeout(this.hostTimer);
+    this.hostTimer = null;
+    const host = this.state.hostId;
+    if (this.isTournament || this.isOnline(host)) return;
+    const since = this.offlineSince.get(host) ?? this.upSince;
+    const wait = Math.max(0, since + HOST_HANDOFF_MS - this.clock.now());
+    this.hostTimer = this.clock.setTimeout(() => {
+      this.hostTimer = null;
+      if (this.state.hostId !== host || this.isOnline(host)) return;
+      const seats = this.state.seats;
+      const from = this.seatOf(host)?.seat ?? -1;
+      const order = seats.map((_, i) => seats[(from + 1 + i + seats.length) % seats.length]);
+      const next = order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId) && !x.sittingOut) ?? order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId));
+      if (!next) {
+        // Nobody to take over yet: look again in a while.
+        this.offlineSince.set(host, this.clock.now());
+        this.watchHost();
+        return;
+      }
+      this.state.hostId = next.playerId;
+      this.log(`${this.nameOf(host)} has been away for ${Math.round(HOST_HANDOFF_MS / 60_000)} minutes, so ${next.name} is now the host`);
+      this.sync();
+    }, wait);
   }
 
   chat(playerId: PlayerId | null, text: string) {

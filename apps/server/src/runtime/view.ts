@@ -7,7 +7,14 @@ const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
 
 /** Everything one person at (or watching) a table may see. */
-export function tableView(rt: TableRuntime, playerId: PlayerId, now: number, tournamentId: string | null = null): TableView {
+export function tableView(
+  rt: TableRuntime,
+  playerId: PlayerId,
+  now: number,
+  tournamentId: string | null = null,
+  /** Everyone with the table open, seated or not. */
+  audience: { playerId: PlayerId; name: string }[] = [],
+): TableView {
   const s = rt.state;
   const mySeat = rt.seatOf(playerId);
   const isHost = rt.isHost(playerId);
@@ -105,6 +112,7 @@ export function tableView(rt: TableRuntime, playerId: PlayerId, now: number, tou
     log: s.log.slice(-LOG_SHOWN),
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
     history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
+    watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
   };
 }
 

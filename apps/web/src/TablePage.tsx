@@ -13,6 +13,7 @@ import { Sheet } from './components/Sheet';
 import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
+import { PeopleDialog } from './components/PeopleDialog';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -100,7 +101,7 @@ function usePortrait() {
   return portrait;
 }
 
-type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | null;
+type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -306,6 +307,9 @@ export function TablePage({ tableId }: { tableId: string }) {
           </>
         ) : (
           <>
+            <button onClick={() => setDialog({ kind: 'people' })} title="Players and spectators">
+              👁 {view.watchers.length}
+            </button>
             <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
             <button onClick={copyLink}>{copied ? 'Copied!' : 'Invite'}</button>
             {volumeButton}
@@ -421,6 +425,14 @@ export function TablePage({ tableId }: { tableId: string }) {
             >
               How to play
             </button>
+            <button
+              onClick={() => {
+                close();
+                setDialog({ kind: 'people' });
+              }}
+            >
+              People · {view.watchers.length} watching
+            </button>
             {volumeButton}
           </div>
           {seatOptions}
@@ -437,6 +449,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'people' && <PeopleDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
     </div>
   );
 }

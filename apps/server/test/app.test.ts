@@ -28,6 +28,20 @@ afterAll(async () => {
 const client = (token: string) => socketClient(url, token, clients);
 
 describe('socket server', () => {
+  it('lists people watching the table by name, but not seated players', async () => {
+    const host = client('watch-host-0123456789');
+    const fan = client('watch-fan-0123456789');
+    await fan.call('session:name', { name: 'Railbird' });
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: {} });
+    await host.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
+    await fan.call('table:join', { tableId });
+    const v = await host.until((x) => x.watchers.length === 1);
+    expect(v.watchers[0].name).toBe('Railbird');
+    fan.socket.emit('table:leave');
+    await host.until((x) => x.watchers.length === 0);
+  });
+
   it('rejects connections without a browser secret', async () => {
     const c: Client = connect(url, { auth: {}, transports: ['websocket'], forceNew: true });
     clients.push(c);
