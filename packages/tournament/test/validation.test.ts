@@ -6,6 +6,7 @@ import {
   DirectorError,
   formatterCacheSize,
   MAX_CHIPS,
+  nextWakeAt,
   payoutPreset,
   presetStructure,
   tick,
@@ -236,6 +237,25 @@ describe('schedules', () => {
 
   it('refuses an unknown start kind', () => {
     expect(refusal(() => create({ start: { kind: 'whenever' } }))).toMatch('starts');
+  });
+});
+
+describe('a new start time during the grace period', () => {
+  it('starts the wait over instead of leaving a wake time in the past', () => {
+    let state = create({ start: scheduled() });
+    state = act(state, { type: 'register', playerId: 'p1', displayName: 'p1' }).state;
+    state = tick(state, T0 + 60 * MIN).state;
+    expect(state.graceUntil).toBe(T0 + 75 * MIN);
+    // The same start time, as the web form resends it with any change, keeps the grace period.
+    expect(update(state, { name: 'Renamed', start: scheduled() }).graceUntil).toBe(T0 + 75 * MIN);
+    state = update(state, { start: scheduled({ startAt: T0 + 660 * MIN }) });
+    state = tick(state, T0 + 76 * MIN).state;
+    expect(state.status).toBe('registering');
+    expect(nextWakeAt(state)).toBe(T0 + 660 * MIN);
+    const delayed = tick(state, T0 + 660 * MIN);
+    expect(delayed.events.map((e) => e.type)).toEqual(['startDelayed']);
+    expect(nextWakeAt(delayed.state)).toBe(T0 + 675 * MIN);
+    expect(tick(delayed.state, T0 + 675 * MIN).state.status).toBe('cancelled');
   });
 });
 

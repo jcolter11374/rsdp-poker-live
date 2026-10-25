@@ -918,7 +918,11 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         if (next.maxEntrants < rankedEntries(s).length) errors.push('Max entrants is below the current field');
         if (errors.length) fail(errors.join('; '));
         s.settings = next;
-        if (next.start.kind === 'scheduled' && s.status === 'registering') s.startAt = next.start.startAt;
+        if (next.start.kind === 'scheduled' && s.status === 'registering') {
+          // A new start time ends the grace period the old one began.
+          if (next.start.startAt !== s.startAt) s.graceUntil = null;
+          s.startAt = next.start.startAt;
+        }
         emit(c, { type: 'settingsUpdated' });
         break;
       }
