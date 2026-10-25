@@ -477,6 +477,7 @@ export function createApp(deps: AppDeps = {}) {
     }
     if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
+    if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Poker Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
     if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }

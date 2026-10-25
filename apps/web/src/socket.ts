@@ -7,7 +7,7 @@ const TOKEN_KEY = 'rsdp.guestId';
 const OLD_TOKEN_KEY = 'rsdp.token';
 
 /** A random secret that identifies this browser. Kept locally so a refresh keeps your seat. */
-function token(): string {
+export function guestToken(): string {
   let t: string | null = null;
   try {
     t = localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(OLD_TOKEN_KEY);
@@ -30,7 +30,41 @@ type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
 export type GameSocket = Socket<S2C, C2S>;
 
-export const socket: GameSocket = io({ auth: { token: token() } });
+const SESSION_KEY = 'rsdp.session';
+
+/** The sign-in token when this browser is signed in to an account, else ''. */
+export function sessionToken(): string {
+  try {
+    return localStorage.getItem(SESSION_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Keeps (or with null, forgets) the sign-in token. The page reloads afterwards to connect as the new player. */
+export function saveSessionToken(value: string | null) {
+  try {
+    if (value) localStorage.setItem(SESSION_KEY, value);
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** After signing out or deleting the account: this browser starts over as a brand new guest. */
+export function startOverAsGuest() {
+  saveSessionToken(null);
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(OLD_TOKEN_KEY);
+    localStorage.removeItem(NAME_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+const signedInWith = sessionToken();
+export const socket: GameSocket = io({ auth: { token: guestToken(), ...(signedInWith ? { session: signedInWith } : {}) } });
 
 export type Session = Parameters<ServerToClient['session']>[0];
 
@@ -40,6 +74,8 @@ let session: Session | null = null;
 const sessionListeners = new Set<(s: Session) => void>();
 socket.on('session', (s) => {
   session = s;
+  // The sign-in ran out or was ended on another device: forget it, and play on as this browser's guest.
+  if (!s.account && signedInWith) saveSessionToken(null);
   sessionListeners.forEach((cb) => cb(s));
 });
 export const currentSession = () => session;

@@ -27,7 +27,8 @@
         { "title": "Clearer game names", "detail": "Pick the game and the betting limit separately, so tables read like \"Hold'em · Pot Limit\"." },
         { "title": "8-or-better labels", "detail": "High-low games say plainly when there's a qualifying low and who won each half." },
         { "title": "Cash game reliability", "detail": "A round of fixes so cash games run smoothly from first hand to settle-up." },
-        { "title": "Fair-deal proof", "detail": "Every shuffle can be checked afterwards to prove nobody, including the server, could rig the cards." }
+        { "title": "Fair-deal proof", "detail": "Every shuffle can be checked afterwards to prove nobody, including the server, could rig the cards." },
+        { "title": "Optional accounts", "detail": "Sign in with a username and password so your name, picture, notes and history follow you to every device. Guests can still play without one." }
       ]
     },
     {
@@ -35,7 +36,6 @@
       "title": "Later",
       "blurb": "On the list, roughly in this order.",
       "items": [
-        { "title": "Accounts", "detail": "Optional sign-in so your name, stats and settings follow you between devices." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." },
         { "title": "The long tail", "detail": "High hand prizes, a final table mode, accessibility improvements and lots of small touches." },
         { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }

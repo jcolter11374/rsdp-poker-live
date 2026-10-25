@@ -22,6 +22,7 @@
 .suggest-form button { align-self: flex-start; }
 .suggest-trap { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
 .suggest-thanks { color: var(--good); margin: 0; }
+.reset-code { font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: 0.05em; color: var(--text); user-select: all; }
 .suggest-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .roadmap-section li .suggest-detail, .admin-list .suggest-detail { white-space: pre-line; }
 .suggest-reply { border-left: 2px solid var(--line); padding-left: 8px; font-style: italic; }
