@@ -548,6 +548,18 @@ export function createApp(deps: AppDeps = {}) {
       ),
     );
     on('tournament:list', (ack) => guarded(ack, async () => ({ tournaments: await tournaments.list(me), serverNow: clock.now() }), log));
+    on('season:get', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const board = await tournaments.season(String(input?.id ?? ''));
+          if (!board) throw new ActionError('season not found');
+          return { board };
+        },
+        log,
+      ),
+    );
+    on('season:mine', (_input, ack) => guarded(ack, async () => ({ seasons: await tournaments.hostSeasons(me) }), log));
     on('tournament:command', (input, ack) =>
       guarded(ack, () => tournaments.command(String(input?.id ?? ''), me, socket.data.session.displayName, input?.command), log),
     );

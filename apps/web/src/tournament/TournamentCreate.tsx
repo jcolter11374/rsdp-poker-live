@@ -15,9 +15,10 @@ import {
   type TournamentSettings,
   type Weekday,
 } from '@rsdp/tournament';
-import { tournamentClient } from './client';
+import { LocalTournamentClient, tournamentClient } from './client';
 import { GAMES, localTime } from './format';
 import { useSession } from './hooks';
+import { call } from '../socket';
 import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
 import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
@@ -118,8 +119,8 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
   // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
   const base = useMemo(() => {
     if (!initial) return defaultSettings({ startingStack: 10_000 });
-    // Formats and payouts come back from their own inputs, so one switched off is left out.
-    const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, ...rest } = initial;
+    // Formats, payouts and the season come back from their own inputs, so one switched off is left out.
+    const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, season: _s, ...rest } = initial;
     return rest;
   }, [initial]);
   const [lateReg, setLateReg] = useState(base.lateRegistration);
@@ -132,6 +133,19 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('standard', 600));
   const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
+  // '' = not part of a season, 'new' = start one, otherwise an existing season's id.
+  const [seasonPick, setSeasonPick] = useState('');
+  const [seasonName, setSeasonName] = useState('');
+  const [mySeasons, setMySeasons] = useState<{ id: string; name: string; events: number }[]>([]);
+  useEffect(() => {
+    if (!session || tournamentClient() instanceof LocalTournamentClient) return;
+    call<{ seasons: typeof mySeasons }>('season:mine', {}).then((r) => {
+      setMySeasons(r.seasons);
+      // A copy of one of your events joins its season unless you pick otherwise.
+      const copied = initial?.season?.id;
+      if (copied && r.seasons.some((x) => x.id === copied)) setSeasonPick((p) => p || copied);
+    }, () => {});
+  }, [session?.playerId]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -181,6 +195,11 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
     ...(formats.bounty ? { bounty: formats.bounty } : {}),
     ...(formats.invites ? { invites: formats.invites } : {}),
     ...(formats.checkIn && startKind !== 'sng' ? { checkIn: formats.checkIn } : {}),
+    ...(seasonPick === 'new'
+      ? { season: { id: '', name: seasonName.trim() || name } }
+      : seasonPick
+        ? { season: { id: seasonPick, name: mySeasons.find((s) => s.id === seasonPick)?.name ?? '' } }
+        : {}),
     // Presets are built for 600 entries; trim them to this event's size.
     ...(payoutsOn ? { payouts: { structure: payouts.name === 'custom' ? payouts : payoutPreset(payouts.name as PayoutPresetName, maxEntrants), money } } : {}),
   };
@@ -466,6 +485,33 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
         <section className="tn-card">
           <h2>Bounties, invites and check-in</h2>
           <FormatsEditor value={formats} onChange={setFormats} scheduled={startKind === 'scheduled'} sng={startKind === 'sng'} />
+          {/* Seasons live on the server; a ?demo tournament has none. */}
+          {!(tournamentClient() instanceof LocalTournamentClient) && <div className="tn-option">
+            <label>
+              Season leaderboard
+              <select value={seasonPick} onChange={(e) => setSeasonPick(e.target.value)}>
+                <option value="">Not part of a season</option>
+                <option value="new">Start a new season</option>
+                {mySeasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Add to {s.name} ({s.events} {s.events === 1 ? 'event' : 'events'})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {seasonPick === 'new' && (
+              <label>
+                Season name
+                <input value={seasonName} maxLength={40} placeholder={name} onChange={(e) => setSeasonName(e.target.value)} />
+              </label>
+            )}
+            {seasonPick !== '' && (
+              <p className="muted">
+                Finished events in a season add up on one leaderboard: points, wins, cashes{formats.bounty ? ', knockouts' : ''} and display-only net.
+                {repeat !== 'none' && startKind === 'scheduled' ? ' Every event in this series joins the season.' : ''}
+              </p>
+            )}
+          </div>}
         </section>
 
         <section className="tn-card">

@@ -180,6 +180,13 @@
 .tn-alerts.on { border-color: var(--good); color: var(--good); }
 .tn-list-head .tn-alerts { margin-left: auto; }
 
+/* Season leaderboard */
+.tn-scroll { overflow-x: auto; margin: 0 -4px; }
+.tn-neg { color: var(--bad); }
+.tn-segment.tn-segment-2 { grid-template-columns: repeat(2, 1fr); flex: 1 1 240px; }
+.tn-season-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tn-season-events li { display: flex; flex-direction: column; gap: 2px; }
+
 /* Host panels: stacks, seats, co-hosts */
 .tn-inline { display: inline-flex; align-items: center; gap: 6px; }
 .tn-inline input { width: 7.5em; }

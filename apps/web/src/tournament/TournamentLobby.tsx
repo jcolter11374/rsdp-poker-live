@@ -102,6 +102,11 @@ export function TournamentLobby({ id }: { id: string }) {
       </header>
 
       <Hero state={state} now={now} />
+      {state.settings.season && !(tournamentClient() instanceof LocalTournamentClient) && (
+        <p className="tn-windows">
+          <a href={`/season/${state.settings.season.id}`}>{state.settings.season.name}: season standings →</a>
+        </p>
+      )}
       {nextId && (
         <p className="tn-windows">
           <a href={`/tn/${nextId}`}>{state.settings.start.kind === 'sng' ? 'The next Sit & Go is open' : 'The next one in this series is open'} →</a>

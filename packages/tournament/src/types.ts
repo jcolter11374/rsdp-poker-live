@@ -61,6 +61,8 @@ export interface TournamentSettings {
   invites?: InviteSettings;
   /** Check-in groups (not for Sit & Go); absent = registering holds a seat. */
   checkIn?: CheckInSettings;
+  /** Counts toward a season leaderboard. An empty id starts a new season named after this event's id. */
+  season?: { id: string; name: string };
 }
 
 export interface BountySettings {
