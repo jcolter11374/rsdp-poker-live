@@ -99,8 +99,10 @@ export interface VariantRules {
   awardPortion: AwardPortion;
   /** Stud: seat that must bring in, from each live seat's up cards. */
   bringInSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
-  /** Stud: seat that acts first on later streets, from up cards. */
-  firstToActSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
+  /** Stud: seat that acts first on later streets, from up cards. Exact ties go to the seat earliest in `order` (clockwise from the dealer's left). */
+  firstToActSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>, order?: SeatIndex[]): SeatIndex;
+  /** Odd-chip order when it is not clockwise from the button (stud: by cards). */
+  oddChipOrder?(eligible: SeatIndex[], holeBySeat: Record<SeatIndex, Card[]>): SeatIndex[];
 }
 
 // ---------------------------------------------------------------- stakes and forced bets
@@ -370,7 +372,7 @@ export interface Modifier<Settings = unknown> {
   /** Fee taken from each pot before it is awarded (simulated rake). */
   potFee?(pot: Pot, state: HandState, settings: Settings): Chips;
   /** Side transfers after the pots are awarded (7-2 bounty, nit game). */
-  afterSettle?(state: HandState, settings: Settings): Extract<HandEvent, { t: 'transfer' }>[];
+  afterSettle?(state: HandState, settings: Settings): Omit<Extract<HandEvent, { t: 'transfer' }>, 'seq'>[];
 }
 
 export class ActionError extends Error {}

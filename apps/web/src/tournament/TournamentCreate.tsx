@@ -119,7 +119,11 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
     // Presets are built for 600 entries; trim them to this event's size.
     ...(payoutsOn ? { payouts: { structure: payouts.name === 'custom' ? payouts : payoutPreset(payouts.name as PayoutPresetName, maxEntrants), money } } : {}),
   };
-  const errors = [...scheduleErrors, ...(startKind === 'scheduled' && startAt === null && !scheduleErrors.length ? ['That start time has passed'] : []), ...validateSettings(settings)];
+  // Without a start time the schedule's own messages say why, so the settings check leaves the start out.
+  const checked: TournamentSettings = startKind === 'scheduled' && startAt === null ? { ...settings, start: { kind: 'manual' } } : settings;
+  const errors = [
+    ...new Set([...scheduleErrors, ...(startKind === 'scheduled' && startAt === null && !scheduleErrors.length ? ['That start time has passed'] : []), ...validateSettings(checked)]),
+  ];
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,13 +142,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
   const toggleGame = (id: string) => setGames(games.includes(id) ? games.filter((g) => g !== id) : [...games, id]);
   const expectedEntrants = startKind === 'sng' ? sng.playersNeeded : Math.min(maxEntrants, 30);
 
-  if (!session?.account) {
-    return (
-      <main className="tn-page">
-        <p>Sign in to host a tournament.</p>
-      </main>
-    );
-  }
+  if (!session) return <main className="tn-page"><p className="muted">Connecting…</p></main>;
 
   return (
     <main className="tn-page">

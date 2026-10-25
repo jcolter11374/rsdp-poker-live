@@ -2,6 +2,8 @@
 // validation, built-in presets, a generator from a target duration, and the
 // pure clock lookup that says which row is live after some elapsed play time.
 
+import { hasUnstorableText, isId } from './text';
+
 export type AnteType = 'none' | 'per-player' | 'big-blind';
 
 /** Fixed-limit and stud betting amounts, for levels that play those games. */
@@ -45,16 +47,22 @@ export interface StructureIssues {
 export const MAX_LEVELS = 100;
 export const MIN_ROW_MINUTES = 1;
 export const MAX_ROW_MINUTES = 240;
+/** Largest chip amount in any setting, the same as the engine's MAX_CHIPS (this package does not depend on the engine). */
+export const MAX_CHIPS = 1_000_000_000_000;
 
-const isChips = (n: number) => Number.isSafeInteger(n) && n >= 0;
+const ANTE_TYPES: readonly AnteType[] = ['none', 'per-player', 'big-blind'];
+const isChips = (n: number) => Number.isSafeInteger(n) && n >= 0 && n <= MAX_CHIPS;
 
 /**
  * Checks a structure. Errors block saving; warnings are shown to the host.
  * `maxRebuys` > 0 requires at least one rebuy level.
  */
 export function validateStructure(rows: StructureRow[], opts: { maxRebuys?: number } = {}): StructureIssues {
+  if (!Array.isArray(rows) || !rows.every((r) => typeof r === 'object' && r !== null))
+    return { errors: ['The structure must be a list of levels and breaks'], warnings: [] };
   const errors: string[] = [];
   const warnings: string[] = [];
+  if (hasUnstorableText(rows)) errors.push('The structure contains characters that cannot be saved');
   const levels = rows.filter((r): r is LevelRow => r.kind === 'level');
   if (!levels.length) errors.push('The structure needs at least one level');
   if (levels.length > MAX_LEVELS) errors.push(`At most ${MAX_LEVELS} levels`);
@@ -62,6 +70,10 @@ export function validateStructure(rows: StructureRow[], opts: { maxRebuys?: numb
   let levelNo = 0;
   let prev: LevelRow | undefined;
   rows.forEach((row, i) => {
+    if (row.kind !== 'level' && row.kind !== 'break') {
+      errors.push(`Row ${i + 1}: must be a level or a break`);
+      return;
+    }
     const label = row.kind === 'level' ? `Level ${++levelNo}` : `Break after level ${levelNo}`;
     if (!Number.isInteger(row.minutes) || row.minutes < MIN_ROW_MINUTES || row.minutes > MAX_ROW_MINUTES)
       errors.push(`${label}: length must be ${MIN_ROW_MINUTES}-${MAX_ROW_MINUTES} minutes`);
@@ -71,6 +83,8 @@ export function validateStructure(rows: StructureRow[], opts: { maxRebuys?: numb
       if (rows[i - 1]?.kind === 'break') errors.push(`${label}: two breaks in a row`);
       return;
     }
+    if (!ANTE_TYPES.includes(row.anteType)) errors.push(`${label}: unknown ante type`);
+    if (row.gameId !== undefined && !isId(row.gameId)) errors.push(`${label}: game must be a game id`);
     if (![row.sb, row.bb, row.ante].every(isChips)) {
       errors.push(`${label}: blinds and ante must be whole chip amounts`);
       return;
@@ -269,12 +283,15 @@ export function buildStructure(spec: PresetSpec, opts: BuildOptions): StructureR
       minutes: spec.levelMinutes,
       ...(opts.rebuyThroughLevel && level <= opts.rebuyThroughLevel ? { rebuy: true } : {}),
     });
-    if (bb >= endBB) break;
+    let next = sb;
+    for (let s = 0; s < spec.stepsPerLevel; s++) next = nextSb(next + 1);
+    // Stop before the blinds pass the chip limit, so huge stacks still get a valid preset.
+    if (bb >= endBB || next * 2 > MAX_CHIPS) break;
     if (spec.breakEvery && level % spec.breakEvery === 0) {
       rows.push({ kind: 'break', minutes: spec.breakMinutes, ...(opts.addOnAtFirstBreak && firstBreak ? { addOn: true } : {}) });
       firstBreak = false;
     }
-    for (let s = 0; s < spec.stepsPerLevel; s++) sb = nextSb(sb + 1);
+    sb = next;
   }
   return rows;
 }

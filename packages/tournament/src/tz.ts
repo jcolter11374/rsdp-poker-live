@@ -10,6 +10,8 @@ export interface LocalDateTime {
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
+// Each formatter holds native memory, and every capitalisation of a zone is its own key.
+const MAX_FORMATTERS = 1000;
 
 function formatter(timeZone: string): Intl.DateTimeFormat {
   let f = formatters.get(timeZone);
@@ -24,19 +26,24 @@ function formatter(timeZone: string): Intl.DateTimeFormat {
       minute: 'numeric',
       second: 'numeric',
     });
+    if (formatters.size >= MAX_FORMATTERS) formatters.clear();
     formatters.set(timeZone, f);
   }
   return f;
 }
 
+/** How many formatters are cached (for tests). */
+export const formatterCacheSize = () => formatters.size;
+
 /** Throws on an unknown time zone name. */
 export function assertTimeZone(timeZone: string): void {
-  formatter(timeZone);
+  // Not cached: any capitalisation is valid, so caching here would let callers fill the cache.
+  new Intl.DateTimeFormat('en-US', { timeZone });
 }
 
 export function isValidTimeZone(timeZone: string): boolean {
   try {
-    formatter(timeZone);
+    assertTimeZone(timeZone);
     return true;
   } catch {
     return false;

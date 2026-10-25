@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { RoomView } from '@rsdp/engine';
-import { socket } from '../socket';
+import type { TableView } from '@rsdp/engine/wire';
+import { call, socket } from '../socket';
+import type { Fmt } from '../format';
 
-export function HostPanel({ view }: { view: RoomView }) {
-  const [sb, setSb] = useState(view.config.smallBlind);
-  const [bb, setBb] = useState(view.config.bigBlind);
-  const [clock, setClock] = useState(view.turnSeconds);
+export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt; onSettings: () => void }) {
   const [msg, setMsg] = useState('');
-
-  const ack = (okText: string) => (res: { ok: boolean; error?: string }) =>
-    setMsg(res.ok ? okText : (res.error ?? 'error'));
+  const run = (p: Promise<unknown>, okText = '') => p.then(() => setMsg(okText)).catch((e: Error) => setMsg(e.message));
+  const handLive = !!view.hand && view.hand.phase !== 'complete';
+  const tournament = view.mode === 'tournament';
+  const canDeal = view.started && !handLive && !view.paused && !view.settings.timing.autoStartNextHand;
 
   return (
     <div className="panel host-panel">
@@ -19,9 +18,9 @@ export function HostPanel({ view }: { view: RoomView }) {
           {view.requests.map((r) => (
             <div className="request" key={r.id}>
               <span>
-                <b>{r.name}</b> wants seat {r.seat + 1} with {r.stack}
+                <b>{r.name}</b> {r.kind === 'seat' ? `wants seat ${(r.seat ?? 0) + 1} with ${fmt(r.amount)}` : `wants to add ${fmt(r.amount)}`}
               </span>
-              <button className="primary" onClick={() => socket.emit('host:approve', { requestId: r.id }, ack('Approved'))}>
+              <button className="primary" onClick={() => run(call('host:approve', { requestId: r.id }))}>
                 Approve
               </button>
               <button onClick={() => socket.emit('host:reject', { requestId: r.id })}>Reject</button>
@@ -29,35 +28,29 @@ export function HostPanel({ view }: { view: RoomView }) {
           ))}
         </div>
       )}
-      <div className="row">
-        {!view.running ? (
-          <button className="primary" onClick={() => socket.emit('host:start', ack('Started'))}>
-            Start game
-          </button>
-        ) : (
-          <button onClick={() => socket.emit('host:pause', { value: !view.paused })}>
-            {view.paused ? 'Resume' : 'Pause'}
-          </button>
-        )}
-      </div>
-      <form
-        className="row settings"
-        onSubmit={(e) => {
-          e.preventDefault();
-          socket.emit('host:settings', { smallBlind: sb, bigBlind: bb, turnSeconds: clock }, ack('Saved, applies next hand'));
-        }}
-      >
-        <label>
-          SB <input type="number" min={1} value={sb} onChange={(e) => setSb(+e.target.value)} />
-        </label>
-        <label>
-          BB <input type="number" min={1} value={bb} onChange={(e) => setBb(+e.target.value)} />
-        </label>
-        <label>
-          Clock <input type="number" min={0} value={clock} onChange={(e) => setClock(+e.target.value)} />
-        </label>
-        <button>Save</button>
-      </form>
+      {!tournament && (
+        <div className="row wrap">
+          {!view.started ? (
+            <button className="primary" onClick={() => run(call('host:start'))}>
+              Start game
+            </button>
+          ) : (
+            <button onClick={() => run(call('host:stop'), handLive ? 'The game stops after this hand.' : '')} disabled={view.stopAfterHand}>
+              {view.stopAfterHand ? 'Stopping after this hand' : 'Stop game'}
+            </button>
+          )}
+          {view.started && (
+            <button onClick={() => run(call('host:pause', { value: !view.paused }))}>{view.paused ? 'Resume' : 'Pause'}</button>
+          )}
+          {canDeal && (
+            <button className="primary" onClick={() => run(call('host:deal'))}>
+              Deal next hand
+            </button>
+          )}
+        </div>
+      )}
+      <button onClick={onSettings}>Table settings</button>
+      {view.pendingSettings && <p className="muted">Some setting changes take effect when this hand ends.</p>}
       {msg && <p className="muted">{msg}</p>}
     </div>
   );

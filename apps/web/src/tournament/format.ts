@@ -1,4 +1,4 @@
-import { VARIANT_LIST } from '@rsdp/engine/src/variants/specs';
+import { VARIANT_LIST } from '@rsdp/engine/variants';
 
 export const chips = (n: number) => n.toLocaleString();
 

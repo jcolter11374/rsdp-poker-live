@@ -82,9 +82,17 @@ export interface ForcedBetPlan {
   dealtIn: SeatIndex[];
   button: SeatIndex;
   buttonDead: boolean;
+  /**
+   * Blind positions (null in stud). A position can be empty: a dead small blind
+   * has a seat here but no post. Feed them back as lastSmallBlindSeat and
+   * lastBigBlindSeat next hand. In a bomb pot they are where the blinds would
+   * have been, so the rotation carries on.
+   */
   smallBlindSeat: SeatIndex | null;
   bigBlindSeat: SeatIndex | null;
   posts: PlannedPost[];
+  /** Seats in `seats` that are not dealt in (waiting for the big blind or to post). */
+  waiting: SeatIndex[];
 }
 
 /**
@@ -99,6 +107,8 @@ export type PlanForcedBets = (args: {
   seats: PlannerSeat[];
   /** Where the big blind was last hand, for the dead-button rule. */
   lastBigBlindSeat: SeatIndex | null;
+  /** Where the small blind was last hand (its position, even if nobody posted it). The button moves there. */
+  lastSmallBlindSeat?: SeatIndex | null;
   lastButton: SeatIndex | null;
   mode: 'cash' | 'tournament';
   straddles: 'off' | 'utg' | 'utg-and-button';

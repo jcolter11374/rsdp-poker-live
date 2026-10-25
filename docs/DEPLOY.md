@@ -1,0 +1,51 @@
+# Deploying RSDP Poker Live!
+
+The whole site is one container: the game server plus the built web app, built from the `Dockerfile` at the repo root. CI builds that same image and runs the browser smoke test against it on every pull request.
+
+## What the host must provide
+
+- **Exactly one instance, always on.** Live tables and tournaments run in that one process on a server clock. A scheduled tournament has to start on time even when nobody has the site open, so turn off any "sleep when idle", "scale to zero" or auto-stop setting, and never run two copies at once.
+- **WebSockets** (Socket.IO). Every mainstream host supports them.
+- **Data that survives deploys.** Either:
+  - set `DATABASE_URL` to a managed Postgres (14 or later), or
+  - leave it unset and mount a persistent volume at `/data`. The server keeps an embedded PGlite database in `/data/pglite`.
+  The container starts as root only to take ownership of `/data`, then runs the server as the unprivileged `node` user.
+- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less.
+- **HTTPS** in front of port `8080` (or whatever `PORT` says).
+
+## Settings
+
+| Variable | Default in the image | Meaning |
+| --- | --- | --- |
+| `PORT` | `8080` | Port the server listens on. |
+| `DATABASE_URL` | unset | Postgres connection string. When set, PGlite is not used. |
+| `PGLITE_DIR` | `/data/pglite` | Where the embedded database lives when `DATABASE_URL` is unset. |
+| `NODE_ENV` | `production` | Turns off development CORS. |
+
+The schema migrates itself at startup. Concurrent starts are serialised with an advisory lock.
+
+- **Health check:** `GET /api/health` returns `{"ok":true,...}`.
+- **Shutdown:** on `SIGTERM` the server saves every table and tournament and then exits, within 10 seconds. Give the host's stop timeout at least that long.
+
+## Restarts and deploys
+
+A deploy restarts the process:
+- Tables reload from their last saved state.
+- A hand in progress resumes with the same cards.
+- Tournaments keep their clocks, and scheduled ones still start on time.
+- Players' browsers reconnect by themselves.
+
+## Backups
+
+- **Managed Postgres:** use the provider's backups or point-in-time restore.
+- **Volume:** use the host's volume snapshots. Alternatively, stop the app and copy `/data/pglite`.
+
+## Local check of the production image
+
+```bash
+docker build -t rsdp-poker .
+docker run --rm -p 3001:8080 -v rsdp-data:/data rsdp-poker
+BASE_URL=http://localhost:3001 npm run smoke
+```
+
+Host-specific steps go below once a host is chosen.

@@ -22,6 +22,6 @@ export function App() {
   if (path === '/tn/new') return <TournamentCreate onCreated={(id) => go(`/tn/${id}`)} />;
   const tournament = path.match(/^\/tn\/([\w-]+)/);
   if (tournament) return <TournamentLobby id={tournament[1]} />;
-  const room = path.match(/^\/t\/([\w-]+)/);
-  return room ? <TablePage roomId={room[1]} /> : <Home onCreated={(id) => go(`/t/${id}`)} />;
+  const table = path.match(/^\/t\/([\w-]+)/);
+  return table ? <TablePage key={table[1]} tableId={table[1]} /> : <Home onCreated={(id) => go(`/t/${id}`)} />;
 }
