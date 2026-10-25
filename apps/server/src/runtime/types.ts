@@ -159,6 +159,8 @@ export interface RuntimeState {
   ledger: Record<PlayerId, LedgerRow>;
   /** Players who left, for the rathole rule. */
   departures: Record<PlayerId, { stack: number; at: number }>;
+  /** The name of everyone dealt a hand here, so logs and history keep it after they leave. Missing in older snapshots. */
+  handNames?: Record<PlayerId, string>;
   /** The host started the game; hands deal automatically while this is true. */
   started: boolean;
   /** Stop after the current hand. */

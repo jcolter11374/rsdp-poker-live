@@ -342,6 +342,7 @@ export function frameView(
       family,
       betting: hand.betting,
       stakes: hand.stakes,
+      names: Object.fromEntries(hand.seats.map((s) => [s.seat, s.name])),
       phase: frame.done ? 'complete' : 'betting',
       street: frame.street,
       streetName: '',

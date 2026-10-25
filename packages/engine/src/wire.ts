@@ -67,6 +67,8 @@ export interface HandView {
   family: GameFamily;
   betting: BettingKind;
   stakes: Stakes;
+  /** Seat → name of everyone dealt in, including players who have since left the seat. */
+  names: Record<number, string>;
   phase: HandPhase;
   street: number;
   streetName: string;

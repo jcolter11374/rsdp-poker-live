@@ -165,6 +165,7 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
     family: input.game.family,
     betting: input.betting,
     stakes: input.stakes,
+    names: Object.fromEntries(hand.seats.map((x) => [x.seat, rt.nameOf(x.playerId)])),
     phase: hand.phase,
     street: hand.street,
     streetName: street?.name ?? '',

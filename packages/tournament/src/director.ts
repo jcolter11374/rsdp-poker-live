@@ -678,10 +678,15 @@ function checkFinish(c: Ctx) {
   if (!started(s)) return;
   const alive = aliveEntries(s);
   if (alive.length > 1 || alive.some((e) => e.status === 'rebuy-offer')) return;
-  // A lone survivor waits while late registration or re-entry could still bring in an opponent.
+  // A lone survivor waits while a busted player can still re-enter. Once someone has won every chip
+  // in play, open late registration no longer holds it, unless a registration is waiting for the
+  // host; before anyone has busted (the others quit or were removed) it waits for late entries.
   const { max } = s.settings.reEntry;
   const canReEnter = s.entries.some((e) => e.status === 'busted' && !e.supersededBy && (max === null || e.entryNo - 1 < max));
-  if (alive.length === 1 && (registrationOpen(s) || (reEntryOpen(s) && canReEnter))) return;
+  if (alive.length === 1 && reEntryOpen(s) && canReEnter) return;
+  const someoneBusted = s.entries.some((e) => e.status === 'busted');
+  const registrationWaiting = s.requests.some((r) => r.kind === 'register');
+  if (alive.length === 1 && registrationOpen(s) && (!someoneBusted || registrationWaiting)) return;
   finish(c);
 }
 

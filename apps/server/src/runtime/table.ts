@@ -749,7 +749,7 @@ export class TableRuntime {
   }
 
   nameOf(playerId: PlayerId) {
-    return this.seatOf(playerId)?.name ?? this.state.ledger[playerId]?.name ?? 'Guest';
+    return this.seatOf(playerId)?.name ?? this.state.ledger[playerId]?.name ?? this.state.handNames?.[playerId] ?? 'Guest';
   }
 
   // ---------------------------------------------------------------- tournament seating
@@ -1234,6 +1234,11 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    s.handNames ??= {};
+    for (const x of hand.seats) {
+      const seat = s.seats[x.seat];
+      if (seat?.playerId === x.playerId) s.handNames[x.playerId] = seat.name;
+    }
     if (!this.isTournament) {
       sideGames.bombPotNext = false;
       sideGames.handsSinceBombPot = bombPot ? 0 : sideGames.handsSinceBombPot + 1;
