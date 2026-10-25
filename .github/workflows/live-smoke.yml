@@ -1,0 +1,34 @@
+name: Live smoke
+
+# Runs the browser smoke test against the live site.
+on:
+  push:
+    branches: [claude/project-thread-i7g1tl]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Browser smoke test (live site)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: curl -sf https://rsdp-poker-live.fly.dev/api/health
+      - run: node e2e/smoke.mjs
+        env:
+          BASE_URL: https://rsdp-poker-live.fly.dev
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: live-smoke-screenshots
+          path: e2e/out/
+          if-no-files-found: ignore
