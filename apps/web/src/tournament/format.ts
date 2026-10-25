@@ -25,7 +25,8 @@ export function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export const GAMES: { id: string; name: string }[] = VARIANT_LIST.map((v) => ({ id: v.id, name: v.name }));
+// Tournaments play each game with its usual betting, so the pickers say which.
+export const GAMES: { id: string; name: string }[] = VARIANT_LIST.map((v) => ({ id: v.id, name: gameTitle(v.id) }));
 
 /** The game with its usual betting: "No-Limit Hold'em", "Pot-Limit Omaha". */
 export const gameName = (id: string) => gameTitle(id);

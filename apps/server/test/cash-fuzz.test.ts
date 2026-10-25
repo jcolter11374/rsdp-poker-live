@@ -17,7 +17,7 @@ beforeAll(() => registerAllVariants(variants));
  * cashed out, or raked, and nothing is negative.
  */
 const PLAYERS = ['host', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
-const GAMES = ['nlhe', 'plo4', 'plo5', 'stud', 'razz', 'stud8', 'td27', 'badugi', 'plo8'];
+const GAMES = ['nlhe', 'plo4', 'plo5', 'plo6', 'plo8', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27', 'badugi'];
 
 function run(seed: number, steps: number) {
   const rng = seeded(seed);
@@ -60,7 +60,11 @@ function run(seed: number, steps: number) {
     for (const x of s.seats) if (x) expect(s.ledger[x.playerId], `${where}: seated without a ledger row`).toBeTruthy();
   };
 
-  const seated = () => rt.state.seats.filter(Boolean).map((x) => x!.playerId);
+  // Someone at the table, or an empty seat's would-be player when nobody is (the runtime must refuse them cleanly).
+  const seated = () => {
+    const ids = rt.state.seats.filter(Boolean).map((x) => x!.playerId);
+    return ids.length ? ids : ['nobody'];
+  };
   const host = () => rt.state.hostId;
 
   const randomAction = (seatNo: number): Action => {
