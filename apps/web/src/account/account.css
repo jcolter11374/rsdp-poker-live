@@ -43,3 +43,5 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .account-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--go); vertical-align: 1px; }
 .account-guest .row > * { flex: 0 0 auto; }
 .account-inline > button, .account-section .my-profile .row > button { flex: 0 0 auto; }
+.account-check { flex-direction: row; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.account-check input { width: auto; margin-top: 3px; flex: 0 0 auto; }

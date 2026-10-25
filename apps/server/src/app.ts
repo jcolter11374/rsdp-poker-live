@@ -9,7 +9,7 @@ import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
-import { IdentityError } from './identity';
+import { hashSecret, IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
@@ -115,7 +115,7 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number; lastFullLog?: number }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; lastExport?: number; lastFullLog?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -217,6 +217,11 @@ export function createApp(deps: AppDeps = {}) {
           // Their tabs reconnect as new guests.
           for (const s of playerSockets.get(id) ?? []) s.disconnect(true);
         }
+      },
+      signedOutElsewhere: (playerIds, keepGuestToken) => {
+        const keep = keepGuestToken ? hashSecret(keepGuestToken) : null;
+        // Those tabs reload and connect again as whoever they are now.
+        for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
       },
     },
   });
@@ -496,6 +501,7 @@ export function createApp(deps: AppDeps = {}) {
       socket.data.playerId = who.playerId;
       socket.data.session = { ...who, avatar: avatars.get(who.playerId) ?? null };
       socket.data.tournaments = new Set();
+      socket.data.device = hashSecret(token);
       next();
     } catch (e) {
       next(e instanceof Error ? e : new Error('sign-in failed'));

@@ -72,7 +72,7 @@ function sessionOf(guest: string, session?: string) {
 }
 
 const signUp = (guest: string, username = 'Mike', password = 'correct horse') => post('/api/account/signup', { username, password }, { guest });
-const signIn = (guest: string, username = 'Mike', password = 'correct horse', ip?: string) => post('/api/account/signin', { username, password }, { guest, ip });
+const signIn = (guest: string, username = 'Mike', password = 'correct horse', ip?: string, bringOver = true) => post('/api/account/signin', { username, password, bringOver }, { guest, ip });
 
 describe('accounts', () => {
   it('signing up keeps the guest player, so everything played so far stays', async () => {
@@ -116,14 +116,36 @@ describe('accounts', () => {
     expect((await me(LAPTOP, signedIn.body.session as string)).account).toMatchObject({ username: 'Mike', devices: 2 });
   });
 
-  it('pauses sign-in after 10 wrong passwords from one address or for one username', async () => {
+  it('pauses sign-in after 10 wrong passwords from one address, without locking the owner out elsewhere', async () => {
     await signUp(PHONE);
     for (let i = 0; i < 10; i++) expect((await signIn(LAPTOP, 'Mike', 'wrong password')).status).toBe(401);
     expect((await signIn(LAPTOP)).status).toBe(429);
-    // Another address is still held back for that username...
-    expect((await signIn(LAPTOP, 'Mike', 'correct horse', '198.51.100.7')).status).toBe(429);
+    // Someone guessing from one address can't keep the real Mike out from his own.
+    expect((await signIn(LAPTOP, 'Mike', 'correct horse', '198.51.100.7')).status).toBe(200);
     clock.advance(15 * 60_000 + 1);
-    expect((await signIn(LAPTOP)).status).toBe(200);
+    await post('/api/account/signout', {}, { guest: LAPTOP });
+    expect((await signIn('guest-secret-tablet-cccccccccccc')).status).toBe(200);
+    // A dozen password checks take a few seconds on a busy machine.
+  }, 20_000);
+
+  it('on a friend’s device, signing in without bringing anything over leaves their guest alone', async () => {
+    await signUp(PHONE);
+    const friend = socketClient(url, LAPTOP, clients);
+    const before = await new Promise<{ playerId: string }>((r) => friend.socket.once('session', r));
+    await friend.call('notes:set', { targetPlayerId: 'villain', text: 'friend’s note', color: 'none' });
+    const { body } = await signIn(LAPTOP, 'Mike', 'correct horse', undefined, false);
+    expect(body.broughtOver).toBe(false);
+    expect((await me(LAPTOP, body.session as string)).account?.devices).toBe(1);
+    const out = await post('/api/account/signout', {}, { guest: LAPTOP, session: body.session as string });
+    expect(out.body.forgot).toBe(false);
+    expect((await sessionOf(LAPTOP)).playerId).toBe(before.playerId);
+    expect(await dbNotes(db).list(before.playerId)).toMatchObject([{ text: 'friend’s note' }]);
+  });
+
+  it('refuses to sign in to a second account while signed in', async () => {
+    const { body } = await signUp(PHONE);
+    await signUp(LAPTOP, 'Bo_99');
+    expect((await post('/api/account/signin', { username: 'Bo_99', password: 'correct horse' }, { guest: PHONE, session: body.session as string })).status).toBe(409);
   });
 
   it('signing out ends the session and the device starts over as a new guest', async () => {
@@ -144,10 +166,16 @@ describe('accounts', () => {
   it('changing the password needs the old one and signs other devices out', async () => {
     const { body } = await signUp(PHONE);
     const laptop = (await signIn(LAPTOP)).body.session as string;
+    const open = connect(url, { auth: { token: LAPTOP, session: laptop }, transports: ['websocket'], forceNew: true });
+    clients.push(open);
+    await new Promise((r) => open.once('session', r));
+    const dropped = new Promise((r) => open.once('disconnect', r));
     expect((await post('/api/account/password', { current: 'nope', password: 'new password 1' }, { guest: PHONE, session: body.session as string })).status).toBe(401);
     expect((await post('/api/account/password', { current: 'correct horse', password: 'new password 1' }, { guest: PHONE, session: body.session as string })).status).toBe(200);
+    await dropped;
     expect((await sessionOf(LAPTOP, laptop)).account).toBeNull();
     expect((await sessionOf(PHONE, body.session as string)).account).toEqual({ username: 'Mike' });
+    expect((await sessionOf(PHONE)).account).toEqual({ username: 'Mike' });
     expect((await signIn(LAPTOP, 'Mike', 'new password 1')).status).toBe(200);
   });
 
@@ -165,6 +193,8 @@ describe('accounts', () => {
     expect((await post('/api/account/reset', { username: 'Mike', code: code.toLowerCase().replace(/-/g, ''), password: 'brand new pw' })).status).toBe(200);
     expect((await post('/api/account/reset', { username: 'Mike', code, password: 'another new pw' })).status).toBe(401);
     expect((await sessionOf(LAPTOP, laptop)).account).toBeNull();
+    // The device that made the account is signed out too, and starts over as a new guest.
+    expect((await sessionOf(PHONE)).account).toBeNull();
     expect((await signIn(LAPTOP, 'Mike', 'brand new pw')).status).toBe(200);
   });
 

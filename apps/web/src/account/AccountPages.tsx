@@ -131,12 +131,13 @@ export function SignInPage() {
   const session = useSession();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [bringOver, setBringOver] = useState(true);
   const { busy, error, run } = useAction();
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      const res = await signIn(username.trim(), password);
+      const res = await signIn(username.trim(), password, bringOver);
       reloadTo(res.broughtOver ? '/profile?merged=1' : '/profile');
     });
   };
@@ -154,11 +155,16 @@ export function SignInPage() {
           Password
           <input type="password" value={password} autoComplete="current-password" maxLength={200} required onChange={(e) => setPassword(e.target.value)} />
         </label>
+        <label className="account-check">
+          <input type="checkbox" checked={bringOver} onChange={(e) => setBringOver(e.target.checked)} />
+          <span>
+            This is my device: move what I did here as a guest (notes, picture, tables and tournaments) into my account. Untick this on a friend's phone so their stuff stays theirs.
+          </span>
+        </label>
         {error && <p className="error">{error}</p>}
         <button className="primary" disabled={busy}>
           Sign in
         </button>
-        <p className="muted">Anything you did here as a guest (notes, picture, tables and tournaments) moves into your account.</p>
       </form>
       <p className="account-alt">
         New here? <a href="/signup">Create an account</a> · <a href="/reset">Forgot your password?</a>

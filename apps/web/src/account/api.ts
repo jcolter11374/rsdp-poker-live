@@ -69,16 +69,19 @@ export async function signUp(username: string, password: string) {
   return res;
 }
 
-export async function signIn(username: string, password: string) {
-  const res = await request<{ session: string; username: string; broughtOver: boolean }>('POST', '/api/account/signin', { username, password });
+/** `bringOver`: this is my own device, so what I did here as a guest joins my account. */
+export async function signIn(username: string, password: string, bringOver: boolean) {
+  const res = await request<{ session: string; username: string; broughtOver: boolean }>('POST', '/api/account/signin', { username, password, bringOver });
   saveSessionToken(res.session);
   return res;
 }
 
 export async function signOut() {
-  // Even when the server can't be reached, this browser forgets the sign-in.
-  await request('POST', '/api/account/signout').catch(() => {});
-  startOverAsGuest();
+  // Even when the server can't be reached, this browser forgets the sign-in. Its guest starts over
+  // only when that guest belonged to the account; a friend's device keeps its own guest.
+  const res = await request<{ forgot: boolean }>('POST', '/api/account/signout').catch(() => ({ forgot: true }));
+  if (res.forgot) startOverAsGuest();
+  else saveSessionToken(null);
 }
 
 export const changePassword = (current: string, password: string) => request('POST', '/api/account/password', { current, password });

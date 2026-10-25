@@ -11,6 +11,7 @@ import {
   checkPassword,
   createAccount,
   deleteAccount,
+  forgetDevices,
   forgetToken,
   IdentityError,
   issueResetCode,
@@ -32,12 +33,16 @@ const SIGN_IN_WINDOW_MS = 15 * 60_000;
 const SIGN_UPS_PER_HOUR = 5;
 /** Wrong reset codes one address may try per window. */
 const RESET_TRIES = 10;
+/** Profile loads one address may make per minute (each one reads hand history). */
+const PROFILE_PER_MINUTE = 30;
 
 export interface AccountHooks {
   /** A browser now plays as `playerId` (its picture may have come over from the guest). */
   signedIn(playerId: string): void;
   /** These players' names, pictures and secrets were wiped; drop anything kept for them. */
   deleted(playerIds: string[]): void;
+  /** The account's sign-ins ended (new password): drop these players' connections, except the browser with `keepGuestToken`. */
+  signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
 }
 
 const HTTP_STATUS: Partial<Record<IdentityError['code'], number>> = {
@@ -67,6 +72,7 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
   const failuresByName = limiter(SIGN_IN_TRIES, SIGN_IN_WINDOW_MS, now);
   const signUps = limiter(SIGN_UPS_PER_HOUR, 60 * 60_000, now);
   const resetTries = limiter(RESET_TRIES, SIGN_IN_WINDOW_MS, now);
+  const profileLoads = limiter(PROFILE_PER_MINUTE, 60_000, now);
 
   const tooMany = (res: express.Response) => res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -99,10 +105,13 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
     route(async (req, res, db) => {
       const who = await identify(req, db);
       if (who.account) return void res.status(409).json({ error: `You're signed in as ${who.account.username}. Sign out first.` });
-      if (!signUps(clientAddress(req))) return void tooMany(res);
+      const address = clientAddress(req);
+      if (!signUps(address, false)) return void tooMany(res);
       const username = str(req.body?.username).trim();
       const password = str(req.body?.password);
       await createAccount(db, username, password, who.guest.id, { now: new Date(now()) });
+      // Only accounts actually made count, so typos don't use up a shared wifi's allowance.
+      signUps(address);
       const { token, account } = await login(db, username, password, { now: new Date(now()) });
       res.json({ ok: true, session: token, username: account.username });
     }),
@@ -115,9 +124,11 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       const username = str(req.body?.username).trim();
       const password = str(req.body?.password);
       const address = clientAddress(req);
-      const name = `u:${username.toLowerCase().slice(0, 64)}`;
+      // Per username and address, so nobody can lock a friend out by typing wrong passwords for them.
+      const name = `u:${username.toLowerCase().slice(0, 64)}@${address}`;
       if (!failuresByAddress(address, false) || !failuresByName(name, false)) return void tooMany(res);
       const who = await identify(req, db);
+      if (who.account) return void res.status(409).json({ error: `You're signed in as ${who.account.username}. Sign out first.` });
       let result;
       try {
         result = await login(db, username, password, { now: new Date(now()) });
@@ -126,8 +137,9 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
         throw e;
       }
       const { token, account } = result;
-      // What this device did as a guest comes along: its notes and picture, and its tables and tournaments in the history.
-      const broughtOver = await adoptGuest(db, account.id, who.guest.id);
+      // Only when asked (it's their own device): what it did as a guest comes along, its notes and picture,
+      // and its tables and tournaments in the history. On a friend's device the friend's guest stays theirs.
+      const broughtOver = req.body?.bringOver === true && (await adoptGuest(db, account.id, who.guest.id));
       hooks.signedIn(account.primaryPlayerId);
       res.json({ ok: true, session: token, username: account.username, broughtOver });
     }),
@@ -140,9 +152,10 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       const session = req.get('x-session-token');
       if (session) await logout(db, session);
       const who = await identify(req, db);
-      // Only a secret tied to an account is forgotten, so a guest who presses this by mistake loses nothing.
-      if (who.guest.accountId) await forgetToken(db, req.get('x-guest-token') ?? '');
-      res.json({ ok: true });
+      // Only a secret tied to an account is forgotten; a friend's device that was signed in on keeps its own guest.
+      const forgot = !!who.guest.accountId;
+      if (forgot) await forgetToken(db, req.get('x-guest-token') ?? '');
+      res.json({ ok: true, forgot });
     }),
   );
 
@@ -159,8 +172,11 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
         return void res.status(401).json({ error: 'Your current password is not right.' });
       }
       await setPassword(db, who.account.id, str(req.body?.password));
-      // Other devices have to sign in again with the new password.
+      // Other devices have to sign in again with the new password, this one excepted.
+      const guestToken = req.get('x-guest-token') ?? '';
       await logoutOthers(db, who.account.id, req.get('x-session-token'));
+      await forgetDevices(db, who.account.id, guestToken);
+      hooks.signedOutElsewhere((await playersForAccount(db, who.account.id)).map((p) => p.id), guestToken);
       res.json({ ok: true });
     }),
   );
@@ -189,12 +205,16 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
     route(async (req, res, db) => {
       const address = clientAddress(req);
       if (!resetTries(address, false)) return void tooMany(res);
+      let account;
       try {
-        await resetPassword(db, str(req.body?.username).trim(), str(req.body?.code), str(req.body?.password), { now: new Date(now()) });
+        account = await resetPassword(db, str(req.body?.username).trim(), str(req.body?.code), str(req.body?.password), { now: new Date(now()) });
       } catch (e) {
         if (e instanceof IdentityError && e.code === 'bad-reset-code') resetTries(address);
         throw e;
       }
+      // Every device signs in again, including the one that made the account.
+      await forgetDevices(db, account.id);
+      hooks.signedOutElsewhere((await playersForAccount(db, account.id)).map((p) => p.id));
       res.json({ ok: true });
     }),
   );
@@ -214,6 +234,7 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
   app.get(
     '/api/account/me',
     route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const who = await identify(req, db);
       const ids = who.account ? (await playersForAccount(db, who.account.id)).map((p) => p.id) : [who.player.id];
       if (!ids.includes(who.player.id)) ids.push(who.player.id);

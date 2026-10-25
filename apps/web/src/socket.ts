@@ -78,6 +78,11 @@ socket.on('session', (s) => {
   if (!s.account && signedInWith) saveSessionToken(null);
   sessionListeners.forEach((cb) => cb(s));
 });
+// The server drops a connection when who it belongs to changed (a password changed on another device,
+// the account was deleted). Reloading connects again as whoever this browser is now.
+socket.on('disconnect', (reason) => {
+  if (reason === 'io server disconnect') setTimeout(() => location.reload(), 300);
+});
 export const currentSession = () => session;
 export function onSession(cb: (s: Session) => void): () => void {
   sessionListeners.add(cb);

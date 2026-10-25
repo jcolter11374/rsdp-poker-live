@@ -289,6 +289,17 @@ export async function forgetToken(db: Db, secret: string): Promise<void> {
   await db.delete(playerTokens).where(eq(playerTokens.tokenHash, hashSecret(secret)));
 }
 
+/**
+ * Forgets the browser secrets of every player the account owns, except
+ * `keepSecret`, so no browser stays signed in through the guest that made
+ * the account (or a guest it adopted) after a password change or reset.
+ */
+export async function forgetDevices(db: Db, accountId: string, keepSecret?: string): Promise<void> {
+  const keep = keepSecret && isWellFormedSecret(keepSecret) ? hashSecret(keepSecret) : '';
+  const owned = db.select({ id: players.id }).from(players).where(eq(players.accountId, accountId));
+  await db.delete(playerTokens).where(and(inArray(playerTokens.playerId, owned), ne(playerTokens.tokenHash, keep)));
+}
+
 // ---------------------------------------------------------------- passwords and resets
 
 /** True when `password` is the account's password. Takes as long as a login. */
