@@ -96,6 +96,8 @@ export interface AppDeps {
   shared?: SharedHandStore;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
+  /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
+  fairLeadMs?: number;
   /** Built web client to serve (production). */
   webDist?: string | null;
   log?: (message: string, err?: unknown) => void;
@@ -360,6 +362,7 @@ export function createApp(deps: AppDeps = {}) {
   const tournaments = new TournamentManager({
     clock,
     rng: deps.rng,
+    fairLeadMs: deps.fairLeadMs,
     store: deps.tournaments ?? memoryTournamentStore(),
     tables: {
       createTable: (state) => store.createTable(state),
@@ -416,7 +419,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!saved || saved.settings.table.mode === 'tournament') return null;
     // Another join may have loaded it while we waited.
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs }));
     rt.resume();
     return rt;
   }
@@ -442,6 +445,7 @@ export function createApp(deps: AppDeps = {}) {
       return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting);
     }
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
+    if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
@@ -521,7 +525,7 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
             try {
@@ -633,7 +637,8 @@ export function createApp(deps: AppDeps = {}) {
           if (!record) throw new ActionError('that hand is no longer available');
           if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
           const id = newId();
-          const hand = handRecordView(rt, record, me, { hideMine: !!input?.hideMine });
+          // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
+          const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
           await sharedStore.create({
             id,
             tableId: rt.state.id,
@@ -699,6 +704,7 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
     on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('fair:seed', (input, ack) => guarded(ack, () => current().addClientSeed(me, input ?? {}), log));
     on('notes:list', (ack) => guarded(ack, async () => ({ notes: await notes.list(me) }), log));
     on('notes:set', (input, ack) =>
       guarded(

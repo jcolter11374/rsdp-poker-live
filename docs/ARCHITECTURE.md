@@ -71,3 +71,13 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 ## Changing contracts
 
 Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging, and a version bump of the snapshot format if stored state changes shape.
+
+## Fair dealing
+
+Decks come from `deckFromSeed(handSeed)` (`@rsdp/engine`, `fairness.ts`), never
+from `shuffle(freshDeck(), …)`. The runtime commits to each hand's server seed a
+hand ahead (`view.fair.nextCommit`), seated browsers add seeds with `fair:seed`,
+and `HandInput.fair` carries the record into history. `fair.serverSeed` and
+`fair.handSeed` give away the whole deck: only `handRecordView` may show them,
+and only once `fairRevealed()` says so. Every card-dealing event carries `pos`.
+See docs/FAIRNESS.md.
