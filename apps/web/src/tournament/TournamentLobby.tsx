@@ -473,7 +473,7 @@ function HostTools({ state, me, powers, send }: { state: TournamentState; me: st
         <div className="tn-requests">
           <h3>Requests</h3>
           {state.requests.map((r) => (
-            <RequestRow key={r.id} state={state} r={r} by={by} send={send} />
+            <RequestRow key={r.id} state={state} r={r} by={by} powers={powers} send={send} />
           ))}
         </div>
       )}

@@ -2,7 +2,7 @@
 // stacks, moving players, co-hosts, and archiving. Each panel shows only what
 // the viewer's powers allow; the server checks again.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HOST_POWER_LABELS, HOST_POWERS, type HostPower } from '@rsdp/engine/roles';
 import { tableAddress, type Command, type Entry, type PendingRequest, type TournamentState } from '@rsdp/tournament';
 import { chips } from './format';
@@ -16,9 +16,12 @@ const tableNumber = (s: TournamentState, tableId: string | null) => (tableId ? s
 const KIND_LABEL: Record<PendingRequest['kind'], string> = { register: 'wants to register', rebuy: 'wants to rebuy', 'add-on': 'wants an add-on', 're-entry': 'wants to re-enter' };
 
 /** One request, with a starting stack to approve registrations and re-entries with (a handicap). */
-export function RequestRow({ state, r, by, send }: { state: TournamentState; r: PendingRequest; by: string; send: Send }) {
-  const takesStack = r.kind === 'register' || r.kind === 're-entry';
-  const [stack, setStack] = useState(state.settings.startingStack);
+export function RequestRow({ state, r, by, powers, send }: { state: TournamentState; r: PendingRequest; by: string; powers: HostPower[]; send: Send }) {
+  // A starting stack is a chip power too.
+  const takesStack = (r.kind === 'register' || r.kind === 're-entry') && powers.includes('chips');
+  const [stack, setStack] = useSynced(state.settings.startingStack);
+  // Co-hosts don't decide their own requests.
+  if (r.playerId === by && by !== state.hostId) return null;
   return (
     <div className="tn-request">
       <span>
@@ -53,7 +56,8 @@ export function PlayerManager({ state, by, powers, send }: { state: TournamentSt
       {players.map((e) => (
         <div key={e.id} className="tn-player-tools">
           <button className="tn-player-name" aria-expanded={open === e.id} onClick={() => setOpen(open === e.id ? null : e.id)}>
-            <b>{e.displayName}</b> · {chips(e.stack)}
+            <b>{e.displayName}</b>
+            {e.playerId === by && ' (you)'} · {chips(e.stack)}
             {e.pendingStack !== undefined && ` → ${chips(e.pendingStack)} after this hand`}
             {e.tableId && ` · Table ${tableNumber(state, e.tableId)}, seat ${e.seat! + 1}`}
           </button>
@@ -65,14 +69,16 @@ export function PlayerManager({ state, by, powers, send }: { state: TournamentSt
 }
 
 function PlayerTools({ state, e, by, powers, send }: { state: TournamentState; e: Entry; by: string; powers: HostPower[]; send: Send }) {
-  const [stack, setStack] = useState(e.pendingStack ?? e.stack);
+  const [stack, setStack] = useSynced(e.pendingStack ?? e.stack);
   const [tableId, setTableId] = useState(e.tableId ?? state.tables[0]?.id ?? '');
-  const [seat, setSeat] = useState(0);
+  const [seat, setSeat] = useState(e.seat ?? 0);
+  // Co-hosts never set their own chips.
+  const ownChips = e.playerId === by && by !== state.hostId;
   const target = state.tables.find((t) => t.id === tableId);
   const nameAt = (id: string | null) => (id ? state.entries.find((x) => x.id === id)?.displayName : null);
   return (
     <div className="tn-request">
-      {powers.includes('chips') && (
+      {powers.includes('chips') && !ownChips && (
         <>
           <label className="tn-inline">
             Stack
@@ -83,7 +89,16 @@ function PlayerTools({ state, e, by, powers, send }: { state: TournamentState; e
       )}
       {powers.includes('players') && e.status === 'seated' && target && (
         <>
-          <select aria-label="Table" value={tableId} onChange={(ev) => setTableId(ev.target.value)}>
+          <select
+            aria-label="Table"
+            value={tableId}
+            onChange={(ev) => {
+              setTableId(ev.target.value);
+              // Start from the player's own seat at their table, else the first empty one.
+              const t = state.tables.find((x) => x.id === ev.target.value);
+              setSeat(ev.target.value === e.tableId ? e.seat! : Math.max(0, t?.seats.indexOf(null) ?? 0));
+            }}
+          >
             {state.tables.map((t, i) => (
               <option key={t.id} value={t.id}>
                 Table {i + 1}
@@ -115,6 +130,15 @@ function PlayerTools({ state, e, by, powers, send }: { state: TournamentState; e
       )}
     </div>
   );
+}
+
+/** A number input's value that follows the server until the host types in it. */
+function useSynced(value: number): [number, (n: number) => void] {
+  const [edited, setEdited] = useState<number | null>(null);
+  useEffect(() => {
+    if (edited === value) setEdited(null);
+  }, [value, edited]);
+  return [edited ?? value, setEdited];
 }
 
 /** The host names co-hosts and picks what each may do; a co-host can step down. */

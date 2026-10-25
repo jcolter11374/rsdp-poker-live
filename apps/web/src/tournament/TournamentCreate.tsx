@@ -77,16 +77,20 @@ export function TournamentCreatePage({ from, onCreated }: { from: string | null;
   const [error, setError] = useState('');
   useEffect(() => {
     if (!from) return;
-    let off = () => {};
+    // One view is all the copy needs; it can arrive before subscribe returns.
+    let done = false;
+    let off: (() => void) | null = null;
     off = tournamentClient().subscribe(
       from,
       (v) => {
         setInitial((prev) => prev ?? copySettings(v.state.settings, v.serverNow));
-        off();
+        done = true;
+        off?.();
       },
       (m) => setError(m),
     );
-    return () => off();
+    if (done) off();
+    return () => off?.();
   }, [from]);
   if (!from) return <TournamentCreate onCreated={onCreated} />;
   if (error) return <main className="tn-page"><p className="error">Couldn't copy that tournament: {error}</p><a href="/tn/new">Start from scratch</a></main>;
@@ -114,8 +118,8 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
   // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
   const base = useMemo(() => {
     if (!initial) return defaultSettings({ startingStack: 10_000 });
-    // Formats come back from their own editor, so one switched off is left out.
-    const { bounty: _b, invites: _i, checkIn: _c, ...rest } = initial;
+    // Formats and payouts come back from their own inputs, so one switched off is left out.
+    const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, ...rest } = initial;
     return rest;
   }, [initial]);
   const [lateReg, setLateReg] = useState(base.lateRegistration);
@@ -146,8 +150,9 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
         return { freq: 'monthly', nth, weekday: firstDay };
     }
   }, [repeat, weekdays, firstDay, date, nth]);
-  const { interval, until } = first.carry as { interval?: number; until?: string };
-  const schedule: Schedule = { timeZone, startDate: date, time, repeat: rule && interval ? { ...rule, interval } : rule, ...(until ? { until } : {}) };
+  // A copied series keeps its interval and end date only while its repeat is left as it was.
+  const { interval, until } = repeat === first.repeat ? (first.carry as { interval?: number; until?: string }) : {};
+  const schedule: Schedule = { timeZone, startDate: date, time, repeat: rule && interval ? { ...rule, interval } : rule, ...(until && rule ? { until } : {}) };
   const scheduleErrors = startKind === 'scheduled' ? validateSchedule(schedule) : [];
   const now = Date.now();
   const startAt = startKind === 'scheduled' && !scheduleErrors.length ? nextOccurrence(schedule, now) : null;
