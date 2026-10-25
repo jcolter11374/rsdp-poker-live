@@ -5,6 +5,8 @@ import {
   bringInSeat,
   drawReplacements,
   firstToActSeat,
+  gameCode,
+  gameTitle,
   registerAllVariants,
   studOddChipOrder,
   VARIANT_LIST,
@@ -86,6 +88,22 @@ describe('awardPortion', () => {
     expect(award.handName).toBe('Straight, Five high and Five-Four low');
   });
 
+  it('hi-lo: winning the high and tying the low takes three quarters', () => {
+    const board = c('2s 3d 7h Kc Kd');
+    const hole = { 0: c('Ac 4c Kh Qs'), 1: c('Ad 4h 9s 9c') };
+    const awards = awardPortion(VARIANTS.plo8, 100, [0, 1], hole, board);
+    expect(awards.map((a) => [a.seat, a.amount, a.half])).toEqual([
+      [0, 50, 'high'],
+      [0, 25, 'low'],
+      [1, 25, 'low'],
+    ]);
+  });
+
+  it('stud hi-lo: a nine low does not qualify, so the high scoops', () => {
+    const hole = { 0: c('9c 7d 5h 3s 2c Kd Kh'), 1: c('Ac Ad Qs Qd Jc Th 4s') };
+    expect(awardPortion(VARIANTS.stud8, 60, [0, 1], hole, [])).toMatchObject([{ seat: 1, amount: 60, half: 'scoop' }]);
+  });
+
   it('stud hi-lo uses any five of seven for each half', () => {
     const hole = {
       3: c('As 2d 3c 4h 9s 9d 9c'), // trip nines high, 9-4-3-2-A is no low -> 4-3-2-A needs a fifth: none
@@ -165,5 +183,26 @@ describe('drawReplacements', () => {
   it('validates the draw', () => {
     expect(() => drawReplacements({ discards: c('Kc Qd Jh Ts 9s'), stub: c('2c'), muck: [], rng, maxDiscard: 4 })).toThrow();
     expect(() => drawReplacements({ discards: c('Kc Qd'), stub: c('2c'), muck: [], rng })).toThrow();
+  });
+});
+
+describe('game names', () => {
+  it('names the game and its betting separately, and every combination', () => {
+    expect(gameTitle('nlhe', 'no-limit')).toBe("No-Limit Hold'em");
+    expect(gameTitle('nlhe', 'fixed-limit')).toBe("Limit Hold'em");
+    expect(gameTitle('plo4', 'pot-limit')).toBe('Pot-Limit Omaha');
+    expect(gameTitle('plo4', 'fixed-limit')).toBe('Limit Omaha');
+    expect(gameTitle('plo8')).toBe('Pot-Limit Omaha Hi-Lo (8 or better)');
+    expect(gameTitle('plo5')).toBe('Pot-Limit 5-Card Omaha');
+    expect(gameTitle('stud8')).toBe('Stud Hi-Lo (8 or better)');
+    expect(gameTitle('badugi', 'no-limit')).toBe('No-Limit Badugi');
+    expect(gameCode('nlhe', 'no-limit')).toBe('NLH');
+    expect(gameCode('nlhe', 'pot-limit')).toBe('PLH');
+    expect(gameCode('nlhe', 'fixed-limit')).toBe('LHE');
+    expect(gameCode('plo4', 'pot-limit')).toBe('PLO');
+    expect(gameCode('plo8', 'fixed-limit')).toBe('LO8');
+    expect(gameCode('stud', 'fixed-limit')).toBe('Stud');
+    expect(gameCode('td27', 'no-limit')).toBe('NL 2-7 TD');
+    for (const v of VARIANT_LIST) expect(v.name).not.toMatch(/limit/i);
   });
 });

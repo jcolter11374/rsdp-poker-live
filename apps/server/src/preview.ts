@@ -2,7 +2,8 @@
 // the app reads these meta tags from the page. Crawlers don't run the web app,
 // so the server writes them into index.html for each link.
 
-import { variants } from '@rsdp/engine/core';
+import type { BettingKind } from '@rsdp/engine/core';
+import { gameTitle } from '@rsdp/engine/variants';
 import { tournamentListing, type TournamentState } from '@rsdp/tournament';
 
 export interface Preview {
@@ -12,14 +13,8 @@ export interface Preview {
 
 const SITE = 'RSDP Poker Live!';
 
-function gameNames(ids: string[]): string {
-  const names = ids.map((id) => {
-    try {
-      return variants.get(id).spec.name;
-    } catch {
-      return id;
-    }
-  });
+function gameNames(ids: string[], betting?: BettingKind): string {
+  const names = ids.map((id) => gameTitle(id, betting));
   return names.length > 2 ? `${names.length}-game mix` : names.join(' / ');
 }
 
@@ -62,8 +57,8 @@ export function tournamentPreview(s: TournamentState, now: number): Preview {
   return { title: `${s.settings.name} · ${SITE}`, description: `${games} tournament · ${status}.${invite}` };
 }
 
-export function tablePreview(name: string, gameIds: string[], stakes: string): Preview {
-  return { title: `${name} · ${SITE}`, description: `${gameNames(gameIds)} · ${stakes}. Tap to take a seat. No sign-up.` };
+export function tablePreview(name: string, gameIds: string[], stakes: string, betting?: BettingKind): Preview {
+  return { title: `${name} · ${SITE}`, description: `${gameNames(gameIds, betting)} · ${stakes}. Tap to take a seat. No sign-up.` };
 }
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

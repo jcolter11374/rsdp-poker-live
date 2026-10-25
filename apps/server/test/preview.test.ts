@@ -25,7 +25,7 @@ describe('link previews', () => {
     });
     const p = tournamentPreview(s, T0 - 86_400_000);
     expect(p.title).toBe('Thursday <Deep> · RSDP Poker Live!');
-    expect(p.description).toBe("No-Limit Texas Hold'em tournament · Thu, Oct 29, 7:30 PM PDT · 0 players registered · starts automatically. Tap to open the lobby and register.");
+    expect(p.description).toBe("No-Limit Hold'em tournament · Thu, Oct 29, 7:30 PM PDT · 0 players registered · starts automatically. Tap to open the lobby and register.");
     const html = withPreview(INDEX, p, 'https://x.test/tn/abc', 'https://x.test');
     expect(html).toContain('<title>Thursday &lt;Deep&gt; · RSDP Poker Live!</title>');
     expect(html).toContain('<meta property="og:image" content="https://x.test/og.jpg" />');
