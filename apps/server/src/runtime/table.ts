@@ -1181,7 +1181,7 @@ export class TableRuntime {
     const bot = this.botInfo(botId);
     if (!bot) throw new ActionError('no such bot');
     if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
-    if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError('only the host can remove a co-host\'s bot');
+    if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can remove a bot the host or a co-host added");
     if (this.state.requests.some((r) => r.playerId === botId)) {
       this.state.requests = this.state.requests.filter((r) => r.playerId !== botId);
       this.forgetBot(botId);

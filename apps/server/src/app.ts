@@ -346,8 +346,10 @@ export function createApp(deps: AppDeps = {}) {
       broadcast(rt);
       scheduleSave(rt);
     };
+    // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
+    let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      (created.get(id) ?? Promise.resolve()).then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
     };
     return rt;
   }
