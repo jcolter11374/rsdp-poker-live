@@ -388,6 +388,8 @@ export function createApp(deps: AppDeps = {}) {
     async close() {
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
+      // The server going down is not players leaving, so their tables never see them drop (and time them out).
+      for (const s of io.of('/').sockets.values()) s.removeAllListeners('disconnect');
       io.close();
       tournaments.dispose();
       const open = [...tables.values()];

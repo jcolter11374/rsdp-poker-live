@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { engine, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
@@ -6,6 +7,7 @@ import { createApp, memoryStore } from '../src/app';
 import type { TableRuntime } from '../src/runtime/table';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock, seeded } from './fake-clock';
+import { socketClient, type Client } from './socket-client';
 import { chipsInPlay, players, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
@@ -95,6 +97,33 @@ describe('shutting down', () => {
     clock.advance(10 * MIN);
     expect(rt.state).toEqual(table);
     expect(errors).toEqual([]);
+  });
+
+  it('players still connected as the server stops are not timed out at their tables', async () => {
+    const tables = memoryStore();
+    const server = createApp({ clock: new FakeClock(), rng: seeded(3), store: tables, log: () => {} });
+    await new Promise<void>((resolve) => server.http.listen(0, resolve));
+    const url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+    const clients: Client[] = [];
+    const host = socketClient(url, 'host-secret-shutdown-0123', clients);
+    const guest = socketClient(url, 'guest-secret-shutdown-0123', clients);
+    try {
+      // No grace: a player who drops is out of time at once.
+      const settings = { seating: { offlineGraceSeconds: 0, requireApproval: false } };
+      const { tableId } = await host.call<{ tableId: string }>('table:create', { settings });
+      await host.call('table:join', { tableId });
+      await guest.call('table:join', { tableId });
+      await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
+      await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100 });
+      await host.call('host:start');
+      const rt = server.tables.get(tableId)!;
+      expect(rt.state.hand).toMatchObject({ phase: 'betting', toAct: expect.any(Number) });
+      const before = JSON.parse(JSON.stringify(rt.state));
+      await server.close();
+      expect(await tables.loadTable(tableId)).toEqual(before);
+    } finally {
+      for (const c of clients) c.close();
+    }
   });
 });
 
