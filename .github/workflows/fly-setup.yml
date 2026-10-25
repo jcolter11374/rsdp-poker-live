@@ -1,0 +1,43 @@
+name: Fly setup
+
+# Checks the FLY_API_TOKEN secret and creates the Fly app and volume ahead of
+# the first deploy. Skips quietly until the secret exists.
+on:
+  pull_request:
+    paths: [fly.toml, scripts/fly-provision.sh, .github/workflows/deploy.yml, .github/workflows/fly-setup.yml]
+  push:
+    branches: [develop]
+    paths: [fly.toml, scripts/fly-provision.sh, .github/workflows/deploy.yml, .github/workflows/fly-setup.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Create Fly app and volume
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check for the token
+        id: token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::notice::FLY_API_TOKEN is not set yet, skipping."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: steps.token.outputs.present == 'true'
+      - run: scripts/fly-provision.sh
+        if: steps.token.outputs.present == 'true'
+      - run: flyctl config validate
+        if: steps.token.outputs.present == 'true'
