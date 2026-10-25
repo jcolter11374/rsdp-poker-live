@@ -10,15 +10,15 @@ beforeAll(() => registerAllVariants(variants));
 
 const IDS = ['host', 'a', 'b'];
 
-function table(patch: (s: TableSettings) => void) {
+function table(patch: (s: TableSettings) => void, ids = IDS) {
   const clock = new FakeClock();
   const settings = defaultSettings('cash');
   settings.seating.requireApproval = false;
   settings.timing.autoStartNextHand = false;
   patch(settings);
   const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded() });
-  for (const p of IDS) rt.connect(p);
-  IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+  for (const p of ids) rt.connect(p);
+  ids.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
   return { rt, clock };
 }
 
@@ -71,6 +71,38 @@ describe('Nit game', () => {
     rt.stand(holder);
     expect(rt.state.ledger[holder].cashOut).toBe(before - 40);
     expect(rt.state.sideGames?.nit).toBeNull();
+  });
+});
+
+describe('Nit game edge cases', () => {
+  const FOUR = ['host', 'a', 'b', 'c'];
+  const chips = (rt: TableRuntime) => total(rt) + FOUR.reduce((n, id) => n + (rt.state.ledger[id]?.cashOut ?? 0), 0);
+
+  it('pays players in a live hand when that hand ends, so no chips are lost', () => {
+    const { rt } = table(nitOn, FOUR);
+    for (const id of FOUR) rt.setPreferences(id, { nitGame: true });
+    rt.start('host');
+    const winner = winOutright(rt);
+    const holder = rt.state.sideGames!.nit!.holders.find((id) => id !== winner)!;
+    rt.sitOut(holder, true);
+    rt.dealNext('host');
+    expect(hand(rt).seats.some((s) => s.playerId === holder)).toBe(false);
+    rt.stand(holder);
+    expect(rt.state.sideGames?.nit).toBeNull();
+    for (let i = 0; i < 20 && hand(rt).phase === 'betting'; i++) rt.act(toActId(rt), { type: 'fold' });
+    expect(hand(rt).phase).toBe('complete');
+    expect(chips(rt)).toBe(800);
+    expect(rt.state.ledger[holder].cashOut).toBe(200 - 60);
+  });
+
+  it('cancels the round as soon as the host turns the game off', () => {
+    const { rt } = table(nitOn);
+    for (const id of IDS) rt.setPreferences(id, { nitGame: true });
+    rt.start('host');
+    rt.updateSettings('host', { modifiers: { nit: { enabled: false } } } as never);
+    winOutright(rt);
+    expect(rt.state.sideGames?.nit ?? null).toBeNull();
+    expect(rt.state.log.some((l) => /pays .* \(Nit game\)/.test(l.text))).toBe(false);
   });
 });
 

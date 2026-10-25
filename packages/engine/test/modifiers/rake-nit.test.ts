@@ -44,6 +44,9 @@ describe('simulated rake', () => {
     expect(rakeFor(pot, flopped, { ...cfg, minPot: 1000 })).toBe(0);
     expect(rakeFor(pot, flopped, { ...cfg, shortHanded: { players: 3, percent: 2.5, cap: 0 } })).toBe(5);
     expect(rakeFor(pot, flopped, { ...cfg, shortHanded: { players: 2, percent: 2.5, cap: 0 } })).toBe(10);
+    // A short-handed cap of 0 keeps the normal cap rather than removing it.
+    expect(rakeFor(pot, flopped, { ...cfg, cap: 3, shortHanded: { players: 3, percent: 2.5, cap: 0 } })).toBe(3);
+    expect(rakeFor(pot, flopped, { ...cfg, cap: 3, shortHanded: { players: 3, percent: 2.5, cap: 4 } })).toBe(4);
   });
 
   it('keeps chips balanced: stacks plus rake equal what came in', () => {

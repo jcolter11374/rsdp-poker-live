@@ -63,7 +63,8 @@ export function rakeFor(pot: Pot, state: HandState, cfg: RakeSettings): number {
   if (total < cfg.minPot) return 0;
   const short = cfg.shortHanded.players > 0 && state.seats.length <= cfg.shortHanded.players;
   const rate = short ? cfg.shortHanded.percent : cfg.percent;
-  const cap = short ? cfg.shortHanded.cap : cfg.cap;
+  // A short-handed cap of 0 keeps the normal cap.
+  const cap = short && cfg.shortHanded.cap > 0 ? cfg.shortHanded.cap : cfg.cap;
   // Integer maths in hundredths of a percent, so 2.5% of 200 is exactly 5.
   const fee = Math.floor((pot.amount * Math.round(rate * 100)) / 10_000);
   return Math.min(pot.amount, cap > 0 ? Math.min(fee, cap) : fee);

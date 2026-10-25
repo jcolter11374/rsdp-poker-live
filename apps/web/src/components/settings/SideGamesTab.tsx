@@ -144,12 +144,12 @@ export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
           label="Short-handed cap"
           value={rake.shortHanded.cap}
           cents={cents}
-          hint="0 = no cap"
+          hint="0 = same as the normal cap"
           disabled={!rake.enabled || !rake.shortHanded.players}
           onChange={(cap) => setRake({ shortHanded: { ...rake.shortHanded, cap } })}
         />
       </div>
-      <Field label="Who sees the total">
+      <Field label="Who sees the total" hint="Each hand's log still shows the rake taken from it.">
         <select value={rake.visibleTo} disabled={!rake.enabled} onChange={(e) => setRake({ visibleTo: e.target.value as RakeSettings['visibleTo'] })}>
           <option value="host">Only the host</option>
           <option value="everyone">Everyone</option>
