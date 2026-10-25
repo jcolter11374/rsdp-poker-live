@@ -1,5 +1,5 @@
 import { STATE_VERSION, type TournamentState } from '@rsdp/tournament';
-import { listLiveTournaments, loadTournament, saveTournament, type Db } from '../db';
+import { insertTournament, listLiveTournaments, loadTournament, saveTournament, type Db } from '../db';
 import type { TournamentStore } from './manager';
 
 const LIVE = new Set(['registering', 'seating', 'running', 'paused']);
@@ -8,6 +8,11 @@ export function memoryTournamentStore(): TournamentStore {
   const rows = new Map<string, string>();
   const read = (json: string) => JSON.parse(json) as { state: TournamentState; nextId: string | null };
   return {
+    async create(state) {
+      if (rows.has(state.id)) return false;
+      rows.set(state.id, JSON.stringify({ state, nextId: null }));
+      return true;
+    },
     async save(state, nextId) {
       const prev = rows.get(state.id);
       rows.set(state.id, JSON.stringify({ state, nextId: nextId ?? (prev ? read(prev).nextId : null) }));
@@ -26,6 +31,9 @@ export function dbTournamentStore(db: Db): TournamentStore {
   // A state saved by an older or newer director is left alone rather than misread.
   const usable = (r: { state: TournamentState; nextId: string | null }) => r.state.version === STATE_VERSION;
   return {
+    async create(state) {
+      return insertTournament(db, { id: state.id, hostPlayerId: state.hostId, status: state.status, state });
+    },
     async save(state, nextId) {
       await saveTournament(db, { id: state.id, hostPlayerId: state.hostId, status: state.status, state, nextId });
     },

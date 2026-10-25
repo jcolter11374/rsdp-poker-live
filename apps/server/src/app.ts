@@ -386,12 +386,18 @@ export function createApp(deps: AppDeps = {}) {
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: () => tournaments.resumeAll(),
     async close() {
-      for (const t of saveTimers.values()) clearTimeout(t);
-      tournaments.dispose();
-      await tournaments.flush();
-      await Promise.all([...tables.values()].map((rt) => store.saveTable(rt.state).catch(() => {})));
-      for (const rt of tables.values()) rt.dispose();
+      // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
+      // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
+      // The server going down is not players leaving, so their tables never see them drop (and time them out).
+      for (const s of io.of('/').sockets.values()) s.removeAllListeners('disconnect');
       io.close();
+      tournaments.dispose();
+      const open = [...tables.values()];
+      for (const rt of open) rt.dispose();
+      for (const t of saveTimers.values()) clearTimeout(t);
+      saveTimers.clear();
+      await tournaments.flush();
+      await Promise.all(open.map((rt) => (created.get(rt.state.id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch(() => {})));
       await new Promise<void>((resolve) => http.close(() => resolve()));
     },
   };
