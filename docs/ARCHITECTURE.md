@@ -44,7 +44,12 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Between hands, in this order: apply queued changes (settings, stack edits, rebuys, removals, approvals, moves), handle busts, check stop or pause, check the gate (`tableGate` for tournament tables), plan forced bets, shuffle, start the hand.
 - Settings are one typed, versioned schema (zod) shared with the web. Edits queue and apply at the next hand. Every change is logged as a diff with who made it.
 - Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
-- Identity: a persistent guest id per browser; optional username and password accounts link guest ids. Tournament registration needs an account.
+- Identity: a persistent guest id per browser (localStorage `rsdp.guestId`); guests need no account for anything, tournaments included. Optional username and password accounts (`apps/server/src/accounts.ts`, `/api/account/*`, pages `/signin` `/signup` `/reset` `/profile`):
+  - Signing up turns the browser's guest player into the account's primary player, so nothing moves.
+  - Signing in elsewhere sends a session token (localStorage `rsdp.session`, socket auth `session`, header `X-Session-Token`); that browser plays as the primary player. Its guest id is linked to the account (its tables and tournaments show in the profile history) and its notes and picture are copied over (`adoptGuest`).
+  - Signing out deletes the session and the browser's guest secret, so the browser starts over as a new guest.
+  - Passwords are scrypt hashes; sign-in pauses after 10 wrong passwords per address or username in 15 minutes. No email: the ADMIN_KEY holder makes a one-time reset code on /roadmap/admin (24 hours, stored hashed), which ends every session when used.
+  - Deleting an account wipes the name, picture, notes, secrets and sessions of every player it owned; hands stay in history under the names used then.
 
 ## Players at the table (pictures, moods, gestures)
 
