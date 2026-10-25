@@ -34,6 +34,7 @@ describe('cash table edge cases', () => {
     rt.updateSettings('host', { table: { maxSeats: 6 } });
     expect(() => rt.requestSeat('c', { seat: 8, name: 'C', stack: 300 })).toThrow(/going down to 6 seats/);
     expect(() => rt.moveSeat('host', 'a', 7)).toThrow(/going down to 6 seats/);
+    expect(() => rt.addBot('host', { seat: 9 })).toThrow(/going down to 6 seats/);
     rt.requestSeat('c', { seat: 5, name: 'C', stack: 300 });
     while (rt.state.hand?.phase !== 'complete') rt.act(toAct(rt), { type: 'fold' });
     clock.advance(10_000);

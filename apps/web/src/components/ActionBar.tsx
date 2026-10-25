@@ -12,6 +12,9 @@ const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}$
 
 type PreAction = { kind: 'checkFold' } | { kind: 'check' } | { kind: 'fold' } | { kind: 'call'; amount: number } | { kind: 'callAny' };
 
+/** How long a move waits for the server before the buttons come back. */
+const SEND_TIMEOUT_MS = 8_000;
+
 export function ActionBar({
   view,
   fmt,
@@ -57,22 +60,32 @@ export function ActionBar({
     const t = setTimeout(() => setSlow(true), 2500);
     return () => clearTimeout(t);
   }, [sending]);
+  const release = () => {
+    inFlight.current = false;
+    setSending(false);
+  };
   const run = (p: () => Promise<unknown>) => {
     if (inFlight.current) return;
     inFlight.current = true;
     lastSent.current = Date.now();
     setSending(true);
-    p()
+    // An answer lost to a dropped connection never comes: give the buttons back rather than lock them for good.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const noAnswer = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('No answer from the table. Check your connection and try again.')), SEND_TIMEOUT_MS);
+    });
+    Promise.race([p(), noAnswer])
       .then(() => setError(''))
       .catch((e: Error) => setError(e.message))
       .finally(() => {
-        inFlight.current = false;
-        lastSent.current = Date.now();
-        setSending(false);
+        clearTimeout(timer);
+        release();
       });
   };
+  // A new turn (or hand) means the last move was dealt with, answered or not.
+  useEffect(release, [legal, hand?.handNumber]);
   const send = (action: Action) => run(() => call('hand:act', action));
-  /** Taps on pre-moves right after a move are the second half of a double tap. */
+  /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
   const settled = () => !inFlight.current && Date.now() - lastSent.current > 500;
 
   useEffect(() => {

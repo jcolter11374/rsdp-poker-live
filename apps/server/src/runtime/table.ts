@@ -226,7 +226,6 @@ export class TableRuntime {
     const { stack } = input;
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
-    this.checkSeatKept(seat);
     const offered = this.offers().find((o) => o.playerId === playerId);
     if (offered) seat = offered.seat;
     else if (this.settings.seating.randomSeats && !this.isHost(playerId)) {
@@ -234,6 +233,7 @@ export class TableRuntime {
       if (!open.length) throw new ActionError('every seat is taken');
       seat = open[this.rng(open.length)];
     }
+    this.checkSeatKept(seat);
     if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, seat);
     this.checkBuyIn(playerId, stack);
@@ -1014,6 +1014,7 @@ export class TableRuntime {
       seat = open[0];
     } else {
       if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+      this.checkSeatKept(seat);
       if (this.state.seats[seat]) throw new ActionError('that seat is taken');
       this.checkSeatFree(by, seat);
     }
@@ -1903,7 +1904,9 @@ export class TableRuntime {
       this.leaveQueue(o.playerId);
     }
     // Seats taken some other way (the host moved someone in) are no longer on offer.
-    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < s.seats.length);
+    // Nor are seats a smaller table is about to drop.
+    const limit = this.seatLimit();
+    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit);
     const open = this.openSeats();
     for (const entry of this.queue()) {
       if (!open.length) break;
