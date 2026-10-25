@@ -297,9 +297,10 @@ export function pastHand(record: HandRecord): PastHand {
 }
 
 /** A finished hand as one person may see it (their own cards, and whatever was shown). */
-export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId): HandRecordView {
+export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId, opts: { hideMine?: boolean } = {}): HandRecordView {
   const past = 'hand' in record ? pastHand(record) : record;
-  const seat = past.seats.find((x) => x.playerId === playerId)?.seat ?? null;
+  // hideMine: as someone who wasn't in the hand sees it, so only shown cards are face up.
+  const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
   return {
     handNumber: past.handNumber,
     startedAt: past.startedAt,

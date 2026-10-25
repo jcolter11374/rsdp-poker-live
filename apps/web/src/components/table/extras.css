@@ -28,3 +28,10 @@
 @media (prefers-reduced-motion: reduce) {
   .gesture-flight { animation: gesture-land 1.5s ease-out both; }
 }
+.nameplate .equity-tag { position: absolute; left: 50%; bottom: -15px; translate: -50% 0; font-size: 0.72rem; font-weight: 700; padding: 0 7px; border-radius: 999px; background: #22303d; border: 1px solid rgba(255, 255, 255, 0.25); color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; z-index: 3; }
+.nameplate .equity-tag.ahead { background: var(--good); color: #0b1a10; border-color: transparent; }
+.highlights { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.highlights h4 { margin: 4px 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-2); }
+.hand-row.highlight .hand-name { white-space: normal; }
+.share-hand .row input { flex: 1; min-width: 0; }
+.shared-hand { max-width: none; }

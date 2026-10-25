@@ -207,6 +207,18 @@ export interface HandRecordView {
   events: HandEvent[];
 }
 
+/** A hand shared as a link: frozen as the sharer saw it (or with their own cards hidden). */
+export interface SharedHandView {
+  id: string;
+  tableName: string;
+  centsMode: boolean;
+  seatCount: number;
+  felt: string | null;
+  sharedBy: string;
+  createdAt: number;
+  hand: HandRecordView;
+}
+
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
 
 export interface CreateTableInput {
@@ -223,6 +235,12 @@ export interface ClientToServer {
   'table:history': (input: { handNumber: number }, ack: Ack<{ hand: HandRecordView }>) => void;
   /** Every finished hand at the table as you may see it, oldest first, for downloads and the replayer. */
   'table:export': (ack: Ack<{ hands: HandRecordView[] }>) => void;
+  /** The whole table log and chat (the view carries only the latest lines) and every finished hand, for the full log download. */
+  'table:fullLog': (ack: Ack<{ log: { at: number; text: string }[]; chat: ChatView[]; hands: HandRecordView[] }>) => void;
+  /** Freeze a finished hand as I saw it behind a link anyone can open; hideMine leaves out my cards unless I showed them. */
+  'hand:share': (input: { handNumber: number; hideMine?: boolean }, ack: Ack<{ id: string }>) => void;
+  /** Stop a link I made from working. */
+  'hand:unshare': (input: { id: string }, ack: Ack) => void;
   'seat:request': (input: { seat: number; name: string; stack: number }, ack: Ack) => void;
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;

@@ -21,6 +21,8 @@ import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
 import { tablePreview, tournamentPreview, withPreview } from './preview';
 import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby';
+import { memorySharedHands, type SharedHandStore } from './shared';
+import { newId } from './db/ids';
 
 export interface Session {
   playerId: PlayerId;
@@ -91,6 +93,7 @@ export interface AppDeps {
   notes?: NotesStore;
   avatars?: AvatarStore;
   lobby?: LobbyStore;
+  shared?: SharedHandStore;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
   /** Built web client to serve (production). */
@@ -100,7 +103,7 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number; lastFullLog?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -112,6 +115,9 @@ const SAVE_DEBOUNCE_MS = 500;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
+/** Share links one player may make per window. */
+const SHARE_BURST = 20;
+const SHARE_WINDOW_MS = 60_000;
 /** Picture changes one player may make per window. */
 const AVATAR_BURST = 4;
 const AVATAR_WINDOW_MS = 30_000;
@@ -135,6 +141,7 @@ export function createApp(deps: AppDeps = {}) {
   const store = deps.store ?? memoryStore();
   const notes = deps.notes ?? memoryNotes();
   const avatarStore = deps.avatars ?? memoryAvatars();
+  const sharedStore = deps.shared ?? memorySharedHands();
   const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
 
   const app = express();
@@ -157,6 +164,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
+  const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
@@ -164,13 +172,32 @@ export function createApp(deps: AppDeps = {}) {
     if (!missing.length) return;
     for (const id of missing) avatars.set(id, null);
     // A failed lookup is forgotten, so the next view tries again.
-    Promise.all(missing.map((id) => avatarStore.get(id).then((a) => avatars.set(id, avatarToken(a)), (e) => (avatars.delete(id), Promise.reject(e)))))
+    Promise.all(
+      missing.map((id) =>
+        avatarStore.get(id).then(
+          (a) => avatars.set(id, avatarToken(a)),
+          (e) => (avatars.delete(id), Promise.reject(e)),
+        ),
+      ),
+    )
       .then(() => broadcast(rt))
       .catch((e) => log('loading avatars failed', e));
   }
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
+  });
+  // Shared hand links: anyone with the id may read the frozen hand.
+  app.get('/api/shared/:id', (req, res) => {
+    const id = String(req.params.id);
+    if (!/^[\w-]{10,40}$/.test(id)) return void res.status(404).json({ error: 'not found' });
+    sharedStore
+      .get(id)
+      .then((hand) => (hand ? res.set('Cache-Control', 'no-store').json(hand) : res.status(404).json({ error: 'not found' })))
+      .catch((e) => {
+        log('loading a shared hand failed', e);
+        res.status(500).json({ error: 'something went wrong' });
+      });
   });
   // Uploaded pictures. Tables name them with a version, so a new upload is a new URL and old ones can be cached for good.
   app.get('/api/avatars/:playerId', (req, res) => {
@@ -280,9 +307,7 @@ export function createApp(deps: AppDeps = {}) {
       id,
       setTimeout(() => {
         saveTimers.delete(id);
-        (created.get(id) ?? Promise.resolve())
-          .then(() => store.saveTable(rt.state))
-          .catch((e) => log(`saving table ${id} failed`, e));
+        (created.get(id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch((e) => log(`saving table ${id} failed`, e));
       }, SAVE_DEBOUNCE_MS),
     );
   }
@@ -296,9 +321,7 @@ export function createApp(deps: AppDeps = {}) {
       scheduleSave(rt);
     };
     rt.onHandFinished = (record) => {
-      (created.get(id) ?? Promise.resolve())
-        .then(() => store.saveHand(id, record))
-        .catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      (created.get(id) ?? Promise.resolve()).then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
     };
     return rt;
   }
@@ -354,6 +377,17 @@ export function createApp(deps: AppDeps = {}) {
     },
     log,
   });
+
+  /** Every finished hand of a table as one player may see it (spectators only those past the delay): saved hands, with the copies still in memory winning (they include cards shown after the hand). */
+  async function allHandViews(rt: TableRuntime, playerId: PlayerId, cutoff = Infinity) {
+    const saved = await store.loadHands(rt.state.id);
+    const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
+    for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
+    return [...byNumber.values()]
+      .sort((a, b) => a.handNumber - b.handNumber)
+      .filter((h) => h.endedAt <= cutoff)
+      .map((h) => handRecordView(rt, h, playerId));
+  }
 
   async function getTable(id: string): Promise<TableRuntime | null> {
     const live = tables.get(id);
@@ -511,12 +545,71 @@ export function createApp(deps: AppDeps = {}) {
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           socket.data.lastExport = now;
-          // Saved hands, with the copies still in memory winning: they include cards shown after the hand.
-          const saved = await store.loadHands(rt.state.id);
-          const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
-          for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
-          const all = [...byNumber.values()].sort((a, b) => a.handNumber - b.handNumber);
-          return { hands: all.filter((h) => h.endedAt <= cutoff).map((h) => handRecordView(rt, h, me)) };
+          return { hands: await allHandViews(rt, me, cutoff) };
+        },
+        log,
+      ),
+    );
+
+    on('table:fullLog', (ack) =>
+      guarded(
+        ack,
+        async () => {
+          const rt = current();
+          const now = clock.now();
+          if (now - (socket.data.lastFullLog ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
+          const cutoff = spectatorCutoff(rt, socket);
+          socket.data.lastFullLog = now;
+          return {
+            log: rt.state.log.filter((l) => l.at <= cutoff).map((l) => ({ ...l })),
+            chat: rt.state.chat.filter((c) => c.at <= cutoff).map((c) => ({ ...c })),
+            hands: await allHandViews(rt, me, cutoff),
+          };
+        },
+        log,
+      ),
+    );
+    on('hand:share', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const rt = current();
+          const handNumber = Number(input?.handNumber);
+          const now = clock.now();
+          const recent = (shareTimes.get(me) ?? []).filter((t) => now - t < SHARE_WINDOW_MS);
+          if (recent.length >= SHARE_BURST) throw new ActionError('that is a lot of links; try again in a minute');
+          const record = rt.state.history.find((h) => h.handNumber === handNumber) ?? (await store.loadHands(rt.state.id)).find((h) => h.handNumber === handNumber);
+          if (!record) throw new ActionError('that hand is no longer available');
+          if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
+          shareTimes.set(me, [...recent, now]);
+          const id = newId();
+          const hand = handRecordView(rt, record, me, { hideMine: !!input?.hideMine });
+          await sharedStore.create({
+            id,
+            tableId: rt.state.id,
+            handNumber,
+            createdBy: me,
+            snapshot: {
+              id,
+              tableName: rt.state.settings.table.name,
+              centsMode: rt.state.settings.stakes.centsMode,
+              seatCount: rt.state.seats.length,
+              felt: rt.state.settings.table.felt ?? null,
+              sharedBy: socket.data.session.displayName || rt.nameOf(me),
+              createdAt: now,
+              hand,
+            },
+          });
+          return { id };
+        },
+        log,
+      ),
+    );
+    on('hand:unshare', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          if (!(await sharedStore.remove(String(input?.id ?? ''), me))) throw new ActionError('that link is not one of yours');
         },
         log,
       ),
@@ -619,9 +712,7 @@ export function createApp(deps: AppDeps = {}) {
       ),
     );
 
-    on('host:approve', ({ requestId, seat }, ack) =>
-      guarded(ack, () => current().approve(me, String(requestId), seat === undefined || seat === null ? undefined : Number(seat)), log),
-    );
+    on('host:approve', ({ requestId, seat }, ack) => guarded(ack, () => current().approve(me, String(requestId), seat === undefined || seat === null ? undefined : Number(seat)), log));
     on('host:reject', ({ requestId }) => guarded(undefined, () => current().reject(me, String(requestId)), log));
     on('host:start', (ack) => guarded(ack, () => current().start(me), log));
     on('host:stop', (ack) => guarded(ack, () => current().stop(me), log));
@@ -667,7 +758,14 @@ export function createApp(deps: AppDeps = {}) {
           const id = String(input?.id ?? '');
           const name = socket.data.session.displayName;
           if (!name) throw new ActionError('pick a name first');
-          const text = Array.from(String(input?.text ?? '').replace(/\p{Cs}/gu, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').replace(/(\p{M}{3})\p{M}+/gu, '$1').trim())
+          const text = Array.from(
+            String(input?.text ?? '')
+              .replace(/\p{Cs}/gu, '')
+              .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+              .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '')
+              .replace(/(\p{M}{3})\p{M}+/gu, '$1')
+              .trim(),
+          )
             .slice(0, LOBBY_CHAT_MAX)
             .join('')
             .trim();
@@ -696,9 +794,7 @@ export function createApp(deps: AppDeps = {}) {
       ),
     );
     on('season:mine', (_input, ack) => guarded(ack, async () => ({ seasons: await tournaments.hostSeasons(me) }), log));
-    on('tournament:command', (input, ack) =>
-      guarded(ack, () => tournaments.command(String(input?.id ?? ''), me, socket.data.session.displayName, input?.command), log),
-    );
+    on('tournament:command', (input, ack) => guarded(ack, () => tournaments.command(String(input?.id ?? ''), me, socket.data.session.displayName, input?.command), log));
 
     socket.on('disconnect', () => {
       leave();
@@ -707,6 +803,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
+        shareTimes.delete(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
       }

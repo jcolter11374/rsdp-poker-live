@@ -32,6 +32,7 @@ describe('createDb', () => {
       'seat_sessions',
       'sessions',
       'settings_changes',
+      'shared_hands',
       'table_snapshots',
       'tables',
       'tournament_log',
