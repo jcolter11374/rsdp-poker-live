@@ -287,11 +287,6 @@ export class TableRuntime {
       this.state.requests.push(request);
       this.log(`${name} asked for seat ${seat + 1} with ${stack}`);
     }
-    // A person keeps their name; a bot that had it takes another, so nobody gets mixed up.
-    for (const botId of Object.keys(this.state.bots ?? {})) {
-      const botName = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name;
-      if (botName?.toLowerCase() === name.toLowerCase()) this.relookBot(botId);
-    }
     this.sync();
   }
 
@@ -464,6 +459,20 @@ export class TableRuntime {
     delete this.state.departures[r.playerId];
     const bot = this.botInfo(r.playerId);
     this.log(`${bot ? `${bot.ownerName}'s practice bot ` : ''}${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
+    if (!bot) this.giveWayTo(r.name);
+  }
+
+  /**
+   * A person who sits down keeps their name; a bot that has it (here, waiting, or gone
+   * but still in the ledger) takes another, so nobody gets mixed up. Only on sitting
+   * down, so asking for a seat never renames anyone's bot.
+   */
+  private giveWayTo(name: string) {
+    const bots = new Set([...Object.keys(this.state.bots ?? {}), ...Object.values(this.state.ledger).flatMap((row) => (row.bot ? [row.playerId] : []))]);
+    for (const id of bots) {
+      const botName = this.seatOf(id)?.name ?? this.state.requests.find((r) => r.playerId === id)?.name ?? this.state.ledger[id]?.name;
+      if (botName?.toLowerCase() === name.toLowerCase()) this.relookBot(id);
+    }
   }
 
   /** Leave the table: folds a live hand now, or with `afterHand` plays it out first. */
@@ -1229,8 +1238,10 @@ export class TableRuntime {
     ];
     const taken = new Set(names.map((n) => n.toLowerCase()));
     const used = new Set(Object.values(this.state.bots ?? {}).map((b) => b.look));
+    // Looks no bot here has come first, even once names need numbers, so two robots never match while there's a choice.
+    const order = BOT_LOOKS.map((_, look) => look).sort((a, b) => Number(used.has(a)) - Number(used.has(b)));
     for (let n = 1; ; n++) {
-      for (let look = 0; look < BOT_LOOKS.length; look++) {
+      for (const look of order) {
         if (n === 1 && used.has(look)) continue;
         const name = n === 1 ? BOT_LOOKS[look].name : `${BOT_LOOKS[look].name} ${n}`;
         if (!taken.has(name.toLowerCase())) return { look, name };
@@ -1245,19 +1256,19 @@ export class TableRuntime {
     }
   }
 
-  /** Gives a bot a fresh name and picture, everywhere its name shows. */
+  /** Gives a bot (here, or gone but still in the ledger) a fresh name and picture, everywhere its name shows. */
   private relookBot(playerId: PlayerId) {
-    const bot = this.botInfo(playerId)!;
-    delete bot.look;
+    const bot = this.botInfo(playerId);
+    if (bot) delete bot.look;
     const { look, name } = this.botLook();
-    bot.look = look;
+    if (bot) bot.look = look;
     const seat = this.seatOf(playerId);
     const request = this.state.requests.find((r) => r.playerId === playerId);
     const row = this.state.ledger[playerId];
-    const old = seat?.name ?? request?.name;
+    const old = seat?.name ?? request?.name ?? row?.name;
     if (seat) seat.name = name;
     if (request) request.name = name;
-    if (row) Object.assign(row, { name, owner: bot.ownerName, look });
+    if (row) Object.assign(row, { name, look, ...(bot ? { owner: bot.ownerName } : {}) });
     if (old) this.log(`${old} is now ${name}`);
   }
 
