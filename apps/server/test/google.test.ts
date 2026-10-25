@@ -36,13 +36,14 @@ beforeEach(async () => {
     clock,
     identity: dbIdentity(db),
     accounts: db,
+    adminKey: 'test-admin-key-0123456789',
     google: {
       clientId: CLIENT_ID,
       clientSecret: 'shh',
       publicUrl: 'https://poker.example',
       exchange: async (form) => {
         seen.push(form);
-        return { id_token: jwt({ iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(clock.t / 1000) + 3600, ...nextClaims }) };
+        return { id_token: jwt({ iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(clock.t / 1000) + 3600, auth_time: Math.floor(clock.t / 1000), ...nextClaims }) };
       },
     },
     log: () => {},
@@ -77,8 +78,8 @@ interface Flow {
 }
 
 /** Begins at our server as `guest` and returns Google's address and this browser's cookie. */
-async function begin(guest: string, opts: { mode?: 'signin' | 'link' | 'confirm'; session?: string; bringOver?: boolean } = {}) {
-  const res = await fetch(`${url}/api/auth/google/begin`, { method: 'POST', headers: headers(guest, opts.session), body: JSON.stringify({ mode: opts.mode ?? 'signin', bringOver: opts.bringOver ?? true }) });
+async function begin(guest: string, opts: { mode?: 'signin' | 'link' | 'confirm'; session?: string; bringOver?: boolean; password?: string } = {}) {
+  const res = await fetch(`${url}/api/auth/google/begin`, { method: 'POST', headers: headers(guest, opts.session), body: JSON.stringify({ mode: opts.mode ?? 'signin', bringOver: opts.bringOver ?? true, password: opts.password }) });
   const body = (await res.json()) as { url?: string; error?: string };
   const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0];
   return { res, body, cookie };
@@ -100,7 +101,7 @@ async function finish(ticket: string, guest: string, cookie: string, session?: s
 }
 
 /** The whole round trip in one browser: begin, Google, callback, finish. */
-async function googleSignIn(guest: string, opts: { sub: string; name?: string; given?: string; mode?: 'signin' | 'link' | 'confirm'; session?: string; bringOver?: boolean; tamper?: object }): Promise<Flow> {
+async function googleSignIn(guest: string, opts: { sub: string; name?: string; given?: string; mode?: 'signin' | 'link' | 'confirm'; session?: string; bringOver?: boolean; password?: string; tamper?: object }): Promise<Flow> {
   const { res, body, cookie } = await begin(guest, opts);
   if (!res.ok) return { status: res.status, error: body.error };
   const google = new URL(body.url!);
@@ -162,12 +163,14 @@ describe('sign in with Google', () => {
   it('links Google to a password account, after which either works; refuses a Google account already used', async () => {
     const up = await fetch(`${url}/api/account/signup`, { method: 'POST', headers: headers(PHONE), body: JSON.stringify({ username: 'Mike', password: 'correct horse' }) });
     const session = ((await up.json()) as { session: string }).session;
-    expect((await googleSignIn(PHONE, { sub: 'g-9', mode: 'link', session })).finished).toEqual({ ok: true, linked: true });
+    // Linking needs the password, so a stolen session can't add its own Google.
+    expect((await googleSignIn(PHONE, { sub: 'g-9', mode: 'link', session })).status).toBe(401);
+    expect((await googleSignIn(PHONE, { sub: 'g-9', mode: 'link', session, password: 'correct horse' })).finished).toEqual({ ok: true, linked: true });
     const viaGoogle = await googleSignIn(LAPTOP, { sub: 'g-9' });
     expect((await sessionOf(LAPTOP, viaGoogle.finished!.session as string)).account).toEqual({ username: 'Mike' });
 
     await googleSignIn('guest-secret-tablet-cccccccccccc', { sub: 'g-other', name: 'Bo' });
-    expect((await googleSignIn(PHONE, { sub: 'g-other', mode: 'link', session })).code).toBe('taken');
+    expect((await googleSignIn(PHONE, { sub: 'g-other', mode: 'link', session, password: 'correct horse' })).code).toBe('taken');
   });
 
   it('lets a Google-only account set a password after confirming with Google, and only then unlink Google', async () => {
@@ -180,10 +183,16 @@ describe('sign in with Google', () => {
     expect((await setIt()).status).toBe(403);
     // Confirming with a different Google account doesn't count.
     expect((await googleSignIn(PHONE, { sub: 'g-2', mode: 'confirm', session })).code).toBe('not-yours');
+    // Google must really have asked again: an old sign-in doesn't count.
+    expect((await googleSignIn(PHONE, { sub: 'g-1', mode: 'confirm', session, tamper: { auth_time: Math.floor(clock.t / 1000) - 3600 } })).code).toBe('stale');
     expect((await googleSignIn(PHONE, { sub: 'g-1', mode: 'confirm', session })).finished).toEqual({ ok: true, confirmed: true });
     expect((await setIt()).status).toBe(200);
-    expect((await fetch(`${url}/api/account/google/unlink`, { method: 'POST', headers: h })).status).toBe(200);
-    const signIn = await fetch(`${url}/api/account/signin`, { method: 'POST', headers: headers(LAPTOP), body: JSON.stringify({ username: 'Mike', password: 'my new password' }) });
+    // One confirm, one change.
+    expect((await fetch(`${url}/api/account/password`, { method: 'POST', headers: h, body: JSON.stringify({ current: 'my new password', password: 'third password' }) })).status).toBe(200);
+    const unlink = (password?: string) => fetch(`${url}/api/account/google/unlink`, { method: 'POST', headers: h, body: JSON.stringify({ password }) });
+    expect((await unlink()).status).toBe(401);
+    expect((await unlink('third password')).status).toBe(200);
+    const signIn = await fetch(`${url}/api/account/signin`, { method: 'POST', headers: headers(LAPTOP), body: JSON.stringify({ username: 'Mike', password: 'third password' }) });
     expect(signIn.status).toBe(200);
   });
 
@@ -226,9 +235,20 @@ describe('sign in with Google', () => {
   it('linking checks the account is still signed in on that browser', async () => {
     const up = await fetch(`${url}/api/account/signup`, { method: 'POST', headers: headers(PHONE), body: JSON.stringify({ username: 'Mike', password: 'correct horse' }) });
     const session = ((await up.json()) as { session: string }).session;
-    const a = await begin(PHONE, { mode: 'link', session });
+    const a = await begin(PHONE, { mode: 'link', session, password: 'correct horse' });
     const fragment = await callback(new URL(a.body.url!), a.cookie, { sub: 'g-9' });
     await fetch(`${url}/api/account/signout`, { method: 'POST', headers: headers(PHONE, session) });
     expect((await finish(fragment.ticket, PHONE, a.cookie)).status).toBe(403);
+  });
+
+  it('an admin password reset also unlinks Google, so the account is back in the owner’s hands', async () => {
+    const up = await fetch(`${url}/api/account/signup`, { method: 'POST', headers: headers(PHONE), body: JSON.stringify({ username: 'Mike', password: 'correct horse' }) });
+    const session = ((await up.json()) as { session: string }).session;
+    await googleSignIn(PHONE, { sub: 'g-9', mode: 'link', session, password: 'correct horse' });
+    const issued = await fetch(`${url}/api/admin/accounts/reset-code`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-key': 'test-admin-key-0123456789' }, body: JSON.stringify({ username: 'Mike' }) });
+    const { code } = (await issued.json()) as { code: string };
+    expect((await fetch(`${url}/api/account/reset`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'Mike', code, password: 'brand new pw' }) })).status).toBe(200);
+    // That Google account now makes a new account rather than opening Mike's.
+    expect((await googleSignIn(LAPTOP, { sub: 'g-9', name: 'Someone' })).finished!.welcome).toBe(true);
   });
 });

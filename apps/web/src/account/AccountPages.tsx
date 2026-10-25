@@ -532,25 +532,38 @@ function DeleteForm({ hasPassword, username, confirmed }: { hasPassword: boolean
 function GoogleSection({ profile }: { profile: Profile | null }) {
   const google = useGoogle();
   const { busy, error, run } = useAction();
+  const [password, setPassword] = useState('');
   const linked = !!profile?.account?.google;
   if (!profile?.account || (!google && !linked)) return null;
+  const hasPassword = profile.account.hasPassword;
+  // Linking or unlinking asks for the password, so someone who got hold of a signed-in device can't change how you sign in.
+  const passwordField = hasPassword && (
+    <label>
+      Your password
+      <input type="password" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} />
+    </label>
+  );
   return (
     <section className="account-section">
       <h2>Google</h2>
       {linked ? (
         <>
           <p className="muted">You can sign in with Google on any device.</p>
-          {profile.account.hasPassword && (
-            <button disabled={busy} onClick={() => void run(async () => (await unlinkGoogle(), reloadTo('/profile')))}>
-              Stop using Google to sign in
-            </button>
+          {hasPassword && (
+            <div className="account-form">
+              {passwordField}
+              <button disabled={busy || !password} onClick={() => void run(async () => (await unlinkGoogle(password), reloadTo('/profile')))}>
+                Stop using Google to sign in
+              </button>
+            </div>
           )}
         </>
       ) : (
-        <>
+        <div className="account-form">
           <p className="muted">Link your Google account to sign in with one tap instead of your password.</p>
-          <GoogleButton label="Link Google" busy={busy} onClick={() => void run(() => startGoogle('link'))} />
-        </>
+          {passwordField}
+          <GoogleButton label="Link Google" busy={busy || (hasPassword && !password)} onClick={() => void run(() => startGoogle('link', true, password))} />
+        </div>
       )}
       {error && <p className="error">{error}</p>}
     </section>
@@ -564,6 +577,7 @@ const GOOGLE_ERRORS: Record<string, string> = {
   cancelled: 'Google sign-in was cancelled.',
   'other-browser': 'That Google sign-in was started in another browser. Start it again here.',
 };
+// Errors from finishing (taken, not-yours, stale and so on) come back as the server's fixed message.
 
 /** Where Google sends the browser back: finishes with the one-time ticket, then opens the profile. */
 export function AuthDonePage() {

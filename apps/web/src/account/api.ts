@@ -102,8 +102,8 @@ export const issueResetCode = (adminKey: string, username: string) =>
 export const fetchAuthConfig = () => request<{ google: boolean }>('GET', '/api/auth/config');
 
 /** Off to Google; it sends the browser back to /auth/done. `link` adds Google to the signed-in account; `confirm` re-checks it's you. */
-export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver = true) {
-  const { url } = await request<{ url: string }>('POST', '/api/auth/google/begin', { mode, bringOver });
+export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver = true, password?: string) {
+  const { url } = await request<{ url: string }>('POST', '/api/auth/google/begin', { mode, bringOver, password });
   location.assign(url);
 }
 
@@ -111,4 +111,4 @@ export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver
 export const finishGoogle = (ticket: string) =>
   request<{ session?: string; welcome?: boolean; merged?: boolean; linked?: boolean; confirmed?: boolean }>('POST', '/api/auth/google/finish', { ticket });
 
-export const unlinkGoogle = () => request('POST', '/api/account/google/unlink');
+export const unlinkGoogle = (password: string) => request('POST', '/api/account/google/unlink', { password });

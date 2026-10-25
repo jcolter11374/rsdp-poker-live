@@ -181,6 +181,7 @@ export function accountRoutes(
         return void res.status(401).json({ error: 'Your current password is not right.' });
       }
       await setPassword(db, who.account.id, str(req.body?.password));
+      confirmations.use(who.account.id, who.guest.id);
       // Other devices have to sign in again with the new password, this one excepted.
       const guestToken = req.get('x-guest-token') ?? '';
       await logoutOthers(db, who.account.id, req.get('x-session-token'));
@@ -208,6 +209,7 @@ export function accountRoutes(
         failuresByAddress(address);
         return void res.status(401).json({ error: hasPassword ? 'That password is not right.' : 'Type your username exactly to confirm.' });
       }
+      confirmations.use(who.account.id, who.guest.id);
       const ids = await deleteAccount(db, who.account.id);
       hooks.deleted(ids);
       res.json({ ok: true });

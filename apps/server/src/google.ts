@@ -19,7 +19,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import type { Db } from './db';
-import { adoptGuest, createGoogleAccount, findAccountByGoogle, getPlayer, IdentityError, linkGoogle, openSession, setDisplayName, unlinkGoogle, whoIs } from './identity';
+import { adoptGuest, checkPassword, createGoogleAccount, findAccountByGoogle, getPlayer, IdentityError, linkGoogle, openSession, setDisplayName, signInMethods, unlinkGoogle, whoIs } from './identity';
 import { clientAddress, limiter } from './admin';
 import type { AccountHooks } from './accounts';
 
@@ -40,9 +40,13 @@ export interface GoogleConfig {
 export interface GoogleConfirmations {
   mark(accountId: string, guestId: string): void;
   fresh(accountId: string, guestId: string): boolean;
+  /** A confirm is good for one change. */
+  use(accountId: string, guestId: string): void;
 }
 
 const CONFIRM_MS = 5 * 60_000;
+/** A confirm needs a Google sign-in this recent, not just an open Google session. */
+const CONFIRM_LOGIN_S = 300;
 
 export function googleConfirmations(now: () => number): GoogleConfirmations {
   const until = new Map<string, number>();
@@ -53,6 +57,7 @@ export function googleConfirmations(now: () => number): GoogleConfirmations {
       until.set(`${accountId}:${guestId}`, t + CONFIRM_MS);
     },
     fresh: (accountId, guestId) => (until.get(`${accountId}:${guestId}`) ?? 0) > now(),
+    use: (accountId, guestId) => void until.delete(`${accountId}:${guestId}`),
   };
 }
 
@@ -85,14 +90,17 @@ interface Pending extends Flow {
 }
 interface Ticket extends Flow {
   sub: string;
+  /** When the person last typed their Google password, in seconds (0 when Google didn't say). */
+  authTime: number;
   name: string;
   givenName: string;
 }
 
 /** Why a Google sign-in failed; the page shows a fixed message for each. */
-export type GoogleError = 'off' | 'expired' | 'cancelled' | 'failed' | 'other-browser' | 'taken' | 'signed-in' | 'signed-out' | 'not-yours';
+export type GoogleError = 'stale' | 'off' | 'expired' | 'cancelled' | 'failed' | 'other-browser' | 'taken' | 'signed-in' | 'signed-out' | 'not-yours';
 
 const MESSAGES: Record<GoogleError, string> = {
+  stale: 'Google didn’t ask for your password again. Try once more.',
   off: 'Sign in with Google is not set up on this server.',
   expired: 'That sign-in took too long or was already used. Try again.',
   cancelled: 'Google sign-in was cancelled.',
@@ -177,9 +185,14 @@ export function googleRoutes(
     if (!begins(clientAddress(req))) return void res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
     const mode: Mode = req.body?.mode === 'link' ? 'link' : req.body?.mode === 'confirm' ? 'confirm' : 'signin';
     whoIs(db, req.get('x-guest-token') ?? '', req.get('x-session-token'))
-      .then((who) => {
+      .then(async (who) => {
         if (mode === 'signin' && who.account) return void fail(res, 409, 'signed-in');
         if (mode !== 'signin' && !who.account) return void fail(res, 401, 'signed-out');
+        // Linking needs the password too, so a stolen session can't add its own Google as a way back in.
+        if (mode === 'link' && who.account) {
+          const { hasPassword } = await signInMethods(db, who.account.id);
+          if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.password))) return void res.status(401).json({ error: 'Your password is not right.' });
+        }
         sweep();
         if (pending.size >= PENDING_MAX) return void res.status(503).json({ error: 'Busy right now. Try again in a minute.' });
         const state = b64url(randomBytes(24));
@@ -211,7 +224,7 @@ export function googleRoutes(
           code_challenge: b64url(createHash('sha256').update(verifier).digest()),
           code_challenge_method: 'S256',
           // Confirming should really ask, not slip through on an open Google session.
-          prompt: mode === 'confirm' ? 'login' : 'select_account',
+          ...(mode === 'confirm' ? { prompt: 'login', max_age: String(CONFIRM_LOGIN_S) } : { prompt: 'select_account' }),
         }).toString();
         res.json({ ok: true, url: url.toString() });
       })
@@ -249,7 +262,7 @@ export function googleRoutes(
         sweep();
         const ticket = b64url(randomBytes(24));
         const str = (v: unknown) => (typeof v === 'string' ? v : '');
-        tickets.set(ticket, { mode: p.mode, guestId: p.guestId, accountId: p.accountId, bringOver: p.bringOver, bind: p.bind, sub, name: str(c.name), givenName: str(c.given_name), expires: now() + TICKET_MS });
+        tickets.set(ticket, { mode: p.mode, guestId: p.guestId, accountId: p.accountId, bringOver: p.bringOver, bind: p.bind, sub, authTime: typeof c.auth_time === 'number' ? c.auth_time : 0, name: str(c.name), givenName: str(c.given_name), expires: now() + TICKET_MS });
         back(res, { ticket });
       })
       .catch((e: unknown) => {
@@ -280,6 +293,7 @@ export function googleRoutes(
         }
         const owner = await findAccountByGoogle(db, t.sub);
         if (owner?.id !== who.account.id) return void fail(res, 403, 'not-yours');
+        if (t.authTime * 1000 < now() - (CONFIRM_LOGIN_S + 60) * 1000) return void fail(res, 403, 'stale');
         confirmations.mark(who.account.id, who.guest.id);
         return void res.json({ ok: true, confirmed: true });
       }
@@ -310,12 +324,14 @@ export function googleRoutes(
     });
   });
 
-  app.post('/api/account/google/unlink', (req, res) => {
+  app.post('/api/account/google/unlink', json, (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!db) return void res.status(503).json({ error: 'Accounts are not available on this server.' });
     whoIs(db, req.get('x-guest-token') ?? '', req.get('x-session-token'))
       .then(async (who) => {
         if (!who.account) return void res.status(401).json({ error: 'Sign in first.' });
+        const { hasPassword } = await signInMethods(db, who.account.id);
+        if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.password))) return void res.status(401).json({ error: 'Your password is not right.' });
         await unlinkGoogle(db, who.account.id);
         res.json({ ok: true });
       })

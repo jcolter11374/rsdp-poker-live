@@ -377,6 +377,8 @@ export async function resetPassword(
   if (!row || !row.resetCodeHash || !matches || !row.resetCodeExpiresAt || row.resetCodeExpiresAt.getTime() <= now.getTime()) throw bad;
   await setPassword(db, row.id, password);
   await logoutOthers(db, row.id);
+  // A reset hands the account back to whoever has the code: a Google account linked by someone else stops working too.
+  await db.update(accounts).set({ googleSub: null }).where(eq(accounts.id, row.id));
   return { id: row.id, username: row.username, primaryPlayerId: row.primaryPlayerId, createdAt: row.createdAt };
 }
 
