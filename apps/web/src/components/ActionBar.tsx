@@ -72,7 +72,7 @@ export function ActionBar({
     if (!legal || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
     // Keys never act behind an open dialog or sheet.
-    if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
+    if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) return;
     const k = e.key.toLowerCase();
     if (k === 'f' && legal.canFold) fold();
     else if (k === 'k' && legal.canCheck) send({ type: 'check' });

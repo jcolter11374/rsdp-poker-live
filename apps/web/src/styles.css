@@ -215,7 +215,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .settings input { padding: 6px; }
 .side-panel { flex: 1; min-height: 320px; }
 .tabs { display: flex; gap: 4px; }
-.tabs button { flex: 1; background: transparent; }
+.tabs button { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; background: transparent; white-space: nowrap; }
 .tabs button.active { background: var(--panel-2); border-color: var(--muted); }
 .scroll { flex: 1; overflow-y: auto; max-height: 50vh; font-size: 0.85rem; display: flex; flex-direction: column; gap: 3px; }
 .log-hand { color: var(--accent-2); margin-top: 6px; }
@@ -321,8 +321,11 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .hint { font-size: 0.75rem; color: var(--muted); }
 .badge { background: var(--accent); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 0.7rem; margin-left: 4px; }
 .log-table { color: var(--muted); }
-.hand-row { display: block; width: 100%; text-align: left; background: transparent; border-color: transparent; padding: 4px 6px; }
+.hand-row { display: flex; gap: 4px; align-items: center; border-radius: 8px; }
 .hand-row:hover { background: var(--panel-2); }
+.hand-row .hand-open { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: baseline; text-align: left; background: transparent; border-color: transparent; padding: 5px 6px; white-space: nowrap; }
+.hand-row .hand-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hand-row .hand-text { background: transparent; padding: 2px 8px; font-size: 0.75rem; }
 .hand-record { display: flex; flex-direction: column; gap: 3px; }
 .hand-record > button { align-self: flex-start; margin-bottom: 6px; }
 
@@ -471,3 +474,16 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .settle { display: flex; flex-direction: column; gap: 6px; }
 .transfer { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
 .transfer .amount { float: right; color: var(--accent-2); font-weight: 700; }
+
+/* ---- replayer */
+.replayer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 30; display: grid; place-items: center; padding: 12px; }
+.replayer { background: var(--bg); border-radius: 14px; width: min(1000px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.replayer.compact { height: 100%; padding: 8px; }
+.replayer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.9rem; }
+.replayer-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.replayer:not(.compact) .replayer-table .felt { margin: 64px 70px 36px; }
+.replayer-caption { text-align: center; min-height: 1.4em; font-size: 0.95rem; }
+.replayer-scrub { width: 100%; }
+.replayer-controls { display: flex; gap: 6px; justify-content: center; }
+.replayer-controls button { min-width: 48px; padding: 10px; font-size: 1rem; }
+.stats td, .stats th { white-space: nowrap; }

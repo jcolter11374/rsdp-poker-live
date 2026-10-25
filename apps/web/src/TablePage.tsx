@@ -4,6 +4,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
 import { getVolume, nextVolume, setVolume, sounds, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
+import { usePortrait } from './layout';
 import { chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { Table, useNow } from './components/Table';
 import { HandExtras } from './components/table/HandExtras';
@@ -88,19 +89,6 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 }
 
 const HURRY_MS = 5000;
-
-/** Phones, and windows taller than they are wide, get the one-column table. */
-function usePortrait() {
-  const query = '(max-width: 700px), (max-aspect-ratio: 4/5)';
-  const [portrait, setPortrait] = useState(() => matchMedia(query).matches);
-  useEffect(() => {
-    const mq = matchMedia(query);
-    const onChange = () => setPortrait(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return portrait;
-}
 
 type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | null;
 

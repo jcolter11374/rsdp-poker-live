@@ -115,8 +115,10 @@ describe('draw games', () => {
     engine.draw(mid, drawer, [0, 1]);
     const other = engine.visibleEvents(mid, { seat: (drawer + 1) % 3, seeAll: false }).find((e) => e.t === 'draw');
     expect(other).toMatchObject({ seat: drawer, discarded: 2, cards: ['??', '??'] });
+    expect(other).not.toHaveProperty('positions');
     const own = engine.visibleEvents(mid, { seat: drawer, seeAll: false }).find((e) => e.t === 'draw');
     expect(own && own.t === 'draw' && own.cards.every((c) => c !== '??')).toBe(true);
+    expect(own).toMatchObject({ positions: [1, 0] });
     expect(s.phase).toBe('complete');
   });
 
