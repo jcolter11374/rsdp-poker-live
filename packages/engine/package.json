@@ -18,6 +18,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./core": "./src/core/index.ts",
-    "./variants": "./src/variants/index.ts"
+    "./variants": "./src/variants/index.ts",
+    "./settings": "./src/settings/index.ts"
   }
 }
