@@ -70,6 +70,16 @@ describe('tournament manager guards', () => {
     expect(env.errors).toEqual([]);
   });
 
+  it('refuses a new tournament whose levels would pick a game nobody can deal', async () => {
+    const env = setup();
+    const settings = defaultSettings({ name: 'Games', startingStack: 1000 });
+    const later = settings.structure.findIndex((r, i) => i > 0 && r.kind === 'level');
+    // An empty level game and a rotation stop between levels both name a game that is not there.
+    const structure = settings.structure.map((r, i) => (i === later ? { ...r, gameId: '' } : r));
+    await expect(env.manager.create('host', { ...settings, structure })).rejects.toThrow(/unknown game/);
+    await expect(env.manager.create('host', { ...settings, games: ['nlhe', 'plo4'], stopRotationAtLevel: 1.5 })).rejects.toThrow(/rotation/);
+  });
+
   it('a table that fails to deal is logged, and the tournament is still saved and timed', async () => {
     const first = setup();
     const id = await first.manager.create('host', defaultSettings({ name: 'Broken', startingStack: 1000 }));
