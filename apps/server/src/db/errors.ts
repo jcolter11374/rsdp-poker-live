@@ -1,0 +1,35 @@
+export type StorageErrorCode = 'not-found' | 'conflict' | 'invalid';
+
+/** Expected storage failures (missing row, stale version, bad input) that callers turn into user-facing errors. */
+export class StorageError extends Error {
+  constructor(
+    readonly code: StorageErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StorageError';
+  }
+}
+
+/** True for Postgres unique_violation, whichever driver raised it (drivers may wrap the error in `cause`). */
+export function isUniqueViolation(err: unknown): boolean {
+  let e = err;
+  for (let depth = 0; depth < 5 && e && typeof e === 'object'; depth++) {
+    if ((e as { code?: unknown }).code === '23505') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** Throws unless n is a whole number of chips that JavaScript represents exactly. */
+export function assertChips(n: unknown, what: string): asserts n is number {
+  if (typeof n !== 'number' || !Number.isSafeInteger(n)) {
+    throw new StorageError('invalid', `${what} must be a whole number of chips`);
+  }
+}
+
+/** Page sizes from callers (often from the network) are clamped rather than trusted. */
+export function clampLimit(limit: number | undefined, fallback: number, max = 500): number {
+  if (limit === undefined || !Number.isFinite(limit)) return fallback;
+  return Math.max(1, Math.min(max, Math.floor(limit)));
+}
