@@ -4,7 +4,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
 import { getVolume, nextVolume, setVolume, sounds, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
-import { notify } from './notify';
+import { closeNotifications, notify } from './notify';
 import { usePortrait } from './layout';
 import { chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { Table, useNow } from './components/Table';
@@ -87,6 +87,8 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
       clearInterval(t);
       document.title = original;
       badgeFavicon(false);
+      // Acted (here or in another tab): the alert is out of date.
+      closeNotifications('turn:');
     };
   }, [myTurn]);
 }

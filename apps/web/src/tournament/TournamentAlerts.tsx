@@ -74,6 +74,8 @@ export function TournamentAlerts() {
       const due = startAlertsDue(list, Date.now() + skew, new Set(fired));
       if (!due.length) return;
       for (const t of due) {
+        // The lobby on screen already counts down.
+        if (!document.hidden && location.pathname === `/tn/${t.id}`) continue;
         const minutes = Math.max(1, Math.round((t.startAt! - Date.now() - skew) / 60_000));
         // Shown even with the tab in front: the player may be on another page of the site.
         notify('Starting soon', `${t.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, { tag: startKey(t), url: `/tn/${t.id}`, whenVisible: true });
