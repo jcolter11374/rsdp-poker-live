@@ -1,4 +1,4 @@
-import { HIGH_EVALUATORS, LOW_EVALUATORS, VARIANT_LIST, compareHands, type HandRank } from '@rsdp/engine/variants';
+import { HIGH_EVALUATORS, LOW_EVALUATORS, VARIANT_LIST, compareHands, getVariant, type HandRank } from '@rsdp/engine/variants';
 import { describe, expect, it } from 'vitest';
 import { GUIDES, cardsOf, guideFor, type Guide, type Showdown } from './guides';
 
@@ -17,6 +17,14 @@ function halfRule(guide: Guide, s: Showdown) {
 describe('rules guides', () => {
   it('cover every game the table can deal', () => {
     for (const spec of VARIANT_LIST) expect(guideFor(spec.id), spec.id).not.toBeNull();
+  });
+
+  it('score hands the way the table does for every game they cover', () => {
+    for (const g of GUIDES) for (const id of g.games) expect(g.scoring, `${g.id} / ${id}`).toEqual(getVariant(id).showdown);
+  });
+
+  it('open by guide id too', () => {
+    for (const g of GUIDES) expect(guideFor(g.id)).toBe(g);
   });
 
   it('use real, distinct cards in every example', () => {
@@ -45,7 +53,12 @@ describe('rules guides', () => {
       for (const s of g.showdowns) {
         const board = cardsOf(s.board ?? '');
         const rule = halfRule(g, s);
-        const diff = compareHands(rank(rule, cardsOf(s.a.cards), board), rank(rule, cardsOf(s.b.cards), board));
+        const a = rank(rule, cardsOf(s.a.cards), board);
+        const b = rank(rule, cardsOf(s.b.cards), board);
+        // A winner (or both, in a split) must actually make a hand.
+        if (s.winner !== 'b') expect(a, `${g.id}: ${s.a.cards}`).not.toBeNull();
+        if (s.winner !== 'a') expect(b, `${g.id}: ${s.b.cards}`).not.toBeNull();
+        const diff = compareHands(a, b);
         const got = diff > 0 ? 'a' : diff < 0 ? 'b' : 'tie';
         expect(got, `${g.id}: ${s.a.cards} vs ${s.b.cards} on ${s.board ?? '-'}`).toBe(s.winner);
       }

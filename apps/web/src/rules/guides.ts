@@ -2,7 +2,7 @@ import type { HighRule, LowRule } from '@rsdp/engine/variants';
 
 /*
  * Plain-language guides for each game, for players still learning them. The
- * example hands are real cards: rules.test.ts checks every ranking and
+ * example hands are real cards: guides.test.ts checks every ranking and
  * "which hand wins" example against the engine's evaluators, so a guide can
  * never teach something the table would score differently.
  */
@@ -63,7 +63,7 @@ const HIGH_LADDER: ExampleHand[] = [
 const HIGH_NOTE = 'An ace can be high (A-K-Q-J-10) or low (5-4-3-2-A) in a straight. Suits never break a tie.';
 
 const STUD_STEPS = (bringIn: string, firstToAct: string) => [
-  'Everyone puts in an ante. There are no blinds and no dealer button.',
+  'Everyone usually puts in an ante. There are no blinds and no dealer button.',
   `Third street: you get two cards face down and one face up. ${bringIn} They can bring it in for the small forced amount, or complete it to a full small bet. Betting then goes round to the left.`,
   `Fourth street: one more card face up, then a round of betting at the small bet. From here on, ${firstToAct} acts first.`,
   'Fifth street: another up card. Bets double to the big bet from here to the end.',
@@ -75,7 +75,7 @@ const STUD_NOTE_DECK =
   'Up to eight players. If eight players all reach seventh street the deck runs short, so one card is dealt face up in the middle and everyone shares it.';
 
 const DRAW_STEPS = (cards: number) => [
-  'The two players left of the button post the small and big blinds.',
+  'The two players left of the button post the small and big blinds (heads-up, the button posts the small blind).',
   `Everyone gets ${cards} cards face down. A round of betting starts with the player left of the big blind.`,
   `First draw: starting left of the button, each player throws away any number of cards (0 to ${cards}) and gets that many new ones. Keeping all your cards is called standing pat.`,
   'A round of betting, starting with the first player still in on the left of the button.',
@@ -333,12 +333,12 @@ export const GUIDES: Guide[] = [
     games: ['plo4', 'plo5', 'plo6'],
     idea: "Like Hold'em with more private cards (four, or five or six in the bigger versions), but your hand must use exactly two of them and exactly three cards from the board.",
     steps: [
-      'The two players left of the button post the small and big blinds.',
+      'The two players left of the button post the small and big blinds (heads-up, the button posts the small blind).',
       'Everyone gets their private cards (four, five or six). Betting starts with the player left of the big blind.',
       'The flop: three cards face up in the middle, then a round of betting starting left of the button.',
       'The turn: a fourth board card, then betting.',
       'The river: a fifth board card, then the last round of betting and the showdown.',
-      'Betting is usually pot limit: the most you can bet or raise is the size of the pot after you call.',
+      'Betting is usually pot limit: you can bet up to the size of the pot. To raise, count your call into the pot first, then raise by up to that total.',
     ],
     goal: 'The best five-card poker hand wins, made from exactly two of your cards and exactly three board cards. Never one, never three.',
     scoring: { high: 'omaha' },
@@ -419,7 +419,7 @@ export const GUIDES: Guide[] = [
     tips: [
       'A-2 with other low cards is the strongest start for low. A-2-3 with a suited ace is even better.',
       'Play hands that can scoop. Winning only the low half when two players tie it can leave you with a quarter of the pot.',
-      'When the board has two or fewer low cards, the hand is high only.',
+      'When the board has fewer than three different cards of 8 or lower, nobody can make a low and the hand is high only.',
     ],
     mistakes: [
       'Using a pair in your hand as two low cards. They must be two different ranks.',
@@ -432,7 +432,7 @@ export const GUIDES: Guide[] = [
     games: ['nlhe'],
     idea: 'Two private cards each and five shared cards in the middle. Make the best five-card hand from any mix of the seven.',
     steps: [
-      'The two players left of the button post the small and big blinds.',
+      'The two players left of the button post the small and big blinds (heads-up, the button posts the small blind).',
       'Everyone gets two private cards. Betting starts left of the big blind.',
       'The flop (three board cards), the turn (one more) and the river (one more), each followed by a round of betting starting left of the button.',
       'At the showdown, the best five-card hand wins. You may use both, one or none of your own cards.',
@@ -464,7 +464,8 @@ export const GUIDES: Guide[] = [
   },
 ];
 
-const BY_GAME = new Map(GUIDES.flatMap((g) => g.games.map((id) => [id, g] as const)));
+/** By variant id, and by guide id so /rules/omaha works too. */
+const BY_GAME = new Map(GUIDES.flatMap((g) => [g.id, ...g.games].map((id) => [id, g] as const)));
 
 export function guideFor(gameId: string): Guide | null {
   return BY_GAME.get(gameId) ?? null;

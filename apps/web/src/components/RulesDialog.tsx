@@ -19,7 +19,8 @@ export function RulesDialog({ view, onClose }: { view: TableView; onClose: () =>
   return (
     <Modal title="How to play" onClose={onClose}>
       <div className="rules">
-        <GameGuide gameIds={[current, ...ids]} current={current} />
+        {/* Keyed so the guide follows the rotation to the next game. */}
+        <GameGuide key={current} gameIds={[current, ...ids]} current={current} />
         <section>
           <h3>Betting here: {BETTING_NAME[betting]}</h3>
           <p>{BETTING_RULES[betting]}</p>
