@@ -4,20 +4,28 @@ import { ActionError, variants, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
 import {
   apply,
+  codeFromWords,
   createTournament,
   DirectorError,
+  isArchived,
+  isLive,
   levelFor,
+  listedPublicly,
   nextOccurrence,
+  sortListings,
+  tournamentListing,
   nextWakeAt,
   tableAddress,
   tableGate,
   tick,
+  viewFor,
   type Command,
   type DirectorEvent,
   type HandResult,
   type Result,
   type SeatInfo,
   type TableId,
+  type TournamentListing,
   type TournamentSettings,
   type TournamentState,
   type TournamentView,
@@ -34,6 +42,8 @@ export interface TournamentStore {
   load(id: string): Promise<{ state: TournamentState; nextId: string | null } | null>;
   /** Tournaments that are not finished or cancelled, to resume after a restart. */
   listLive(): Promise<{ state: TournamentState; nextId: string | null }[]>;
+  /** Tournaments a player hosted or entered that were still going at `since` (ms), the most recent first. */
+  listForPlayer(playerId: PlayerId, since: number): Promise<{ state: TournamentState; nextId: string | null }[]>;
 }
 
 /** The server side of the tables a tournament runs: storage, broadcasting and links. */
@@ -76,13 +86,29 @@ interface Live {
 }
 
 /** Commands only the host may send; the director trusts the server to check. */
-const HOST_COMMANDS = new Set<Command['type']>(['approve', 'reject', 'remove', 'pause', 'resume', 'startNow', 'editStructure', 'updateSettings', 'end']);
+const HOST_COMMANDS = new Set<Command['type']>([
+  'approve',
+  'reject',
+  'remove',
+  'pause',
+  'resume',
+  'startNow',
+  'editStructure',
+  'updateSettings',
+  'end',
+  'createInvites',
+  'cancelInvite',
+  'openCheckIn',
+]);
 /** Commands that come from tables, never from a browser. */
 const TABLE_COMMANDS = new Set<Command['type']>(['handStarted', 'handResult']);
 const SAVE_DEBOUNCE_MS = 300;
 /** Long sleeps are re-armed in steps, so a far-off scheduled start never overflows a timer. */
 const MAX_SLEEP_MS = 60 * 60 * 1000;
 const NAME_MAX = 20;
+/** How far back the home page lists a player's own tournaments. */
+const OWN_LIST_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Hex, so a table address `<tournament>-t<n>` still leads back to its tournament. */
 const newTournamentId = () => randomBytes(8).toString('hex');
@@ -144,11 +170,33 @@ export class TournamentManager {
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
   }
 
-  /** What a browser is sent. The seating seed stays on the server. */
-  view(id: string): TournamentView | null {
+  /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
+  view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);
     if (!live) return null;
-    return { state: { ...live.state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+    const state = viewer === undefined ? live.state : viewFor(live.state, viewer);
+    return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+  }
+
+  /**
+   * The home page lists: every upcoming and running event on this server (all of them are in memory), plus the
+   * player's own from the last 30 days, which may have finished before the server last started.
+   */
+  async list(me: PlayerId): Promise<TournamentListing[]> {
+    const now = this.clock.now();
+    const out = new Map<string, TournamentListing>();
+    const involved = (s: TournamentState) => s.hostId === me || s.entries.some((e) => e.playerId === me) || s.requests.some((r) => r.playerId === me);
+    for (const l of this.live.values()) {
+      // An invite-only event still shows for its host and players.
+      if (listedPublicly(l.state) || (isLive(l.state) && !isArchived(l.state) && involved(l.state))) out.set(l.state.id, tournamentListing(l.state, me, now, l.nextId));
+    }
+    for (const saved of await this.deps.store.listForPlayer(me, now - OWN_LIST_DAYS * DAY_MS)) {
+      // The copy in memory is newer than the saved one.
+      const l = this.live.get(saved.state.id) ?? saved;
+      if (isArchived(l.state)) continue;
+      out.set(l.state.id, tournamentListing(l.state, me, now, l.nextId));
+    }
+    return sortListings([...out.values()]);
   }
 
   /** A browser's command, with who is acting filled in from the connection. */
@@ -205,14 +253,21 @@ export class TournamentManager {
       // The director checks the shape; the games must also be ones this server can deal.
       if (cmd.type === 'editStructure') checkGames({ ...live.state.settings, structure: cmd.structure });
       if (cmd.type === 'updateSettings') checkGames({ ...live.state.settings, ...cmd.settings });
+      // Codes come from a secure source, never from the browser or the seating seed.
+      if (cmd.type === 'createInvites') {
+        const count = Number.isSafeInteger(cmd.count) && cmd.count > 0 && cmd.count <= 200 ? cmd.count : 0;
+        return { type: 'createInvites', by: me, count: cmd.count, maxUses: cmd.maxUses, codes: newCodes(count, live.state) };
+      }
       return { ...cmd, by: me } as Command;
     }
     switch (cmd.type) {
       case 'register': {
         const displayName = cleanName(myName || ('displayName' in cmd ? String(cmd.displayName ?? '') : ''));
         if (!displayName) throw new ActionError('pick a name first');
-        return { type: 'register', playerId: me, displayName };
+        const code = typeof cmd.code === 'string' ? cmd.code.slice(0, 40) : undefined;
+        return { type: 'register', playerId: me, displayName, ...(code ? { code } : {}) };
       }
+      case 'checkIn':
       case 'unregister':
       case 'rebuy':
       case 'declineRebuy':
@@ -640,6 +695,19 @@ function checkGames(settings: TournamentSettings) {
     }
     if (settings.seatsPerTable > spec.maxPlayers) throw new ActionError(`${spec.name} seats at most ${spec.maxPlayers} per table`);
   }
+}
+
+/** Fresh invite codes no other code in this tournament has. */
+function newCodes(count: number, state: TournamentState): string[] {
+  const taken = new Set(state.invites?.map((c) => c.code));
+  const out: string[] = [];
+  while (out.length < count) {
+    const code = codeFromWords(new Uint32Array(randomBytes(32).buffer));
+    if (taken.has(code)) continue;
+    taken.add(code);
+    out.push(code);
+  }
+  return out;
 }
 
 function cleanName(name: string) {

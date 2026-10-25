@@ -1,8 +1,10 @@
 import { STATE_VERSION, type TournamentState } from '@rsdp/tournament';
-import { insertTournament, listLiveTournaments, loadTournament, saveTournament, type Db } from '../db';
+import { insertTournament, listLiveTournaments, listPlayerTournaments, loadTournament, saveTournament, type Db } from '../db';
 import type { TournamentStore } from './manager';
 
 const LIVE = new Set(['registering', 'seating', 'running', 'paused']);
+/** Most of a player's own tournaments the home page shows. */
+const PLAYER_LIST_MAX = 50;
 
 export function memoryTournamentStore(): TournamentStore {
   const rows = new Map<string, string>();
@@ -23,6 +25,12 @@ export function memoryTournamentStore(): TournamentStore {
     },
     async listLive() {
       return [...rows.values()].map(read).filter((r) => LIVE.has(r.state.status));
+    },
+    async listForPlayer(playerId, since) {
+      return [...rows.values()]
+        .map(read)
+        .filter((r) => (r.state.hostId === playerId || r.state.entries.some((e) => e.playerId === playerId)) && (r.state.finishedAt ?? Infinity) > since)
+        .slice(-PLAYER_LIST_MAX);
     },
   };
 }
@@ -45,6 +53,9 @@ export function dbTournamentStore(db: Db): TournamentStore {
     },
     async listLive() {
       return (await listLiveTournaments<TournamentState>(db)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
+    },
+    async listForPlayer(playerId, since) {
+      return (await listPlayerTournaments<TournamentState>(db, playerId, new Date(since), PLAYER_LIST_MAX)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
     },
   };
 }
