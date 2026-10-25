@@ -48,7 +48,7 @@ describe('random play', () => {
 
           // Chips in front of players plus stacks always equal what we started with.
           const inPlay = hand.players.reduce((s, p) => s + p.total, 0);
-          if (hand.street !== 'complete') expect(chips() + inPlay).toBe(startChips);
+          if ((hand.street as string) !== 'complete') expect(chips() + inPlay).toBe(startChips);
         }
         expect(chips(), `game ${game} hand ${h}: chips not conserved`).toBe(startChips);
         for (const s of t.seats) if (s) expect(s.stack).toBeGreaterThanOrEqual(0);
