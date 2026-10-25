@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
+import { contributeSeed, liveSeedProblem } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -123,6 +124,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     const onState = (v: TableView) => {
       if (v.id !== tableId) return;
       setView(v);
+      contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
       if (first) setChatSeen(v.chat.length);
@@ -169,6 +171,19 @@ export function TablePage({ tableId }: { tableId: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
+  // Losing your seat without pressing Leave (the host removed you, or an offline seat was released) gets a word of explanation.
+  const wasSeated = useRef(false);
+  const leftByMe = useRef(false);
+  const [unseated, setUnseated] = useState(false);
+  useEffect(() => {
+    const seated = view?.me.seat != null;
+    if (wasSeated.current && !seated && !leftByMe.current && view?.mode === 'cash') setUnseated(true);
+    if (seated) {
+      leftByMe.current = false;
+      setUnseated(false);
+    }
+    wasSeated.current = seated;
+  }, [view?.me.seat]);
 
   if (error) {
     // A tournament table closes when it breaks; the lobby knows the new seat.
@@ -259,7 +274,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         <button
           onClick={() =>
             confirm(inHand ? 'Leave your seat when this hand ends? Your chips go back to the ledger.' : 'Leave your seat? Your chips go back to the ledger.') &&
-            socket.emit('seat:stand', { afterHand: inHand })
+            ((leftByMe.current = true), socket.emit('seat:stand', { afterHand: inHand }))
           }
         >
           {mySeat.leaving ? 'Leaving…' : 'Leave seat'}
@@ -366,13 +381,23 @@ export function TablePage({ tableId }: { tableId: string }) {
               </a>
             </div>
           )}
+          {unseated && (
+            <div className="banner attention">
+              You're no longer seated: the host removed you, or your seat was released while you were away. Your chips are counted in the ledger.{' '}
+              <button onClick={() => setUnseated(false)}>OK</button>
+            </div>
+          )}
           {cash && !view.started && (
             <div className="banner">
-              {view.isHost
-                ? portrait
-                  ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
-                  : 'Take a seat, send friends the invite link, then press Start game.'
-                : 'Waiting for the host to start the game.'}
+              {view.history.length > 0
+                ? view.isHost
+                  ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : 'Press Start game to deal again'}.`
+                  : 'The game is stopped. Waiting for the host to start it again.'
+                : view.isHost
+                  ? portrait
+                    ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
+                    : 'Take a seat, send friends the invite link, then press Start game.'
+                  : 'Waiting for the host to start the game.'}
             </div>
           )}
           {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
@@ -394,6 +419,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
+          {liveSeedProblem(view) && <div className="banner warn">⚠ Fair dealing: {liveSeedProblem(view)}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">

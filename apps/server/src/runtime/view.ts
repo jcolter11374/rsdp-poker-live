@@ -1,7 +1,7 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
-import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { fillStakes, rabbitCards, type TableRuntime } from './table';
+import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
+import { FAIR_REVEAL_AFTER_MS, fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
 
@@ -140,6 +140,7 @@ export function tableView(
     offers: (s.offers ?? []).map((o) => ({ ...o, name: s.waitlist?.find((w) => w.playerId === o.playerId)?.name ?? rt.nameOf(o.playerId) })),
     muted: [...(s.muted ?? [])],
     spectator: isSpectator ? { delaySeconds: s.settings.spectators.delaySeconds, seeAll: viewer.seeAll, blocked } : null,
+    fair: { nextCommit: rt.nextCommit(), handCommit: hand?.input.fair?.commit ?? null },
   };
 }
 
@@ -225,6 +226,7 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
   const street = input.game.streets[hand.street];
   return {
     handNumber: input.handNumber,
+    ...(input.fair ? { fair: { commit: input.fair.commit, clientSeeds: input.fair.clientSeeds.map((c) => ({ ...c })) } } : {}),
     gameId: input.game.id,
     gameName: gameTitle(input.game.id, input.betting),
     shortName: gameCode(input.game.id, input.betting),
@@ -300,6 +302,8 @@ export function pastHand(record: HandRecord): PastHand {
     button: hand.input.button,
     seats: hand.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
     events: hand.events,
+    handId: hand.input.handId,
+    fair: hand.input.fair,
   };
 }
 
@@ -319,5 +323,23 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
+    // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
+    fair: opts.hideMine ? null : fairRecordView(rt, past),
+  };
+}
+
+function fairRecordView(rt: TableRuntime, past: PastHand): FairRecordView | null {
+  const { fair, handId } = past;
+  if (!fair || !handId) return null;
+  const revealed = rt.fairRevealed(past.handNumber, past.endedAt);
+  return {
+    version: fair.version,
+    handId,
+    commit: fair.commit,
+    clientSeeds: fair.clientSeeds.map((c) => ({ ...c, name: rt.nameOf(c.playerId) })),
+    serverSeed: revealed ? fair.serverSeed : null,
+    handSeed: revealed ? fair.handSeed : null,
+    revealsAt: revealed ? null : past.endedAt + FAIR_REVEAL_AFTER_MS,
+    events: revealed ? past.events : null,
   };
 }

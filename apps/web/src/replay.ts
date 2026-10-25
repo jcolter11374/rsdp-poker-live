@@ -325,6 +325,7 @@ export function frameView(
     offers: [],
     muted: [],
     spectator: null,
+    fair: { nextCommit: '', handCommit: null },
     bombPotNext: false,
     rabbit: { available: false, cards: null },
     nit: null,

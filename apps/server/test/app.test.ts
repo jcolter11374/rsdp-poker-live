@@ -28,6 +28,18 @@ afterAll(async () => {
 const client = (token: string) => socketClient(url, token, clients);
 
 describe('socket server', () => {
+  it('shrugs off malformed messages instead of crashing (one bad client must not restart every table)', async () => {
+    const c = client('malformed-0123456789');
+    const { tableId } = await c.call<{ tableId: string }>('table:create', {});
+    await c.call('table:join', { tableId });
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('seat:sitOut');
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('hand:draw');
+    (c.socket.emit as (e: string, ...a: unknown[]) => void)('seat:prefs', null, null);
+    // Still connected and answering.
+    await c.call('seat:request', { seat: 0, name: 'Still here', stack: 100 });
+    expect((await c.until((v) => !!v.seats[0])).seats[0]?.name).toBe('Still here');
+  });
+
   it('exports every finished hand, hiding cards the viewer never saw', async () => {
     const host = client('export-host-0123456789');
     const guest = client('export-guest-0123456789');

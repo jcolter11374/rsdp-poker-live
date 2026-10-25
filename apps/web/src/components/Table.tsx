@@ -3,7 +3,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
+import { fromVars, lerp, px, seatFractions, stadiumPoint, type Point } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
@@ -106,7 +106,14 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  const seatPoint = (seat: number) => stadiumPoint(((seat - offset + n) % n) / n, w, h);
+  // Empty seats keep half a nameplate plus half a seat button clear of players, and some room between each other.
+  const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
+  const fractions = seatFractions(
+    view.seats.map((s) => !!s),
+    offset,
+    { clear: (compact ? 80 : 115) / perimeter, minGap: (compact ? 44 : 60) / perimeter },
+  );
+  const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
   // Your own bet sits further in, clear of your bigger cards.
   const betPoint = (seat: number) => lerp(seatPoint(seat), center, seat === view.me.seat ? (compact ? 0.48 : 0.56) : compact ? 0.36 : 0.4);
   const buttonPoint = (seat: number) => {
@@ -201,7 +208,7 @@ export function Table({
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
-      <div className="board">
+      <div className={`board${multiRun || multiBoard ? ' multi' : ''}`}>
         {runs.map((run, r) =>
           run.map(
             (cards, b) =>

@@ -190,11 +190,29 @@ export interface HandInput {
   posts: PlannedPost[];
   /** Full deck order, already shuffled with a CSPRNG by the runtime. Cards are dealt from index 0. */
   deck: Card[];
-  /** Seed for reshuffling the muck when a draw game runs out of cards (keeps the engine deterministic). */
+  /** Seed for reshuffling the muck when a draw game runs out of cards (keeps the engine deterministic). Used only by hands dealt before `fair` existed. */
   reshuffleSeed: number;
+  /**
+   * Provably fair dealing (docs/FAIRNESS.md): the deck is deckFromSeed(fair.handSeed),
+   * and draw-game reshuffles use the same seed. Server-only until the hand is revealed:
+   * it gives away every card. Missing on hands dealt before it existed.
+   */
+  fair?: HandFairness;
   options: HandOptions;
   /** Modifiers active this hand with their settings; the engine calls their potFee and afterSettle. */
   modifiers: { id: string; settings: unknown }[];
+}
+
+/** How a hand's deck was made, kept so it can be checked once revealed. */
+export interface HandFairness {
+  version: 'rsdp-fair-v1';
+  /** SHA-256 of serverSeed, published before any player picked a client seed. */
+  commit: string;
+  serverSeed: string;
+  /** Seeds from players' browsers mixed into the deck, one per player at most. */
+  clientSeeds: { playerId: PlayerId; seed: string }[];
+  /** handSeedOf(serverSeed, handId, client seeds). */
+  handSeed: string;
 }
 
 // ---------------------------------------------------------------- actions
@@ -292,6 +310,8 @@ export interface HandState {
   runs: Card[][][];
   /** Draw games: discarded cards, reshuffled when the deck runs short. */
   muck: Card[];
+  /** Draw games: the muck has been shuffled back in this hand, so the deck no longer matches its seed. */
+  reshuffled?: boolean;
   toAct: SeatIndex | null;
   /** Highest live bet this round. */
   currentBet: Chips;
@@ -326,9 +346,12 @@ export type HandEvent = { seq: number } & (
       bombPot: boolean;
     }
   | { t: 'post'; seat: SeatIndex; kind: PostKind; amount: Chips; live: boolean; allIn: boolean }
-  /** Private unless every card is up. Filter with visibleEvents(). */
-  | { t: 'deal'; seat: SeatIndex; cards: DealtCard[] }
-  | { t: 'board'; run: number; board: number; cards: Card[] }
+  /**
+   * Private unless every card is up. Filter with visibleEvents().
+   * `pos` (deal, board, draw): where each card sat in the deck, for checking a revealed hand.
+   */
+  | { t: 'deal'; seat: SeatIndex; cards: DealtCard[]; pos?: number[] }
+  | { t: 'board'; run: number; board: number; cards: Card[]; pos?: number[] }
   | { t: 'street'; street: number; name: string }
   | {
       t: 'action';
@@ -345,8 +368,9 @@ export type HandEvent = { seq: number } & (
   /**
    * Draw games. `cards` (the replacements) are private and go on the end of the hand.
    * `positions` are the indexes thrown away, highest first (hands saved before it was added lack it).
+   * `reshuffled` when the muck was shuffled in to cover this draw; `pos` only before any reshuffle.
    */
-  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[]; positions?: number[] }
+  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[]; positions?: number[]; pos?: number[]; reshuffled?: true }
   | { t: 'uncalled'; seat: SeatIndex; amount: Chips }
   | { t: 'rit-offer'; seats: SeatIndex[] }
   | { t: 'rit-vote'; seat: SeatIndex; yes: boolean }
