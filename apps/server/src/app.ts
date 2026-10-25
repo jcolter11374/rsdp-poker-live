@@ -319,7 +319,7 @@ export function createApp(deps: AppDeps = {}) {
     });
   }
 
-  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isHost(s.data.playerId);
+  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isStaff(s.data.playerId);
 
   /**
    * Finished hands a person may open: everything for players and the host;
@@ -373,8 +373,10 @@ export function createApp(deps: AppDeps = {}) {
       broadcast(rt);
       scheduleSave(rt);
     };
+    // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
+    let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      (created.get(id) ?? Promise.resolve()).then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
     };
     return rt;
   }
@@ -832,6 +834,8 @@ export function createApp(deps: AppDeps = {}) {
     on('host:transfer', ({ playerId }, ack) => guarded(ack, () => current().transferHost(me, String(playerId)), log));
     on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
     on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
+    on('host:coHost', (input, ack) => guarded(ack, () => current().setCoHost(me, String(input?.playerId ?? ''), input?.powers), log));
+    on('host:removeCoHost', (input, ack) => guarded(ack, () => current().removeCoHost(me, String(input?.playerId ?? '')), log));
     on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
     on('bot:add', (input, ack) =>
       guarded(

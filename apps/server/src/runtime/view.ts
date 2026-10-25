@@ -24,7 +24,8 @@ export function tableView(
   const isHost = rt.isHost(playerId);
   const hand = s.hand;
   // The host keeps the live table whether seated or not; everyone else unseated is a spectator.
-  const isSpectator = !mySeat && !isHost;
+  const staff = rt.isStaff(playerId);
+  const isSpectator = !mySeat && !staff;
   const blocked = isSpectator && !s.settings.spectators.allowed;
   const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && s.settings.spectators.seeAllCards };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
@@ -99,6 +100,8 @@ export function tableView(
     tournamentId,
     hostId: s.hostId,
     isHost,
+    powers: rt.powersOf(playerId),
+    coHosts: (s.coHosts ?? []).map((c) => ({ ...c, powers: [...c.powers] })),
     me: { playerId, seat: mySeat?.seat ?? null },
     settings,
     pendingSettings: s.pendingSettings,
@@ -117,11 +120,11 @@ export function tableView(
     bombPotNext: !!s.sideGames?.bombPotNext,
     rabbit: rabbitView(rt, playerId),
     nit: nitRound ? { prize: nitRound.prize, participants: nitRound.participants.length, holders: nitRound.holders.length } : null,
-    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
+    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (staff || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
     level: levelView(rt, now),
     // Besides their own, a player sees the requests of bots they added, so they can take them back.
-    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => ({
+    requests: (rt.can(playerId, 'approve') ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => ({
       ...r,
       ...(rt.isBot(r.playerId) ? { bot: true as const } : {}),
     })),

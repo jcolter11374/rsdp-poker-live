@@ -12,9 +12,15 @@
         { "title": "Tournaments that start on their own", "detail": "Schedule one and it starts at the set time, no host click needed. Sit & Gos, recurring events, late registration, rebuys, add-ons, hand-for-hand and custom payouts." },
         { "title": "Tournament formats", "detail": "Bounty and progressive knockout events, invite codes, check-in, and season leaderboards that add up points across nights." },
         { "title": "Finding games", "detail": "The home page lists upcoming and running tournaments. Optional browser alerts, lobby chat, and links that show a nice preview when pasted in WhatsApp." },
-        { "title": "Cash game host controls", "detail": "Co-hosts, a waitlist, seat shuffles, spectators with a delay, chat settings and saved table presets." },
+        { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, spectators with a delay, chat settings and saved table presets." },
         { "title": "Records", "detail": "Ledger with settle-up, hand replayer, your stats, player notes, hand highlights, shareable hand links and full log downloads." },
-        { "title": "Table extras", "detail": "Avatars, emotes, show stacks in big blinds, all-in odds, sounds, keep-screen-awake, and install it on your phone like an app." }
+        { "title": "Table extras", "detail": "Avatars, emotes, show stacks in big blinds, all-in odds, sounds, keep-screen-awake, and install it on your phone like an app." },
+        { "title": "Practice bots", "detail": "Add a bot to an empty cash seat (it's named after you, like \"John's Poker Bot\") to practice any game risk-free. A player's bot needs the host's OK, and bots never play in tournaments." },
+        { "title": "Clean felt look", "detail": "A cleaner, flatter table with crisp cards and seats with pictures. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
+        { "title": "Clearer game names", "detail": "Tables name the game without the betting clutter, and high-low games are labelled 8 or better." },
+        { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, tables shrinking, phones dropping out and double taps." },
+        { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a seed from each player's browser. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
+        { "title": "Roadmap, suggestions and What's new", "detail": "This page: send your ideas and follow them in the suggestion log. The What's new page lists what each release added." }
       ]
     },
     {
@@ -22,12 +28,7 @@
       "title": "Coming in the next release",
       "blurb": "Built and being tested now.",
       "items": [
-        { "title": "Clean felt look", "detail": "A cleaner, flatter table: green felt, crisp cards with big corner letters, and round player badges." },
-        { "title": "Practice bots", "detail": "Add a bot to an empty seat (it's named after you, like \"John's Poker Bot\") to practice a new game risk-free. Bots only sit where a player puts them, never in tournaments." },
-        { "title": "Clearer game names", "detail": "Pick the game and the betting limit separately, so tables read like \"Hold'em · Pot Limit\"." },
-        { "title": "8-or-better labels", "detail": "High-low games say plainly when there's a qualifying low and who won each half." },
-        { "title": "Cash game reliability", "detail": "A round of fixes so cash games run smoothly from first hand to settle-up." },
-        { "title": "Fair-deal proof", "detail": "Every shuffle can be checked afterwards to prove nobody, including the server, could rig the cards." },
+        { "title": "Co-hosts for cash tables", "detail": "Let a friend help you run a cash table, the way tournament co-hosts already can." },
         { "title": "Optional accounts", "detail": "Sign in with a username and password so your name, picture, notes and history follow you to every device. Guests can still play without one." }
       ]
     },
