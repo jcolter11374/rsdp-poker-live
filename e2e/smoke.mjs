@@ -78,6 +78,34 @@ try {
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
   });
 
+  await step('side games: a PLO bomb pot on two boards at a Hold\'em table', async () => {
+    const host = await open('side games host');
+    const guest = await open('side games guest');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Dee');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Eli');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    await host.click('button:has-text("Table settings")');
+    await host.click('.tabs button:has-text("Side games")');
+    await host.locator('label:has-text("Bomb pot game") select').selectOption('plo4');
+    await host.locator('label.toggle:has-text("Deal two boards") input').check();
+    await host.click('.modal button:has-text("Save")');
+    await host.click('button:has-text("Bomb pot next hand")');
+    await host.click('button:has-text("Start game")');
+    await host.locator('.topbar:has-text("Bomb pot")').waitFor();
+    await host.locator('.board-row').nth(1).waitFor();
+    await playOut([host, guest]);
+    await host.screenshot({ path: path.join(OUT, 'bomb-pot.png') });
+  });
+
   await step('tournament: create, register with names, start, everyone taken to the table', async () => {
     const host = await open('tournament host');
     await host.goto(`${BASE}/tn/new`);

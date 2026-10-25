@@ -735,6 +735,10 @@ export function show(state: HandState, seat: SeatIndex, cardIndexes: number[]) {
   if (!fresh.length) return;
   s.shown.push(...fresh);
   emit(state, { t: 'show', seat, cards: fresh.map((i) => s.cards[i].card) });
+  for (const m of state.input.modifiers) {
+    const mod = modifierRegistry.get(m.id);
+    for (const t of mod?.afterShow?.(state, m.settings, seat) ?? []) applyTransfer(state, t);
+  }
 }
 
 /** Odd-chip order helper re-exported for the runtime and tests. */

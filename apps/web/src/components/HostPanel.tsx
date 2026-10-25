@@ -42,6 +42,13 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
           {view.started && (
             <button onClick={() => run(call('host:pause', { value: !view.paused }))}>{view.paused ? 'Resume' : 'Pause'}</button>
           )}
+          <button
+            className={view.bombPotNext ? 'primary' : ''}
+            title="Everyone posts the bomb pot amount and the flop comes straight away"
+            onClick={() => run(call('host:bombPot', { value: !view.bombPotNext }))}
+          >
+            {view.bombPotNext ? 'Bomb pot next hand ✓' : 'Bomb pot next hand'}
+          </button>
           {canDeal && (
             <button className="primary" onClick={() => run(call('host:deal'))}>
               Deal next hand

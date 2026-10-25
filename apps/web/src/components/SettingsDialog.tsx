@@ -1,19 +1,23 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
+import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
-import type { SettingsPatch, TableSettings } from '@rsdp/engine/settings';
+import { getModifierSchema, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import { BETTING_NAME, fromInput, toInput } from '../format';
 import { Modal } from './SeatDialog';
+import { Field } from './settings/fields';
+import { SideGamesTab } from './settings/SideGamesTab';
 
-type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules';
+type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'stakes', label: 'Stakes' },
   { id: 'clock', label: 'Clock' },
   { id: 'seats', label: 'Seats' },
   { id: 'rules', label: 'Rules' },
+  { id: 'side', label: 'Side games' },
 ];
 const BETTINGS: BettingKind[] = ['no-limit', 'pot-limit', 'fixed-limit'];
 
@@ -47,6 +51,12 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   /** Edit one section of the draft. */
   const set = <K extends keyof TableSettings>(section: K, patch: Partial<TableSettings[K]>) =>
     setDraft((d) => ({ ...d, [section]: { ...(d[section] as object), ...patch } }));
+
+  const setModifier = (id: string, patch: object) =>
+    setDraft((d) => {
+      const cur = (getModifierSchema(id)?.get(d) as object | undefined) ?? {};
+      return { ...d, modifiers: { ...d.modifiers, [id]: { ...cur, ...patch } } };
+    });
 
   const games = draft.game.rotation.enabled && draft.game.rotation.steps.length ? draft.game.rotation.steps.map((s) => s.gameId) : [draft.game.gameId];
   const seatLimit = maxSeatsFor(games);
@@ -312,6 +322,9 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
           </>
         )}
 
+        {tab === 'side' && tournament && <p className="muted">Side games are for cash tables.</p>}
+        {tab === 'side' && !tournament && <SideGamesTab draft={draft} cents={cents} setModifier={setModifier} />}
+
         {tab === 'rules' && (
           <>
             <Field label="Run it twice" hint={tournament ? 'Cash games only.' : undefined}>
@@ -346,15 +359,5 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
         </button>
       </div>
     </Modal>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label>
-      {label}
-      {children}
-      {hint && <span className="hint">{hint}</span>}
-    </label>
   );
 }

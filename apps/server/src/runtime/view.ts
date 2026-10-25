@@ -100,6 +100,7 @@ export function tableView(
     turn: live && s.turn ? { seat: s.turn.seat, startedAt: s.turn.startedAt, deadline: rt.turnDeadline(), usingBank: s.turn.usingBank } : null,
     nextHandAt: s.nextHandAt,
     serverNow: now,
+    bombPotNext: !!s.sideGames?.bombPotNext,
     upcoming,
     level: levelView(rt, now),
     requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),
@@ -168,6 +169,7 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
       times: runItTwiceEvent && runItTwiceEvent.t === 'run-it' ? runItTwiceEvent.times : null,
     },
     showdown: hand.showdown,
+    bombPot: input.options.bombPot,
     awards: hand.phase === 'complete' ? hand.awards : [],
     events: engine.visibleEvents(hand, viewer),
   };
