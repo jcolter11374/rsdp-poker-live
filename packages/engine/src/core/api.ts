@@ -12,6 +12,7 @@ import type {
   HandInput,
   HandState,
   LegalActions,
+  Modifier,
   PlannedPost,
   PlayerId,
   Pot,
@@ -29,6 +30,12 @@ export interface VariantRegistry {
   register(spec: GameSpec, rules: VariantRules): void;
   get(id: string): { spec: GameSpec; rules: VariantRules };
   list(): GameSpec[];
+}
+
+/** Modifiers register once at startup, like variants. */
+export interface ModifierRegistry {
+  register(modifier: Modifier): void;
+  get(id: string): Modifier | undefined;
 }
 
 export interface EngineApi {
@@ -73,7 +80,8 @@ export interface PlannerSeat {
 export interface ForcedBetPlan {
   /** Seats dealt in this hand. */
   dealtIn: SeatIndex[];
-  button: SeatIndex | null;
+  button: SeatIndex;
+  buttonDead: boolean;
   smallBlindSeat: SeatIndex | null;
   bigBlindSeat: SeatIndex | null;
   posts: PlannedPost[];

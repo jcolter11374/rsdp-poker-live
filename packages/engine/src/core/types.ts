@@ -173,13 +173,19 @@ export interface HandInput {
   maxSeats: number;
   /** Players dealt in, in seat order. */
   seats: HandSeatInput[];
-  /** Seat with the dealer button, or null when the button is dead. */
-  button: SeatIndex | null;
+  /** Button position. It may sit on an empty seat (dead button); see buttonDead. */
+  button: SeatIndex;
+  /** True when the button is on a seat with nobody dealt in (dead-button rule). */
+  buttonDead: boolean;
   /** Forced bets in posting order (from the runtime's forced-bet planner). */
   posts: PlannedPost[];
   /** Full deck order, already shuffled with a CSPRNG by the runtime. Cards are dealt from index 0. */
   deck: Card[];
+  /** Seed for reshuffling the muck when a draw game runs out of cards (keeps the engine deterministic). */
+  reshuffleSeed: number;
   options: HandOptions;
+  /** Modifiers active this hand with their settings; the engine calls their potFee and afterSettle. */
+  modifiers: { id: string; settings: unknown }[];
 }
 
 // ---------------------------------------------------------------- actions
@@ -304,7 +310,8 @@ export type HandEvent = { seq: number } & (
       gameId: string;
       betting: BettingKind;
       stakes: Stakes;
-      button: SeatIndex | null;
+      button: SeatIndex;
+      buttonDead: boolean;
       seats: { seat: SeatIndex; playerId: PlayerId; stack: Chips }[];
       boards: 1 | 2;
       bombPot: boolean;
@@ -339,6 +346,9 @@ export type HandEvent = { seq: number } & (
   | { t: 'transfer'; kind: 'bounty-72' | 'nit' | 'nit-escrow' | 'rake'; from: SeatIndex | 'house'; to: SeatIndex | 'house'; amount: Chips }
   | { t: 'hand-end'; stacks: Record<SeatIndex, Chips> }
 );
+
+/** Stands in for a card the viewer may not see. */
+export const HIDDEN_CARD = '??';
 
 /** Who is looking. Spectators may be granted all cards (with a delay) by the host. */
 export interface Viewer {
