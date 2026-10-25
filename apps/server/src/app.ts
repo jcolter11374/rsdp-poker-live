@@ -9,7 +9,7 @@ import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
-import { IdentityError } from './identity';
+import { hashSecret, IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
@@ -24,6 +24,9 @@ import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby'
 import { memorySharedHands, type SharedHandStore } from './shared';
 import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
+import { adminGate } from './admin';
+import { accountRoutes } from './accounts';
+import type { Db } from './db';
 
 export interface Session {
   playerId: PlayerId;
@@ -35,7 +38,8 @@ export interface Session {
 
 /** Who a browser is. The default derives a player id from the browser secret; the database version adds names and accounts. */
 export interface IdentityService {
-  resolve(token: string): Promise<Session>;
+  /** `session` is the sign-in token the browser keeps, when it has one. */
+  resolve(token: string, session?: string): Promise<Session>;
   rename(playerId: PlayerId, name: string): Promise<void>;
 }
 
@@ -96,6 +100,8 @@ export interface AppDeps {
   lobby?: LobbyStore;
   shared?: SharedHandStore;
   suggestions?: SuggestionStore;
+  /** The database that keeps accounts. Without it, sign-up and sign-in answer that accounts are not available. */
+  accounts?: Db | null;
   /** Lets the roadmap admin page change suggestions. Defaults to the ADMIN_KEY environment variable. */
   adminKey?: string;
   /** Deck shuffles; tests pass a seeded one. */
@@ -109,7 +115,7 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number; lastFullLog?: number }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; lastExport?: number; lastFullLog?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -197,7 +203,28 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
   });
-  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { adminKey: deps.adminKey ?? process.env.ADMIN_KEY, now: () => clock.now(), log });
+  const isAdmin = adminGate(deps.adminKey ?? process.env.ADMIN_KEY, () => clock.now());
+  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { isAdmin, now: () => clock.now(), log });
+  accountRoutes(app, deps.accounts ?? null, {
+    isAdmin,
+    now: () => clock.now(),
+    log,
+    hooks: {
+      signedIn: (playerId) => avatars.delete(playerId),
+      deleted: (playerIds) => {
+        for (const id of playerIds) {
+          avatars.delete(id);
+          // Their tabs reconnect as new guests.
+          for (const s of playerSockets.get(id) ?? []) s.disconnect(true);
+        }
+      },
+      signedOutElsewhere: (playerIds, keepGuestToken) => {
+        const keep = keepGuestToken ? hashSecret(keepGuestToken) : null;
+        // Those tabs reload and connect again as whoever they are now.
+        for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
+      },
+    },
+  });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
     const id = String(req.params.id);
@@ -457,6 +484,7 @@ export function createApp(deps: AppDeps = {}) {
     }
     if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
+    if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Poker Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
     if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
@@ -465,7 +493,8 @@ export function createApp(deps: AppDeps = {}) {
     const token = socket.handshake.auth?.token;
     if (typeof token !== 'string' || token.length < 16 || token.length > 128) return next(new Error('missing token'));
     try {
-      const who = await identity.resolve(token);
+      const signedIn = socket.handshake.auth?.session;
+      const who = await identity.resolve(token, typeof signedIn === 'string' ? signedIn : undefined);
       if (!avatars.has(who.playerId)) {
         // A database hiccup shows no picture for now and tries again on the next connect.
         const saved = await avatarStore.get(who.playerId).then(avatarToken, () => undefined);
@@ -474,6 +503,7 @@ export function createApp(deps: AppDeps = {}) {
       socket.data.playerId = who.playerId;
       socket.data.session = { ...who, avatar: avatars.get(who.playerId) ?? null };
       socket.data.tournaments = new Set();
+      socket.data.device = hashSecret(token);
       next();
     } catch (e) {
       next(e instanceof Error ? e : new Error('sign-in failed'));

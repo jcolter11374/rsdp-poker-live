@@ -1,8 +1,8 @@
 // Roadmap suggestions: anyone can send an idea from /roadmap and everyone sees
 // the log. Only someone holding ADMIN_KEY changes a status or removes spam.
 
-import { createHash, timingSafeEqual } from 'node:crypto';
 import express from 'express';
+import { clientAddress, limiter, type AdminCheck } from './admin';
 import { deleteSuggestion, insertSuggestion, listSuggestions, updateSuggestion, type Db, type SuggestionStatus } from './db';
 import { SUGGESTION_STATUSES } from './db/schema';
 
@@ -76,9 +76,6 @@ export const REPLY_MAX = 300;
 const SEND_BURST = 3;
 const SEND_WINDOW_MS = 10 * 60_000;
 const SITE_PER_HOUR = 60;
-/** Wrong admin keys one address may try per window. */
-const ADMIN_TRIES = 10;
-const ADMIN_WINDOW_MS = 10 * 60_000;
 
 const isStatus = (s: unknown): s is SuggestionStatus => typeof s === 'string' && (SUGGESTION_STATUSES as readonly string[]).includes(s);
 
@@ -90,53 +87,20 @@ function clean(v: unknown, max: number, multiline = false): string | null {
   return s.length <= max ? s : null;
 }
 
-/** Sliding-window counter: true (and counted) when `key` has room for one more. */
-function limiter(burst: number, windowMs: number, now: () => number) {
-  const hits = new Map<string, number[]>();
-  return (key: string, count = true) => {
-    const t = now();
-    const recent = (hits.get(key) ?? []).filter((x) => x > t - windowMs);
-    if (recent.length >= burst) return hits.set(key, recent), false;
-    if (count) recent.push(t);
-    if (recent.length) hits.set(key, recent);
-    else hits.delete(key);
-    // Old keys are swept now and then.
-    if (hits.size > 5_000) for (const [k, v] of hits) if (v.every((x) => x <= t - windowMs)) hits.delete(k);
-    return true;
-  };
-}
-
-const digest = (s: string) => createHash('sha256').update(s).digest();
-
 export function suggestionRoutes(
   app: express.Express,
   store: SuggestionStore,
-  opts: { adminKey?: string; now: () => number; log: (message: string, err?: unknown) => void },
+  opts: { isAdmin: AdminCheck; now: () => number; log: (message: string, err?: unknown) => void },
 ) {
-  const { now, log } = opts;
-  // A short key would be guessable; treat it as unset.
-  const adminKey = opts.adminKey && opts.adminKey.length >= 12 ? digest(opts.adminKey) : null;
+  const { now, log, isAdmin } = opts;
   const perAddress = limiter(SEND_BURST, SEND_WINDOW_MS, now);
   const site = limiter(SITE_PER_HOUR, 60 * 60_000, now);
-  const adminTries = limiter(ADMIN_TRIES, ADMIN_WINDOW_MS, now);
   const json = express.json({ limit: '8kb' });
-  const address = (req: express.Request) => req.get('fly-client-ip') ?? req.socket.remoteAddress ?? '';
+  const address = clientAddress;
   const failed = (res: express.Response) => (e: unknown) => {
     log('suggestions failed', e);
     res.status(500).json({ error: 'something went wrong' });
   };
-
-  /** Responds and returns false unless the request carries the admin key. */
-  function isAdmin(req: express.Request, res: express.Response): boolean {
-    if (!adminKey) return res.status(403).json({ error: 'The admin key is not set up on this server yet.' }), false;
-    const ip = address(req);
-    if (!adminTries(ip, false)) return res.status(429).json({ error: 'Too many wrong keys. Try again in a few minutes.' }), false;
-    const given = req.get('x-admin-key') ?? '';
-    if (given && timingSafeEqual(digest(given), adminKey)) return true;
-    adminTries(ip);
-    res.status(401).json({ error: 'That admin key is not right.' });
-    return false;
-  }
 
   // The public log, or only some statuses (e.g. ?status=approved, for planning new work).
   app.get('/api/suggestions', (req, res) => {

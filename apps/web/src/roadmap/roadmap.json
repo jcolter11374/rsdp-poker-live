@@ -28,7 +28,8 @@
       "title": "Coming in the next release",
       "blurb": "Built and being tested now.",
       "items": [
-        { "title": "Co-hosts for cash tables", "detail": "Let a friend help you run a cash table, the way tournament co-hosts already can." }
+        { "title": "Co-hosts for cash tables", "detail": "Let a friend help you run a cash table, the way tournament co-hosts already can." },
+        { "title": "Optional accounts", "detail": "Sign in with a username and password so your name, picture, notes and history follow you to every device. Guests can still play without one." }
       ]
     },
     {
@@ -36,7 +37,6 @@
       "title": "Later",
       "blurb": "On the list, roughly in this order.",
       "items": [
-        { "title": "Accounts", "detail": "Optional sign-in so your name, stats and settings follow you between devices." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." },
         { "title": "The long tail", "detail": "High hand prizes, a final table mode, accessibility improvements and lots of small touches." },
         { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }
