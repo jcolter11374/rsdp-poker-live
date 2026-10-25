@@ -1,24 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
+import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
+import { BoardExtras, SeatExtras } from './table/slots';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
   seat.cards.length && seat.cards.every((c) => c.card !== '??') ? handStrength(gameId, seat.cards.map((c) => c.card), board) : null;
-
-/** Seat positions around an oval, as percentages. Index 0 is the bottom centre. */
-function position(i: number, n: number) {
-  const angle = Math.PI / 2 + (i / n) * Math.PI * 2;
-  return { left: `${50 + 46 * Math.cos(angle)}%`, top: `${50 + 42 * Math.sin(angle)}%` };
-}
-
-/** Where a seat's bet sits: part of the way from the seat towards the middle. */
-function betPosition(i: number, n: number) {
-  const angle = Math.PI / 2 + (i / n) * Math.PI * 2;
-  return { left: `${50 + 30 * Math.cos(angle)}%`, top: `${50 + 25 * Math.sin(angle)}%` };
-}
 
 /** Re-renders on an interval while something on screen is counting down. */
 export function useNow(active: boolean, ms = 200) {
@@ -31,22 +21,56 @@ export function useNow(active: boolean, ms = 200) {
   return now;
 }
 
-const SIT_OUT_TEXT: Record<NonNullable<SeatView['sitOutReason']>, string> = {
-  player: 'sitting out',
-  timeouts: 'away',
-  busted: 'busted',
-  host: 'sat out by host',
-};
+/** The element's size, kept up to date as it changes. */
+function useSize(ref: RefObject<HTMLElement>) {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
+/** A short badge for a seat that is not playing, or null when it is. */
+function seatBadge(s: SeatView): { text: string; kind: 'offline' | 'away' | 'info' } | null {
+  if (!s.online) return { text: s.sittingOut ? 'Away · offline' : 'Offline', kind: 'offline' };
+  if (s.sittingOut) {
+    if (s.sitOutReason === 'busted') return { text: 'Busted', kind: 'away' };
+    if (s.sitOutReason === 'host') return { text: 'Sat out by host', kind: 'away' };
+    if (s.sitOutReason === 'timeouts') return { text: 'Away · timed out', kind: 'away' };
+    return { text: 'Away', kind: 'away' };
+  }
+  if (s.leaving) return { text: 'Leaving', kind: 'info' };
+  if (s.waiting && !s.inHand) return { text: s.waitForBigBlind ? 'Waits for big blind' : 'Plays next hand', kind: 'info' };
+  return null;
+}
 
 export interface DiscardPick {
   selected: number[];
   toggle: (index: number) => void;
 }
 
+/** Chips flying across the felt: bets swept into the pot, the pot pushed to a winner. */
+interface Flight {
+  id: number;
+  from: Point;
+  to: Point;
+  delay: number;
+  kind: 'sweep' | 'award';
+}
+
+let flightId = 0;
+
 export function Table({
   view,
   skew,
   fmt,
+  compact = false,
   onPickSeat,
   onSeatClick,
   discard,
@@ -55,10 +79,14 @@ export function Table({
   /** Server clock minus ours. */
   skew: number;
   fmt: Fmt;
+  /** Phone layout: a tall table and smaller seats. */
+  compact?: boolean;
   onPickSeat?: (seat: number) => void;
   onSeatClick?: (seat: SeatView) => void;
   discard?: DiscardPick | null;
 }) {
+  const felt = useRef<HTMLDivElement>(null);
+  const size = useSize(felt);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
   const offset = view.me.seat ?? 0;
@@ -67,10 +95,38 @@ export function Table({
   const live = !!hand && !done;
   const ticking = !!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline;
   const now = useNow(ticking) + skew;
+  const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
 
-  const winningCards = new Set<string>();
-  if (done) for (const a of hand!.awards) if (a.run === 0 && a.board === 0) a.cards?.forEach((c) => winningCards.add(c));
-  const highlight = (card: string) => (winningCards.size === 0 || card === '??' ? '' : winningCards.has(card) ? 'win' : 'dim');
+  // Geometry. Before the first measure, assume a typical box so nothing jumps far.
+  const w = size.w || (compact ? 320 : 800);
+  const h = size.h || (compact ? 520 : 500);
+  const center: Point = { x: w / 2, y: h / 2 };
+  const seatPoint = (seat: number) => stadiumPoint(((seat - offset + n) % n) / n, w, h);
+  const betPoint = (seat: number) => lerp(seatPoint(seat), center, compact ? 0.36 : 0.4);
+  const buttonPoint = (seat: number) => {
+    const p = seatPoint(seat);
+    const toward = lerp(p, center, compact ? 0.3 : 0.26);
+    // Off to one side of the line to the middle, so it never covers the bet.
+    const dx = center.x - p.x;
+    const dy = center.y - p.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const side = compact ? 22 : 30;
+    return { x: toward.x - (dy / len) * side, y: toward.y + (dx / len) * side };
+  };
+
+  // Winning cards, per board, and every card any winner used.
+  const boardWinners = new Map<string, Set<string>>();
+  const winningHole = new Set<string>();
+  if (done)
+    for (const a of hand!.awards) {
+      const key = `${a.run}-${a.board}`;
+      if (!boardWinners.has(key)) boardWinners.set(key, new Set());
+      a.cards?.forEach((c) => {
+        boardWinners.get(key)!.add(c);
+        winningHole.add(c);
+      });
+    }
+  const highlight = (card: string, set: Set<string> | undefined) => (!set || set.size === 0 || card === '??' ? '' : set.has(card) ? 'win' : 'dim');
 
   // One line per winner: total won and the best hand they won with.
   const results = new Map<number, { amount: number; handName?: string }>();
@@ -80,14 +136,52 @@ export function Table({
       results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount, handName: prev?.handName ?? a.handName });
     }
 
+  // Chip flights: bets swept in when a betting round ends, the pot pushed to the winners.
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const lastRound = useRef<{ key: string; hand: number } | null>(null);
+  const lastBets = useRef<number[]>([]);
+  const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
+  const geometry = useRef({ betPoint, seatPoint, center });
+  geometry.current = { betPoint, seatPoint, center };
+  const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';
+  // Runs before the effect below stores this view's bets, so lastBets holds the round that just ended.
+  useEffect(() => {
+    const before = lastRound.current;
+    lastRound.current = hand ? { key: roundKey, hand: hand.handNumber } : null;
+    if (!hand || !before || before.key === roundKey || before.hand !== hand.handNumber || document.hidden) return;
+    const g = geometry.current;
+    const next: Flight[] = [];
+    lastBets.current.forEach((amount, seat) => {
+      if (amount > 0) next.push({ id: ++flightId, from: g.betPoint(seat), to: g.center, delay: 0, kind: 'sweep' });
+    });
+    if (done) {
+      const winners = [...new Set(hand.awards.map((a) => a.seat))];
+      for (const seat of winners) next.push({ id: ++flightId, from: g.center, to: g.seatPoint(seat), delay: next.length ? 350 : 100, kind: 'award' });
+    }
+    if (!next.length) return;
+    setFlights((f) => [...f, ...next]);
+    const ids = new Set(next.map((f) => f.id));
+    const t = setTimeout(() => {
+      flightTimers.current.delete(t);
+      setFlights((f) => f.filter((x) => !ids.has(x.id)));
+    }, 1400);
+    flightTimers.current.add(t);
+  }, [roundKey]);
+  useEffect(() => {
+    lastBets.current = view.seats.map((s) => s?.bet ?? 0);
+  }, [view]);
+
   const bets = view.seats.reduce((s, x) => s + (x?.bet ?? 0), 0);
   const runs = hand?.boards ?? [];
   const multiRun = runs.length > 1;
   const multiBoard = (runs[0]?.length ?? 0) > 1;
   const stud = hand?.family === 'stud';
+  // Order of seats from the button, so the deal goes round the table.
+  const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
   return (
-    <div className={`felt ${view.me.seat !== null ? 'seated-view' : ''}`}>
+    <div ref={felt} className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}>
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
@@ -97,15 +191,13 @@ export function Table({
             (cards, b) =>
               cards.length > 0 && (
                 <div className="cards board-row" key={`${r}-${b}`}>
-                  {(multiRun || multiBoard) && (
-                    <span className="board-label">{multiRun ? `Run ${r + 1}` : `Board ${b + 1}`}</span>
-                  )}
+                  {(multiRun || multiBoard) && <span className="board-label">{multiRun ? `Run ${r + 1}` : `Board ${b + 1}`}</span>}
                   {cards.map((c, i) => (
                     <PlayingCard
                       key={`${hand!.handNumber}-${r}-${b}-${c}`}
                       card={c}
-                      className={`deal-board ${highlight(c)}`}
-                      style={{ animationDelay: `${cards.length <= 3 ? i * 90 : 0}ms` }}
+                      className={`deal-board ${highlight(c, boardWinners.get(`${r}-${b}`))}`}
+                      style={{ animationDelay: `${cards.length <= 3 ? i * 110 : 0}ms` }}
                     />
                   ))}
                 </div>
@@ -134,14 +226,14 @@ export function Table({
         )}
         {view.paused && <div className="next-hand">Paused</div>}
         {!hand && view.upcoming && <div className="next-hand muted">{view.upcoming.gameName}</div>}
+        <BoardExtras view={view} />
       </div>
 
       {view.seats.map((s, seat) => {
-        const idx = (seat - offset + n) % n;
-        const pos = position(idx, n);
+        const pos = seatPoint(seat);
         if (!s) {
           return (
-            <div className="seat empty" style={pos} key={seat}>
+            <div className="seat empty" style={px(pos)} key={seat}>
               {onPickSeat ? <button onClick={() => onPickSeat(seat)}>Sit</button> : <span>{seat + 1}</span>}
             </div>
           );
@@ -156,8 +248,10 @@ export function Table({
           timeFraction = Math.max(0, Math.min(1, (view.turn.deadline - now) / total));
           secondsLeft = Math.max(0, Math.ceil((view.turn.deadline - now) / 1000));
         }
+        const badge = seatBadge(s);
         const classes = [
           'seat',
+          pos.x < w * 0.18 ? 'edge-left' : pos.x > w * 0.82 ? 'edge-right' : '',
           acting && 'acting',
           s.folded && 'folded',
           (s.sittingOut || !s.online) && 'away',
@@ -167,64 +261,65 @@ export function Table({
         ]
           .filter(Boolean)
           .join(' ');
-        const status = !s.online
-          ? 'offline'
-          : s.sittingOut
-            ? SIT_OUT_TEXT[s.sitOutReason ?? 'player']
-            : s.leaving
-              ? 'leaving'
-              : s.waiting && !s.inHand
-                ? s.waitForBigBlind
-                  ? 'waiting for big blind'
-                  : 'next hand'
-                : null;
         const pickable = isMe && !!discard;
+        const shown = done && !won && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null;
+        const toMiddle = fromVars(center, pos);
+        const muck = fromVars(lerp(pos, center, 0.5), pos);
         return (
           <div key={seat}>
-            <div className={classes} style={pos}>
-              <div className={`hole n${s.cards.length}`}>
-                {s.cards.map((c, i) => (
-                  <PlayingCard
-                    key={`${hand?.handNumber}-${i}-${c.card}`}
-                    card={c.card}
-                    small
-                    className={[
-                      'deal-hole',
-                      highlight(c.card),
-                      stud && !c.up && 'facedown',
-                      pickable && discard!.selected.includes(i) && 'discard',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    style={{ animationDelay: `${i * 90}ms` }}
-                    onClick={pickable ? () => discard!.toggle(i) : undefined}
-                    title={pickable ? 'Click to throw this card away' : undefined}
-                  />
-                ))}
+            <div className={classes} style={px(pos)}>
+              <div className={`hole n${s.cards.length} ${s.folded && !isMe ? 'mucked' : ''}`} style={muck}>
+                {s.cards.map((c, i) => {
+                  const face = c.card !== '??';
+                  // Cards turned over at showdown flip; everything else is dealt in from the middle.
+                  const flip = face && !isMe && !c.up;
+                  return (
+                    <PlayingCard
+                      key={`${hand?.handNumber}-${i}-${isMe ? c.card : face ? 'f' : 'b'}`}
+                      card={c.card}
+                      small={!(compact && isMe)}
+                      className={[
+                        flip ? 'flip-in' : 'deal-hole',
+                        highlight(c.card, winningHole),
+                        stud && !c.up && 'facedown',
+                        pickable && discard!.selected.includes(i) && 'discard',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      style={{ ...toMiddle, animationDelay: flip ? `${i * 80}ms` : hand?.street === 0 ? `${(i * n + dealOrder(seat)) * 45}ms` : '0ms' }}
+                      onClick={pickable ? () => discard!.toggle(i) : undefined}
+                      title={pickable ? 'Tap to throw this card away' : undefined}
+                    />
+                  );
+                })}
               </div>
               <div className="nameplate" onClick={onSeatClick ? () => onSeatClick(s) : undefined}>
+                {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name">
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
-                {status && <div className="status">{status}</div>}
+                {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
-                {done && !won && s.inHand && !s.folded && shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) && (
-                  <div className="status">{shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? [])}</div>
-                )}
+                {shown && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
                   <div className={`timer ${view.turn?.usingBank ? 'bank' : ''}`}>
                     <div className={`timer-fill ${secondsLeft! <= 5 ? 'low' : ''}`} style={{ width: `${timeFraction * 100}%` }} />
                   </div>
                 )}
-                {timeFraction !== null && view.turn?.usingBank && <div className="status bank-text">time bank {clock(secondsLeft! * 1000)}</div>}
+                {timeFraction !== null && (secondsLeft! <= 10 || view.turn?.usingBank) && (
+                  <div className={`status ${view.turn?.usingBank ? 'bank-text' : 'low-text'}`}>
+                    {view.turn?.usingBank ? 'time bank ' : ''}
+                    {clock(secondsLeft! * 1000)}
+                  </div>
+                )}
+                <SeatExtras view={view} seat={s} />
               </div>
-              {hand && !stud && hand.button === seat && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`}>D</div>}
               {won && <div className="win-float">+{fmt(won.amount)}</div>}
             </div>
             {s.bet > 0 && (
-              <div className="bet" style={betPosition(idx, n)}>
+              <div className="bet" style={{ ...px(betPoint(seat)), ...fromVars(pos, betPoint(seat)) }}>
                 <span className="chip" />
                 {fmt(s.bet)}
               </div>
@@ -232,6 +327,16 @@ export function Table({
           </div>
         );
       })}
+
+      {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+
+      {flights.map((f) => (
+        <div key={f.id} className={`chip-flight ${f.kind}`} style={{ ...px(f.to), ...fromVars(f.from, f.to), animationDelay: `${f.delay}ms` }}>
+          <span className="chip" />
+          <span className="chip" />
+          <span className="chip" />
+        </div>
+      ))}
     </div>
   );
 }

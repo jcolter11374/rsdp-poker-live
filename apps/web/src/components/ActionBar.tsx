@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Action } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -17,12 +17,15 @@ export function ActionBar({
   skew,
   discard,
   clearDiscard,
+  onPreAction,
 }: {
   view: TableView;
   fmt: Fmt;
   skew: number;
   discard: number[];
   clearDiscard: () => void;
+  /** Tells the page whether a move is queued, so it can skip the your-turn sound. */
+  onPreAction?: (queued: boolean) => void;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
@@ -34,6 +37,11 @@ export function ActionBar({
   const streetKey = hand ? `${hand.handNumber}:${hand.street}` : '';
   const pre = queued?.key === streetKey ? queued.action : null;
   const setPre = (action: PreAction | null) => setQueued(action && { key: streetKey, action });
+  const [confirmFold, setConfirmFold] = useState(false);
+  const amountBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    onPreAction?.(!!pre);
+  }, [!!pre]);
   const ritDeadline = view.canVoteRunItTwice ? hand?.runItTwice.deadline ?? null : null;
   const now = useNow(ritDeadline !== null, 500) + skew;
 
@@ -43,19 +51,54 @@ export function ActionBar({
   useEffect(() => {
     if (legal) setAmount(legal.minTo);
     setError('');
+    setConfirmFold(false);
   }, [legal?.minTo, hand?.handNumber, hand?.street]);
+
+  // Folding when you could check for free asks once more.
+  const fold = () => {
+    if (legal?.canCheck && !confirmFold) return setConfirmFold(true);
+    setConfirmFold(false);
+    send({ type: 'fold' });
+  };
+
+  // Keyboard: F fold, K check, C call, R raise box (Enter sends it).
+  const keys = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keys.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  keys.current = (e) => {
+    if (!legal || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
+    // Keys never act behind an open dialog or sheet.
+    if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'f' && legal.canFold) fold();
+    else if (k === 'k' && legal.canCheck) send({ type: 'check' });
+    else if (k === 'c' && !legal.canCheck && !legal.canBringIn) send({ type: 'call' });
+    else if (k === 'r' && amountBox.current) {
+      e.preventDefault();
+      amountBox.current.focus();
+      amountBox.current.select();
+    } else return;
+  };
 
   // When it becomes your turn, play the queued move if it still applies.
   useEffect(() => {
     if (!legal || !pre) return;
     setPre(null);
-    if (pre.kind === 'checkFold') send(legal.canCheck ? { type: 'check' } : { type: 'fold' });
-    else if (pre.kind === 'fold') send({ type: 'fold' });
-    else if (pre.kind === 'check' && legal.canCheck) send({ type: 'check' });
-    else if (pre.kind === 'callAny') send(legal.canCheck ? { type: 'check' } : { type: 'call' });
-    else if (pre.kind === 'call' && legal.canCheck) send({ type: 'check' });
-    else if (pre.kind === 'call' && legal.callAmount === pre.amount) send({ type: 'call' });
-    // A "call 20" that now faces a bigger bet is dropped so you can decide again.
+    let move: Action | null = null;
+    if (pre.kind === 'checkFold') move = legal.canCheck ? { type: 'check' } : { type: 'fold' };
+    else if (pre.kind === 'fold') move = { type: 'fold' };
+    else if (pre.kind === 'check' && legal.canCheck) move = { type: 'check' };
+    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : { type: 'call' };
+    else if (pre.kind === 'call' && legal.canCheck) move = { type: 'check' };
+    else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
+    // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can
+    // decide again; say so now, before the page decides whether to call you with the turn sound.
+    if (move) send(move);
+    else onPreAction?.(false);
   }, [legal]);
 
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
@@ -183,36 +226,45 @@ export function ActionBar({
       {sized && (
         <div className="sizing">
           {hand.betting !== 'fixed-limit' && (
-            <>
+            <div className="presets">
               <button onClick={() => setAmount(potRaise(0.5))}>½ pot</button>
               <button onClick={() => setAmount(potRaise(0.75))}>¾ pot</button>
               <button onClick={() => setAmount(potRaise(1))}>Pot</button>
               <button onClick={() => setAmount(legal.maxTo)}>{legal.maxTo >= allInTo ? 'All in' : 'Max'}</button>
-            </>
+            </div>
           )}
-          <input type="range" min={legal.minTo} max={legal.maxTo} value={amount} onChange={(e) => setAmount(+e.target.value)} />
-          <input
-            type="number"
-            min={toInput(centsMode, legal.minTo)}
-            max={toInput(centsMode, legal.maxTo)}
-            step={centsMode ? 0.01 : 1}
-            value={toInput(centsMode, amount)}
-            onChange={(e) => setAmount(fromInput(centsMode, +e.target.value))}
-          />
+          <div className="slider">
+            <input type="range" min={legal.minTo} max={legal.maxTo} value={amount} onChange={(e) => setAmount(+e.target.value)} />
+            <input
+              ref={amountBox}
+              type="number"
+              inputMode="decimal"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && legal.canRaise) send({ type: raiseType, to: clamp(amount) });
+              }}
+              min={toInput(centsMode, legal.minTo)}
+              max={toInput(centsMode, legal.maxTo)}
+              step={centsMode ? 0.01 : 1}
+              value={toInput(centsMode, amount)}
+              onChange={(e) => setAmount(fromInput(centsMode, +e.target.value))}
+            />
+          </div>
         </div>
       )}
       <div className="buttons">
         {legal.canFold && (
-          <button className="fold" onClick={() => send({ type: 'fold' })}>
-            Fold
+          <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="F">
+            {confirmFold ? 'Fold anyway?' : 'Fold'}
           </button>
         )}
         {legal.canBringIn ? (
           <button onClick={() => send({ type: 'bring-in' })}>Bring in {fmt(hand.stakes.bringIn)}</button>
         ) : legal.canCheck ? (
-          <button onClick={() => send({ type: 'check' })}>Check</button>
+          <button onClick={() => send({ type: 'check' })} title="K">
+            Check
+          </button>
         ) : (
-          <button onClick={() => send({ type: 'call' })}>
+          <button onClick={() => send({ type: 'call' })} title="C">
             Call {fmt(legal.callAmount)}
             {legal.callAmount >= me.stack ? ' (all in)' : ''}
           </button>
