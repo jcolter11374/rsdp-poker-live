@@ -171,6 +171,9 @@ export class TournamentManager {
     if (TABLE_COMMANDS.has(cmd.type)) throw new ActionError('unknown command');
     if (HOST_COMMANDS.has(cmd.type)) {
       if (me !== live.state.hostId) throw new ActionError('only the host can do that');
+      // The director checks the shape; the games must also be ones this server can deal.
+      if (cmd.type === 'editStructure') checkGames({ ...live.state.settings, structure: cmd.structure });
+      if (cmd.type === 'updateSettings') checkGames({ ...live.state.settings, ...cmd.settings });
       return { ...cmd, by: me } as Command;
     }
     switch (cmd.type) {
@@ -331,7 +334,13 @@ export class TournamentManager {
       }
     }
     // Starts, levels, breaks, rebuys and moves all change which tables may deal.
-    for (const rt of live.tables.values()) rt.poke();
+    for (const [tableId, rt] of live.tables) {
+      try {
+        rt.poke();
+      } catch (err) {
+        this.deps.log(`tournament ${live.state.id}: dealing at table ${tableId} failed`, err);
+      }
+    }
   }
 
   private handleOne(live: Live, e: DirectorEvent) {
@@ -402,7 +411,11 @@ export class TournamentManager {
 /** Every game must exist and seat a full table. */
 function checkGames(settings: TournamentSettings) {
   if (!settings || !Array.isArray(settings.games) || !Array.isArray(settings.structure)) throw new ActionError('those tournament settings are incomplete');
-  const ids = new Set([...settings.games, ...settings.structure.flatMap((r) => (r.kind === 'level' && r.gameId ? [r.gameId] : []))]);
+  // Any other value would pick a rotation game that is not in the list.
+  const stop = settings.stopRotationAtLevel;
+  if (stop != null && !(Number.isInteger(stop) && stop >= 1)) throw new ActionError('the rotation must stop at a whole level number');
+  // A level's game is only skipped when it is left out: an empty one is still a game nobody can deal.
+  const ids = new Set([...settings.games, ...settings.structure.flatMap((r) => (r?.kind === 'level' && r.gameId !== undefined ? [r.gameId] : []))]);
   for (const id of ids) {
     let spec;
     try {
