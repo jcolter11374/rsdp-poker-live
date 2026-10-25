@@ -1,0 +1,40 @@
+{
+  "releases": [
+    {
+      "id": "2026-10-25-c",
+      "date": "2026-10-25",
+      "title": "Practice bots, a new look and fair dealing you can check",
+      "items": [
+        { "title": "Practice bots", "detail": "Add a bot to any empty seat of a cash table and practice any game for free, including Stud, Razz, Triple Draw and Badugi. A player's bot needs the host's OK, like any seat." },
+        { "title": "A new look", "detail": "A clean, flat felt with new cards, seats with pictures, chips and buttons. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
+        { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a random seed from each player's browser. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
+        { "title": "Roadmap and suggestions", "detail": "See what's coming next on the Roadmap page, send your own ideas, and follow what happens to them in the suggestion log." },
+        { "title": "Smoother cash games", "detail": "Shorter game names, hi-lo games labelled 8 or better, and fixes for players leaving all in, tables shrinking and phones dropping out." }
+      ]
+    },
+    {
+      "id": "2026-10-25-b",
+      "date": "2026-10-25",
+      "title": "Tournament formats, host tools and table extras",
+      "items": [
+        { "title": "Find tournaments easily", "detail": "The home page lists upcoming and running tournaments. Turn on browser alerts, chat in the lobby, and links show a proper preview in WhatsApp." },
+        { "title": "New tournament formats", "detail": "Bounty and progressive knockout events, invite codes, check-in, and season leaderboards that add up points across nights." },
+        { "title": "Tournament host tools", "detail": "Co-hosts, seat moves, custom stack approval and copying an old tournament's settings." },
+        { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, spectators with a delay, chat settings and saved table presets." },
+        { "title": "Table extras", "detail": "Avatars, emotes, stacks in big blinds, all-in odds, sounds, keep-screen-awake, and install the site on your phone like an app." },
+        { "title": "Better records", "detail": "Share a hand with a link, hand highlights, and full log downloads." }
+      ]
+    },
+    {
+      "id": "2026-10-25-a",
+      "date": "2026-10-25",
+      "title": "RSDP Poker Live! is live",
+      "items": [
+        { "title": "Every game", "detail": "Hold'em, Omaha and Omaha Hi-Lo, Seven Card Stud, Stud Hi-Lo, Razz, 2-7 Triple Draw and Badugi, with a How to play guide for each one." },
+        { "title": "Extras for everyone, free", "detail": "Run it twice, straddles, bomb pots, the 7-2 bounty, double board, game rotation, rabbit hunting, the time bank and the Nit game." },
+        { "title": "Tournaments that start on their own", "detail": "Schedule one and it starts at the set time. Sit & Gos, recurring events, late registration, rebuys, add-ons and custom payouts." },
+        { "title": "Ledger, replayer and stats", "detail": "Settle up after the game, replay any hand, and see your stats and notes on players." }
+      ]
+    }
+  ]
+}

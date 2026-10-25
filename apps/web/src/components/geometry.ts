@@ -51,6 +51,48 @@ export function stadiumPoint(t: number, w: number, h: number): Point {
   return { x: right.x - d, y: cy + r };
 }
 
+/**
+ * Where each seat sits round the table, as a fraction (0..1) from the bottom
+ * centre. The anchor seat (yours, or seat 0 when watching) is at the bottom,
+ * the players present are spaced evenly, and empty seats share the gaps
+ * between them in seat order. So four players at a ten-seat table sit at the
+ * four quarters instead of bunched on one side.
+ *
+ * `clear` is how far an empty seat must stay from a player's nameplate and
+ * `minGap` how far empty seats stay from each other, both as fractions of
+ * the way round. When some gap is too small for its empty seats (a nearly
+ * full table), every seat goes back to even spacing.
+ */
+export function seatFractions(taken: readonly boolean[], anchor: number, { clear = 0, minGap = 0 } = {}): number[] {
+  const n = taken.length;
+  const even = Array.from({ length: n }, (_, seat) => ((seat - anchor + n) % n) / n);
+  if (n === 0) return even;
+  // Seat positions counted round from the anchor.
+  const players: number[] = [];
+  for (let k = 0; k < n; k++) if (taken[(anchor + k) % n]) players.push(k);
+  if (players.length === 0) return even;
+  if (players[0] !== 0) players.unshift(0);
+  const m = players.length;
+  const span = 1 / m;
+  const out = new Array<number>(n).fill(0);
+  for (let i = 0; i < m; i++) {
+    const from = players[i];
+    const empties = (i + 1 < m ? players[i + 1] : n) - from - 1;
+    out[(anchor + from) % n] = i * span;
+    if (empties === 0) continue;
+    if (span < 2 * clear + (empties - 1) * minGap || span < (empties + 1) * minGap) return even;
+    if (empties === 1) {
+      out[(anchor + from + 1) % n] = i * span + span / 2;
+      continue;
+    }
+    // Evenly split, unless that would put the end ones too close to the players.
+    const edge = Math.max(span / (empties + 1), clear);
+    const room = span - 2 * edge;
+    for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 1)) / (empties - 1);
+  }
+  return out;
+}
+
 /** Part of the way from `a` to `b`. */
 export const lerp = (a: Point, b: Point, f: number): Point => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
 

@@ -50,6 +50,13 @@
       "when": 1792953962752,
       "tag": "0006_shared_hands",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792962411616,
+      "tag": "0007_suggestions",
+      "breakpoints": true
     }
   ]
 }

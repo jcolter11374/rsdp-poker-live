@@ -1,4 +1,4 @@
-import type { BettingKind, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
+import type { BettingKind, HandFairness, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
@@ -87,6 +87,8 @@ export interface LedgerRow {
   buyIn: number;
   /** Everything taken away when leaving. */
   cashOut: number;
+  /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
+  bot?: true;
 }
 
 export interface ChatMessage {
@@ -121,6 +123,20 @@ export interface PastHand {
   button: number;
   seats: { seat: number; playerId: PlayerId; startStack: number }[];
   events: HandState['events'];
+  /** Missing on hands dealt before provably fair dealing. */
+  handId?: string;
+  fair?: HandFairness;
+}
+
+/** The secret behind the next hand's published commitment. Server-only: never put serverSeed in a view. */
+export interface FairState {
+  next: { serverSeed: string; commit: string };
+  /** Client seeds sent for the next hand, by player. */
+  clientSeeds: Record<PlayerId, string>;
+  /** Hands up to this number are revealed (the host stopped the game after it). */
+  revealedThrough: number;
+  /** When `next` was committed to. Missing in snapshots from before it existed. */
+  committedAt?: number;
 }
 
 /** A finished hand kept in memory for the hand log and replayer; the server also stores it. */
@@ -213,6 +229,17 @@ export interface RuntimeState {
   offers?: SeatOffer[];
   /** Players the host has muted in chat. */
   muted?: PlayerId[];
+  /** Provably fair dealing (docs/FAIRNESS.md). Missing in older snapshots; made on first use. */
+  fair?: FairState;
+  /** Practice bots at this table (seated or asking for a seat), by their player id. */
+  bots?: Record<PlayerId, BotInfo>;
+}
+
+/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+export interface BotInfo {
+  ownerId: PlayerId;
+  ownerName: string;
+  buyIn: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

@@ -33,6 +33,7 @@ describe('createDb', () => {
       'sessions',
       'settings_changes',
       'shared_hands',
+      'suggestions',
       'table_snapshots',
       'tables',
       'tournament_log',

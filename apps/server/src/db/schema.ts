@@ -395,3 +395,25 @@ export const sharedHands = pgTable(
   },
   (t) => [index('shared_hands_created_by_idx').on(t.createdBy)],
 );
+
+// ---------------------------------------------------------------- roadmap suggestions
+
+export const SUGGESTION_STATUSES = ['new', 'approved', 'planned', 'in_progress', 'shipped', 'declined'] as const;
+
+/** An idea anyone sent from the roadmap page. Only the admin changes its status. */
+export const suggestions = pgTable(
+  'suggestions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** Who to credit, as they typed it. */
+    name: text('name').notNull(),
+    title: text('title').notNull(),
+    detail: text('detail').notNull().default(''),
+    status: text('status').notNull().default('new'),
+    /** The admin's short public reply, e.g. why it was declined. */
+    reply: text('reply').notNull().default(''),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [check('suggestions_status_check', sql`${t.status} in (${oneOf(SUGGESTION_STATUSES)})`), index('suggestions_status_idx').on(t.status)],
+);

@@ -1,0 +1,17 @@
+/* ---- /fairness */
+.fairness-page { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; line-height: 1.5; }
+.fairness-page header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.fairness-page h1 { margin: 0 0 8px; font-size: 1.6rem; }
+.fairness-page h2 { margin: 28px 0 8px; font-size: 1.2rem; }
+.fairness-page h3 { margin: 20px 0 6px; font-size: 1.02rem; }
+.fairness-page p, .fairness-page li { overflow-wrap: anywhere; }
+.fairness-page ul, .fairness-page ol { padding-left: 22px; }
+.fairness-page li { margin: 4px 0; }
+.fairness-page code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.fairness-page pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.fairness-page pre code { background: none; border: 0; padding: 0; }
+.fairness-page .md-table { overflow-x: auto; margin: 10px 0; }
+.fairness-page table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.fairness-page th, .fairness-page td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.fairness-page th { background: var(--panel); }
+.fairness-page > .muted { margin-top: 32px; font-size: 0.9rem; }

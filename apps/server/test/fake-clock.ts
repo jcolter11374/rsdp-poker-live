@@ -16,7 +16,10 @@ export class FakeClock implements Clock {
   };
   advance(ms: number) {
     const end = this.t + ms;
+    // A timer that keeps re-arming itself for a time already past would spin a real server.
+    let fired = 0;
     for (;;) {
+      if (++fired > 10_000) throw new Error(`timers keep firing at ${this.t}`);
       const due = [...this.timers.entries()].filter(([, x]) => x.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
       if (!due) break;
       this.timers.delete(due[0]);

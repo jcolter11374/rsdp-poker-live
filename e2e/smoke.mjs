@@ -98,7 +98,7 @@ try {
     await guest.click('.avatar-pick[aria-label="fox"]');
     await guest.click('.mood-pick:has-text("🤠")');
     await guest.click('.modal button:has-text("Close")');
-    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar');
+    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar:not(.initials)');
     await host.waitForSelector('.seat:not(.me) .seat-mood:has-text("🤠")');
     await host.click('.seat:not(.me) .nameplate');
     await host.click('.gesture-grid button[aria-label^="Fish"]');
@@ -127,6 +127,21 @@ try {
     const log = host.waitForEvent('download');
     await host.click('button:has-text("Download full log")');
     if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
+
+    // Fair dealing: the hand is sealed while the game runs, and checks out once the host stops it.
+    await guest.click('.side-panel .tabs button:has-text("Hands")');
+    await guest.locator('.hand-open').first().click();
+    await guest.click('.replayer button:has-text("Check this hand")');
+    await guest.waitForSelector('.fair-check:has-text("Sealed")');
+    await guest.click('.replayer button[aria-label="Close"]');
+    await host.click('button:has-text("Stop game")');
+    await host.waitForSelector('button:has-text("Start game")');
+    await guest.waitForTimeout(500);
+    await guest.locator('.hand-open').first().click();
+    await guest.click('.replayer button:has-text("Check this hand")');
+    await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
+    await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
+    await guest.click('.replayer button[aria-label="Close"]');
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {

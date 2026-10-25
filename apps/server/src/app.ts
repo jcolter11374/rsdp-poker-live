@@ -22,6 +22,7 @@ import { memoryTournamentStore } from './tournament/store';
 import { tablePreview, tournamentPreview, withPreview } from './preview';
 import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby';
 import { memorySharedHands, type SharedHandStore } from './shared';
+import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
 
 export interface Session {
@@ -94,8 +95,13 @@ export interface AppDeps {
   avatars?: AvatarStore;
   lobby?: LobbyStore;
   shared?: SharedHandStore;
+  suggestions?: SuggestionStore;
+  /** Lets the roadmap admin page change suggestions. Defaults to the ADMIN_KEY environment variable. */
+  adminKey?: string;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
+  /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
+  fairLeadMs?: number;
   /** Built web client to serve (production). */
   webDist?: string | null;
   log?: (message: string, err?: unknown) => void;
@@ -148,6 +154,10 @@ export function createApp(deps: AppDeps = {}) {
   const http = createServer(app);
   const io = new Server<C2S, S2C>(http, {
     cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
+    // A phone that loses its signal sends nothing; with the defaults (25 s + 20 s) the table waited up to 45 s
+    // to notice and kept giving them the full clock and time bank. Now it notices within about 20 s.
+    pingInterval: 10_000,
+    pingTimeout: 10_000,
   });
 
   const tables = new Map<string, TableRuntime>();
@@ -187,6 +197,7 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
   });
+  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { adminKey: deps.adminKey ?? process.env.ADMIN_KEY, now: () => clock.now(), log });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
     const id = String(req.params.id);
@@ -341,6 +352,9 @@ export function createApp(deps: AppDeps = {}) {
     return rt;
   }
 
+  /** Practice tables waiting for their creator to arrive before the first deal: table id → creator. */
+  const practiceStarts = new Map<string, PlayerId>();
+
   /** When each player last chatted in a lobby. */
   const lastLobbyChat = new Map<PlayerId, number>();
   const lobby = new LobbyLog(deps.lobby ?? memoryLobbyStore(), log);
@@ -357,6 +371,7 @@ export function createApp(deps: AppDeps = {}) {
   const tournaments = new TournamentManager({
     clock,
     rng: deps.rng,
+    fairLeadMs: deps.fairLeadMs,
     store: deps.tournaments ?? memoryTournamentStore(),
     tables: {
       createTable: (state) => store.createTable(state),
@@ -413,7 +428,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!saved || saved.settings.table.mode === 'tournament') return null;
     // Another join may have loaded it while we waited.
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs }));
     rt.resume();
     return rt;
   }
@@ -436,8 +451,11 @@ export function createApp(deps: AppDeps = {}) {
       const state = tables.get(t[1])?.state ?? (await store.loadTable(t[1]));
       if (!state) return null;
       const { settings } = state;
-      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`);
+      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting);
     }
+    if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
+    if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
+    if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
@@ -494,7 +512,28 @@ export function createApp(deps: AppDeps = {}) {
         if (rt) broadcast(rt);
       }
     };
-    const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
+    /** A practice table: sits me in the first seat, adds the bots and deals. */
+    const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown }) => {
+      const name = cleanName(practice.name, NAME_MAX) || socket.data.session.displayName;
+      if (!name) throw new ActionError('pick a name');
+      if (!socket.data.session.displayName) await rename(name).catch(() => {});
+      const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
+      rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
+      for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
+      // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
+      practiceStarts.set(rt.state.id, me);
+    };
+    // A malformed message (no payload, the wrong shape) must not throw out of the socket and restart the server for every table.
+    const on = <K extends keyof C2S>(event: K, handler: C2S[K]) =>
+      socket.on(event, ((...args: unknown[]) => {
+        try {
+          (handler as (...a: unknown[]) => unknown)(...args);
+        } catch (e) {
+          log(`bad ${String(event)} message`, e);
+          const ack = args.at(-1);
+          if (typeof ack === 'function') ack({ ok: false, error: 'something went wrong' });
+        }
+      }) as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
 
@@ -506,7 +545,16 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
+          // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
+          if (input?.practice) {
+            try {
+              await startPractice(rt, input.practice);
+            } catch (e) {
+              rt.dispose();
+              throw e;
+            }
+          }
           await store.createTable(rt.state);
           attach(rt);
           return { tableId: rt.state.id };
@@ -527,6 +575,14 @@ export function createApp(deps: AppDeps = {}) {
             if (!watchers.has(rt.state.id)) watchers.set(rt.state.id, new Set());
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
+          }
+          if (practiceStarts.get(rt.state.id) === me) {
+            practiceStarts.delete(rt.state.id);
+            try {
+              rt.start(me);
+            } catch (e) {
+              log(`practice table ${rt.state.id} could not start`, e);
+            }
           }
           loadAvatars(rt);
           rt.guestNames.set(me, socket.data.session.displayName || 'Guest');
@@ -601,7 +657,8 @@ export function createApp(deps: AppDeps = {}) {
           if (!record) throw new ActionError('that hand is no longer available');
           if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
           const id = newId();
-          const hand = handRecordView(rt, record, me, { hideMine: !!input?.hideMine });
+          // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
+          const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
           await sharedStore.create({
             id,
             tableId: rt.state.id,
@@ -667,6 +724,7 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
     on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('fair:seed', (input, ack) => guarded(ack, () => current().addClientSeed(me, input ?? {}), log));
     on('notes:list', (ack) => guarded(ack, async () => ({ notes: await notes.list(me) }), log));
     on('notes:set', (input, ack) =>
       guarded(
@@ -745,6 +803,17 @@ export function createApp(deps: AppDeps = {}) {
     on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
     on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
     on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
+    on('bot:add', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const seat = input?.seat === undefined || input?.seat === null ? undefined : Number(input.seat);
+          return { playerId: current().addBot(me, { ownerName: socket.data.session.displayName, seat }) };
+        },
+        log,
+      ),
+    );
+    on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
     on('tournament:subscribe', (input, ack) =>

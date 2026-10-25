@@ -61,10 +61,18 @@ export interface SeatView {
   avatar: string | null;
   /** An emoji the player shows by their seat, or null. */
   mood: string | null;
+  /** A practice bot, and who added it (absent for people). */
+  bot?: { ownerId: PlayerId; ownerName: string };
 }
 
 export interface HandView {
   handNumber: number;
+  /**
+   * Provably fair dealing: the commitment this hand was dealt from and the
+   * players' seeds mixed in, so each browser can see its own seed was used.
+   * Missing on hands dealt before it existed.
+   */
+  fair?: { commit: string; clientSeeds: { playerId: PlayerId; seed: string }[] };
   gameId: string;
   gameName: string;
   shortName: string;
@@ -102,6 +110,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
+  /** A practice bot asking for a seat (its owner sees it too). */
+  bot?: true;
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -117,6 +127,8 @@ export interface LedgerView {
   /** Current chips if still seated. */
   stack: number;
   net: number;
+  /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
+  bot?: true;
 }
 
 export interface ChatView {
@@ -192,6 +204,12 @@ export interface TableView {
    * has turned watching off: the hand is hidden until you sit.
    */
   spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
+  /**
+   * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
+   * next hand's server seed (seated browsers answer with fair:seed), and the
+   * one the hand in progress was dealt from.
+   */
+  fair: { nextCommit: string; handCommit: string | null };
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */
@@ -205,6 +223,25 @@ export interface HandRecordView {
   button: number;
   seats: { seat: number; playerId: PlayerId; name: string; stack: number }[];
   events: HandEvent[];
+  /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
+  fair?: FairRecordView | null;
+}
+
+/**
+ * A finished hand's fairness record. serverSeed and handSeed are null until the
+ * hand is revealed (the host stopped the game, or at revealsAt): they give away
+ * every card in the deck, folded hands included.
+ */
+export interface FairRecordView {
+  version: string;
+  handId: string;
+  commit: string;
+  clientSeeds: { playerId: PlayerId; name: string; seed: string }[];
+  serverSeed: string | null;
+  handSeed: string | null;
+  revealsAt: number | null;
+  /** Once revealed: every event with every card, so the checker can deal the hand again. */
+  events: HandEvent[] | null;
 }
 
 /** A hand shared as a link: frozen as the sharer saw it (or with their own cards hidden). */
@@ -224,6 +261,8 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
+  /** A practice table: seat me with this name and deal straight away against this many bots (1-9). */
+  practice?: { name: string; bots: number };
 }
 
 export interface ClientToServer {
@@ -259,6 +298,8 @@ export interface ClientToServer {
   'hand:timeBank': (ack: Ack) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
+  /** Add my browser's randomness to the next hand, answering the commitment I was shown (seated players). */
+  'fair:seed': (input: { commit: string; seed: string }, ack: Ack) => void;
   'chat:send': (input: { text: string }, ack?: Ack) => void;
   /** Throw a gesture at a player at my table. */
   'table:gesture': (input: { to: PlayerId; kind: GestureKind }, ack: Ack) => void;
@@ -288,6 +329,10 @@ export interface ClientToServer {
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
+  /** Add a practice bot named after me, in this seat or the first free one. */
+  'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
+  /** Take away a bot I added (the host can take away any). */
+  'bot:remove': (input: { playerId: string }, ack: Ack) => void;
 }
 
 export interface ServerToClient {

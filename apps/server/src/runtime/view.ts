@@ -1,8 +1,9 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
-import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { fillStakes, rabbitCards, type TableRuntime } from './table';
+import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
+import { FAIR_REVEAL_AFTER_MS, fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand } from './types';
+import { gameCode, gameTitle } from '@rsdp/engine/variants';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -73,6 +74,7 @@ export function tableView(
       handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
       avatar: avatarOf(seat.playerId),
       mood: seat.mood ?? null,
+      ...botTag(rt, seat.playerId),
     };
   });
 
@@ -118,7 +120,12 @@ export function tableView(
     rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
     level: levelView(rt, now),
-    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),
+    // Besides their own, a player sees the requests of bots they added, so they can take them back.
+    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => ({
+      ...r,
+      ...(rt.isBot(r.playerId) ? { bot: true as const } : {}),
+    })),
+    // Bot rows are flagged: they play for nothing, so settle-up pays only between people.
     ledger: Object.values(s.ledger).map((row) => {
       const seat = rt.seatOf(row.playerId);
       const stack = seat ? seat.stack + seat.pendingChips : 0;
@@ -127,12 +134,13 @@ export function tableView(
     chat: s.chat.slice(-CHAT_SHOWN),
     log: s.log.slice(-LOG_SHOWN),
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
-    history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
+    history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: gameTitle(h.hand.input.game.id, h.hand.input.betting) })),
     watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
     waitlist: (s.waitlist ?? []).map((w) => ({ playerId: w.playerId, name: w.name })),
     offers: (s.offers ?? []).map((o) => ({ ...o, name: s.waitlist?.find((w) => w.playerId === o.playerId)?.name ?? rt.nameOf(o.playerId) })),
     muted: [...(s.muted ?? [])],
     spectator: isSpectator ? { delaySeconds: s.settings.spectators.delaySeconds, seeAll: viewer.seeAll, blocked } : null,
+    fair: { nextCommit: rt.nextCommit(), handCommit: hand?.input.fair?.commit ?? null },
   };
 }
 
@@ -185,6 +193,11 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   };
 }
 
+function botTag(rt: TableRuntime, playerId: PlayerId): Pick<SeatView, 'bot'> {
+  const bot = rt.botInfo(playerId);
+  return bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName } } : {};
+}
+
 function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {
   const s = rt.state;
   const cards = s.hand ? rabbitCards(s.hand, s.settings.play.rabbitHunt) : null;
@@ -208,20 +221,15 @@ function showable(hand: HandState, seat: number) {
 function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
   const s = rt.state;
   const { input } = hand;
-  let shortName = input.game.name;
-  try {
-    shortName = (variants.get(input.game.id).spec as { shortName?: string }).shortName ?? input.game.name;
-  } catch {
-    /* unregistered game: keep the full name */
-  }
   const runItTwiceEvent = [...hand.events].reverse().find((e) => e.t === 'run-it');
   const offered = hand.events.some((e) => e.t === 'rit-offer');
   const street = input.game.streets[hand.street];
   return {
     handNumber: input.handNumber,
+    ...(input.fair ? { fair: { commit: input.fair.commit, clientSeeds: input.fair.clientSeeds.map((c) => ({ ...c })) } } : {}),
     gameId: input.game.id,
-    gameName: input.game.name,
-    shortName,
+    gameName: gameTitle(input.game.id, input.betting),
+    shortName: gameCode(input.game.id, input.betting),
     family: input.game.family,
     betting: input.betting,
     stakes: input.stakes,
@@ -264,7 +272,8 @@ function previewSetup(rt: TableRuntime): TableView['upcoming'] {
     const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
     Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
   }
-  return { gameId: game.id, gameName: game.name, betting: step?.betting ?? settings.game.betting, stakes: fillStakes(stakes, game) };
+  const betting = step?.betting ?? settings.game.betting;
+  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes: fillStakes(stakes, game) };
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {
@@ -287,12 +296,14 @@ export function pastHand(record: HandRecord): PastHand {
     handNumber: record.handNumber,
     startedAt: record.startedAt,
     endedAt: record.endedAt,
-    gameName: hand.input.game.name,
+    gameName: gameTitle(hand.input.game.id, hand.input.betting),
     betting: hand.input.betting,
     stakes: hand.input.stakes,
     button: hand.input.button,
     seats: hand.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
     events: hand.events,
+    handId: hand.input.handId,
+    fair: hand.input.fair,
   };
 }
 
@@ -312,5 +323,23 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
+    // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
+    fair: opts.hideMine ? null : fairRecordView(rt, past),
+  };
+}
+
+function fairRecordView(rt: TableRuntime, past: PastHand): FairRecordView | null {
+  const { fair, handId } = past;
+  if (!fair || !handId) return null;
+  const revealed = rt.fairRevealed(past.handNumber, past.endedAt);
+  return {
+    version: fair.version,
+    handId,
+    commit: fair.commit,
+    clientSeeds: fair.clientSeeds.map((c) => ({ ...c, name: rt.nameOf(c.playerId) })),
+    serverSeed: revealed ? fair.serverSeed : null,
+    handSeed: revealed ? fair.handSeed : null,
+    revealsAt: revealed ? null : past.endedAt + FAIR_REVEAL_AFTER_MS,
+    events: revealed ? past.events : null,
   };
 }

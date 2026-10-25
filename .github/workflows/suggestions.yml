@@ -1,0 +1,32 @@
+name: Approved suggestions
+
+# Lists the roadmap suggestions John approved on the live site, read only,
+# so new work can be planned from them. Run it by hand from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      status:
+        description: Statuses to list, comma separated (new, approved, planned, in_progress, shipped, declined)
+        default: approved
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List suggestions
+        env:
+          STATUS: ${{ inputs.status }}
+        run: |
+          curl -sfG "https://rsdp-poker-live.fly.dev/api/suggestions" --data-urlencode "status=$STATUS" -o suggestions.json
+          jq . suggestions.json
+          # Anyone can write a suggestion, so the summary shows them as plain text, never as Markdown.
+          {
+            echo "## Suggestions: $STATUS"
+            echo '~~~'
+            jq -r '.suggestions[] | "#\(.id) \(.title) — by \(.name) (\(.status))\(if .detail != "" then "\n    \(.detail | gsub("\n"; " ") | gsub("~~~"; "~ ~ ~"))" else "" end)"' suggestions.json
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -6,6 +6,7 @@ import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
+import { WhatsNewBanner } from './roadmap/WhatsNewPage';
 import { TournamentList } from './tournament/TournamentList';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
@@ -18,6 +19,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [turnSeconds, setTurnSeconds] = useState(30);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [bots, setBots] = useState(3);
   const presets = usePresets();
   const [presetName, setPresetName] = useState('');
   const preset = presets.find((p) => p.name === presetName) ?? null;
@@ -29,8 +31,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
     setBetting(getVariant(id).defaultBetting);
   };
 
-  const create = (e: React.FormEvent) => {
-    e.preventDefault();
+  /** A table for friends, or with `practice` a table for you and some bots that deals at once. */
+  const create = (e: React.FormEvent | null, practice = false) => {
+    e?.preventDefault();
     setBusy(true);
     saveName(name);
     let fromPreset: SettingsPatch | null = null;
@@ -40,8 +43,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       setBusy(false);
       return setError((err as Error).message);
     }
+    const tableName = practice ? `${name.trim() || 'My'}'s practice table` : `${name.trim() || 'Friends'}'s table`;
     const quick: SettingsPatch = {
-      table: { name: `${name.trim() || 'Friends'}'s table`, maxSeats: Math.min(9, spec.maxPlayers) },
+      table: { name: tableName, maxSeats: Math.min(9, spec.maxPlayers) },
       game: { gameId, betting },
       // Stud has no blinds: the ante and bring-in start the pot. Limit bets are the big blind and twice it.
       stakes: {
@@ -51,7 +55,11 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       timing: { decisionSeconds: turnSeconds },
     };
     const settings: SettingsPatch = fromPreset ? { ...fromPreset, table: { ...fromPreset.table, name: quick.table!.name, mode: 'cash' } } : quick;
-    call<{ tableId: string }>('table:create', { settings })
+    if (practice && !name.trim()) {
+      setBusy(false);
+      return setError('Pick a name first');
+    }
+    call<{ tableId: string }>('table:create', { settings, ...(practice ? { practice: { name, bots } } : {}) })
       .then((res) => onCreated(res.tableId))
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(false));
@@ -63,6 +71,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         RSDP Poker <span>Live!</span>
       </h1>
       <p className="tagline">Start a table, send the link, and play with friends. No sign-up.</p>
+      <WhatsNewBanner />
       <TournamentList />
       <form className="card-panel" onSubmit={create}>
         <label>
@@ -135,12 +144,34 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
           Create table
         </button>
         <p className="muted">Everything else (run it twice, straddles, rebuys, game rotation) is in Table settings once you're in.</p>
+        <div className="practice">
+          <p className="muted">New to a game? Try it against practice bots first. They play the game above, with play chips, and the cards are dealt straight away.</p>
+          <div className="row">
+            <label>
+              Bots
+              <select value={bots} onChange={(e) => setBots(+e.target.value)}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" disabled={busy} onClick={() => create(null, true)}>
+              Practice with bots
+            </button>
+          </div>
+        </div>
       </form>
       <p className="tagline">
         Or <a href="/tn/new">host a tournament</a>: schedule it and it starts on its own.
       </p>
       <p className="tagline">
         New to Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
+      </p>
+      <p className="tagline">
+        See <a href="/whats-new">what's new</a> and what's coming on the <a href="/roadmap">roadmap</a>.{' '}
+        Wondering if the deal is fair? <a href="/fairness">See how we prove it</a>.
       </p>
       <InstallApp />
     </main>
