@@ -93,7 +93,9 @@ describe('tournament manager guards', () => {
     const env = setup({ store: first.store, snapshots: first.snapshots, clock: first.clock });
     await env.manager.resumeAll();
     await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
-    expect(env.errors.map((x) => (x as [string])[0])).toEqual([expect.stringMatching(/deal/)]);
+    // Logged by the manager, or by the table when it catches the failure itself.
+    expect(env.errors.length).toBeGreaterThan(0);
+    expect(env.errors.every((x) => /deal/.test((x as [string])[0]))).toBe(true);
     env.clock.advance(1000);
     expect((await env.store.load(id))!.state.status).toBe('running');
     // The clock still runs: the first level ends on time.

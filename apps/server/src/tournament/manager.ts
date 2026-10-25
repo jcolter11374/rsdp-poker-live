@@ -347,7 +347,8 @@ export class TournamentManager {
   }
 
   private runtimeDeps(live: Live, tableId: TableId) {
-    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId) };
+    // `log`: failures a table catches itself go to the server log too.
+    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log };
   }
 
   /** What a tournament table asks of the director. Acting on its reports waits for a 0 ms timer, so the table finishes its own step first. */
