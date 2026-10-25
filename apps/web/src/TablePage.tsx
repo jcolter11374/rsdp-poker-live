@@ -390,10 +390,10 @@ export function TablePage({ tableId }: { tableId: string }) {
           {cash && !view.started && (
             <div className="banner">
               {view.history.length > 0
-                ? view.isHost
+                ? view.powers.includes('run')
                   ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : 'Press Start game to deal again'}.`
                   : 'The game is stopped. Waiting for the host to start it again.'
-                : view.isHost
+                : view.powers.includes('run')
                   ? portrait
                     ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
                     : 'Take a seat, send friends the invite link, then press Start game.'

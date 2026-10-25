@@ -364,6 +364,14 @@ describe('co-hosts', () => {
     expect(() => rt.kick('a', 'b')).toThrow(/co-host/);
   });
 
+  it("doesn't let a co-host remove the host's bots", () => {
+    const { rt } = withCoHost(['players']);
+    const bot = rt.addBot('host', { seat: 3 });
+    expect(() => rt.removeBot('a', bot)).toThrow(/only the host/);
+    rt.removeBot('host', bot);
+    expect(rt.seatOf(bot)).toBeNull();
+  });
+
   it('takes co-host powers away from someone the host removes', () => {
     const { rt } = withCoHost(['players']);
     rt.kick('host', 'a');

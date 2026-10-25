@@ -608,7 +608,7 @@ export class TableRuntime {
       this.revealHands();
     }
     this.state.nextHandAt = null;
-    this.log('The host stopped the game');
+    this.log(`${this.nameOf(by)} stopped the game`);
     this.sync();
   }
 
@@ -1181,6 +1181,7 @@ export class TableRuntime {
     const bot = this.botInfo(botId);
     if (!bot) throw new ActionError('no such bot');
     if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
+    if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError('only the host can remove a co-host\'s bot');
     if (this.state.requests.some((r) => r.playerId === botId)) {
       this.state.requests = this.state.requests.filter((r) => r.playerId !== botId);
       this.forgetBot(botId);
@@ -1270,7 +1271,7 @@ export class TableRuntime {
   // ---------------------------------------------------------------- tournament seating
 
   /** Tournament: put a player in a seat with a stack (start, late registration, moves). */
-  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number }) {
+  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number; mood?: string | null }) {
     if (this.state.seats[input.seat]) throw new Error(`seat ${input.seat} is taken`);
     this.state.seats[input.seat] = {
       seat: input.seat,
@@ -1290,6 +1291,7 @@ export class TableRuntime {
       leaveAfterHand: false,
       pendingChips: 0,
       pendingStack: null,
+      ...(input.mood ? { mood: input.mood } : {}),
     };
     // A moved or newly seated player is still on their way to the table.
     if (!this.isOnline(input.playerId)) this.offlineSince.set(input.playerId, this.clock.now());
@@ -1402,6 +1404,12 @@ export class TableRuntime {
     if (hand.phase === 'complete' && this.state.handStartedAt === null) {
       this.applyLateTransfers(hand, from);
       this.logBounty(hand, from);
+      // Store the hand again so its history (here and in the database) has the show.
+      const record = this.state.history.find((r) => r.handNumber === hand.input.handNumber);
+      if (record && hand.events.length > from) {
+        record.hand = hand;
+        this.onHandFinished(record);
+      }
     }
     this.onChange();
   }
@@ -1453,7 +1461,6 @@ export class TableRuntime {
         if (gone) gone.stack += amount;
       }
     };
-    let changed = false;
     for (const e of hand.events.slice(fromEvent)) {
       if (e.t !== 'transfer') continue;
       const paid = e.from === 'house' ? e.amount : take(e.from, e.amount);
@@ -1467,11 +1474,7 @@ export class TableRuntime {
         }
         e.amount = paid;
       }
-      changed = true;
     }
-    // Store the hand again so its history has the claim.
-    const record = s.history.find((r) => r.handNumber === hand.input.handNumber);
-    if (changed && record) this.onHandFinished({ ...record, hand });
   }
 
   private liveHandFor(playerId: PlayerId): HandState {

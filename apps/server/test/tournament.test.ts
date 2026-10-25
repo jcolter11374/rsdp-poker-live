@@ -59,6 +59,25 @@ describe('tournaments on the server', () => {
     expect(env.moves.filter((m) => m.from !== '').length).toBeGreaterThan(0);
   }, 60_000);
 
+  it("keeps a player's mood emoji when they are moved to another table", async () => {
+    const env = setup();
+    const settings: TournamentSettings = defaultSettings({
+      name: 'Moods',
+      start: { kind: 'scheduled', startAt: env.clock.now() + 2 * MIN },
+      startingStack: 1000,
+      seatsPerTable: 6,
+      lateRegistration: { enabled: false, throughLevel: null },
+    });
+    const id = await env.manager.create('host', settings);
+    for (const p of players(14)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    env.clock.advance(2 * MIN + 1000);
+    for (const rt of env.tables.values()) for (const seat of rt.state.seats) if (seat) rt.setPreferences(seat.playerId, { mood: '🔥' });
+    const moved = () => env.moves.find((m) => m.from !== '');
+    playUntil(env, () => !!moved());
+    const m = moved()!;
+    expect(env.tables.get(m.to)!.seatOf(m.playerId)?.mood).toBe('🔥');
+  }, 60_000);
+
   it('plays a mixed-game tournament (Hold\'em, Omaha, Stud, Triple Draw, Badugi) to the end', async () => {
     const env = setup();
     const games = ['nlhe', 'plo4', 'stud', 'td27', 'badugi'];
