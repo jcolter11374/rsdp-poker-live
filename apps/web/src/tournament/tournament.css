@@ -51,6 +51,7 @@
 .tn-table tr.tn-me-row td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tn-tag { display: inline-block; margin-left: 6px; font-size: 0.7rem; padding: 0 5px; border-radius: 4px; background: var(--panel-2); color: var(--muted); vertical-align: middle; }
 .tn-tag-warn { color: var(--accent-2); }
+.tn-tag-good { color: var(--good); }
 .tn-search { margin-bottom: 4px; }
 
 .tn-tables { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -156,3 +157,25 @@
 .tn-strip-row + .tn-strip-row { border-top: 1px solid var(--panel-2); }
 .tn-strip-row a { margin-left: auto; }
 .tn-strip-row button { padding: 3px 10px; }
+
+/* Home page tournament lists. */
+.tn-list { margin-bottom: 16px; gap: 10px; }
+.tn-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tn-list-head h2 { margin: 0; font-size: 1.1rem; }
+.tn-list .tn-tabs { margin: 0 -20px; padding: 0 20px; }
+.tn-list-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tn-list-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); color: var(--text); text-decoration: none; min-width: 0; }
+.tn-list-row:hover { outline: 1px solid var(--muted); }
+.tn-list-row .muted { margin: 0; }
+.tn-list-name { font-weight: 600; overflow-wrap: anywhere; }
+.tn-list-when { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.tn-list-running, .tn-list-seating { color: var(--good); }
+.tn-list-paused { color: var(--accent-2); }
+.tn-list-cancelled { color: var(--bad); }
+
+/* Background alerts switch. */
+.tn-header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.tn-header-actions .tn-share { margin-top: 0; }
+.tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
+.tn-alerts.on { border-color: var(--good); color: var(--good); }
+.tn-list-head .tn-alerts { margin-left: auto; }

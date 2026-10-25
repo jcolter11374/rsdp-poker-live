@@ -5,23 +5,31 @@ import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from
 import {
   apply,
   autoArchive,
+  codeFromWords,
   createTournament,
   isStaffCommand,
   lastActivityAt,
   mayCommand,
   DirectorError,
+  isArchived,
+  isLive,
   levelFor,
+  listedPublicly,
   nextOccurrence,
+  sortListings,
+  tournamentListing,
   nextWakeAt,
   tableAddress,
   tableGate,
   tick,
+  viewFor,
   type Command,
   type DirectorEvent,
   type HandResult,
   type Result,
   type SeatInfo,
   type TableId,
+  type TournamentListing,
   type TournamentSettings,
   type TournamentState,
   type TournamentView,
@@ -38,6 +46,8 @@ export interface TournamentStore {
   load(id: string): Promise<{ state: TournamentState; nextId: string | null } | null>;
   /** Tournaments that are not finished or cancelled, to resume after a restart. */
   listLive(): Promise<{ state: TournamentState; nextId: string | null }[]>;
+  /** Tournaments a player hosted or entered that were still going at `since` (ms), the most recent first. */
+  listForPlayer(playerId: PlayerId, since: number): Promise<{ state: TournamentState; nextId: string | null }[]>;
 }
 
 /** The server side of the tables a tournament runs: storage, broadcasting and links. */
@@ -91,6 +101,9 @@ const SWEEP_MS = 60 * 60 * 1000;
 export const IDLE_ARCHIVE_MS = 30 * 24 * 60 * 60 * 1000;
 /** A finished event stays in memory this long, then is loaded again from storage when someone asks for it. */
 export const FINISHED_KEEP_MS = 60 * 60 * 1000;
+/** How far back the home page lists a player's own tournaments. */
+const OWN_LIST_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Hex, so a table address `<tournament>-t<n>` still leads back to its tournament. */
 const newTournamentId = () => randomBytes(8).toString('hex');
@@ -209,11 +222,33 @@ export class TournamentManager {
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
   }
 
-  /** What a browser is sent. The seating seed stays on the server. */
-  view(id: string): TournamentView | null {
+  /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
+  view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);
     if (!live) return null;
-    return { state: { ...live.state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+    const state = viewer === undefined ? live.state : viewFor(live.state, viewer);
+    return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+  }
+
+  /**
+   * The home page lists: every upcoming and running event on this server (all of them are in memory), plus the
+   * player's own from the last 30 days, which may have finished before the server last started.
+   */
+  async list(me: PlayerId): Promise<TournamentListing[]> {
+    const now = this.clock.now();
+    const out = new Map<string, TournamentListing>();
+    const involved = (s: TournamentState) => s.hostId === me || s.entries.some((e) => e.playerId === me) || s.requests.some((r) => r.playerId === me);
+    for (const l of this.live.values()) {
+      // An invite-only event still shows for its host and players.
+      if (listedPublicly(l.state) || (isLive(l.state) && !isArchived(l.state) && involved(l.state))) out.set(l.state.id, tournamentListing(l.state, me, now, l.nextId));
+    }
+    for (const saved of await this.deps.store.listForPlayer(me, now - OWN_LIST_DAYS * DAY_MS)) {
+      // The copy in memory is newer than the saved one.
+      const l = this.live.get(saved.state.id) ?? saved;
+      if (isArchived(l.state)) continue;
+      out.set(l.state.id, tournamentListing(l.state, me, now, l.nextId));
+    }
+    return sortListings([...out.values()]);
   }
 
   /** A browser's command, with who is acting filled in from the connection. */
@@ -273,6 +308,11 @@ export class TournamentManager {
       // The director checks the shape; the games must also be ones this server can deal.
       if (cmd.type === 'editStructure') checkGames({ ...live.state.settings, structure: cmd.structure });
       if (cmd.type === 'updateSettings') checkGames({ ...live.state.settings, ...cmd.settings });
+      // Codes come from a secure source, never from the browser or the seating seed.
+      if (command.type === 'createInvites') {
+        const count = Number.isSafeInteger(command.count) && command.count > 0 && command.count <= 200 ? command.count : 0;
+        return { type: 'createInvites', by: me, count: command.count, maxUses: command.maxUses, codes: newCodes(count, live.state) };
+      }
       if (command.type === 'transferHost') command.byName = cleanName(myName);
       return command;
     }
@@ -280,8 +320,10 @@ export class TournamentManager {
       case 'register': {
         const displayName = cleanName(myName || ('displayName' in cmd ? String(cmd.displayName ?? '') : ''));
         if (!displayName) throw new ActionError('pick a name first');
-        return { type: 'register', playerId: me, displayName };
+        const code = typeof cmd.code === 'string' ? cmd.code.slice(0, 40) : undefined;
+        return { type: 'register', playerId: me, displayName, ...(code ? { code } : {}) };
       }
+      case 'checkIn':
       case 'unregister':
       case 'rebuy':
       case 'declineRebuy':
@@ -775,6 +817,19 @@ function checkGames(settings: TournamentSettings) {
     }
     if (settings.seatsPerTable > spec.maxPlayers) throw new ActionError(`${spec.name} seats at most ${spec.maxPlayers} per table`);
   }
+}
+
+/** Fresh invite codes no other code in this tournament has. */
+function newCodes(count: number, state: TournamentState): string[] {
+  const taken = new Set(state.invites?.map((c) => c.code));
+  const out: string[] = [];
+  while (out.length < count) {
+    const code = codeFromWords(new Uint32Array(randomBytes(32).buffer));
+    if (taken.has(code)) continue;
+    taken.add(code);
+    out.push(code);
+  }
+  return out;
 }
 
 function cleanName(name: string) {

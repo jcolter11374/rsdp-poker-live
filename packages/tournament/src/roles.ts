@@ -22,6 +22,9 @@ export const COMMAND_POWERS: Partial<Record<Command['type'], HostPower | 'host'>
   removeCoHost: 'host',
   transferHost: 'host',
   archive: 'host',
+  createInvites: 'approve',
+  cancelInvite: 'approve',
+  openCheckIn: 'run',
 };
 
 export const isStaffCommand = (type: Command['type']) => Object.hasOwn(COMMAND_POWERS, type);
