@@ -2,7 +2,7 @@
 // or monthly by day of month or by nth / last weekday. Occurrences keep the
 // same local time across daylight-saving changes.
 
-import { addDays, assertTimeZone, daysInMonth, fromLocal, toLocal, weekdayOf } from './tz';
+import { addDays, daysInMonth, fromLocal, isValidTimeZone, toLocal, weekdayOf } from './tz';
 
 /** 0 = Sunday ... 6 = Saturday. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -48,11 +48,7 @@ const dateKey = (d: { year: number; month: number; day: number }) => d.year * 10
 /** Returns a list of problems; empty means the schedule is valid. */
 export function validateSchedule(s: Schedule): string[] {
   const errors: string[] = [];
-  try {
-    assertTimeZone(s.timeZone);
-  } catch {
-    errors.push(`Unknown time zone "${s.timeZone}"`);
-  }
+  if (typeof s.timeZone !== 'string' || !isValidTimeZone(s.timeZone)) errors.push(`Unknown time zone "${s.timeZone}"`);
   for (const [label, fn] of [
     ['startDate', () => parseDate(s.startDate)],
     ['time', () => parseTime(s.time)],
@@ -66,15 +62,18 @@ export function validateSchedule(s: Schedule): string[] {
   }
   const r = s.repeat;
   if (r) {
+    if (!['daily', 'weekly', 'monthly'].includes(r.freq)) errors.push('Repeat must be daily, weekly or monthly');
     if (r.interval !== undefined && (!Number.isInteger(r.interval) || r.interval < 1 || r.interval > 365))
       errors.push('interval must be a whole number from 1 to 365');
     if (r.freq === 'weekly') {
-      if (!r.weekdays.length) errors.push('Pick at least one weekday');
-      if (r.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) errors.push('Weekdays must be 0-6');
+      if (!Array.isArray(r.weekdays) || !r.weekdays.length) errors.push('Pick at least one weekday');
+      else if (r.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) errors.push('Weekdays must be 0-6');
     }
     if (r.freq === 'monthly' && 'monthDay' in r && (!Number.isInteger(r.monthDay) || r.monthDay < 1 || r.monthDay > 31))
       errors.push('monthDay must be 1-31');
     if (r.freq === 'monthly' && 'nth' in r && ![1, 2, 3, 4, -1].includes(r.nth)) errors.push('nth must be 1-4 or -1');
+    if (r.freq === 'monthly' && 'nth' in r && !(Number.isInteger(r.weekday) && r.weekday >= 0 && r.weekday <= 6)) errors.push('Weekdays must be 0-6');
+    if (r.freq === 'monthly' && !('monthDay' in r) && !('nth' in r)) errors.push('Pick a day of the month');
   }
   if (!errors.length && s.until && dateKey(parseDate(s.until)) < dateKey(parseDate(s.startDate)))
     errors.push('until is before startDate');
