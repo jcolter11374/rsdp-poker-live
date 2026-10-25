@@ -288,7 +288,7 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
     />
   );
   const fileReplay = fromFile && (
-    <Replayer hands={fromFile} start={0} tableName={view.name} seatCount={Math.max(view.seats.length, ...fromFile.flatMap((h) => h.seats.map((s) => s.seat + 1)))} myId={view.me.playerId} fmt={fmt} onClose={() => setFromFile(null)} />
+    <Replayer hands={fromFile} start={0} tableName={view.name} seatCount={Math.max(view.seats.length, ...fromFile.flatMap((h) => h.seats.map((s) => s.seat + 1)))} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setFromFile(null)} />
   );
 
   if (open) {
@@ -361,7 +361,7 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
           </div>
         ))}
       {replay !== null && (
-        <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} fmt={fmt} onClose={() => setReplay(null)} />
+        <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setReplay(null)} />
       )}
       {fileReplay}
     </>

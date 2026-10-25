@@ -21,7 +21,7 @@ export function LookDialog({ view, onClose }: { view: TableView; onClose: () => 
   return (
     <Modal title="Table look" onClose={onClose}>
       <div className="look">
-        {view.isHost && (
+        {view.isHost && view.mode !== 'tournament' && (
           <>
             <h3>Felt for everyone</h3>
             <div className="swatches">
@@ -45,8 +45,8 @@ export function LookDialog({ view, onClose }: { view: TableView; onClose: () => 
             </button>
           ))}
         </div>
-        <h3>Deck</h3>
-        <div className="row wrap">
+        <h3 id="look-deck">Deck</h3>
+        <div className="row wrap" role="radiogroup" aria-labelledby="look-deck">
           {(['two', 'four'] as const).map((d) => (
             <label key={d} className="toggle">
               <input type="radio" name="deck" checked={prefs.deck === d} onChange={() => setPrefs({ deck: d })} />
@@ -54,7 +54,7 @@ export function LookDialog({ view, onClose }: { view: TableView; onClose: () => 
             </label>
           ))}
         </div>
-        <div className="look-sample">
+        <div className="look-sample" aria-hidden="true">
           {['As', 'Kh', 'Qd', 'Jc'].map((c) => (
             <PlayingCard key={c} card={c} />
           ))}
@@ -63,7 +63,7 @@ export function LookDialog({ view, onClose }: { view: TableView; onClose: () => 
         <div className="row wrap look-backs">
           {(Object.keys(BACKS) as Back[]).map((b) => (
             <button key={b} className={`back-pick ${prefs.back === b ? 'active' : ''}`} data-back={b} onClick={() => setPrefs({ back: b })} aria-pressed={prefs.back === b} title={BACKS[b]}>
-              <PlayingCard card={null} />
+              <span className="playing-card back" aria-hidden="true" />
               <span>{BACKS[b]}</span>
             </button>
           ))}

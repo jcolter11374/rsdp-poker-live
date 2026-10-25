@@ -4,7 +4,6 @@ import {
   SettingsError,
   applyAtNextHand,
   applyImmediate,
-  parseSettings,
   defaultSettings,
   diffSettings,
   isImmediateField,
@@ -134,8 +133,7 @@ describe('applyAtNextHand', () => {
 
 describe('immediate fields', () => {
   it('names real settings paths', () => {
-    // table.felt is optional, so it is filled in here to count as present.
-    const s = parseSettings({ ...cash(), table: { ...cash().table, felt: 'green' } }) as unknown as Record<string, Record<string, unknown>>;
+    const s = cash() as unknown as Record<string, Record<string, unknown>>;
     for (const path of IMMEDIATE_FIELDS) {
       const [section, field] = path.split('.');
       expect(s[section], path).toBeDefined();
@@ -171,7 +169,7 @@ describe('applyImmediate', () => {
       stakes: { bigBlind: 4 },
     };
     const now = applyImmediate(current, edit);
-    expect(now.settings.table).toEqual({ name: 'Late game', maxSeats: 10, mode: 'cash' });
+    expect(now.settings.table).toEqual({ name: 'Late game', maxSeats: 10, mode: 'cash', felt: 'green' });
     expect(now.settings.chat.guestChat).toBe(false);
     expect(now.settings.spectators).toEqual({ allowed: false, seeAllCards: false, delaySeconds: 0 });
     expect(now.settings.stakes.bigBlind).toBe(2);

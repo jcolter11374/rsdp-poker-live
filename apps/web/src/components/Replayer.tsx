@@ -1,5 +1,5 @@
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { HandRecordView } from '@rsdp/engine/wire';
+import type { HandRecordView, TableView } from '@rsdp/engine/wire';
 import { gameLabel, stakesLabel, type Fmt } from '../format';
 import { frameView, handNet, replayFrames } from '../replay';
 import { Table } from './Table';
@@ -45,6 +45,7 @@ function ReplayerView({
   tableName,
   seatCount,
   myId,
+  felt,
   fmt,
   onClose,
 }: {
@@ -54,6 +55,8 @@ function ReplayerView({
   tableName: string;
   seatCount: number;
   myId: string | null;
+  /** The table's felt, so the replay looks like the table. */
+  felt?: TableView['settings']['table']['felt'];
   fmt: Fmt;
   onClose: () => void;
 }) {
@@ -103,7 +106,7 @@ function ReplayerView({
 
   if (!hand || !frames.length) return null;
   const frame = frames[Math.min(step, last)];
-  const view = frameView(tableName, seatCount, hand, frame, myId);
+  const view = frameView(tableName, seatCount, hand, frame, myId, felt);
   const family = view.hand!.family;
   const net = myId ? handNet(hand, myId) : null;
 

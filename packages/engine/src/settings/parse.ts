@@ -62,7 +62,7 @@ export function defaultSettings(mode: TableMode): TableSettings {
   const tournament = mode === 'tournament';
   return {
     version: SETTINGS_VERSION,
-    table: { name: tournament ? 'Tournament table' : 'Poker night', maxSeats: 10, mode },
+    table: { name: tournament ? 'Tournament table' : 'Poker night', maxSeats: 10, mode, felt: 'green' },
     game: { gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] } },
     stakes: {
       smallBlind: 1,

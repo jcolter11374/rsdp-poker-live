@@ -30,11 +30,11 @@ const DEFAULTS: Prefs = { felt: 'table', deck: 'two', back: 'red' };
 
 function load(): Prefs {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') ?? {};
     return {
       felt: raw.felt === 'table' || (FELTS as readonly string[]).includes(raw.felt) ? raw.felt : DEFAULTS.felt,
       deck: raw.deck === 'four' ? 'four' : 'two',
-      back: raw.back in BACKS ? raw.back : DEFAULTS.back,
+      back: typeof raw.back === 'string' && Object.hasOwn(BACKS, raw.back) ? raw.back : DEFAULTS.back,
     };
   } catch {
     return DEFAULTS;
@@ -62,11 +62,24 @@ export function setPrefs(patch: Partial<Prefs>) {
   listeners.forEach((l) => l());
 }
 
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+};
+const snapshot = () => current;
+
+// Another tab changed the look: follow it here too.
+window.addEventListener('storage', (e) => {
+  if (e.key !== KEY) return;
+  current = load();
+  apply(current);
+  listeners.forEach((l) => l());
+});
+
 export function usePrefs(): Prefs {
-  return useSyncExternalStore(
-    (l) => (listeners.add(l), () => listeners.delete(l)),
-    () => current,
-  );
+  return useSyncExternalStore(subscribe, snapshot);
 }
 
 /** The felt this viewer sees: their own pick, else the host's, else green. */

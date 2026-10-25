@@ -13,6 +13,7 @@ import { issuesOf, pathsOf } from './helpers';
 function friday(): TableSettings {
   const s = defaultSettings('cash');
   s.table.name = 'Friday PLO';
+  s.table.felt = 'purple';
   s.game.betting = 'pot-limit';
   s.game.gameId = 'plo';
   s.stakes = { ...s.stakes, smallBlind: 25, bigBlind: 50, centsMode: true };
