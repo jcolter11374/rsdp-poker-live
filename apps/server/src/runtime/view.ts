@@ -133,10 +133,18 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history'>;
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming'>;
 
-/** The ledger and the list of finished hands run behind too, or they would give away how a hand ends. */
-export const delayedPart = (view: TableView): DelayedPart => ({ seats: view.seats, hand: view.hand, turn: view.turn, ledger: view.ledger, history: view.history });
+/** The ledger, hand list and next-hand countdown run behind too, or they would give away how a hand ends. */
+export const delayedPart = (view: TableView): DelayedPart => ({
+  seats: view.seats,
+  hand: view.hand,
+  turn: view.turn,
+  ledger: view.ledger,
+  history: view.history,
+  nextHandAt: view.nextHandAt,
+  upcoming: view.upcoming,
+});
 
 /**
  * A spectator's view with the table as it was `delayMs` ago: seats, cards,
@@ -146,9 +154,11 @@ export const delayedPart = (view: TableView): DelayedPart => ({ seats: view.seat
  * everything else stay live.
  */
 export function behind(live: TableView, past: DelayedPart | null, delayMs: number): TableView {
+  // The table log runs behind too: "X left with 2350" would tell how the hand went.
+  const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
   if (!past) {
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    return { ...live, seats, hand: null, turn: null };
+    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [] };
   }
   const later = (t: number | null) => (t === null ? null : t + delayMs);
   const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + delayMs, deadline: later(past.turn.deadline) };
@@ -158,7 +168,17 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     const then = past.seats[i];
     return then && x && then.playerId === x.playerId ? then : x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null };
   });
-  return { ...live, seats, hand, turn, ledger: past.ledger, history: past.history };
+  return {
+    ...live,
+    seats,
+    hand,
+    turn,
+    log,
+    ledger: past.ledger,
+    history: past.history,
+    nextHandAt: later(past.nextHandAt),
+    upcoming: past.upcoming,
+  };
 }
 
 function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {

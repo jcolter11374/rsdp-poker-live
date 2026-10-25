@@ -84,6 +84,17 @@ describe('waitlist', () => {
     expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['d']);
   });
 
+  it('keeps your earlier seat request when a new one is refused', () => {
+    const { rt } = table((s) => {
+      s.seating.requireApproval = true;
+    });
+    rt.requestSeat('host', { seat: 0, name: 'H', stack: 100 });
+    rt.requestSeat('a', { seat: 3, name: 'Ann', stack: 100 });
+    rt.requestSeat('b', { seat: 5, name: 'Bob', stack: 100 });
+    expect(() => rt.requestSeat('a', { seat: 5, name: 'Ann', stack: 100 })).toThrow(/Bob has asked/);
+    expect(rt.state.requests.find((r) => r.playerId === 'a')?.seat).toBe(3);
+  });
+
   it('refuses to queue when a seat is free, and clears the queue when turned off', () => {
     const { rt } = full();
     expect(() => rt.joinWaitlist('host', { name: 'H', stack: 100 })).toThrow(/already have a seat/);
@@ -196,6 +207,21 @@ describe('releasing offline seats', () => {
     rt.disconnect('b');
     clock.advance(24 * 60 * 60_000);
     expect(seatOf(rt, 'b')).toBe(2);
+  });
+
+  it('keeps the seat of a player who comes back before the hand ends', () => {
+    const { rt, clock } = table((s) => {
+      s.seating.releaseOfflineSeatMinutes = 1;
+      s.timing.decisionSeconds = 0;
+      s.seating.offlineGraceSeconds = 300;
+    });
+    fill(rt, 3);
+    rt.start('host');
+    const p = rt.state.hand!.seats[0].playerId;
+    rt.disconnect(p);
+    clock.advance(60_000);
+    rt.connect(p);
+    expect(rt.seatOf(p)?.leaveAfterHand).toBe(false);
   });
 
   it('lets a player in the hand finish it first', () => {

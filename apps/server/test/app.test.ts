@@ -84,6 +84,12 @@ describe('socket server', () => {
     const later = await fan.until((x) => !!x.hand);
     expect(Date.now() - started).toBeGreaterThanOrEqual(1900);
     expect(later.seats.filter(Boolean).every((s) => s!.cards.length === 2 && s!.cards.every((c) => c.card !== '??'))).toBe(true);
+    // Hand history can't get ahead of the delay.
+    const first = later.hand!.toAct === 0 ? host : guest;
+    await first.until((x) => x.legal !== null);
+    await first.call('hand:act', { type: 'fold' });
+    await host.until((x) => x.history.length === 1);
+    await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow(/once the delay has passed/);
     // Chat stays live for everyone.
     await guest.call('chat:send', { text: 'gl' });
     await fan.until((x) => x.chat.some((m) => m.text === 'gl'));

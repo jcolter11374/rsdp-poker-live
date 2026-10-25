@@ -159,6 +159,10 @@ export function createApp(deps: AppDeps = {}) {
         const feed = feeds.get(id) ?? [];
         feeds.set(id, feed);
         feed.push({ at: now, part: delayedPart(tableView(rt, '', now)) });
+        // Keep only the newest snapshot old enough to show, and the ones after it.
+        let old = 0;
+        while (old + 1 < feed.length && feed[old + 1].at <= now - delayMs) old++;
+        if (old > 0) feed.splice(0, old);
         clock.setTimeout(() => {
           if (tables.get(id) !== rt) return;
           const later = clock.now();
@@ -170,6 +174,17 @@ export function createApp(deps: AppDeps = {}) {
   }
 
   const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isHost(s.data.playerId);
+
+  /**
+   * Finished hands a person may open: everything for players and the host;
+   * for spectators nothing when watching is off, and only hands that ended
+   * longer ago than the delay, so history can't get ahead of the table.
+   */
+  function spectatorCutoff(rt: TableRuntime, s: Sock): number {
+    if (!isSpectator(rt, s)) return Infinity;
+    if (!rt.settings.spectators.allowed) throw new ActionError('the host has turned watching off');
+    return clock.now() - rt.settings.spectators.delaySeconds * 1000;
+  }
 
   /** One person's view; a spectator at a table with a delay sees the hand as it was that long ago. */
   function viewFor(rt: TableRuntime, s: Sock, now: number) {
@@ -234,6 +249,7 @@ export function createApp(deps: AppDeps = {}) {
       },
       detach: (rt) => {
         tables.delete(rt.state.id);
+        feeds.delete(rt.state.id);
         // Save the final state so the table's history stays readable.
         store.saveTable(rt.state).catch(() => {});
         broadcast(rt);
@@ -359,6 +375,7 @@ export function createApp(deps: AppDeps = {}) {
           const rt = current();
           const record = rt.state.history.find((h) => h.handNumber === Number(handNumber));
           if (!record) throw new ActionError('that hand is no longer available');
+          if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
           return { hand: handRecordView(rt, record, me) };
         },
         log,
@@ -370,6 +387,7 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const rt = current();
+          const cutoff = spectatorCutoff(rt, socket);
           // Each download reads every hand of the table, so one per socket every few seconds.
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
@@ -379,7 +397,7 @@ export function createApp(deps: AppDeps = {}) {
           const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
           for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
           const all = [...byNumber.values()].sort((a, b) => a.handNumber - b.handNumber);
-          return { hands: all.map((h) => handRecordView(rt, h, me)) };
+          return { hands: all.filter((h) => h.endedAt <= cutoff).map((h) => handRecordView(rt, h, me)) };
         },
         log,
       ),

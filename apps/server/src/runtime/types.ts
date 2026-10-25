@@ -42,6 +42,8 @@ export interface SeatState {
   handsSinceRefill: number;
   /** Stand up once the current hand ends. */
   leaveAfterHand: boolean;
+  /** leaveAfterHand was set because the player was offline too long; coming back undoes it. */
+  released?: boolean;
   /** Chips approved to add before the next hand (rebuys, host top-ups). */
   pendingChips: number;
   /** Host set the stack to this before the next hand. */

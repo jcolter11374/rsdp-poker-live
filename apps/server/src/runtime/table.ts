@@ -177,6 +177,12 @@ export class TableRuntime {
   connect(playerId: PlayerId) {
     this.connections.set(playerId, (this.connections.get(playerId) ?? 0) + 1);
     this.offlineSince.delete(playerId);
+    // Back before the hand ended: the seat release that was waiting for it is off.
+    const seat = this.seatOf(playerId);
+    if (seat?.released) {
+      seat.leaveAfterHand = false;
+      seat.released = false;
+    }
     // The host back stops the handoff; anyone else arriving may be the one to take over.
     if (this.isHost(playerId) || this.hostTimer !== null) this.watchHost();
     this.sync();
@@ -203,8 +209,6 @@ export class TableRuntime {
     const { stack } = input;
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
-    // Your own earlier request doesn't hold a seat against you.
-    this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     const offered = this.offers().find((o) => o.playerId === playerId);
     if (offered) seat = offered.seat;
     else if (this.settings.seating.randomSeats && !this.isHost(playerId)) {
@@ -215,6 +219,8 @@ export class TableRuntime {
     if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, seat);
     this.checkBuyIn(playerId, stack);
+    // A new request replaces your earlier one (which never holds a seat against you).
+    this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
     this.leaveQueue(playerId);
     const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
@@ -1603,8 +1609,10 @@ export class TableRuntime {
       for (const seat of s.seats) {
         if (!seat || seat.leaveAfterHand || this.isOnline(seat.playerId) || this.offlineFor(seat) < releaseMs) continue;
         this.log(`${seat.name} has been offline for ${s.settings.seating.releaseOfflineSeatMinutes} minutes, so their seat is released`);
-        if (this.inHand(seat.playerId)) seat.leaveAfterHand = true;
-        else this.removeSeat(seat);
+        if (this.inHand(seat.playerId)) {
+          seat.leaveAfterHand = true;
+          seat.released = true;
+        } else this.removeSeat(seat);
       }
     }
     if (!s.settings.seating.waitlist) {
