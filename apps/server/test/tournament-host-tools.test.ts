@@ -221,3 +221,29 @@ describe('cleanup', () => {
     expect((await env.manager.get(id))!.state.status).toBe('finished');
   });
 });
+
+describe('operator cleanup', () => {
+  it('lists events, then ends a running one as its host would and hides it', async () => {
+    const { env, id, state } = await started(3);
+    expect(env.manager.adminList()).toEqual([expect.objectContaining({ id, name: 'Tools', status: 'running', archived: false, players: ['Player 1', 'Player 2', 'Player 3'] })]);
+    const rt = [...env.tables.values()][0];
+    untilDealt(env, rt);
+    const done = env.manager.adminArchive(id);
+    // The pause waits for the hand in progress.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state().status).toBe('paused');
+    foldOut(rt);
+    env.clock.advance(100);
+    expect(await done).toEqual({ id, status: 'finished', archived: true });
+    expect(await env.manager.list('p1')).toEqual([]);
+    expect(problems(env)).toEqual([]);
+  });
+
+  it('archives an event that has not started', async () => {
+    const env = setup();
+    const id = await env.manager.create('host', defaultSettings({ name: 'Smoke Cup' }));
+    await registerAll(env, id, 2);
+    expect(await env.manager.adminArchive(id)).toEqual({ id, status: 'cancelled', archived: true });
+    await expect(env.manager.adminArchive('nope')).rejects.toThrow('tournament not found');
+  });
+});
