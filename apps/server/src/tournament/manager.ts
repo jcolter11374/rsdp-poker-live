@@ -169,10 +169,10 @@ export class TournamentManager {
   async list(me: PlayerId): Promise<TournamentListing[]> {
     const now = this.clock.now();
     const out = new Map<string, TournamentListing>();
+    const involved = (s: TournamentState) => s.hostId === me || s.entries.some((e) => e.playerId === me) || s.requests.some((r) => r.playerId === me);
     for (const l of this.live.values()) {
-      const t = tournamentListing(l.state, me, now, l.nextId);
       // An invite-only event still shows for its host and players.
-      if (listedPublicly(l.state) || (isLive(l.state) && !isArchived(l.state) && (t.me.hosting || t.me.registered))) out.set(l.state.id, t);
+      if (listedPublicly(l.state) || (isLive(l.state) && !isArchived(l.state) && involved(l.state))) out.set(l.state.id, tournamentListing(l.state, me, now, l.nextId));
     }
     for (const saved of await this.deps.store.listForPlayer(me, now - OWN_LIST_DAYS * DAY_MS)) {
       // The copy in memory is newer than the saved one.

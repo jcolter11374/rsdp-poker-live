@@ -31,7 +31,8 @@ export function useTournamentList() {
         .catch(() => alive && setList((l) => l ?? []));
     const onVisible = () => document.visibilityState === 'visible' && load();
     load();
-    const t = setInterval(load, REFRESH_MS);
+    // A hidden tab catches up when it comes back into view.
+    const t = setInterval(() => document.visibilityState === 'visible' && load(), REFRESH_MS);
     socket.on('connect', load);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -74,10 +75,16 @@ export function TournamentList() {
         </a>
       </div>
       <nav className="tn-tabs" role="tablist">
-        <button role="tab" aria-selected={shown === 'open'} className={shown === 'open' ? 'on' : ''} onClick={() => setTab('open')}>
+        <button role="tab" aria-selected={shown === 'open'} className={shown === 'open' ? 'on' : ''} onClick={() => {
+            setTab('open');
+            setAll(false);
+          }}>
           Upcoming & running{open.length ? ` (${open.length})` : ''}
         </button>
-        <button role="tab" aria-selected={shown === 'mine'} className={shown === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
+        <button role="tab" aria-selected={shown === 'mine'} className={shown === 'mine' ? 'on' : ''} onClick={() => {
+            setTab('mine');
+            setAll(false);
+          }}>
           Mine{mine.length ? ` (${mine.length})` : ''}
         </button>
       </nav>
@@ -148,6 +155,7 @@ export function when(t: TournamentListing, now: number): string {
     case 'registering':
       if (t.start === 'sng' && t.playersNeeded !== null) return `Starts when full · ${t.playersNeeded} more needed`;
       if (t.startAt === null) return 'Starts when the host starts it';
+      if (t.startAt <= now) return 'Waiting for players';
       return t.startAt - now < COUNTDOWN_UNDER_MS ? `Starts in ${countdown(t.startAt - now)}` : `Starts ${localTime(t.startAt)}`;
   }
 }

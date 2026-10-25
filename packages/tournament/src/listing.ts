@@ -81,7 +81,8 @@ export function sortListings(list: TournamentListing[]): TournamentListing[] {
     const r = rank(a) - rank(b);
     if (r) return r;
     if (rank(a) === 3) return (b.finishedAt ?? b.startAt ?? 0) - (a.finishedAt ?? a.startAt ?? 0);
-    return (a.startAt ?? Infinity) - (b.startAt ?? Infinity) || a.name.localeCompare(b.name);
+    if (a.startAt !== b.startAt) return (a.startAt ?? Infinity) - (b.startAt ?? Infinity);
+    return a.name.localeCompare(b.name);
   });
 }
 
