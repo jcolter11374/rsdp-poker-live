@@ -1093,7 +1093,7 @@ export class TableRuntime {
 }
 
 /** Fills in limit sizes and the bring-in when the settings leave them at 0. */
-function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
+export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
   const out = { ...stakes };
   if (out.smallBet <= 0) out.smallBet = Math.max(1, out.bigBlind);
   if (out.bigBet <= 0) out.bigBet = out.smallBet * 2;

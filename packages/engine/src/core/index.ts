@@ -1,6 +1,5 @@
 /**
  * The engine core: `import { engine, variants, planForcedBets } from '@rsdp/engine/core'`.
- * The old MVP table (src/table.ts) stays exported from '@rsdp/engine' until the runtime moves over.
  */
 import type { EngineApi } from './api';
 import { act, draw, foldOutOfTurn, legalActions, pots, show, startHand, timeout, voteRunItTwice } from './hand';

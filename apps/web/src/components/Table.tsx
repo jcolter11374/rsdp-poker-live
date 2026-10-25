@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { RoomView } from '@rsdp/engine';
+import type { SeatView, TableView } from '@rsdp/engine/wire';
+import { clock, type Fmt } from '../format';
+import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
+
+/** What a player who showed down made, when every card of theirs is face up to us. */
+const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
+  seat.cards.length && seat.cards.every((c) => c.card !== '??') ? handStrength(gameId, seat.cards.map((c) => c.card), board) : null;
 
 /** Seat positions around an oval, as percentages. Index 0 is the bottom centre. */
 function position(i: number, n: number) {
@@ -14,72 +20,120 @@ function betPosition(i: number, n: number) {
   return { left: `${50 + 30 * Math.cos(angle)}%`, top: `${50 + 25 * Math.sin(angle)}%` };
 }
 
-function useNow(active: boolean) {
+/** Re-renders on an interval while something on screen is counting down. */
+export function useNow(active: boolean, ms = 200) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 200);
+    const t = setInterval(() => setNow(Date.now()), ms);
     return () => clearInterval(t);
-  }, [active]);
+  }, [active, ms]);
   return now;
 }
 
-export function Table({ view, onPickSeat }: { view: RoomView; onPickSeat?: (seat: number) => void }) {
+const SIT_OUT_TEXT: Record<NonNullable<SeatView['sitOutReason']>, string> = {
+  player: 'sitting out',
+  timeouts: 'away',
+  busted: 'busted',
+  host: 'sat out by host',
+};
+
+export interface DiscardPick {
+  selected: number[];
+  toggle: (index: number) => void;
+}
+
+export function Table({
+  view,
+  skew,
+  fmt,
+  onPickSeat,
+  onSeatClick,
+  discard,
+}: {
+  view: TableView;
+  /** Server clock minus ours. */
+  skew: number;
+  fmt: Fmt;
+  onPickSeat?: (seat: number) => void;
+  onSeatClick?: (seat: SeatView) => void;
+  discard?: DiscardPick | null;
+}) {
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
-  const offset = view.you.seat === -1 ? 0 : view.you.seat;
+  const offset = view.me.seat ?? 0;
   const hand = view.hand;
-  const now = useNow(view.turnDeadline !== null);
-  const done = hand?.street === 'complete';
+  const done = hand?.phase === 'complete';
+  const live = !!hand && !done;
+  const ticking = !!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline;
+  const now = useNow(ticking) + skew;
 
-  const winnings = new Map<number, number>();
   const winningCards = new Set<string>();
-  for (const pot of done ? hand!.results : [])
-    for (const w of pot.winners) {
-      winnings.set(w.seat, (winnings.get(w.seat) ?? 0) + w.amount);
-      // Highlight the hand that won the main pot.
-      if (pot === hand!.results[0]) w.bestCards?.forEach((c) => winningCards.add(c));
-    }
-  const highlight = (card: string | null) =>
-    winningCards.size === 0 || !card ? '' : winningCards.has(card) ? 'win' : 'dim';
+  if (done) for (const a of hand!.awards) if (a.run === 0 && a.board === 0) a.cards?.forEach((c) => winningCards.add(c));
+  const highlight = (card: string) => (winningCards.size === 0 || card === '??' ? '' : winningCards.has(card) ? 'win' : 'dim');
 
-  const totalPot = (hand?.pot ?? 0) + view.seats.reduce((s, x) => s + (x?.bet ?? 0), 0);
-  const winnerText = done
-    ? hand!.results
-        .flatMap((r) => r.winners)
-        .reduce<Map<number, { amount: number; handName?: string }>>((m, w) => {
-          const prev = m.get(w.seat);
-          m.set(w.seat, { amount: (prev?.amount ?? 0) + w.amount, handName: w.handName });
-          return m;
-        }, new Map())
-    : null;
+  // One line per winner: total won and the best hand they won with.
+  const results = new Map<number, { amount: number; handName?: string }>();
+  if (done)
+    for (const a of hand!.awards) {
+      const prev = results.get(a.seat);
+      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount, handName: prev?.handName ?? a.handName });
+    }
+
+  const bets = view.seats.reduce((s, x) => s + (x?.bet ?? 0), 0);
+  const runs = hand?.boards ?? [];
+  const multiRun = runs.length > 1;
+  const multiBoard = (runs[0]?.length ?? 0) > 1;
+  const stud = hand?.family === 'stud';
 
   return (
-    <div className={`felt ${view.you.seat !== -1 ? 'seated-view' : ''}`}>
+    <div className={`felt ${view.me.seat !== null ? 'seated-view' : ''}`}>
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
       <div className="board">
-        {hand && hand.board.length > 0 && (
-          <div className="cards">
-            {hand.board.map((c, i) => (
-              <PlayingCard
-                key={`${hand.number}-${c}`}
-                card={c}
-                className={`deal-board ${highlight(c)}`}
-                style={{ animationDelay: `${hand.board.length <= 3 ? i * 90 : 0}ms` }}
-              />
+        {runs.map((run, r) =>
+          run.map(
+            (cards, b) =>
+              cards.length > 0 && (
+                <div className="cards board-row" key={`${r}-${b}`}>
+                  {(multiRun || multiBoard) && (
+                    <span className="board-label">{multiRun ? `Run ${r + 1}` : `Board ${b + 1}`}</span>
+                  )}
+                  {cards.map((c, i) => (
+                    <PlayingCard
+                      key={`${hand!.handNumber}-${r}-${b}-${c}`}
+                      card={c}
+                      className={`deal-board ${highlight(c)}`}
+                      style={{ animationDelay: `${cards.length <= 3 ? i * 90 : 0}ms` }}
+                    />
+                  ))}
+                </div>
+              ),
+          ),
+        )}
+        {live && (
+          <div className="pots">
+            {hand!.pots.map((p, i) => (
+              <div className="pot" key={i}>
+                {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
+              </div>
             ))}
+            {bets > 0 && hand!.potTotal > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
           </div>
         )}
-        {hand && !done && totalPot > 0 && <div className="pot">Pot {totalPot}</div>}
-        {winnerText &&
-          [...winnerText.entries()].map(([seat, w]) => (
+        {done &&
+          [...results.entries()].map(([seat, w]) => (
             <div className="pot result" key={seat}>
-              {view.seats[seat]?.name ?? 'Player'} wins {w.amount}
+              {view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
               {w.handName ? ` · ${w.handName}` : ''}
             </div>
           ))}
+        {!live && view.nextHandAt !== null && view.started && !view.paused && (
+          <div className="next-hand">Next hand in {Math.max(0, Math.ceil((view.nextHandAt - now) / 1000))}</div>
+        )}
+        {view.paused && <div className="next-hand">Paused</div>}
+        {!hand && view.upcoming && <div className="next-hand muted">{view.upcoming.gameName}</div>}
       </div>
 
       {view.seats.map((s, seat) => {
@@ -92,64 +146,87 @@ export function Table({ view, onPickSeat }: { view: RoomView; onPickSeat?: (seat
             </div>
           );
         }
-        const acting = hand?.toAct === seat;
-        const away = view.away.includes(s.playerId);
+        const isMe = seat === view.me.seat;
+        const acting = live && hand!.toAct === seat;
+        const won = results.get(seat);
         let timeFraction: number | null = null;
         let secondsLeft: number | null = null;
-        if (acting && view.turnDeadline && view.turnStarted) {
-          const total = view.turnDeadline - view.turnStarted;
-          timeFraction = Math.max(0, Math.min(1, (view.turnDeadline - now) / total));
-          secondsLeft = Math.max(0, Math.ceil((view.turnDeadline - now) / 1000));
+        if (acting && view.turn?.seat === seat && view.turn.deadline) {
+          const total = view.turn.deadline - view.turn.startedAt;
+          timeFraction = Math.max(0, Math.min(1, (view.turn.deadline - now) / total));
+          secondsLeft = Math.max(0, Math.ceil((view.turn.deadline - now) / 1000));
         }
         const classes = [
           'seat',
           acting && 'acting',
           s.folded && 'folded',
-          (s.sittingOut || away) && 'away',
-          winnings.has(seat) && 'winner',
-          seat === view.you.seat && 'me',
+          (s.sittingOut || !s.online) && 'away',
+          won && 'winner',
+          isMe && 'me',
+          onSeatClick && 'host-click',
         ]
           .filter(Boolean)
           .join(' ');
-        const status = away ? 'offline' : s.sittingOut ? 'sitting out' : null;
+        const status = !s.online
+          ? 'offline'
+          : s.sittingOut
+            ? SIT_OUT_TEXT[s.sitOutReason ?? 'player']
+            : s.leaving
+              ? 'leaving'
+              : s.waiting && !s.inHand
+                ? s.waitForBigBlind
+                  ? 'waiting for big blind'
+                  : 'next hand'
+                : null;
+        const pickable = isMe && !!discard;
         return (
           <div key={seat}>
             <div className={classes} style={pos}>
-              <div className="hole">
+              <div className={`hole n${s.cards.length}`}>
                 {s.cards.map((c, i) => (
                   <PlayingCard
-                    key={`${hand?.number}-${i}-${c ?? 'x'}`}
-                    card={c}
+                    key={`${hand?.handNumber}-${i}-${c.card}`}
+                    card={c.card}
                     small
-                    className={`deal-hole ${highlight(c)}`}
-                    style={{ animationDelay: `${i * 120}ms` }}
+                    className={[
+                      'deal-hole',
+                      highlight(c.card),
+                      stud && !c.up && 'facedown',
+                      pickable && discard!.selected.includes(i) && 'discard',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={{ animationDelay: `${i * 90}ms` }}
+                    onClick={pickable ? () => discard!.toggle(i) : undefined}
+                    title={pickable ? 'Click to throw this card away' : undefined}
                   />
                 ))}
               </div>
-              <div className="nameplate">
+              <div className="nameplate" onClick={onSeatClick ? () => onSeatClick(s) : undefined}>
                 <div className="name">
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
                 </div>
-                <div className="stack">{s.allIn ? 'ALL IN' : s.stack}</div>
+                <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
                 {status && <div className="status">{status}</div>}
-                {s.lastAction && !done && <div className={`last-action a-${s.lastAction.replace(' ', '-').toLowerCase()}`}>{s.lastAction}</div>}
+                {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
+                {done && !won && s.inHand && !s.folded && shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) && (
+                  <div className="status">{shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? [])}</div>
+                )}
                 {timeFraction !== null && (
-                  <div className="timer">
-                    <div
-                      className={`timer-fill ${secondsLeft! <= 5 ? 'low' : ''}`}
-                      style={{ width: `${timeFraction * 100}%` }}
-                    />
+                  <div className={`timer ${view.turn?.usingBank ? 'bank' : ''}`}>
+                    <div className={`timer-fill ${secondsLeft! <= 5 ? 'low' : ''}`} style={{ width: `${timeFraction * 100}%` }} />
                   </div>
                 )}
+                {timeFraction !== null && view.turn?.usingBank && <div className="status bank-text">time bank {clock(secondsLeft! * 1000)}</div>}
               </div>
-              {view.button === seat && <div className="dealer">D</div>}
-              {winnings.has(seat) && <div className="win-float">+{winnings.get(seat)}</div>}
+              {hand && !stud && hand.button === seat && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`}>D</div>}
+              {won && <div className="win-float">+{fmt(won.amount)}</div>}
             </div>
             {s.bet > 0 && (
               <div className="bet" style={betPosition(idx, n)}>
                 <span className="chip" />
-                {s.bet}
+                {fmt(s.bet)}
               </div>
             )}
           </div>

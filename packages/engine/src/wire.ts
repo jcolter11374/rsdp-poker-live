@@ -142,7 +142,7 @@ export interface TableView {
   /** Server clock when the view was built, to correct for skew. */
   serverNow: number;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
-  upcoming: { gameName: string; betting: BettingKind; stakes: Stakes } | null;
+  upcoming: { gameId: string; gameName: string; betting: BettingKind; stakes: Stakes } | null;
   /** Blind schedule: current level and when it ends. */
   level: { index: number; count: number; endsAt: number | null; handsLeft: number | null } | null;
   /** The host sees all requests; everyone else sees their own. */

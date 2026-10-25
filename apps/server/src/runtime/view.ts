@@ -1,6 +1,6 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import type { TableRuntime } from './table';
+import { fillStakes, type TableRuntime } from './table';
 import type { HandRecord } from './types';
 
 const CHAT_SHOWN = 100;
@@ -177,7 +177,7 @@ function previewSetup(rt: TableRuntime): TableView['upcoming'] {
     const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
     Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
   }
-  return { gameName: game.name, betting: step?.betting ?? settings.game.betting, stakes };
+  return { gameId: game.id, gameName: game.name, betting: step?.betting ?? settings.game.betting, stakes: fillStakes(stakes, game) };
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {
