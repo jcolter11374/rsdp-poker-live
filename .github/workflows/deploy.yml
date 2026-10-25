@@ -53,15 +53,16 @@ jobs:
             echo "No ADMIN_KEY secret; the roadmap admin page is off."
           fi
       # Sign in with Google: on when both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET repository secrets are set; otherwise the button is hidden.
+      # Google sends people back to PUBLIC_URL (fly.toml) + /auth/google/callback.
       - name: Google sign-in keys
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           if [ -n "$GOOGLE_CLIENT_ID" ] && [ -n "$GOOGLE_CLIENT_SECRET" ]; then
-            printf 'GOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nPUBLIC_URL=https://%s.fly.dev\n' "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" "$FLY_APP" | flyctl secrets import --stage --app "$FLY_APP"
+            printf 'GOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_SECRET" | flyctl secrets import --stage --app "$FLY_APP"
           else
-            flyctl secrets unset GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET PUBLIC_URL --stage --app "$FLY_APP" 2>/dev/null || true
+            flyctl secrets unset GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET --stage --app "$FLY_APP" 2>/dev/null || true
             echo "No Google keys; Sign in with Google is off."
           fi
       - run: flyctl deploy --remote-only --ha=false --wait-timeout 10m

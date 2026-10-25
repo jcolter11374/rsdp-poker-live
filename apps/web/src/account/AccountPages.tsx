@@ -3,7 +3,7 @@ import { currentSession, onSession, saveSessionToken, setName } from '../socket'
 import { chipFormat } from '../format';
 import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
-import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, unlinkGoogle, type Profile } from './api';
+import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile } from './api';
 import '../components/table/extras.css';
 import './account.css';
 
@@ -297,6 +297,7 @@ export function ProfilePage() {
       {params.has('merged') && <p className="account-note">Signed in. What you did on this device as a guest is in your account now.</p>}
       {params.has('signedin') && <p className="account-note">Signed in.</p>}
       {params.has('linked') && <p className="account-note">Google is linked. You can sign in with it on any device now.</p>}
+      {params.has('confirmed') && <p className="account-note">Confirmed. For the next few minutes you can set a password or delete your account.</p>}
       {account ? (
         <p className="account-intro">
           Signed in as <strong>{account.username}</strong>
@@ -343,7 +344,7 @@ export function ProfilePage() {
           <GoogleSection profile={profile} />
           <section className="account-section">
             <h2>{profile?.account && !profile.account.hasPassword ? 'Set a password' : 'Password'}</h2>
-            <PasswordForm needsCurrent={profile?.account?.hasPassword ?? true} />
+            <PasswordForm needsCurrent={profile?.account?.hasPassword ?? true} confirmed={params.has('confirmed')} />
           </section>
           <section className="account-section">
             <h2>Sign out</h2>
@@ -352,7 +353,7 @@ export function ProfilePage() {
           </section>
           <section className="account-section danger">
             <h2>Delete account</h2>
-            <DeleteForm hasPassword={profile?.account?.hasPassword ?? true} username={account.username} />
+            <DeleteForm hasPassword={profile?.account?.hasPassword ?? true} username={account.username} confirmed={params.has('confirmed')} />
           </section>
         </>
       )}
@@ -433,11 +434,24 @@ function TournamentsList({ profile }: { profile: Profile }) {
   );
 }
 
-function PasswordForm({ needsCurrent }: { needsCurrent: boolean }) {
+/** Accounts made with Google confirm with Google before setting a first password or being deleted. */
+function ConfirmWithGoogle({ what }: { what: string }) {
+  const { busy, error, run } = useAction();
+  return (
+    <div className="account-google">
+      <span className="muted">You sign in with Google, so confirm it's you with Google first to {what}.</span>
+      <GoogleButton label="Confirm with Google" busy={busy} onClick={() => void run(() => startGoogle('confirm'))} />
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+function PasswordForm({ needsCurrent, confirmed }: { needsCurrent: boolean; confirmed: boolean }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [done, setDone] = useState(false);
   const { busy, error, run } = useAction();
+  if (!needsCurrent && !confirmed) return <ConfirmWithGoogle what="add a password" />;
   return (
     <form
       className="account-form"
@@ -449,7 +463,7 @@ function PasswordForm({ needsCurrent }: { needsCurrent: boolean }) {
           setNext('');
           setDone(true);
           // The page now shows "Change password" with the current one asked for.
-          if (!needsCurrent) setTimeout(() => location.reload(), 1200);
+          if (!needsCurrent) setTimeout(() => reloadTo('/profile'), 1200);
         });
       }}
     >
@@ -472,7 +486,7 @@ function PasswordForm({ needsCurrent }: { needsCurrent: boolean }) {
   );
 }
 
-function DeleteForm({ hasPassword, username }: { hasPassword: boolean; username: string }) {
+function DeleteForm({ hasPassword, username, confirmed }: { hasPassword: boolean; username: string; confirmed: boolean }) {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const { busy, error, run } = useAction();
@@ -485,6 +499,7 @@ function DeleteForm({ hasPassword, username }: { hasPassword: boolean; username:
         </button>
       </>
     );
+  if (!hasPassword && !confirmed) return <ConfirmWithGoogle what="delete your account" />;
   return (
     <form
       className="account-form"
@@ -542,19 +557,34 @@ function GoogleSection({ profile }: { profile: Profile | null }) {
   );
 }
 
-/** Where Google sends the browser back: keeps the session from the address fragment, then opens the profile. */
+/** The fixed words for each error code Google sign-in can come back with (never text from the address). */
+const GOOGLE_ERRORS: Record<string, string> = {
+  off: 'Sign in with Google is not set up on this server.',
+  expired: 'That sign-in took too long or was already used. Try again.',
+  cancelled: 'Google sign-in was cancelled.',
+  'other-browser': 'That Google sign-in was started in another browser. Start it again here.',
+};
+
+/** Where Google sends the browser back: finishes with the one-time ticket, then opens the profile. */
 export function AuthDonePage() {
   const [error, setError] = useState('');
   useEffect(() => {
     const f = new URLSearchParams(location.hash.slice(1));
-    // The token must not stay in the address bar or the history.
+    // The ticket must not stay in the address bar or the history.
     history.replaceState(null, '', '/auth/done');
-    if (f.get('error')) return setError(f.get('error')!);
-    if (f.get('linked')) return reloadTo('/profile?linked=1');
-    const session = f.get('session');
-    if (!session) return setError('Sign-in did not finish. Try again.');
-    saveSessionToken(session);
-    reloadTo(f.get('welcome') ? '/profile?welcome=1' : f.get('merged') ? '/profile?merged=1' : '/profile?signedin=1');
+    const code = f.get('error');
+    if (code) return setError(GOOGLE_ERRORS[code] ?? 'Google sign-in did not work. Try again.');
+    const ticket = f.get('ticket');
+    if (!ticket) return setError('Sign-in did not finish. Try again.');
+    finishGoogle(ticket)
+      .then((r) => {
+        if (r.linked) return reloadTo('/profile?linked=1');
+        if (r.confirmed) return reloadTo('/profile?confirmed=1');
+        if (!r.session) return setError('Sign-in did not finish. Try again.');
+        saveSessionToken(r.session);
+        reloadTo(r.welcome ? '/profile?welcome=1' : r.merged ? '/profile?merged=1' : '/profile?signedin=1');
+      })
+      .catch((e: Error) => setError(e.message));
   }, []);
   return (
     <Shell title={error ? 'Sign-in did not work' : 'Signing you in…'}>

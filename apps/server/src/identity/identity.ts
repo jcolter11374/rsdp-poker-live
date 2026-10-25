@@ -5,7 +5,7 @@
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, inArray, lte, ne, sql, TransactionRollbackError } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, ne, or, sql, TransactionRollbackError } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client';
 import { newId } from '../db/ids';
@@ -542,7 +542,13 @@ export async function createGoogleAccount(
 export async function linkGoogle(db: Db, accountId: string, sub: string): Promise<void> {
   const owner = await findAccountByGoogle(db, sub);
   if (owner && owner.id !== accountId) throw new IdentityError('google-taken', 'that Google account already belongs to another account');
-  await db.update(accounts).set({ googleSub: sub }).where(eq(accounts.id, accountId));
+  // Never swaps one linked Google account for another; unlink first.
+  const done = await db
+    .update(accounts)
+    .set({ googleSub: sub })
+    .where(and(eq(accounts.id, accountId), or(isNull(accounts.googleSub), eq(accounts.googleSub, sub))))
+    .returning({ id: accounts.id });
+  if (done.length === 0) throw new IdentityError('google-taken', 'this account already has another Google account linked');
 }
 
 /** Stops Google sign-in for an account; it then needs its password, so one must be set. */

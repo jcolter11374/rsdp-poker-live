@@ -101,10 +101,14 @@ export const issueResetCode = (adminKey: string, username: string) =>
 /** Whether this server offers "Sign in with Google". */
 export const fetchAuthConfig = () => request<{ google: boolean }>('GET', '/api/auth/config');
 
-/** Off to Google; it sends the browser back to /auth/done. `link` adds Google to the signed-in account. */
-export async function startGoogle(mode: 'signin' | 'link', bringOver = true) {
+/** Off to Google; it sends the browser back to /auth/done. `link` adds Google to the signed-in account; `confirm` re-checks it's you. */
+export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver = true) {
   const { url } = await request<{ url: string }>('POST', '/api/auth/google/begin', { mode, bringOver });
   location.assign(url);
 }
+
+/** Back from Google: trades the one-time ticket (only this browser can) for the result. */
+export const finishGoogle = (ticket: string) =>
+  request<{ session?: string; welcome?: boolean; merged?: boolean; linked?: boolean; confirmed?: boolean }>('POST', '/api/auth/google/finish', { ticket });
 
 export const unlinkGoogle = () => request('POST', '/api/account/google/unlink');
