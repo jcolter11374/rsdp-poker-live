@@ -226,6 +226,7 @@ export class TableRuntime {
     const { stack } = input;
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    this.checkSeatKept(seat);
     const offered = this.offers().find((o) => o.playerId === playerId);
     if (offered) seat = offered.seat;
     else if (this.settings.seating.randomSeats && !this.isHost(playerId)) {
@@ -265,8 +266,14 @@ export class TableRuntime {
       let target = seat ?? r.seat!;
       if (seat !== undefined) {
         if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+        this.checkSeatKept(seat);
         if (this.state.seats[seat]) throw new ActionError('that seat is taken');
         this.checkSeatFree(r.playerId, seat);
+      } else if (target >= this.seatLimit()) {
+        // The table is getting smaller and drops the seat they asked for: any open seat will do.
+        const open = this.openSeats(r.playerId);
+        if (!open.length) throw new ActionError('that seat is going when the table gets smaller, and every other seat is taken');
+        target = open[this.rng(open.length)];
       } else if (this.state.seats[target]) {
         // Random seating: any open seat will do.
         const open = this.settings.seating.randomSeats ? this.openSeats(r.playerId) : [];
@@ -310,13 +317,28 @@ export class TableRuntime {
     if (asked) throw new ActionError(`${asked.name} has asked for that seat`);
   }
 
+  /**
+   * Seats the table will still have at the next hand: a smaller table the host
+   * asked for mid-hand drops the last seats then, and nobody may sit in them.
+   */
+  private seatLimit(): number {
+    const next = this.state.pendingSettings?.table?.maxSeats;
+    return typeof next === 'number' ? Math.min(next, this.state.seats.length) : this.state.seats.length;
+  }
+
+  private checkSeatKept(seat: number) {
+    const limit = this.seatLimit();
+    if (seat >= limit) throw new ActionError(`the table is going down to ${limit} seats after this hand; pick seat ${limit} or lower`);
+  }
+
   /** Empty seats nobody else is waiting on. */
   private openSeats(playerId: PlayerId | null = null): number[] {
     const held = new Set([
       ...this.offers().filter((o) => o.playerId !== playerId).map((o) => o.seat),
       ...this.state.requests.filter((r) => r.kind === 'seat' && r.playerId !== playerId).map((r) => r.seat!),
     ]);
-    return this.state.seats.flatMap((x, i) => (x || held.has(i) ? [] : [i]));
+    const limit = this.seatLimit();
+    return this.state.seats.flatMap((x, i) => (x || held.has(i) || i >= limit ? [] : [i]));
   }
 
   private queue(): WaitlistEntry[] {
@@ -406,7 +428,7 @@ export class TableRuntime {
     if (!seat) return;
     if (this.inHand(playerId)) {
       seat.leaveAfterHand = true;
-      if (!opts.afterHand) this.foldIfLive(playerId);
+      if (!opts.afterHand) this.leaveHand(playerId);
     } else {
       this.removeSeat(seat);
     }
@@ -420,6 +442,8 @@ export class TableRuntime {
     if (row) row.cashOut += stack;
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
+    // A rebuy they asked for has nobody to go to now.
+    this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
     this.log(`${seat.name} left the table with ${stack}`);
     this.forgetBot(seat.playerId);
   }
@@ -502,7 +526,8 @@ export class TableRuntime {
   stop(by: PlayerId) {
     this.requireHost(by);
     if (this.isTournament) throw new ActionError('the tournament runs this table');
-    this.state.stopAfterHand = true;
+    // Between hands the game stops now; otherwise after this hand.
+    this.state.stopAfterHand = this.handLive();
     if (!this.handLive()) this.state.started = false;
     this.state.nextHandAt = null;
     this.log('The host stopped the game');
@@ -758,6 +783,8 @@ export class TableRuntime {
     s.pendingSettings = null;
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
+      // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
+      for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
       s.positions = null;
     }
@@ -800,7 +827,7 @@ export class TableRuntime {
     this.log(`The host removed ${seat.name}`);
     if (this.inHand(playerId)) {
       seat.leaveAfterHand = true;
-      this.foldIfLive(playerId);
+      this.leaveHand(playerId);
     } else this.removeSeat(seat);
     this.sync();
   }
@@ -850,6 +877,7 @@ export class TableRuntime {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
     if (!Number.isInteger(to) || to < 0 || to >= this.state.seats.length) throw new ActionError('no such seat');
+    this.checkSeatKept(to);
     if (this.state.seats[to]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, to);
     if (this.inHand(playerId)) throw new ActionError('move them once this hand is over');
@@ -1019,7 +1047,7 @@ export class TableRuntime {
     this.log(`${this.nameOf(by)} removed ${seat.name}`);
     if (this.inHand(botId)) {
       seat.leaveAfterHand = true;
-      this.foldIfLive(botId);
+      this.leaveHand(botId);
     } else this.removeSeat(seat);
     this.sync();
   }
@@ -1320,6 +1348,23 @@ export class TableRuntime {
     const seat = this.seatOf(playerId);
     if (!seat || !this.handLive()) return false;
     return this.state.hand!.seats.some((x) => x.seat === seat.seat);
+  }
+
+  /**
+   * A cash player leaving (or removed) mid-hand folds, unless they are all in:
+   * their chips are already in the pot and have no more decisions to make, so
+   * the hand plays out for them and they go when it ends (a run-it-twice vote
+   * counts as once).
+   */
+  private leaveHand(playerId: PlayerId) {
+    const seat = this.seatOf(playerId);
+    const hand = this.state.hand;
+    const hs = seat && hand ? hand.seats.find((x) => x.seat === seat.seat) : undefined;
+    if (!hand || !hs || !hs.allIn || hs.folded) return this.foldIfLive(playerId);
+    if (hand.phase === 'rit-vote' && hs.ritVote === null) {
+      engine.voteRunItTwice(hand, hs.seat, false);
+      this.afterEngine(false);
+    }
   }
 
   private foldIfLive(playerId: PlayerId) {

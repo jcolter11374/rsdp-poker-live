@@ -1,0 +1,7 @@
+/* A move on its way to the server: the buttons wait for it rather than take a second tap. */
+.action-bar.sending .buttons button,
+.action-bar.sending .presets button {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.action-bar .sending-note { text-align: center; }

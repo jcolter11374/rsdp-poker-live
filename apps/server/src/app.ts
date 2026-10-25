@@ -148,6 +148,10 @@ export function createApp(deps: AppDeps = {}) {
   const http = createServer(app);
   const io = new Server<C2S, S2C>(http, {
     cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
+    // A phone that loses its signal sends nothing; with the defaults (25 s + 20 s) the table waited up to 45 s
+    // to notice and kept giving them the full clock and time bank. Now it notices within about 20 s.
+    pingInterval: 10_000,
+    pingTimeout: 10_000,
   });
 
   const tables = new Map<string, TableRuntime>();
@@ -509,7 +513,17 @@ export function createApp(deps: AppDeps = {}) {
       // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
       practiceStarts.set(rt.state.id, me);
     };
-    const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
+    // A malformed message (no payload, the wrong shape) must not throw out of the socket and restart the server for every table.
+    const on = <K extends keyof C2S>(event: K, handler: C2S[K]) =>
+      socket.on(event, ((...args: unknown[]) => {
+        try {
+          (handler as (...a: unknown[]) => unknown)(...args);
+        } catch (e) {
+          log(`bad ${String(event)} message`, e);
+          const ack = args.at(-1);
+          if (typeof ack === 'function') ack({ ok: false, error: 'something went wrong' });
+        }
+      }) as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
 
