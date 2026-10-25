@@ -1,5 +1,6 @@
 import type { BettingKind, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
+import type { CoHost } from '@rsdp/engine/roles';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
 export const RUNTIME_VERSION = 1;
@@ -211,6 +212,8 @@ export interface RuntimeState {
   offers?: SeatOffer[];
   /** Players the host has muted in chat. */
   muted?: PlayerId[];
+  /** Co-hosts and the powers the host gave each (cash tables). Absent in older snapshots. */
+  coHosts?: CoHost[] | null;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

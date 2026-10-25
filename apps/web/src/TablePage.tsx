@@ -30,7 +30,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     prev.current = view;
     if (!view || !before) return;
     if (view.chat.length > before.chat.length && view.chat.at(-1)?.playerId && view.chat.at(-1)?.playerId !== view.me.playerId) sounds.chat();
-    if (view.isHost && view.requests.length > before.requests.length) sounds.request();
+    if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     const hand = view.hand;
     if (!hand) return;
     const fresh = hand.handNumber !== before.hand?.handNumber;
@@ -185,7 +185,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
-  const pending = view.isHost ? view.requests.length : 0;
+  const pending = view.powers.includes('approve') ? view.requests.length : 0;
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
@@ -255,7 +255,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
     </div>
   );
-  const hostPanel = view.isHost && cash && (
+  const hostPanel = view.powers.length > 0 && cash && (
     <HostPanel
       view={view}
       fmt={fmt}
@@ -390,7 +390,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             fmt={fmt}
             compact={portrait}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
-            onSeatClick={view.isHost && cash ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
+            onSeatClick={view.powers.length > 0 && cash ? (seat) => setDialog({ kind: 'player', seat }) : undefined}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
           <ActionBar

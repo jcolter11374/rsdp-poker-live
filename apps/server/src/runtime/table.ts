@@ -41,6 +41,7 @@ import {
   type WaitlistEntry,
 } from './types';
 import { cleanName as cleanDisplayName } from '../names';
+import { handOver, hasPower, isStaff, powersOf, RoleError, withCoHost, withoutCoHost, type HostPower } from '@rsdp/engine/roles';
 import { maskProfanity } from './profanity';
 
 const CHAT_LIMIT = 200;
@@ -164,6 +165,24 @@ export class TableRuntime {
     return playerId === this.state.hostId;
   }
 
+  /** The host, or a co-host the host gave this power. */
+  can(playerId: PlayerId, power: HostPower) {
+    return hasPower(this.staff(), playerId, power);
+  }
+
+  /** The host or any co-host. */
+  isStaff(playerId: PlayerId) {
+    return isStaff(this.staff(), playerId);
+  }
+
+  powersOf(playerId: PlayerId): HostPower[] {
+    return powersOf(this.staff(), playerId);
+  }
+
+  private staff() {
+    return { hostId: this.state.hostId, coHosts: this.state.coHosts };
+  }
+
   seatOf(playerId: PlayerId): SeatState | null {
     return this.state.seats.find((s) => s?.playerId === playerId) ?? null;
   }
@@ -211,7 +230,7 @@ export class TableRuntime {
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
     const offered = this.offers().find((o) => o.playerId === playerId);
     if (offered) seat = offered.seat;
-    else if (this.settings.seating.randomSeats && !this.isHost(playerId)) {
+    else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
       const open = this.openSeats(playerId);
       if (!open.length) throw new ActionError('every seat is taken');
       seat = open[this.rng(open.length)];
@@ -224,7 +243,7 @@ export class TableRuntime {
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
     this.leaveQueue(playerId);
     const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
-    if (!this.settings.seating.requireApproval || this.isHost(playerId)) {
+    if (!this.settings.seating.requireApproval || this.can(playerId, 'approve')) {
       this.seatPlayer(request);
     } else {
       this.state.requests.push(request);
@@ -240,7 +259,7 @@ export class TableRuntime {
 
   /** Approves a request; for a seat request the host may put the player in another open seat. */
   approve(by: PlayerId, requestId: string, seat?: number) {
-    this.requireHost(by);
+    this.requirePower(by, 'approve');
     const r = this.state.requests.find((x) => x.id === requestId);
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
@@ -266,7 +285,7 @@ export class TableRuntime {
   }
 
   reject(by: PlayerId, requestId: string) {
-    this.requireHost(by);
+    this.requirePower(by, 'approve');
     const r = this.state.requests.find((x) => x.id === requestId);
     this.state.requests = this.state.requests.filter((x) => x.id !== requestId);
     if (r) this.log(`${r.name}'s ${r.kind === 'seat' ? 'seat request' : 'rebuy'} was declined`);
@@ -432,7 +451,7 @@ export class TableRuntime {
     if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_CHIPS) throw new ActionError('the amount must be a positive whole number');
     const { maxBuyIn } = this.settings.seating;
     if (maxBuyIn > 0 && seat.stack + seat.pendingChips + amount > maxBuyIn) throw new ActionError(`you can have at most ${maxBuyIn} in front of you`);
-    if (this.settings.seating.rebuyRequiresApproval && !this.isHost(playerId)) {
+    if (this.settings.seating.rebuyRequiresApproval && !this.can(playerId, 'approve')) {
       this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'rebuy'));
       this.state.requests.push({ id: randomUUID().slice(0, 8), kind: 'rebuy', playerId, name: seat.name, seat: seat.seat, amount, at: this.clock.now() });
       this.log(`${seat.name} asked to add ${amount}`);
@@ -465,8 +484,45 @@ export class TableRuntime {
     if (!this.isHost(by)) throw new ActionError('only the host can do that');
   }
 
-  start(by: PlayerId) {
+  private requirePower(by: PlayerId, power: HostPower) {
+    if (!this.can(by, power)) throw new ActionError(this.isStaff(by) ? "the host hasn't given you that power" : 'only the host can do that');
+  }
+
+  /** Co-hosts act on players, never on the host. */
+  private notTheHost(by: PlayerId, playerId: PlayerId) {
+    if (playerId === this.state.hostId && by !== this.state.hostId) throw new ActionError('only the host can do that to the host');
+  }
+
+  /** The host names a co-host (or changes one's powers). Cash tables; tournaments have their own. */
+  setCoHost(by: PlayerId, playerId: PlayerId, powers: unknown) {
     this.requireHost(by);
+    if (this.isTournament) throw new ActionError('tournament co-hosts are set in the lobby');
+    const was = this.state.coHosts?.some((c) => c.playerId === playerId);
+    if (!was && !this.seatOf(playerId) && !this.isOnline(playerId)) throw new ActionError('that player is not at the table');
+    this.state.coHosts = this.roles(() => withCoHost(this.staff(), { playerId, name: this.queueName(playerId), powers }));
+    if (!was) this.log(`${this.nameOf(by)} made ${this.queueName(playerId)} a co-host`);
+    this.sync();
+  }
+
+  /** The host removes a co-host, or a co-host steps down. */
+  removeCoHost(by: PlayerId, playerId: PlayerId) {
+    if (by !== playerId) this.requireHost(by);
+    this.state.coHosts = this.roles(() => withoutCoHost(this.staff(), playerId));
+    this.log(by === playerId ? `${this.queueName(playerId)} stepped down as co-host` : `${this.queueName(playerId)} is no longer a co-host`);
+    this.sync();
+  }
+
+  private roles<T>(fn: () => T): T {
+    try {
+      return fn();
+    } catch (e) {
+      if (e instanceof RoleError) throw new ActionError(e.message);
+      throw e;
+    }
+  }
+
+  start(by: PlayerId) {
+    this.requirePower(by, 'run');
     if (this.isTournament) throw new ActionError('the tournament starts this table');
     if (this.activePlayers().length < 2) throw new ActionError('need at least two players with chips');
     this.state.started = true;
@@ -480,7 +536,7 @@ export class TableRuntime {
 
   /** Cash tables: no new hands after the current one. */
   stop(by: PlayerId) {
-    this.requireHost(by);
+    this.requirePower(by, 'run');
     if (this.isTournament) throw new ActionError('the tournament runs this table');
     this.state.stopAfterHand = true;
     if (!this.handLive()) this.state.started = false;
@@ -491,7 +547,7 @@ export class TableRuntime {
 
   /** Deal now (when the next hand doesn't start by itself). */
   dealNext(by: PlayerId) {
-    this.requireHost(by);
+    this.requirePower(by, 'run');
     if (this.isTournament) throw new ActionError('the tournament runs this table');
     if (this.handLive()) throw new ActionError('a hand is still being played');
     this.state.started = true;
@@ -501,7 +557,7 @@ export class TableRuntime {
 
   /** Cash tables: make the next hand a bomb pot (or take that back). */
   requestBombPot(by: PlayerId, value: boolean) {
-    this.requireHost(by);
+    this.requirePower(by, 'run');
     if (this.isTournament) throw new ActionError('bomb pots are for cash games');
     const sg = this.sideGames();
     if (sg.bombPotNext === value) return;
@@ -627,7 +683,7 @@ export class TableRuntime {
   }
 
   pause(by: PlayerId, value: boolean) {
-    this.requireHost(by);
+    this.requirePower(by, 'run');
     // Tournament tables hold through the director's gate when the tournament pauses.
     if (this.isTournament) throw new ActionError('pause the tournament from its lobby');
     this.setPaused(value);
@@ -672,7 +728,7 @@ export class TableRuntime {
 
   /** Host edit: some fields apply now, the rest at the next hand. */
   updateSettings(by: PlayerId, patch: SettingsPatch) {
-    this.requireHost(by);
+    this.requirePower(by, 'settings');
     if (this.isTournament) throw new ActionError('change tournament settings in its lobby');
     const s = this.state;
     const merged = s.pendingSettings ? mergePatches(s.pendingSettings, patch) : patch;
@@ -750,7 +806,8 @@ export class TableRuntime {
   }
 
   setStack(by: PlayerId, playerId: PlayerId, stack: number) {
-    this.requireHost(by);
+    this.requirePower(by, 'chips');
+    this.notTheHost(by, playerId);
     if (this.isTournament) throw new ActionError('stacks are set by the tournament');
     if (!Number.isInteger(stack) || stack < 0 || stack > MAX_CHIPS) throw new ActionError('the stack must be a whole number');
     const seat = this.seatOf(playerId);
@@ -766,7 +823,8 @@ export class TableRuntime {
   }
 
   kick(by: PlayerId, playerId: PlayerId) {
-    this.requireHost(by);
+    this.requirePower(by, 'players');
+    this.notTheHost(by, playerId);
     if (this.isTournament) throw new ActionError('remove players through the tournament');
     const seat = this.seatOf(playerId);
     this.state.requests = this.state.requests.filter((r) => r.playerId !== playerId);
@@ -785,7 +843,8 @@ export class TableRuntime {
   }
 
   hostSitOut(by: PlayerId, playerId: PlayerId) {
-    this.requireHost(by);
+    this.requirePower(by, 'players');
+    this.notTheHost(by, playerId);
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
     seat.sittingOut = true;
@@ -799,7 +858,7 @@ export class TableRuntime {
    * forgiven, as when a game starts.
    */
   shuffleSeats(by: PlayerId) {
-    this.requireHost(by);
+    this.requirePower(by, 'players');
     if (this.isTournament) throw new ActionError('the tournament seats players');
     if (this.handLive()) throw new ActionError('shuffle between hands');
     const s = this.state;
@@ -823,7 +882,8 @@ export class TableRuntime {
 
   /** Cash tables: the host moves a player who is not in the hand to an empty seat. */
   moveSeat(by: PlayerId, playerId: PlayerId, to: number) {
-    this.requireHost(by);
+    this.requirePower(by, 'players');
+    this.notTheHost(by, playerId);
     if (this.isTournament) throw new ActionError('the tournament seats players');
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
@@ -846,7 +906,8 @@ export class TableRuntime {
 
   /** The host mutes (or unmutes) someone's chat for the whole table. */
   mute(by: PlayerId, playerId: PlayerId, value: boolean) {
-    this.requireHost(by);
+    this.requirePower(by, 'players');
+    this.notTheHost(by, playerId);
     if (playerId === by) throw new ActionError("you can't mute yourself");
     const muted = (this.state.muted ??= []);
     if (muted.includes(playerId) === value) return;
@@ -861,7 +922,8 @@ export class TableRuntime {
     if (!this.seatOf(to) && !this.isOnline(to)) throw new ActionError('that player is not at the table');
     // An offline host would be handed straight on again.
     if (!this.isOnline(to)) throw new ActionError('that player is offline');
-    this.state.hostId = to;
+    // The old host stays on as a co-host with every power, so it can be handed back.
+    Object.assign(this.state, this.roles(() => handOver(this.staff(), to, this.nameOf(by))));
     this.log(`${this.nameOf(by)} made ${this.nameOf(to)} the host`);
     this.watchHost();
     this.sync();
@@ -876,9 +938,9 @@ export class TableRuntime {
   }
 
   /**
-   * A cash table whose host has been offline for HOST_HANDOFF_MS passes to a
-   * seated player who is online and playing, starting from the seat after the
-   * host's, so nobody is stuck waiting for approvals. Tournament tables are run
+   * A cash table whose host has been offline for HOST_HANDOFF_MS passes to an
+   * online co-host, or else a seated player who is online and playing, starting
+   * from the seat after the host's, so nobody is stuck waiting for approvals. Tournament tables are run
    * by the lobby and have no host to hand off.
    */
   private watchHost(retry: number | null = null) {
@@ -894,14 +956,18 @@ export class TableRuntime {
       const seats = this.state.seats;
       const from = this.seatOf(host)?.seat ?? -1;
       const order = seats.map((_, i) => seats[(from + 1 + i + seats.length) % seats.length]);
-      const next = order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId) && !x.sittingOut) ?? order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId));
+      // An online co-host first, then a seated player who is playing, then any seated player online.
+      const coHost = this.state.coHosts?.find((c) => c.playerId !== host && this.isOnline(c.playerId));
+      const seated = order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId) && !x.sittingOut) ?? order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId));
+      const next = coHost?.playerId ?? seated?.playerId;
       if (!next) {
         // Nobody to take over yet: look again in a while (or as soon as someone connects).
         this.watchHost(HOST_HANDOFF_MS);
         return;
       }
-      this.state.hostId = next.playerId;
-      this.log(`${this.nameOf(host)} has been away for ${Math.round(HOST_HANDOFF_MS / 60_000)} minutes, so ${next.name} is now the host`);
+      // The host keeps every power as a co-host, so they can carry on when they are back.
+      Object.assign(this.state, this.roles(() => handOver(this.staff(), next, this.nameOf(host))));
+      this.log(`${this.nameOf(host)} has been away for ${Math.round(HOST_HANDOFF_MS / 60_000)} minutes, so ${this.queueName(next)} is now the host`);
       this.sync();
     }, wait);
   }
@@ -911,7 +977,7 @@ export class TableRuntime {
     if (!clean) return;
     if (playerId) {
       if (this.state.muted?.includes(playerId)) throw new ActionError('the host has muted you');
-      if (!this.settings.chat.guestChat && !this.seatOf(playerId) && !this.isHost(playerId)) throw new ActionError('only players at the table can chat here');
+      if (!this.settings.chat.guestChat && !this.seatOf(playerId) && !this.isStaff(playerId)) throw new ActionError('only players at the table can chat here');
       if (this.settings.chat.profanityFilter) clean = maskProfanity(clean);
     }
     this.state.chat.push({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });

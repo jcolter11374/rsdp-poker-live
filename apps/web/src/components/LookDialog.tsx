@@ -21,7 +21,7 @@ export function LookDialog({ view, onClose }: { view: TableView; onClose: () => 
   return (
     <Modal title="Table look" onClose={onClose}>
       <div className="look">
-        {view.isHost && view.mode !== 'tournament' && (
+        {view.powers.includes('settings') && view.mode !== 'tournament' && (
           <>
             <h3>Felt for everyone</h3>
             <div className="swatches">

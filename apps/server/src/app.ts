@@ -179,7 +179,7 @@ export function createApp(deps: AppDeps = {}) {
     });
   }
 
-  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isHost(s.data.playerId);
+  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isStaff(s.data.playerId);
 
   /**
    * Finished hands a person may open: everything for players and the host;
@@ -499,6 +499,8 @@ export function createApp(deps: AppDeps = {}) {
     on('host:transfer', ({ playerId }, ack) => guarded(ack, () => current().transferHost(me, String(playerId)), log));
     on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
     on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
+    on('host:coHost', (input, ack) => guarded(ack, () => current().setCoHost(me, String(input?.playerId ?? ''), input?.powers), log));
+    on('host:removeCoHost', (input, ack) => guarded(ack, () => current().removeCoHost(me, String(input?.playerId ?? '')), log));
     on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
