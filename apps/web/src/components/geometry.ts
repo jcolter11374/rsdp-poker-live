@@ -53,32 +53,43 @@ export function stadiumPoint(t: number, w: number, h: number): Point {
 
 /**
  * Where each seat sits round the table, as a fraction (0..1) from the bottom
- * centre. The anchor seat (yours, or the first taken one) is at the bottom,
+ * centre. The anchor seat (yours, or seat 0 when watching) is at the bottom,
  * the players present are spaced evenly, and empty seats share the gaps
  * between them in seat order. So four players at a ten-seat table sit at the
- * four quarters instead of bunched on one side. `margin` (a fraction of the
- * way round) keeps empty seats that far from a player's nameplate when the
- * gap allows.
+ * four quarters instead of bunched on one side.
+ *
+ * `margin` keeps empty seats that far from the players beside them when the
+ * gap allows; `minGap` is the least room an empty seat needs. When some gap
+ * is too small for its empty seats (a nearly full table), every seat goes
+ * back to even spacing. Both are fractions of the way round.
  */
-export function seatFractions(taken: readonly boolean[], anchor: number, margin = 0): number[] {
+export function seatFractions(taken: readonly boolean[], anchor: number, { margin = 0, minGap = 0 } = {}): number[] {
   const n = taken.length;
-  const out = new Array<number>(n).fill(0);
-  if (n === 0) return out;
+  const even = Array.from({ length: n }, (_, seat) => ((seat - anchor + n) % n) / n);
+  if (n === 0) return even;
   // Seat positions counted round from the anchor.
   const players: number[] = [];
   for (let k = 0; k < n; k++) if (taken[(anchor + k) % n]) players.push(k);
-  if (players.length === 0) return out.map((_, seat) => (((seat - anchor + n) % n) / n));
+  if (players.length === 0) return even;
   if (players[0] !== 0) players.unshift(0);
   const m = players.length;
   const span = 1 / m;
+  const out = new Array<number>(n).fill(0);
   for (let i = 0; i < m; i++) {
     const from = players[i];
     const empties = (i + 1 < m ? players[i + 1] : n) - from - 1;
     out[(anchor + from) % n] = i * span;
     if (empties === 0) continue;
-    const edge = Math.min(margin, span / (empties + 1));
+    if (span < (empties + 1) * minGap) return even;
+    if (empties === 1) {
+      out[(anchor + from + 1) % n] = i * span + span / 2;
+      continue;
+    }
+    // Evenly split by default; pushed in from the players by up to `margin`
+    // as long as the empty seats stay at least minGap apart.
+    const edge = Math.max(span / (empties + 1), Math.min(margin, (span - (empties - 1) * minGap) / 2));
     const room = span - 2 * edge;
-    for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 0.5)) / empties;
+    for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 1)) / (empties - 1);
   }
   return out;
 }

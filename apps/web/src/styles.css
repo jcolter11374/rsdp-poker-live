@@ -122,6 +122,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   align-items: center;
   min-width: 96px;
   width: max-content;
+  /* Seats glide when someone sits down or leaves and the table re-spreads. */
+  transition: left 0.4s ease, top 0.4s ease;
 }
 .seat.empty button, .seat.empty span {
   background: rgba(0, 0, 0, 0.12);
@@ -426,7 +428,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .action-bar .fold.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
 @media (prefers-reduced-motion: reduce) {
   .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
-  .dealer, .seat .hole { transition: none; }
+  .dealer, .seat, .seat .hole { transition: none; }
   .chip-flight { display: none; }
 }
 
