@@ -14,6 +14,7 @@ export interface TableView {
     folded: boolean;
     allIn: boolean;
     bet: number;
+    lastAction: string | null;
     cards: (Card | null)[];
   } | null)[];
   button: number | null;
@@ -51,6 +52,7 @@ export function viewFor(table: PokerTable, playerId: string): TableView {
         folded: hp?.folded ?? false,
         allIn: !!hp?.allIn && hand!.street !== 'complete',
         bet: hp?.bet ?? 0,
+        lastAction: hp?.lastAction ?? null,
         cards: hp ? (reveal ? hp.cards : [null, null]) : [],
       };
     }),

@@ -11,7 +11,12 @@ import {
   type SeatRequest,
 } from '@rsdp/engine';
 
-const NEXT_HAND_DELAY_MS = 4000;
+const NEXT_HAND_DELAY_MS = 3000;
+const SHOWDOWN_DELAY_MS = 6000;
+/** How long a disconnected player gets before the game acts for them, even with no clock. */
+const AWAY_SECONDS = 15;
+/** Missed turns in a row before a player is sat out automatically. */
+const MAX_MISSED_TURNS = 2;
 const MAX_SEATS = 10;
 
 interface LedgerRecord {
@@ -30,12 +35,17 @@ export class Room {
   paused = false;
   turnSeconds: number;
   turnDeadline: number | null = null;
+  turnStarted: number | null = null;
   requests: SeatRequest[] = [];
   chat: ChatMessage[] = [];
   lastActivity = Date.now();
   private ledger = new Map<string, LedgerRecord>();
   private names = new Map<string, string>();
+  private connections = new Map<string, number>();
+  private missedTurns = new Map<string, number>();
   private turnTimer: NodeJS.Timeout | null = null;
+  private turnKey = '';
+  private turnStartedAt = 0;
   private nextHandTimer: NodeJS.Timeout | null = null;
 
   /** Called whenever state changes and every viewer needs a fresh view. */
@@ -50,6 +60,24 @@ export class Room {
       bigBlind: input.bigBlind,
       maxSeats: MAX_SEATS,
     });
+  }
+
+  connect(playerId: string) {
+    this.connections.set(playerId, (this.connections.get(playerId) ?? 0) + 1);
+    this.armTurnTimer();
+    this.changed();
+  }
+
+  disconnect(playerId: string) {
+    const n = (this.connections.get(playerId) ?? 1) - 1;
+    if (n > 0) this.connections.set(playerId, n);
+    else this.connections.delete(playerId);
+    this.armTurnTimer();
+    this.changed();
+  }
+
+  isConnected(playerId: string) {
+    return this.connections.has(playerId);
   }
 
   isHost(playerId: string) {
@@ -112,6 +140,7 @@ export class Room {
 
   sitOut(playerId: string, value: boolean) {
     this.table.setSittingOut(playerId, value);
+    if (!value) this.missedTurns.delete(playerId);
     this.changed();
     if (!value) this.maybeScheduleHand();
   }
@@ -173,6 +202,7 @@ export class Room {
   act(playerId: string, action: Action) {
     if (this.paused) throw new ActionError('the game is paused');
     this.table.act(playerId, action);
+    this.missedTurns.delete(playerId);
     this.afterTableChange();
   }
 
@@ -203,8 +233,9 @@ export class Room {
     for (const s of this.table.seats) if (s) this.lastStacks.set(s.playerId, s.stack);
   }
 
-  private maybeScheduleHand(delay = NEXT_HAND_DELAY_MS) {
+  private maybeScheduleHand(delay?: number) {
     if (!this.running || this.paused || this.nextHandTimer) return;
+    delay ??= this.table.hand?.showdown ? SHOWDOWN_DELAY_MS : NEXT_HAND_DELAY_MS;
     if (!this.table.canStartHand()) return;
     this.nextHandTimer = setTimeout(() => {
       this.nextHandTimer = null;
@@ -218,23 +249,39 @@ export class Room {
     if (this.turnTimer) clearTimeout(this.turnTimer);
     this.turnTimer = null;
     this.turnDeadline = null;
+    this.turnStarted = null;
   }
 
   private armTurnTimer() {
     this.clearTurnTimer();
     const hand = this.table.hand;
-    if (!this.turnSeconds || this.paused || !hand || hand.toAct === null) return;
+    if (this.paused || !hand || hand.toAct === null) return;
     const seat = hand.toAct;
     const handNumber = hand.number;
-    this.turnDeadline = Date.now() + this.turnSeconds * 1000;
+    const playerId = this.table.seats[seat]!.playerId;
+    // Someone who has dropped off gets a short grace period, so the table doesn't stall.
+    const seconds = this.isConnected(playerId)
+      ? this.turnSeconds
+      : Math.min(this.turnSeconds || AWAY_SECONDS, AWAY_SECONDS);
+    if (!seconds) return;
+    // Keep the original start when re-arming for the same turn (e.g. on reconnect).
+    const key = `${handNumber}:${seat}:${this.table.log.length}`;
+    if (this.turnKey !== key) {
+      this.turnKey = key;
+      this.turnStartedAt = Date.now();
+    }
+    this.turnStarted = this.turnStartedAt;
+    this.turnDeadline = this.turnStartedAt + seconds * 1000;
     this.turnTimer = setTimeout(() => {
       const h = this.table.hand;
       if (!h || h.number !== handNumber || h.toAct !== seat) return;
-      const playerId = this.table.seats[seat]!.playerId;
       const legal = this.table.legalActions(playerId)!;
       this.table.act(playerId, legal.canCheck ? { type: 'check' } : { type: 'fold' });
+      const missed = (this.missedTurns.get(playerId) ?? 0) + 1;
+      this.missedTurns.set(playerId, missed);
+      if (missed >= MAX_MISSED_TURNS) this.table.setSittingOut(playerId, true);
       this.afterTableChange();
-    }, this.turnSeconds * 1000);
+    }, Math.max(0, this.turnDeadline - Date.now()));
   }
 
   private changed() {
@@ -271,6 +318,8 @@ export class Room {
       ledger: this.ledgerView(),
       chat: this.chat.slice(-50),
       turnDeadline: this.turnDeadline,
+      turnStarted: this.turnStarted,
+      away: this.table.seats.filter((s) => s && !this.isConnected(s.playerId)).map((s) => s!.playerId),
       turnSeconds: this.turnSeconds,
     };
   }

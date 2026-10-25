@@ -96,7 +96,13 @@ io.on('connection', (socket: Sock) => {
     guarded(ack, () => {
       const r = rooms.get(String(roomId));
       if (!r) throw new ActionError('table not found');
+      if (socket.data.roomId === r.id) {
+        socket.emit('room:state', r.viewFor(me));
+        return;
+      }
+      if (socket.data.roomId) rooms.get(socket.data.roomId)?.disconnect(me);
       socket.data.roomId = r.id;
+      r.connect(me);
       socket.emit('room:state', r.viewFor(me));
     }),
   );
@@ -120,6 +126,10 @@ io.on('connection', (socket: Sock) => {
   socket.on('host:setStack', ({ playerId, stack }, ack) =>
     guarded(ack, () => hostRoom().setStack(String(playerId), Number(stack))),
   );
+  socket.on('disconnect', () => {
+    const r = socket.data.roomId ? rooms.get(socket.data.roomId) : undefined;
+    r?.disconnect(me);
+  });
   socket.on('host:kick', ({ playerId }) => guarded(undefined, () => hostRoom().stand(String(playerId))));
 });
 

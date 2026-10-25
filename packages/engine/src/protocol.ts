@@ -46,7 +46,11 @@ export interface RoomView extends TableView {
   chat: ChatMessage[];
   /** Epoch ms when the current player's clock runs out, if the clock is on. */
   turnDeadline: number | null;
+  /** When the current clock started, so clients can draw a shrinking bar. */
+  turnStarted: number | null;
   turnSeconds: number;
+  /** Seated players with no open connection. */
+  away: string[];
 }
 
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;

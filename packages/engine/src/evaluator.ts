@@ -17,6 +17,8 @@ export interface HandValue {
   score: number;
   category: number;
   name: string;
+  /** Readable hand, e.g. "Pair of Kings" or "Full House, Jacks full of Fives". */
+  description: string;
   /** The five cards that make the hand. */
   cards: Card[];
 }
@@ -79,5 +81,35 @@ export function evaluate(cards: Card[]): HandValue {
             }
           }
   const category = Math.floor(best / 16 ** 5);
-  return { score: best, category, name: CATEGORY_NAMES[category], cards: bestCards };
+  return { score: best, category, name: CATEGORY_NAMES[category], description: describe(best), cards: bestCards };
+}
+
+const RANK_NAMES = ['', '', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace'];
+const plural = (r: number) => (r === 6 ? 'Sixes' : RANK_NAMES[r] + 's');
+
+/** Turns a score back into words. */
+export function describe(score: number): string {
+  const category = Math.floor(score / 16 ** 5);
+  const r = [4, 3, 2, 1, 0].map((i) => Math.floor(score / 16 ** i) % 16);
+  const [a, b] = r;
+  switch (category) {
+    case 8:
+      return a === 14 ? 'Royal Flush' : `Straight Flush, ${RANK_NAMES[a]} high`;
+    case 7:
+      return `Four ${plural(a)}`;
+    case 6:
+      return `Full House, ${plural(a)} full of ${plural(b)}`;
+    case 5:
+      return `Flush, ${RANK_NAMES[a]} high`;
+    case 4:
+      return `Straight, ${RANK_NAMES[a]} high`;
+    case 3:
+      return `Three ${plural(a)}`;
+    case 2:
+      return `Two Pair, ${plural(a)} and ${plural(b)}`;
+    case 1:
+      return `Pair of ${plural(a)}`;
+    default:
+      return `${RANK_NAMES[a]} High`;
+  }
 }

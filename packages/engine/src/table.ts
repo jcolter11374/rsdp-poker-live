@@ -32,11 +32,13 @@ export interface HandPlayer {
   hasActed: boolean;
   /** False after an incomplete all-in raise that does not reopen betting for this player. */
   canRaise: boolean;
+  /** Short label of the player's latest action on this street, for display. */
+  lastAction: string | null;
 }
 
 export interface PotResult {
   amount: number;
-  winners: { seat: number; playerId: string; amount: number; handName?: string }[];
+  winners: { seat: number; playerId: string; amount: number; handName?: string; bestCards?: Card[] }[];
 }
 
 export interface Hand {
@@ -184,6 +186,7 @@ export class PokerTable {
       allIn: false,
       hasActed: false,
       canRaise: true,
+      lastAction: null,
     }));
     for (let round = 0; round < 2; round++) for (const p of players) p.cards.push(deck.pop()!);
 
@@ -243,15 +246,18 @@ export class PokerTable {
     switch (action.type) {
       case 'fold':
         p.folded = true;
+        p.lastAction = 'Fold';
         this.note(`${seat.name} folds`);
         break;
       case 'check':
         if (!legal.canCheck) throw new ActionError('cannot check');
+        p.lastAction = 'Check';
         this.note(`${seat.name} checks`);
         break;
       case 'call': {
         if (legal.canCheck) throw new ActionError('nothing to call');
         this.commit(p, legal.callAmount);
+        p.lastAction = p.allIn ? 'All in' : 'Call';
         this.note(`${seat.name} calls ${legal.callAmount}${p.allIn ? ' (all in)' : ''}`);
         break;
       }
@@ -273,6 +279,7 @@ export class PokerTable {
           for (const o of hand.players) if (o !== p) { if (o.hasActed) o.canRaise = false; o.hasActed = false; }
         }
         hand.currentBet = to;
+        p.lastAction = p.allIn ? 'All in' : verb === 'bets' ? 'Bet' : 'Raise';
         this.note(`${seat.name} ${verb} ${to}${p.allIn ? ' (all in)' : ''}`);
         break;
       }
@@ -292,6 +299,7 @@ export class PokerTable {
       return;
     }
     p.folded = true;
+    p.lastAction = 'Fold';
     this.note(`${this.nameAt(p.seat)} folds`);
     if (this.live().length === 1) this.advance();
   }
@@ -370,6 +378,7 @@ export class PokerTable {
       p.bet = 0;
       p.hasActed = false;
       p.canRaise = true;
+      if (!p.folded && !p.allIn) p.lastAction = null;
     }
     hand.currentBet = 0;
     hand.minRaise = this.config.bigBlind;
@@ -454,7 +463,7 @@ export class PokerTable {
         this.live().map((p) => [p.seat, evaluate([...p.cards, ...hand.board])]),
       );
       for (const p of this.live()) {
-        this.note(`${this.nameAt(p.seat)} shows ${p.cards.join(' ')} (${values.get(p.seat)!.name})`);
+        this.note(`${this.nameAt(p.seat)} shows ${p.cards.join(' ')} (${values.get(p.seat)!.description})`);
       }
       // Odd chips go to the first winner clockwise from the button.
       const clockwise = (seat: number) => (seat - hand.button - 1 + this.seats.length) % this.seats.length;
@@ -470,8 +479,9 @@ export class PokerTable {
           winners: winners.map((seat) => {
             const amount = share + (odd-- > 0 ? 1 : 0);
             this.seats[seat]!.stack += amount;
-            this.note(`${this.nameAt(seat)} wins ${amount} with ${values.get(seat)!.name}`);
-            return { seat, playerId: this.seats[seat]!.playerId, amount, handName: values.get(seat)!.name };
+            this.note(`${this.nameAt(seat)} wins ${amount} with ${values.get(seat)!.description}`);
+            const v = values.get(seat)!;
+            return { seat, playerId: this.seats[seat]!.playerId, amount, handName: v.description, bestCards: v.cards };
           }),
         };
       });
