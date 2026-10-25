@@ -13,3 +13,27 @@
 .roadmap-section.live li { border-left: 3px solid var(--go); }
 .roadmap-section.next li { border-left: 3px solid var(--accent-2); }
 .roadmap-section li span { color: var(--muted); line-height: 1.45; font-size: 0.92rem; }
+.roadmap-section li .credit { font-size: 0.82rem; color: var(--accent-2); font-style: normal; }
+
+/* ---- suggestions */
+.suggest-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.suggest-form textarea { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical; }
+.suggest-form textarea:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.suggest-form button { align-self: flex-start; }
+.suggest-trap { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
+.suggest-thanks { color: var(--good); margin: 0; }
+.suggest-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.roadmap-section li .suggest-detail, .admin-list .suggest-detail { white-space: pre-line; }
+.suggest-reply { border-left: 2px solid var(--line); padding-left: 8px; font-style: italic; }
+.roadmap-section li .suggest-meta, .admin-list .suggest-meta { font-size: 0.8rem; }
+.suggest-status { flex: 0 0 auto; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.suggest-status.approved, .suggest-status.planned { background: #3a3220; color: var(--accent-2); }
+.suggest-status.in_progress { background: #20303e; color: #8cc4f2; }
+.suggest-status.shipped { background: #173826; color: var(--good); }
+.suggest-status.declined { background: #3a2220; color: var(--bad); }
+.admin-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.admin-list li { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.admin-list .suggest-detail, .admin-list .suggest-meta { color: var(--muted); font-size: 0.92rem; }
+.admin-controls { display: grid; grid-template-columns: 160px 1fr; gap: 8px; align-items: end; }
+.admin-buttons { grid-column: 1 / -1; display: flex; gap: 8px; }
+@media (max-width: 480px) { .admin-controls { grid-template-columns: 1fr; } }

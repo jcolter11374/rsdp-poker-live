@@ -22,6 +22,7 @@ import { memoryTournamentStore } from './tournament/store';
 import { tablePreview, tournamentPreview, withPreview } from './preview';
 import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby';
 import { memorySharedHands, type SharedHandStore } from './shared';
+import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
 
 export interface Session {
@@ -94,6 +95,9 @@ export interface AppDeps {
   avatars?: AvatarStore;
   lobby?: LobbyStore;
   shared?: SharedHandStore;
+  suggestions?: SuggestionStore;
+  /** Lets the roadmap admin page change suggestions. Defaults to the ADMIN_KEY environment variable. */
+  adminKey?: string;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
   /** Built web client to serve (production). */
@@ -187,6 +191,7 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
   });
+  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { adminKey: deps.adminKey ?? process.env.ADMIN_KEY, now: () => clock.now(), log });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
     const id = String(req.params.id);

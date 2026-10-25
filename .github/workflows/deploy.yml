@@ -36,6 +36,16 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@master
       # First deploy only: create the app and its data volume if they are missing.
       - run: scripts/fly-provision.sh
+      # The roadmap admin key: copied from the ADMIN_KEY repository secret when one is set; the deploy below applies it.
+      - name: Admin key
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: |
+          if [ -n "$ADMIN_KEY" ]; then
+            printf 'ADMIN_KEY=%s\n' "$ADMIN_KEY" | flyctl secrets import --stage --app "$FLY_APP"
+          else
+            echo "No ADMIN_KEY secret; the roadmap admin page stays off."
+          fi
       - run: flyctl deploy --remote-only --ha=false --wait-timeout 10m
       - name: Health check
         run: |
