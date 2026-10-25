@@ -1,22 +1,31 @@
-import { useState } from 'react';
-import { playerOptions, standings, summarize, type Command } from '@rsdp/tournament';
+import { useEffect, useRef, useState } from 'react';
+import { playerOptions, standings, summarize, tableAddress, type Command } from '@rsdp/tournament';
 import { tournamentClient } from './client';
 import { blinds, chips, countdown, ordinal } from './format';
-import { navigate, useNow, useSession, useTournament } from './hooks';
+import { followMissedMove, navigate, useNow, useSession, useTournament } from './hooks';
 
 /**
  * The tournament above a tournament table: level, blinds and clock, how many
- * are left, and the player's own rebuy and add-on choices.
+ * are left, and the player's own rebuy and add-on choices. Points the player
+ * to their seat when it is at another table than `tableId`, the one on screen.
  */
-export function TableStrip({ tournamentId }: { tournamentId: string }) {
+export function TableStrip({ tournamentId, tableId, seatedHere }: { tournamentId: string; tableId: string; seatedHere: boolean }) {
   const { state, skew } = useTournament(tournamentId);
   const session = useSession();
   const now = useNow(500) + skew;
   const [error, setError] = useState('');
+  const o = state && session ? playerOptions(state, session.playerId) : null;
+  const seat = o?.entry?.status === 'seated' && o.entry.tableId ? tableAddress(o.entry.tableId) : null;
+  // A tab that was away when the player was moved (a dropped socket) never got
+  // table:moved; the tournament state still says where the seat went.
+  const wasHere = useRef(false);
+  useEffect(() => {
+    if (seat === tableId) wasHere.current = true;
+    else if (followMissedMove(seat, tableId, wasHere.current, seatedHere)) navigate(`/t/${seat}`);
+  }, [seat, tableId, seatedHere]);
   if (!state) return null;
 
   const sum = summarize(state, now);
-  const o = session ? playerOptions(state, session.playerId) : null;
   const me = session?.playerId ?? '';
   const send = (command: Command) => {
     setError('');
@@ -39,6 +48,7 @@ export function TableStrip({ tournamentId }: { tournamentId: string }) {
   const c = sum.clock;
   const place = o?.entry && !['registered', 'seated', 'rebuy-offer'].includes(o.entry.status) ? standings(state).find((s) => s.entryId === o.entry!.id)?.place : null;
   const winner = state.status === 'finished' ? standings(state).find((s) => s.place === 1) : null;
+  const seatTable = seat && seat !== tableId ? state.tables.findIndex((t) => tableAddress(t.id) === seat) + 1 : 0;
 
   return (
     <div className="tn-strip">
@@ -66,6 +76,20 @@ export function TableStrip({ tournamentId }: { tournamentId: string }) {
         )}
         {lobby}
       </div>
+      {seatTable > 0 && (
+        <div className="tn-strip-row tn-alert">
+          You're at Table {seatTable}.
+          <a
+            href={`/t/${seat}`}
+            onClick={(e) => {
+              e.preventDefault();
+              navigate(`/t/${seat}`);
+            }}
+          >
+            Go to my table
+          </a>
+        </div>
+      )}
       {o?.entry?.status === 'rebuy-offer' && (
         <div className="tn-strip-row tn-alert">
           You're out of chips. Rebuy for {chips(state.settings.rebuy.chips)}? {countdown((o.entry.rebuyOfferExpiresAt ?? now) - now)}
