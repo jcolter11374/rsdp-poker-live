@@ -6,6 +6,13 @@ export interface PotSeat {
   /** All chips put in this hand, live and dead. */
   total: Chips;
   folded: boolean;
+  /**
+   * Part of `total` paid for the whole table rather than to play (a dead small
+   * blind, a big blind ante). It goes to the main pot and does not raise this
+   * seat's side-pot level. Per-player antes are not included: everyone pays
+   * them, so they level like any bet.
+   */
+  dead?: Chips;
 }
 
 /** What uncalled-bet detection needs from each seat this round. */
@@ -41,15 +48,21 @@ export function computePots(seats: PotSeat[]): Pot[] {
     return [];
   }
 
-  const levels = [...new Set(live.map((s) => s.total))].sort((a, b) => a - b);
+  for (const s of ordered) {
+    assertChips(s.dead ?? 0, `dead money for seat ${s.seat}`);
+    if ((s.dead ?? 0) > s.total) throw new Error(`seat ${s.seat} has more dead money than chips in`);
+  }
+  const claim = (s: PotSeat) => s.total - (s.dead ?? 0);
+  const levels = [...new Set(live.map(claim))].sort((a, b) => a - b);
   const raw: Pot[] = [];
   let prev = 0;
   for (const level of levels) {
     let amount = 0;
-    for (const s of ordered) amount += Math.max(0, Math.min(s.total, level) - prev);
-    raw.push({ amount, eligible: live.filter((s) => s.total >= level).map((s) => s.seat) });
+    for (const s of ordered) amount += Math.max(0, Math.min(claim(s), level) - prev);
+    raw.push({ amount, eligible: live.filter((s) => claim(s) >= level).map((s) => s.seat) });
     prev = level;
   }
+  raw[0].amount += ordered.reduce((sum, s) => sum + (s.dead ?? 0), 0);
   raw[raw.length - 1].amount += all - raw.reduce((sum, p) => sum + p.amount, 0);
 
   const pots: Pot[] = [];

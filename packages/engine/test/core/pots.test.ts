@@ -193,3 +193,28 @@ describe('uncalledBet', () => {
     expect(() => uncalledBet([{ seat: 0, bet: -1 }])).toThrow();
   });
 });
+
+describe('computePots: dead money paid for the table', () => {
+  it('a big blind ante goes to the main pot instead of back to the big blind', () => {
+    // Big blind posts 2 + 2 ante and shoves for 48 live in total; seat 1 calls 48.
+    expect(
+      computePots([
+        { seat: 0, total: 50, folded: false, dead: 2 },
+        { seat: 1, total: 48, folded: false },
+      ]),
+    ).toEqual([{ amount: 98, eligible: [0, 1] }]);
+  });
+
+  it('a dead small blind does not raise the poster’s side-pot level', () => {
+    expect(
+      computePots([
+        { seat: 0, total: 51, folded: false, dead: 1 },
+        { seat: 1, total: 100, folded: false },
+        { seat: 2, total: 100, folded: false },
+      ]),
+    ).toEqual([
+      { amount: 151, eligible: [0, 1, 2] },
+      { amount: 100, eligible: [1, 2] },
+    ]);
+  });
+});
