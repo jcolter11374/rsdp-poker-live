@@ -3,8 +3,8 @@ import { Home } from './Home';
 import { RulesPage } from './rules/RulesPage';
 import { TablePage } from './TablePage';
 import { SeasonPage } from './tournament/SeasonPage';
-import { TournamentCreate } from './tournament/TournamentCreate';
 import { TournamentAlerts } from './tournament/TournamentAlerts';
+import { TournamentCreatePage } from './tournament/TournamentCreate';
 import { TournamentLobby } from './tournament/TournamentLobby';
 import './tournament/tournament.css';
 
@@ -33,7 +33,7 @@ function Page() {
 
   const rules = path.match(/^\/rules(?:\/([\w-]+))?\/?$/);
   if (rules) return <RulesPage gameId={rules[1] ?? null} />;
-  if (path === '/tn/new') return <TournamentCreate onCreated={(id) => go(`/tn/${id}`)} />;
+  if (path === '/tn/new') return <TournamentCreatePage from={new URLSearchParams(location.search).get('from')} onCreated={(id) => go(`/tn/${id}`)} />;
   const season = path.match(/^\/season\/([\w-]+)/);
   if (season) return <SeasonPage key={season[1]} id={season[1]} />;
   const tournament = path.match(/^\/tn\/([\w-]+)/);
