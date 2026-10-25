@@ -34,6 +34,7 @@ describe('createDb', () => {
       'settings_changes',
       'table_snapshots',
       'tables',
+      'tournament_log',
       'tournaments',
     ]);
   });

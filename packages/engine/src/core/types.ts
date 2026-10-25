@@ -169,6 +169,8 @@ export interface HandOptions {
    * first) and muck hands that can't win anything. Absent means show-all.
    */
   showdown?: 'show-all' | 'muck-losers';
+  /** Cap every bet and raise at the most a live opponent can call (absent means off). */
+  trimExcessBets?: boolean;
 }
 
 export interface HandInput {

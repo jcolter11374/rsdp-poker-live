@@ -9,6 +9,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  bigserial,
   check,
   index,
   integer,
@@ -285,6 +286,23 @@ export const tournaments = pgTable(
     index('tournaments_status_idx').on(t.status),
     check('tournaments_status_check', sql`${t.status} in (${oneOf(TOURNAMENT_STATUSES)})`),
   ],
+);
+
+/** A tournament lobby's chat and public event log, oldest first by `n`. */
+export const tournamentLog = pgTable(
+  'tournament_log',
+  {
+    n: bigserial('n', { mode: 'number' }).primaryKey(),
+    tournamentId: text('tournament_id')
+      .notNull()
+      .references(() => tournaments.id, { onDelete: 'cascade' }),
+    /** The item's id as browsers know it. */
+    itemId: text('item_id').notNull(),
+    at: at('at').notNull(),
+    /** A LobbyItem from @rsdp/tournament, without its id and time. */
+    item: jsonb('item').$type<unknown>().notNull(),
+  },
+  (t) => [index('tournament_log_tournament_idx').on(t.tournamentId, t.n)],
 );
 
 // ---------------------------------------------------------------- jobs

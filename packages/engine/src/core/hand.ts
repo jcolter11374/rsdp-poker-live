@@ -322,6 +322,7 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
           }
         : undefined,
     bringIn: bringInContext(state),
+    trimTo: input.options.trimExcessBets ? Math.max(0, ...live(state).filter((x) => x !== s).map((x) => x.bet + x.stack)) : undefined,
   };
 }
 

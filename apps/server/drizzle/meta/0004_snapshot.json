@@ -1,5 +1,5 @@
 {
-  "id": "ffbea42f-e7d7-4173-8f4d-8c49c9b381b6",
+  "id": "5529fc85-2fe1-4c70-929e-56a2db5cf1b1",
   "prevId": "36662d31-a6f9-481e-a07d-a5f4d5ed9aea",
   "version": "7",
   "dialect": "postgresql",
@@ -501,63 +501,6 @@
         "jobs_status_check": {
           "name": "jobs_status_check",
           "value": "\"jobs\".\"status\" in ('pending', 'running', 'done', 'failed', 'cancelled')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.player_avatars": {
-      "name": "player_avatars",
-      "schema": "",
-      "columns": {
-        "player_id": {
-          "name": "player_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "player_avatars_player_id_players_id_fk": {
-          "name": "player_avatars_player_id_players_id_fk",
-          "tableFrom": "player_avatars",
-          "tableTo": "players",
-          "columnsFrom": [
-            "player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "player_avatars_kind_check": {
-          "name": "player_avatars_kind_check",
-          "value": "\"player_avatars\".\"kind\" in ('library', 'upload')"
         }
       },
       "isRLSEnabled": false
@@ -1312,6 +1255,85 @@
           "value": "\"tables\".\"mode\" in ('cash', 'tournament')"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.tournament_log": {
+      "name": "tournament_log",
+      "schema": "",
+      "columns": {
+        "n": {
+          "name": "n",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tournament_id": {
+          "name": "tournament_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item": {
+          "name": "item",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "tournament_log_tournament_idx": {
+          "name": "tournament_log_tournament_idx",
+          "columns": [
+            {
+              "expression": "tournament_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "n",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tournament_log_tournament_id_tournaments_id_fk": {
+          "name": "tournament_log_tournament_id_tournaments_id_fk",
+          "tableFrom": "tournament_log",
+          "tableTo": "tournaments",
+          "columnsFrom": [
+            "tournament_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.tournaments": {

@@ -92,6 +92,7 @@ export function defaultSettings(mode: TableMode): TableSettings {
       maxBuyIn: 0,
       ratholeMinutes: 0,
       waitlist: false,
+      randomSeats: false,
       dealToAway: tournament,
       awayAfterTimeouts: 2,
       offlineGraceSeconds: 15,

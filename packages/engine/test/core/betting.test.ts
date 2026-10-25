@@ -507,3 +507,28 @@ describe('invariants', () => {
     }
   });
 });
+
+describe('trimming excess bets', () => {
+  it('caps a shove at the most an opponent can call', () => {
+    // 100 behind facing a 2 big blind; the deepest opponent has 40 in all.
+    const l = computeLegal(preflop({ trimTo: 40 }));
+    expect(range(l)).toEqual([4, 40]);
+  });
+
+  it('allows a raise to the cap below a full raise', () => {
+    // Facing 30, the only opponent left can reach 35: a full raise would be 58.
+    const l = computeLegal(ctx({ currentBet: 30, lastFullRaise: 28, trimTo: 35 }));
+    expect(l.canRaise).toBe(true);
+    expect(range(l)).toEqual([35, 35]);
+  });
+
+  it('allows only a call once nobody can put in more', () => {
+    const l = computeLegal(ctx({ currentBet: 30, lastFullRaise: 28, trimTo: 30 }));
+    expect(l.canRaise).toBe(false);
+    expect(l.callAmount).toBe(30);
+  });
+
+  it('changes nothing when every opponent covers', () => {
+    expect(range(computeLegal(preflop({ trimTo: 500 })))).toEqual(range(computeLegal(preflop())));
+  });
+});

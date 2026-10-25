@@ -33,8 +33,15 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1792951370832,
-      "tag": "0004_player_avatars",
+      "when": 1792952116735,
+      "tag": "0004_tournament_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792953700359,
+      "tag": "0005_player_avatars",
       "breakpoints": true
     }
   ]

@@ -58,6 +58,9 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - The server translates socket calls into commands, runs the hands, and reports each hand's `startStacks`, `endStacks` and knockouts per table.
 - Before dealing on a tournament table, the runtime asks `tableGate(state, tableId, now)` and reads `levelFor(state, tableId)` for game and blinds.
 - Director events such as `moveSeat` and `tableBroken` are applied between hands.
+- Host and co-hosts: `@rsdp/engine/roles` is the one co-host model for cash tables and tournaments. A host names co-hosts and gives each some powers (`approve`, `chips`, `run`, `players`, `settings`); managing co-hosts, handing over the host role and archiving stay with the host. Tournaments keep them in `state.coHosts`; the server checks every staff command with `mayCommand(state, playerId, command)` from `@rsdp/tournament` before the director sees it.
+- Host tools in the director: `approve` takes an optional `stack` (a handicap), `setStack` (waits for the player's hand to end; not a rebuy), `movePlayer` (between hands; a taken seat swaps the two players), `archive` (`state.archivedAt`; before the start it also cancels). Lists should skip archived events. The server's hourly cleanup archives manual and Sit & Go events left untouched for 30 days and drops finished events from memory an hour after they end; results are never deleted.
+- After a crash, a table saved behind its director is brought in line (`alignTables` in the manager): a hand the director already closed is dropped rather than played again, and a hand the director heard start but the table never saved is closed with no chips moving. The director also ignores a result for a hand it has already closed.
 
 ## Branches and ownership
 

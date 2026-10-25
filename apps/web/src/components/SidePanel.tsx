@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HandRecordView, TableView } from '@rsdp/engine/wire';
-import { call, socket } from '../socket';
+import { call } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
+import { setChatMuted, useChatMutes } from '../chatMutes';
 
 export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -26,6 +27,8 @@ export function SidePanel({
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [text, setText] = useState('');
+  const [chatError, setChatError] = useState('');
+  const mutes = useChatMutes();
   const [ownSeen, setOwnSeen] = useState(view.chat.length);
   const seenChat = chatSeen ?? ownSeen;
   const setSeenChat = onChatSeen ?? setOwnSeen;
@@ -74,12 +77,22 @@ export function SidePanel({
         )}
         {tab === 'chat' &&
           (view.chat.length ? (
-            view.chat.map((m, i) => (
-              <div key={i} className={m.playerId ? '' : 'log-table'}>
-                {m.playerId ? <b>{m.name}: </b> : null}
-                {m.text}
-              </div>
-            ))
+            view.chat
+              .filter((m) => !m.playerId || !mutes.includes(m.playerId))
+              .map((m, i) => (
+                <div key={i} className={m.playerId ? '' : 'log-table'}>
+                  {m.playerId ? (
+                    m.playerId === view.me.playerId ? (
+                      <b>{m.name}: </b>
+                    ) : (
+                      <b className="chat-name" title={`Click to mute ${m.name} for you`} onClick={() => confirm(`Mute ${m.name}? Only you stop seeing their messages.`) && setChatMuted(m.playerId!, true)}>
+                        {m.name}:{' '}
+                      </b>
+                    )
+                  ) : null}
+                  {m.text}
+                </div>
+              ))
           ) : (
             <p className="muted">No messages yet.</p>
           ))}
@@ -87,19 +100,46 @@ export function SidePanel({
         {tab === 'hands' && <Hands view={view} fmt={fmt} />}
         {tab === 'stats' && <Stats view={view} fmt={fmt} />}
       </div>
+      {tab === 'chat' && <ChatNotes view={view} mutes={mutes} error={chatError} />}
       {tab === 'chat' && (
         <form
           className="row"
           onSubmit={(e) => {
             e.preventDefault();
             if (!text.trim()) return;
-            socket.emit('chat:send', { text });
+            call('chat:send', { text })
+              .then(() => setChatError(''))
+              .catch((err: Error) => setChatError(err.message));
             setText('');
           }}
         >
           <input value={text} maxLength={300} placeholder="Say something" onChange={(e) => setText(e.target.value)} />
           <button>Send</button>
         </form>
+      )}
+    </div>
+  );
+}
+
+/** Under the chat: whom you muted, and why you can't talk if you can't. */
+function ChatNotes({ view, mutes, error }: { view: TableView; mutes: string[]; error: string }) {
+  const name = (id: string) => [...view.chat].reverse().find((m) => m.playerId === id)?.name ?? view.seats.find((s) => s?.playerId === id)?.name ?? view.watchers.find((w) => w.playerId === id)?.name ?? 'Guest';
+  const shown = mutes.filter((id) => view.chat.some((m) => m.playerId === id) || view.seats.some((s) => s?.playerId === id) || view.watchers.some((w) => w.playerId === id));
+  const mutedByHost = view.muted.includes(view.me.playerId);
+  const quiet = !view.settings.chat.guestChat && view.me.seat === null && !view.isHost;
+  if (!shown.length && !mutedByHost && !quiet && !error) return null;
+  return (
+    <div className="chat-notes muted">
+      {mutedByHost ? <div>The host has muted you.</div> : quiet ? <div>Only players at the table can chat here.</div> : error && <div className="error">{error}</div>}
+      {shown.length > 0 && (
+        <div>
+          Muted for you:{' '}
+          {shown.map((id) => (
+            <button key={id} className="link" title="Unmute" onClick={() => setChatMuted(id, false)}>
+              {name(id)} ✕
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

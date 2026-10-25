@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  copySettings,
   defaultSettings,
   nextOccurrence,
   payoutPreset,
@@ -14,9 +15,10 @@ import {
   type TournamentSettings,
   type Weekday,
 } from '@rsdp/tournament';
-import { tournamentClient } from './client';
+import { LocalTournamentClient, tournamentClient } from './client';
 import { GAMES, localTime } from './format';
 import { useSession } from './hooks';
+import { call } from '../socket';
 import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
 import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
@@ -47,33 +49,103 @@ function tzList(): string[] {
   return all.includes(here) ? all : [here, ...all];
 }
 
-export function TournamentCreate({ onCreated }: { onCreated: (id: string) => void }) {
+/** The form's start fields for copied settings (TRN-07). */
+function startFields(initial: TournamentSettings | undefined) {
+  const start = initial?.start;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (start?.kind !== 'scheduled') return { date: defaultDate(), time: '19:30', timeZone: zone, repeat: 'none' as Repeat, weekdays: [] as Weekday[], nth: 1 as const, carry: {} };
+  if (!start.schedule) {
+    const d = new Date(start.startAt);
+    return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}`, timeZone: zone, repeat: 'none' as Repeat, weekdays: [] as Weekday[], nth: 1 as const, carry: {} };
+  }
+  const { startDate, time, timeZone, repeat: r, until } = start.schedule;
+  const repeat: Repeat = !r ? 'none' : r.freq === 'daily' ? 'daily' : r.freq === 'weekly' ? 'weekly' : 'monthDay' in r ? 'monthly-day' : 'monthly-nth';
+  return {
+    date: startDate,
+    time,
+    timeZone,
+    repeat,
+    weekdays: r?.freq === 'weekly' ? r.weekdays : ([] as Weekday[]),
+    nth: r && 'nth' in r ? r.nth : (1 as const),
+    // Parts of a copied schedule the form has no fields for.
+    carry: { ...(r?.interval ? { interval: r.interval } : {}), ...(until ? { until } : {}) },
+  };
+}
+
+/** `/tn/new?from=<id>`: the form filled in from another tournament. */
+export function TournamentCreatePage({ from, onCreated }: { from: string | null; onCreated: (id: string) => void }) {
+  const [initial, setInitial] = useState<TournamentSettings | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!from) return;
+    // One view is all the copy needs; it can arrive before subscribe returns.
+    let done = false;
+    let off: (() => void) | null = null;
+    off = tournamentClient().subscribe(
+      from,
+      (v) => {
+        setInitial((prev) => prev ?? copySettings(v.state.settings, v.serverNow));
+        done = true;
+        off?.();
+      },
+      (m) => setError(m),
+    );
+    if (done) off();
+    return () => off?.();
+  }, [from]);
+  if (!from) return <TournamentCreate onCreated={onCreated} />;
+  if (error) return <main className="tn-page"><p className="error">Couldn't copy that tournament: {error}</p><a href="/tn/new">Start from scratch</a></main>;
+  if (!initial) return <main className="tn-page"><p className="muted">Copying settings…</p></main>;
+  return <TournamentCreate onCreated={onCreated} initial={initial} />;
+}
+
+export function TournamentCreate({ onCreated, initial }: { onCreated: (id: string) => void; initial?: TournamentSettings }) {
   const session = useSession();
-  const [name, setName] = useState('Friday Night Tournament');
-  const [games, setGames] = useState<string[]>(['nlhe']);
-  const [startingStack, setStartingStack] = useState(10_000);
-  const [seatsPerTable, setSeats] = useState(9);
-  const [maxEntrants, setMaxEntrants] = useState(100);
-  const [startKind, setStartKind] = useState<StartKind>('scheduled');
-  const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState('19:30');
-  const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const [repeat, setRepeat] = useState<Repeat>('none');
-  const [weekdays, setWeekdays] = useState<Weekday[]>([]);
-  const [nth, setNth] = useState<1 | 2 | 3 | 4 | -1>(1);
-  const [sng, setSng] = useState({ playersNeeded: 9, startDelaySeconds: 30, autoSpawn: true });
-  const [structure, setStructure] = useState<StructureRow[]>(() => presetStructure('regular', { startingStack: 10_000, expectedEntrants: 20 }));
-  const base = useMemo(() => defaultSettings({ startingStack: 10_000 }), []);
+  const first = useMemo(() => startFields(initial), [initial]);
+  const [name, setName] = useState(initial?.name ?? 'Friday Night Tournament');
+  const [games, setGames] = useState<string[]>(initial?.games ?? ['nlhe']);
+  const [startingStack, setStartingStack] = useState(initial?.startingStack ?? 10_000);
+  const [seatsPerTable, setSeats] = useState(initial?.seatsPerTable ?? 9);
+  const [maxEntrants, setMaxEntrants] = useState(initial?.maxEntrants ?? 100);
+  const [startKind, setStartKind] = useState<StartKind>(initial?.start.kind ?? 'scheduled');
+  const [date, setDate] = useState(first.date);
+  const [time, setTime] = useState(first.time);
+  const [timeZone, setTimeZone] = useState(first.timeZone);
+  const [repeat, setRepeat] = useState<Repeat>(first.repeat);
+  const [weekdays, setWeekdays] = useState<Weekday[]>(first.weekdays);
+  const [nth, setNth] = useState<1 | 2 | 3 | 4 | -1>(first.nth);
+  const [sng, setSng] = useState(initial?.start.kind === 'sng' ? { playersNeeded: initial.start.playersNeeded, startDelaySeconds: initial.start.startDelaySeconds, autoSpawn: initial.start.autoSpawn } : { playersNeeded: 9, startDelaySeconds: 30, autoSpawn: true });
+  const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? presetStructure('regular', { startingStack: 10_000, expectedEntrants: 20 }));
+  // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
+  const base = useMemo(() => {
+    if (!initial) return defaultSettings({ startingStack: 10_000 });
+    // Formats, payouts and the season come back from their own inputs, so one switched off is left out.
+    const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, season: _s, ...rest } = initial;
+    return rest;
+  }, [initial]);
   const [lateReg, setLateReg] = useState(base.lateRegistration);
   const [rebuy, setRebuy] = useState({ ...base.rebuy });
   const [addOn, setAddOn] = useState({ ...base.addOn });
   const [reEntry, setReEntry] = useState(base.reEntry);
-  const [registrationApproval, setRegistrationApproval] = useState(false);
-  const [allowQuit, setAllowQuit] = useState(false);
-  const [payoutsOn, setPayoutsOn] = useState(false);
-  const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0 });
-  const [payouts, setPayouts] = useState(() => payoutPreset('standard', 600));
-  const [formats, setFormats] = useState<Formats>(NO_FORMATS);
+  const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
+  const [allowQuit, setAllowQuit] = useState(base.allowQuit);
+  const [payoutsOn, setPayoutsOn] = useState(!!initial?.payouts);
+  const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
+  const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('standard', 600));
+  const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
+  // '' = not part of a season, 'new' = start one, otherwise an existing season's id.
+  const [seasonPick, setSeasonPick] = useState('');
+  const [seasonName, setSeasonName] = useState('');
+  const [mySeasons, setMySeasons] = useState<{ id: string; name: string; events: number }[]>([]);
+  useEffect(() => {
+    if (!session || tournamentClient() instanceof LocalTournamentClient) return;
+    call<{ seasons: typeof mySeasons }>('season:mine', {}).then((r) => {
+      setMySeasons(r.seasons);
+      // A copy of one of your events joins its season unless you pick otherwise.
+      const copied = initial?.season?.id;
+      if (copied && r.seasons.some((x) => x.id === copied)) setSeasonPick((p) => p || copied);
+    }, () => {});
+  }, [session?.playerId]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -92,7 +164,9 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
         return { freq: 'monthly', nth, weekday: firstDay };
     }
   }, [repeat, weekdays, firstDay, date, nth]);
-  const schedule: Schedule = { timeZone, startDate: date, time, repeat: rule };
+  // A copied series keeps its interval and end date only while its repeat is left as it was.
+  const { interval, until } = repeat === first.repeat ? (first.carry as { interval?: number; until?: string }) : {};
+  const schedule: Schedule = { timeZone, startDate: date, time, repeat: rule && interval ? { ...rule, interval } : rule, ...(until && rule ? { until } : {}) };
   const scheduleErrors = startKind === 'scheduled' ? validateSchedule(schedule) : [];
   const now = Date.now();
   const startAt = startKind === 'scheduled' && !scheduleErrors.length ? nextOccurrence(schedule, now) : null;
@@ -121,6 +195,11 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
     ...(formats.bounty ? { bounty: formats.bounty } : {}),
     ...(formats.invites ? { invites: formats.invites } : {}),
     ...(formats.checkIn && startKind !== 'sng' ? { checkIn: formats.checkIn } : {}),
+    ...(seasonPick === 'new'
+      ? { season: { id: '', name: seasonName.trim() || name } }
+      : seasonPick
+        ? { season: { id: seasonPick, name: mySeasons.find((s) => s.id === seasonPick)?.name ?? '' } }
+        : {}),
     // Presets are built for 600 entries; trim them to this event's size.
     ...(payoutsOn ? { payouts: { structure: payouts.name === 'custom' ? payouts : payoutPreset(payouts.name as PayoutPresetName, maxEntrants), money } } : {}),
   };
@@ -156,6 +235,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
           RSDP Poker <span>Live!</span>
         </a>
         <h1>New tournament</h1>
+        {initial && <p className="muted">Copied from another tournament. Check the start time, then create.</p>}
       </header>
       <form className="tn-form" onSubmit={submit} noValidate>
         <section className="tn-card">
@@ -405,6 +485,33 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
         <section className="tn-card">
           <h2>Bounties, invites and check-in</h2>
           <FormatsEditor value={formats} onChange={setFormats} scheduled={startKind === 'scheduled'} sng={startKind === 'sng'} />
+          {/* Seasons live on the server; a ?demo tournament has none. */}
+          {!(tournamentClient() instanceof LocalTournamentClient) && <div className="tn-option">
+            <label>
+              Season leaderboard
+              <select value={seasonPick} onChange={(e) => setSeasonPick(e.target.value)}>
+                <option value="">Not part of a season</option>
+                <option value="new">Start a new season</option>
+                {mySeasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Add to {s.name} ({s.events} {s.events === 1 ? 'event' : 'events'})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {seasonPick === 'new' && (
+              <label>
+                Season name
+                <input value={seasonName} maxLength={40} placeholder={name} onChange={(e) => setSeasonName(e.target.value)} />
+              </label>
+            )}
+            {seasonPick !== '' && (
+              <p className="muted">
+                Finished events in a season add up on one leaderboard: points, wins, cashes{formats.bounty ? ', knockouts' : ''} and display-only net.
+                {repeat !== 'none' && startKind === 'scheduled' ? ' Every event in this series joins the season.' : ''}
+              </p>
+            )}
+          </div>}
         </section>
 
         <section className="tn-card">

@@ -2,6 +2,7 @@
 // progressive knockout), invite codes, and check-in groups. These are the
 // pure helpers; the director calls them from its transitions.
 
+import { hasPower } from '@rsdp/engine/roles';
 import { nextRandom } from './seating';
 import type { Entry, InviteCode, PlayerId, TournamentSettings, TournamentState } from './types';
 
@@ -46,6 +47,12 @@ export function validateFormats(s: TournamentSettings): string[] {
       const waits = Array.isArray(c.groups) ? c.groups.slice(0, -1).reduce((sum, g) => sum + (isObject(g) && isWhole(g.waitMinutes, 1, 599) ? g.waitMinutes : 0), 0) : 0;
       if (waits * 60 >= c.opensMinutesBefore! * 60 - s.seatLeadSeconds) errors.push('Every check-in group must open before the seats are drawn');
     }
+  }
+  if (s.season !== undefined) {
+    const v: Record<string, unknown> = isObject(s.season) ? s.season : {};
+    if (typeof v.id !== 'string' || !/^[0-9A-Za-z_-]{0,40}$/.test(v.id)) errors.push('Pick a season');
+    const length = typeof v.name === 'string' ? Array.from(v.name.trim()).length : 0;
+    if (length < 1 || length > 40) errors.push('The season name must be 1-40 characters');
   }
   return errors;
 }
@@ -106,7 +113,8 @@ export function usableCode(s: TournamentState, code: string): InviteCode | null 
 
 /** The state a viewer is sent: only the host sees the codes. */
 export function viewFor(s: TournamentState, viewer: PlayerId): TournamentState {
-  if (viewer === s.hostId) return s;
+  // The host and co-hosts who approve entries see the invite codes.
+  if (hasPower(s, viewer, 'approve')) return s;
   const { invites: _hidden, ...rest } = s;
   return { ...rest, requests: s.requests.map(({ code: _code, ...r }) => r) };
 }

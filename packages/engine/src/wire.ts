@@ -179,6 +179,19 @@ export interface TableView {
   history: { handNumber: number; endedAt: number; gameName: string }[];
   /** People with the table open who are not seated (spectators). */
   watchers: { playerId: PlayerId; name: string }[];
+  /** Cash tables with a waitlist: who is queued for a seat, first in line first. */
+  waitlist: { playerId: PlayerId; name: string }[];
+  /** Free seats held for someone on the waitlist until `expiresAt`. */
+  offers: { seat: number; playerId: PlayerId; name: string; expiresAt: number }[];
+  /** People the host has muted in chat. */
+  muted: PlayerId[];
+  /**
+   * How a spectator sees the table: `delaySeconds` behind the players (seats,
+   * cards and bets as they were then), and with every hole card when
+   * `seeAll`. Null for seated players and the host. `blocked` when the host
+   * has turned watching off: the hand is hidden until you sit.
+   */
+  spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */
@@ -216,6 +229,10 @@ export interface ClientToServer {
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;
   'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean; mood?: string | null }, ack: Ack) => void;
   'seat:rebuy': (input: { amount: number }, ack: Ack) => void;
+  /** Queue for a seat at a full table, with the stack to sit with. */
+  'waitlist:join': (input: { name: string; stack: number }, ack: Ack) => void;
+  /** Leave the waitlist (also turns down a seat being held for you). */
+  'waitlist:leave': (ack: Ack) => void;
   'hand:act': (action: Action, ack: Ack) => void;
   'hand:draw': (input: { discard: number[] }, ack: Ack) => void;
   'hand:runItTwice': (input: { yes: boolean }, ack: Ack) => void;
@@ -224,7 +241,7 @@ export interface ClientToServer {
   'hand:timeBank': (ack: Ack) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
-  'chat:send': (input: { text: string }) => void;
+  'chat:send': (input: { text: string }, ack?: Ack) => void;
   /** Throw a gesture at a player at my table. */
   'table:gesture': (input: { to: PlayerId; kind: GestureKind }, ack: Ack) => void;
   /** My picture everywhere: one from the library, an uploaded image (a small data: URL), or none. */
@@ -233,7 +250,8 @@ export interface ClientToServer {
   'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
   /** Saves (or, with no text and no colour, deletes) my note on a player. */
   'notes:set': (input: PlayerNote, ack: Ack<{ note: PlayerNote | null }>) => void;
-  'host:approve': (input: { requestId: string }, ack: Ack) => void;
+  /** Approve a request; `seat` puts a seat request's player in another open seat. */
+  'host:approve': (input: { requestId: string; seat?: number }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;
   'host:start': (ack: Ack) => void;
   'host:stop': (ack: Ack) => void;
@@ -246,6 +264,12 @@ export interface ClientToServer {
   'host:kick': (input: { playerId: string }, ack: Ack) => void;
   'host:sitOut': (input: { playerId: string }, ack: Ack) => void;
   'host:transfer': (input: { playerId: string }, ack: Ack) => void;
+  /** Between hands: reseat everyone at random and draw the button again. */
+  'host:shuffle': (ack: Ack) => void;
+  /** Move a player who is not in the hand to an empty seat. */
+  'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
+  /** Mute (or unmute) someone's chat for everyone. */
+  'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
 }
 
 export interface ServerToClient {

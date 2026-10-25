@@ -43,6 +43,11 @@ export interface BettingContext {
   /** Required when betting is fixed-limit. */
   fixed?: FixedLimitRound;
   bringIn?: BringInRound;
+  /**
+   * Trim excess bets: the most any live opponent can put in this round (their
+   * bet plus chips behind). No bet or raise may go past it.
+   */
+  trimTo?: Chips;
 }
 
 /**
@@ -60,7 +65,8 @@ export function potLimitMax(currentBet: Chips, potTotal: Chips, toCall: Chips): 
  */
 export function computeLegal(ctx: BettingContext): LegalActions {
   const toCall = Math.max(0, ctx.currentBet - ctx.bet);
-  const allInTo = ctx.bet + ctx.stack;
+  // With trimming on, going all in only goes as far as someone can call; a raise to there is legal even below a full raise.
+  const allInTo = ctx.trimTo === undefined ? ctx.bet + ctx.stack : Math.min(ctx.bet + ctx.stack, ctx.trimTo);
   const canBringIn = !!ctx.bringIn && ctx.currentBet === 0 && ctx.stack > 0;
   const { base, step, completing } = fullRaise(ctx);
   const fullTo = base + step;
