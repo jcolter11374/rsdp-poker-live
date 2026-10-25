@@ -98,7 +98,7 @@ try {
     await guest.click('.avatar-pick[aria-label="fox"]');
     await guest.click('.mood-pick:has-text("🤠")');
     await guest.click('.modal button:has-text("Close")');
-    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar');
+    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar:not(.initials)');
     await host.waitForSelector('.seat:not(.me) .seat-mood:has-text("🤠")');
     await host.click('.seat:not(.me) .nameplate');
     await host.click('.gesture-grid button[aria-label^="Fish"]');
