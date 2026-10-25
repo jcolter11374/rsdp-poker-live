@@ -13,7 +13,7 @@ env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   FLY_APP: rsdp-poker-live
   # Filled in after reading the list; empty means list only.
-  ARCHIVE_IDS: ""
+  ARCHIVE_IDS: "1e954f548ca7391e 56a5989bc19ae053"
 
 jobs:
   cleanup:
