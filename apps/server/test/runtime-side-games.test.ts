@@ -193,6 +193,8 @@ describe('7-2 bounty', () => {
     rt.show(idAt(rt, first), [0, 1]);
     expect(rt.state.seats[poor]!.stack).toBe(0);
     expect(total(rt)).toBe(before);
+    const paid = hand(rt).events.filter((e) => e.t === 'transfer' && e.from === poor);
+    expect(paid.map((e) => e.t === 'transfer' && e.amount)).toEqual([4]);
   });
 
   it('a payer who already left pays from their cash-out', () => {

@@ -723,6 +723,15 @@ export class TableRuntime {
       if (e.t !== 'transfer') continue;
       const paid = e.from === 'house' ? e.amount : take(e.from, e.amount);
       if (e.to !== 'house') give(e.to, paid);
+      // The hand records what really moved, so its history matches the ledger.
+      if (paid !== e.amount) {
+        const short = e.amount - paid;
+        for (const hs of hand.seats) {
+          if (hs.seat === e.from) hs.stack += short;
+          if (hs.seat === e.to) hs.stack -= short;
+        }
+        e.amount = paid;
+      }
       changed = true;
     }
     // Store the hand again so its history has the claim.

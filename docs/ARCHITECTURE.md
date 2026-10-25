@@ -34,7 +34,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - `startHand` returns a `HandState`. The runtime then calls `act`, `draw`, `voteRunItTwice`, `show`, `timeout` and `foldOutOfTurn`, and reads new `HandEvent`s from `state.events`.
 - Settlement runs pot, then run (run it twice), then board (double board), then `awardPortion` from the variants package (high, low, hi-lo halves). Odd chips go to the first eligible seat clockwise from the button; in hi-lo the odd chip goes to the high half.
 - `Modifier`s plug in before the hand (`beforeHand`), at pot award (`potFee`), after settlement (`afterSettle`), and after a post-hand show (`afterShow`, for claims such as the 7-2 bounty), so paid-feature modules never edit the core.
-- `import '@rsdp/engine/modifiers'` registers every modifier's settings section and engine hooks. The server runtime and the web settings dialog both import it, so they parse the same `settings.modifiers` sections. Bomb pots have no engine hook: the runtime decides them between hands (`bombPotDue`), because their posts replace the blinds.
+- `import '@rsdp/engine/modifiers'` registers every modifier's settings section and engine hooks. The server runtime and the web settings dialog both import it, so they parse the same `settings.modifiers` sections. Bomb pots have no engine hook: the runtime decides them between hands (`bombPotDue`), because their posts replace the blinds. A bomb pot takes no blinds: owed blinds stay owed, and the blind positions still move on one seat.
 - Betting structures: no-limit, pot-limit and fixed-limit share one `LegalActions` shape. Fixed-limit uses `smallBet`/`bigBet` per street and a raise cap.
 
 ## Table runtime (apps/server)
