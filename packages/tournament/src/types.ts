@@ -1,6 +1,7 @@
 // Tournament director contracts. State is plain JSON and is snapshotted by the
 // server; bump STATE_VERSION when its shape changes.
 
+import type { CoHost, HostPower } from '@rsdp/engine/roles';
 import type { PayoutStructure, PrizeMoney } from './payouts';
 import type { Schedule } from './recurrence';
 import type { AnteType, StructureRow } from './structure';
@@ -129,6 +130,9 @@ export interface Entry {
   rebuyOfferExpiresAt?: number;
   /** Quit or host removal waiting for the current hand to end. */
   leaveRequested?: 'quit' | 'removed';
+  /** A host stack edit waiting for the current hand to end, and who made it. */
+  pendingStack?: number;
+  pendingStackBy?: PlayerId;
   bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[] };
   /** Bounty tournaments: money (cents) on this entry's head now. */
   bounty?: number;
@@ -180,6 +184,10 @@ export interface TournamentState {
   version: typeof STATE_VERSION;
   id: string;
   hostId: PlayerId;
+  /** Players the host shares some powers with. Missing in state saved before co-hosts. */
+  coHosts?: CoHost[];
+  /** Hidden from lists; set by the host or by cleanup. Missing or null: not archived. */
+  archivedAt?: number | null;
   settings: TournamentSettings;
   status: TournamentStatus;
   createdAt: number;
@@ -235,7 +243,8 @@ export type Command =
   | { type: 'addOn'; playerId: PlayerId }
   | { type: 'reEnter'; playerId: PlayerId }
   | { type: 'quit'; playerId: PlayerId }
-  | { type: 'approve'; by: PlayerId; requestId: string }
+  /** `stack` seats a registration or re-entry with other than the starting stack (a handicap). */
+  | { type: 'approve'; by: PlayerId; requestId: string; stack?: number }
   | { type: 'reject'; by: PlayerId; requestId: string }
   | { type: 'remove'; by: PlayerId; playerId: PlayerId }
   | { type: 'pause'; by: PlayerId }
@@ -245,6 +254,18 @@ export type Command =
   | { type: 'updateSettings'; by: PlayerId; settings: Partial<TournamentSettings> }
   /** Before the start: cancel. Paused with no hand running: end and rank the rest by chips. */
   | { type: 'end'; by: PlayerId }
+  /** Adds a co-host or changes their powers. Only someone already in the event can be one. */
+  | { type: 'setCoHost'; by: PlayerId; playerId: PlayerId; powers: HostPower[] }
+  /** The host removes a co-host, or a co-host steps down. */
+  | { type: 'removeCoHost'; by: PlayerId; playerId: PlayerId }
+  /** Hands the host role on; the old host stays as a co-host with every power. */
+  | { type: 'transferHost'; by: PlayerId; to: PlayerId; byName?: string }
+  /** Sets a player's stack; during their hand it applies when the hand ends. Not a rebuy. */
+  | { type: 'setStack'; by: PlayerId; playerId: PlayerId; stack: number }
+  /** Moves a seated player to a seat between hands; a taken seat swaps the two players. */
+  | { type: 'movePlayer'; by: PlayerId; playerId: PlayerId; tableId: TableId; seat: number }
+  /** Hides the tournament from lists. Before the start it cancels it too; once started, end it first. */
+  | { type: 'archive'; by: PlayerId }
   /** Makes `count` codes. The server fills in `codes` from a secure source; without them the director draws its own. */
   | { type: 'createInvites'; by: PlayerId; count: number; maxUses: number | null; codes?: string[] }
   | { type: 'cancelInvite'; by: PlayerId; code: string }
@@ -266,7 +287,8 @@ export interface SeatInfo {
 }
 
 export type DirectorEvent =
-  | { type: 'registered'; entryId: EntryId; playerId: PlayerId; displayName: string; late: boolean; entryNo: number }
+  /** `stack` is set when the host approved a stack other than the starting stack. */
+  | { type: 'registered'; entryId: EntryId; playerId: PlayerId; displayName: string; late: boolean; entryNo: number; stack?: number }
   | { type: 'unregistered'; playerId: PlayerId; reason?: 'not-checked-in' }
   /** A check-in group opened; `playerIds` may check in from now (nobody is told twice). */
   | { type: 'checkInOpened'; group: number; playerIds: PlayerId[] }
@@ -290,7 +312,14 @@ export type DirectorEvent =
   /** Seat a player at a table before its next hand. */
   | { type: 'seatPlayer'; seat: SeatInfo; reason: 'late-registration' | 're-entry' }
   /** Move between hands of the source table; the player is dealt in at the destination's next hand. */
-  | { type: 'moveSeat'; entryId: EntryId; playerId: PlayerId; from: { tableId: TableId; seat: number }; to: { tableId: TableId; seat: number }; stack: number }
+  | { type: 'moveSeat'; entryId: EntryId; playerId: PlayerId; from: { tableId: TableId; seat: number }; to: { tableId: TableId; seat: number }; stack: number; by?: PlayerId }
+  /** Two players trade seats between hands (a host move onto a taken seat). Unseat both, then seat both. */
+  | { type: 'seatsSwapped'; by: PlayerId; moves: Extract<DirectorEvent, { type: 'moveSeat' }>[] }
+  /** A host stack edit. `applied` false: it waits for the player's hand to end, and comes again once it lands. */
+  | { type: 'stackSet'; by: PlayerId; entryId: EntryId; playerId: PlayerId; tableId: TableId | null; seat: number | null; stack: number; previous: number; applied: boolean }
+  | { type: 'coHostsChanged'; by: PlayerId }
+  | { type: 'hostChanged'; by: PlayerId; hostId: PlayerId }
+  | { type: 'archived'; by: PlayerId | null }
   | { type: 'tableBroken'; tableId: TableId }
   | { type: 'rebuyOffered'; entryId: EntryId; playerId: PlayerId; expiresAt: number; chips: number }
   /** Add chips to a seated player's stack before their next hand. */

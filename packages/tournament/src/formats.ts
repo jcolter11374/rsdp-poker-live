@@ -2,6 +2,7 @@
 // progressive knockout), invite codes, and check-in groups. These are the
 // pure helpers; the director calls them from its transitions.
 
+import { hasPower } from '@rsdp/engine/roles';
 import { nextRandom } from './seating';
 import type { Entry, InviteCode, PlayerId, TournamentSettings, TournamentState } from './types';
 
@@ -106,7 +107,8 @@ export function usableCode(s: TournamentState, code: string): InviteCode | null 
 
 /** The state a viewer is sent: only the host sees the codes. */
 export function viewFor(s: TournamentState, viewer: PlayerId): TournamentState {
-  if (viewer === s.hostId) return s;
+  // The host and co-hosts who approve entries see the invite codes.
+  if (hasPower(s, viewer, 'approve')) return s;
   const { invites: _hidden, ...rest } = s;
   return { ...rest, requests: s.requests.map(({ code: _code, ...r }) => r) };
 }

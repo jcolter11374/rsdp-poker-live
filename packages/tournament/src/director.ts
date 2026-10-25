@@ -14,6 +14,7 @@
 // scheduled starts and offer expiries only take effect in tick, so the server
 // must wake at nextWakeAt (a 1 s tick is a fine fallback).
 
+import { handOver, RoleError, withCoHost, withoutCoHost } from '@rsdp/engine/roles';
 import {
   checkInActive,
   checkInGroupOf,
@@ -458,15 +459,15 @@ function checkChipsInPlay(s: TournamentState, chips: number) {
   if (inPlay + chips > MAX_CHIPS_IN_PLAY) fail('The tournament cannot hold any more chips');
 }
 
-function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number): Entry {
-  checkChipsInPlay(c.s, c.s.settings.startingStack);
+function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number, stack = c.s.settings.startingStack): Entry {
+  checkChipsInPlay(c.s, stack);
   const e: Entry = {
     id: `${c.s.id}:e${++c.s.counters.entry}`,
     playerId,
     displayName,
     entryNo,
     status: 'registered',
-    stack: c.s.settings.startingStack,
+    stack,
     tableId: null,
     seat: null,
     rebuys: 0,
@@ -492,11 +493,14 @@ function newTable(c: Ctx): TableState {
   return t;
 }
 
-function register(c: Ctx, playerId: PlayerId, displayName: string) {
+/** A stack the host approves in place of the starting stack. */
+const customStack = (s: TournamentState, stack: number | undefined) => (stack === undefined || stack === s.settings.startingStack ? {} : { stack });
+
+function register(c: Ctx, playerId: PlayerId, displayName: string, stack?: number) {
   const s = c.s;
   const late = started(s);
-  const e = newEntry(c, playerId, displayName, 1);
-  emit(c, { type: 'registered', entryId: e.id, playerId, displayName, late, entryNo: 1 });
+  const e = newEntry(c, playerId, displayName, 1, stack);
+  emit(c, { type: 'registered', entryId: e.id, playerId, displayName, late, entryNo: 1, ...customStack(s, stack) });
   if (s.tables.length) seatLate(c, e, 'late-registration');
   afterRegistration(c);
 }
@@ -624,6 +628,8 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
     e.seat = null;
     delete e.rebuyOfferExpiresAt;
     delete e.leaveRequested;
+    delete e.pendingStack;
+    delete e.pendingStackBy;
   }
   const placeOf = places(s);
   members.forEach((e, i) =>
@@ -639,6 +645,8 @@ function canRebuy(s: TournamentState, e: Entry): boolean {
 function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
   checkChipsInPlay(c.s, chips);
   e.stack += chips;
+  // An add-on bought after a pending stack edit counts on top of it.
+  if (e.pendingStack !== undefined) e.pendingStack += chips;
   if (reason === 'rebuy') {
     e.rebuys++;
     e.status = 'seated';
@@ -650,10 +658,10 @@ function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
   emit(c, { type: 'stackAdded', entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, chips, reason });
 }
 
-function reEnter(c: Ctx, old: Entry) {
-  const e = newEntry(c, old.playerId, old.displayName, old.entryNo + 1);
+function reEnter(c: Ctx, old: Entry, stack?: number) {
+  const e = newEntry(c, old.playerId, old.displayName, old.entryNo + 1, stack);
   old.supersededBy = e.id;
-  emit(c, { type: 'registered', entryId: e.id, playerId: e.playerId, displayName: e.displayName, late: true, entryNo: e.entryNo });
+  emit(c, { type: 'registered', entryId: e.id, playerId: e.playerId, displayName: e.displayName, late: true, entryNo: e.entryNo, ...customStack(c.s, stack) });
   seatLate(c, e, 're-entry');
 }
 
@@ -889,6 +897,7 @@ export function tick(state: TournamentState, now: number): Result {
 }
 
 export function apply(state: TournamentState, cmd: Command, now: number): Result {
+  if (cmd.type === 'archive') return archive(state, cmd.by, now);
   if (state.status === 'finished' || state.status === 'cancelled') fail('This tournament is over');
   return run(state, now, (c) => {
     const s = c.s;
@@ -1021,6 +1030,11 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         const r = s.requests.find((x) => x.id === cmd.requestId) ?? fail('Request not found');
         s.requests = s.requests.filter((x) => x !== r);
         const e = r.entryId ? entry(s, r.entryId) : undefined;
+        const stack = cmd.type === 'approve' ? cmd.stack : undefined;
+        if (stack !== undefined) {
+          if (r.kind !== 'register' && r.kind !== 're-entry') fail('Only registrations and re-entries take a starting stack');
+          if (!isWhole(stack, 1, MAX_CHIPS)) fail(`The stack must be a whole number from 1 to ${CHIPS_LABEL}`);
+        }
         if (cmd.type === 'reject') {
           emit(c, { type: 'requestRejected', request: r });
           if (r.kind === 'rebuy' && e?.status === 'rebuy-offer') eliminate(c, [e], 'busted');
@@ -1030,7 +1044,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           if (activeEntry(s, r.playerId)) fail('Already registered');
           if (!hasRoom(s)) fail('The tournament is full');
           if (r.code) useCode(c, r.code, r);
-          register(c, r.playerId, r.displayName);
+          register(c, r.playerId, r.displayName, stack);
         } else if (r.kind === 'rebuy') {
           if (e?.status !== 'rebuy-offer') fail('The rebuy offer has expired');
           addChips(c, e!, s.settings.rebuy.chips, 'rebuy');
@@ -1039,7 +1053,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           addChips(c, e!, s.settings.addOn.chips, 'add-on');
         } else {
           if (!e || e.status !== 'busted' || e.supersededBy || activeEntry(s, r.playerId)) fail('Nothing to re-enter');
-          reEnter(c, e!);
+          reEnter(c, e!, stack);
         }
         break;
       }
@@ -1110,6 +1124,17 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         }
         break;
       }
+      case 'setCoHost':
+      case 'removeCoHost':
+      case 'transferHost':
+        staffCommand(c, cmd);
+        break;
+      case 'setStack':
+        setStack(c, cmd.by, cmd.playerId, cmd.stack);
+        break;
+      case 'movePlayer':
+        movePlayer(c, cmd.by, cmd.playerId, cmd.tableId, cmd.seat);
+        break;
       case 'handStarted': {
         const t = table(s, cmd.tableId);
         t.inHand = true;
@@ -1129,6 +1154,8 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
 function handResult(c: Ctx, r: HandResult) {
   const s = c.s;
   const t = table(s, r.tableId);
+  // A hand this table already reported: a table restored from an older snapshot played it again.
+  if (r.handNumber < t.lastHandNumber || (r.handNumber === t.lastHandNumber && !t.inHand && t.lastHandNumber > 0)) return;
   t.inHand = false;
   t.lastHandNumber = r.handNumber;
   if (r.button !== undefined) t.button = r.button;
@@ -1139,6 +1166,18 @@ function handResult(c: Ctx, r: HandResult) {
   for (const e of players) {
     const end = r.endStacks[e.playerId];
     if (end !== undefined && e.status === 'seated') e.stack = end;
+  }
+  // Host stack edits made during the hand land now, before anyone is counted out.
+  for (const e of players) {
+    if (e.pendingStack === undefined) continue;
+    const stack = e.pendingStack;
+    const by = e.pendingStackBy ?? s.hostId;
+    delete e.pendingStack;
+    delete e.pendingStackBy;
+    if (e.status !== 'seated' || e.leaveRequested) continue;
+    const previous = e.stack;
+    e.stack = stack;
+    emit(c, { type: 'stackSet', by, entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, stack, previous, applied: true });
   }
   const leavers = players.filter((e) => e.leaveRequested);
   // A leaver who lost every chip in the hand was knocked out first: their bounty goes to whoever did it.
@@ -1162,4 +1201,133 @@ function handResult(c: Ctx, r: HandResult) {
   }
   eliminate(c, out, 'busted', hfhRound);
   advanceHandForHand(s);
+}
+
+// ---------------------------------------------------------------------------
+// Host tools: co-hosts, stack edits, seat moves, archive
+
+function roles<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof RoleError) fail(e.message.charAt(0).toUpperCase() + e.message.slice(1));
+    throw e;
+  }
+}
+
+/** A name for someone the event knows: an entry, a pending request, or a co-host. */
+function knownName(s: TournamentState, playerId: PlayerId): string | null {
+  return (
+    latestEntry(s, playerId)?.displayName ??
+    s.requests.find((r) => r.playerId === playerId)?.displayName ??
+    s.coHosts?.find((x) => x.playerId === playerId)?.name ??
+    null
+  );
+}
+
+function staffCommand(c: Ctx, cmd: Extract<Command, { type: 'setCoHost' | 'removeCoHost' | 'transferHost' }>) {
+  const s = c.s;
+  if (cmd.type === 'setCoHost') {
+    const name = knownName(s, cmd.playerId) ?? fail('Only players in this event can be co-hosts');
+    s.coHosts = roles(() => withCoHost(s, { playerId: cmd.playerId, name, powers: cmd.powers }));
+    emit(c, { type: 'coHostsChanged', by: cmd.by });
+  } else if (cmd.type === 'removeCoHost') {
+    s.coHosts = roles(() => withoutCoHost(s, cmd.playerId));
+    emit(c, { type: 'coHostsChanged', by: cmd.by });
+  } else {
+    if (knownName(s, cmd.to) === null) fail('Only players in this event can be the host');
+    const oldName = knownName(s, s.hostId) ?? (cleanText(cmd.byName ?? '').slice(0, NAME_MAX) || 'Host');
+    const next = roles(() => handOver(s, cmd.to, oldName));
+    s.hostId = next.hostId;
+    s.coHosts = next.coHosts;
+    emit(c, { type: 'hostChanged', by: cmd.by, hostId: next.hostId });
+  }
+}
+
+function setStack(c: Ctx, by: PlayerId, playerId: PlayerId, stack: number) {
+  const s = c.s;
+  const e = activeEntry(s, playerId) ?? fail('Not playing');
+  if (!isWhole(stack, 1, MAX_CHIPS)) fail(`The stack must be a whole number from 1 to ${CHIPS_LABEL}`);
+  if (e.status === 'rebuy-offer') fail('They are deciding on a rebuy; wait for that first');
+  if (stack > e.stack) checkChipsInPlay(s, stack - e.stack);
+  const inHand = e.status === 'seated' && !!e.tableId && table(s, e.tableId).inHand;
+  const info = { by, entryId: e.id, playerId, tableId: e.tableId, seat: e.seat, stack, previous: e.stack };
+  if (inHand) {
+    e.pendingStack = stack;
+    e.pendingStackBy = by;
+    emit(c, { type: 'stackSet', ...info, applied: false });
+  } else {
+    delete e.pendingStack;
+    delete e.pendingStackBy;
+    e.stack = stack;
+    emit(c, { type: 'stackSet', ...info, applied: true });
+  }
+}
+
+function movePlayer(c: Ctx, by: PlayerId, playerId: PlayerId, tableId: TableId, seat: number) {
+  const s = c.s;
+  if (!(s.status === 'seating' || started(s))) fail('Seats are not drawn yet');
+  const e = activeEntry(s, playerId) ?? fail('Not playing');
+  if (e.status !== 'seated' || !e.tableId) fail('Only seated players can move');
+  const from = table(s, e.tableId!);
+  const to = s.tables.find((t) => t.id === tableId) ?? fail('No such table');
+  if (!isWhole(seat, 0, to.seats.length - 1)) fail('No such seat');
+  if (from.inHand || to.inHand) fail('Wait for the hand in progress to finish');
+  if (to === from && seat === e.seat) fail('They are already in that seat');
+  const otherId = to.seats[seat];
+  const fromSeat = e.seat!;
+  const move = (x: Entry, dest: TableState, destSeat: number) => {
+    const ev = { type: 'moveSeat' as const, entryId: x.id, playerId: x.playerId, from: { tableId: x.tableId!, seat: x.seat! }, to: { tableId: dest.id, seat: destSeat }, stack: x.stack, by };
+    x.tableId = dest.id;
+    x.seat = destSeat;
+    return ev;
+  };
+  if (otherId) {
+    const other = entry(s, otherId);
+    if (other.status !== 'seated') fail('That player is deciding on a rebuy; wait for that first');
+    from.seats[fromSeat] = otherId;
+    to.seats[seat] = e.id;
+    const moves = [move(e, to, seat), move(other, from, fromSeat)];
+    emit(c, { type: 'seatsSwapped', by, moves });
+    return;
+  }
+  if (to !== from) {
+    const counts = s.tables.map((t) => tablePlayers(s, t).length);
+    const spread = (n: number[]) => Math.max(...n) - Math.min(...n);
+    const after = s.tables.map((t, i) => counts[i] + (t === to ? 1 : t === from ? -1 : 0));
+    if (spread(after) > 1 && spread(after) > spread(counts)) fail('That would leave the tables uneven; pick a taken seat to swap two players');
+  }
+  from.seats[fromSeat] = null;
+  to.seats[seat] = e.id;
+  emit(c, move(e, to, seat));
+}
+
+function archive(state: TournamentState, by: PlayerId, now: number): Result {
+  return run(state, now, (c) => {
+    const s = c.s;
+    if (s.archivedAt) fail('Already archived');
+    if (started(s)) fail('End the tournament first');
+    if (s.status === 'registering' || s.status === 'seating') cancel(c, 'host');
+    s.archivedAt = now;
+    emit(c, { type: 'archived', by });
+  });
+}
+
+/**
+ * Cleanup (TRN-54): the newest thing that happened in an event nobody started,
+ * so the server can archive one that has sat untouched for weeks.
+ */
+export function lastActivityAt(s: TournamentState): number {
+  return Math.max(s.createdAt, ...s.entries.map((e) => e.registeredAt), ...s.requests.map((r) => r.at));
+}
+
+/** The server's cleanup: cancels an event that never started and archives it (or archives one that is over). */
+export function autoArchive(state: TournamentState, now: number): Result {
+  return run(state, now, (c) => {
+    const s = c.s;
+    if (s.archivedAt || started(s)) return;
+    if (s.status === 'registering' || s.status === 'seating') cancel(c, 'host');
+    s.archivedAt = now;
+    emit(c, { type: 'archived', by: null });
+  });
 }
