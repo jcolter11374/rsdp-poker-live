@@ -27,7 +27,7 @@ import {
   type SettingsPatch,
   type TableSettings,
 } from '@rsdp/engine/settings';
-import { bombPotDue, bombPotSchema, bounty72Schema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
+import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -297,6 +297,7 @@ export class TableRuntime {
   }
 
   private removeSeat(seat: SeatState) {
+    this.nitLeaves(seat.playerId);
     const row = this.state.ledger[seat.playerId];
     const stack = seat.stack + seat.pendingChips;
     if (row) row.cashOut += stack;
@@ -315,9 +316,10 @@ export class TableRuntime {
     this.sync();
   }
 
-  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean }) {
+  setPreferences(playerId: PlayerId, prefs: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
+    if (prefs.nitGame !== undefined) seat.nitOptIn = !!prefs.nitGame;
     if (prefs.waitForBigBlind !== undefined) seat.waitForBigBlind = !!prefs.waitForBigBlind;
     if (prefs.straddle !== undefined) seat.straddle = !!prefs.straddle;
     this.sync();
@@ -413,6 +415,100 @@ export class TableRuntime {
   sideGames(): SideGameState {
     this.state.sideGames ??= { handsSinceBombPot: 0, bombPotNext: false };
     return this.state.sideGames;
+  }
+
+  /** Rake and the Nit game after a cash hand, once stacks are back on the seats. */
+  private settleSideGames(hand: HandState) {
+    const sg = this.sideGames();
+    const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
+    if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
+
+    const round = sg.nit;
+    if (!round || !this.nitStillOn()) return;
+    const seatOfPlayer = new Map(hand.seats.map((x) => [x.playerId, x.seat]));
+    const inHand = round.holders.filter((id) => seatOfPlayer.has(id));
+    const cleared = new Set(nitClears(hand, inHand.map((id) => seatOfPlayer.get(id)!)).map((seat) => hand.seats.find((x) => x.seat === seat)!.playerId));
+    if (!cleared.size) return;
+    round.holders = round.holders.filter((id) => !cleared.has(id));
+    for (const id of cleared) this.log(`${this.nameOf(id)} is off the nit`);
+    if (round.holders.length === 1) this.nitPays(round.holders[0], 'is the last nit');
+  }
+
+  /** Starts a Nit game round when enough opted-in players are dealt in. */
+  private maybeStartNitRound(dealtIn: number[], bigBlind: number) {
+    const sg = this.sideGames();
+    const cfg = nitSchema.get(this.settings);
+    if (!cfg.enabled) {
+      if (sg.nit) this.log('The Nit game is off; the round is cancelled');
+      sg.nit = null;
+      return;
+    }
+    if (sg.nit) return;
+    const players = dealtIn.map((n) => this.state.seats[n]!).filter((x) => x.nitOptIn).map((x) => x.playerId);
+    if (players.length < cfg.minPlayers) return;
+    const prize = cfg.prizeBigBlinds * bigBlind;
+    sg.nit = { participants: players, holders: [...players], prize };
+    this.log(`Nit game: ${players.length} players are in. The last one to win a pot pays ${prize} to each of the others.`);
+  }
+
+  /** A participant leaves: a holder forfeits (pays everyone); anyone else just drops out. */
+  private nitLeaves(playerId: PlayerId) {
+    const round = this.state.sideGames?.nit;
+    if (!round || !round.participants.includes(playerId) || !this.nitStillOn()) return;
+    if (round.holders.includes(playerId)) {
+      this.nitPays(playerId, 'left holding the nit');
+      return;
+    }
+    round.participants = round.participants.filter((id) => id !== playerId);
+    if (round.participants.length < 2) {
+      this.sideGames().nit = null;
+      this.log('The Nit game round ended: not enough players');
+    }
+  }
+
+  /** Turning the Nit game off cancels a running round straight away, so nobody pays after that. */
+  private nitStillOn(): boolean {
+    const { pendingSettings } = this.state;
+    // A change still waiting for the hand to end counts already.
+    const settings = pendingSettings ? applyAtNextHand(this.settings, pendingSettings).settings : this.settings;
+    if (nitSchema.get(settings).enabled) return true;
+    if (this.state.sideGames?.nit) {
+      this.sideGames().nit = null;
+      this.log('The Nit game is off; the round is cancelled');
+    }
+    return false;
+  }
+
+  /** The loser pays the prize to every other participant (as far as their stack goes) and the round ends. */
+  private nitPays(loserId: PlayerId, why: string) {
+    const sg = this.sideGames();
+    const round = sg.nit!;
+    sg.nit = null;
+    const loser = this.seatOf(loserId);
+    const payees = loser ? round.participants.filter((id) => id !== loserId).flatMap((id) => this.seatOf(id) ?? []) : [];
+    // Short of the full prize, the loser's stack is split evenly (odd chips to the first payees).
+    const share = payees.length ? Math.min(round.prize, Math.floor(loser!.stack / payees.length)) : 0;
+    let odd = share < round.prize ? loser!.stack - share * payees.length : 0;
+    let paidTotal = 0;
+    for (const to of payees) {
+      const amount = share + (odd > 0 ? 1 : 0);
+      if (odd > 0) odd--;
+      if (amount <= 0) continue;
+      loser!.stack -= amount;
+      // A payee in a live hand gets the chips when it ends, or finishing the hand would overwrite them.
+      if (this.inHand(to.playerId)) to.pendingChips += amount;
+      else to.stack += amount;
+      if (to.sitOutReason === 'busted') {
+        to.sittingOut = false;
+        to.sitOutReason = null;
+      }
+      paidTotal += amount;
+    }
+    if (loser && loser.stack === 0 && loser.pendingChips === 0 && !loser.leaveAfterHand) {
+      loser.sittingOut = true;
+      loser.sitOutReason = 'busted';
+    }
+    this.log(`${this.nameOf(loserId)} ${why} and pays ${paidTotal} in all (Nit game)`);
   }
 
   pause(by: PlayerId, value: boolean) {
@@ -902,6 +998,7 @@ export class TableRuntime {
         seat.handsSinceRefill = 0;
       }
     }
+    if (!this.isTournament) this.settleSideGames(hand);
     const report = this.tournament ? handReport(record, s.seats) : null;
     for (const seat of s.seats) {
       if (!seat) continue;
@@ -1108,6 +1205,7 @@ export class TableRuntime {
     if (!this.isTournament) {
       sideGames.bombPotNext = false;
       sideGames.handsSinceBombPot = bombPot ? 0 : sideGames.handsSinceBombPot + 1;
+      this.maybeStartNitRound(plan.dealtIn, setup.stakes.bigBlind);
     }
     s.handStartedAt = now;
     s.positions = { button: plan.button, smallBlind: plan.smallBlindSeat, bigBlind: plan.bigBlindSeat };
