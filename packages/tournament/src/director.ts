@@ -76,6 +76,8 @@ const NAME_MAX = 40;
 /** The latest instant a Date can hold; later start times break the time-zone maths. */
 const MAX_DATE_MS = 8.64e15;
 const CHIPS_LABEL = MAX_CHIPS.toLocaleString('en-US');
+/** Most chips the whole field may hold, so any stack or pot the engine adds up stays a safe integer. */
+export const MAX_CHIPS_IN_PLAY = Math.floor(Number.MAX_SAFE_INTEGER / 4);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isWhole = (n: unknown, min: number, max: number) => Number.isSafeInteger(n) && (n as number) >= min && (n as number) <= max;
@@ -417,7 +419,14 @@ function seatInfo(c: Ctx, e: Entry): SeatInfo {
   return { tableId: e.tableId!, seat: e.seat!, entryId: e.id, playerId: e.playerId, displayName: e.displayName, stack: e.stack };
 }
 
+/** Each entry is capped, but unlimited re-entries are not, and their chips can all end up in one stack. */
+function checkChipsInPlay(s: TournamentState, chips: number) {
+  const inPlay = aliveEntries(s).reduce((sum, e) => sum + e.stack, 0);
+  if (inPlay + chips > MAX_CHIPS_IN_PLAY) fail('The tournament cannot hold any more chips');
+}
+
 function newEntry(c: Ctx, playerId: PlayerId, displayName: string, entryNo: number): Entry {
+  checkChipsInPlay(c.s, c.s.settings.startingStack);
   const e: Entry = {
     id: `${c.s.id}:e${++c.s.counters.entry}`,
     playerId,
@@ -574,6 +583,7 @@ function canRebuy(s: TournamentState, e: Entry): boolean {
 }
 
 function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
+  checkChipsInPlay(c.s, chips);
   e.stack += chips;
   if (reason === 'rebuy') {
     e.rebuys++;

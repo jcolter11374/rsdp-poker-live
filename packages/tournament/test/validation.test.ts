@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aliveEntries,
   apply,
   createTournament,
   defaultSettings,
   DirectorError,
   formatterCacheSize,
   MAX_CHIPS,
+  MAX_CHIPS_IN_PLAY,
   nextWakeAt,
   payoutPreset,
   presetStructure,
@@ -256,6 +258,48 @@ describe('a new start time during the grace period', () => {
     expect(delayed.events.map((e) => e.type)).toEqual(['startDelayed']);
     expect(nextWakeAt(delayed.state)).toBe(T0 + 675 * MIN);
     expect(tick(delayed.state, T0 + 675 * MIN).state.status).toBe('cancelled');
+  });
+});
+
+describe('chips in play', () => {
+  const reEntry = { enabled: true, throughLevel: null, max: null, approval: false };
+
+  /** The same state with `total` chips in play, as if many re-entries had passed their chips to `holder`. */
+  function withChipsInPlay(state: TournamentState, holder: string, total: number) {
+    const next = structuredClone(state);
+    const others = aliveEntries(next).filter((e) => e.playerId !== holder);
+    entryOf(next, holder).stack = total - others.reduce((sum, e) => sum + e.stack, 0);
+    return next;
+  }
+
+  /** Accepted with exactly room for `chips`, refused with one chip less. */
+  function expectLimit(state: TournamentState, cmd: Command, chips: number) {
+    expect(refusal(() => act(withChipsInPlay(state, 'p0', MAX_CHIPS_IN_PLAY - chips), cmd))).toBeNull();
+    expect(refusal(() => act(withChipsInPlay(state, 'p0', MAX_CHIPS_IN_PLAY - chips + 1), cmd))).toMatch('cannot hold any more chips');
+  }
+
+  it('keeps the limit within what the engine can add up', () => {
+    expect(MAX_CHIPS_IN_PLAY * 4).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+    expect(MAX_CHIPS_IN_PLAY).toBeGreaterThan(600 * MAX_CHIPS);
+  });
+
+  it('refuses a re-entry or late registration past the limit', () => {
+    const state = bust(running({ reEntry }), 'p1', 'p0');
+    expectLimit(state, { type: 'reEnter', playerId: 'p1' }, 1000);
+    expectLimit(state, { type: 'register', playerId: 'p3', displayName: 'p3' }, 1000);
+  });
+
+  it('refuses to approve a re-entry past the limit', () => {
+    let state = bust(running({ reEntry: { ...reEntry, approval: true } }), 'p1', 'p0');
+    state = act(state, { type: 'reEnter', playerId: 'p1' }).state;
+    expectLimit(state, { type: 'approve', by: 'host', requestId: state.requests[0].id }, 1000);
+  });
+
+  it('refuses rebuys and add-ons past the limit', () => {
+    const offered = bust(running({ rebuy: { max: 1, chips: 500, approval: false, offerSeconds: 15 } }), 'p1', 'p0');
+    expectLimit(offered, { type: 'rebuy', playerId: 'p1' }, 500);
+    const onBreak = tick(running({ addOn: { max: 1, chips: 700, approval: false } }), T0 + 10 * MIN).state;
+    expectLimit(onBreak, { type: 'addOn', playerId: 'p1' }, 700);
   });
 });
 
