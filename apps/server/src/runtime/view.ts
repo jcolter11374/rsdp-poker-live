@@ -2,7 +2,7 @@ import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type View
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { fillStakes, rabbitCards, type TableRuntime } from './table';
-import type { HandRecord } from './types';
+import type { HandRecord, PastHand } from './types';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -219,11 +219,9 @@ function levelView(rt: TableRuntime, now: number): TableView['level'] {
   return { index, count: sched.levels.length, endsAt, handsLeft: null };
 }
 
-/** A finished hand as one person may see it (their own cards, and whatever was shown). */
-export function handRecordView(rt: TableRuntime, record: HandRecord, playerId: PlayerId): HandRecordView {
+/** The parts of a finished hand that history keeps. */
+export function pastHand(record: HandRecord): PastHand {
   const { hand } = record;
-  const seat = hand.seats.find((x) => x.playerId === playerId)?.seat ?? null;
-  const names = new Map(hand.seats.map((x) => [x.playerId, rt.nameOf(x.playerId)]));
   return {
     handNumber: record.handNumber,
     startedAt: record.startedAt,
@@ -232,7 +230,25 @@ export function handRecordView(rt: TableRuntime, record: HandRecord, playerId: P
     betting: hand.input.betting,
     stakes: hand.input.stakes,
     button: hand.input.button,
-    seats: hand.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: names.get(x.playerId) ?? 'Player', stack: x.startStack })),
-    events: engine.visibleEvents(hand, { seat, seeAll: false }),
+    seats: hand.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
+    events: hand.events,
+  };
+}
+
+/** A finished hand as one person may see it (their own cards, and whatever was shown). */
+export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId): HandRecordView {
+  const past = 'hand' in record ? pastHand(record) : record;
+  const seat = past.seats.find((x) => x.playerId === playerId)?.seat ?? null;
+  return {
+    handNumber: past.handNumber,
+    startedAt: past.startedAt,
+    endedAt: past.endedAt,
+    gameName: past.gameName,
+    betting: past.betting,
+    stakes: past.stakes,
+    button: past.button,
+    seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
+    // Only events matter for what a viewer may see; the rest of the hand state is not kept.
+    events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
   };
 }

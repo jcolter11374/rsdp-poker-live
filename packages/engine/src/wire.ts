@@ -202,6 +202,8 @@ export interface ClientToServer {
   'table:join': (input: { tableId: string }, ack: Ack) => void;
   'table:leave': () => void;
   'table:history': (input: { handNumber: number }, ack: Ack<{ hand: HandRecordView }>) => void;
+  /** Every finished hand at the table as you may see it, oldest first, for downloads and the replayer. */
+  'table:export': (ack: Ack<{ hands: HandRecordView[] }>) => void;
   'seat:request': (input: { seat: number; name: string; stack: number }, ack: Ack) => void;
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;

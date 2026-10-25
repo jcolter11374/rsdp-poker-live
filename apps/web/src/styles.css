@@ -459,3 +459,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dot.on { background: var(--good); }
 .dot.off { background: var(--bad); }
+
+/* ---- records */
+.ledger-panel { display: flex; flex-direction: column; gap: 8px; }
+.ledger-actions { gap: 6px; }
+.ledger-actions button { padding: 4px 10px; font-size: 0.8rem; }
+.ledger-actions button.active { border-color: var(--accent-2); color: var(--accent-2); }
+.ledger th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.ledger tfoot td { font-weight: 700; border-bottom: none; border-top: 2px solid #2a3643; }
+.ledger tr.departed td { color: var(--muted); }
+.settle { display: flex; flex-direction: column; gap: 6px; }
+.transfer { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+.transfer .amount { float: right; color: var(--accent-2); font-weight: 700; }

@@ -1,7 +1,7 @@
 import type { Db } from './db';
-import { createTable, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, createTable, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
 import { resolveToken, setDisplayName } from './identity';
-import { RUNTIME_VERSION, type RuntimeState } from './runtime/types';
+import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import type { IdentityService, TableStore } from './app';
 
 /** Browser secrets map to persistent guest players; accounts come with the account pages. */
@@ -49,6 +49,21 @@ export function dbStore(db: Db): TableStore {
         events: hand.events,
         results: { awards: hand.awards },
       });
+    },
+    async loadHands(tableId) {
+      type Header = { input: Omit<HandRecord['hand']['input'], 'deck'>; seats: PastHand['seats'] };
+      const rows = await allHandsOfTable<Header, PastHand['events'][number]>(db, tableId);
+      return rows.map((r) => ({
+        handNumber: r.number,
+        startedAt: r.startedAt.getTime(),
+        endedAt: (r.endedAt ?? r.startedAt).getTime(),
+        gameName: r.header.input.game.name,
+        betting: r.header.input.betting,
+        stakes: r.header.input.stakes,
+        button: r.header.input.button,
+        seats: r.header.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
+        events: r.events,
+      }));
     },
   };
 }

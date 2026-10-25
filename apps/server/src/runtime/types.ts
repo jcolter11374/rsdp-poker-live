@@ -90,6 +90,19 @@ export interface SettingsLogEntry {
   changes: SettingsChange[];
 }
 
+/** What hand history keeps of a finished hand: enough to show it to each viewer, no deck. */
+export interface PastHand {
+  handNumber: number;
+  startedAt: number;
+  endedAt: number;
+  gameName: string;
+  betting: BettingKind;
+  stakes: Stakes;
+  button: number;
+  seats: { seat: number; playerId: PlayerId; startStack: number }[];
+  events: HandState['events'];
+}
+
 /** A finished hand kept in memory for the hand log and replayer; the server also stores it. */
 export interface HandRecord {
   handNumber: number;

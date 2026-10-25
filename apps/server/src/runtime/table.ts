@@ -643,7 +643,7 @@ export class TableRuntime {
     if (this.inHand(playerId)) {
       seat.pendingStack = stack;
     } else {
-      this.state.ledger[playerId].buyIn += stack - seat.stack;
+      this.ledgerEdit(playerId, stack - seat.stack);
       seat.stack = stack;
     }
     this.log(`The host set ${seat.name}'s stack to ${stack}${this.inHand(playerId) ? ' after this hand' : ''}`);
@@ -683,6 +683,14 @@ export class TableRuntime {
     this.log(`${this.nameOf(by)} made ${this.nameOf(to)} the host`);
     this.watchHost();
     this.sync();
+  }
+
+  /** A host stack edit: chips added count as brought in, chips removed as taken out. */
+  private ledgerEdit(playerId: PlayerId, change: number) {
+    const row = this.state.ledger[playerId];
+    if (!row) return;
+    if (change > 0) row.buyIn += change;
+    else row.cashOut -= change;
   }
 
   /**
@@ -985,7 +993,7 @@ export class TableRuntime {
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.pendingStack !== null) {
-        if (s.ledger[seat.playerId]) s.ledger[seat.playerId].buyIn += seat.pendingStack - seat.stack;
+        this.ledgerEdit(seat.playerId, seat.pendingStack - seat.stack);
         seat.stack = seat.pendingStack;
         seat.pendingStack = null;
       }

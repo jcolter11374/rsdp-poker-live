@@ -445,3 +445,14 @@ describe('host handoff', () => {
     expect(() => rt.transferHost('host', 'a')).toThrow(/host/);
   });
 });
+
+describe('ledger', () => {
+  it('counts host stack cuts as chips taken out, so net is unchanged by the edit itself', () => {
+    const { rt } = table();
+    seatPlayers(rt, 2, 200);
+    rt.setStack('host', 'a', 150);
+    expect(rt.state.ledger.a).toMatchObject({ buyIn: 200, cashOut: 50 });
+    rt.setStack('host', 'a', 300);
+    expect(rt.state.ledger.a).toMatchObject({ buyIn: 350, cashOut: 50 });
+  });
+});

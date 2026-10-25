@@ -11,10 +11,10 @@ import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import type { TournamentClientToServer, TournamentServerToClient } from '@rsdp/tournament';
 import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
-import { systemClock, type Clock, type HandRecord, type RuntimeState } from './runtime/types';
+import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
-import { handRecordView, tableView } from './runtime/view';
+import { handRecordView, pastHand, tableView } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
 
@@ -37,6 +37,8 @@ export interface TableStore {
   saveTable(state: RuntimeState): Promise<void>;
   loadTable(id: string): Promise<RuntimeState | null>;
   saveHand(tableId: string, record: HandRecord): Promise<void>;
+  /** Every finished hand saved for a table, oldest first. */
+  loadHands(tableId: string): Promise<PastHand[]>;
 }
 
 export function memoryIdentity(): IdentityService {
@@ -54,6 +56,7 @@ export function memoryIdentity(): IdentityService {
 
 export function memoryStore(): TableStore {
   const tables = new Map<string, string>();
+  const hands = new Map<string, PastHand[]>();
   const save = async (state: RuntimeState) => {
     tables.set(state.id, JSON.stringify(state));
   };
@@ -64,7 +67,13 @@ export function memoryStore(): TableStore {
       const json = tables.get(id);
       return json ? (JSON.parse(json) as RuntimeState) : null;
     },
-    async saveHand() {},
+    async saveHand(tableId, record) {
+      const list = hands.get(tableId) ?? [];
+      hands.set(tableId, [...list.filter((h) => h.handNumber !== record.handNumber), pastHand(record)]);
+    },
+    async loadHands(tableId) {
+      return [...(hands.get(tableId) ?? [])].sort((a, b) => a.handNumber - b.handNumber);
+    },
   };
 }
 
@@ -83,7 +92,10 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string> }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number }>;
+
+/** Least time between two hand downloads from one browser tab. */
+const EXPORT_GAP_MS = 5_000;
 
 const SAVE_DEBOUNCE_MS = 500;
 const NAME_MAX = 20;
@@ -318,6 +330,26 @@ export function createApp(deps: AppDeps = {}) {
           const record = rt.state.history.find((h) => h.handNumber === Number(handNumber));
           if (!record) throw new ActionError('that hand is no longer available');
           return { hand: handRecordView(rt, record, me) };
+        },
+        log,
+      ),
+    );
+
+    on('table:export', (ack) =>
+      guarded(
+        ack,
+        async () => {
+          const rt = current();
+          // Each download reads every hand of the table, so one per socket every few seconds.
+          const now = clock.now();
+          if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
+          socket.data.lastExport = now;
+          // Saved hands, with the copies still in memory winning: they include cards shown after the hand.
+          const saved = await store.loadHands(rt.state.id);
+          const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
+          for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
+          const all = [...byNumber.values()].sort((a, b) => a.handNumber - b.handNumber);
+          return { hands: all.map((h) => handRecordView(rt, h, me)) };
         },
         log,
       ),
