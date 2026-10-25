@@ -12,7 +12,7 @@ import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { TableStrip } from './tournament/TableStrip';
-import { useFollowSeat } from './tournament/hooks';
+import { navigate, useFollowSeat } from './tournament/hooks';
 
 /** Plays sounds and flashes the tab title for what changed between two views. */
 function useTableEffects(view: TableView | null) {
@@ -72,7 +72,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [muted, setMutedState] = useState(isMuted);
   const [discard, setDiscard] = useState<number[]>([]);
   useTableEffects(view);
-  useFollowSeat(tableId);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
@@ -203,6 +203,20 @@ export function TablePage({ tableId }: { tableId: string }) {
       <div className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} />}
+          {readyTable && (
+            <div className="banner attention">
+              Your tournament table is ready.{' '}
+              <a
+                href={`/t/${readyTable}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate(`/t/${readyTable}`);
+                }}
+              >
+                Go to it
+              </a>
+            </div>
+          )}
           {cash && !view.started && (
             <div className="banner">
               {view.isHost ? 'Take a seat, send friends the invite link, then press Start game.' : 'Waiting for the host to start the game.'}

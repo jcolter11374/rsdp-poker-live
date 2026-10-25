@@ -56,19 +56,36 @@ export function navigate(to: string) {
 }
 
 /**
- * Takes this tab to the player's table when the tournament first seats them,
- * and along with them when they are moved from the table on screen.
+ * What a table:moved event means for a tab showing `currentTable` (null off
+ * the tables): go to the new seat, offer a link to it, or nothing. A first
+ * seat never pulls a tab where the player is seated, since leaving that page
+ * leaves the seat there offline.
  */
-export function useFollowSeat(currentTable: string | null) {
+export function followMove(move: { from: string; to: string }, currentTable: string | null, seatedHere: boolean): 'go' | 'offer' | null {
+  if (move.to === currentTable) return null;
+  if (move.from === '') return seatedHere ? 'offer' : 'go';
+  return move.from === currentTable ? 'go' : null;
+}
+
+/**
+ * Takes this tab to the player's table when the tournament first seats them,
+ * and along with them when they are moved from the table on screen. Returns
+ * the first seat it left alone because the player is seated here, for a link.
+ */
+export function useFollowSeat(currentTable: string | null, seatedHere = false): string | null {
+  const [ready, setReady] = useState<string | null>(null);
   useEffect(() => {
-    const onMoved = ({ from, to }: { from: string; to: string }) => {
-      if (from !== '' && from !== currentTable) return;
-      if (to === currentTable) return;
-      navigate(`/t/${to}`);
+    const onMoved = (move: { from: string; to: string }) => {
+      const next = followMove(move, currentTable, seatedHere);
+      if (next === 'go') navigate(`/t/${move.to}`);
+      else if (next === 'offer') setReady(move.to);
+      // Keep the link on the seat when the tournament moves it again.
+      else setReady((r) => (r === move.from ? move.to : r));
     };
     socket.on('table:moved', onMoved);
     return () => {
       socket.off('table:moved', onMoved);
     };
-  }, [currentTable]);
+  }, [currentTable, seatedHere]);
+  return ready;
 }
