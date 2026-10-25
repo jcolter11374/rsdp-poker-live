@@ -176,6 +176,8 @@ export interface CreateTableInput {
 }
 
 export interface ClientToServer {
+  /** The name other players see; also used to register for tournaments. */
+  'session:name': (input: { name: string }, ack: Ack) => void;
   'table:create': (input: CreateTableInput, ack: Ack<{ tableId: string }>) => void;
   'table:join': (input: { tableId: string }, ack: Ack) => void;
   'table:leave': () => void;
@@ -207,6 +209,8 @@ export interface ClientToServer {
 export interface ServerToClient {
   session: (session: { playerId: string; displayName: string; account: { username: string } | null }) => void;
   'table:state': (view: TableView) => void;
+  /** A tournament moved you to another table (balancing or a broken table). */
+  'table:moved': (input: { from: string; to: string }) => void;
 }
 
 export interface HandshakeAuth {

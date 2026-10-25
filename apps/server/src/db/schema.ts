@@ -44,11 +44,13 @@ export const MOVEMENT_KINDS = [
   'rake',
 ] as const;
 export const JOB_STATUSES = ['pending', 'running', 'done', 'failed', 'cancelled'] as const;
+export const TOURNAMENT_STATUSES = ['registering', 'seating', 'running', 'paused', 'finished', 'cancelled'] as const;
 
 export type TableStatus = (typeof TABLE_STATUSES)[number];
 export type TableMode = (typeof TABLE_MODES)[number];
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 export type JobStatus = (typeof JOB_STATUSES)[number];
+export type TournamentStatus = (typeof TOURNAMENT_STATUSES)[number];
 
 // ---------------------------------------------------------------- identity
 
@@ -258,6 +260,30 @@ export const hands = pgTable(
     results: jsonb('results').$type<unknown>(),
   },
   (t) => [uniqueIndex('hands_table_number_idx').on(t.tableId, t.number)],
+);
+
+// ---------------------------------------------------------------- tournaments
+
+/** Tournament director state, saved after every change; its tables live in `tables` with tournament_id set. */
+export const tournaments = pgTable(
+  'tournaments',
+  {
+    id: text('id').primaryKey(),
+    hostPlayerId: text('host_player_id')
+      .notNull()
+      .references(() => players.id),
+    status: text('status', { enum: TOURNAMENT_STATUSES }).notNull(),
+    /** The director's state (plain JSON with its own version field). */
+    state: jsonb('state').$type<unknown>().notNull(),
+    /** The next event in a series, or the next Sit & Go, once created. */
+    nextId: text('next_id'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('tournaments_status_idx').on(t.status),
+    check('tournaments_status_check', sql`${t.status} in (${oneOf(TOURNAMENT_STATUSES)})`),
+  ],
 );
 
 // ---------------------------------------------------------------- jobs

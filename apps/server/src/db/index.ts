@@ -6,3 +6,4 @@ export * from './ledger';
 export * from './tables';
 export * as schema from './schema';
 export type { JobStatus, MovementKind, TableMode, TableStatus } from './schema';
+export * from './tournaments';

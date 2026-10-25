@@ -31,6 +31,7 @@ describe('createDb', () => {
       'settings_changes',
       'table_snapshots',
       'tables',
+      'tournaments',
     ]);
   });
 
@@ -71,7 +72,7 @@ describe('createDb', () => {
       db = await createDb({ pgliteDir: dir, ignoreEnv: true });
       expect(await queryRows(db, sql`select id, display_name from players`)).toEqual([{ id: 'kept', display_name: 'Kept' }]);
       const migrations = await queryRows<{ n: number }>(db, sql`select count(*)::int as n from drizzle.__drizzle_migrations`);
-      expect(migrations[0].n).toBe(2);
+      expect(migrations[0].n).toBe(3);
       await closeDb(db);
       db = undefined;
     } finally {

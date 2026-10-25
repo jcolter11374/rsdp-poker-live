@@ -4,17 +4,28 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server, type Socket } from 'socket.io';
+import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
-import { defaultSettings, mergePatches, parseSettings, SettingsError, applyAtNextHand } from '@rsdp/engine/settings';
+import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import type { TournamentClientToServer, TournamentServerToClient } from '@rsdp/tournament';
 import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type RuntimeState } from './runtime/types';
 import { handRecordView, tableView } from './runtime/view';
+import { TournamentManager, type TournamentStore } from './tournament/manager';
+import { memoryTournamentStore } from './tournament/store';
+
+export interface Session {
+  playerId: PlayerId;
+  displayName: string;
+  account: { username: string } | null;
+}
 
 /** Who a browser is. The default derives a player id from the browser secret; the database version adds names and accounts. */
 export interface IdentityService {
-  resolve(token: string): Promise<{ playerId: PlayerId; displayName: string; account: { username: string } | null }>;
+  resolve(token: string): Promise<Session>;
+  rename(playerId: PlayerId, name: string): Promise<void>;
 }
 
 /** Where tables and finished hands are kept. The default keeps them in memory. */
@@ -26,12 +37,18 @@ export interface TableStore {
   saveHand(tableId: string, record: HandRecord): Promise<void>;
 }
 
-export const memoryIdentity: IdentityService = {
-  async resolve(token) {
-    const playerId = createHash('sha256').update(token).digest('base64url').slice(0, 16);
-    return { playerId, displayName: '', account: null };
-  },
-};
+export function memoryIdentity(): IdentityService {
+  const names = new Map<PlayerId, string>();
+  return {
+    async resolve(token) {
+      const playerId = createHash('sha256').update(token).digest('base64url').slice(0, 16);
+      return { playerId, displayName: names.get(playerId) ?? '', account: null };
+    },
+    async rename(playerId, name) {
+      names.set(playerId, name);
+    },
+  };
+}
 
 export function memoryStore(): TableStore {
   const tables = new Map<string, string>();
@@ -53,15 +70,20 @@ export interface AppDeps {
   clock?: Clock;
   identity?: IdentityService;
   store?: TableStore;
+  tournaments?: TournamentStore;
+  /** Deck shuffles; tests pass a seeded one. */
+  rng?: Rng;
   /** Built web client to serve (production). */
   webDist?: string | null;
-  /** Called once per runtime, e.g. to register modifiers or log. */
   log?: (message: string, err?: unknown) => void;
 }
 
-type Sock = Socket<ClientToServer, ServerToClient, object, { playerId: PlayerId; tableId?: string }>;
+type C2S = ClientToServer & TournamentClientToServer;
+type S2C = ServerToClient & TournamentServerToClient;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string> }>;
 
 const SAVE_DEBOUNCE_MS = 500;
+const NAME_MAX = 20;
 
 /** Runs a handler and acks the result; expected failures become an error ack, not a crash. */
 async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | void | Promise<T | void>, log: AppDeps['log']) {
@@ -77,20 +99,24 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
 
 export function createApp(deps: AppDeps = {}) {
   const clock = deps.clock ?? systemClock;
-  const identity = deps.identity ?? memoryIdentity;
+  const identity = deps.identity ?? memoryIdentity();
   const store = deps.store ?? memoryStore();
   const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
 
   const app = express();
   const http = createServer(app);
-  const io = new Server<ClientToServer, ServerToClient>(http, {
+  const io = new Server<C2S, S2C>(http, {
     cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
   });
 
   const tables = new Map<string, TableRuntime>();
   const watchers = new Map<string, Set<Sock>>();
+  const tournamentWatchers = new Map<string, Set<Sock>>();
+  const playerSockets = new Map<PlayerId, Set<Sock>>();
   const pendingBroadcast = new Set<string>();
   const saveTimers = new Map<string, NodeJS.Timeout>();
+  /** Saves wait for the table's row to exist. */
+  const created = new Map<string, Promise<void>>();
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
@@ -109,7 +135,8 @@ export function createApp(deps: AppDeps = {}) {
     queueMicrotask(() => {
       pendingBroadcast.delete(id);
       const now = clock.now();
-      for (const s of watchers.get(id) ?? []) s.emit('table:state', tableView(rt, s.data.playerId, now));
+      const tournamentId = tournaments.tournamentOf(id);
+      for (const s of watchers.get(id) ?? []) s.emit('table:state', tableView(rt, s.data.playerId, now, tournamentId));
     });
   }
 
@@ -120,31 +147,66 @@ export function createApp(deps: AppDeps = {}) {
       id,
       setTimeout(() => {
         saveTimers.delete(id);
-        store.saveTable(rt.state).catch((e) => log(`saving table ${id} failed`, e));
+        (created.get(id) ?? Promise.resolve())
+          .then(() => store.saveTable(rt.state))
+          .catch((e) => log(`saving table ${id} failed`, e));
       }, SAVE_DEBOUNCE_MS),
     );
   }
 
-  function attach(rt: TableRuntime) {
-    tables.set(rt.state.id, rt);
+  function attach(rt: TableRuntime, ready: Promise<void> = Promise.resolve()) {
+    const id = rt.state.id;
+    tables.set(id, rt);
+    created.set(id, ready);
     rt.onChange = () => {
       broadcast(rt);
       scheduleSave(rt);
     };
     rt.onHandFinished = (record) => {
-      store.saveHand(rt.state.id, record).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      (created.get(id) ?? Promise.resolve())
+        .then(() => store.saveHand(id, record))
+        .catch((e) => log(`saving hand ${record.handNumber} failed`, e));
     };
     return rt;
   }
 
+  const tournaments = new TournamentManager({
+    clock,
+    rng: deps.rng,
+    store: deps.tournaments ?? memoryTournamentStore(),
+    tables: {
+      createTable: (state) => store.createTable(state),
+      loadTable: (id) => store.loadTable(id),
+      attach: (rt, _tournamentId, ready) => {
+        attach(rt, ready);
+      },
+      detach: (rt) => {
+        tables.delete(rt.state.id);
+        // Save the final state so the table's history stays readable.
+        store.saveTable(rt.state).catch(() => {});
+        broadcast(rt);
+      },
+    },
+    onState: (id) => {
+      const view = tournaments.view(id);
+      if (view) for (const s of tournamentWatchers.get(id) ?? []) s.emit('tournament:state', { id, view });
+    },
+    onMoved: (playerId, from, to) => {
+      for (const s of playerSockets.get(playerId) ?? []) s.emit('table:moved', { from, to });
+    },
+    log,
+  });
+
   async function getTable(id: string): Promise<TableRuntime | null> {
     const live = tables.get(id);
     if (live) return live;
+    // Tournament tables come back with their tournament, which gives them their clock and seats.
+    if (await tournaments.loadTableOwner(id)) return tables.get(id) ?? null;
     const saved = await store.loadTable(id);
-    if (!saved) return null;
+    if (!saved || saved.settings.table.mode === 'tournament') return null;
     // Another join may have loaded it while we waited.
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng }));
     rt.resume();
     return rt;
   }
@@ -155,7 +217,8 @@ export function createApp(deps: AppDeps = {}) {
     try {
       const who = await identity.resolve(token);
       socket.data.playerId = who.playerId;
-      (socket.data as { session?: typeof who }).session = who;
+      socket.data.session = who;
+      socket.data.tournaments = new Set();
       next();
     } catch (e) {
       next(e instanceof Error ? e : new Error('sign-in failed'));
@@ -165,8 +228,9 @@ export function createApp(deps: AppDeps = {}) {
   io.on('connection', (raw) => {
     const socket = raw as Sock;
     const me = socket.data.playerId;
-    const session = (socket.data as { session?: Parameters<ServerToClient['session']>[0] }).session;
-    if (session) socket.emit('session', session);
+    socket.emit('session', socket.data.session);
+    if (!playerSockets.has(me)) playerSockets.set(me, new Set());
+    playerSockets.get(me)!.add(socket);
 
     const current = () => {
       const rt = socket.data.tableId ? tables.get(socket.data.tableId) : undefined;
@@ -180,7 +244,23 @@ export function createApp(deps: AppDeps = {}) {
       tables.get(id)?.disconnect(me);
       socket.data.tableId = undefined;
     };
-    const on = <K extends keyof ClientToServer>(event: K, handler: ClientToServer[K]) => socket.on(event, handler as never);
+    /** Remembers a name for every tab of this player. */
+    const rename = async (value: unknown) => {
+      const name = String(value ?? '')
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .trim()
+        .slice(0, NAME_MAX);
+      if (!name) throw new ActionError('pick a name');
+      if (name === socket.data.session.displayName) return;
+      await identity.rename(me, name);
+      for (const s of playerSockets.get(me) ?? []) {
+        s.data.session = { ...s.data.session, displayName: name };
+        s.emit('session', s.data.session);
+      }
+    };
+    const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
+
+    on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
 
     on('table:create', (input, ack) =>
       guarded(
@@ -190,7 +270,7 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng });
           await store.createTable(rt.state);
           attach(rt);
           return { tableId: rt.state.id };
@@ -212,7 +292,7 @@ export function createApp(deps: AppDeps = {}) {
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
           }
-          socket.emit('table:state', tableView(rt, me, clock.now()));
+          socket.emit('table:state', tableView(rt, me, clock.now(), tournaments.tournamentOf(rt.state.id)));
         },
         log,
       ),
@@ -232,7 +312,15 @@ export function createApp(deps: AppDeps = {}) {
     );
 
     on('seat:request', (input, ack) =>
-      guarded(ack, () => current().requestSeat(me, { seat: Number(input?.seat), name: String(input?.name ?? ''), stack: Number(input?.stack) }), log),
+      guarded(
+        ack,
+        async () => {
+          current().requestSeat(me, { seat: Number(input?.seat), name: String(input?.name ?? ''), stack: Number(input?.stack) });
+          // The name you sit with is the name you register for tournaments with.
+          if (!socket.data.session.displayName) await rename(input?.name).catch(() => {});
+        },
+        log,
+      ),
     );
     on('seat:cancel', () => guarded(undefined, () => current().cancelRequest(me), log));
     on('seat:stand', (input) => guarded(undefined, () => current().stand(me, { afterHand: !!input?.afterHand }), log));
@@ -258,7 +346,36 @@ export function createApp(deps: AppDeps = {}) {
     on('host:sitOut', ({ playerId }, ack) => guarded(ack, () => current().hostSitOut(me, String(playerId)), log));
     on('host:transfer', ({ playerId }, ack) => guarded(ack, () => current().transferHost(me, String(playerId)), log));
 
-    socket.on('disconnect', () => leave());
+    on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
+    on('tournament:subscribe', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const id = String(input?.id ?? '');
+          if (!(await tournaments.get(id))) throw new ActionError('tournament not found');
+          if (!tournamentWatchers.has(id)) tournamentWatchers.set(id, new Set());
+          tournamentWatchers.get(id)!.add(socket);
+          socket.data.tournaments.add(id);
+          socket.emit('tournament:state', { id, view: tournaments.view(id)! });
+        },
+        log,
+      ),
+    );
+    on('tournament:unsubscribe', (input) => {
+      const id = String(input?.id ?? '');
+      tournamentWatchers.get(id)?.delete(socket);
+      socket.data.tournaments.delete(id);
+    });
+    on('tournament:command', (input, ack) =>
+      guarded(ack, () => tournaments.command(String(input?.id ?? ''), me, socket.data.session.displayName, input?.command), log),
+    );
+
+    socket.on('disconnect', () => {
+      leave();
+      for (const id of socket.data.tournaments) tournamentWatchers.get(id)?.delete(socket);
+      playerSockets.get(me)?.delete(socket);
+      if (!playerSockets.get(me)?.size) playerSockets.delete(me);
+    });
   });
 
   return {
@@ -266,9 +383,14 @@ export function createApp(deps: AppDeps = {}) {
     http,
     io,
     tables,
+    tournaments,
     getTable,
+    /** Brings back unfinished tournaments (and their tables) after a restart. */
+    resume: () => tournaments.resumeAll(),
     async close() {
       for (const t of saveTimers.values()) clearTimeout(t);
+      tournaments.dispose();
+      await tournaments.flush();
       await Promise.all([...tables.values()].map((rt) => store.saveTable(rt.state).catch(() => {})));
       for (const rt of tables.values()) rt.dispose();
       io.close();

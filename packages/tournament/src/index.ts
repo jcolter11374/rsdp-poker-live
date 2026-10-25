@@ -6,3 +6,4 @@ export * from './recurrence';
 export * from './seating';
 export * from './tz';
 export * from './summary';
+export * from './wire';

@@ -14,6 +14,7 @@ export function createTestDb(): Promise<Db> {
 export async function resetTestDb(db: Db): Promise<void> {
   const names = [
     'jobs',
+    'tournaments',
     'hands',
     'chip_movements',
     'seat_sessions',

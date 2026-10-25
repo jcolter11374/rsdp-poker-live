@@ -15,6 +15,13 @@
       "when": 1792911989260,
       "tag": "0001_ledger_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792913431724,
+      "tag": "0002_tournaments",
+      "breakpoints": true
     }
   ]
 }

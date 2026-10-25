@@ -1,6 +1,6 @@
 import type { Db } from './db';
 import { createTable, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
-import { resolveToken } from './identity';
+import { resolveToken, setDisplayName } from './identity';
 import { RUNTIME_VERSION, type RuntimeState } from './runtime/types';
 import type { IdentityService, TableStore } from './app';
 
@@ -10,6 +10,9 @@ export function dbIdentity(db: Db): IdentityService {
     async resolve(token) {
       const player = await resolveToken(db, token);
       return { playerId: player.id, displayName: player.displayName, account: null };
+    },
+    async rename(playerId, name) {
+      await setDisplayName(db, playerId, name);
     },
   };
 }
