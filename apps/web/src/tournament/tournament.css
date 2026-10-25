@@ -179,3 +179,12 @@
 .tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
 .tn-alerts.on { border-color: var(--good); color: var(--good); }
 .tn-list-head .tn-alerts { margin-left: auto; }
+
+/* Host panels: stacks, seats, co-hosts */
+.tn-inline { display: inline-flex; align-items: center; gap: 6px; }
+.tn-inline input { width: 7.5em; }
+.tn-player-tools { border-top: 1px solid var(--panel-2); padding: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.tn-player-name { text-align: left; background: none; border: none; padding: 4px 0; color: inherit; cursor: pointer; }
+.tn-cohosts { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.tn-cohost { background: var(--panel-2); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.tn-link { align-self: center; }

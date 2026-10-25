@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import type { HostPower } from '@rsdp/engine/roles';
 import {
+  isTournamentStaff,
   placePrizes,
   playerOptions,
   standings,
   summarize,
   tableAddress,
+  tournamentPowers,
   type Command,
   type StructureRow,
   type TournamentState,
@@ -13,6 +16,7 @@ import { LocalTournamentClient, tournamentClient, type Session } from './client'
 import { blinds, chips, countdown, gameName, localTime, money, ordinal } from './format';
 import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
 import { savedName } from '../socket';
+import { CoHostPanel, EventPanel, PlayerManager, RequestRow } from './HostPanels';
 import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
@@ -59,7 +63,9 @@ export function TournamentLobby({ id }: { id: string }) {
   if (error) return <main className="tn-page"><p className="error">{error}</p><a href="/">Home</a></main>;
   if (!state) return <main className="tn-page"><p className="muted">Loading…</p></main>;
 
-  const isHost = session?.playerId === state.hostId;
+  // The host and co-hosts see the host tools, each with their own powers.
+  const isHost = isTournamentStaff(state, session?.playerId);
+  const powers = tournamentPowers(state, session?.playerId);
   const sum = summarize(state, now);
   const tabs: [Tab, string][] = [
     ['players', `Players (${sum.entrants})`],
@@ -110,9 +116,16 @@ export function TournamentLobby({ id }: { id: string }) {
       <section className="tn-card">
         {tab === 'players' && <Players state={state} me={session?.playerId} />}
         {tab === 'tables' && <Tables state={state} />}
-        {tab === 'structure' && <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />}
+        {tab === 'structure' && (
+          <>
+            <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />
+            <p className="muted">
+              <a href={`/tn/new?from=${state.id}`}>Copy these settings into a new tournament</a>
+            </p>
+          </>
+        )}
         {tab === 'payouts' && <Payouts state={state} now={now} />}
-        {tab === 'host' && isHost && <HostTools state={state} send={send} />}
+        {tab === 'host' && isHost && session && <HostTools state={state} me={session.playerId} powers={powers} send={send} />}
       </section>
       {tournamentClient() instanceof LocalTournamentClient && <DemoTools state={state} />}
     </main>
@@ -442,38 +455,30 @@ function Payouts({ state, now }: { state: TournamentState; now: number }) {
   );
 }
 
-function HostTools({ state, send }: { state: TournamentState; send: (c: Command) => Promise<boolean> }) {
-  const by = state.hostId;
+function HostTools({ state, me, powers, send }: { state: TournamentState; me: string; powers: HostPower[]; send: (c: Command) => Promise<boolean> }) {
+  const by = me;
+  const can = (p: HostPower) => powers.includes(p);
   const started = state.status === 'running' || state.status === 'paused';
   const [rows, setRows] = useState<StructureRow[]>(state.settings.structure);
   const [dirty, setDirty] = useState(false);
   useEffect(() => {
     if (!dirty) setRows(state.settings.structure);
   }, [state.settings.structure, dirty]);
-  const kindLabel: Record<string, string> = { register: 'wants to register', rebuy: 'wants to rebuy', 'add-on': 'wants an add-on', 're-entry': 'wants to re-enter' };
   const s = state.settings;
   const over = state.status === 'finished' || state.status === 'cancelled';
 
   return (
     <div className="tn-host">
-      {state.requests.length > 0 && (
+      {can('approve') && state.requests.length > 0 && (
         <div className="tn-requests">
           <h3>Requests</h3>
           {state.requests.map((r) => (
-            <div className="tn-request" key={r.id}>
-              <span>
-                <b>{r.displayName}</b> {kindLabel[r.kind]}
-              </span>
-              <button className="primary" onClick={() => send({ type: 'approve', by, requestId: r.id })}>
-                Approve
-              </button>
-              <button onClick={() => send({ type: 'reject', by, requestId: r.id })}>Reject</button>
-            </div>
+            <RequestRow key={r.id} state={state} r={r} by={by} send={send} />
           ))}
         </div>
       )}
 
-      {!over && (
+      {!over && can('run') && (
         <div className="tn-actions">
           {(state.status === 'registering' || state.status === 'seating') && (
             <button className="primary" onClick={() => send({ type: 'startNow', by })}>
@@ -501,9 +506,13 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
           </button>
         </div>
       )}
-      {state.status === 'running' && <p className="muted">To end early, pause first and let running hands finish.</p>}
+      {state.status === 'running' && can('run') && <p className="muted">To end early, pause first and let running hands finish.</p>}
 
-      {!over && (
+      {!over && can('approve') && <InvitesPanel state={state} send={send} />}
+
+      {!over && (can('chips') || can('players')) && <PlayerManager state={state} by={by} powers={powers} send={send} />}
+
+      {!over && can('settings') && (
         <>
           <h3>Settings</h3>
           <div className="tn-toggles">
@@ -527,8 +536,6 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
               />
             )}
           </div>
-
-          <InvitesPanel state={state} send={send} />
 
           <h3>Blind levels</h3>
           <p className="muted">{started ? 'Levels already played and the current level are locked; changes apply from the next level.' : 'Edit freely until the start.'}</p>
@@ -559,27 +566,11 @@ function HostTools({ state, send }: { state: TournamentState; send: (c: Command)
             </div>
           )}
 
-          {state.entries.some((e) => ['registered', 'seated', 'rebuy-offer'].includes(e.status)) && (
-            <details className="tn-details">
-              <summary>Remove a player</summary>
-              {state.entries
-                .filter((e) => ['registered', 'seated', 'rebuy-offer'].includes(e.status))
-                .map((e) => (
-                  <div className="tn-request" key={e.id}>
-                    <span>{e.displayName}</span>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Remove ${e.displayName}? Their chips leave play.`)) send({ type: 'remove', by, playerId: e.playerId });
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-            </details>
-          )}
         </>
       )}
+
+      <CoHostPanel state={state} me={me} send={send} />
+      <EventPanel state={state} me={me} send={send} />
     </div>
   );
 }
