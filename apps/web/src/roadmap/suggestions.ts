@@ -23,12 +23,24 @@ export interface Suggestion {
   updatedAt: string;
 }
 
+/** A failed request; `status` is the HTTP status, 0 when the server wasn't reached. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function call<T>(path: string, init?: RequestInit & { adminKey?: string }): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (init?.adminKey) headers['x-admin-key'] = init.adminKey;
-  const res = await fetch(`/api/suggestions${path}`, { ...init, headers });
+  const res = await fetch(`/api/suggestions${path}`, { ...init, headers }).catch(() => {
+    throw new ApiError('Could not reach the server. Try again.', 0);
+  });
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(body.error ?? 'Something went wrong. Try again.');
+  if (!res.ok) throw new ApiError(body.error ?? 'Something went wrong. Try again.', res.status);
   return body;
 }
 

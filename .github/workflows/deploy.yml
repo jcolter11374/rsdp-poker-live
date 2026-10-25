@@ -42,9 +42,15 @@ jobs:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
         run: |
           if [ -n "$ADMIN_KEY" ]; then
+            if [ "${#ADMIN_KEY}" -lt 12 ]; then
+              echo "::error::The ADMIN_KEY secret must be at least 12 characters; the server ignores shorter keys."
+              exit 1
+            fi
             printf 'ADMIN_KEY=%s\n' "$ADMIN_KEY" | flyctl secrets import --stage --app "$FLY_APP"
           else
-            echo "No ADMIN_KEY secret; the roadmap admin page stays off."
+            # Removing the repository secret turns the admin page off again.
+            flyctl secrets unset ADMIN_KEY --stage --app "$FLY_APP" 2>/dev/null || true
+            echo "No ADMIN_KEY secret; the roadmap admin page is off."
           fi
       - run: flyctl deploy --remote-only --ha=false --wait-timeout 10m
       - name: Health check

@@ -23,7 +23,10 @@ jobs:
         run: |
           curl -sfG "https://rsdp-poker-live.fly.dev/api/suggestions" --data-urlencode "status=$STATUS" -o suggestions.json
           jq . suggestions.json
+          # Anyone can write a suggestion, so the summary shows them as plain text, never as Markdown.
           {
             echo "## Suggestions: $STATUS"
-            jq -r '.suggestions[] | "- **#\(.id) \(.title)** by \(.name) (\(.status))\(if .detail != "" then ": \(.detail | gsub("\n"; " "))" else "" end)"' suggestions.json
+            echo '~~~'
+            jq -r '.suggestions[] | "#\(.id) \(.title) — by \(.name) (\(.status))\(if .detail != "" then "\n    \(.detail | gsub("\n"; " ") | gsub("~~~"; "~ ~ ~"))" else "" end)"' suggestions.json
+            echo '~~~'
           } >> "$GITHUB_STEP_SUMMARY"

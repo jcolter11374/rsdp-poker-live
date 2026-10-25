@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { StatusPill } from './Suggestions';
-import { checkAdminKey, deleteSuggestion, fetchSuggestions, logOrder, shortDate, STATUS_LABEL, STATUSES, updateSuggestion, type Suggestion } from './suggestions';
+import { ApiError, checkAdminKey, deleteSuggestion, fetchSuggestions, logOrder, shortDate, STATUS_LABEL, STATUSES, updateSuggestion, type Suggestion } from './suggestions';
 import './roadmap.css';
 
 const KEY = 'rsdp.adminKey';
@@ -16,6 +16,8 @@ function savedKey(): string {
 /** /roadmap/admin: the admin sets each suggestion's status and an optional public reply. */
 export function RoadmapAdminPage() {
   const [key, setKey] = useState(savedKey);
+  /** Bumped on every Open, so trying the same key again re-checks it. */
+  const [attempt, setAttempt] = useState(0);
   const [entered, setEntered] = useState('');
   const [ok, setOk] = useState(false);
   const [error, setError] = useState('');
@@ -29,13 +31,16 @@ export function RoadmapAdminPage() {
       .catch((e: Error) => {
         setOk(false);
         setError(e.message);
-        try {
-          localStorage.removeItem(KEY);
-        } catch {
-          // ignore
+        // Forget a saved key only when it is wrong, not when the server is briefly unreachable.
+        if (e instanceof ApiError && e.status === 401) {
+          try {
+            localStorage.removeItem(KEY);
+          } catch {
+            // ignore
+          }
         }
       });
-  }, [key]);
+  }, [key, attempt]);
 
   function signIn(e: FormEvent) {
     e.preventDefault();
@@ -45,6 +50,7 @@ export function RoadmapAdminPage() {
       // The key then lasts only for this visit.
     }
     setKey(entered);
+    setAttempt((n) => n + 1);
   }
 
   function signOut() {
@@ -140,7 +146,14 @@ function AdminRow(props: { s: Suggestion; adminKey: string; onSaved: (s: Suggest
           <input value={reply} maxLength={300} onChange={(e) => setReply(e.target.value)} />
         </label>
         <div className="admin-buttons">
-          <button disabled={busy || reply === s.reply} onClick={() => run(async () => props.onSaved(await updateSuggestion(adminKey, s.id, { reply })))}>
+          <button disabled={busy || reply === s.reply} onClick={() =>
+              run(async () => {
+                const saved = await updateSuggestion(adminKey, s.id, { reply });
+                // The server tidies spacing; show what actually went public.
+                setReply(saved.reply);
+                props.onSaved(saved);
+              })
+            }>
             Save reply
           </button>
           <button
