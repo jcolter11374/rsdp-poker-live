@@ -58,12 +58,12 @@ export function stadiumPoint(t: number, w: number, h: number): Point {
  * between them in seat order. So four players at a ten-seat table sit at the
  * four quarters instead of bunched on one side.
  *
- * `margin` keeps empty seats that far from the players beside them when the
- * gap allows; `minGap` is the least room an empty seat needs. When some gap
- * is too small for its empty seats (a nearly full table), every seat goes
- * back to even spacing. Both are fractions of the way round.
+ * `clear` is how far an empty seat must stay from a player's nameplate and
+ * `minGap` how far empty seats stay from each other, both as fractions of
+ * the way round. When some gap is too small for its empty seats (a nearly
+ * full table), every seat goes back to even spacing.
  */
-export function seatFractions(taken: readonly boolean[], anchor: number, { margin = 0, minGap = 0 } = {}): number[] {
+export function seatFractions(taken: readonly boolean[], anchor: number, { clear = 0, minGap = 0 } = {}): number[] {
   const n = taken.length;
   const even = Array.from({ length: n }, (_, seat) => ((seat - anchor + n) % n) / n);
   if (n === 0) return even;
@@ -80,14 +80,13 @@ export function seatFractions(taken: readonly boolean[], anchor: number, { margi
     const empties = (i + 1 < m ? players[i + 1] : n) - from - 1;
     out[(anchor + from) % n] = i * span;
     if (empties === 0) continue;
-    if (span < (empties + 1) * minGap) return even;
+    if (span < 2 * clear + (empties - 1) * minGap || span < (empties + 1) * minGap) return even;
     if (empties === 1) {
       out[(anchor + from + 1) % n] = i * span + span / 2;
       continue;
     }
-    // Evenly split by default; pushed in from the players by up to `margin`
-    // as long as the empty seats stay at least minGap apart.
-    const edge = Math.max(span / (empties + 1), Math.min(margin, (span - (empties - 1) * minGap) / 2));
+    // Evenly split, unless that would put the end ones too close to the players.
+    const edge = Math.max(span / (empties + 1), clear);
     const room = span - 2 * edge;
     for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 1)) / (empties - 1);
   }

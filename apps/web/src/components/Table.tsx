@@ -106,12 +106,12 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  // Empty seats keep about half a nameplate clear of players and a seat button's width from each other.
+  // Empty seats keep half a nameplate plus half a seat button clear of players, and some room between each other.
   const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
   const fractions = seatFractions(
     view.seats.map((s) => !!s),
     offset,
-    { margin: (compact ? 62 : 90) / perimeter, minGap: (compact ? 58 : 64) / perimeter },
+    { clear: (compact ? 80 : 115) / perimeter, minGap: (compact ? 44 : 60) / perimeter },
   );
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
   // Your own bet sits further in, clear of your bigger cards.
