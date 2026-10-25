@@ -57,6 +57,13 @@
       "when": 1792962411616,
       "tag": "0007_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793000000000,
+      "tag": "0008_account_reset",
+      "breakpoints": true
     }
   ]
 }

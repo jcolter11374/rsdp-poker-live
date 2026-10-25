@@ -97,6 +97,9 @@ export const accounts = pgTable(
       .notNull()
       .references((): AnyPgColumn => players.id),
     createdAt: at('created_at').notNull().defaultNow(),
+    /** A one-time password reset code from the admin, stored as a sha256 hash. Null when none is open. */
+    resetCodeHash: text('reset_code_hash'),
+    resetCodeExpiresAt: at('reset_code_expires_at'),
   },
   (t) => [uniqueIndex('accounts_username_lower_idx').on(sql`lower(${t.username})`)],
 );
