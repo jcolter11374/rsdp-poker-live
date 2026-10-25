@@ -17,9 +17,9 @@ FROM node:22-slim
 ENV NODE_ENV=production PORT=8080 PGLITE_DIR=/data/pglite
 WORKDIR /app
 COPY --from=build /app /app
-RUN mkdir -p /data && chown node:node /data
-USER node
 EXPOSE 8080
 WORKDIR /app/apps/server
+# Starts as root only to take ownership of the data volume, then runs as node.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # node directly (not npm) so SIGTERM reaches the server and it saves before exiting.
 CMD ["node", "--import", "tsx", "src/index.ts"]

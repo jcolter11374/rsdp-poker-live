@@ -63,6 +63,9 @@ export async function closeDb(db: Db): Promise<void> {
 
 async function openPostgres(url: string): Promise<Db> {
   const pool = new pg.Pool({ connectionString: url });
+  // An idle connection dropped by the server (maintenance, failover, a paused database) is
+  // replaced on the next query; without a listener it would be an uncaught exception.
+  pool.on('error', (e) => console.error('postgres connection lost', e.message));
   try {
     // Several server processes may boot at once; the advisory lock lets one migrate at a time.
     const client = await pool.connect();

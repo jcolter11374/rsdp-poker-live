@@ -9,6 +9,8 @@ The whole site is one container: the game server plus the built web app, built f
 - **Data that survives deploys.** Either:
   - set `DATABASE_URL` to a managed Postgres (14 or later), or
   - leave it unset and mount a persistent volume at `/data`. The server keeps an embedded PGlite database in `/data/pglite`.
+  The container starts as root only to take ownership of `/data`, then runs the server as the unprivileged `node` user.
+- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less.
 - **HTTPS** in front of port `8080` (or whatever `PORT` says).
 
 ## Settings
