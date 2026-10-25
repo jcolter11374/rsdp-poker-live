@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
+// It creates tables and a tournament with made-up players, so it never runs against the live site.
+if (/fly\.dev/.test(BASE)) {
+  console.error('smoke test refused: it would leave test tables and tournaments on the live site');
+  process.exit(1);
+}
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
@@ -93,7 +98,7 @@ try {
     await guest.click('.avatar-pick[aria-label="fox"]');
     await guest.click('.mood-pick:has-text("🤠")');
     await guest.click('.modal button:has-text("Close")');
-    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar');
+    await host.waitForSelector('.seat:not(.me) .seat-avatar .avatar:not(.initials)');
     await host.waitForSelector('.seat:not(.me) .seat-mood:has-text("🤠")');
     await host.click('.seat:not(.me) .nameplate');
     await host.click('.gesture-grid button[aria-label^="Fish"]');

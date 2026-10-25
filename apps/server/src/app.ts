@@ -214,6 +214,21 @@ export function createApp(deps: AppDeps = {}) {
         res.status(500).end();
       });
   });
+  // Operator cleanup, only from a shell on the server itself (flyctl ssh console). Requests through
+  // Fly's proxy come from another address and always carry Fly-Client-IP and X-Forwarded-For.
+  const fromServerShell = (req: express.Request) =>
+    ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') && !req.get('fly-client-ip') && !req.get('x-forwarded-for');
+  app.get('/api/admin/tournaments', (req, res) => {
+    if (!fromServerShell(req)) return void res.status(404).end();
+    res.json(tournaments.adminList());
+  });
+  app.post('/api/admin/tournaments/:id/archive', (req, res) => {
+    if (!fromServerShell(req)) return void res.status(404).end();
+    tournaments.adminArchive(String(req.params.id)).then(
+      (r) => res.json(r),
+      (e) => res.status(e instanceof ActionError ? 400 : 500).json({ error: e instanceof Error ? e.message : String(e) }),
+    );
+  });
   if (deps.webDist && existsSync(deps.webDist)) {
     const dist = deps.webDist;
     // index: false, so "/" also goes through the preview below.
