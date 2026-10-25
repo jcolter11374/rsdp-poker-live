@@ -22,6 +22,7 @@ import { memoryTournamentStore } from './tournament/store';
 import { tablePreview, tournamentPreview, withPreview } from './preview';
 import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby';
 import { memorySharedHands, type SharedHandStore } from './shared';
+import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
 
 export interface Session {
@@ -94,6 +95,9 @@ export interface AppDeps {
   avatars?: AvatarStore;
   lobby?: LobbyStore;
   shared?: SharedHandStore;
+  suggestions?: SuggestionStore;
+  /** Lets the roadmap admin page change suggestions. Defaults to the ADMIN_KEY environment variable. */
+  adminKey?: string;
   /** Deck shuffles; tests pass a seeded one. */
   rng?: Rng;
   /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
@@ -193,6 +197,7 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size });
   });
+  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { adminKey: deps.adminKey ?? process.env.ADMIN_KEY, now: () => clock.now(), log });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
     const id = String(req.params.id);
@@ -448,6 +453,7 @@ export function createApp(deps: AppDeps = {}) {
       const { settings } = state;
       return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting);
     }
+    if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
     if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };

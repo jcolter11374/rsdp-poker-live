@@ -38,9 +38,7 @@
         { "title": "Accounts", "detail": "Optional sign-in so your name, stats and settings follow you between devices." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." },
         { "title": "The long tail", "detail": "High hand prizes, a final table mode, accessibility improvements and lots of small touches." },
-        { "title": "Clubs", "detail": "A home for the group, with members and its own games and leaderboards." },
-        { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." },
-        { "title": "AI recaps", "detail": "A short write-up of the night's best hands and biggest swings." }
+        { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }
       ]
     }
   ]

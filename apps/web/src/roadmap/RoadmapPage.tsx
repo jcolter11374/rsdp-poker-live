@@ -1,11 +1,12 @@
 import roadmap from './roadmap.json';
+import { Suggestions } from './Suggestions';
 import './roadmap.css';
 
 export interface Roadmap {
   /** YYYY-MM-DD */
   lastUpdated: string;
   intro: string;
-  sections: { id: string; title: string; blurb: string; items: { title: string; detail: string }[] }[];
+  sections: { id: string; title: string; blurb: string; items: { title: string; detail: string; /** Who suggested it, credited on the page. */ suggestedBy?: string }[] }[];
 }
 
 /** "October 25, 2026", read as a calendar date so no time zone shifts it a day. */
@@ -26,7 +27,9 @@ export function RoadmapPage({ data = roadmap as Roadmap }: { data?: Roadmap }) {
       </header>
       <h1>Roadmap</h1>
       <p className="roadmap-intro">{data.intro}</p>
-      <p className="muted">Last updated {formatDay(data.lastUpdated)}</p>
+      <p className="muted">
+        Last updated {formatDay(data.lastUpdated)} · <a href="/whats-new">What's new</a> · <a href="#suggest">Suggest an idea</a>
+      </p>
       {data.sections.map((s) => (
         <section key={s.id} className={`roadmap-section ${s.id}`}>
           <h2>{s.title}</h2>
@@ -36,11 +39,13 @@ export function RoadmapPage({ data = roadmap as Roadmap }: { data?: Roadmap }) {
               <li key={it.title}>
                 <strong>{it.title}</strong>
                 <span>{it.detail}</span>
+                {it.suggestedBy && <em className="credit">Suggested by {it.suggestedBy}</em>}
               </li>
             ))}
           </ul>
         </section>
       ))}
+      <Suggestions />
     </main>
   );
 }
