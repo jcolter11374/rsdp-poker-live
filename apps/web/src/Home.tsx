@@ -167,6 +167,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       <p className="tagline">
         New to Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
       </p>
+      <p className="tagline">
+        See what's live and what's coming on the <a href="/roadmap">roadmap</a>.
+      </p>
       <InstallApp />
     </main>
   );
