@@ -427,8 +427,9 @@ describe('host handoff', () => {
     rt.disconnect('host');
     clock.advance(HOST_HANDOFF_MS * 2);
     expect(rt.state.hostId).toBe('host');
+    // Someone to take over arriving hands the table on straight away.
     rt.connect('a');
-    clock.advance(HOST_HANDOFF_MS);
+    clock.advance(0);
     expect(rt.state.hostId).toBe('a');
   });
 
@@ -436,6 +437,9 @@ describe('host handoff', () => {
     const { rt } = table();
     seatPlayers(rt, 2);
     expect(() => rt.transferHost('host', 'stranger')).toThrow(/not at the table/);
+    rt.disconnect('a');
+    expect(() => rt.transferHost('host', 'a')).toThrow(/offline/);
+    rt.connect('a');
     rt.transferHost('host', 'a');
     expect(rt.state.hostId).toBe('a');
     expect(() => rt.transferHost('host', 'a')).toThrow(/host/);

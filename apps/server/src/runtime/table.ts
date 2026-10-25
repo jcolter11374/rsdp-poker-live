@@ -171,7 +171,8 @@ export class TableRuntime {
   connect(playerId: PlayerId) {
     this.connections.set(playerId, (this.connections.get(playerId) ?? 0) + 1);
     this.offlineSince.delete(playerId);
-    if (this.isHost(playerId)) this.watchHost();
+    // The host back stops the handoff; anyone else arriving may be the one to take over.
+    if (this.isHost(playerId) || this.hostTimer !== null) this.watchHost();
     this.sync();
   }
 
@@ -449,6 +450,7 @@ export class TableRuntime {
       s.pausedLeft = null;
       s.paused = false;
       for (const id of this.offlineSince.keys()) this.offlineSince.set(id, now);
+      this.watchHost();
       if (s.settings.blindSchedule.enabled && s.handNumber > 0) s.level.runningSince = now;
       this.log('Game resumed');
     }
@@ -575,6 +577,8 @@ export class TableRuntime {
     this.requireHost(by);
     if (to === by) throw new ActionError('you are already the host');
     if (!this.seatOf(to) && !this.isOnline(to)) throw new ActionError('that player is not at the table');
+    // An offline host would be handed straight on again.
+    if (!this.isOnline(to)) throw new ActionError('that player is offline');
     this.state.hostId = to;
     this.log(`${this.nameOf(by)} made ${this.nameOf(to)} the host`);
     this.watchHost();
@@ -587,13 +591,13 @@ export class TableRuntime {
    * host's, so nobody is stuck waiting for approvals. Tournament tables are run
    * by the lobby and have no host to hand off.
    */
-  private watchHost() {
+  private watchHost(retry: number | null = null) {
     this.clock.clearTimeout(this.hostTimer);
     this.hostTimer = null;
     const host = this.state.hostId;
     if (this.isTournament || this.isOnline(host)) return;
     const since = this.offlineSince.get(host) ?? this.upSince;
-    const wait = Math.max(0, since + HOST_HANDOFF_MS - this.clock.now());
+    const wait = retry ?? Math.max(0, since + HOST_HANDOFF_MS - this.clock.now());
     this.hostTimer = this.clock.setTimeout(() => {
       this.hostTimer = null;
       if (this.state.hostId !== host || this.isOnline(host)) return;
@@ -602,9 +606,8 @@ export class TableRuntime {
       const order = seats.map((_, i) => seats[(from + 1 + i + seats.length) % seats.length]);
       const next = order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId) && !x.sittingOut) ?? order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId));
       if (!next) {
-        // Nobody to take over yet: look again in a while.
-        this.offlineSince.set(host, this.clock.now());
-        this.watchHost();
+        // Nobody to take over yet: look again in a while (or as soon as someone connects).
+        this.watchHost(HOST_HANDOFF_MS);
         return;
       }
       this.state.hostId = next.playerId;

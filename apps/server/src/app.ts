@@ -262,6 +262,9 @@ export function createApp(deps: AppDeps = {}) {
       for (const s of playerSockets.get(me) ?? []) {
         s.data.session = { ...s.data.session, displayName: name };
         s.emit('session', s.data.session);
+        // Watchers are listed by this name.
+        const rt = s.data.tableId ? tables.get(s.data.tableId) : undefined;
+        if (rt) broadcast(rt);
       }
     };
     const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);

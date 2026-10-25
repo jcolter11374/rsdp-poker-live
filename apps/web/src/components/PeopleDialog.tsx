@@ -28,7 +28,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
               {s.playerId === view.me.playerId && <span className="muted"> (you)</span>}
             </span>
             <span className="muted">{s.sittingOut ? 'away' : fmt(s.stack)}</span>
-            {canHandOff && s.playerId !== view.me.playerId && <button onClick={() => handOff(s.playerId, s.name)}>Make host</button>}
+            {canHandOff && s.online && s.playerId !== view.me.playerId && <button onClick={() => handOff(s.playerId, s.name)}>Make host</button>}
           </div>
         ))}
         <h3>Watching ({view.watchers.length})</h3>
