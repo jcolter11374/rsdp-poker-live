@@ -1,6 +1,6 @@
 import type { HandEvent } from '@rsdp/engine/core';
 import type { HandRecordView } from '@rsdp/engine/wire';
-import { equity } from './equity';
+import { equity, type Equity, type EquityInput } from './equity';
 import { finalStacks } from './replay';
 import { handStrength } from './strength';
 import type { Fmt } from './format';
@@ -36,6 +36,17 @@ export const HIGHLIGHT_ICON: Record<HighlightKind, string> = {
 };
 
 type Ev<T extends HandEvent['t']> = Extract<HandEvent, { t: T }>;
+
+/** Highlights are picked again after every hand, on the main thread, so each all-in is worked out once. */
+const equityCache = new Map<string, Equity | null>();
+function cachedEquity(input: EquityInput): Equity | null {
+  const key = JSON.stringify(input);
+  if (!equityCache.has(key)) {
+    if (equityCache.size > 500) equityCache.delete(equityCache.keys().next().value!);
+    equityCache.set(key, equity(input));
+  }
+  return equityCache.get(key)!;
+}
 
 /** Every hand worth remembering in one hand, best first. */
 function candidates(h: HandRecordView, index: number, fmt: Fmt): Highlight[] {
@@ -134,7 +145,7 @@ function candidates(h: HandRecordView, index: number, fmt: Fmt): Highlight[] {
     };
     const hands = [...live].map((seat) => ({ seat, cards: shownBefore(seat) }));
     if (hands.length >= 2 && hands.every((x) => x.cards.length && !x.cards.includes('??'))) {
-      const e = equity({ gameId: start.gameId, hands, boards: boardOf(firstShow).length ? boardOf(firstShow) : [[]], dead: [] });
+      const e = cachedEquity({ gameId: start.gameId, hands, boards: boardOf(firstShow).length ? boardOf(firstShow) : [[]], dead: [], samples: 600 });
       const share = e?.[winner];
       if (share !== undefined && share < 0.4 && wonBy.size === 1) add('underdog', winner, 30 + (40 - share * 100), `${who} came from behind as a ${Math.max(1, Math.round(share * 100))}% underdog`);
     }

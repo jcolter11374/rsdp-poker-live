@@ -578,10 +578,13 @@ export function createApp(deps: AppDeps = {}) {
           const now = clock.now();
           const recent = (shareTimes.get(me) ?? []).filter((t) => now - t < SHARE_WINDOW_MS);
           if (recent.length >= SHARE_BURST) throw new ActionError('that is a lot of links; try again in a minute');
+          // Counted before the lookup, so asking for hands that aren't there can't read the table's history over and over.
+          shareTimes.set(me, [...recent, now]);
+          // Kept across reconnects (so reconnecting doesn't reset the limit); old entries are swept now and then.
+          if (shareTimes.size > 500) for (const [id, times] of shareTimes) if (now - times.at(-1)! >= SHARE_WINDOW_MS) shareTimes.delete(id);
           const record = rt.state.history.find((h) => h.handNumber === handNumber) ?? (await store.loadHands(rt.state.id)).find((h) => h.handNumber === handNumber);
           if (!record) throw new ActionError('that hand is no longer available');
           if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
-          shareTimes.set(me, [...recent, now]);
           const id = newId();
           const hand = handRecordView(rt, record, me, { hideMine: !!input?.hideMine });
           await sharedStore.create({
@@ -803,7 +806,6 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
-        shareTimes.delete(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
       }

@@ -22,6 +22,8 @@ export function equityInput(view: TableView): { key: string; input: EquityInput 
   const seats = view.seats.filter((s): s is SeatView => !!s && s.inHand);
   const live = seats.filter((s) => !s.folded);
   if (live.length < 2 || live.some((s) => !s.cards.length || s.cards.some((c) => c.card === '??'))) return null;
+  // Only once the hands have been turned over for a run-out: seeing every card (a spectator who sees all, or a replay) isn't an all-in.
+  if (!hand.events.some((e) => e.t === 'show')) return null;
   const stud = hand.family === 'stud';
   // Stud's shared last card (eight players reaching seventh street) is too rare to count.
   if (stud && (hand.boards[0] ?? []).some((b) => b.length)) return null;

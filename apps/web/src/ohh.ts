@@ -38,6 +38,8 @@ export interface OhhOptions {
 export function toOhh(h: HandRecordView, opts: OhhOptions): object | null {
   const start = h.events.find((e): e is Ev<'hand-start'> => e.t === 'hand-start');
   if (!start || !GAME_TYPE[start.gameId]) return null;
+  // Trackers know one board: hands on two boards or run twice wouldn't add up, so they stay out.
+  if (start.boards > 1 || h.events.some((e) => e.t === 'board' && e.run > 0)) return null;
   const amt = (n: number) => (opts.centsMode ? n / 100 : n);
   // OHH seats and player ids start at 1.
   const pid = (seat: number) => seat + 1;
@@ -66,8 +68,6 @@ export function toOhh(h: HandRecordView, opts: OhhOptions): object | null {
         if (e.cards.some((c) => c.card !== '??')) act({ player_id: pid(e.seat), action: 'Dealt Cards', cards: e.cards.map((c) => c.card) });
         break;
       case 'board':
-        // Second runs and second boards stay out: trackers expect one board.
-        if (e.run !== 0 || e.board !== 0) break;
         // Named by how many cards are out, since a run-out deals with no street events.
         boardCards += e.cards.length;
         round(boardCards <= 3 ? 'Flop' : boardCards === 4 ? 'Turn' : 'River', e.cards);
@@ -129,7 +129,8 @@ export function toOhh(h: HandRecordView, opts: OhhOptions): object | null {
       rounds,
       pots: [...pots].map(([number, wins]) => ({
         number,
-        amount: amt([...wins.values()].reduce((a, b) => a + b, 0)),
+        // The rake is one amount for the hand, so it goes on the main pot; a pot's amount is what was won plus its rake.
+        amount: amt([...wins.values()].reduce((a, b) => a + b, 0) + (number === 0 ? rake : 0)),
         rake: number === 0 ? amt(rake) : 0,
         player_wins: [...wins].map(([seat, win]) => ({ player_id: pid(seat), win_amount: amt(win), contributed_rake: 0 })),
       })),
