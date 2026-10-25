@@ -33,7 +33,16 @@ export function mayCommand(s: TournamentState, playerId: PlayerId, cmd: Command)
   // A co-host may always step down.
   if (cmd.type === 'removeCoHost' && cmd.playerId === playerId) return true;
   if (need === 'host') return playerId === s.hostId;
-  return hasPower(s, playerId, need);
+  if (!hasPower(s, playerId, need)) return false;
+  if (playerId === s.hostId) return true;
+  // A co-host never decides their own requests or chips, and choosing a starting stack is a chip power too.
+  if (cmd.type === 'approve' || cmd.type === 'reject') {
+    const r = s.requests.find((x) => x.id === cmd.requestId);
+    if (r?.playerId === playerId) return false;
+    if (cmd.type === 'approve' && cmd.stack !== undefined) return hasPower(s, playerId, 'chips');
+  }
+  if (cmd.type === 'setStack') return cmd.playerId !== playerId;
+  return true;
 }
 
 /** Sees the host tools: the host or any co-host. */

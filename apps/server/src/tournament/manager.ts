@@ -115,6 +115,8 @@ export class TournamentManager {
   /** Shutting down: tables deal no more hands and browsers' commands are refused. */
   private closed = false;
   private sweepTimer: unknown = null;
+  /** Final saves of events let go of by cleanup, by id. */
+  private readonly evicting = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: ManagerDeps) {
     this.clock = deps.clock;
@@ -172,7 +174,13 @@ export class TournamentManager {
     this.clock.clearTimeout(live.timer);
     this.clock.clearTimeout(live.saveTimer);
     live.timer = live.saveTimer = null;
-    this.deps.store.save(live.state, live.nextId).catch((e) => this.deps.log(`saving tournament ${id} failed`, e));
+    const saved = this.deps.store
+      .save(live.state, live.nextId)
+      .catch((e) => this.deps.log(`saving tournament ${id} failed`, e))
+      .finally(() => {
+        if (this.evicting.get(id) === saved) this.evicting.delete(id);
+      });
+    this.evicting.set(id, saved);
     for (const rt of live.tables.values()) this.unmount(rt);
     live.tables.clear();
     this.live.delete(id);
@@ -194,6 +202,8 @@ export class TournamentManager {
   async get(id: string): Promise<Live | null> {
     const live = this.live.get(id);
     if (live) return live;
+    // An event let go of a moment ago is read back only once its last save is in.
+    await this.evicting.get(id);
     const saved = await this.deps.store.load(id);
     if (!saved) return null;
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
@@ -359,7 +369,11 @@ export class TournamentManager {
     try {
       state.tables.forEach((t, i) => {
         const saved = snapshots[i];
-        if (saved) this.mount(live, t.id, new TableRuntime(saved, this.runtimeDeps(live, t.id)), Promise.resolve());
+        if (saved) {
+          // The host may have changed after the table was last saved.
+          saved.hostId = state.hostId;
+          this.mount(live, t.id, new TableRuntime(saved, this.runtimeDeps(live, t.id)), Promise.resolve());
+        }
         else {
           // No snapshot yet (the server stopped right after seating): rebuild the seats from the director.
           const seats = t.seats.flatMap((entryId, seat) => {
@@ -650,7 +664,8 @@ export class TournamentManager {
         break;
       }
       case 'stackSet':
-        if (e.applied) this.table(live, e.tableId)?.tournamentSetStack(e.playerId, e.stack);
+        // A replayed edit is already in the table's snapshot, which may be a hand further on.
+        if (e.applied && !live.replay) this.table(live, e.tableId)?.tournamentSetStack(e.playerId, e.stack);
         break;
       case 'hostChanged':
         for (const rt of live.tables.values()) rt.state.hostId = e.hostId;

@@ -4,6 +4,7 @@ import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings, tableAddress, type TournamentSettings } from '@rsdp/tournament';
 import type { TableRuntime } from '../src/runtime/table';
 import { FINISHED_KEEP_MS, IDLE_ARCHIVE_MS } from '../src/tournament/manager';
+import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
 import { chipsInPlay, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
@@ -160,6 +161,38 @@ describe('restart behind the director (issue #5)', () => {
     expect(problems(next)).toEqual([]);
     playUntil(next, () => s().status === 'finished');
     expect(s().status).toBe('finished');
+  });
+});
+
+describe('restart with a stack edit in flight', () => {
+  it('does not apply a replayed edit again to the hand after it', async () => {
+    const { env, id } = await started(3);
+    const rt = [...env.tables.values()][0];
+    untilDealt(env, rt);
+    await env.manager.command(id, 'host', '', { type: 'setStack', by: 'host', playerId: 'p2', stack: 2222 });
+    env.clock.advance(400);
+    await settled();
+    // The director as saved: the edit still waiting for hand 1.
+    const directorSave = (await env.store.load(id))!.state;
+    expect(directorSave.entries.find((e) => e.playerId === 'p2')!.pendingStack).toBe(2222);
+    foldOut(rt);
+    env.clock.advance(10);
+    untilDealt(env, rt);
+    // The table as saved: in hand 2, with the edit already in its stacks.
+    const store = memoryTournamentStore();
+    await store.save(directorSave, null);
+    const clock = new FakeClock();
+    clock.t = env.clock.now();
+    const next = setup({ store, snapshots: new Map(env.snapshots), clock });
+    await next.manager.resumeAll();
+    const table = [...next.tables.values()][0];
+    expect(table.seatOf('p2')!.pendingStack).toBeNull();
+    const total = () => next.manager.view(id)!.state.entries.reduce((n, e) => n + e.stack, 0);
+    const before = chipsInPlay(next);
+    foldOut(table);
+    next.clock.advance(10);
+    expect(total()).toBe(before);
+    expect(chipsInPlay(next)).toBe(before);
   });
 });
 

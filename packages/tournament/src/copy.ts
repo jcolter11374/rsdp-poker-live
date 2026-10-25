@@ -15,8 +15,16 @@ export function copySettings(source: TournamentSettings, now: number): Tournamen
   const start = out.start;
   if (start.kind !== 'scheduled') return out;
   if (start.schedule) {
-    if (!start.schedule.repeat) start.schedule.startDate = rollForwardStart(start.schedule, now);
-    start.startAt = nextOccurrence(start.schedule, now) ?? start.startAt;
+    const schedule = start.schedule;
+    let next = schedule.repeat ? nextOccurrence(schedule, now) : null;
+    if (next === null) {
+      // A one-off, or a series that has ended: one event, on the next day still to come.
+      delete schedule.repeat;
+      delete schedule.until;
+      schedule.startDate = rollForwardStart(schedule, now);
+      next = nextOccurrence(schedule, now);
+    }
+    start.startAt = next ?? start.startAt;
   } else if (start.startAt <= now) {
     const day = 24 * 3600_000;
     start.startAt += Math.ceil((now - start.startAt + 1) / day) * day;

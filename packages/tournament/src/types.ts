@@ -87,8 +87,9 @@ export interface Entry {
   rebuyOfferExpiresAt?: number;
   /** Quit or host removal waiting for the current hand to end. */
   leaveRequested?: 'quit' | 'removed';
-  /** A host stack edit waiting for the current hand to end. */
+  /** A host stack edit waiting for the current hand to end, and who made it. */
   pendingStack?: number;
+  pendingStackBy?: PlayerId;
   bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[] };
 }
 

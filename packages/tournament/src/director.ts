@@ -575,6 +575,7 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
     delete e.rebuyOfferExpiresAt;
     delete e.leaveRequested;
     delete e.pendingStack;
+    delete e.pendingStackBy;
   }
   const placeOf = places(s);
   members.forEach((e, i) =>
@@ -590,6 +591,8 @@ function canRebuy(s: TournamentState, e: Entry): boolean {
 function addChips(c: Ctx, e: Entry, chips: number, reason: 'rebuy' | 'add-on') {
   checkChipsInPlay(c.s, chips);
   e.stack += chips;
+  // An add-on bought after a pending stack edit counts on top of it.
+  if (e.pendingStack !== undefined) e.pendingStack += chips;
   if (reason === 'rebuy') {
     e.rebuys++;
     e.status = 'seated';
@@ -1009,11 +1012,13 @@ function handResult(c: Ctx, r: HandResult) {
   for (const e of players) {
     if (e.pendingStack === undefined) continue;
     const stack = e.pendingStack;
+    const by = e.pendingStackBy ?? s.hostId;
     delete e.pendingStack;
+    delete e.pendingStackBy;
     if (e.status !== 'seated' || e.leaveRequested) continue;
     const previous = e.stack;
     e.stack = stack;
-    emit(c, { type: 'stackSet', by: s.hostId, entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, stack, previous, applied: true });
+    emit(c, { type: 'stackSet', by, entryId: e.id, playerId: e.playerId, tableId: e.tableId, seat: e.seat, stack, previous, applied: true });
   }
   const leavers = players.filter((e) => e.leaveRequested);
   for (const reason of ['quit', 'removed'] as const) eliminate(c, leavers.filter((e) => e.leaveRequested === reason), reason, hfhRound);
@@ -1083,9 +1088,11 @@ function setStack(c: Ctx, by: PlayerId, playerId: PlayerId, stack: number) {
   const info = { by, entryId: e.id, playerId, tableId: e.tableId, seat: e.seat, stack, previous: e.stack };
   if (inHand) {
     e.pendingStack = stack;
+    e.pendingStackBy = by;
     emit(c, { type: 'stackSet', ...info, applied: false });
   } else {
     delete e.pendingStack;
+    delete e.pendingStackBy;
     e.stack = stack;
     emit(c, { type: 'stackSet', ...info, applied: true });
   }

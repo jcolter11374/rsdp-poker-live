@@ -66,9 +66,10 @@ describe('co-hosts', () => {
   it('gives a co-host only the powers the host picked', () => {
     const sim = new Sim({ registrationApproval: true });
     sim.do({ type: 'register', playerId: 'ann', displayName: 'Ann' });
+    sim.do({ type: 'register', playerId: 'bob', displayName: 'Bob' });
     sim.do({ type: 'setCoHost', by: 'host', playerId: 'ann', powers: ['approve'] });
     expect(sim.state.coHosts).toEqual([{ playerId: 'ann', name: 'Ann', powers: ['approve'] }]);
-    const approve: Command = { type: 'approve', by: 'ann', requestId: sim.state.requests[0].id };
+    const approve: Command = { type: 'approve', by: 'ann', requestId: sim.state.requests[1].id };
     expect(mayCommand(sim.state, 'ann', approve)).toBe(true);
     expect(mayCommand(sim.state, 'ann', { type: 'pause', by: 'ann' })).toBe(false);
     expect(mayCommand(sim.state, 'ann', { type: 'setCoHost', by: 'ann', playerId: 'x', powers: [] })).toBe(false);
@@ -78,6 +79,22 @@ describe('co-hosts', () => {
     expect(mayCommand(sim.state, 'host', { type: 'register', playerId: 'host', displayName: 'H' })).toBe(false);
     expect(isTournamentStaff(sim.state, 'ann')).toBe(true);
     expect(isTournamentStaff(sim.state, 'bob')).toBe(false);
+  });
+
+  it('keeps co-hosts off their own requests and chips, and needs the chip power for a custom stack', () => {
+    const sim = new Sim({ registrationApproval: true });
+    sim.do({ type: 'register', playerId: 'ann', displayName: 'Ann' });
+    sim.do({ type: 'register', playerId: 'bob', displayName: 'Bob' });
+    sim.do({ type: 'setCoHost', by: 'host', playerId: 'ann', powers: ['approve'] });
+    const [annReq, bobReq] = sim.state.requests;
+    expect(mayCommand(sim.state, 'ann', { type: 'approve', by: 'ann', requestId: annReq.id })).toBe(false);
+    expect(mayCommand(sim.state, 'ann', { type: 'approve', by: 'ann', requestId: bobReq.id })).toBe(true);
+    expect(mayCommand(sim.state, 'ann', { type: 'approve', by: 'ann', requestId: bobReq.id, stack: 5000 })).toBe(false);
+    sim.do({ type: 'setCoHost', by: 'host', playerId: 'ann', powers: ['approve', 'chips'] });
+    expect(mayCommand(sim.state, 'ann', { type: 'approve', by: 'ann', requestId: bobReq.id, stack: 5000 })).toBe(true);
+    expect(mayCommand(sim.state, 'ann', { type: 'setStack', by: 'ann', playerId: 'ann', stack: 5000 })).toBe(false);
+    expect(mayCommand(sim.state, 'ann', { type: 'setStack', by: 'ann', playerId: 'bob', stack: 5000 })).toBe(true);
+    expect(mayCommand(sim.state, 'host', { type: 'approve', by: 'host', requestId: annReq.id, stack: 1 })).toBe(true);
   });
 
   it('only takes people the event knows, and known powers', () => {
@@ -146,6 +163,27 @@ describe('stacks', () => {
     expect(sim.entry('p1')).toMatchObject({ stack: 300, status: 'seated' });
     expect(sim.of('stackSet')[2]).toMatchObject({ applied: true, stack: 300, previous: 0 });
     expect(sim.of('eliminated')).toHaveLength(0);
+  });
+
+  it('credits the co-host who made the edit and keeps an add-on bought while it waits', () => {
+    const structure = [
+      { kind: 'level' as const, sb: 5, bb: 10, ante: 0, anteType: 'none' as const, minutes: 10 },
+      { kind: 'break' as const, minutes: 5, addOn: true },
+      { kind: 'level' as const, sb: 10, bb: 20, ante: 0, anteType: 'none' as const, minutes: 10 },
+    ];
+    const sim = new Sim({ structure, addOn: { max: 1, chips: 500, approval: false } });
+    sim.register(2);
+    sim.do({ type: 'setCoHost', by: 'host', playerId: 'p1', powers: ['chips'] });
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.start(t);
+    sim.do({ type: 'setStack', by: 'p1', playerId: 'p0', stack: 3000 });
+    // The break starts during the hand; p0 takes the add-on before it ends.
+    sim.now += 10 * 60_000;
+    sim.do({ type: 'addOn', playerId: 'p0' });
+    sim.end(t);
+    expect(sim.entry('p0').stack).toBe(3500);
+    expect(sim.of('stackSet').at(-1)).toMatchObject({ by: 'p1', applied: true, stack: 3500 });
   });
 
   it('is not a rebuy', () => {
@@ -246,6 +284,14 @@ describe('copy settings', () => {
     expect({ ...copy, start: null }).toEqual({ ...source, start: null });
     expect(copy.start).toMatchObject({ startAt: Date.parse('2026-10-31T02:30:00Z'), schedule: { startDate: '2026-10-31' } });
     expect(source.start).toMatchObject({ schedule: { startDate: '2026-10-23' } });
+  });
+
+  it('makes an ended series into one event on the next day', () => {
+    const source = defaultSettings({
+      start: { kind: 'scheduled', startAt: Date.parse('2026-10-02T19:00:00Z'), schedule: { timeZone: 'UTC', startDate: '2026-10-02', time: '19:00', repeat: { freq: 'daily' }, until: '2026-10-05' } },
+    });
+    const copy = copySettings(source, Date.parse('2026-10-25T20:00:00Z'));
+    expect(copy.start).toEqual({ kind: 'scheduled', startAt: Date.parse('2026-10-26T19:00:00Z'), schedule: { timeZone: 'UTC', startDate: '2026-10-26', time: '19:00' } });
   });
 
   it('starts a copied series at its next occurrence', () => {
