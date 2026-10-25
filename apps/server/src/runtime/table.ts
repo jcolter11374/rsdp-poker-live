@@ -49,6 +49,8 @@ export interface RuntimeDeps {
   clock?: Clock;
   rng?: Rng;
   tournament?: TournamentHooks;
+  /** Failures nobody is there to be told about (timers, a level that can't be dealt). Default console.error. */
+  log?: (message: string, err?: unknown) => void;
 }
 
 /** The game, betting and stakes the next hand is dealt with. */
@@ -73,17 +75,21 @@ export class TableRuntime {
   private readonly clock: Clock;
   private readonly rng: Rng;
   readonly tournament: TournamentHooks | null;
+  private readonly logError: (message: string, err?: unknown) => void;
   private readonly connections = new Map<PlayerId, number>();
   private readonly offlineSince = new Map<PlayerId, number>();
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
   private timers: Record<'turn' | 'next' | 'rit', unknown> = { turn: null, next: null, rit: null };
+  /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
+  private dealFailure: string | null = null;
 
   constructor(state: RuntimeState, deps: RuntimeDeps = {}) {
     this.state = state;
     this.clock = deps.clock ?? systemClock;
     this.rng = deps.rng ?? cryptoRng;
     this.tournament = deps.tournament ?? null;
+    this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
   }
 
@@ -265,6 +271,8 @@ export class TableRuntime {
 
   /** Leave the table: folds a live hand now, or with `afterHand` plays it out first. */
   stand(playerId: PlayerId, opts: { afterHand?: boolean } = {}) {
+    // The director would keep them seated with chips the table no longer has.
+    if (this.isTournament) throw new ActionError('leave through the tournament');
     const seat = this.seatOf(playerId);
     if (!seat) return;
     if (this.inHand(playerId)) {
@@ -694,18 +702,10 @@ export class TableRuntime {
     s.ritDeadline = null;
 
     const startStacks: Record<PlayerId, number> = {};
-    const endStacks: Record<PlayerId, number> = {};
     for (const hs of hand.seats) {
       startStacks[hs.playerId] = hs.startStack;
-      endStacks[hs.playerId] = hs.stack;
       const seat = s.seats[hs.seat];
       if (seat && seat.playerId === hs.playerId) seat.stack = hs.stack;
-    }
-    const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
-    for (const hs of hand.seats) {
-      if (hs.stack > 0) continue;
-      const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
-      knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
     }
 
     // Queued chips and stack edits land now; leavers go.
@@ -726,6 +726,18 @@ export class TableRuntime {
         seat.timeBank = s.settings.timing.timeBankSeconds;
         seat.handsSinceRefill = 0;
       }
+    }
+    // The director takes these as the new stacks, so a rebuy or add-on bought mid-hand
+    // must be in them, and a player it covers is not knocked out.
+    const endStacks: Record<PlayerId, number> = {};
+    const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+    for (const hs of hand.seats) {
+      const seat = s.seats[hs.seat];
+      const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
+      endStacks[hs.playerId] = end;
+      if (end > 0) continue;
+      const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
+      knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
     }
     for (const seat of s.seats) {
       if (!seat) continue;
@@ -754,6 +766,31 @@ export class TableRuntime {
 
   /** The between-hands pipeline. Returns false when no hand could start. */
   private deal(): boolean {
+    if (!this.isTournament) return this.dealHand();
+    // A tournament table never stops: it holds, and a later level or poke deals.
+    try {
+      const dealt = this.dealHand();
+      if (dealt) this.dealFailure = null;
+      return dealt;
+    } catch (e) {
+      this.dealFailed(e);
+      return false;
+    }
+  }
+
+  private dealFailed(e: unknown) {
+    const why = e instanceof Error ? e.message : String(e);
+    if (why === this.dealFailure) return;
+    this.dealFailure = why;
+    // An ActionError's reason is for players; anything else (a bad level, a bug) is for the server log.
+    if (e instanceof ActionError) this.log(`Couldn't deal: ${why}`);
+    else {
+      this.log("Couldn't deal: this level cannot be dealt");
+      this.logError(`table ${this.state.id}: dealing failed`, e);
+    }
+  }
+
+  private dealHand(): boolean {
     const s = this.state;
     const now = this.clock.now();
     s.nextHandAt = null;
@@ -868,7 +905,8 @@ export class TableRuntime {
       hand = engine.startHand(input);
     } catch (e) {
       // A setting that can't be dealt (e.g. too many players for the deck): tell the table and stop.
-      if (e instanceof ActionError) {
+      // Tournament tables hold instead (see deal()).
+      if (e instanceof ActionError && !this.isTournament) {
         this.log(`Couldn't deal: ${e.message}`);
         s.started = false;
         return false;
@@ -1085,7 +1123,12 @@ export class TableRuntime {
       if (when == null) return;
       this.timers[key] = this.clock.setTimeout(() => {
         this.timers[key] = null;
-        this.sync();
+        // A throw out of a timer would take the whole server down; the table holds until its next change.
+        try {
+          this.sync();
+        } catch (e) {
+          this.logError(`table ${this.state.id}: ${key} timer failed`, e);
+        }
       }, Math.max(0, when - now));
     };
     at('turn', this.turnDeadline());
