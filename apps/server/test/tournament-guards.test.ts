@@ -3,6 +3,7 @@ import { engine, variants, type Action } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { addOnsOpen, defaultSettings, standings, tableAddress, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
 import type { TableRuntime } from '../src/runtime/table';
+import { tableName } from '../src/tournament/manager';
 import { chipsInPlay, playUntil, registerAll, seatsAgree, setup } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
@@ -217,6 +218,27 @@ describe('tournament manager guards', () => {
 
     for (const e of state().entries) expect(e.stack, e.playerId).toBe(rt.seatOf(e.playerId)!.stack);
     expect(state().entries.reduce((a, e) => a + e.stack, 0)).toBe(4500);
+    expect(env.errors).toEqual([]);
+  });
+
+  it('names each table after its tournament within the table-name limit, even with emoji', async () => {
+    expect(tableName('Friday Game', 2)).toBe('Friday Game · Table 2');
+    for (const name of ['🏆🏆🏆 Sunday Major Championship', '😀'.repeat(20), '𠀀'.repeat(28), 'x'.repeat(40)]) {
+      for (const n of [1, 10, 100]) {
+        const t = tableName(name, n);
+        expect(t.length, `${name} ${n}`).toBeLessThanOrEqual(40);
+        expect(t.endsWith(` · Table ${n}`)).toBe(true);
+        expect(t).not.toMatch(/\p{Cs}/u);
+      }
+    }
+    const env = setup();
+    const id = await env.manager.create('host', defaultSettings({ name: '🏆🏆🏆 Sunday Major Championship', startingStack: 1000, seatsPerTable: 3 }));
+    await registerAll(env, id, 6);
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    expect([...env.tables.values()].map((rt) => rt.state.settings.table.name).sort()).toEqual([
+      '🏆🏆🏆 Sunday Major Championsh · Table 1',
+      '🏆🏆🏆 Sunday Major Championsh · Table 2',
+    ]);
     expect(env.errors).toEqual([]);
   });
 

@@ -274,6 +274,59 @@ describe('tournaments after a crash', () => {
     expect(after.errors).toEqual([]);
   });
 
+  it('a hand the replay itself ends reaches the director after its own start, so the table is not left "in a hand"', async () => {
+    const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 60, rebuy: true });
+    const { env, id, state } = await started(5, {
+      seatsPerTable: 3,
+      structure: [level(10), level(20)],
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 30 },
+    });
+    const rts = [...env.tables.values()];
+    const t = rts.find((rt) => rt.state.seats.filter(Boolean).length === 2)!;
+    const u = rts.find((rt) => rt !== t)!;
+    for (const rt of rts) for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    const step = (rt: TableRuntime, shove: boolean) => {
+      const hand = rt.state.hand;
+      if (!hand || hand.phase !== 'betting' || hand.toAct === null) return false;
+      const seat = hand.seats.find((x) => x.seat === hand.toAct)!;
+      const legal = engine.legalActions(hand, seat.seat)!;
+      rt.act(seat.playerId, shove && legal.canRaise ? { type: legal.raiseKind, to: legal.maxTo } : legal.canCheck ? { type: 'check' } : { type: 'call' });
+      return true;
+    };
+    // Heads-up all-ins at one table until somebody busts there and is offered a rebuy; the other table checks along.
+    for (let i = 0; i < 2000 && !t.state.seats.some((x) => x?.stack === 0); i++) if (!step(t, true) && !step(u, false)) env.clock.advance(500);
+    env.clock.advance(0);
+    const busted = t.state.seats.find((x) => x?.stack === 0)!.playerId;
+    expect(state().entries.find((e) => e.playerId === busted)!.status).toBe('rebuy-offer');
+    // The other table finishes its hand. The director's last save is from just after that.
+    for (let i = 0; i < 2000 && u.state.handStartedAt !== null; i++) if (!step(u, false)) env.clock.advance(100);
+    env.clock.advance(0);
+    const saved = structuredClone(state());
+    // The other table deals again; then the rebuy lets the first table deal at once. Only the tables are saved.
+    for (let i = 0; i < 100 && u.state.handStartedAt === null; i++) env.clock.advance(500);
+    env.clock.advance(100);
+    await env.manager.command(id, busted, '', { type: 'rebuy', playerId: busted });
+    for (let i = 0; i < 100 && t.state.handStartedAt === null; i++) env.clock.advance(100);
+    expect([t.state.handStartedAt, u.state.handStartedAt].every((x) => x !== null)).toBe(true);
+
+    // The server comes back after the rebuy offer would have run out. Replaying the lost rebuy's hand start
+    // expires the offer, which folds that player out of the hand still being played, ending it during the replay.
+    const after = await restart(await savedAs(saved), new Map(env.snapshots), env.clock.t + 60_000);
+    after.clock.advance(0);
+    const now = () => after.manager.view(id)!.state;
+    for (const table of now().tables) expect(table.inHand, table.id).toBe(after.tables.get(tableAddress(table.id))!.state.handStartedAt !== null);
+    seatsAgree(after, id);
+    expect(after.errors).toEqual([]);
+    // Nothing waits on a hand that is over: the host can pause, let the last hand finish, and end the event.
+    await after.manager.command(id, 'host', '', { type: 'pause', by: 'host' });
+    for (const rt of after.tables.values()) for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    for (let i = 0; i < 2000 && [...after.tables.values()].some((rt) => rt.state.handStartedAt !== null); i++) {
+      if (![...after.tables.values()].some((rt) => step(rt, false))) after.clock.advance(100);
+    }
+    await after.manager.command(id, 'host', '', { type: 'end', by: 'host' });
+    expect(now().status).toBe('finished');
+  });
+
   it('seats players where the director has them when their tables were saved before a move', async () => {
     const env = setup();
     const startAt = env.clock.now() + 5 * MIN;

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { cryptoRng, type Rng } from '@rsdp/engine';
 import { ActionError, variants, type PlayerId } from '@rsdp/engine/core';
-import { applyAtNextHand, defaultSettings, parseSettings } from '@rsdp/engine/settings';
+import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
 import {
   apply,
   createTournament,
@@ -71,6 +71,8 @@ interface Live {
   deferred: DirectorEvent[];
   /** What the tables have reported and the director is yet to act on, by its 0 ms timer. */
   reports: Map<unknown, () => void>;
+  /** A restart's replay of missed reports, while it runs; hands it ends report at the back. */
+  replay: Command[] | null;
 }
 
 /** Commands only the host may send; the director trusts the server to check. */
@@ -294,7 +296,7 @@ export class TournamentManager {
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map() };
+    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {
         const saved = snapshots[i];
@@ -317,8 +319,12 @@ export class TournamentManager {
     // Tables hold while they are brought in line, then deal as the director says.
     const missed = missedReports(state, snapshots);
     live.applying = true;
+    // A replayed event can end a hand (a player folded out as they leave). Its report goes after every
+    // missed one, so it never reaches the director before that hand's own missed start.
+    live.replay = missed;
     try {
-      for (const command of missed) {
+      for (let i = 0; i < missed.length; i++) {
+        const command = missed[i];
         try {
           const result = this.guard(() => apply(live.state, command, this.clock.now()));
           live.state = result.state;
@@ -329,6 +335,7 @@ export class TournamentManager {
       }
       this.reconcileSeats(live);
     } finally {
+      live.replay = null;
       live.applying = false;
     }
     if (missed.length) this.scheduleSave(live);
@@ -358,6 +365,10 @@ export class TournamentManager {
    */
   private hooks(live: Live, tableId: TableId): TournamentHooks {
     const report = (what: string, command: Command) => {
+      if (live.replay) {
+        live.replay.push(command);
+        return;
+      }
       try {
         const result = this.guard(() => apply(live.state, command, this.clock.now()));
         live.state = result.state;
@@ -445,7 +456,7 @@ export class TournamentManager {
     const base = defaultSettings('tournament');
     const settings = parseSettings(
       applyAtNextHand(base, {
-        table: { name: `${cleanDisplayName(s.settings.name, 28)} · Table ${number}`, maxSeats: s.settings.seatsPerTable },
+        table: { name: tableName(s.settings.name, number), maxSeats: s.settings.seatsPerTable },
         timing: { nextHandDelaySeconds: Math.max(base.timing.nextHandDelaySeconds, TOURNAMENT_NEXT_HAND_SECONDS) },
       }).settings,
     );
@@ -598,6 +609,14 @@ function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[
       missed.push({ at: saved.handStartedAt, command: { type: 'handStarted', tableId: t.id, handNumber: saved.handNumber } });
   });
   return missed.sort((a, b) => a.at - b.at).map((m) => m.command);
+}
+
+/** "<tournament> · Table 3", cut by whole characters to fit the table-name limit, which counts UTF-16 units. */
+export function tableName(tournament: string, number: number) {
+  const suffix = ` · Table ${number}`;
+  const chars = Array.from(cleanDisplayName(tournament, SETTINGS_LIMITS.tableName.max));
+  while (chars.length && chars.join('').trim().length + suffix.length > SETTINGS_LIMITS.tableName.max) chars.pop();
+  return `${chars.join('').trim()}${suffix}`;
 }
 
 /** Every game must exist and seat a full table. */
