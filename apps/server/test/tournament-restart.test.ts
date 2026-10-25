@@ -23,6 +23,7 @@ vi.mock('node:crypto', async (importOriginal) => {
 });
 
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 
 /** A new server process after a crash: the stores as the old one left them, and a clock of its own, so nothing the old process armed ever fires. */
 async function restart(store: Env['store'], snapshots: Map<string, string>, now: number) {
@@ -41,6 +42,14 @@ async function savedAs(state: TournamentState) {
   const store = memoryTournamentStore();
   await store.save(state, null);
   return store;
+}
+
+/** A series at 20:00 UTC every day, from the test clock's first day. */
+function daily(env: Env) {
+  const startAt = Date.UTC(1970, 0, 1, 20, 0);
+  expect(startAt).toBeGreaterThan(env.clock.now());
+  const schedule = { timeZone: 'UTC', startDate: '1970-01-01', time: '20:00', repeat: { freq: 'daily' as const } };
+  return { startAt, settings: defaultSettings({ name: 'Daily', startingStack: 1000, start: { kind: 'scheduled', startAt, schedule } }) };
 }
 
 async function started(n: number, overrides: Partial<TournamentSettings> = {}) {
@@ -213,5 +222,36 @@ describe('the next event', () => {
     const open = (await after.store.listLive()).filter((t) => t.state.status === 'registering').map((t) => t.state.id);
     expect(open).toEqual([next]);
     expect(after.errors).toEqual([]);
+  });
+
+  it('a series goes on after the server was down through its next date', async () => {
+    const first = setup();
+    const { startAt, settings } = daily(first);
+    const id = await first.manager.create('host', settings);
+    await registerAll(first, id, 3);
+    await first.manager.flush();
+    // Back up a day and an hour after the start: the overdue event begins, and next is the one still to come.
+    const after = await restart(first.store, first.snapshots, startAt + DAY + 60 * MIN);
+    await settled();
+    const view = after.manager.view(id)!;
+    expect(view.state.status).toBe('running');
+    expect(view.nextId).not.toBeNull();
+    expect((await after.store.load(view.nextId!))!.state).toMatchObject({ status: 'registering', startAt: startAt + 2 * DAY });
+    expect(after.errors).toEqual([]);
+  });
+
+  it('a series goes on after an event nobody came to', async () => {
+    const env = setup();
+    const { startAt, settings } = daily(env);
+    const id = await env.manager.create('host', settings);
+    await registerAll(env, id, 1);
+    // Past the start and its 15 minutes of grace.
+    env.clock.advance(startAt + 16 * MIN - env.clock.now());
+    await settled();
+    const view = env.manager.view(id)!;
+    expect(view.state.status).toBe('cancelled');
+    expect(view.nextId).not.toBeNull();
+    expect((await env.store.load(view.nextId!))!.state).toMatchObject({ status: 'registering', startAt: startAt + DAY });
+    expect(env.errors).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import {
   createTournament,
   DirectorError,
   levelFor,
+  nextOccurrence,
   nextWakeAt,
   tableAddress,
   tableGate,
@@ -526,7 +527,11 @@ export class TournamentManager {
         this.table(live, e.tableId)?.unseatPlayer(e.playerId);
         break;
       case 'scheduleNext':
-        this.spawn(live, { ...live.state.settings, start: { ...live.state.settings.start, startAt: e.startAt } as TournamentSettings['start'] });
+        this.scheduleNext(live, e.startAt);
+        break;
+      case 'cancelled':
+        // A series goes on after an event nobody came to.
+        if (e.reason === 'not-enough-players') this.scheduleNext(live, null);
         break;
       case 'spawnNext':
         this.spawn(live, live.state.settings);
@@ -534,6 +539,15 @@ export class TournamentManager {
       default:
         break;
     }
+  }
+
+  /** The next event of a series. One whose start has passed (the server was down through it) gives way to the next still to come. */
+  private scheduleNext(live: Live, startAt: number | null) {
+    const start = live.state.settings.start;
+    if (start.kind !== 'scheduled' || !start.schedule?.repeat) return;
+    const now = this.clock.now();
+    const at = startAt !== null && startAt > now ? startAt : nextOccurrence(start.schedule, Math.max(start.startAt, now));
+    if (at !== null) this.spawn(live, { ...live.state.settings, start: { ...start, startAt: at } });
   }
 
   /** The next event of a series, or a fresh Sit & Go. */
