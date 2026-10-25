@@ -88,6 +88,19 @@ describe('manual time bank', () => {
     rt.act(id, { type: 'call' });
     expect(rt.seatOf(id)!.timeBank).toBe(30);
   });
+
+  it('a bank turned on early and cut short by a disconnect is not lost', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 30;
+      s.timing.timeBankSeconds = 60;
+      s.seating.offlineGraceSeconds = 10;
+    });
+    const id = toActId(rt);
+    rt.useTimeBank(id);
+    rt.disconnect(id);
+    clock.advance(11_000);
+    expect(rt.seatOf(id)!.timeBank).toBe(60);
+  });
 });
 
 describe('showdown', () => {

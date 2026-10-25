@@ -1262,7 +1262,8 @@ export class TableRuntime {
     engine.timeout(hand, seatNo);
     const seat = s.seats[seatNo];
     if (seat) {
-      if (seat.timeBank > 0 && s.turn?.usingBank) seat.timeBank = 0;
+      // Charge only the bank time actually used (a bank turned on early may not have started).
+      this.spendBank(seat);
       seat.timeouts++;
       const limit = s.settings.seating.awayAfterTimeouts;
       if (limit > 0 && seat.timeouts >= limit && !seat.sittingOut) {

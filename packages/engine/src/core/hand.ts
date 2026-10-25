@@ -713,8 +713,9 @@ function finish(state: HandState) {
 /**
  * Showdown with mucking: the last aggressor of the final round shows first
  * (or, if it was checked through, the first live player after the button).
- * Going clockwise, a hand is shown if it wins chips or beats or ties every
- * hand shown so far on some board or half; the rest are mucked unseen.
+ * Going clockwise, a hand is shown if it is all in, wins a contested pot, or
+ * beats or ties every hand shown so far on some board or half; the rest are
+ * mucked unseen.
  */
 function showInOrder(state: HandState, holeBySeat: Record<SeatIndex, Card[]>) {
   const { spec, rules } = variants.get(state.input.game.id);
@@ -727,7 +728,9 @@ function showInOrder(state: HandState, holeBySeat: Record<SeatIndex, Card[]>) {
   }
   const first = aggressor !== null && contenders.some((s) => s.seat === aggressor) ? aggressor : null;
   const order = first !== null ? clockwiseFrom(state, first - 1).filter((s) => !s.folded) : clockwiseFrom(state, state.input.button).filter((s) => !s.folded);
-  const winners = new Set(state.awards.map((a) => a.seat));
+  // Winners of a contested pot must show; a pot nobody else could win is handed over unseen.
+  const potList = pots(state);
+  const winners = new Set(state.awards.filter((a) => (potList[a.pot]?.eligible.length ?? 0) > 1).map((a) => a.seat));
   const runs = state.runs.length > 0 ? state.runs : [[[]]];
   const shown: SeatIndex[] = [];
   const beatsShown = (seat: SeatIndex) =>
@@ -739,7 +742,8 @@ function showInOrder(state: HandState, holeBySeat: Record<SeatIndex, Card[]>) {
     );
   for (const s of order) {
     const faceUp = s.cards.every((c, i) => c.up || s.shown.includes(i));
-    if (shown.length === 0 || faceUp || winners.has(s.seat) || beatsShown(s.seat)) {
+    // A player who is all in always shows, as in cardroom rules.
+    if (shown.length === 0 || faceUp || s.allIn || winners.has(s.seat) || beatsShown(s.seat)) {
       shown.push(s.seat);
       revealSeat(state, s);
     } else {
