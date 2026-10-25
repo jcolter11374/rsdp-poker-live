@@ -4,10 +4,12 @@ import {
   createTournament,
   defaultSettings,
   DirectorError,
+  formatterCacheSize,
   MAX_CHIPS,
   payoutPreset,
   presetStructure,
   tick,
+  toLocal,
   validateStructure,
   type Command,
   type StructureRow,
@@ -208,6 +210,28 @@ describe('schedules', () => {
     expect(refusal(() => create({ start: scheduled({ schedule: { ...daily, repeat: { freq: 'yearly' } } }) }))).toMatch('Repeat');
     expect(refusal(() => create({ start: scheduled({ schedule: { ...daily, repeat: { freq: 'monthly', nth: 2, weekday: 9 } } }) }))).toMatch('Weekdays');
     expect(refusal(() => create({ start: scheduled({ schedule: daily }) }))).toBeNull();
+  });
+
+  // Intl accepts any capitalisation of a zone, so each spelling is a new cache key.
+  const spellings = (n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      let bit = 0;
+      return 'america/argentina/comodrivadavia'.replace(/[a-z]/g, (ch) => ((i >> bit++) & 1 ? ch.toUpperCase() : ch));
+    });
+
+  it('validating a time zone does not cache a formatter for it', () => {
+    const state = create({ start: scheduled({ schedule: daily }) });
+    const before = formatterCacheSize();
+    for (const timeZone of spellings(200)) {
+      update(state, { start: scheduled({ schedule: { ...daily, timeZone } }) });
+      expect(refusal(() => create({ name: 42, start: scheduled({ schedule: { ...daily, timeZone } }) }))).toMatch('Name');
+    }
+    expect(formatterCacheSize()).toBe(before);
+  });
+
+  it('keeps the formatter cache bounded', () => {
+    for (const timeZone of spellings(1500)) toLocal(T0, timeZone);
+    expect(formatterCacheSize()).toBeLessThanOrEqual(1000);
   });
 
   it('refuses an unknown start kind', () => {
