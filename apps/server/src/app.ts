@@ -94,7 +94,7 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number; lastLobbyChat?: number }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -199,6 +199,8 @@ export function createApp(deps: AppDeps = {}) {
     return rt;
   }
 
+  /** When each player last chatted in a lobby. */
+  const lastLobbyChat = new Map<PlayerId, number>();
   const lobby = new LobbyLog(deps.lobby ?? memoryLobbyStore(), log);
   /** Adds to a lobby's log and sends the new items to everyone watching it. */
   function addToLobby(id: string, fresh: Parameters<LobbyLog['add']>[1]) {
@@ -464,15 +466,17 @@ export function createApp(deps: AppDeps = {}) {
           const id = String(input?.id ?? '');
           const name = socket.data.session.displayName;
           if (!name) throw new ActionError('pick a name first');
-          const text = Array.from(String(input?.text ?? '').replace(/\p{Cs}/gu, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').trim())
+          const text = Array.from(String(input?.text ?? '').replace(/\p{Cs}/gu, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').replace(/(\p{M}{3})\p{M}+/gu, '$1').trim())
             .slice(0, LOBBY_CHAT_MAX)
             .join('')
             .trim();
           if (!text) return;
+          // Only from a tab with the lobby (or its table strip) open.
+          if (!socket.data.tournaments.has(id)) throw new ActionError('open the tournament first');
           const now = clock.now();
-          if (now - (socket.data.lastLobbyChat ?? 0) < LOBBY_CHAT_GAP_MS) throw new ActionError('slow down a little');
-          if (!(await tournaments.get(id))) throw new ActionError('tournament not found');
-          socket.data.lastLobbyChat = now;
+          // Per player, so more tabs don't mean more messages.
+          if (now - (lastLobbyChat.get(me) ?? 0) < LOBBY_CHAT_GAP_MS) throw new ActionError('slow down a little');
+          lastLobbyChat.set(me, now);
           addToLobby(id, [{ at: now, kind: 'chat', playerId: me, name, text }]);
         },
         log,
@@ -487,7 +491,10 @@ export function createApp(deps: AppDeps = {}) {
       leave();
       for (const id of socket.data.tournaments) tournamentWatchers.get(id)?.delete(socket);
       playerSockets.get(me)?.delete(socket);
-      if (!playerSockets.get(me)?.size) playerSockets.delete(me);
+      if (!playerSockets.get(me)?.size) {
+        playerSockets.delete(me);
+        lastLobbyChat.delete(me);
+      }
     });
   });
 

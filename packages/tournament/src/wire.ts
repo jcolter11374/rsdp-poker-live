@@ -21,9 +21,9 @@ export interface TournamentClientToServer {
   'tournament:unsubscribe': (input: { id: string }) => void;
   /** Player and host commands. The server fills in who is acting from the connection. */
   'tournament:command': (input: { id: string; command: Command }, ack: Ack) => void;
-  /** Home page: every upcoming and running event, plus the viewer's own (hosted or played) from the last 30 days. */
-  /** Lobby chat; needs a display name. */
+  /** Lobby chat; needs a display name and the tournament followed (subscribe). */
   'tournament:chat': (input: { id: string; text: string }, ack: Ack) => void;
+  /** Home page: every upcoming and running event, plus the viewer's own (hosted or played) from the last 30 days. */
   'tournament:list': (ack: Ack<{ tournaments: TournamentListing[]; serverNow: number }>) => void;
 }
 

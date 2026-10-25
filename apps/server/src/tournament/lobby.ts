@@ -11,6 +11,8 @@ export interface LobbyStore {
 
 /** Items a lobby keeps and sends: enough for a long tournament's story without making each subscribe heavy. */
 export const LOBBY_KEEP = 300;
+/** Lobbies kept in memory at once. */
+const LOBBY_CACHE_MAX = 200;
 
 export function memoryLobbyStore(): LobbyStore {
   const rows = new Map<string, LobbyItem[]>();
@@ -61,8 +63,15 @@ export class LobbyLog {
     if (!list) {
       list = this.store.recent(tournamentId, LOBBY_KEEP).catch((e) => {
         this.log(`loading the lobby log of ${tournamentId} failed`, e);
+        // Try again next time rather than keep an empty history.
+        if (this.cache.get(tournamentId) === list) this.cache.delete(tournamentId);
         return [];
       });
+      this.cache.set(tournamentId, list);
+      this.trim();
+    } else {
+      // Most recently used last, for trim().
+      this.cache.delete(tournamentId);
       this.cache.set(tournamentId, list);
     }
     return list;
@@ -72,14 +81,30 @@ export class LobbyLog {
   async add(tournamentId: string, fresh: NewItem[]): Promise<LobbyItem[]> {
     if (!fresh.length) return [];
     const items = fresh.map((x) => ({ ...x, id: `${this.prefix}${(this.counter++).toString(36)}` }) as LobbyItem);
-    const next = this.items(tournamentId).then((list) => [...list, ...items].slice(-LOBBY_KEEP));
+    const loaded = this.items(tournamentId);
+    const next = loaded.then((list) => {
+      const have = new Set(list.map((x) => x.id));
+      return [...list, ...items.filter((x) => !have.has(x.id))].slice(-LOBBY_KEEP);
+    });
     this.cache.set(tournamentId, next);
-    const saved = (this.saving.get(tournamentId) ?? Promise.resolve())
+    // Saved only after the history is read, so a fast insert never shows up in that read as well.
+    const saved = Promise.all([this.saving.get(tournamentId), loaded])
       .then(() => this.store.append(tournamentId, items))
-      .catch((e) => this.log(`saving the lobby log of ${tournamentId} failed`, e));
+      .catch((e) => this.log(`saving the lobby log of ${tournamentId} failed`, e))
+      .finally(() => {
+        if (this.saving.get(tournamentId) === saved) this.saving.delete(tournamentId);
+      });
     this.saving.set(tournamentId, saved);
     await next;
     return items;
+  }
+
+  /** Keeps the most recently used lobbies in memory; the rest load again from storage when needed. */
+  private trim() {
+    for (const id of this.cache.keys()) {
+      if (this.cache.size <= LOBBY_CACHE_MAX) break;
+      if (!this.saving.has(id)) this.cache.delete(id);
+    }
   }
 
   /** Waits for every save (shutdown). */

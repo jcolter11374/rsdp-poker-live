@@ -60,7 +60,9 @@ describe('tournament lobby chat and log', () => {
     await ana.call('tournament:command', { id, command: { type: 'register' } });
     // A request waiting for the host is not news; the approval is.
     await host.call('tournament:command', { id, command: { type: 'approve', requestId: 'x' } }).catch(() => {});
-    await ana.call('tournament:chat', { id, text: '  good luck all \u0007 ' });
+    await expect(ana.call('tournament:chat', { id, text: 'hi' })).rejects.toThrow('open the tournament first');
+    await ana.call('tournament:subscribe', { id });
+    await ana.call('tournament:chat', { id, text: '  good luck all \u0007\u202e ' });
     await expect(ana.call('tournament:chat', { id, text: 'again' })).rejects.toThrow('slow down');
     const seen = await host.until((items) => items.some((x) => x.kind === 'chat'));
     expect(text(seen)).toEqual(['Ana: good luck all']);

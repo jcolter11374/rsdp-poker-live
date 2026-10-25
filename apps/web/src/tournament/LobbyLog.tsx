@@ -22,11 +22,12 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
   const list = useRef<HTMLOListElement>(null);
   const needsName = !!session && !session.displayName;
 
-  // Stay at the newest message unless the reader has scrolled up.
+  // Stay at the newest message unless the reader has scrolled up (judged before the new one lands).
+  const atBottom = useRef(true);
   const last = chat.at(-1)?.id;
   useEffect(() => {
     const el = list.current;
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
   }, [last]);
   useEffect(() => {
     if (list.current) list.current.scrollTop = list.current.scrollHeight;
@@ -57,7 +58,14 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
       {chat.length === 0 ? (
         <p className="muted">No messages yet. Say hello, or talk about the structure before the start.</p>
       ) : (
-        <ol className="tn-chat-list" ref={list}>
+        <ol
+          className="tn-chat-list"
+          ref={list}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          }}
+        >
           {chat.map((m) => (
             <li key={m.id} className={m.playerId === session?.playerId ? 'mine' : ''}>
               <span className="tn-chat-meta">
