@@ -15,6 +15,7 @@ import type {
   Stakes,
 } from './core/types';
 import type { SettingsChange, SettingsPatch, TableSettings } from './settings';
+import type { CoHost, HostPower } from './roles';
 
 /** A card as one viewer sees it: '??' when hidden. */
 export interface WireCard {
@@ -145,7 +146,12 @@ export interface TableView {
   /** Set on tournament tables. */
   tournamentId: string | null;
   hostId: PlayerId;
+  /** I am the host (co-hosts are not). */
   isHost: boolean;
+  /** The host powers I hold: all of them for the host, the ones given for a co-host, none otherwise. */
+  powers: HostPower[];
+  /** Cash tables: the host's co-hosts and their powers. */
+  coHosts: CoHost[];
   me: { playerId: PlayerId; seat: number | null };
   settings: TableSettings;
   /** Host edits waiting for the next hand. */
@@ -327,6 +333,10 @@ export interface ClientToServer {
   'host:shuffle': (ack: Ack) => void;
   /** Move a player who is not in the hand to an empty seat. */
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
+  /** Host only: make someone a co-host, or change a co-host's powers. */
+  'host:coHost': (input: { playerId: string; powers: HostPower[] }, ack: Ack) => void;
+  /** Host: remove a co-host. A co-host may remove themselves (step down). */
+  'host:removeCoHost': (input: { playerId: string }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
   /** Add a practice bot named after me, in this seat or the first free one. */

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TableView } from '@rsdp/engine/wire';
 import { call, socket } from '../socket';
 import type { Fmt } from '../format';
+import { HOST_POWER_LABELS, type HostPower } from '@rsdp/engine/roles';
 
 export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt; onSettings: () => void }) {
   const [msg, setMsg] = useState('');
@@ -13,11 +14,21 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
   const held = new Set([...view.offers.map((o) => o.seat), ...view.requests.filter((r) => r.kind === 'seat').map((r) => r.seat)]);
   /** Open seats a seat request could go to instead of the one asked for. */
   const otherSeats = (asked: number | null) => view.seats.flatMap((s, i) => (s || (held.has(i) && i !== asked) ? [] : [i]));
+  const can = (p: HostPower) => view.powers.includes(p);
+  const me = view.coHosts.find((c) => c.playerId === view.me.playerId);
 
   return (
     <div className="panel host-panel">
-      <h3>Host controls</h3>
-      {view.requests.length > 0 && (
+      <h3>{view.isHost ? 'Host controls' : 'Co-host controls'}</h3>
+      {me && (
+        <p className="muted">
+          The host has let you: {me.powers.length ? me.powers.map((p) => HOST_POWER_LABELS[p].toLowerCase()).join('; ') : 'see the host tools'}.{' '}
+          <button className="link" onClick={() => confirm('Stop being a co-host?') && run(call('host:removeCoHost', { playerId: view.me.playerId }))}>
+            Step down
+          </button>
+        </p>
+      )}
+      {can('approve') && view.requests.length > 0 && (
         <div className="requests">
           {view.requests.map((r) => (
             <div className="request" key={r.id}>
@@ -46,7 +57,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
           ))}
         </div>
       )}
-      {!tournament && (
+      {!tournament && can('run') && (
         <div className="row wrap">
           {!view.started ? (
             <button className="primary" onClick={() => run(call('host:start'))}>
@@ -57,9 +68,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
               {view.stopAfterHand ? 'Stopping after this hand' : 'Stop game'}
             </button>
           )}
-          {view.started && (
-            <button onClick={() => run(call('host:pause', { value: !view.paused }))}>{view.paused ? 'Resume' : 'Pause'}</button>
-          )}
+          {view.started && <button onClick={() => run(call('host:pause', { value: !view.paused }))}>{view.paused ? 'Resume' : 'Pause'}</button>}
           <button
             className={view.bombPotNext ? 'primary' : ''}
             title="Everyone posts the bomb pot amount and the flop comes straight away"
@@ -87,9 +96,11 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
                   <li key={w.playerId}>
                     {w.name}
                     {offer && <span className="muted"> · seat {offer.seat + 1} held</span>}{' '}
-                    <button className="link" title="Take off the waitlist" onClick={() => run(call('host:kick', { playerId: w.playerId }))}>
-                      ✕
-                    </button>
+                    {can('players') && (
+                      <button className="link" title="Take off the waitlist" onClick={() => run(call('host:kick', { playerId: w.playerId }))}>
+                        ✕
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -97,7 +108,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
           )}
         </div>
       )}
-      {!tournament && !handLive && seated >= 2 && (
+      {!tournament && can('players') && !handLive && seated >= 2 && (
         <button
           title="Reseat everyone at random between hands; the button is drawn again and missed blinds are forgiven"
           onClick={() => confirm('Shuffle everyone into random seats?') && run(call('host:shuffle'), 'Seats shuffled.')}
@@ -105,7 +116,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
           Shuffle seats
         </button>
       )}
-      <button onClick={onSettings}>Table settings</button>
+      {can('settings') && <button onClick={onSettings}>Table settings</button>}
       {view.pendingSettings && <p className="muted">Some setting changes take effect when this hand ends.</p>}
       {msg && <p className="muted">{msg}</p>}
     </div>

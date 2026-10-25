@@ -103,7 +103,7 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
             </label>
           </>
         )}
-        {tab === 'table' && view.isHost && view.mode !== 'tournament' && (
+        {tab === 'table' && view.powers.includes('settings') && view.mode !== 'tournament' && (
           <>
             <h3>Felt for everyone</h3>
             <div className="swatches">
