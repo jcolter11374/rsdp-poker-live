@@ -6,7 +6,7 @@ import { useSession } from './hooks';
 
 type Sort = 'points' | 'ppg';
 
-/** Fetches a season's leaderboard, again whenever the socket reconnects. */
+/** Fetches a season's leaderboard once; it changes only when an event finishes, so a reload is enough. */
 function useSeason(id: string) {
   const [board, setBoard] = useState<SeasonBoard | null>(null);
   const [error, setError] = useState('');

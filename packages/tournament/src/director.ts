@@ -131,7 +131,10 @@ const SETTINGS_KEYS: Record<keyof TournamentSettings, true> = {
 function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSettings> {
   const out: Partial<TournamentSettings> = Object.fromEntries(Object.entries(raw ?? {}).filter(([k]) => Object.hasOwn(SETTINGS_KEYS, k)));
   if (typeof out.name === 'string') out.name = cleanText(out.name);
-  if (isObject(out.season) && typeof out.season.name === 'string') out.season = { ...out.season, name: Array.from(cleanText(out.season.name)).slice(0, NAME_MAX).join('') };
+  if (isObject(out.season)) {
+    const { id, name } = out.season;
+    out.season = { id, name: typeof name === 'string' ? Array.from(cleanText(name)).slice(0, NAME_MAX).join('') : name };
+  }
   const payoutName = out.payouts?.structure?.name;
   if (typeof payoutName === 'string') {
     const name = Array.from(cleanText(payoutName)).slice(0, NAME_MAX).join('');

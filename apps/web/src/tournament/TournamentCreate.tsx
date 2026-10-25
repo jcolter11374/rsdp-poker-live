@@ -131,7 +131,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
     ...(formats.invites ? { invites: formats.invites } : {}),
     ...(formats.checkIn && startKind !== 'sng' ? { checkIn: formats.checkIn } : {}),
     ...(seasonPick === 'new'
-      ? { season: { id: '', name: seasonName || name } }
+      ? { season: { id: '', name: seasonName.trim() || name } }
       : seasonPick
         ? { season: { id: seasonPick, name: mySeasons.find((s) => s.id === seasonPick)?.name ?? '' } }
         : {}),
@@ -419,7 +419,8 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
         <section className="tn-card">
           <h2>Bounties, invites and check-in</h2>
           <FormatsEditor value={formats} onChange={setFormats} scheduled={startKind === 'scheduled'} sng={startKind === 'sng'} />
-          <div className="tn-option">
+          {/* Seasons live on the server; a ?demo tournament has none. */}
+          {!(tournamentClient() instanceof LocalTournamentClient) && <div className="tn-option">
             <label>
               Season leaderboard
               <select value={seasonPick} onChange={(e) => setSeasonPick(e.target.value)}>
@@ -444,7 +445,7 @@ export function TournamentCreate({ onCreated }: { onCreated: (id: string) => voi
                 {repeat !== 'none' && startKind === 'scheduled' ? ' Every event in this series joins the season.' : ''}
               </p>
             )}
-          </div>
+          </div>}
         </section>
 
         <section className="tn-card">
