@@ -1,5 +1,16 @@
 import type { BettingKind } from '@rsdp/engine/core';
-import { bombPotSchema, bounty72Schema, doubleBoardSchema, type BombPotSettings, type Bounty72Settings, type DoubleBoardSettings } from '@rsdp/engine/modifiers';
+import {
+  bombPotSchema,
+  bounty72Schema,
+  doubleBoardSchema,
+  nitSchema,
+  rakeSchema,
+  type BombPotSettings,
+  type Bounty72Settings,
+  type DoubleBoardSettings,
+  type NitSettings,
+  type RakeSettings,
+} from '@rsdp/engine/modifiers';
 import type { TableSettings } from '@rsdp/engine/settings';
 import { VARIANT_LIST } from '@rsdp/engine/variants';
 import { BETTING_NAME } from '../../format';
@@ -17,7 +28,7 @@ export interface SideGamesProps {
   setModifier: (id: string, patch: object) => void;
 }
 
-/** Bomb pots, double board and the 7-2 bounty: cash games only, all free. */
+/** Bomb pots, double board, the 7-2 bounty, the Nit game and the house fee: cash games only, all free. */
 export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
   const bomb = bombPotSchema.get(draft);
   const board = doubleBoardSchema.get(draft);
@@ -25,6 +36,15 @@ export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
   const setBomb = (p: Partial<BombPotSettings>) => setModifier(bombPotSchema.id, p);
   const setBoard = (p: Partial<DoubleBoardSettings>) => setModifier(doubleBoardSchema.id, p);
   const setBounty = (p: Partial<Bounty72Settings>) => setModifier(bounty72Schema.id, p);
+  const nit = nitSchema.get(draft);
+  const setNit = (p: Partial<NitSettings>) => setModifier(nitSchema.id, p);
+  const rake = rakeSchema.get(draft);
+  const setRake = (p: Partial<RakeSettings>) => setModifier(rakeSchema.id, p);
+  const percentField = (label: string, value: number, onChange: (v: number) => void, disabled: boolean) => (
+    <Field label={label}>
+      <input type="number" min={0} max={100} step={0.5} value={value} disabled={disabled} onChange={(e) => onChange(Math.round(+e.target.value * 100) / 100)} />
+    </Field>
+  );
 
   return (
     <>
@@ -89,6 +109,52 @@ export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
         </Field>
       </div>
       <Toggle label="Show a winning 7-2 automatically" checked={bounty.autoShow} disabled={!bounty.enabled} onChange={(autoShow) => setBounty({ autoShow })} />
+
+      <h4>Nit game</h4>
+      <p className="hint">
+        Players opt in from their seat. Once enough are dealt in, a round starts: win a pot outright to get off the nit. The last player still on it pays the prize to each of the others. Leaving while on the nit pays straight away.
+      </p>
+      <Toggle label="Play the Nit game" checked={nit.enabled} onChange={(enabled) => setNit({ enabled })} />
+      <div className="row">
+        <NumberField label="Prize (big blinds, to each player)" value={nit.prizeBigBlinds} min={1} max={100} disabled={!nit.enabled} onChange={(prizeBigBlinds) => setNit({ prizeBigBlinds })} />
+        <NumberField label="Players needed" value={nit.minPlayers} min={2} max={10} disabled={!nit.enabled} onChange={(minPlayers) => setNit({ minPlayers })} />
+      </div>
+
+      <h4>House fee (simulated rake)</h4>
+      <p className="hint">A share of each pot goes to the house. Nothing is charged for real; the table keeps a running total.</p>
+      <Toggle label="Take a house fee" checked={rake.enabled} onChange={(enabled) => setRake({ enabled })} />
+      <div className="row">
+        {percentField('Fee (% of each pot)', rake.percent, (percent) => setRake({ percent }), !rake.enabled)}
+        <ChipsField label="Cap per pot" value={rake.cap} cents={cents} hint="0 = no cap" disabled={!rake.enabled} onChange={(cap) => setRake({ cap })} />
+        <ChipsField label="Smallest pot with a fee" value={rake.minPot} cents={cents} hint="0 = any" disabled={!rake.enabled} onChange={(minPot) => setRake({ minPot })} />
+      </div>
+      <Toggle label="No flop, no fee" checked={rake.noFlopNoDrop} disabled={!rake.enabled} onChange={(noFlopNoDrop) => setRake({ noFlopNoDrop })} />
+      <div className="row">
+        <NumberField
+          label="Short-handed rate at or below (players)"
+          value={rake.shortHanded.players}
+          min={0}
+          max={10}
+          hint="0 = off"
+          disabled={!rake.enabled}
+          onChange={(players) => setRake({ shortHanded: { ...rake.shortHanded, players } })}
+        />
+        {percentField('Short-handed fee (%)', rake.shortHanded.percent, (percent) => setRake({ shortHanded: { ...rake.shortHanded, percent } }), !rake.enabled || !rake.shortHanded.players)}
+        <ChipsField
+          label="Short-handed cap"
+          value={rake.shortHanded.cap}
+          cents={cents}
+          hint="0 = no cap"
+          disabled={!rake.enabled || !rake.shortHanded.players}
+          onChange={(cap) => setRake({ shortHanded: { ...rake.shortHanded, cap } })}
+        />
+      </div>
+      <Field label="Who sees the total">
+        <select value={rake.visibleTo} disabled={!rake.enabled} onChange={(e) => setRake({ visibleTo: e.target.value as RakeSettings['visibleTo'] })}>
+          <option value="host">Only the host</option>
+          <option value="everyone">Everyone</option>
+        </select>
+      </Field>
     </>
   );
 }

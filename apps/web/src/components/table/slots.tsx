@@ -7,8 +7,13 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
  */
 
 /** Extra lines on a seat's nameplate. */
-export function SeatExtras(_props: { view: TableView; seat: SeatView }) {
-  return null;
+export function SeatExtras({ seat }: { view: TableView; seat: SeatView }) {
+  if (seat.nit !== 'holder') return null;
+  return (
+    <span className="tag nit-tag" title="Still holding the nit: win a pot outright to get off it">
+      NIT
+    </span>
+  );
 }
 
 /** Extra things under the board and pots. */

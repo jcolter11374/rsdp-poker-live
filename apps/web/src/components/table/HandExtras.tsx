@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import type { TableView } from '@rsdp/engine/wire';
+import { nitSchema } from '@rsdp/engine/modifiers';
+import { chipFormat } from '../../format';
 import { call } from '../../socket';
 import { PlayingCard } from '../PlayingCard';
 import './extras.css';
 
 /**
  * Hand aids under the action bar: the time bank button on your turn, and
- * rabbit hunting after a hand that ended before all the cards were out.
+ * rabbit hunting after a hand that ended before all the cards were out,
+ * the Nit game opt-in and round, and the house fee total.
  */
 export function HandExtras({ view }: { view: TableView }) {
   const [error, setError] = useState('');
@@ -15,7 +18,10 @@ export function HandExtras({ view }: { view: TableView }) {
   const myTurn = !!me && view.turn?.seat === me.seat && !!view.hand && view.hand.phase !== 'complete';
   const canBank = myTurn && !view.turn!.usingBank && view.turn!.deadline !== null && me!.timeBank > 0;
   const rabbit = view.rabbit ?? { available: false, cards: null };
-  if (!canBank && !rabbit.available) return null;
+  const nitOn = view.mode === 'cash' && !!me && nitSchema.get(view.settings).enabled;
+  const showRake = view.rakeTotal !== null && view.rakeTotal !== undefined;
+  if (!canBank && !rabbit.available && !nitOn && !view.nit && !showRake) return null;
+  const fmt = chipFormat(view.settings.stakes.centsMode);
 
   return (
     <div className="hand-extras">
@@ -38,6 +44,18 @@ export function HandExtras({ view }: { view: TableView }) {
           ))}
         </div>
       )}
+      {nitOn && (
+        <label className="toggle">
+          <input type="checkbox" checked={me!.nitOptIn} onChange={(e) => run(call('seat:prefs', { nitGame: e.target.checked }))} />
+          Play the Nit game
+        </label>
+      )}
+      {view.nit && (
+        <span className="muted">
+          Nit game: {view.nit.holders} of {view.nit.participants} still holding · the last pays {fmt(view.nit.prize)} each
+        </span>
+      )}
+      {showRake && <span className="muted">House fees: {fmt(view.rakeTotal!)}</span>}
       {error && <span className="error">{error}</span>}
     </div>
   );

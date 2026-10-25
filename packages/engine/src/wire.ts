@@ -49,6 +49,10 @@ export interface SeatView {
   waiting: boolean;
   waitForBigBlind: boolean;
   straddle: boolean;
+  /** Opted in to the Nit game. */
+  nitOptIn: boolean;
+  /** In the current Nit game round: still holding the nit, or off it. */
+  nit: 'holder' | 'clear' | null;
   /** Chips this seat won in the finished hand. */
   won: number;
   /** Best hand name at showdown. */
@@ -149,6 +153,10 @@ export interface TableView {
    * who asked.
    */
   rabbit: { available: boolean; cards: string[][] | null };
+  /** The Nit game round in progress. */
+  nit: { prize: number; participants: number; holders: number } | null;
+  /** Simulated rake collected so far, for whoever the host lets see it. */
+  rakeTotal: number | null;
   /** The host made the next hand a bomb pot. */
   bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
@@ -198,7 +206,7 @@ export interface ClientToServer {
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;
-  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean }, ack: Ack) => void;
+  'seat:prefs': (input: { waitForBigBlind?: boolean; straddle?: boolean; nitGame?: boolean }, ack: Ack) => void;
   'seat:rebuy': (input: { amount: number }, ack: Ack) => void;
   'hand:act': (action: Action, ack: Ack) => void;
   'hand:draw': (input: { discard: number[] }, ack: Ack) => void;
