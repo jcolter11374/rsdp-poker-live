@@ -47,6 +47,12 @@ export function validateFormats(s: TournamentSettings): string[] {
       if (waits * 60 >= c.opensMinutesBefore! * 60 - s.seatLeadSeconds) errors.push('Every check-in group must open before the seats are drawn');
     }
   }
+  if (s.season !== undefined) {
+    const v: Record<string, unknown> = isObject(s.season) ? s.season : {};
+    if (typeof v.id !== 'string' || !/^[0-9A-Za-z_-]{0,40}$/.test(v.id)) errors.push('Pick a season');
+    const length = typeof v.name === 'string' ? Array.from(v.name.trim()).length : 0;
+    if (length < 1 || length > 40) errors.push('The season name must be 1-40 characters');
+  }
   return errors;
 }
 

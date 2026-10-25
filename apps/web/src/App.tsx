@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Home } from './Home';
 import { RulesPage } from './rules/RulesPage';
 import { TablePage } from './TablePage';
+import { SeasonPage } from './tournament/SeasonPage';
 import { TournamentCreate } from './tournament/TournamentCreate';
 import { TournamentAlerts } from './tournament/TournamentAlerts';
 import { TournamentLobby } from './tournament/TournamentLobby';
@@ -33,6 +34,8 @@ function Page() {
   const rules = path.match(/^\/rules(?:\/([\w-]+))?\/?$/);
   if (rules) return <RulesPage gameId={rules[1] ?? null} />;
   if (path === '/tn/new') return <TournamentCreate onCreated={(id) => go(`/tn/${id}`)} />;
+  const season = path.match(/^\/season\/([\w-]+)/);
+  if (season) return <SeasonPage key={season[1]} id={season[1]} />;
   const tournament = path.match(/^\/tn\/([\w-]+)/);
   if (tournament) return <TournamentLobby id={tournament[1]} />;
   const table = path.match(/^\/t\/([\w-]+)/);

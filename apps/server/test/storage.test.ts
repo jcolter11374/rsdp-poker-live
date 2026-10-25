@@ -116,4 +116,23 @@ describe('database storage', () => {
     await store.save({ ...state, status: 'cancelled' }, null);
     expect((await store.load(state.id))!.state.status).toBe('cancelled');
   });
+
+  it('keeps seasons: a host starts one and adds events, nobody else can, and anyone can read the board', async () => {
+    const host = client('db-season-host-0123456789');
+    const other = client('db-season-other-0123456789');
+    await new Promise((r) => setTimeout(r, 200));
+    const first = await host.call<{ id: string }>('tournament:create', { settings: tournamentDefaults({ name: 'Week 1', season: { id: '', name: 'Fall league' } }) });
+    const second = await host.call<{ id: string }>('tournament:create', { settings: tournamentDefaults({ name: 'Week 2', season: { id: first.id, name: 'renamed?' } }) });
+    await expect(other.call('tournament:create', { settings: tournamentDefaults({ name: 'Sneaky', season: { id: first.id, name: 'x' } }) })).rejects.toThrow(/only the host/);
+    await expect(host.call('tournament:create', { settings: tournamentDefaults({ name: 'Lost', season: { id: 'nope', name: 'x' } }) })).rejects.toThrow(/season was not found/);
+
+    const { seasons } = await host.call<{ seasons: { id: string; name: string; events: number }[] }>('season:mine', {});
+    expect(seasons).toEqual([{ id: first.id, name: 'Fall league', events: 2 }]);
+    expect((await other.call<{ seasons: unknown[] }>('season:mine', {})).seasons).toEqual([]);
+
+    const { board } = await other.call<{ board: { name: string; events: unknown[]; rows: unknown[] } }>('season:get', { id: first.id });
+    expect(board).toMatchObject({ name: 'Fall league', events: [], rows: [] });
+    await expect(other.call('season:get', { id: 'nope' })).rejects.toThrow(/season not found/);
+    expect((await dbTournamentStore(db).listSeason(first.id)).map((s) => s.id).sort()).toEqual([first.id, second.id].sort());
+  });
 });

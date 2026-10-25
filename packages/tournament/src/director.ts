@@ -124,12 +124,14 @@ const SETTINGS_KEYS: Record<keyof TournamentSettings, true> = {
   bounty: true,
   invites: true,
   checkIn: true,
+  season: true,
 };
 
 /** Only the known settings, with the free text cleaned (names are cut by whole characters). */
 function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSettings> {
   const out: Partial<TournamentSettings> = Object.fromEntries(Object.entries(raw ?? {}).filter(([k]) => Object.hasOwn(SETTINGS_KEYS, k)));
   if (typeof out.name === 'string') out.name = cleanText(out.name);
+  if (isObject(out.season) && typeof out.season.name === 'string') out.season = { ...out.season, name: Array.from(cleanText(out.season.name)).slice(0, NAME_MAX).join('') };
   const payoutName = out.payouts?.structure?.name;
   if (typeof payoutName === 'string') {
     const name = Array.from(cleanText(payoutName)).slice(0, NAME_MAX).join('');
@@ -209,6 +211,8 @@ export function createTournament({ id, hostId, settings: raw, now, seed }: Creat
   const errors = validateSettings(settings);
   if (settings.start?.kind === 'scheduled' && settings.start.startAt <= now) errors.push('The start time has already passed');
   if (errors.length) fail(errors.join('; '));
+  // A new season is named after the event that starts it.
+  if (settings.season?.id === '') settings.season = { ...settings.season, id };
   return {
     version: STATE_VERSION,
     id,
@@ -1082,11 +1086,11 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         const changes = cleanSettings(cmd.settings);
         const next = { ...s.settings, ...structuredClone(changes) };
         const locked: (keyof TournamentSettings)[] = s.tables.length
-          ? ['start', 'games', 'stopRotationAtLevel', 'startingStack', 'seatsPerTable', 'structure']
-          : ['structure'];
+          ? ['start', 'games', 'stopRotationAtLevel', 'startingStack', 'seatsPerTable', 'structure', 'season']
+          : ['structure', 'season'];
         for (const k of locked) {
           if (k in changes && JSON.stringify(next[k]) !== JSON.stringify(s.settings[k]))
-            fail(k === 'structure' ? 'Use editStructure to change levels' : `${k} is locked once tables exist`);
+            fail(k === 'structure' ? 'Use editStructure to change levels' : k === 'season' ? 'The season is set when the tournament is created' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next);
         if (next.maxEntrants < (next.checkIn && checkInActive(s) ? readyEntries(s) : rankedEntries(s)).length) errors.push('Max entrants is below the current field');

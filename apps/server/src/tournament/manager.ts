@@ -23,6 +23,8 @@ import {
   type DirectorEvent,
   type HandResult,
   type Result,
+  seasonBoard,
+  type SeasonBoard,
   type SeatInfo,
   type TableId,
   type TournamentListing,
@@ -44,6 +46,10 @@ export interface TournamentStore {
   listLive(): Promise<{ state: TournamentState; nextId: string | null }[]>;
   /** Tournaments a player hosted or entered that were still going at `since` (ms), the most recent first. */
   listForPlayer(playerId: PlayerId, since: number): Promise<{ state: TournamentState; nextId: string | null }[]>;
+  /** Every tournament in a season. */
+  listSeason(seasonId: string): Promise<TournamentState[]>;
+  /** Seasons a host's tournaments belong to, newest first. */
+  hostSeasons(hostId: PlayerId): Promise<{ id: string; name: string; events: number }[]>;
 }
 
 /** The server side of the tables a tournament runs: storage, broadcasting and links. */
@@ -151,6 +157,7 @@ export class TournamentManager {
 
   async create(hostId: PlayerId, settings: TournamentSettings): Promise<string> {
     checkGames(settings);
+    settings = await this.checkSeason(hostId, settings);
     for (let i = 0; i < ID_TRIES; i++) {
       const state = this.newState(newTournamentId(), hostId, settings);
       // A taken id is never saved over: another one is drawn.
@@ -206,6 +213,29 @@ export class TournamentManager {
     if (this.closed) throw new ActionError('the server is restarting');
     const command = this.fromBrowser(live, me, myName, raw);
     this.dispatch(live, (s, now) => apply(s, command, now));
+  }
+
+  /** A season's leaderboard, with live events as they stand now. */
+  async season(id: string): Promise<SeasonBoard | null> {
+    const saved = await this.deps.store.listSeason(id);
+    if (!saved.length) return null;
+    const states = saved.map((s) => this.live.get(s.id)?.state ?? s);
+    return seasonBoard(id, states);
+  }
+
+  hostSeasons(hostId: PlayerId) {
+    return this.deps.store.hostSeasons(hostId);
+  }
+
+  /** Only a season's host adds events to it; it keeps the name it already has. */
+  private async checkSeason(hostId: PlayerId, settings: TournamentSettings): Promise<TournamentSettings> {
+    const season = settings?.season;
+    if (!season || typeof season !== 'object' || !season.id) return settings;
+    const events = await this.deps.store.listSeason(String(season.id));
+    if (!events.length) throw new ActionError('that season was not found');
+    if (events.some((s) => s.hostId !== hostId)) throw new ActionError('only the host of that season can add events to it');
+    const latest = events.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+    return { ...settings, season: { id: season.id, name: latest.settings.season!.name } };
   }
 
   /** The tournament a runtime table belongs to (by its runtime id), if any. */
