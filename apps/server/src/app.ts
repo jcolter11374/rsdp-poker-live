@@ -1,6 +1,6 @@
 import express from 'express';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server, type Socket } from 'socket.io';
@@ -8,7 +8,7 @@ import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
-import { LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
+import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { IdentityError } from './identity';
 import { TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
@@ -17,6 +17,7 @@ import { cleanNote, memoryNotes, type NotesStore } from './notes';
 import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
+import { tablePreview, tournamentPreview, withPreview } from './preview';
 import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby';
 
 export interface Session {
@@ -146,9 +147,25 @@ export function createApp(deps: AppDeps = {}) {
   });
   if (deps.webDist && existsSync(deps.webDist)) {
     const dist = deps.webDist;
-    app.use(express.static(dist));
-    // Client-side routes (/t/:id, /tn/:id, ...) all load the app.
-    app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+    // index: false, so "/" also goes through the preview below.
+    app.use(express.static(dist, { index: false }));
+    const indexHtml = readFileSync(path.join(dist, 'index.html'), 'utf8');
+    // Client-side routes (/t/:id, /tn/:id, ...) all load the app, with a link preview for chat apps.
+    app.get('*', async (req, res, next) => {
+      // A missing file (an old asset) is a 404, not the app.
+      if (/\.[a-z0-9]+$/i.test(req.path)) return next();
+      let html = indexHtml;
+      try {
+        const preview = await linkPreview(req.path);
+        if (preview) {
+          const origin = process.env.PUBLIC_URL ?? `${req.get('x-forwarded-proto')?.split(',')[0] ?? req.protocol}://${req.get('host')}`;
+          html = withPreview(indexHtml, preview, `${origin}${req.path}`, origin);
+        }
+      } catch (e) {
+        log('link preview failed', e);
+      }
+      res.type('html').send(html);
+    });
   }
 
   function broadcast(rt: TableRuntime) {
@@ -307,6 +324,29 @@ export function createApp(deps: AppDeps = {}) {
     const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log }));
     rt.resume();
     return rt;
+  }
+
+  /** What a pasted link to this page should show in a chat app. */
+  async function linkPreview(pathname: string) {
+    // Read only: a crawler opening a link must not load a tournament or wake a table up.
+    const tn = /^\/tn\/([0-9a-f]{16})\/?$/.exec(pathname);
+    if (tn) {
+      const state = await tournaments.peek(tn[1]);
+      return state && !isArchived(state) ? tournamentPreview(state, clock.now()) : null;
+    }
+    const t = /^\/t\/([\w-]{1,64})\/?$/.exec(pathname);
+    if (t) {
+      const owner = tournaments.tournamentOf(t[1]) ?? /^([0-9a-f]{16})-t\d+$/.exec(t[1])?.[1];
+      if (owner) {
+        const state = await tournaments.peek(owner);
+        return state && !isArchived(state) ? tournamentPreview(state, clock.now()) : null;
+      }
+      const state = tables.get(t[1])?.state ?? (await store.loadTable(t[1]));
+      if (!state) return null;
+      const { settings } = state;
+      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`);
+    }
+    return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
   io.use(async (socket, next) => {
