@@ -184,7 +184,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
     </th>
   );
   const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : fmt(n));
-  const { transfers, off } = settleUp(view.ledger);
+  const { transfers, off, bots } = settleUp(view.ledger);
   const summary = [
     `${view.name}: settle up`,
     ...transfers.map((t) => `${t.from} pays ${t.to} ${fmt(t.amount)}`),
@@ -211,6 +211,11 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
             ))
           )}
           {off !== 0 && <p className="error">The books are off by {signed(off)}; check the buy-ins.</p>}
+          {bots !== 0 && (
+            <p className="hint">
+              Practice bots {bots > 0 ? 'won' : 'lost'} {fmt(Math.abs(bots))} here. Bots play for nothing, so those chips aren't paid to or from anyone.
+            </p>
+          )}
           <p className="hint">Counts chips still on the table as if everyone cashed out now.</p>
           <button
             onClick={() =>
@@ -242,6 +247,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
               <tr key={e.playerId} className={seated.has(e.playerId) ? '' : 'departed'}>
                 <td>
                   {e.name}
+                  {e.bot && <span className="tag bot">bot</span>}
                   {!seated.has(e.playerId) && <span className="muted"> · left</span>}
                 </td>
                 <td>{fmt(e.buyIn)}</td>

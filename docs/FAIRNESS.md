@@ -14,12 +14,14 @@ first, details after.
 - **The deck is locked before the deal.** Before a hand is dealt, the table
   publishes a *commitment*: a SHA-256 fingerprint of that hand's secret. Once
   published, the secret can't be swapped without the fingerprint changing.
-- **Nobody, not even whoever runs the server, can pick the cards.** While the
-  previous hand is being played, every seated player's browser quietly sends
-  its own random seed for the next hand. The deck depends on the server's
-  secret *and* every player's seed. The server committed first, so it can't
-  steer the result; players never see the server's secret until later, so they
-  can't predict it either.
+- **Whoever runs the server can't pick the cards without getting caught.**
+  While the previous hand is being played, every seated player's browser
+  quietly sends its own random seed for the next hand. The deck depends on the
+  server's secret *and* every player's seed. The server committed first, so it
+  can't steer the result with its own secret; players never see that secret
+  until later, so they can't predict the deck either. The only way left to
+  steer it is to tamper with the players' seeds, and each browser watches its
+  own (below).
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
   although it was sent in good time, or a seed your browser never sent is
@@ -110,17 +112,21 @@ Limits, stated plainly:
 
 - A dishonest server could list a made-up seed under a player's name, or drop
   a real one, to steer the deck. Each browser checks its own entry, live and
-  in "Check this hand", so this is caught unless the affected player never
-  looks (say they left right after the hand, or play with browser storage
-  blocked). "Check this hand" also lists who sent no seed.
+  in "Check this hand": it warns if a seed it never sent is listed, if its
+  seed was left out although sent more than 3 seconds before the deal, and if
+  the server turns a seed down while that hand's commitment is still current
+  (an honest server only turns down a seed that arrived after the deal). So
+  this is caught unless the affected player never looks (say they left right
+  after the hand, or play with browser storage blocked), and except for seeds
+  sent in the last 3 seconds before a deal, which can honestly miss it.
+  "Check this hand" also lists who sent no seed.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a
   live hand out of the server's memory or database. Every online poker site
-  has this limit. That is true of every online
-poker site; the defence is that only the operator can do it, and the code does
-not expose it. It also does nothing about players sharing their cards with
-each other off the table.
+  has this limit; only the operator can do it, and the code never exposes it.
+- None of this stops players from sharing their cards with each other off the
+  table.
 
 ## Audit findings (2026-10-25)
 
@@ -136,7 +142,7 @@ each other off the table.
 | What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. | OK |
 | After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers; a restart keeps the same commitment. | OK |
 | Host setting "Spectators see every hole card" | With no delay, anyone with the table link sees all hole cards live and could relay them. The host is warned and seated players see a banner. | Use it with a spectator delay. |
-| Practice bots (not built yet) | Must decide from a player's own view, never from the hand state. | Requirement passed on. |
+| Practice bots | They decide from their own cards and cards dealt face up only (`situation()` in apps/server/src/bots/strategy.ts), never other hole cards or the deck. Their own random choices don't touch the deck. | OK |
 | Independent review of this scheme | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. A second review then found that a server could still drop or invent seeds, and that the checker compared the server's revealed record with nothing players saw live: both closed with the browser's own records above. |
 
 ## Statistical tests

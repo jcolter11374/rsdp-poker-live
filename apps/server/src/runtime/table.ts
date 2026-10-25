@@ -32,6 +32,7 @@ import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenD
 import {
   RUNTIME_VERSION,
   systemClock,
+  type BotInfo,
   type Clock,
   type HandRecord,
   type RuntimeState,
@@ -43,6 +44,7 @@ import {
 } from './types';
 import { cleanName as cleanDisplayName } from '../names';
 import { maskProfanity } from './profanity';
+import { chooseMove, seededRand } from '../bots/strategy';
 
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
@@ -55,6 +57,11 @@ const NAME_MAX = 20;
 export const HOST_HANDOFF_MS = 3 * 60_000;
 /** How long a free seat is held for the next person on the waitlist. */
 export const SEAT_OFFER_MS = 60_000;
+/** A practice bot takes this long, plus up to BOT_THINK_SPREAD_MS, to act. */
+export const BOT_THINK_MS = 700;
+const BOT_THINK_SPREAD_MS = 1100;
+/** Bots a player who is not the host may have at one table. */
+export const BOTS_PER_PLAYER = 3;
 
 export interface RuntimeDeps {
   clock?: Clock;
@@ -93,7 +100,7 @@ export class TableRuntime {
   private readonly offlineSince = new Map<PlayerId, number>();
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
-  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null };
+  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
@@ -176,8 +183,17 @@ export class TableRuntime {
     return this.state.seats.find((s) => s?.playerId === playerId) ?? null;
   }
 
+  /** Bots are always there. */
   isOnline(playerId: PlayerId) {
-    return (this.connections.get(playerId) ?? 0) > 0;
+    return this.isBot(playerId) || (this.connections.get(playerId) ?? 0) > 0;
+  }
+
+  isBot(playerId: PlayerId) {
+    return !!this.state.bots && Object.hasOwn(this.state.bots, playerId);
+  }
+
+  botInfo(playerId: PlayerId): BotInfo | null {
+    return this.isBot(playerId) ? this.state.bots![playerId] : null;
   }
 
   // ---------------------------------------------------------------- connections
@@ -278,6 +294,7 @@ export class TableRuntime {
     const r = this.state.requests.find((x) => x.id === requestId);
     this.state.requests = this.state.requests.filter((x) => x.id !== requestId);
     if (r) this.log(`${r.name}'s ${r.kind === 'seat' ? 'seat request' : 'rebuy'} was declined`);
+    if (r) this.forgetBot(r.playerId);
     this.sync();
   }
 
@@ -382,7 +399,7 @@ export class TableRuntime {
       row.buyIn += r.amount;
       row.name = r.name;
     } else {
-      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0 };
+      this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(this.isBot(r.playerId) ? { bot: true as const } : {}) };
     }
     delete this.state.departures[r.playerId];
     this.log(`${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
@@ -411,6 +428,7 @@ export class TableRuntime {
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
     this.log(`${seat.name} left the table with ${stack}`);
+    this.forgetBot(seat.playerId);
   }
 
   sitOut(playerId: PlayerId, value: boolean) {
@@ -838,6 +856,7 @@ export class TableRuntime {
       const waiting = this.state.waitlist?.find((w) => w.playerId === playerId);
       if (waiting) this.log(`The host took ${waiting.name} off the waitlist`);
       this.leaveQueue(playerId);
+      this.forgetBot(playerId);
       return this.sync();
     }
     this.log(`The host removed ${seat.name}`);
@@ -852,6 +871,7 @@ export class TableRuntime {
     this.requireHost(by);
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
+    if (this.isBot(playerId)) throw new ActionError('remove the bot instead');
     seat.sittingOut = true;
     seat.sitOutReason = 'host';
     this.sync();
@@ -922,6 +942,7 @@ export class TableRuntime {
   transferHost(by: PlayerId, to: PlayerId) {
     this.requireHost(by);
     if (to === by) throw new ActionError('you are already the host');
+    if (this.isBot(to)) throw new ActionError("a bot can't be the host");
     if (!this.seatOf(to) && !this.isOnline(to)) throw new ActionError('that player is not at the table');
     // An offline host would be handed straight on again.
     if (!this.isOnline(to)) throw new ActionError('that player is offline');
@@ -958,7 +979,8 @@ export class TableRuntime {
       const seats = this.state.seats;
       const from = this.seatOf(host)?.seat ?? -1;
       const order = seats.map((_, i) => seats[(from + 1 + i + seats.length) % seats.length]);
-      const next = order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId) && !x.sittingOut) ?? order.find((x) => x && x.playerId !== host && this.isOnline(x.playerId));
+      const human = (x: SeatState | null): x is SeatState => !!x && x.playerId !== host && !this.isBot(x.playerId) && this.isOnline(x.playerId);
+      const next = order.find((x) => human(x) && !x.sittingOut) ?? order.find(human);
       if (!next) {
         // Nobody to take over yet: look again in a while (or as soon as someone connects).
         this.watchHost(HOST_HANDOFF_MS);
@@ -999,6 +1021,140 @@ export class TableRuntime {
     if (this.state.settings.chat.gestures === false) throw new ActionError('the host has turned gestures off');
     if (from === to) throw new ActionError('pick another player');
     if (!this.seatOf(to)) throw new ActionError('that player is not seated');
+  }
+
+  // ---------------------------------------------------------------- practice bots
+
+  /**
+   * Seats a practice bot named after whoever added it ("Ann's Poker Bot").
+   * The host can always add one; seated players can unless the host turned
+   * that off, and they wait for approval like anyone else when the table
+   * approves seats. Cash tables only.
+   */
+  addBot(by: PlayerId, input: { ownerName?: string; seat?: number; stack?: number } = {}) {
+    if (this.isTournament) throw new ActionError("bots can't play in tournaments");
+    if (this.isBot(by)) throw new ActionError("bots can't add bots");
+    const host = this.isHost(by);
+    if (!host) {
+      if (!this.seatOf(by)) throw new ActionError('take a seat before adding a bot');
+      if (this.settings.seating.allowPlayerBots === false) throw new ActionError('the host has turned off bots for players');
+      const mine = Object.values(this.state.bots ?? {}).filter((b) => b.ownerId === by).length;
+      if (mine >= BOTS_PER_PLAYER) throw new ActionError(`you can have at most ${BOTS_PER_PLAYER} bots here`);
+    }
+    const open = this.openSeats();
+    let seat = input.seat;
+    if (seat === undefined) {
+      if (!open.length) throw new ActionError('every seat is taken');
+      seat = open[0];
+    } else {
+      if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+      if (this.state.seats[seat]) throw new ActionError('that seat is taken');
+      this.checkSeatFree(by, seat);
+    }
+    const stack = input.stack ?? this.defaultBuyIn();
+    const ownerName = cleanDisplayName(input.ownerName ?? '', NAME_MAX) || this.nameOf(by);
+    const playerId = `bot-${randomUUID().slice(0, 8)}`;
+    this.checkBuyIn(playerId, stack);
+    (this.state.bots ??= {})[playerId] = { ownerId: by, ownerName, buyIn: stack };
+    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name: this.botName(ownerName), seat, amount: stack, at: this.clock.now() };
+    if (!this.settings.seating.requireApproval || host) this.seatPlayer(request);
+    else {
+      this.state.requests.push(request);
+      this.log(`${ownerName} asked to add ${request.name} in seat ${seat + 1}`);
+    }
+    this.sync();
+    return playerId;
+  }
+
+  /** The bot's owner or the host takes a bot away (after folding its hand). */
+  removeBot(by: PlayerId, botId: PlayerId) {
+    const bot = this.botInfo(botId);
+    if (!bot) throw new ActionError('no such bot');
+    if (bot.ownerId !== by && !this.isHost(by)) throw new ActionError('only its owner or the host can remove a bot');
+    if (this.state.requests.some((r) => r.playerId === botId)) {
+      this.state.requests = this.state.requests.filter((r) => r.playerId !== botId);
+      this.forgetBot(botId);
+      return this.sync();
+    }
+    const seat = this.seatOf(botId);
+    if (!seat) return;
+    this.log(`${this.nameOf(by)} removed ${seat.name}`);
+    if (this.inHand(botId)) {
+      seat.leaveAfterHand = true;
+      this.foldIfLive(botId);
+    } else this.removeSeat(seat);
+    this.sync();
+  }
+
+  /** A sensible stack (what a bot sits with): the table's minimum or maximum buy-in if set, else 100 big blinds. */
+  defaultBuyIn() {
+    const { stakes } = this.handSetup();
+    const { minBuyIn, maxBuyIn } = this.settings.seating;
+    const base = Math.max(stakes.bigBlind, stakes.bigBet / 2, stakes.bringIn * 5, 1) * 100;
+    return maxBuyIn > 0 ? Math.min(maxBuyIn, Math.max(base, minBuyIn)) : Math.max(base, minBuyIn);
+  }
+
+  /** "Ann's Poker Bot", then "Ann's Poker Bot 2"; shortened to fit a nameplate. */
+  private botName(owner: string) {
+    const taken = new Set([...this.state.seats.flatMap((x) => (x ? [x.name] : [])), ...this.state.requests.map((r) => r.name)]);
+    for (let n = 1; ; n++) {
+      const suffix = n === 1 ? '' : ` ${n}`;
+      const full = `${owner}'s Poker Bot${suffix}`;
+      // By whole characters, so an emoji in the owner's name is never split.
+      const short = Array.from(owner).slice(0, Math.max(1, NAME_MAX - 6 - suffix.length)).join('');
+      const name = Array.from(full).length <= NAME_MAX ? full : `${short}'s Bot${suffix}`;
+      if (!taken.has(name)) return name;
+    }
+  }
+
+  /** A bot gone from the table entirely leaves no trace but its ledger row. */
+  private forgetBot(playerId: PlayerId) {
+    if (!this.isBot(playerId) || this.seatOf(playerId) || this.state.requests.some((r) => r.playerId === playerId)) return;
+    delete this.state.bots![playerId];
+  }
+
+  /** A busted bot buys back in for what it started with, or leaves when rebuys are off. */
+  private botBusted(seat: SeatState) {
+    const bot = this.botInfo(seat.playerId)!;
+    if (!this.settings.seating.allowRebuys) {
+      this.removeSeat(seat);
+      return;
+    }
+    const row = this.state.ledger[seat.playerId];
+    if (row) row.buyIn += bot.buyIn;
+    seat.stack = bot.buyIn;
+    // However it lost its last chips (a hand, a late 7-2 claim, the Nit game), it plays on.
+    seat.sittingOut = false;
+    seat.sitOutReason = null;
+    this.log(`${seat.name} bought back in for ${bot.buyIn}`);
+  }
+
+  /** When the bot whose turn it is acts: a moment after its turn starts, so people can follow the play. */
+  private botDue(): number | null {
+    const s = this.state;
+    const hand = s.hand;
+    if (s.paused || !hand || hand.phase === 'complete' || hand.phase === 'rit-vote' || hand.toAct === null || !s.turn) return null;
+    const seat = s.seats[hand.toAct];
+    if (!seat || !this.isBot(seat.playerId) || s.turn.seat !== hand.toAct) return null;
+    let h = 0;
+    for (const ch of s.turn.key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return s.turn.startedAt + BOT_THINK_MS + (h % BOT_THINK_SPREAD_MS);
+  }
+
+  private botMove(seatNo: number) {
+    const s = this.state;
+    const hand = s.hand!;
+    try {
+      const move = chooseMove(hand, seatNo, seededRand(this.rng(0x7fffffff)));
+      if (move.kind === 'draw') engine.draw(hand, seatNo, move.discard);
+      else engine.act(hand, seatNo, move.action);
+    } catch (e) {
+      // A bot must never hold up the table: check or fold instead.
+      this.logError(`table ${s.id}: bot in seat ${seatNo + 1} failed to act`, e);
+      engine.timeout(hand, seatNo);
+    }
+    s.turn = null;
+    this.afterEngine(false);
   }
 
   // ---------------------------------------------------------------- tournament seating
@@ -1073,7 +1229,7 @@ export class TableRuntime {
    */
   alignWithDirector(input: { handNumber: number; button: number | null; stacks: Record<PlayerId, number> }) {
     const s = this.state;
-    for (const key of ['turn', 'next', 'rit'] as const) this.clearTimer(key);
+    for (const key of ['turn', 'next', 'rit', 'bot'] as const) this.clearTimer(key);
     if (this.handLive()) {
       s.hand = null;
       s.handStartedAt = null;
@@ -1330,8 +1486,11 @@ export class TableRuntime {
         if (this.isTournament) s.seats[seat.seat] = null;
         else this.removeSeat(seat);
       } else if (seat.stack === 0 && !this.isTournament) {
-        seat.sittingOut = true;
-        seat.sitOutReason = 'busted';
+        if (this.isBot(seat.playerId)) this.botBusted(seat);
+        else {
+          seat.sittingOut = true;
+          seat.sitOutReason = 'busted';
+        }
       }
     }
 
@@ -1395,6 +1554,11 @@ export class TableRuntime {
 
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
     for (const seat of s.seats) {
+      // A bot with no chips buys back in, even one already marked busted.
+      if (seat && seat.stack === 0 && !this.isTournament && this.isBot(seat.playerId)) {
+        this.botBusted(seat);
+        continue;
+      }
       if (seat && seat.stack === 0 && !this.isTournament && !seat.sittingOut) {
         seat.sittingOut = true;
         seat.sitOutReason = 'busted';
@@ -1410,6 +1574,9 @@ export class TableRuntime {
       return true;
     });
     if (candidates.length < 2) return false;
+    // Bots don't play on by themselves at a cash table: someone has to be there.
+    const here = (x: SeatState) => !this.isBot(x.playerId) && !(offline(x) && this.offlineFor(x) > s.settings.seating.offlineGraceSeconds * 1000);
+    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return false;
     // Nobody has played yet (or a game is restarting): deal everyone in free.
     if (candidates.filter((x) => !x.isNew).length < 2) for (const x of candidates) x.isNew = false;
 
@@ -1670,6 +1837,13 @@ export class TableRuntime {
     const hand = s.hand;
     if (hand && hand.phase !== 'complete') {
       if (hand.phase === 'rit-vote') {
+        // Bots always say yes to running it twice.
+        const botVoter = hand.seats.find((x) => !x.folded && x.ritVote === null && this.isBot(x.playerId));
+        if (botVoter) {
+          engine.voteRunItTwice(hand, botVoter.seat, true);
+          this.afterEngine(false);
+          return true;
+        }
         if (s.ritDeadline === null) s.ritDeadline = now + RIT_VOTE_SECONDS * 1000;
         if (now >= s.ritDeadline) {
           for (const x of hand.seats) if (!x.folded && x.ritVote === null && hand.phase === 'rit-vote') engine.voteRunItTwice(hand, x.seat, false);
@@ -1684,6 +1858,11 @@ export class TableRuntime {
       if (toAct === null) return false;
       const key = `${hand.input.handId}:${hand.events.length}`;
       if (!s.turn || s.turn.key !== key) s.turn = this.newTurn(key, toAct);
+      const due = this.botDue();
+      if (due !== null && now >= due) {
+        this.botMove(toAct);
+        return true;
+      }
       const deadline = this.turnDeadline();
       if (deadline !== null && now >= deadline) {
         const seat = s.seats[toAct];
@@ -1835,6 +2014,7 @@ export class TableRuntime {
     at('upkeep', this.upkeepDue());
     if (s.paused) return;
     at('turn', this.turnDeadline());
+    at('bot', this.botDue());
     at('next', s.nextHandAt);
     at('rit', s.ritDeadline);
   }
@@ -1850,7 +2030,7 @@ export class TableRuntime {
   }
 }
 
-const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep'] as const;
+const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep', 'bot'] as const;
 type TimerKey = (typeof TIMER_KEYS)[number];
 
 /** Fills in limit sizes and the bring-in when the settings leave them at 0. */

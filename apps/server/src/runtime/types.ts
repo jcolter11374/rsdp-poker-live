@@ -87,6 +87,8 @@ export interface LedgerRow {
   buyIn: number;
   /** Everything taken away when leaving. */
   cashOut: number;
+  /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
+  bot?: true;
 }
 
 export interface ChatMessage {
@@ -227,6 +229,15 @@ export interface RuntimeState {
   muted?: PlayerId[];
   /** Provably fair dealing (docs/FAIRNESS.md). Missing in older snapshots; made on first use. */
   fair?: FairState;
+  /** Practice bots at this table (seated or asking for a seat), by their player id. */
+  bots?: Record<PlayerId, BotInfo>;
+}
+
+/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+export interface BotInfo {
+  ownerId: PlayerId;
+  ownerName: string;
+  buyIn: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

@@ -341,6 +341,9 @@ export function createApp(deps: AppDeps = {}) {
     return rt;
   }
 
+  /** Practice tables waiting for their creator to arrive before the first deal: table id → creator. */
+  const practiceStarts = new Map<string, PlayerId>();
+
   /** When each player last chatted in a lobby. */
   const lastLobbyChat = new Map<PlayerId, number>();
   const lobby = new LobbyLog(deps.lobby ?? memoryLobbyStore(), log);
@@ -438,6 +441,7 @@ export function createApp(deps: AppDeps = {}) {
       const { settings } = state;
       return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`);
     }
+    if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
@@ -494,6 +498,17 @@ export function createApp(deps: AppDeps = {}) {
         if (rt) broadcast(rt);
       }
     };
+    /** A practice table: sits me in the first seat, adds the bots and deals. */
+    const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown }) => {
+      const name = cleanName(practice.name, NAME_MAX) || socket.data.session.displayName;
+      if (!name) throw new ActionError('pick a name');
+      if (!socket.data.session.displayName) await rename(name).catch(() => {});
+      const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
+      rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
+      for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
+      // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
+      practiceStarts.set(rt.state.id, me);
+    };
     const on = <K extends keyof C2S>(event: K, handler: C2S[K]) => socket.on(event, handler as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
@@ -507,6 +522,15 @@ export function createApp(deps: AppDeps = {}) {
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
+          // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
+          if (input?.practice) {
+            try {
+              await startPractice(rt, input.practice);
+            } catch (e) {
+              rt.dispose();
+              throw e;
+            }
+          }
           await store.createTable(rt.state);
           attach(rt);
           return { tableId: rt.state.id };
@@ -527,6 +551,14 @@ export function createApp(deps: AppDeps = {}) {
             if (!watchers.has(rt.state.id)) watchers.set(rt.state.id, new Set());
             watchers.get(rt.state.id)!.add(socket);
             rt.connect(me);
+          }
+          if (practiceStarts.get(rt.state.id) === me) {
+            practiceStarts.delete(rt.state.id);
+            try {
+              rt.start(me);
+            } catch (e) {
+              log(`practice table ${rt.state.id} could not start`, e);
+            }
           }
           loadAvatars(rt);
           rt.guestNames.set(me, socket.data.session.displayName || 'Guest');
@@ -747,6 +779,17 @@ export function createApp(deps: AppDeps = {}) {
     on('host:shuffle', (ack) => guarded(ack, () => current().shuffleSeats(me), log));
     on('host:move', ({ playerId, seat }, ack) => guarded(ack, () => current().moveSeat(me, String(playerId), Number(seat)), log));
     on('host:mute', ({ playerId, value }, ack) => guarded(ack, () => current().mute(me, String(playerId), !!value), log));
+    on('bot:add', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const seat = input?.seat === undefined || input?.seat === null ? undefined : Number(input.seat);
+          return { playerId: current().addBot(me, { ownerName: socket.data.session.displayName, seat }) };
+        },
+        log,
+      ),
+    );
+    on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
     on('tournament:subscribe', (input, ack) =>

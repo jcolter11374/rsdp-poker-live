@@ -20,7 +20,7 @@ const GESTURE_MODES: { id: GestureMode; label: string }[] = [
   { id: 'off', label: 'Hide' },
 ];
 
-const swatch = (f: Felt) => ({ background: `radial-gradient(circle, ${FELT_COLORS[f].light}, ${FELT_COLORS[f].edge})` });
+const swatch = (f: Felt) => ({ background: FELT_COLORS[f].felt, boxShadow: `inset 0 0 0 5px ${FELT_COLORS[f].edge}` });
 
 /**
  * My picture and mood; felt, deck, card backs and amounts; sounds and what

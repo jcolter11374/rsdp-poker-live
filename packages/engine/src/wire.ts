@@ -61,6 +61,8 @@ export interface SeatView {
   avatar: string | null;
   /** An emoji the player shows by their seat, or null. */
   mood: string | null;
+  /** A practice bot, and who added it (absent for people). */
+  bot?: { ownerId: PlayerId; ownerName: string };
 }
 
 export interface HandView {
@@ -108,6 +110,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
+  /** A practice bot asking for a seat (its owner sees it too). */
+  bot?: true;
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -123,6 +127,8 @@ export interface LedgerView {
   /** Current chips if still seated. */
   stack: number;
   net: number;
+  /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
+  bot?: true;
 }
 
 export interface ChatView {
@@ -255,6 +261,8 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
+  /** A practice table: seat me with this name and deal straight away against this many bots (1-9). */
+  practice?: { name: string; bots: number };
 }
 
 export interface ClientToServer {
@@ -321,6 +329,10 @@ export interface ClientToServer {
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
+  /** Add a practice bot named after me, in this seat or the first free one. */
+  'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
+  /** Take away a bot I added (the host can take away any). */
+  'bot:remove': (input: { playerId: string }, ack: Ack) => void;
 }
 
 export interface ServerToClient {

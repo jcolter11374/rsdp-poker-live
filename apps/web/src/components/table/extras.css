@@ -11,10 +11,12 @@
 .note-swatch.picked { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .note-text { width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 8px; }
 /* Pictures, moods and gestures (Persona.tsx). */
-.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; line-height: 1; box-sizing: border-box; border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
-.nameplate .seat-avatar { position: absolute; left: -24px; top: 50%; translate: 0 -50%; display: flex; pointer-events: none; }
-.felt.compact .nameplate .seat-avatar { left: -16px; }
-.felt.compact .nameplate .seat-avatar .avatar { width: 26px !important; height: 26px !important; font-size: 15px !important; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; line-height: 1; box-sizing: border-box; }
+.avatar.initials { width: 36px; height: 36px; color: #fff; font-weight: 700; font-size: 15px; }
+.avatar.bot-avatar { width: 36px; height: 36px; background: #3c4652; font-size: 20px; }
+/* The picture sits at the left of the nameplate, beside the name and stack. */
+.nameplate .seat-avatar { grid-column: 1; grid-row: 1 / span 8; display: flex; align-self: center; pointer-events: none; }
+.felt.compact .nameplate .seat-avatar .avatar { width: 26px !important; height: 26px !important; font-size: 13px !important; }
 .nameplate .seat-mood { position: absolute; right: -10px; bottom: -10px; font-size: 18px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); pointer-events: none; }
 .felt.compact .nameplate .seat-mood { font-size: 14px; right: -7px; bottom: -8px; }
 .my-profile .row { align-items: center; flex-wrap: wrap; }
