@@ -260,11 +260,11 @@ export function ActionBar({
         {legal.canBringIn ? (
           <button onClick={() => send({ type: 'bring-in' })}>Bring in {fmt(hand.stakes.bringIn)}</button>
         ) : legal.canCheck ? (
-          <button onClick={() => send({ type: 'check' })} title="K">
+          <button className="call" onClick={() => send({ type: 'check' })} title="K">
             Check
           </button>
         ) : (
-          <button onClick={() => send({ type: 'call' })} title="C">
+          <button className="call" onClick={() => send({ type: 'call' })} title="C">
             Call {fmt(legal.callAmount)}
             {legal.callAmount >= me.stack ? ' (all in)' : ''}
           </button>

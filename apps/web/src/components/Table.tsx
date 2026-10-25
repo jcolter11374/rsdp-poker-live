@@ -104,7 +104,8 @@ export function Table({
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
   const seatPoint = (seat: number) => stadiumPoint(((seat - offset + n) % n) / n, w, h);
-  const betPoint = (seat: number) => lerp(seatPoint(seat), center, compact ? 0.36 : 0.4);
+  // Your own bet sits further in, clear of your bigger cards.
+  const betPoint = (seat: number) => lerp(seatPoint(seat), center, seat === view.me.seat ? (compact ? 0.48 : 0.56) : compact ? 0.36 : 0.4);
   const buttonPoint = (seat: number) => {
     const p = seatPoint(seat);
     // Beside the nameplate, square to the line to the middle: clear of the

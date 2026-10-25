@@ -33,12 +33,12 @@ export interface Prefs {
 }
 
 export const FELT_COLORS: Record<Felt, { name: string; light: string; felt: string; edge: string }> = {
-  green: { name: 'Green', light: '#2a8a5d', felt: '#1f6f4a', edge: '#0f3d28' },
-  blue: { name: 'Blue', light: '#2f6fa8', felt: '#1f527f', edge: '#0f2b45' },
-  red: { name: 'Red', light: '#a83a3a', felt: '#7f2525', edge: '#431111' },
-  purple: { name: 'Purple', light: '#6f4ba8', felt: '#51357f', edge: '#2a1a45' },
-  charcoal: { name: 'Charcoal', light: '#4a5058', felt: '#33383f', edge: '#16191d' },
-  teal: { name: 'Teal', light: '#2a8a8a', felt: '#1f6a6f', edge: '#0f383d' },
+  green: { name: 'Green', light: '#3a8f5f', felt: '#2d7b4f', edge: '#23603e' },
+  blue: { name: 'Blue', light: '#3a77a8', felt: '#2c6491', edge: '#214d70' },
+  red: { name: 'Red', light: '#a84444', felt: '#8f3434', edge: '#6e2828' },
+  purple: { name: 'Purple', light: '#7055a8', felt: '#5d4591', edge: '#473570' },
+  charcoal: { name: 'Charcoal', light: '#4f555e', felt: '#3e434a', edge: '#2c3036' },
+  teal: { name: 'Teal', light: '#2f8f8c', felt: '#257a77', edge: '#1c5e5c' },
 };
 
 export const BACKS: Record<Back, string> = { red: 'Red', blue: 'Blue', green: 'Green', black: 'Black' };

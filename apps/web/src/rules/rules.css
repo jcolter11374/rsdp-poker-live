@@ -10,7 +10,7 @@
 .guide-body h4 { margin: 10px 0 4px; font-size: 0.9rem; color: var(--muted); }
 .guide-body p, .guide-body li { line-height: 1.45; }
 .guide-idea { font-size: 1rem; }
-.guide-body details { border-top: 1px solid #33414f; padding: 6px 0; }
+.guide-body details { border-top: 1px solid var(--line); padding: 6px 0; }
 .guide-body summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .guide-body ol, .guide-body ul { margin: 6px 0; padding-left: 22px; }
 .guide-body li + li { margin-top: 4px; }

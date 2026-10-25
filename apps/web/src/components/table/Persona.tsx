@@ -46,19 +46,31 @@ export function Avatar({ playerId, avatar, name, size = 36 }: { playerId: string
   return null;
 }
 
+const INITIALS_COLORS = ['#e5574b', '#3b82f6', '#e39a1c', '#14a06f', '#8b5cf6', '#e0558f', '#0f9fae', '#6b7a8f'];
+
+/** A steady colour per player for the initials shown when there's no picture. */
+function initialsColor(playerId: string) {
+  let h = 0;
+  for (const ch of playerId) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return INITIALS_COLORS[Math.abs(h) % INITIALS_COLORS.length];
+}
+
 /** Picture and mood on a seat, as this viewer chose to see them. */
 export function SeatPersona({ seat }: { seat: SeatView }) {
   const prefs = usePrefs();
   const showAvatar = prefs.avatars && !!seat.avatar && !prefs.hiddenAvatars.includes(seat.playerId);
   const showMood = prefs.moods && !!seat.mood;
-  if (!showAvatar && !showMood) return null;
   return (
     <>
-      {showAvatar && (
-        <span className="seat-avatar">
+      <span className="seat-avatar">
+        {showAvatar ? (
           <Avatar playerId={seat.playerId} avatar={seat.avatar} name={seat.name} />
-        </span>
-      )}
+        ) : (
+          <span className="avatar initials" style={{ background: initialsColor(seat.playerId) }} aria-hidden="true">
+            {[...seat.name.trim()][0]?.toUpperCase() ?? '?'}
+          </span>
+        )}
+      </span>
       {showMood && (
         <span className="seat-mood" title={`${seat.name}'s mood`}>
           {seat.mood}
