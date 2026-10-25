@@ -122,6 +122,15 @@ describe('payouts', () => {
     expect(placePrizes(1001, s, 11)).toEqual([]);
   });
 
+  it('refuses ranges that are not shaped like ranges instead of throwing', () => {
+    const bad = (ranges: unknown[]) => validatePayoutStructure({ name: 'bad', ranges } as never, 10);
+    expect(bad([null])).toEqual(['Range 1 is not a payout range']);
+    expect(bad([{ minEntries: 2, maxEntries: 10, percents: null }])).toEqual(['Range 1 is not a payout range']);
+    expect(bad([{ minEntries: 2, maxEntries: 10, percents: [100] }, { minEntries: 11, maxEntries: 20, percents: ['50', '50'] }])).toEqual([
+      'Range 2 is not a payout range',
+    ]);
+  });
+
   it('validates ranges', () => {
     const errors = validatePayoutStructure(
       {

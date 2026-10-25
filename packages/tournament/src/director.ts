@@ -73,8 +73,8 @@ export function defaultSettings(overrides: Partial<TournamentSettings> = {}): To
 }
 
 const NAME_MAX = 40;
-/** The latest instant a Date can hold; later start times break the time-zone maths. */
-const MAX_DATE_MS = 8.64e15;
+/** The end of year 9999: later start times cannot be shown, stored in Postgres, or handled by the time-zone maths. */
+const MAX_DATE_MS = 253_402_300_799_999;
 const CHIPS_LABEL = MAX_CHIPS.toLocaleString('en-US');
 /** Most chips the whole field may hold, so any stack or pot the engine adds up stays a safe integer. */
 export const MAX_CHIPS_IN_PLAY = Math.floor(Number.MAX_SAFE_INTEGER / 4);

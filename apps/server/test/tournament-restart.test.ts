@@ -184,16 +184,22 @@ describe('tournaments after a crash', () => {
   it.each(['during', 'before'] as const)('a bust the director never saved is replayed from the table (director saved %s the hand)', async (when) => {
     const { env, id, state } = await started(4);
     const [rt] = env.tables.values();
-    // The director as it stood between hands, and at a hand that has just knocked somebody out but not been reported yet.
+    // The director hears of each hand at once but saves a moment later, so after a crash its last save can be
+    // from during the hand that knocked somebody out, or from between hands before it.
     let between = state();
+    let during = state();
     playUntil(env, () => {
       const t = state().tables[0];
-      if (rt.state.handStartedAt === null && !t.inHand && t.lastHandNumber === rt.state.handNumber) between = state();
-      const unreported = rt.state.handStartedAt === null && t.inHand && rt.state.seats.some((x) => x?.stack === 0);
+      // The hand is over and the busted player is still at the table: the director has not acted on it yet.
+      const bust = rt.state.handStartedAt === null && rt.state.seats.some((x) => x?.stack === 0);
       // Before: the director must have been between hands since the last one (not so for a bust in the first hand).
-      return unreported && (when === 'during' || (!between.tables[0].inHand && between.tables[0].lastHandNumber === rt.state.handNumber - 1));
+      if (bust && (when === 'during' || (!between.tables[0].inHand && between.tables[0].lastHandNumber === rt.state.handNumber - 1))) return true;
+      during = state();
+      if (rt.state.handStartedAt === null && !t.inHand && t.lastHandNumber === rt.state.handNumber) between = state();
+      return false;
     });
-    const saved = when === 'during' ? state() : between;
+    const saved = when === 'during' ? during : between;
+    expect(saved.tables[0].inHand).toBe(when === 'during');
     expect(saved.tables[0].lastHandNumber).toBe(when === 'during' ? rt.state.handNumber : rt.state.handNumber - 1);
     const busted = rt.state.seats.flatMap((x) => (x?.stack === 0 ? [x.playerId] : [])).sort();
 
@@ -211,13 +217,16 @@ describe('tournaments after a crash', () => {
   it.each(['before', 'after'] as const)('a table break the director never saved is replayed, and its players reach the table they moved to (saved %s the move)', async (when) => {
     const { env, id, state } = await started(4, { seatsPerTable: 3 });
     expect(state().tables).toHaveLength(2);
-    const unreported = () =>
-      state().tables.some((t) => {
-        const rt = env.tables.get(tableAddress(t.id))!;
-        return t.inHand && rt.state.handStartedAt === null && rt.state.seats.some((x) => x?.stack === 0);
-      });
-    playUntil(env, unreported);
-    const saved = state();
+    // The hand is over and the busted player is still at the table: the director has not acted on it yet.
+    const unhandled = () => [...env.tables.values()].some((rt) => rt.state.handStartedAt === null && rt.state.seats.some((x) => x?.stack === 0));
+    // The director hears of the hand at once but saves a moment later: its last save is from before the hand ended.
+    let saved = state();
+    playUntil(env, () => {
+      if (unhandled()) return true;
+      saved = state();
+      return false;
+    });
+    expect(saved.tables.some((t) => t.inHand)).toBe(true);
     const before = new Map(env.snapshots);
     // The report lands: somebody is out, a table breaks and its players move.
     env.clock.advance(0);

@@ -207,7 +207,7 @@ export function createApp(deps: AppDeps = {}) {
     if (!saved || saved.settings.table.mode === 'tournament') return null;
     // Another join may have loaded it while we waited.
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log }));
     rt.resume();
     return rt;
   }
@@ -268,7 +268,7 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables; tournaments make their own.
           const base = defaultSettings('cash');
           const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log });
           await store.createTable(rt.state);
           attach(rt);
           return { tableId: rt.state.id };

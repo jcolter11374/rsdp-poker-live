@@ -701,9 +701,7 @@ export class TableRuntime {
     s.turn = null;
     s.ritDeadline = null;
 
-    const startStacks: Record<PlayerId, number> = {};
     for (const hs of hand.seats) {
-      startStacks[hs.playerId] = hs.startStack;
       const seat = s.seats[hs.seat];
       if (seat && seat.playerId === hs.playerId) seat.stack = hs.stack;
     }
@@ -727,18 +725,7 @@ export class TableRuntime {
         seat.handsSinceRefill = 0;
       }
     }
-    // The director takes these as the new stacks, so a rebuy or add-on bought mid-hand
-    // must be in them, and a player it covers is not knocked out.
-    const endStacks: Record<PlayerId, number> = {};
-    const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
-    for (const hs of hand.seats) {
-      const seat = s.seats[hs.seat];
-      const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
-      endStacks[hs.playerId] = end;
-      if (end > 0) continue;
-      const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
-      knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
-    }
+    const report = this.tournament ? handReport(record, s.seats) : null;
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.leaveAfterHand) {
@@ -751,9 +738,7 @@ export class TableRuntime {
     }
 
     this.onHandFinished(record);
-    if (this.tournament) {
-      this.tournament.handEnded({ handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button });
-    }
+    if (this.tournament && report) this.tournament.handEnded(report);
 
     if (s.stopAfterHand) {
       s.started = false;
@@ -1155,6 +1140,28 @@ export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
   if (game.family === 'stud' && out.bringIn <= 0) out.bringIn = Math.max(1, Math.floor(out.smallBet / 3));
   if (game.forcedBets === 'ante-bring-in' && out.anteType === 'big-blind') out.anteType = 'per-player';
   return out;
+}
+
+/**
+ * What a tournament table tells the director when a hand ends. The director takes the end stacks as the
+ * new stacks, so chips bought during the hand (a rebuy or add-on, already in `seats`) must be in them,
+ * and a player they cover is not knocked out. Without `seats`, the hand's own end stacks count.
+ */
+export function handReport(record: HandRecord, seats: RuntimeState['seats'] | null): Parameters<TournamentHooks['handEnded']>[0] {
+  const { hand } = record;
+  const startStacks: Record<PlayerId, number> = {};
+  const endStacks: Record<PlayerId, number> = {};
+  const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
+  for (const hs of hand.seats) {
+    startStacks[hs.playerId] = hs.startStack;
+    const seat = seats?.[hs.seat];
+    const end = seat && seat.playerId === hs.playerId ? seat.stack : hs.stack;
+    endStacks[hs.playerId] = end;
+    if (end > 0) continue;
+    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== hs.seat));
+    knockedOutBy[hs.playerId] = hand.seats.filter((x) => winners.has(x.seat)).map((x) => x.playerId);
+  }
+  return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
 
 function cleanName(name: string) {

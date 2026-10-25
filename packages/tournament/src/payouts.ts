@@ -50,7 +50,12 @@ export function validatePayoutStructure(s: PayoutStructure, maxEntries: number):
   const errors: string[] = [];
   if (!Array.isArray(s?.ranges) || !s.ranges.length) return ['Add at least one range'];
   let expectedMin = 2;
-  s.ranges.forEach((r, i) => {
+  for (const [i, r] of s.ranges.entries()) {
+    // Settings arrive from browsers, so a range may not be shaped like one.
+    if (r === null || typeof r !== 'object' || !Array.isArray(r.percents) || !r.percents.every((p) => typeof p === 'number')) {
+      errors.push(`Range ${i + 1} is not a payout range`);
+      return errors;
+    }
     const label = `Range ${r.minEntries}-${r.maxEntries}`;
     if (!Number.isInteger(r.minEntries) || !Number.isInteger(r.maxEntries) || r.maxEntries < r.minEntries)
       errors.push(`${label}: invalid entry counts`);
@@ -64,7 +69,7 @@ export function validatePayoutStructure(s: PayoutStructure, maxEntries: number):
     if (r.percents.some((p, j) => j > 0 && p > r.percents[j - 1])) errors.push(`${label}: a lower place pays more than a higher one`);
     const sum = r.percents.reduce((a, p) => a + cents(p), 0);
     if (sum !== 10000) errors.push(`${label}: percents add up to ${sum / 100}, not 100`);
-  });
+  }
   if (expectedMin - 1 < maxEntries) errors.push(`Ranges stop at ${expectedMin - 1} entries; they must reach ${maxEntries}`);
   return errors;
 }

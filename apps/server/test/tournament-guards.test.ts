@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { engine, variants, type Action } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, standings, tableAddress, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
+import { addOnsOpen, defaultSettings, standings, tableAddress, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
 import type { TableRuntime } from '../src/runtime/table';
 import { chipsInPlay, playUntil, registerAll, seatsAgree, setup } from './tournament-helpers';
 
@@ -179,6 +179,46 @@ describe('tournament manager guards', () => {
     expect(env.errors).toEqual([]);
     expect(standings(state())[0].stack).toBe(7000);
   }, 60_000);
+
+  it('an add-on bought after a hand ends but before the director acts on it counts on top of the hand', async () => {
+    const env = setup();
+    const structure: StructureRow[] = [
+      { kind: 'level', sb: 10, bb: 20, ante: 0, anteType: 'none', minutes: 1 },
+      { kind: 'break', minutes: 5, addOn: true },
+      { kind: 'level', sb: 20, bb: 40, ante: 0, anteType: 'none', minutes: 20 },
+    ];
+    const settings = defaultSettings({
+      name: 'Add-on race',
+      startingStack: 1000,
+      structure,
+      addOn: { max: 1, chips: 1500, approval: false },
+      lateRegistration: { enabled: false, throughLevel: null },
+    });
+    const id = await env.manager.create('host', settings);
+    await registerAll(env, id, 3);
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    const rt = [...env.tables.values()][0];
+    for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    // The break and its add-ons start while a hand is still being played.
+    for (let i = 0; i < 120 && !addOnsOpen(state()); i++) env.clock.advance(1000);
+    expect(addOnsOpen(state())).toBe(true);
+    expect(rt.state.hand?.phase).toBe('betting');
+
+    // Finish the hand, then add on before any timer runs.
+    while (rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null) {
+      const hand = rt.state.hand;
+      const seat = hand.seats.find((x) => x.seat === hand.toAct)!;
+      rt.act(seat.playerId, engine.legalActions(hand, seat.seat)!.canCheck ? { type: 'check' } : { type: 'call' });
+    }
+    expect(rt.state.hand?.phase).toBe('complete');
+    await env.manager.command(id, 'p1', 'Player 1', { type: 'addOn', playerId: 'p1' });
+    env.clock.advance(1);
+
+    for (const e of state().entries) expect(e.stack, e.playerId).toBe(rt.seatOf(e.playerId)!.stack);
+    expect(state().entries.reduce((a, e) => a + e.stack, 0)).toBe(4500);
+    expect(env.errors).toEqual([]);
+  });
 
   it('a restart that fails to load a table leaves nothing half-loaded, and the next visit loads it whole', async () => {
     const { first, id, addresses } = await seatedThenStopped();

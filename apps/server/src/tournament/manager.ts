@@ -23,7 +23,7 @@ import {
   type TournamentView,
 } from '@rsdp/tournament';
 import { cleanName as cleanDisplayName } from '../names';
-import { TableRuntime } from '../runtime/table';
+import { handReport, TableRuntime } from '../runtime/table';
 import type { Clock, HandRecord, RuntimeState, TournamentHooks } from '../runtime/types';
 
 /** Where tournament director state is kept. */
@@ -351,9 +351,25 @@ export class TournamentManager {
     return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log };
   }
 
-  /** What a tournament table asks of the director. Acting on its reports waits for a 0 ms timer, so the table finishes its own step first. */
+  /**
+   * What a tournament table asks of the director. The director hears of each deal and result at once, so no
+   * command in the meantime works from a stale hand; acting on the events waits for a 0 ms timer, so the table
+   * finishes its own step first.
+   */
   private hooks(live: Live, tableId: TableId): TournamentHooks {
-    const later = (what: string, step: (s: TournamentState, now: number) => Result) => this.soon(live, () => this.dispatchQuietly(live, step, what));
+    const report = (what: string, command: Command) => {
+      try {
+        const result = this.guard(() => apply(live.state, command, this.clock.now()));
+        live.state = result.state;
+        live.deferred.push(...result.events);
+      } catch (e) {
+        this.deps.log(`tournament ${live.state.id}: ${what} failed`, e);
+      }
+      this.soon(live, () => {
+        this.handle(live, []);
+        this.changed(live);
+      });
+    };
     return {
       // Tables hold while the director's events are still reaching them, so nobody is dealt in at a seat they are leaving.
       gate: (now) => (this.closed || live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
@@ -364,21 +380,9 @@ export class TournamentManager {
           stakes: { smallBlind: l.sb, bigBlind: l.bb, ante: l.ante, anteType: l.anteType, bringIn: l.bringIn, smallBet: l.smallBet, bigBet: l.bigBet },
         };
       },
-      handStarted: (handNumber) => {
-        // The director hears of the deal at once, so no command in the meantime moves a player out of this hand.
-        try {
-          const result = this.guard(() => apply(live.state, { type: 'handStarted', tableId, handNumber }, this.clock.now()));
-          live.state = result.state;
-          live.deferred.push(...result.events);
-        } catch (e) {
-          this.deps.log(`tournament ${live.state.id}: hand start failed`, e);
-        }
-        this.soon(live, () => {
-          this.handle(live, []);
-          this.changed(live);
-        });
-      },
-      handEnded: (r) => later('hand result', (s, now) => apply(s, { type: 'handResult', result: { ...r, tableId } }, now)),
+      handStarted: (handNumber) => report('hand start', { type: 'handStarted', tableId, handNumber }),
+      // A rebuy or add-on taken between the end of a hand and the timer then counts on top of the hand's result.
+      handEnded: (r) => report('hand result', { type: 'handResult', result: { ...r, tableId } }),
     };
   }
 
@@ -441,7 +445,7 @@ export class TournamentManager {
     const base = defaultSettings('tournament');
     const settings = parseSettings(
       applyAtNextHand(base, {
-        table: { name: `${s.settings.name.slice(0, 28)} · Table ${number}`, maxSeats: s.settings.seatsPerTable },
+        table: { name: `${cleanDisplayName(s.settings.name, 28)} · Table ${number}`, maxSeats: s.settings.seatsPerTable },
         timing: { nextHandDelaySeconds: Math.max(base.timing.nextHandDelaySeconds, TOURNAMENT_NEXT_HAND_SECONDS) },
       }).settings,
     );
@@ -585,7 +589,8 @@ function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[
     for (const record of saved.history) {
       if (record.handNumber < t.lastHandNumber || (record.handNumber === t.lastHandNumber && !t.inHand)) continue;
       if (record.handNumber > t.lastHandNumber) missed.push({ at: record.startedAt, command: { type: 'handStarted', tableId: t.id, handNumber: record.handNumber } });
-      const result = handResultOf(record, record === last ? saved.seats : null);
+      // For the table's last hand, chips bought during it (an add-on) are in the saved seats.
+      const result = handReport(record, record === last ? saved.seats : null);
       missed.push({ at: record.endedAt, command: { type: 'handResult', result: { ...result, tableId: t.id } } });
     }
     // A hand still being played that the director never heard start.
@@ -593,28 +598,6 @@ function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[
       missed.push({ at: saved.handStartedAt, command: { type: 'handStarted', tableId: t.id, handNumber: saved.handNumber } });
   });
   return missed.sort((a, b) => a.at - b.at).map((m) => m.command);
-}
-
-/**
- * The report a table makes when a hand ends (TableRuntime.finishHand), rebuilt from the hand's record.
- * For the table's last hand, chips bought during it (an add-on) are in the saved seats, so they count:
- * they are not lost, and a player they cover is not knocked out.
- */
-function handResultOf(record: HandRecord, seats: RuntimeState['seats'] | null): Omit<HandResult, 'tableId'> {
-  const { hand } = record;
-  const startStacks: Record<PlayerId, number> = {};
-  const endStacks: Record<PlayerId, number> = {};
-  const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
-  for (const x of hand.seats) {
-    startStacks[x.playerId] = x.startStack;
-    const after = seats?.[x.seat];
-    const end = after?.playerId === x.playerId ? after.stack : x.stack;
-    endStacks[x.playerId] = end;
-    if (end > 0) continue;
-    const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== x.seat));
-    knockedOutBy[x.playerId] = hand.seats.filter((y) => winners.has(y.seat)).map((y) => y.playerId);
-  }
-  return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
 
 /** Every game must exist and seat a full table. */

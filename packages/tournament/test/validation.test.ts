@@ -104,6 +104,12 @@ describe('numeric settings', () => {
     expect(refusal(() => update(state, { start: scheduled({ startAt: -1e300, schedule: daily }) }))).toMatch('Pick a start time');
   });
 
+  it('refuses a start time after the year 9999, which cannot be shown or stored', () => {
+    const last = Date.parse('9999-12-31T23:59:59.999Z');
+    expect(refusal(() => create({ start: scheduled({ startAt: last + 1 }) }))).toMatch('Pick a start time');
+    expect(refusal(() => create({ start: scheduled({ startAt: last }) }))).toBeNull();
+  });
+
   it('accepts the largest stack and refuses more chips than that per entry', () => {
     const big = presetStructure('regular', { startingStack: MAX_CHIPS });
     expect(validateStructure(big).errors).toEqual([]);
