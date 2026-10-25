@@ -5,6 +5,7 @@ import { registerAllVariants } from '@rsdp/engine/variants';
 import { addOnsOpen, defaultSettings, levelEndsAt, standings, tableAddress, type StructureRow, type TournamentSettings, type TournamentState } from '@rsdp/tournament';
 import { createApp, memoryStore } from '../src/app';
 import type { TableRuntime } from '../src/runtime/table';
+import type { RuntimeState } from '../src/runtime/types';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock, seeded } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
@@ -121,6 +122,58 @@ describe('shutting down', () => {
       const before = JSON.parse(JSON.stringify(rt.state));
       await server.close();
       expect(await tables.loadTable(tableId)).toEqual(before);
+    } finally {
+      for (const c of clients) c.close();
+    }
+  });
+
+  it('an action sent while the director is being saved is not played, so the director and its table still agree', async () => {
+    // A database round trip for each director save; nothing is written once the process has exited.
+    let exited = false;
+    const tables = memoryStore();
+    const tournaments = memoryTournamentStore();
+    const store = {
+      ...tables,
+      async saveTable(state: RuntimeState) {
+        if (!exited) await tables.saveTable(state);
+      },
+    };
+    const slow = {
+      ...tournaments,
+      async save(state: TournamentState, nextId: string | null) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (!exited) await tournaments.save(state, nextId);
+      },
+    };
+    const server = createApp({ rng: seeded(3), store, tournaments: slow, log: () => {} });
+    await new Promise<void>((resolve) => server.http.listen(0, resolve));
+    const url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+    const clients: Client[] = [];
+    const ann = socketClient(url, 'ann-secret-stopping-0123', clients);
+    const bob = socketClient(url, 'bob-secret-stopping-0123', clients);
+    try {
+      const { id } = await ann.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Stopping', startingStack: 1500 }) });
+      for (const [c, name] of [[ann, 'Ann'], [bob, 'Bob']] as const) await c.call('tournament:command', { id, command: { type: 'register', displayName: name } });
+      await ann.call('tournament:command', { id, command: { type: 'startNow' } });
+      const tableId = tableAddress(server.tournaments.view(id)!.state.tables[0].id);
+      for (const c of [ann, bob]) await c.call('table:join', { tableId });
+      const rt = server.tables.get(tableId)!;
+      // Heads-up: the first to act moves all in, and the other calls just after the server starts to stop.
+      const hand = rt.state.hand!;
+      const first = hand.seats.find((x) => x.seat === hand.toAct)!;
+      const legal = engine.legalActions(hand, first.seat)!;
+      rt.act(first.playerId, { type: legal.raiseKind, to: legal.maxTo });
+      const caller = rt.seatOf(first.playerId)!.name === 'Ann' ? bob : ann;
+      const closing = server.close();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      (caller.socket.emit as (event: string, ...args: unknown[]) => void)('hand:act', { type: 'call' }, () => {});
+      await closing;
+      exited = true;
+
+      const director = (await tournaments.load(id))!.state;
+      const table = (await tables.loadTable(tableId))!;
+      expect(director.tables[0].inHand).toBe(table.handStartedAt !== null);
+      for (const e of director.entries) expect(table.seats.find((x) => x?.playerId === e.playerId)?.stack ?? 0, e.displayName).toBe(e.stack);
     } finally {
       for (const c of clients) c.close();
     }
