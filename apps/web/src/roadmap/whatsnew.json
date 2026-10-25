@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "id": "2026-10-25-c",
+      "date": "2026-10-25",
+      "title": "Practice bots, a new look and fair dealing you can check",
+      "items": [
+        { "title": "Practice bots", "detail": "Add a bot to any empty seat of a cash table and practice any game for free, including Stud, Razz, Triple Draw and Badugi. A player's bot needs the host's OK, like any seat." },
+        { "title": "A new look", "detail": "A clean, flat felt with new cards, seats with pictures, chips and buttons. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
+        { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a random seed from each player's browser. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
+        { "title": "Roadmap and suggestions", "detail": "See what's coming next on the Roadmap page, send your own ideas, and follow what happens to them in the suggestion log." },
+        { "title": "Smoother cash games", "detail": "Shorter game names, hi-lo games labelled 8 or better, and fixes for players leaving all in, tables shrinking and phones dropping out." }
+      ]
+    },
+    {
       "id": "2026-10-25-b",
       "date": "2026-10-25",
       "title": "Tournament formats, host tools and table extras",
