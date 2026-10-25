@@ -89,6 +89,15 @@ try {
     await host.screenshot({ path: path.join(OUT, 'notes.png') });
   });
 
+  await step('rules guides: open a game from its link and switch games', async () => {
+    const p = await open('rules');
+    await p.goto(`${BASE}/rules/badugi`);
+    await p.waitForSelector('.guide-body h3:has-text("Badugi")');
+    await p.click('.guide-chip:has-text("Razz")');
+    await p.waitForSelector('.guide-body h3:has-text("Razz")');
+    await p.close();
+  });
+
   await step('side games: a PLO bomb pot on two boards at a Hold\'em table', async () => {
     const host = await open('side games host');
     const guest = await open('side games guest');

@@ -1,6 +1,6 @@
-import { getVariant } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { BETTING_NAME } from '../format';
+import { GameGuide } from '../rules/GameGuide';
 import { Modal } from './SeatDialog';
 
 const BETTING_RULES = {
@@ -10,57 +10,19 @@ const BETTING_RULES = {
     'Bets and raises come in one fixed size: the small bet on the early streets, the big bet on the later ones. Each round allows a bet and a few raises.',
 } as const;
 
-const HIGH_HANDS = [
-  'Straight flush',
-  'Four of a kind',
-  'Full house',
-  'Flush',
-  'Straight',
-  'Three of a kind',
-  'Two pair',
-  'One pair',
-  'High card',
-];
-
-/** How to play the game on the table now (and the others in a rotation). */
+/** How to play the game on the table now (and the others in a rotation), with guides to every other game too. */
 export function RulesDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
   const rot = view.settings.game.rotation;
   const ids = rot.enabled && rot.steps.length ? [...new Set(rot.steps.map((s) => s.gameId))] : [view.hand?.gameId ?? view.settings.game.gameId];
   const current = view.hand?.gameId ?? ids[0];
-  const ordered = [current, ...ids.filter((id) => id !== current)];
   const betting = view.hand?.betting ?? view.upcoming?.betting ?? view.settings.game.betting;
   return (
     <Modal title="How to play" onClose={onClose}>
       <div className="rules">
-        {ordered.map((id) => {
-          let spec;
-          try {
-            spec = getVariant(id);
-          } catch {
-            return null;
-          }
-          return (
-            <section key={id}>
-              <h3>
-                {spec.name}
-                {id === current && <span className="tag">now</span>}
-              </h3>
-              <p>{spec.rules}</p>
-              <p className="muted">Betting rounds: {spec.streets.map((s) => s.name).join(', ')}.</p>
-            </section>
-          );
-        })}
+        <GameGuide gameIds={[current, ...ids]} current={current} />
         <section>
-          <h3>{BETTING_NAME[betting]}</h3>
+          <h3>Betting here: {BETTING_NAME[betting]}</h3>
           <p>{BETTING_RULES[betting]}</p>
-        </section>
-        <section>
-          <h3>High hands, best first</h3>
-          <ol className="rank-list">
-            {HIGH_HANDS.map((h) => (
-              <li key={h}>{h}</li>
-            ))}
-          </ol>
         </section>
         <button onClick={onClose}>Close</button>
       </div>
