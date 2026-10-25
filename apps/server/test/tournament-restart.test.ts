@@ -2,7 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { engine, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, standings, tableAddress, type TournamentSettings, type TournamentState } from '@rsdp/tournament';
+import { addOnsOpen, defaultSettings, levelEndsAt, standings, tableAddress, type StructureRow, type TournamentSettings, type TournamentState } from '@rsdp/tournament';
 import { createApp, memoryStore } from '../src/app';
 import type { TableRuntime } from '../src/runtime/table';
 import { memoryTournamentStore } from '../src/tournament/store';
@@ -183,6 +183,34 @@ describe('tournaments after a crash', () => {
     expect(after.errors).toEqual([]);
     expect(standings(now())[0].stack).toBe(4000);
   }, 60_000);
+
+  it('an add-on bought during a hand the director never heard end is kept', async () => {
+    const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 5 });
+    const structure = [level(10), { kind: 'break', minutes: 5, addOn: true } as const, level(20), level(40)];
+    const { env, id, state } = await started(3, { structure, addOn: { max: 1, chips: 1000, approval: false } });
+    const [rt] = env.tables.values();
+    // A hand is dealt just before the break, which starts while it is still being played.
+    const toBreak = () => levelEndsAt(state(), 1, env.clock.now())! - env.clock.now();
+    playUntil(env, () => rt.state.hand?.phase === 'betting' && toBreak() < 20_000, { shove: 0 });
+    env.clock.advance(toBreak());
+    expect(addOnsOpen(state())).toBe(true);
+    const buyer = rt.state.hand!.seats[0].playerId;
+    await env.manager.command(id, buyer, '', { type: 'addOn', playerId: buyer });
+    expect(rt.seatOf(buyer)!.pendingChips).toBe(1000);
+    const saved = state();
+    // The hand ends and the table is saved; the server stops before the director acts on it.
+    playUntil(env, () => rt.state.handStartedAt === null, { shove: 0 });
+    expect(saved.tables[0].inHand).toBe(true);
+
+    const after = await restart(await savedAs(saved), env.snapshots, env.clock.t);
+    const now = () => after.manager.view(id)!.state;
+    const [table] = after.tables.values();
+    expect(now().tables[0]).toMatchObject({ inHand: false, lastHandNumber: rt.state.handNumber });
+    for (const e of now().entries) expect(e.stack, e.playerId).toBe(table.seatOf(e.playerId)?.stack ?? 0);
+    expect(now().entries.reduce((n, e) => n + e.stack, 0)).toBe(4000);
+    seatsAgree(after, id);
+    expect(after.errors).toEqual([]);
+  });
 
   it('seats players where the director has them when their tables were saved before a move', async () => {
     const env = setup();

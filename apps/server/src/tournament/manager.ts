@@ -581,10 +581,12 @@ function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[
   state.tables.forEach((t, i) => {
     const saved = snapshots[i];
     if (!saved) return;
+    const last = saved.history[saved.history.length - 1];
     for (const record of saved.history) {
       if (record.handNumber < t.lastHandNumber || (record.handNumber === t.lastHandNumber && !t.inHand)) continue;
       if (record.handNumber > t.lastHandNumber) missed.push({ at: record.startedAt, command: { type: 'handStarted', tableId: t.id, handNumber: record.handNumber } });
-      missed.push({ at: record.endedAt, command: { type: 'handResult', result: { ...handResultOf(record), tableId: t.id } } });
+      const result = handResultOf(record, record === last ? saved.seats : null);
+      missed.push({ at: record.endedAt, command: { type: 'handResult', result: { ...result, tableId: t.id } } });
     }
     // A hand still being played that the director never heard start.
     if (saved.handStartedAt !== null && saved.handNumber > t.lastHandNumber)
@@ -593,16 +595,22 @@ function missedReports(state: TournamentState, snapshots: (RuntimeState | null)[
   return missed.sort((a, b) => a.at - b.at).map((m) => m.command);
 }
 
-/** The report a table makes when a hand ends (TableRuntime.finishHand), rebuilt from the hand's record. */
-function handResultOf(record: HandRecord): Omit<HandResult, 'tableId'> {
+/**
+ * The report a table makes when a hand ends (TableRuntime.finishHand), rebuilt from the hand's record.
+ * For the table's last hand, chips bought during it (an add-on) are in the saved seats, so they count:
+ * they are not lost, and a player they cover is not knocked out.
+ */
+function handResultOf(record: HandRecord, seats: RuntimeState['seats'] | null): Omit<HandResult, 'tableId'> {
   const { hand } = record;
   const startStacks: Record<PlayerId, number> = {};
   const endStacks: Record<PlayerId, number> = {};
   const knockedOutBy: Record<PlayerId, PlayerId[]> = {};
   for (const x of hand.seats) {
     startStacks[x.playerId] = x.startStack;
-    endStacks[x.playerId] = x.stack;
-    if (x.stack > 0) continue;
+    const after = seats?.[x.seat];
+    const end = after?.playerId === x.playerId ? after.stack : x.stack;
+    endStacks[x.playerId] = end;
+    if (end > 0) continue;
     const winners = new Set(hand.awards.map((a) => a.seat).filter((seat) => seat !== x.seat));
     knockedOutBy[x.playerId] = hand.seats.filter((y) => winners.has(y.seat)).map((y) => y.playerId);
   }
