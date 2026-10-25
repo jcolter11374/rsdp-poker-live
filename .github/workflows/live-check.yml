@@ -20,7 +20,7 @@ jobs:
         run: |
           site=https://rsdp-poker-live.fly.dev
           curl -sf "$site/api/health"; echo
-          for path in / /rules/badugi /tn/new; do
+          for path in / /rules/badugi /tn/new /fairness /roadmap /roadmap/admin /whats-new; do
             curl -sf "$site$path" | grep -q '<div id="root">' || { echo "$path did not serve the app"; exit 1; }
           done
           # The new tables answer, and the operator endpoint is closed to the internet.
@@ -28,3 +28,11 @@ jobs:
             code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
             echo "$path $code"; [ "$code" = 404 ] || exit 1
           done
+          curl -sf "$site/api/suggestions" > /dev/null
+          # 401 means the admin key reached the server (403: no key set). Sends no key, changes nothing.
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/suggestions/admin")
+          echo "suggestions admin $code"; [ "$code" = 401 ] || exit 1
+          # The deployed app carries the current roadmap text.
+          js=$(curl -sf "$site/" | grep -o 'assets/[^"]*\.js' | head -1)
+          curl -sf "$site/$js" | grep -q 'the way tournament co-hosts already can' || { echo "roadmap text not deployed"; exit 1; }
+          echo "roadmap text deployed"
