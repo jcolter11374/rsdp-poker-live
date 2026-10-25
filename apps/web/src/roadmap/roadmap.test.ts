@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import roadmap from './roadmap.json';
 import { formatDay, type Roadmap } from './RoadmapPage';
 import { logOrder, type Suggestion } from './suggestions';
+import { releases } from './whatsNew';
 
 describe('roadmap.json', () => {
   const data = roadmap as Roadmap;
@@ -34,5 +35,20 @@ describe('suggestion log order', () => {
   const s = (id: number, status: Suggestion['status']) => ({ id, status }) as Suggestion;
   it('puts open ideas first, newest first, then shipped and declined', () => {
     expect(logOrder([s(1, 'shipped'), s(2, 'new'), s(3, 'declined'), s(4, 'approved')]).map((x) => x.id)).toEqual([4, 2, 3, 1]);
+  });
+});
+
+describe('whatsnew.json', () => {
+  it('lists releases newest first with unique ids, real dates and filled-in items', () => {
+    expect(releases.length).toBeGreaterThan(0);
+    expect(new Set(releases.map((r) => r.id)).size).toBe(releases.length);
+    for (const r of releases) {
+      expect(r.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(formatDay(r.date)).not.toContain('Invalid');
+      expect(r.items.length).toBeGreaterThan(0);
+      for (const it of r.items) expect(it.title && it.detail).toBeTruthy();
+    }
+    const dates = releases.map((r) => r.date);
+    expect([...dates].sort().reverse()).toEqual(dates);
   });
 });

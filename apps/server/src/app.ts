@@ -446,6 +446,7 @@ export function createApp(deps: AppDeps = {}) {
       const { settings } = state;
       return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting);
     }
+    if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }

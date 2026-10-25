@@ -28,7 +28,7 @@ export function RoadmapPage({ data = roadmap as Roadmap }: { data?: Roadmap }) {
       <h1>Roadmap</h1>
       <p className="roadmap-intro">{data.intro}</p>
       <p className="muted">
-        Last updated {formatDay(data.lastUpdated)} · <a href="#suggest">Suggest an idea</a>
+        Last updated {formatDay(data.lastUpdated)} · <a href="/whats-new">What's new</a> · <a href="#suggest">Suggest an idea</a>
       </p>
       {data.sections.map((s) => (
         <section key={s.id} className={`roadmap-section ${s.id}`}>

@@ -6,6 +6,7 @@ import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
+import { WhatsNewBanner } from './roadmap/WhatsNewPage';
 import { TournamentList } from './tournament/TournamentList';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
@@ -70,6 +71,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         RSDP Poker <span>Live!</span>
       </h1>
       <p className="tagline">Start a table, send the link, and play with friends. No sign-up.</p>
+      <WhatsNewBanner />
       <TournamentList />
       <form className="card-panel" onSubmit={create}>
         <label>
@@ -168,7 +170,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         New to Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
       </p>
       <p className="tagline">
-        See what's live and what's coming on the <a href="/roadmap">roadmap</a>.
+        See <a href="/whats-new">what's new</a> and what's coming on the <a href="/roadmap">roadmap</a>.
       </p>
       <InstallApp />
     </main>
