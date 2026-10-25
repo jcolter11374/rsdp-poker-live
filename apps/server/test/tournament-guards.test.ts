@@ -1,44 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { engine, variants, type Action, type PlayerId } from '@rsdp/engine/core';
+import { engine, variants, type Action } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings, standings, tableAddress, type Command, type StructureRow, type TournamentSettings } from '@rsdp/tournament';
 import type { TableRuntime } from '../src/runtime/table';
-import { players, playUntil, setup } from './tournament-helpers';
+import { chipsInPlay, playUntil, registerAll, seatsAgree, setup } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
 const MIN = 60_000;
-
-type Env = ReturnType<typeof setup>;
-
-async function registerAll(env: Env, id: string, n: number) {
-  for (const p of players(n)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
-}
-
-/** Chips at every table; a live hand counts what its players started it with. */
-function chipsInPlay(env: Env) {
-  let total = 0;
-  for (const rt of env.tables.values()) {
-    const hand = rt.state.hand?.phase === 'complete' ? null : rt.state.hand;
-    for (const seat of rt.state.seats) if (seat) total += seat.pendingChips + (hand?.seats.some((x) => x.playerId === seat.playerId) ? 0 : seat.stack);
-    for (const x of hand?.seats ?? []) total += x.startStack;
-  }
-  return total;
-}
-
-/** Every player sits at one table at most, and where the director says they sit. */
-function seatsAgree(env: Env, id: string) {
-  const at = new Map<PlayerId, string[]>();
-  for (const rt of env.tables.values()) {
-    for (const seat of rt.state.seats) if (seat) at.set(seat.playerId, [...(at.get(seat.playerId) ?? []), rt.state.id]);
-  }
-  const state = env.manager.view(id)!.state;
-  for (const e of state.entries) {
-    if (e.status !== 'seated' && e.status !== 'rebuy-offer') continue;
-    expect(at.get(e.playerId), e.playerId).toEqual([tableAddress(e.tableId!)]);
-  }
-  for (const [playerId, tables] of at) expect(tables, playerId).toHaveLength(1);
-}
 
 /** Plays one hand at a table: the first player to act shoves, the next one calls, everyone else folds. */
 function shoveAndCall(rt: TableRuntime) {

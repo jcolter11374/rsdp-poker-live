@@ -1,4 +1,6 @@
-import { engine, type Action } from '@rsdp/engine/core';
+import { expect } from 'vitest';
+import { engine, type Action, type PlayerId } from '@rsdp/engine/core';
+import { tableAddress } from '@rsdp/tournament';
 import { TableRuntime } from '../src/runtime/table';
 import type { RuntimeState } from '../src/runtime/types';
 import { TournamentManager, type TableHost } from '../src/tournament/manager';
@@ -75,4 +77,35 @@ export function playUntil(env: ReturnType<typeof setup>, done: () => boolean, op
     if (!acted) env.clock.advance(1000);
     else if (opts.thinkMs) env.clock.advance(opts.thinkMs);
   }
+}
+
+export type Env = ReturnType<typeof setup>;
+
+export async function registerAll(env: Env, id: string, n: number) {
+  for (const p of players(n)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+}
+
+/** Chips at every table; a live hand counts what its players started it with. */
+export function chipsInPlay(env: Env) {
+  let total = 0;
+  for (const rt of env.tables.values()) {
+    const hand = rt.state.hand?.phase === 'complete' ? null : rt.state.hand;
+    for (const seat of rt.state.seats) if (seat) total += seat.pendingChips + (hand?.seats.some((x) => x.playerId === seat.playerId) ? 0 : seat.stack);
+    for (const x of hand?.seats ?? []) total += x.startStack;
+  }
+  return total;
+}
+
+/** Every player sits at one table at most, and where the director says they sit. */
+export function seatsAgree(env: Env, id: string) {
+  const at = new Map<PlayerId, string[]>();
+  for (const rt of env.tables.values()) {
+    for (const seat of rt.state.seats) if (seat) at.set(seat.playerId, [...(at.get(seat.playerId) ?? []), rt.state.id]);
+  }
+  const state = env.manager.view(id)!.state;
+  for (const e of state.entries) {
+    if (e.status !== 'seated' && e.status !== 'rebuy-offer') continue;
+    expect(at.get(e.playerId), e.playerId).toEqual([tableAddress(e.tableId!)]);
+  }
+  for (const [playerId, tables] of at) expect(tables, playerId).toHaveLength(1);
 }
