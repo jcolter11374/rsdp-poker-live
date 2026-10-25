@@ -3,6 +3,7 @@
 // standalone checker (scripts/verify-hand.mjs) compute exactly the same deck.
 
 import { freshDeck, shuffle, type Card, type Rng } from './cards';
+import { drawReplacements } from './variants/draw';
 
 /** Version tag mixed into every hash, so a future scheme can't be confused with this one. */
 export const FAIR_VERSION = 'rsdp-fair-v1';
@@ -87,10 +88,12 @@ export function commitmentOf(serverSeed: string): string {
  * The hand's seed. The server seed was committed to before any player picked
  * a client seed, so the server can't steer the deck; players can't predict it
  * either, because they never see the server seed until it is revealed.
- * Client seeds are sorted so the order they arrived in doesn't matter.
+ * Client seeds are sorted so the order they arrived in doesn't matter. Nothing
+ * else goes in: every input is either committed or chosen by a player, so the
+ * server has nothing left to vary.
  */
-export function handSeedOf(serverSeed: string, handId: string, clientSeeds: string[]): string {
-  return sha256Hex(`${FAIR_VERSION}|${serverSeed}|${handId}|${[...clientSeeds].sort().join(',')}`);
+export function handSeedOf(serverSeed: string, clientSeeds: string[]): string {
+  return sha256Hex(`${FAIR_VERSION}|${serverSeed}|${[...clientSeeds].sort().join(',')}`);
 }
 
 /**
@@ -133,78 +136,152 @@ export function reshuffleRng(handSeed: string, deckPos: number): Rng {
 
 // ---------------------------------------------------------------- checking a hand
 
-/** The parts of a hand event that carry cards (deal, board and draw events). */
+/** A hand event as the checker reads it: only the fields that carry or move cards. */
 export interface CardEvent {
   t: string;
+  seat?: number;
   cards?: (Card | { card: Card })[];
   pos?: number[];
+  /** Draw events: the hand indexes thrown away, highest first. */
+  positions?: number[];
+  action?: string;
 }
 
 export interface FairCheck {
-  /** Every check passed. */
+  /** Every check passed and every card was checked. */
   ok: boolean;
   checks: { label: string; ok: boolean; detail: string }[];
-  /** The deck rebuilt from the seeds, top card first (null if the seeds didn't match). */
+  /** The deck rebuilt from the seeds, top card first (null if the server seed doesn't match the commitment). */
   deck: Card[] | null;
-  /** Cards the viewer saw that were compared with the deck. */
+  /** Cards compared with the deck. */
   matched: number;
-  /** Cards dealt face down to others and never shown: their place in the deck is checked, not their face. */
-  hidden: number;
-  /** Cards with no recorded place (dealt from a draw-game reshuffle): not checked. */
-  unplaced: number;
+  /** Cards that couldn't be compared (face down in the events given): 0 when checking a revealed hand's full events. */
+  unchecked: number;
 }
 
+const cardOf = (c: Card | { card: Card }) => (typeof c === 'string' ? c : c.card);
+const HIDDEN = '??';
+
 /**
- * Checks a revealed hand: the server seed matches the commitment published
- * before the deal, the hand seed follows from it and the client seeds, and
- * every card the viewer saw sat at its recorded place in the deck rebuilt from
- * that seed, with no card skipped or used twice. Hidden cards show as '??'.
+ * Checks a revealed hand by dealing it again. The server seed must match the
+ * commitment published before the deal, and the deck is rebuilt from it and
+ * the players' seeds. Then the hand is replayed the way the engine deals:
+ * hole cards one at a time clockwise from the left of the button, boards and
+ * draws off the top, draw-game reshuffles from the same seed and the real
+ * muck. Every dealt card must be the card at its place, and every card shown
+ * or awarded must be one that seat was really dealt (or on the board).
  */
 export function verifyHand(args: {
-  handId: string;
   commit: string;
   serverSeed: string;
   clientSeeds: string[];
   /** The hand seed the server says it used, if given; it must match. */
   handSeed?: string | null;
+  button: number;
   events: CardEvent[];
 }): FairCheck {
   const checks: FairCheck['checks'] = [];
   const add = (label: string, ok: boolean, detail: string) => checks.push({ label, ok, detail });
   const commitOk = commitmentOf(args.serverSeed) === args.commit;
   add('Server seed matches the commitment shown before the deal', commitOk, `SHA-256(${args.serverSeed}) = ${commitmentOf(args.serverSeed)}`);
-  const handSeed = handSeedOf(args.serverSeed, args.handId, args.clientSeeds);
-  if (args.handSeed != null) add('Hand seed comes from the server seed and the players’ seeds', handSeed === args.handSeed, handSeed);
-  const deck = deckFromSeed(handSeed);
+  const handSeed = handSeedOf(args.serverSeed, args.clientSeeds);
+  if (args.handSeed != null) add('Hand seed comes from the server seed and the players\u2019 seeds', handSeed === args.handSeed, handSeed);
+  const original = deckFromSeed(handSeed);
 
+  let deck = original.slice();
+  let next = 0;
+  let muck: Card[] = [];
+  const hands = new Map<number, Card[]>();
+  const board = new Set<Card>();
+  const wrong: string[] = [];
+  const order: string[] = [];
+  const unseen: string[] = [];
   let matched = 0;
-  let hidden = 0;
-  let unplaced = 0;
-  const mismatches: string[] = [];
-  const used = new Map<number, number>();
-  for (const e of args.events) {
-    if (!e.cards || !['deal', 'board', 'draw'].includes(e.t)) continue;
-    const cards = e.cards.map((c) => (typeof c === 'string' ? c : c.card));
-    if (!e.pos) {
-      unplaced += cards.length;
-      continue;
+  let unchecked = 0;
+  /** A draw hid which cards were thrown, so the deck after it can't be followed. */
+  let lost = false;
+  const hand = (seat: number) => hands.get(seat) ?? (hands.set(seat, []), hands.get(seat)!);
+  /** One dealt card at deck place `at`. */
+  const dealt = (card: Card, at: number, recorded: number | undefined) => {
+    if (lost) return void unchecked++;
+    if (recorded !== undefined && recorded !== at) wrong.push(`${card} is recorded at place ${recorded + 1} but was dealt from place ${at + 1}`);
+    if (card === HIDDEN) unchecked++;
+    else if (deck[at] === card) matched++;
+    else wrong.push(`${card} at place ${at + 1} (the deck has ${deck[at] ?? 'nothing'} there)`);
+  };
+  // Clockwise from the seat after the button.
+  const clockwise = (seat: number) => (seat > args.button ? seat - args.button : seat + 1000 - args.button);
+
+  const events = args.events;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.t === 'deal') {
+      // One street's deal: consecutive deal events, one per player, a card at a time around the table.
+      let end = i;
+      while (end < events.length && events[end].t === 'deal') end++;
+      const group = events.slice(i, end);
+      i = end - 1;
+      const n = group.length;
+      const k = group[0].cards?.length ?? 0;
+      for (let g = 1; g < n; g++) {
+        if (clockwise(group[g].seat!) <= clockwise(group[g - 1].seat!)) order.push(`seat ${group[g].seat! + 1} was dealt out of turn`);
+      }
+      if (group.some((d) => (d.cards?.length ?? 0) !== k)) order.push('players were dealt different numbers of cards on one street');
+      group.forEach((d, idx) => {
+        (d.cards ?? []).forEach((c, j) => {
+          dealt(cardOf(c), next + j * n + idx, d.pos?.[j]);
+          hand(d.seat!).push(cardOf(c));
+        });
+      });
+      next += n * k;
+    } else if (e.t === 'board') {
+      (e.cards ?? []).forEach((c, j) => {
+        dealt(cardOf(c), next + j, e.pos?.[j]);
+        board.add(cardOf(c));
+      });
+      next += e.cards?.length ?? 0;
+    } else if (e.t === 'action' && e.action === 'fold') {
+      // Draw games reshuffle folded hands; other games never read the muck.
+      muck.push(...hand(e.seat!));
+    } else if (e.t === 'draw') {
+      const mine = hand(e.seat!);
+      const cards = (e.cards ?? []).map(cardOf);
+      if (lost || !e.positions || cards.includes(HIDDEN) || mine.includes(HIDDEN)) {
+        // Without the full hand there is no knowing what went to the muck: nothing after this can be dealt again.
+        unchecked += cards.length;
+        unseen.push(`seat ${e.seat! + 1}'s draw`);
+        mine.push(...cards);
+        lost = true;
+        continue;
+      }
+      const thrown = e.positions.map((p) => mine.splice(p, 1)[0]);
+      let result;
+      try {
+        result = drawReplacements({ discards: thrown, stub: deck.slice(next), muck, rng: reshuffleRng(handSeed, next) });
+      } catch {
+        wrong.push(`seat ${e.seat! + 1}'s draw can't be dealt from this deck`);
+        continue;
+      }
+      cards.forEach((card, j) => {
+        if (result.cards[j] === card) matched++;
+        else wrong.push(`${card} in seat ${e.seat! + 1}'s draw (the deck gives ${result.cards[j] ?? 'nothing'})`);
+        if (e.pos && e.pos[j] !== next + j) wrong.push(`${card} is recorded at place ${e.pos[j] + 1} but was dealt from place ${next + j + 1}`);
+      });
+      if (cards.length !== result.cards.length) wrong.push(`seat ${e.seat! + 1} drew ${cards.length} cards for ${thrown.length} thrown`);
+      deck = [...deck.slice(0, next), ...result.cards, ...result.stub];
+      next += result.cards.length;
+      muck = result.muck;
+      mine.push(...cards);
+    } else if ((e.t === 'show' || e.t === 'award') && e.cards) {
+      for (const c of e.cards.map(cardOf)) {
+        if (c === HIDDEN) continue;
+        if (hand(e.seat!).includes(c) || (e.t === 'award' && board.has(c))) matched++;
+        else wrong.push(`seat ${e.seat! + 1} ${e.t === 'show' ? 'showed' : 'won with'} ${c}, which it was never dealt`);
+      }
     }
-    cards.forEach((card, i) => {
-      const at = e.pos![i];
-      used.set(at, (used.get(at) ?? 0) + 1);
-      if (card === '??') hidden++;
-      else if (deck[at] === card) matched++;
-      else mismatches.push(`${card} at place ${at + 1} (the deck has ${deck[at] ?? 'nothing'} there)`);
-    });
   }
-  add('Every card seen is the one at its place in the deck', mismatches.length === 0, mismatches.length ? mismatches.join('; ') : `${matched} cards matched`);
-  const places = [...used.keys()].sort((a, b) => a - b);
-  const twice = [...used].filter(([, n]) => n > 1).map(([p]) => p + 1);
-  const gaps = places.length ? Array.from({ length: places[places.length - 1] + 1 }, (_, i) => i).filter((i) => !used.has(i)).map((i) => i + 1) : [];
-  add(
-    'Cards were dealt in order from the top, none skipped or used twice',
-    twice.length === 0 && gaps.length === 0,
-    twice.length || gaps.length ? `${gaps.length ? `skipped places ${gaps.join(', ')}` : ''}${twice.length ? ` reused places ${twice.join(', ')}` : ''}`.trim() : `places 1 to ${places.length}`,
-  );
-  return { ok: checks.every((c) => c.ok), checks, deck: commitOk ? deck : null, matched, hidden, unplaced };
+  add('Every card is the one at its place in the deck', wrong.length === 0, wrong.length ? wrong.join('; ') : `${matched} cards matched`);
+  add('Cards were dealt in turn from the top, none skipped', order.length === 0, order.length ? order.join('; ') : 'one at a time, clockwise from the left of the button');
+  if (unseen.length) add('Every card could be checked', false, `${unseen.join(', ')} hid which cards were thrown, so later cards weren't checked`);
+  return { ok: checks.every((c) => c.ok) && unchecked === 0, checks, deck: commitOk ? original : null, matched, unchecked };
 }

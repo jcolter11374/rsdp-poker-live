@@ -65,6 +65,12 @@ export interface SeatView {
 
 export interface HandView {
   handNumber: number;
+  /**
+   * Provably fair dealing: the commitment this hand was dealt from and the
+   * players' seeds mixed in, so each browser can see its own seed was used.
+   * Missing on hands dealt before it existed.
+   */
+  fair?: { commit: string; clientSeeds: { playerId: PlayerId; seed: string }[] };
   gameId: string;
   gameName: string;
   shortName: string;
@@ -228,6 +234,8 @@ export interface FairRecordView {
   serverSeed: string | null;
   handSeed: string | null;
   revealsAt: number | null;
+  /** Once revealed: every event with every card, so the checker can deal the hand again. */
+  events: HandEvent[] | null;
 }
 
 /** A hand shared as a link: frozen as the sharer saw it (or with their own cards hidden). */

@@ -145,6 +145,11 @@ export class TableRuntime {
 
   /** Re-arms clocks after construction from a snapshot. */
   resume() {
+    // A crash can lose the save made after the last deal; a fresh seed keeps a restart from dealing that deck again.
+    if (this.state.fair) {
+      this.state.fair.next = this.newServerSeed();
+      this.state.fair.clientSeeds = {};
+    }
     this.watchHost();
     this.sync();
   }
@@ -529,13 +534,13 @@ export class TableRuntime {
    * seeds of the players dealt in. Then a new server seed is committed for the
    * hand after, so players have this whole hand to send theirs.
    */
-  private fairDeal(handId: string, dealtIn: PlayerId[]): HandFairness {
+  private fairDeal(dealtIn: PlayerId[]): HandFairness {
     const f = this.fairState();
     const { serverSeed, commit } = f.next;
     const clientSeeds = dealtIn.filter((p) => f.clientSeeds[p]).map((playerId) => ({ playerId, seed: f.clientSeeds[playerId] }));
     f.next = this.newServerSeed();
     f.clientSeeds = {};
-    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, handId, clientSeeds.map((c) => c.seed)) };
+    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds.map((c) => c.seed)) };
   }
 
   /** The host stopped the game: every hand so far may be checked. */
@@ -1477,10 +1482,9 @@ export class TableRuntime {
     if (s.settings.game.rotation.enabled) s.rotation.hands++;
 
     const dealt = new Set(plan.dealtIn);
-    const handId = `${s.id}-${s.handNumber + 1}`;
-    const fair = this.fairDeal(handId, candidates.filter((x) => dealt.has(x.seat)).map((x) => x.playerId));
+    const fair = this.fairDeal(candidates.filter((x) => dealt.has(x.seat)).map((x) => x.playerId));
     let input: HandInput = {
-      handId,
+      handId: `${s.id}-${s.handNumber + 1}`,
       handNumber: s.handNumber + 1,
       game: setup.game,
       betting: setup.betting,

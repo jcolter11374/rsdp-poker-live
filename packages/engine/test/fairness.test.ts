@@ -26,29 +26,29 @@ describe('seeded deck', () => {
 
   // Hands already played must stay checkable: changing this deck is changing the scheme (bump FAIR_VERSION).
   it('is pinned for a known seed', () => {
-    const seed = handSeedOf('00'.repeat(32), 'table-1', ['abcdefabcdefabcd']);
-    expect(seed).toBe(createHash('sha256').update(`rsdp-fair-v1|${'00'.repeat(32)}|table-1|abcdefabcdefabcd`).digest('hex'));
+    const seed = handSeedOf('00'.repeat(32), ['abcdefabcdefabcd']);
+    expect(seed).toBe(createHash('sha256').update(`rsdp-fair-v1|${'00'.repeat(32)}|abcdefabcdefabcd`).digest('hex'));
     expect(deckFromSeed(seed).slice(0, 10)).toMatchInlineSnapshot(`
       [
-        "9h",
-        "3d",
-        "Ad",
-        "Jc",
-        "Jd",
-        "3s",
-        "Kh",
-        "As",
-        "5s",
+        "Qd",
+        "6h",
+        "Qc",
+        "Jh",
+        "6d",
+        "6s",
         "2h",
+        "Js",
+        "Jd",
+        "7h",
       ]
     `);
   });
 
   it('client seed order does not matter, but every seed changes the deck', () => {
     const s = 'ab'.repeat(32);
-    expect(handSeedOf(s, 'h', ['1111111111111111', '2222222222222222'])).toBe(handSeedOf(s, 'h', ['2222222222222222', '1111111111111111']));
-    expect(handSeedOf(s, 'h', ['1111111111111111'])).not.toBe(handSeedOf(s, 'h', ['1111111111111112']));
-    expect(handSeedOf(s, 'h', [])).not.toBe(handSeedOf(s, 'h2', []));
+    expect(handSeedOf(s, ['1111111111111111', '2222222222222222'])).toBe(handSeedOf(s, ['2222222222222222', '1111111111111111']));
+    expect(handSeedOf(s, ['1111111111111111'])).not.toBe(handSeedOf(s, ['1111111111111112']));
+    expect(handSeedOf(s, [])).not.toBe(handSeedOf('ac'.repeat(32), []));
   });
 
   it('draws are in range and every value turns up', () => {
@@ -71,7 +71,7 @@ describe('seeded deck', () => {
 });
 
 function fairHand(serverSeed: string, clientSeeds: string[] = []): HandInput {
-  const handSeed = handSeedOf(serverSeed, 'h1', clientSeeds);
+  const handSeed = handSeedOf(serverSeed, clientSeeds);
   return {
     handId: 'h1',
     handNumber: 1,
@@ -108,26 +108,39 @@ function playOut(input: HandInput): HandState {
 describe('verifyHand', () => {
   const serverSeed = 'ef'.repeat(32);
   const clientSeeds = ['0123456789abcdef'];
-  const args = (events: CardEvent[]) => ({ handId: 'h1', commit: commitmentOf(serverSeed), serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, 'h1', clientSeeds), events });
+  const args = (events: CardEvent[]) => ({ commit: commitmentOf(serverSeed), serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds), button: 0, events });
+  const full = () => engine.visibleEvents(playOut(fairHand(serverSeed, clientSeeds)), { seat: null, seeAll: true }) as CardEvent[];
+  const failing = (events: CardEvent[]) => verifyHand(args(events)).checks.filter((c) => !c.ok).map((c) => c.label);
 
-  it('passes a real hand, as a player who saw only their own cards', () => {
-    const state = playOut(fairHand(serverSeed, clientSeeds));
-    const seen = engine.visibleEvents(state, { seat: 1, seeAll: false });
-    const check = verifyHand(args(seen));
+  it('passes a real hand', () => {
+    const check = verifyHand(args(full()));
     expect(check.checks.filter((c) => !c.ok)).toEqual([]);
     expect(check.ok).toBe(true);
-    // Showdown shows everyone's cards here: 6 hole cards and 5 on the board.
-    expect(check.matched).toBe(11);
+    // 6 hole cards and 5 board cards dealt, then shown and awarded.
+    expect(check.matched).toBeGreaterThanOrEqual(11 + 6);
   });
 
-  it('fails a swapped card, a skipped card, a wrong seed and a wrong commitment', () => {
-    const state = playOut(fairHand(serverSeed, clientSeeds));
-    const events = engine.visibleEvents(state, { seat: null, seeAll: true });
-    const board = events.find((e) => e.t === 'board' && e.cards.length === 1)! as Extract<CardEvent, { t: string }>;
-    const swapped = events.map((e) => (e === board ? { ...board, cards: [board.cards![0] === 'As' ? 'Ks' : 'As'] } : e));
-    expect(verifyHand(args(swapped)).ok).toBe(false);
-    const skipped = events.map((e) => (e === board ? { ...board, pos: [board.pos![0] + 1] } : e));
-    expect(verifyHand(args(skipped)).ok).toBe(false);
+  it('as one player sees it, other hands that were never shown count as unchecked', () => {
+    const state = playOut({ ...fairHand(serverSeed, clientSeeds), options: { ...fairHand(serverSeed).options, showdown: 'muck-losers' } });
+    const check = verifyHand(args(engine.visibleEvents(state, { seat: 1, seeAll: false }) as CardEvent[]));
+    expect(check.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(check.unchecked).toBeGreaterThan(0);
+    expect(check.ok).toBe(false);
+  });
+
+  it('fails a swapped card, cards handed out of turn, a shown card never dealt, a wrong seed and a wrong commitment', () => {
+    const events = full();
+    const flop = events.find((e) => e.t === 'board')!;
+    // A different card where the flop is.
+    expect(failing(events.map((e) => (e === flop ? { ...e, cards: [...flop.cards!.slice(1), flop.cards![0]] } : e)))).toContain('Every card is the one at its place in the deck');
+    // The flop given to seat 1 as hole cards and the hole cards put on the board: every place still used once.
+    const deals = events.filter((e) => e.t === 'deal');
+    const swappedSeats = events.map((e) => (e === deals[0] ? { ...e, seat: deals[1].seat } : e === deals[1] ? { ...e, seat: deals[0].seat } : e));
+    expect(failing(swappedSeats)).toContain('Cards were dealt in turn from the top, none skipped');
+    // A showdown with a card the seat never had.
+    const show = events.find((e) => e.t === 'show')!;
+    const other = flop.cards![0] as string;
+    expect(failing(events.map((e) => (e === show ? { ...e, cards: [other, ...show.cards!.slice(1)] } : e)))).toContain('Every card is the one at its place in the deck');
     expect(verifyHand({ ...args(events), clientSeeds: [] }).ok).toBe(false);
     expect(verifyHand({ ...args(events), commit: commitmentOf('aa'.repeat(32)) }).ok).toBe(false);
   });

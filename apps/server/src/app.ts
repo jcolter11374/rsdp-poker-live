@@ -601,7 +601,8 @@ export function createApp(deps: AppDeps = {}) {
           if (!record) throw new ActionError('that hand is no longer available');
           if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
           const id = newId();
-          const hand = handRecordView(rt, record, me, { hideMine: !!input?.hideMine });
+          // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
+          const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
           await sharedStore.create({
             id,
             tableId: rt.state.id,

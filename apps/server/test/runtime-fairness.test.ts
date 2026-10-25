@@ -50,7 +50,9 @@ describe('provably fair dealing', () => {
     expect(fair.commit).toBe(commit);
     expect(commitmentOf(fair.serverSeed)).toBe(commit);
     expect(fair.clientSeeds.map((c) => c.playerId).sort()).toEqual(['a', 'b']);
-    expect(fair.handSeed).toBe(handSeedOf(fair.serverSeed, h.input.handId, ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb']));
+    expect(fair.handSeed).toBe(handSeedOf(fair.serverSeed, ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb']));
+    // Everyone at the table sees which seeds went in, so a browser can tell if its own was left out.
+    expect(tableView(rt, 'b', 0).hand!.fair).toEqual({ commit, clientSeeds: fair.clientSeeds });
     expect(h.input.deck).toEqual(deckFromSeed(fair.handSeed));
     // The next hand already has a different commitment, and the seeds sent so far are spent.
     const view = tableView(rt, 'a', 0);
@@ -104,13 +106,17 @@ describe('provably fair dealing', () => {
     expect(fair.serverSeed).toBe(hand(rt).input.fair!.serverSeed);
     expect(fair.revealsAt).toBeNull();
     expect(fair.clientSeeds).toEqual([{ playerId: 'a', name: 'A', seed: '0123456789abcdef' }]);
-    const check = verifyHand({ handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed!, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, events: view.events });
+    expect(fair.events).not.toBeNull();
+    const proof = { commit: fair.commit, serverSeed: fair.serverSeed!, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, button: view.button, events: fair.events! };
+    const check = verifyHand(proof);
     expect(check.checks.filter((c) => !c.ok)).toEqual([]);
-    expect(check.matched).toBeGreaterThanOrEqual(5);
+    expect(check.ok).toBe(true);
+    expect(check.matched).toBeGreaterThanOrEqual(11);
+    // Hiding my cards in a shared hand also hides the seeds that would rebuild them.
+    expect(handRecordView(rt, rt.state.history.at(-1)!, 'b', { hideMine: true }).fair).toBeNull();
 
     // The standalone checker (Node's own SHA-256, no app code) agrees, and catches a swapped card.
     const dir = mkdtempSync(path.join(tmpdir(), 'proof-'));
-    const proof = { handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, events: view.events };
     const script = path.resolve(__dirname, '../../../scripts/verify-hand.mjs');
     const run = (p: object) => {
       const file = path.join(dir, `${Math.random()}.json`);
@@ -120,7 +126,7 @@ describe('provably fair dealing', () => {
     const good = run(proof);
     expect(good.stdout).toContain('This hand checks out.');
     expect(good.status).toBe(0);
-    const events = view.events.map((e) => (e.t === 'board' ? { ...e, cards: e.cards.map((c) => (c === '2c' ? '3c' : '2c')) } : e));
+    const events = proof.events.map((e) => (e.t === 'board' ? { ...e, cards: e.cards.map((c) => (c === '2c' ? '3c' : '2c')) } : e));
     expect(run({ ...proof, events }).status).toBe(1);
   });
 
@@ -136,10 +142,14 @@ describe('provably fair dealing', () => {
     expect(handRecordView(rt, record, 'a').fair!.serverSeed).toBe(record.hand.input.fair!.serverSeed);
   });
 
-  it('keeps the commitment across a restart', () => {
+  it('commits to a fresh seed after a restart, so a deal lost in a crash is never dealt again', () => {
     const { rt, clock } = table();
     const commit = rt.nextCommit();
+    rt.addClientSeed('a', { commit, seed: 'aaaaaaaaaaaaaaaa' });
     const restored = new TableRuntime(JSON.parse(JSON.stringify(rt.state)), { clock, rng: seeded(3) });
-    expect(restored.nextCommit()).toBe(commit);
+    restored.resume();
+    expect(restored.nextCommit()).not.toBe(commit);
+    expect(restored.state.fair!.clientSeeds).toEqual({});
+    expect(JSON.stringify(restored.state)).not.toContain(rt.state.fair!.next.serverSeed);
   });
 });

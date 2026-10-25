@@ -130,7 +130,7 @@ function ReplayerView({
             </button>
           </span>
         </div>
-        {checking && <FairCheck hand={hand} />}
+        {checking && <FairCheck hand={hand} myId={myId} />}
         <div className="replayer-table">
           <Table key={hand.handNumber} view={view} skew={0} fmt={fmt} compact={compact} />
         </div>

@@ -1,7 +1,7 @@
 // Statistical checks of the shuffle (docs/FAIRNESS.md has the latest results).
 //   npx tsx scripts/fairness/stats.ts [decks=1000000]
-// Runs every test against the live shuffle (Fisher-Yates over the CSPRNG) and
-// against the provably fair deck (Fisher-Yates over SHA-256 of a per-hand seed).
+// Runs every test against the seeded deck that deals every hand (Fisher-Yates over
+// SHA-256 of a per-hand seed) and the direct CSPRNG shuffle (seats, older hands).
 
 import { randomBytes } from 'node:crypto';
 import { cryptoRng, freshDeck, shuffle } from '../../packages/engine/src/cards';
@@ -167,8 +167,8 @@ const range = (k: number) => Array.from({ length: k }, (_, i) => i);
 const seed = () => randomBytes(32).toString('hex');
 
 const all = [
-  ...run('Live shuffle (CSPRNG)', () => shuffle(DECK, cryptoRng), (k) => shuffle(range(k), cryptoRng)),
-  ...run('Provably fair deck (SHA-256 seed)', () => deckFromSeed(seed()), (k) => shuffle(range(k), reshuffleRng(seed(), 0))),
+  ...run('Direct CSPRNG shuffle', () => shuffle(DECK, cryptoRng), (k) => shuffle(range(k), cryptoRng)),
+  ...run('Seeded deck (rsdp-fair-v1)', () => deckFromSeed(seed()), (k) => shuffle(range(k), reshuffleRng(seed(), 0))),
 ];
 
 console.log(`| Test | What was measured | Statistic | p-value |\n|---|---|---|---|`);

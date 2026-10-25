@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shuffle } from '../../src/cards';
 import { ActionError, engine, modifierRegistry, planForcedBets, variants, type HandInput, type HandState, type PlannerSeat } from '../../src/core';
@@ -89,7 +93,7 @@ function randomHand(seed: number): HandInput {
 /** A provably fair deck, seeded from the fuzz seed so failures replay. */
 function fairDeal(seed: number) {
   const serverSeed = seed.toString(16).padStart(64, '0');
-  const handSeed = handSeedOf(serverSeed, `fuzz-${seed}`, []);
+  const handSeed = handSeedOf(serverSeed, []);
   return {
     deck: deckFromSeed(handSeed),
     reshuffleSeed: 0,
@@ -153,6 +157,8 @@ function play(seed: number): HandState {
 describe('fuzz: random hands in every game', () => {
   it('always finishes, conserves chips and never duplicates a card', () => {
     let played = 0;
+    let reshuffles = 0;
+    const proofs: object[] = [];
     const byGame = new Map<string, number>();
     const hands = Number(process.env.FUZZ_HANDS ?? 3000);
     for (let seed = 1; seed <= hands; seed++) {
@@ -183,11 +189,21 @@ describe('fuzz: random hands in every game', () => {
       expect(end_.t, ctx).toBe('hand-end');
       // Every card dealt checks out against the deck rebuilt from the seed.
       const fair = state.input.fair!;
-      const check = verifyHand({ handId: state.input.handId, commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, events: state.events });
+      const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, button: state.input.button, events: state.events };
+      const check = verifyHand(proof);
       expect(check.checks.filter((c) => !c.ok), ctx).toEqual([]);
-      if (!state.reshuffled) expect(check.unplaced, ctx).toBe(0);
+      expect(check.ok, ctx).toBe(true);
+      proofs.push(proof);
+      if (state.reshuffled) reshuffles++;
     }
     expect(played).toBeGreaterThan(hands * 0.8);
+    expect(reshuffles, 'draw-game reshuffles get checked too').toBeGreaterThan(0);
+    // The standalone checker (Node's own SHA-256, no app code) agrees on every hand.
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'proofs-')), 'proofs.json');
+    writeFileSync(file, JSON.stringify(proofs));
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../../../../scripts/verify-hand.mjs'), file], { encoding: 'utf8' });
+    expect(run.stdout.trim().split('\n').at(-1)).toBe(`All ${proofs.length} hands check out.`);
+    expect(run.status).toBe(0);
     for (const id of GAMES) expect(byGame.get(id) ?? 0, id).toBeGreaterThan(50);
   });
 });

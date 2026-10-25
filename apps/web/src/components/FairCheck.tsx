@@ -1,29 +1,42 @@
 import { useMemo } from 'react';
-import { verifyHand } from '@rsdp/engine';
+import { verifyHand, type CardEvent } from '@rsdp/engine';
 import type { HandRecordView } from '@rsdp/engine/wire';
-import { mySeedFor } from '../fair';
+import { myCardsFor, mySeedFor, seedProblem } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
 const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
-/** "Check this hand": the hand's fairness record, and once it is revealed, the checks run right here in the browser. */
-export function FairCheck({ hand }: { hand: HandRecordView }) {
+/** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
+export function FairCheck({ hand, myId }: { hand: HandRecordView; myId: string | null }) {
   const fair = hand.fair;
-  const check = useMemo(
-    () =>
-      fair?.serverSeed
-        ? verifyHand({ handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, events: hand.events })
-        : null,
-    [fair, hand.events],
-  );
-  if (!fair) return <p className="muted">This hand was dealt before hands could be checked.</p>;
-  const mine = mySeedFor(fair.commit);
-  const mineUsed = !!mine && fair.clientSeeds.some((c) => c.seed === mine);
+  const report = useMemo(() => {
+    if (!fair) return null;
+    const mine = mySeedFor(fair.commit);
+    const dealtIn = !!myId && hand.seats.some((s) => s.playerId === myId);
+    // My own records from the table: the seed the server accepted from me, and the cards I was shown.
+    const extra: { label: string; ok: boolean; detail: string }[] = [];
+    const problem = myId ? seedProblem(fair.commit, fair.clientSeeds, myId, dealtIn) : null;
+    if (problem || (mine && dealtIn)) extra.push({ label: 'The seed under your name is the one your browser sent', ok: !problem, detail: problem ?? mine! });
+    if (!fair.serverSeed || !fair.events) return { check: null, extra };
+    const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, button: hand.button, events: fair.events as CardEvent[] };
+    const check = verifyHand(proof);
+    const seat = hand.seats.find((s) => s.playerId === myId)?.seat;
+    const seen = myCardsFor(fair.commit);
+    if (seat !== undefined && seen.length) {
+      const dealt = new Set(fair.events.flatMap((e) => (e.t === 'deal' && e.seat === seat ? e.cards.map((c) => c.card) : e.t === 'draw' && e.seat === seat ? e.cards : [])));
+      const missing = seen.filter((c) => !dealt.has(c));
+      extra.push({ label: 'Your cards are the ones you saw at the table', ok: !missing.length, detail: missing.length ? `the record doesn't have ${missing.join(' ')}` : seen.join(' ') });
+    }
+    return { check, extra, proof };
+  }, [fair, hand, myId]);
+  if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
+  const { check, extra } = report;
+  const checks = [...(check?.checks ?? []), ...extra];
+  const ok = !!check?.ok && extra.every((c) => c.ok);
 
   const download = () => {
-    const proof = { handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, events: hand.events };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(proof, null, 2)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report.proof, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = `hand-${hand.handNumber}-proof.json`;
@@ -38,18 +51,18 @@ export function FairCheck({ hand }: { hand: HandRecordView }) {
           🔒 <b>Sealed.</b> The deck was locked in before the deal. It can be checked{' '}
           {fair.revealsAt ? <>when the host stops the game, or {when(fair.revealsAt)}</> : 'once the host stops the game'}, so folded hands stay private while you play.
         </p>
-      ) : check.ok ? (
+      ) : ok ? (
         <p className="up">
-          ✓ <b>This hand checks out.</b> {check.matched} cards you saw match the deck, which came from seeds no single person controlled.
+          ✓ <b>This hand checks out.</b> It was dealt again from the seeds and all {check.matched} cards match, from a deck no single person could choose.
         </p>
       ) : (
         <p className="down">
-          ✗ <b>This hand does not check out.</b> Tell the host and keep the proof file.
+          ✗ <b>This hand does not check out.</b> Tell the table and keep the proof file.
         </p>
       )}
-      {check && (
+      {checks.length > 0 && (
         <ul className="fair-list">
-          {check.checks.map((c) => (
+          {checks.map((c) => (
             <li key={c.label} className={c.ok ? 'up' : 'down'}>
               {c.ok ? '✓' : '✗'} {c.label}
               <div className="muted fair-detail">{c.detail}</div>
@@ -61,10 +74,7 @@ export function FairCheck({ hand }: { hand: HandRecordView }) {
         <dt>Commitment (shown before the deal)</dt>
         <dd>{fair.commit}</dd>
         <dt>Players&rsquo; seeds</dt>
-        <dd>
-          {fair.clientSeeds.length ? fair.clientSeeds.map((c) => `${c.name}: ${c.seed}`).join(', ') : 'none'}
-          {mine && <div className={mineUsed ? 'up' : 'muted'}>{mineUsed ? '✓ Your browser’s seed was mixed in.' : 'Your seed arrived after the deal, so it wasn’t used.'}</div>}
-        </dd>
+        <dd>{fair.clientSeeds.length ? fair.clientSeeds.map((c) => `${c.name}: ${c.seed}`).join(', ') : 'none'}</dd>
         {fair.serverSeed && (
           <>
             <dt>Server seed</dt>

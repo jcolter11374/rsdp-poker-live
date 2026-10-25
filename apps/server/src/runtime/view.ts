@@ -220,6 +220,7 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
   const street = input.game.streets[hand.street];
   return {
     handNumber: input.handNumber,
+    ...(input.fair ? { fair: { commit: input.fair.commit, clientSeeds: input.fair.clientSeeds.map((c) => ({ ...c })) } } : {}),
     gameId: input.game.id,
     gameName: input.game.name,
     shortName,
@@ -315,7 +316,8 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
-    fair: fairRecordView(rt, past),
+    // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
+    fair: opts.hideMine ? null : fairRecordView(rt, past),
   };
 }
 
@@ -331,5 +333,6 @@ function fairRecordView(rt: TableRuntime, past: PastHand): FairRecordView | null
     serverSeed: revealed ? fair.serverSeed : null,
     handSeed: revealed ? fair.handSeed : null,
     revealsAt: revealed ? null : past.endedAt + FAIR_REVEAL_AFTER_MS,
+    events: revealed ? past.events : null,
   };
 }
