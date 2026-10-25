@@ -100,14 +100,16 @@ function recordLive(view: TableView) {
 
 let sent = '';
 let sending = '';
-/** The commitment the table shows as next, as of the latest view. */
+/** The commitment the table shows as next, and whether I'm seated, as of the latest view. */
 let current = '';
+let seated = false;
 
 /** Call with every table view: sends a fresh seed once per published commitment while seated, and notes what the hand showed. */
 export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
   current = commit ?? '';
+  seated = view.me.seat !== null;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;
@@ -120,8 +122,8 @@ export function contributeSeed(view: TableView) {
     // One seed per commitment, accepted or not: a fresh one after a refusal would let a server pick and choose.
     sent = commit;
     if (!res.ok) {
-      // Only "already dealt" claims the commitment moved on; other refusals (say, standing up meanwhile) aren't about the deal.
-      const whileCurrent = current === commit && /already been dealt/.test(res.error);
+      // Seated, against the commitment still showing as next, an honest server has no reason to refuse, whatever it says.
+      const whileCurrent = current === commit && seated;
       save(SENT, commit, JSON.stringify({ seed, at, rejected: { after: Date.now() - at, whileCurrent } } satisfies Sent));
       return;
     }

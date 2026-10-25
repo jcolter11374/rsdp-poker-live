@@ -114,8 +114,9 @@ Limits, stated plainly:
   a real one, to steer the deck. Each browser checks its own entry, live and
   in "Check this hand": it warns if a seed it never sent is listed, if its
   seed was left out although sent more than 3 seconds before the deal, and if
-  the server turns a seed down while that hand's commitment is still current
-  (an honest server only turns down a seed that arrived after the deal). So
+  the server turns a seed down for any reason while the player is seated and
+  that hand's commitment is still current (an honest server only turns down a
+  seed that arrived after the deal). So
   this is caught unless the affected player never looks (say they left right
   after the hand, or play with browser storage blocked), and except for seeds
   sent in the last 3 seconds before a deal, which can honestly miss it.
