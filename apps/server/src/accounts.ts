@@ -21,6 +21,7 @@ import {
   playersForAccount,
   resetPassword,
   setPassword,
+  signInMethods,
   whoIs,
   type Identity,
 } from './identity';
@@ -167,11 +168,14 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       if (!who) return;
       const address = clientAddress(req);
       if (!failuresByAddress(address, false)) return void tooMany(res);
-      if (!(await checkPassword(db, who.account.id, req.body?.current))) {
+      // An account made with Google has no password yet; its first one needs no current one.
+      const { hasPassword } = await signInMethods(db, who.account.id);
+      if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.current))) {
         failuresByAddress(address);
         return void res.status(401).json({ error: 'Your current password is not right.' });
       }
       await setPassword(db, who.account.id, str(req.body?.password));
+      if (!hasPassword) return void res.json({ ok: true });
       // Other devices have to sign in again with the new password, this one excepted.
       const guestToken = req.get('x-guest-token') ?? '';
       await logoutOthers(db, who.account.id, req.get('x-session-token'));
@@ -189,9 +193,14 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       if (!who) return;
       const address = clientAddress(req);
       if (!failuresByAddress(address, false)) return void tooMany(res);
-      if (!(await checkPassword(db, who.account.id, req.body?.password))) {
+      // Without a password (a Google account), typing the username confirms it instead.
+      const { hasPassword } = await signInMethods(db, who.account.id);
+      const confirmed = hasPassword
+        ? await checkPassword(db, who.account.id, req.body?.password)
+        : str(req.body?.username).trim().toLowerCase() === who.account.username.toLowerCase();
+      if (!confirmed) {
         failuresByAddress(address);
-        return void res.status(401).json({ error: 'That password is not right.' });
+        return void res.status(401).json({ error: hasPassword ? 'That password is not right.' : 'Type your username exactly to confirm.' });
       }
       const ids = await deleteAccount(db, who.account.id);
       hooks.deleted(ids);
@@ -243,7 +252,7 @@ export function accountRoutes(app: express.Express, db: Db | null, opts: { hooks
       res.json({
         playerId: who.player.id,
         displayName: who.player.displayName,
-        account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length },
+        account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length, ...(await signInMethods(db, who.account.id)) },
         tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
         tournaments: tournaments.flatMap((row) => {
           const s = row.state;

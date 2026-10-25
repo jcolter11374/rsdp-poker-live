@@ -8,6 +8,7 @@
         { "title": "Sign in on any device", "detail": "Create an account with a username and password, then sign in on your phone, laptop or tablet to play as yourself with the same name, picture and notes. Guests can still play without signing up." },
         { "title": "Your history comes along", "detail": "When you create an account, everything you've played on that device stays yours. Sign in on another device and what you did there as a guest moves into your account too." },
         { "title": "Your profile", "detail": "A new profile page shows your cash games with your result at each table, and your tournament finishes. Change your name, picture or password there, sign out, or delete your account." },
+        { "title": "Sign in with Google", "detail": "Skip the password: continue with your Google account, or link it to the account you already have from your profile." },
         { "title": "Forgot your password?", "detail": "There's no email, so ask the site admin for a one-time reset code and enter it on the Forgot password page." }
       ]
     },

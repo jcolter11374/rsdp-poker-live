@@ -25,7 +25,8 @@ import { memorySharedHands, type SharedHandStore } from './shared';
 import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
 import { adminGate } from './admin';
-import { accountRoutes } from './accounts';
+import { accountRoutes, type AccountHooks } from './accounts';
+import { googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
 
 export interface Session {
@@ -102,6 +103,8 @@ export interface AppDeps {
   suggestions?: SuggestionStore;
   /** The database that keeps accounts. Without it, sign-up and sign-in answer that accounts are not available. */
   accounts?: Db | null;
+  /** Sign in with Google; off when null (production reads GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET). */
+  google?: GoogleConfig | null;
   /** Lets the roadmap admin page change suggestions. Defaults to the ADMIN_KEY environment variable. */
   adminKey?: string;
   /** Deck shuffles; tests pass a seeded one. */
@@ -205,26 +208,23 @@ export function createApp(deps: AppDeps = {}) {
   });
   const isAdmin = adminGate(deps.adminKey ?? process.env.ADMIN_KEY, () => clock.now());
   suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { isAdmin, now: () => clock.now(), log });
-  accountRoutes(app, deps.accounts ?? null, {
-    isAdmin,
-    now: () => clock.now(),
-    log,
-    hooks: {
-      signedIn: (playerId) => avatars.delete(playerId),
-      deleted: (playerIds) => {
-        for (const id of playerIds) {
-          avatars.delete(id);
-          // Their tabs reconnect as new guests.
-          for (const s of playerSockets.get(id) ?? []) s.disconnect(true);
-        }
-      },
-      signedOutElsewhere: (playerIds, keepGuestToken) => {
-        const keep = keepGuestToken ? hashSecret(keepGuestToken) : null;
-        // Those tabs reload and connect again as whoever they are now.
-        for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
-      },
+  const accountHooks: AccountHooks = {
+    signedIn: (playerId) => avatars.delete(playerId),
+    deleted: (playerIds) => {
+      for (const id of playerIds) {
+        avatars.delete(id);
+        // Their tabs reconnect as new guests.
+        for (const s of playerSockets.get(id) ?? []) s.disconnect(true);
+      }
     },
-  });
+    signedOutElsewhere: (playerIds, keepGuestToken) => {
+      const keep = keepGuestToken ? hashSecret(keepGuestToken) : null;
+      // Those tabs reload and connect again as whoever they are now.
+      for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
+    },
+  };
+  accountRoutes(app, deps.accounts ?? null, { isAdmin, now: () => clock.now(), log, hooks: accountHooks });
+  googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
     const id = String(req.params.id);

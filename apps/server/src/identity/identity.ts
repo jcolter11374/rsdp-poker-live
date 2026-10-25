@@ -15,7 +15,7 @@ import { hashSecret, isWellFormedSecret, newSecret } from './secrets';
 
 export type Player = typeof players.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
-export type Account = Omit<typeof accounts.$inferSelect, 'passwordHash' | 'resetCodeHash' | 'resetCodeExpiresAt'>;
+export type Account = Pick<typeof accounts.$inferSelect, 'id' | 'username' | 'primaryPlayerId' | 'createdAt'>;
 
 export type IdentityErrorCode =
   | 'invalid-token'
@@ -28,7 +28,8 @@ export type IdentityErrorCode =
   | 'account-not-found'
   | 'already-linked'
   | 'not-linked'
-  | 'bad-reset-code';
+  | 'bad-reset-code'
+  | 'google-taken';
 
 /** Expected identity failures; the message is safe to show to the user. */
 export class IdentityError extends Error {
@@ -231,25 +232,30 @@ export async function login(
   const matches = await verifyPassword(ok ? password : '', row?.passwordHash ?? (await dummyPasswordHash()));
   if (!row || !ok || !matches) throw new IdentityError('bad-credentials', 'wrong username or password');
 
-  const now = opts.now ?? new Date();
-  const token = newSecret();
-  await db.delete(sessions).where(and(eq(sessions.accountId, row.id), lte(sessions.expiresAt, now)));
-  const [session] = await db
-    .insert(sessions)
-    .values({
-      id: newId(),
-      accountId: row.id,
-      tokenHash: hashSecret(token),
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + (opts.ttlMs ?? SESSION_TTL_MS)),
-    })
-    .returning();
   const account: Account = {
     id: row.id,
     username: row.username,
     primaryPlayerId: row.primaryPlayerId,
     createdAt: row.createdAt,
   };
+  return openSession(db, account, opts);
+}
+
+/** Opens a session for an account whose owner has already proved who they are (password or Google). */
+export async function openSession(db: Db, account: Account, opts: { now?: Date; ttlMs?: number } = {}): Promise<LoginResult> {
+  const now = opts.now ?? new Date();
+  const token = newSecret();
+  await db.delete(sessions).where(and(eq(sessions.accountId, account.id), lte(sessions.expiresAt, now)));
+  const [session] = await db
+    .insert(sessions)
+    .values({
+      id: newId(),
+      accountId: account.id,
+      tokenHash: hashSecret(token),
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + (opts.ttlMs ?? SESSION_TTL_MS)),
+    })
+    .returning();
   return { token, session, account };
 }
 
@@ -318,7 +324,7 @@ export async function setPassword(db: Db, accountId: string, password: string): 
   const passwordHash = await hashPassword(password);
   const updated = await db
     .update(accounts)
-    .set({ passwordHash, resetCodeHash: null, resetCodeExpiresAt: null })
+    .set({ passwordHash, hasPassword: true, resetCodeHash: null, resetCodeExpiresAt: null })
     .where(eq(accounts.id, accountId))
     .returning({ id: accounts.id });
   if (updated.length === 0) throw new IdentityError('account-not-found', 'no such account');
@@ -460,4 +466,88 @@ export async function whoIs(db: Db, guestSecret: string, sessionToken?: unknown,
     if (account?.primaryPlayerId === guest.id) return { guest, player: guest, account, session: null };
   }
   return { guest, player: guest, account: null, session: null };
+}
+
+// ---------------------------------------------------------------- Google
+
+/** How an account signs in: with a password, with Google, or both. */
+export async function signInMethods(db: Db, accountId: string): Promise<{ hasPassword: boolean; google: boolean }> {
+  const [row] = await db.select({ hasPassword: accounts.hasPassword, googleSub: accounts.googleSub }).from(accounts).where(eq(accounts.id, accountId));
+  if (!row) throw new IdentityError('account-not-found', 'no such account');
+  return { hasPassword: row.hasPassword, google: !!row.googleSub };
+}
+
+export async function findAccountByGoogle(db: Db, sub: string): Promise<Account | null> {
+  const [account] = await db.select(accountColumns).from(accounts).where(eq(accounts.googleSub, sub));
+  return account ?? null;
+}
+
+/** A free username from a Google name: letters and digits kept, then 2, 3, ... until one is free. */
+async function freeUsername(db: Db, wanted: string): Promise<string> {
+  let base = wanted
+    .normalize('NFKD')
+    .replace(/[^A-Za-z0-9_.-]+/g, '')
+    .replace(/^[.-]+/, '')
+    .slice(0, 20);
+  if (base.length < 3) base = `player${base}`;
+  for (let i = 1; i < 50; i++) {
+    const name = i === 1 ? base : `${base.slice(0, 20)}${i}`;
+    if (!(await findAccountByUsername(db, name))) return name;
+  }
+  return `player${randomBytes(4).toString('hex')}`;
+}
+
+/**
+ * Makes an account for someone signing in with Google for the first time.
+ * It plays as the browser's guest when that guest belongs to no account
+ * (so what they did on this device stays theirs), else as a new player.
+ * It has no password until one is set.
+ */
+export async function createGoogleAccount(
+  db: Db,
+  input: { sub: string; name: string; guestId: string },
+  opts: { now?: Date } = {},
+): Promise<{ account: Account; usedGuest: boolean }> {
+  const now = opts.now ?? new Date();
+  const passwordHash = await hashPassword(randomBytes(32).toString('hex'));
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const username = await freeUsername(db, input.name);
+    const made = await db.transaction(async (tx) => {
+      const [guest] = await tx.select().from(players).where(eq(players.id, input.guestId)).for('update');
+      const usedGuest = !!guest && !guest.accountId;
+      const playerId = usedGuest
+        ? guest.id
+        : (await tx.insert(players).values({ id: newId(), createdAt: now, lastSeenAt: now }).returning())[0].id;
+      const [account] = await tx
+        .insert(accounts)
+        .values({ id: newId(), username, passwordHash, hasPassword: false, googleSub: input.sub, primaryPlayerId: playerId, createdAt: now })
+        .onConflictDoNothing()
+        .returning(accountColumns);
+      // A username or Google account taken in the meantime: start over.
+      if (!account) tx.rollback();
+      await tx.update(players).set({ accountId: account.id }).where(eq(players.id, playerId));
+      return { account, usedGuest };
+    }).catch((e: unknown) => {
+      if (e instanceof TransactionRollbackError) return null;
+      throw e;
+    });
+    if (made) return made;
+    const existing = await findAccountByGoogle(db, input.sub);
+    if (existing) return { account: existing, usedGuest: false };
+  }
+  throw new IdentityError('username-taken', 'could not pick a username; try again');
+}
+
+/** Lets an account also sign in with this Google account. */
+export async function linkGoogle(db: Db, accountId: string, sub: string): Promise<void> {
+  const owner = await findAccountByGoogle(db, sub);
+  if (owner && owner.id !== accountId) throw new IdentityError('google-taken', 'that Google account already belongs to another account');
+  await db.update(accounts).set({ googleSub: sub }).where(eq(accounts.id, accountId));
+}
+
+/** Stops Google sign-in for an account; it then needs its password, so one must be set. */
+export async function unlinkGoogle(db: Db, accountId: string): Promise<void> {
+  const { hasPassword } = await signInMethods(db, accountId);
+  if (!hasPassword) throw new IdentityError('weak-password', 'set a password first, or you could not sign in any more');
+  await db.update(accounts).set({ googleSub: null }).where(eq(accounts.id, accountId));
 }

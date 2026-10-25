@@ -64,6 +64,13 @@
       "when": 1793000000000,
       "tag": "0008_account_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793000100000,
+      "tag": "0009_google_sign_in",
+      "breakpoints": true
     }
   ]
 }
