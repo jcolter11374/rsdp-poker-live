@@ -21,11 +21,24 @@ await server.resume();
 
 server.http.listen(PORT, () => console.log(`RSDP Poker Live! server on http://localhost:${PORT}`));
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(signal, () => {
-    server
-      .close()
-      .then(() => closeDb(db))
-      .finally(() => process.exit(0));
-  });
+let stopping = false;
+/** Saves every table and tournament, then exits; gives up after 10 s so a host's restart never hangs. */
+function shutdown(code: number) {
+  if (stopping) return;
+  stopping = true;
+  setTimeout(() => process.exit(code), 10_000).unref();
+  server
+    .close()
+    .then(() => closeDb(db))
+    .catch((e) => console.error('shutdown failed', e))
+    .finally(() => process.exit(code));
 }
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => shutdown(0));
+// One stray rejected promise must not end every game in progress.
+process.on('unhandledRejection', (e) => console.error('unhandled rejection', e));
+// Anything worse: save what we can and let the host restart us; tables and tournaments resume.
+process.on('uncaughtException', (e) => {
+  console.error('uncaught exception', e);
+  shutdown(1);
+});

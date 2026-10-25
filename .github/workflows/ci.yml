@@ -26,13 +26,13 @@ jobs:
           POSTGRES_DB: rsdp_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U rsdp"
+          --health-cmd "pg_isready -U rsdp -d rsdp_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -46,30 +46,38 @@ jobs:
       - run: npm run build
 
   smoke:
-    name: Browser smoke test
+    name: Browser smoke test (production image)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
+      # The same image a host would run, with its data on a volume.
+      - run: docker build -t rsdp-poker .
       - name: Start the server
         run: |
-          PGLITE_DIR="$RUNNER_TEMP/pglite" PORT=3001 npm start > "$RUNNER_TEMP/server.log" 2>&1 &
+          docker run -d --name rsdp -p 3001:8080 -v rsdp-data:/data rsdp-poker
           for i in $(seq 1 60); do curl -sf localhost:3001/api/health && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/server.log"; exit 1
+          docker logs rsdp; exit 1
       - run: node e2e/smoke.mjs
         env:
           BASE_URL: http://localhost:3001
+      - name: Restart keeps data and shuts down cleanly
+        run: |
+          docker stop rsdp
+          test "$(docker inspect rsdp --format '{{.State.ExitCode}}')" = 0
+          docker start rsdp
+          for i in $(seq 1 60); do curl -sf localhost:3001/api/health && exit 0; sleep 1; done
+          docker logs rsdp; exit 1
       - name: Server log
         if: failure()
-        run: cat "$RUNNER_TEMP/server.log"
-      - uses: actions/upload-artifact@v4
+        run: docker logs rsdp
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: smoke-screenshots

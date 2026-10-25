@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/dist
+apps/server/.data
+e2e/out
+.claude
+*.log
+Dockerfile
+.dockerignore
