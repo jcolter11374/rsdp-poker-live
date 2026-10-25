@@ -582,6 +582,8 @@ export class TableRuntime {
     if (s.settingsLog.length > LOG_LIMIT) s.settingsLog.splice(0, s.settingsLog.length - LOG_LIMIT);
     // Between hands, queued changes can take effect straight away.
     if (!this.handLive()) this.applyPendingSettings();
+    // Turning the Nit game off ends any round now, mid-hand or not.
+    this.nitStillOn();
     this.sync();
   }
 

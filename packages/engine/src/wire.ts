@@ -217,6 +217,10 @@ export interface ClientToServer {
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
   'chat:send': (input: { text: string }) => void;
+  /** My private notes on other players. */
+  'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
+  /** Saves (or, with no text and no colour, deletes) my note on a player. */
+  'notes:set': (input: PlayerNote, ack: Ack<{ note: PlayerNote | null }>) => void;
   'host:approve': (input: { requestId: string }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;
   'host:start': (ack: Ack) => void;
@@ -237,6 +241,19 @@ export interface ServerToClient {
   'table:state': (view: TableView) => void;
   /** A tournament moved you to another table (balancing or a broken table). */
   'table:moved': (input: { from: string; to: string }) => void;
+  /** All my notes again, after one changed in any of my tabs. */
+  notes: (notes: PlayerNote[]) => void;
+}
+
+export const NOTE_COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type NoteColor = (typeof NOTE_COLORS)[number];
+export const NOTE_MAX = 500;
+
+/** A private note one player keeps on another. Only its owner ever receives it. */
+export interface PlayerNote {
+  targetPlayerId: string;
+  text: string;
+  color: NoteColor;
 }
 
 export interface HandshakeAuth {
