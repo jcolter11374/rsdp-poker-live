@@ -136,19 +136,31 @@ export interface Reach {
 }
 
 /**
- * Where something of half-size `half` sits just outside `box` (around `from`),
- * on the way towards `to`, with `gap` pixels to spare. It never goes more than
- * `most` of the way.
+ * Where a seat's bet goes: just in front of its nameplate and cards (`box`,
+ * around `from`), towards the middle (`to`). Seats above or below the middle
+ * get it straight below or above them, seats at the ends straight beside
+ * them, leaning a little towards the middle, the way chips sit on a real
+ * table. `half` is the bet's half-size; it never goes more than `most` of
+ * the way.
  */
-export function pastBox(from: Point, to: Point, box: Reach, half: { w: number; h: number }, gap: number, most = 0.8): Point {
+export function inFront(from: Point, to: Point, box: Reach, half: { w: number; h: number }, gap: number, lean = 0.12, most = 0.8): Point {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1) return from;
-  const ux = dx / len;
-  const uy = dy / len;
-  const sideX = (ux >= 0 ? box.r : box.l) + half.w + gap;
-  const sideY = (uy >= 0 ? box.d : box.u) + half.h + gap;
-  const t = Math.min(Math.abs(ux) > 1e-6 ? sideX / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-6 ? sideY / Math.abs(uy) : Infinity);
-  return lerp(from, to, Math.min(t / len, most));
+  // `to` is the middle, so it is also half the felt's width and height.
+  const vertical = Math.abs(dy) / Math.max(1, to.y) >= Math.abs(dx) / Math.max(1, to.x);
+  if (vertical) {
+    const reach = Math.min((dy >= 0 ? box.d : box.u) + half.h + gap, Math.abs(dy) * most);
+    return { x: from.x + dx * lean, y: from.y + Math.sign(dy || 1) * reach };
+  }
+  const reach = Math.min((dx >= 0 ? box.r : box.l) + half.w + gap, Math.abs(dx) * most);
+  return { x: from.x + Math.sign(dx) * reach, y: from.y + dy * lean };
+}
+
+/** The dealer button: beside the seat's bet spot, on the side away from the middle. */
+export function besideBet(bet: Point, from: Point, to: Point, half: { w: number; h: number }, gap: number): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const vertical = Math.abs(dy) / Math.max(1, to.y) >= Math.abs(dx) / Math.max(1, to.x);
+  if (vertical) return { x: bet.x - Math.sign(dx || 1) * (half.w + gap), y: bet.y };
+  return { x: bet.x, y: bet.y - Math.sign(dy || -1) * (half.h + gap) };
 }

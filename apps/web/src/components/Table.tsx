@@ -3,7 +3,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { clearSideBands, fromVars, lerp, pastBox, px, seatFractions, stadiumPoint, type Point, type Reach } from './geometry';
+import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, stadiumPoint, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
@@ -147,7 +147,7 @@ export function Table({
   const spread = seatFractions(
     view.seats.map((s) => !!s),
     offset,
-    { clear: (compact ? 80 : 115) / perimeter, minGap: (compact ? 44 : 60) / perimeter },
+    { clear: (compact ? 80 : 165) / perimeter, minGap: (compact ? 44 : 80) / perimeter },
   );
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
@@ -156,13 +156,15 @@ export function Table({
   const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - n * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
   // Desktop seats shrink a little when a full table on a small window leaves them less room than a nameplate.
-  const seatScale = compact ? 1 : Math.round(Math.max(0.72, Math.min(1, perimeter / n / 300)) * 100) / 100;
+  const seatScale = compact ? 1 : Math.round(Math.max(0.72, Math.min(1.06, perimeter / n / 300)) * 100) / 100;
+  // Board cards grow with the felt, so a big window doesn't leave a small board in a sea of green.
+  const boardCard = compact ? null : Math.round(Math.max(56, Math.min(80, w * 0.055, h * 0.15)));
   // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
   const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
   // The board sits midway between the seats above it and below it (your own cards are bigger),
   // so on a short window it doesn't run into either.
   let boardShift = 0;
-  if (!compact) {
+  if (!compact || w > h) {
     let above = 0;
     let below = h;
     view.seats.forEach((s, seat) => {
@@ -175,24 +177,11 @@ export function Table({
     });
     boardShift = Math.max(-h * 0.15, Math.min(h * 0.15, (above + below) / 2 - center.y));
   }
-  const betPoint = (seat: number) =>
-    pastBox(seatPoint(seat), center, reach[seat] ?? guess, compact ? { w: 22, h: 10 } : { w: 30, h: 13 }, compact ? 3 : 6, 0.75);
-  const buttonPoint = (seat: number) => {
-    const p = seatPoint(seat);
-    // Beside the nameplate, square to the line to the middle: clear of the
-    // cards above the plate and the bet in front of it. Downward when that
-    // line is mostly sideways, since the cards sit above.
-    const dx = center.x - p.x;
-    const dy = center.y - p.y;
-    const len = Math.hypot(dx, dy) || 1;
-    let sx = -dy / len;
-    let sy = dx / len;
-    if (sy < 0) (sx = -sx), (sy = -sy);
-    // Clear of the nameplate, which is wider now that it carries the picture.
-    const reach = Math.abs(sx) * (compact ? 58 : 88) + Math.abs(sy) * (compact ? 36 : 44);
-    const inward = compact ? 22 : 10;
-    return { x: p.x + sx * reach + (dx / len) * inward, y: p.y + sy * reach + (dy / len) * inward };
-  };
+  const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
+  const betHalf = compact ? { w: 22, h: 10 } : { w: 30, h: 13 };
+  const betPoint = (seat: number) => inFront(seatPoint(seat), boardMiddle, reach[seat] ?? guess, betHalf, compact ? 4 : 8);
+  // The dealer button sits beside where that seat's bet goes, so the two never cover each other.
+  const buttonPoint = (seat: number) => besideBet(betPoint(seat), seatPoint(seat), boardMiddle, betHalf, compact ? 18 : 24);
 
   // Winning cards, per board, and every card any winner used.
   const boardWinners = new Map<string, Set<string>>();
@@ -223,7 +212,7 @@ export function Table({
   const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
   const geometry = useRef({ betPoint, seatPoint, center });
-  geometry.current = { betPoint, seatPoint, center: { x: center.x, y: center.y + boardShift } };
+  geometry.current = { betPoint, seatPoint, center: boardMiddle };
   const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';
   // Runs before the effect below stores this view's bets, so lastBets holds the round that just ended.
   useEffect(() => {
@@ -264,7 +253,7 @@ export function Table({
     <div
       ref={felt}
       className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}
-      style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale } as CSSProperties}
+      style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}) } as CSSProperties}
     >
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
@@ -290,11 +279,13 @@ export function Table({
         )}
         {live && (
           <div className="pots">
-            {hand!.pots.map((p, i) => (
-              <div className="pot" key={i}>
-                {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
-              </div>
-            ))}
+            <div className="pot-row">
+              {(hand!.pots.length ? hand!.pots : [{ amount: 0 }]).map((p, i) => (
+                <div className="pot" key={i}>
+                  {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
+                </div>
+              ))}
+            </div>
             {bets > 0 && hand!.potTotal > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
           </div>
         )}

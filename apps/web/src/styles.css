@@ -94,7 +94,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .table-page:not(.portrait) .layout { grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .table-page:not(.portrait) .felt-area { min-height: 0; }
 .table-page:not(.portrait) .side { min-height: 0; overflow-y: auto; }
-.table-page:not(.portrait) .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 70px 100px 40px; }
+.table-page:not(.portrait) .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 84px 100px 40px; }
 .table-page:not(.portrait) .felt-area > :not(.felt) { flex-shrink: 0; }
 @media (max-width: 900px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt { aspect-ratio: 16 / 10; flex: none; } }
 .banner { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; text-align: center; }
@@ -180,7 +180,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .seat.acting .nameplate { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, 0.35); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 0 1px var(--good), 0 0 14px var(--good); }
 .seat.folded .hole { opacity: 0.25; }
-.seat.folded .nameplate { opacity: 0.55; }
+.seat.folded .nameplate > * { opacity: 0.55; }
+.seat.folded .nameplate { background: #1f2329; }
 .seat.away { opacity: 0.55; }
 .seat.me .nameplate { background: #2b3139; }
 .dealer {
@@ -361,7 +362,7 @@ input[type='checkbox'] { width: auto; }
 /* Your own face-down stud cards: visible to you, marked as hidden from others. */
 .playing-card.facedown:not(.back) { background: #dfe6ee; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 2px 4px rgba(0, 0, 0, 0.4); }
 .playing-card.win { box-shadow: 0 0 0 2px var(--good), 0 0 12px var(--good); }
-.playing-card.dim { filter: brightness(0.5) saturate(0.6); }
+.playing-card.dim { filter: brightness(0.72) saturate(0.6); }
 .deal-board { animation: deal-in 0.25s ease-out both; }
 @keyframes deal-in { from { transform: translateY(-12px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Hole cards fly in from the middle of the table (--dx/--dy point back to it). */
@@ -484,7 +485,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   flex: 1;
   min-height: 0;
   aspect-ratio: auto;
-  margin: 54px 50px 26px;
+  margin: 62px 50px 26px;
   border-width: 10px;
 }
 .felt.compact .felt-brand { top: 64%; font-size: 1rem; }
@@ -601,14 +602,18 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact { border-width: 11px; }
 .board { gap: 10px; }
 .board .pots, .board .next-hand { order: -1; }
-.next-hand { background: rgba(0, 0, 0, 0.22); padding: 4px 14px; border-radius: 999px; }
+.next-hand { font-weight: 600; letter-spacing: 0.02em; }
+.board .pots { flex-direction: column; align-items: center; gap: 2px; }
+.pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.pot.total { padding: 0; font-size: 0.8rem; }
+.pot.result { background: #1d6b41; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .pot.result { max-width: min(440px, 80%); }
 .felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }
 .pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
-.board .playing-card { --cw: 62px; }
+.board .playing-card { --cw: var(--board-cw, 62px); }
 .board .cards { gap: 6px; }
-.board.multi .playing-card { --cw: 50px; }
-.felt-brand { font-size: 1.5rem; color: rgba(255, 255, 255, 0.07); }
+.board.multi .playing-card { --cw: calc(var(--board-cw, 62px) * 0.8); }
+.felt-brand { font-size: 1.5rem; color: rgba(255, 255, 255, 0.06); top: 76%; }
 .seat.empty button, .seat.empty span { border-radius: 12px; min-width: 110px; padding: 12px 18px; background: rgba(0, 0, 0, 0.18); border-color: rgba(255, 255, 255, 0.22); }
 .felt.compact .seat.empty button, .felt.compact .seat.empty span { min-width: 64px; padding: 6px 10px; }
 
@@ -621,18 +626,18 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .playing-card.small { --cw: 30px; }
 .felt.compact .seat .hole { height: 42px; }
 .felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -10px; }
-.felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -16px; }
+.felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -13px; }
 .felt.compact .seat.me .playing-card { --cw: 56px; }
 .felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -10px; }
 .felt.compact .seat.me .hole.n4 .playing-card + .playing-card { margin-left: -24px; }
 .felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 42px; }
-.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -20px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -18px; }
 .felt.compact .board .playing-card { --cw: 46px; }
 .felt.compact .board .cards { gap: 4px; }
 .felt.compact .board.multi .playing-card { --cw: 34px; }
 
 /* Desktop seats: wide dark nameplates with the cards tucked in on the left. */
-.table-page:not(.portrait) .felt { margin-left: clamp(110px, 8vw, 150px); margin-right: clamp(110px, 8vw, 150px); }
+.table-page:not(.portrait) .felt { margin-left: clamp(110px, 9vw, 175px); margin-right: clamp(110px, 9vw, 175px); }
 .felt:not(.compact) .seat { scale: var(--seat-scale, 1); }
 .felt:not(.compact) {
   .nameplate { grid-template-columns: minmax(0, 1fr) auto; min-width: 200px; max-width: 290px; min-height: 60px; padding: 9px 12px 9px 16px; border-radius: 12px; background: #23282f; border-color: #343a43; }
@@ -658,15 +663,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
     .hole.n3 { --cw: 50px; }
     .hole.n3 .playing-card + .playing-card { margin-left: -22px; }
     .hole.n4 { --cw: 48px; }
-    .hole.n4 .playing-card + .playing-card { margin-left: -26px; }
+    .hole.n4 .playing-card + .playing-card { margin-left: -20px; }
     .hole:is(.n3, .n4) .playing-card:not(:last-child) .pip { display: none; }
   }
   .seat.has-cards:not(.long-hand):has(.hole.n3) { --tuck: 136px; }
-  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 140px; }
+  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 158px; }
   .seat.me.has-cards:not(.long-hand) { --cw: 62px; --tuck: 128px; }
-  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 150px; }
+  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 172px; }
   .seat.me.has-cards:not(.long-hand) .hole.n4 { --cw: 54px; }
-  .seat.me.has-cards:not(.long-hand) .hole.n4 .playing-card + .playing-card { margin-left: -28px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 .playing-card + .playing-card { margin-left: -22px; }
   /* Stud and draw: a row of cards over the nameplate. */
   .seat.long-hand .hole { height: auto; bottom: calc(100% - 6px); }
   .seat.long-hand .playing-card.small { --cw: 44px; }
@@ -675,3 +680,37 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -22px; }
   .seat.long-hand.me .nameplate { min-width: 230px; }
 }
+
+/* Your own face-down stud cards sit a little lower than your up cards, so you can tell them apart. */
+.seat.me .playing-card.facedown:not(.back) { translate: 0 8px; }
+/* Card backs: a fine original lattice instead of a flat colour. */
+.playing-card.back {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px);
+}
+/* A two-digit 10 is set tighter, so it fits the visible corner of an overlapped card. */
+.playing-card.rank-10 .rank { letter-spacing: -0.12em !important; font-size: calc(var(--cw) * 0.5) !important; }
+/* The notes button only shows on hover, or when there's a note. */
+.felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0; }
+.felt:not(.compact) .nameplate:hover .note-badge { opacity: 1; }
+/* Phones on their side: a short table, so smaller cards keep your hand clear of the board. */
+@media (max-height: 500px) {
+  .felt.compact .seat.me .playing-card { --cw: 40px; }
+  .felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 34px; }
+  .felt.compact .board .playing-card { --cw: 36px; }
+  .felt.compact .board.multi .playing-card { --cw: 28px; }
+  .felt.compact .playing-card.small { --cw: 24px; }
+  .felt.compact .seat .hole { height: 34px; }
+  /* Your cards go beside your nameplate, leaving the short table's middle to the board. */
+  .felt.compact .seat.me .hole { bottom: auto; top: 50%; left: auto; right: 100%; translate: 0 -50%; margin-right: 4px; }
+  /* Pot, total and status share one line. */
+  .felt.compact .board { gap: 4px; }
+  .felt.compact .board .pots { flex-direction: row; gap: 8px; align-items: baseline; }
+  .felt.compact .next-hand { font-size: 0.72rem; }
+  .portrait .action-bar .strength { display: none; }
+}
+/* Pre-moves look like the real buttons, dimmer until armed; the row stays a sensible width. */
+.action-bar .buttons { width: 100%; max-width: 780px; margin: 0 auto; }
+.action-bar.pre .buttons button { background: var(--panel-2); border-color: var(--line); color: var(--muted); }
+.action-bar.pre .buttons button.queued { background: #2c3a2f; border-color: var(--go); color: #fff; }
+.action-bar.pre .box { border-radius: 50%; border-color: currentColor; margin-right: 4px; }
+.action-bar.pre button.queued .box { background: var(--go); border-color: var(--go); color: #fff; }

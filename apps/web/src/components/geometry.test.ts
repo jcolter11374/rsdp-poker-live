@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearSideBands, pastBox, seatFractions, stadiumPoint } from './geometry';
+import { besideBet, clearSideBands, inFront, seatFractions, stadiumPoint } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -76,14 +76,33 @@ describe('clearSideBands', () => {
   });
 });
 
-describe('pastBox', () => {
-  it('puts a bet just below a seat at the top of the table', () => {
-    const p = pastBox({ x: 100, y: 0 }, { x: 100, y: 200 }, { l: 50, r: 50, u: 40, d: 30 }, { w: 20, h: 10 }, 6);
-    expect(p).toEqual({ x: 100, y: 46 });
+describe('inFront', () => {
+  const box = { l: 140, r: 140, u: 60, d: 30 };
+  const half = { w: 30, h: 12 };
+
+  it('puts a top seat\'s bet straight below its nameplate, leaning in a little', () => {
+    const p = inFront({ x: 200, y: 0 }, { x: 600, y: 300 }, box, half, 6);
+    expect(p.y).toBe(48);
+    expect(p.x).toBeCloseTo(248);
   });
 
-  it('never goes past the given share of the way', () => {
-    const p = pastBox({ x: 0, y: 0 }, { x: 0, y: 50 }, { l: 50, r: 50, u: 40, d: 60 }, { w: 20, h: 10 }, 6, 0.5);
-    expect(p).toEqual({ x: 0, y: 25 });
+  it('puts a seat at the end of the table beside its nameplate', () => {
+    const p = inFront({ x: 0, y: 300 }, { x: 600, y: 300 }, box, half, 6);
+    expect(p).toEqual({ x: 176, y: 300 });
+  });
+
+  it('never goes most of the way to the middle', () => {
+    const p = inFront({ x: 600, y: 560 }, { x: 600, y: 300 }, { ...box, u: 400 }, half, 6);
+    expect(p.y).toBeCloseTo(560 - 260 * 0.8);
+  });
+});
+
+describe('besideBet', () => {
+  it('puts the button beside a top seat\'s bet, away from the middle', () => {
+    expect(besideBet({ x: 250, y: 50 }, { x: 200, y: 0 }, { x: 600, y: 300 }, { w: 30, h: 12 }, 20)).toEqual({ x: 200, y: 50 });
+  });
+
+  it('puts the button above a left seat\'s bet when the seat is above the middle', () => {
+    expect(besideBet({ x: 176, y: 290 }, { x: 0, y: 280 }, { x: 600, y: 300 }, { w: 30, h: 12 }, 20)).toEqual({ x: 176, y: 258 });
   });
 });
