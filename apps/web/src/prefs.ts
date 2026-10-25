@@ -127,5 +127,5 @@ export function usePrefs(): Prefs {
 /** The felt this viewer sees: their own pick, else the host's, else green. */
 export function feltStyle(prefs: Prefs, hostFelt: Felt | undefined): CSSProperties {
   const c = FELT_COLORS[prefs.felt === 'table' ? (hostFelt ?? 'green') : prefs.felt];
-  return { '--felt-light': c.light, '--felt': c.felt, '--felt-edge': c.edge } as CSSProperties;
+  return { '--felt': c.felt, '--felt-edge': c.edge } as CSSProperties;
 }

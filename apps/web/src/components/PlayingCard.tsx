@@ -1,6 +1,11 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 
 const SUIT_SYMBOL: Record<string, string> = { c: '♣', d: '♦', h: '♥', s: '♠' };
+const SUIT_NAME: Record<string, string> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
+const RANK_NAME: Record<string, string> = { A: 'Ace', K: 'King', Q: 'Queen', J: 'Jack', T: '10' };
+
+/** "Ace of spades", for screen readers. */
+const cardName = (card: string) => `${RANK_NAME[card[0]] ?? card[0]} of ${SUIT_NAME[card[1]] ?? card[1]}`;
 
 export const suitSymbol = (s: string) => SUIT_SYMBOL[s] ?? s;
 
@@ -35,12 +40,28 @@ export function PlayingCard({
   title?: string;
 }) {
   const cls = `playing-card${small ? ' small' : ''}${onClick ? ' clickable' : ''} ${className}`;
-  if (!card || card === '??') return <div className={`${cls} back`} style={style} onClick={onClick} title={title} />;
+  const face = !!card && card !== '??';
+  const name = face ? cardName(card) : 'Face-down card';
+  // A card you can tap (picking draw discards) is a button; otherwise it's a picture of a card.
+  const a11y = onClick
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': title ? `${name}. ${title}` : name,
+        onKeyDown: (e: KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        },
+      }
+    : { role: 'img', 'aria-label': name };
+  if (!face) return <div className={`${cls} back`} style={style} onClick={onClick} title={title} {...a11y} />;
   const rank = card[0] === 'T' ? '10' : card[0];
   const suit = card[1];
   return (
-    <div className={`${cls} suit-${suit}`} style={style} onClick={onClick} title={title} role="img" aria-label={`${rank}${suitSymbol(suit)}`}>
-      <span className="rank">{rank}</span>
+    <div className={`${cls} suit-${suit}`} style={style} onClick={onClick} title={title} {...a11y}>
+      <span className="rank" aria-hidden="true">{rank}</span>
       <SuitIcon suit={suit} className="suit" />
       <SuitIcon suit={suit} className="pip" />
     </div>

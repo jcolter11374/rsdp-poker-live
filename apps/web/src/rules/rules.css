@@ -15,8 +15,7 @@
 .guide-body ol, .guide-body ul { margin: 6px 0; padding-left: 22px; }
 .guide-body li + li { margin-top: 4px; }
 .guide-cards { display: inline-flex; gap: 2px; flex: 0 0 auto; }
-.guide-cards .playing-card.small { width: 26px; height: 37px; }
-.guide-cards .playing-card.small .rank, .guide-cards .playing-card.small .suit { font-size: 0.8rem; }
+.guide-cards .playing-card.small { --cw: 26px; }
 .guide-ladder li { display: flex; align-items: center; gap: 10px; }
 .guide-ladder li::marker { color: var(--muted); }
 .guide-showdown { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }

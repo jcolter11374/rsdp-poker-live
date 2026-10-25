@@ -117,7 +117,8 @@ export function Table({
     let sx = -dy / len;
     let sy = dx / len;
     if (sy < 0) (sx = -sx), (sy = -sy);
-    const reach = Math.abs(sx) * (compact ? 46 : 62) + Math.abs(sy) * (compact ? 34 : 42);
+    // Clear of the nameplate, which is wider now that it carries the picture.
+    const reach = Math.abs(sx) * (compact ? 58 : 88) + Math.abs(sy) * (compact ? 36 : 44);
     const inward = compact ? 22 : 10;
     return { x: p.x + sx * reach + (dx / len) * inward, y: p.y + sy * reach + (dy / len) * inward };
   };
