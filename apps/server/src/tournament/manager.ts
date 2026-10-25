@@ -64,6 +64,8 @@ export interface ManagerDeps {
   onState: (id: string) => void;
   /** A player was moved to another table (or seated late). `from` is '' when they had no table. */
   onMoved: (playerId: PlayerId, from: string, to: string) => void;
+  /** Director events as they are acted on, with the state after them and (for a browser's command) the state before. */
+  onEvents?: (state: TournamentState, before: TournamentState | null, events: DirectorEvent[]) => void;
   log: (message: string, err?: unknown) => void;
   rng?: Rng;
 }
@@ -297,9 +299,10 @@ export class TournamentManager {
 
   /** Runs one director step, then acts on its events. Throws ActionError when the director refuses. */
   private dispatch(live: Live, step: (s: TournamentState, now: number) => Result) {
+    const before = live.state;
     const result = this.guard(() => step(live.state, this.clock.now()));
     live.state = result.state;
-    this.handle(live, result.events);
+    this.handle(live, result.events, before);
     this.changed(live);
   }
 
@@ -532,9 +535,16 @@ export class TournamentManager {
     return tableId ? live.tables.get(tableId) : undefined;
   }
 
-  private handle(live: Live, events: DirectorEvent[]) {
+  private handle(live: Live, events: DirectorEvent[], before: TournamentState | null = null) {
     // Events a hand start left waiting came from an earlier state, so they go first.
     const all = [...live.deferred.splice(0), ...events];
+    if (all.length) {
+      try {
+        this.deps.onEvents?.(live.state, before, all);
+      } catch (e) {
+        this.deps.log(`tournament ${live.state.id}: reporting events failed`, e);
+      }
+    }
     live.applying = true;
     try {
       for (const e of all) this.handleQuietly(live, e);

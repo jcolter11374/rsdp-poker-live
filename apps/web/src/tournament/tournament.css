@@ -179,3 +179,18 @@
 .tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
 .tn-alerts.on { border-color: var(--good); color: var(--good); }
 .tn-list-head .tn-alerts { margin-left: auto; }
+
+/* Lobby chat and activity. */
+.tn-chat { display: flex; flex-direction: column; gap: 8px; }
+.tn-chat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.tn-chat-list li { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: 10px; background: var(--panel-2); align-self: flex-start; max-width: 85%; }
+.tn-chat-list li.mine { align-self: flex-end; background: color-mix(in srgb, var(--accent) 20%, var(--panel-2)); }
+.tn-chat-meta { font-size: 0.8rem; }
+.tn-chat-meta .muted { font-size: 0.75rem; }
+.tn-chat-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.tn-chat-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.tn-chat-form input { flex: 1 1 160px; width: auto; }
+.tn-chat-form button { min-height: 40px; }
+.tn-activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.tn-activity li { font-size: 0.95rem; }
+.tn-activity .muted { display: inline; margin-right: 6px; font-variant-numeric: tabular-nums; }
