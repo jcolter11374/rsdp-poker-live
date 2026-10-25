@@ -16,6 +16,7 @@ import { savedName } from '../socket';
 import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
+import { AlertsToggle } from './TournamentAlerts';
 
 type Tab = 'players' | 'tables' | 'structure' | 'payouts' | 'host';
 
@@ -83,7 +84,10 @@ export function TournamentLobby({ id }: { id: string }) {
           {state.settings.start.kind === 'sng' ? ' · Sit & Go' : ''}
           {state.settings.bounty ? ` · ${money(state.settings.bounty.amount)} ${state.settings.bounty.progressivePercent > 0 ? 'progressive bounty' : 'bounty'}` : ''}
         </p>
-        <ShareLink />
+        <div className="tn-header-actions">
+          <ShareLink />
+          <AlertsToggle />
+        </div>
       </header>
 
       <Hero state={state} now={now} />
