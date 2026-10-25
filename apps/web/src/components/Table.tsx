@@ -73,6 +73,7 @@ export function Table({
   fmt,
   compact = false,
   onPickSeat,
+  onAddBot,
   onSeatClick,
   discard,
 }: {
@@ -83,6 +84,8 @@ export function Table({
   /** Phone layout: a tall table and smaller seats. */
   compact?: boolean;
   onPickSeat?: (seat: number) => void;
+  /** Put a practice bot in this empty seat. */
+  onAddBot?: (seat: number) => void;
   onSeatClick?: (seat: SeatView) => void;
   discard?: DiscardPick | null;
 }) {
@@ -247,7 +250,12 @@ export function Table({
         if (!s) {
           return (
             <div className="seat empty" style={px(pos)} key={seat}>
-              {onPickSeat ? <button onClick={() => onPickSeat(seat)}>Sit</button> : <span>{seat + 1}</span>}
+              {onPickSeat ? <button onClick={() => onPickSeat(seat)}>Sit</button> : !onAddBot && <span>{seat + 1}</span>}
+              {onAddBot && (
+                <button className="add-bot" onClick={() => onAddBot(seat)} title="Add a practice bot to this seat">
+                  + Bot
+                </button>
+              )}
             </div>
           );
         }
@@ -311,6 +319,11 @@ export function Table({
                 <div className="name">
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
+                  {s.bot && (
+                    <span className="tag bot" title={`A practice bot added by ${s.bot.ownerName}`}>
+                      bot
+                    </span>
+                  )}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}

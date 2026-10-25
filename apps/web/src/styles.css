@@ -161,6 +161,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .nameplate .stack { font-variant-numeric: tabular-nums; color: #fff; font-weight: 800; font-size: 1rem; line-height: 1.2; }
 .nameplate .clock { font-size: 0.75rem; color: var(--bad); }
 .tag { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 5px; vertical-align: 1px; }
+.tag.bot { background: #5b6b7a; }
+.seat.empty .add-bot { font-size: 0.7rem; padding: 2px 8px; margin-top: 4px; opacity: 0.8; }
+.seat.empty .add-bot:hover { opacity: 1; }
 .seat.acting .nameplate { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, 0.35); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 0 1px var(--good), 0 0 14px var(--good); }
 .seat.folded .hole { opacity: 0.25; }
@@ -475,6 +478,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .seat, .felt.compact .nameplate { min-width: 0; }
 .felt.compact .nameplate { padding: 4px 8px 5px 5px; column-gap: 5px; border-radius: 9px; min-width: 76px; max-width: 100px; }
 .felt.compact .nameplate .name .tag { display: none; }
+/* Bots stay marked on phones too. */
+.felt.compact .nameplate .name .tag.bot { display: inline-block; font-size: 0.5rem; padding: 0 3px; margin-left: 3px; }
 .felt.compact .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .name { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .stack { font-size: 0.85rem; }

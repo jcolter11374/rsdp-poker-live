@@ -13,6 +13,7 @@
 /* Pictures, moods and gestures (Persona.tsx). */
 .avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; line-height: 1; box-sizing: border-box; }
 .avatar.initials { width: 36px; height: 36px; color: #fff; font-weight: 700; font-size: 15px; }
+.avatar.bot-avatar { width: 36px; height: 36px; background: #3c4652; font-size: 20px; }
 /* The picture sits at the left of the nameplate, beside the name and stack. */
 .nameplate .seat-avatar { grid-column: 1; grid-row: 1 / span 8; display: flex; align-self: center; pointer-events: none; }
 .felt.compact .nameplate .seat-avatar .avatar { width: 26px !important; height: 26px !important; font-size: 13px !important; }

@@ -46,6 +46,7 @@ export const IMMEDIATE_FIELDS = [
   'seating.ratholeMinutes',
   'seating.waitlist',
   'seating.randomSeats',
+  'seating.allowPlayerBots',
 ] as const;
 
 export function isImmediateField(path: string): boolean {

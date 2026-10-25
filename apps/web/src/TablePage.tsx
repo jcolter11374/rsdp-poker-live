@@ -17,7 +17,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { Sheet } from './components/Sheet';
-import { Modal, PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
+import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
@@ -208,6 +208,16 @@ export function TablePage({ tableId }: { tableId: string }) {
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
+  // A player sees only their own bots' requests; the host sees everyone's and never has to ask.
+  const myBotRequests = view.isHost ? [] : view.requests.filter((r) => r.bot);
+  const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
+  const canAddBot = cash && (view.isHost || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
+  const addBot = (seat: number) =>
+    call('bot:add', { seat })
+      .then(() => {
+        if (view.settings.seating.requireApproval && !view.isHost) alert('Your bot is waiting for the host to approve it.');
+      })
+      .catch((e: Error) => alert(e.message));
   const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
   const close = () => setSheet(null);
 
@@ -377,6 +387,12 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
+          {myBotRequests.map((r) => (
+            <div className="banner" key={r.id}>
+              {r.name} is waiting for the host to let it sit…{' '}
+              <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
+            </div>
+          ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
@@ -408,6 +424,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             fmt={feltFmt}
             compact={portrait}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
+            onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
@@ -482,6 +499,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         ) : (
           <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
             <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
+            {dialog.seat.bot?.ownerId === view.me.playerId && <RemoveBot seat={dialog.seat} onDone={() => setDialog(null)} />}
             <div className="row">
               <button onClick={() => setDialog(null)}>Close</button>
             </div>

@@ -327,6 +327,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                 <span className="hint">When a seat comes free it is held for the next person in line for a minute.</span>
                 {toggle('Seat new players at random', !!draft.seating.randomSeats, (randomSeats) => set('seating', { randomSeats }))}
                 <span className="hint">Players who sit down get a random open seat instead of the one they clicked.</span>
+                {toggle('Players can add practice bots', draft.seating.allowPlayerBots !== false, (allowPlayerBots) => set('seating', { allowPlayerBots }))}
+                <span className="hint">Anyone seated can add a bot to practice against (up to three each). You can always add and remove bots.</span>
                 {numberField('Free the seat of a player offline for (minutes)', draft.seating.releaseOfflineSeatMinutes, (v) => set('seating', { releaseOfflineSeatMinutes: v }), 0, 1440, '0 = never. Their chips go back to the ledger.')}
               </>
             )}
