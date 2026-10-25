@@ -3,7 +3,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
+import { fromVars, lerp, px, seatFractions, stadiumPoint, type Point } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
@@ -93,8 +93,8 @@ export function Table({
   const prefs = usePrefs();
   const size = useSize(felt);
   const n = view.seats.length;
-  // Rotate so your own seat is at the bottom.
-  const offset = view.me.seat ?? 0;
+  // Rotate so your own seat (or, watching, the first player) is at the bottom.
+  const offset = view.me.seat ?? Math.max(0, view.seats.findIndex((s) => !!s));
   const hand = view.hand;
   const done = hand?.phase === 'complete';
   const live = !!hand && !done;
@@ -106,7 +106,10 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  const seatPoint = (seat: number) => stadiumPoint(((seat - offset + n) % n) / n, w, h);
+  // Keep empty seats about half a nameplate clear of the players beside them.
+  const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
+  const fractions = seatFractions(view.seats.map((s) => !!s), offset, (compact ? 62 : 90) / perimeter);
+  const seatPoint = (seat: number) => stadiumPoint(fractions[seat] ?? seat / n, w, h);
   // Your own bet sits further in, clear of your bigger cards.
   const betPoint = (seat: number) => lerp(seatPoint(seat), center, seat === view.me.seat ? (compact ? 0.48 : 0.56) : compact ? 0.36 : 0.4);
   const buttonPoint = (seat: number) => {
@@ -201,7 +204,7 @@ export function Table({
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
-      <div className="board">
+      <div className={`board${multiRun || multiBoard ? ' multi' : ''}`}>
         {runs.map((run, r) =>
           run.map(
             (cards, b) =>

@@ -51,6 +51,38 @@ export function stadiumPoint(t: number, w: number, h: number): Point {
   return { x: right.x - d, y: cy + r };
 }
 
+/**
+ * Where each seat sits round the table, as a fraction (0..1) from the bottom
+ * centre. The anchor seat (yours, or the first taken one) is at the bottom,
+ * the players present are spaced evenly, and empty seats share the gaps
+ * between them in seat order. So four players at a ten-seat table sit at the
+ * four quarters instead of bunched on one side. `margin` (a fraction of the
+ * way round) keeps empty seats that far from a player's nameplate when the
+ * gap allows.
+ */
+export function seatFractions(taken: readonly boolean[], anchor: number, margin = 0): number[] {
+  const n = taken.length;
+  const out = new Array<number>(n).fill(0);
+  if (n === 0) return out;
+  // Seat positions counted round from the anchor.
+  const players: number[] = [];
+  for (let k = 0; k < n; k++) if (taken[(anchor + k) % n]) players.push(k);
+  if (players.length === 0) return out.map((_, seat) => (((seat - anchor + n) % n) / n));
+  if (players[0] !== 0) players.unshift(0);
+  const m = players.length;
+  const span = 1 / m;
+  for (let i = 0; i < m; i++) {
+    const from = players[i];
+    const empties = (i + 1 < m ? players[i + 1] : n) - from - 1;
+    out[(anchor + from) % n] = i * span;
+    if (empties === 0) continue;
+    const edge = Math.min(margin, span / (empties + 1));
+    const room = span - 2 * edge;
+    for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 0.5)) / empties;
+  }
+  return out;
+}
+
 /** Part of the way from `a` to `b`. */
 export const lerp = (a: Point, b: Point, f: number): Point => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
 
