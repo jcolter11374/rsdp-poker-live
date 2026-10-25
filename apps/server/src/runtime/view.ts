@@ -1,0 +1,255 @@
+import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
+import { rakeSchema } from '@rsdp/engine/modifiers';
+import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
+import { fillStakes, rabbitCards, type TableRuntime } from './table';
+import type { HandRecord, PastHand } from './types';
+
+const CHAT_SHOWN = 100;
+const LOG_SHOWN = 60;
+
+/** Everything one person at (or watching) a table may see. */
+export function tableView(
+  rt: TableRuntime,
+  playerId: PlayerId,
+  now: number,
+  tournamentId: string | null = null,
+  /** Everyone with the table open, seated or not. */
+  audience: { playerId: PlayerId; name: string }[] = [],
+): TableView {
+  const s = rt.state;
+  const mySeat = rt.seatOf(playerId);
+  const isHost = rt.isHost(playerId);
+  const hand = s.hand;
+  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: false };
+  const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
+  const won = new Map<number, number>();
+  const handNames = new Map<number, string>();
+  if (hand?.phase === 'complete') {
+    for (const a of hand.awards) {
+      won.set(a.seat, (won.get(a.seat) ?? 0) + a.amount);
+      if (a.handName && !handNames.has(a.seat)) handNames.set(a.seat, a.handName);
+    }
+  }
+  const live = !!hand && hand.phase !== 'complete';
+  const waiting = new Set<number>();
+  if (live) for (const seat of s.seats) if (seat && !handSeats.has(seat.seat) && !seat.sittingOut && seat.stack > 0) waiting.add(seat.seat);
+
+  const nitRound = s.sideGames?.nit ?? null;
+  const rake = rakeSchema.get(s.settings);
+  const seats: (SeatView | null)[] = s.seats.map((seat) => {
+    if (!seat) return null;
+    const hs = hand ? handSeats.get(seat.seat) : undefined;
+    // A seat taken by someone new since the hand began has no part in it.
+    const inThisHand = !!hs && hs.playerId === seat.playerId;
+    const cards = inThisHand ? hs!.cards.map((c, i) => visibleCard(hand!, viewer, seat.seat, c.card, c.up, hs!.shown.includes(i))) : [];
+    return {
+      seat: seat.seat,
+      playerId: seat.playerId,
+      name: seat.name,
+      stack: inThisHand ? hs!.stack : seat.stack,
+      sittingOut: seat.sittingOut,
+      sitOutReason: seat.sitOutReason,
+      online: rt.isOnline(seat.playerId),
+      inHand: inThisHand,
+      folded: inThisHand && hs!.folded,
+      allIn: inThisHand && hs!.allIn && live,
+      bet: inThisHand ? hs!.bet : 0,
+      cards,
+      lastAction: inThisHand ? hs!.lastAction : null,
+      timeBank: seat.timeBank,
+      leaving: seat.leaveAfterHand,
+      owesBlinds: seat.missedBigBlind || seat.missedSmallBlind,
+      waiting: waiting.has(seat.seat) || (seat.isNew && !inThisHand),
+      waitForBigBlind: seat.waitForBigBlind,
+      straddle: seat.straddle,
+      nitOptIn: !!seat.nitOptIn,
+      nit: nitRound?.participants.includes(seat.playerId) ? (nitRound.holders.includes(seat.playerId) ? 'holder' : 'clear') : null,
+      won: inThisHand ? (won.get(seat.seat) ?? 0) : 0,
+      handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
+    };
+  });
+
+  const myHandSeat = mySeat && hand ? handSeats.get(mySeat.seat) : undefined;
+  const mine = myHandSeat && myHandSeat.playerId === playerId ? myHandSeat : undefined;
+  const myTurn = live && !s.paused && !!mine && hand!.toAct === mine.seat;
+  const settings = s.settings;
+  let upcoming: TableView['upcoming'] = null;
+  if (!live && !rt.tournament) {
+    try {
+      const setup = previewSetup(rt);
+      upcoming = setup;
+    } catch {
+      upcoming = null;
+    }
+  }
+
+  return {
+    id: s.id,
+    name: settings.table.name,
+    mode: settings.table.mode,
+    tournamentId,
+    hostId: s.hostId,
+    isHost,
+    me: { playerId, seat: mySeat?.seat ?? null },
+    settings,
+    pendingSettings: s.pendingSettings,
+    started: s.started,
+    paused: s.paused,
+    stopAfterHand: s.stopAfterHand,
+    seats,
+    hand: hand ? handView(rt, hand, viewer) : null,
+    legal: myTurn && hand!.phase === 'betting' ? engine.legalActions(hand!, mine!.seat) : null,
+    canDraw: myTurn && hand!.phase === 'drawing' ? { max: hand!.input.game.streets[hand!.street].drawMaxDiscard ?? 0 } : null,
+    canVoteRunItTwice: live && hand!.phase === 'rit-vote' && !!mine && !mine.folded && mine.ritVote === null,
+    canShow: hand?.phase === 'complete' && mine ? showable(hand, mine.seat) : [],
+    turn: live && s.turn ? { seat: s.turn.seat, startedAt: s.turn.startedAt, deadline: rt.turnDeadline(), usingBank: s.turn.usingBank } : null,
+    nextHandAt: s.nextHandAt,
+    serverNow: now,
+    bombPotNext: !!s.sideGames?.bombPotNext,
+    rabbit: rabbitView(rt, playerId),
+    nit: nitRound ? { prize: nitRound.prize, participants: nitRound.participants.length, holders: nitRound.holders.length } : null,
+    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
+    upcoming,
+    level: levelView(rt, now),
+    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),
+    ledger: Object.values(s.ledger).map((row) => {
+      const seat = rt.seatOf(row.playerId);
+      const stack = seat ? seat.stack + seat.pendingChips : 0;
+      return { ...row, stack, net: stack + row.cashOut - row.buyIn };
+    }),
+    chat: s.chat.slice(-CHAT_SHOWN),
+    log: s.log.slice(-LOG_SHOWN),
+    settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
+    history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
+    watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
+  };
+}
+
+function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {
+  const s = rt.state;
+  const cards = s.hand ? rabbitCards(s.hand, s.settings.play.rabbitHunt) : null;
+  if (!cards) return { available: false, cards: null };
+  const asked = s.rabbit?.handNumber === s.hand!.input.handNumber && s.rabbit.playerIds.includes(playerId);
+  return { available: true, cards: asked ? cards : null };
+}
+
+function visibleCard(hand: HandState, viewer: Viewer, seat: number, card: string, up: boolean, shown: boolean) {
+  const visible = up || shown || viewer.seeAll || viewer.seat === seat;
+  return { card: visible ? card : HIDDEN_CARD, up };
+}
+
+function showable(hand: HandState, seat: number) {
+  const hs = hand.seats.find((x) => x.seat === seat);
+  if (!hs) return [];
+  if (hs.folded && hand.input.game.family === 'draw') return [];
+  return hs.cards.map((_, i) => i).filter((i) => !hs.shown.includes(i) && !hs.cards[i].up);
+}
+
+function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
+  const s = rt.state;
+  const { input } = hand;
+  let shortName = input.game.name;
+  try {
+    shortName = (variants.get(input.game.id).spec as { shortName?: string }).shortName ?? input.game.name;
+  } catch {
+    /* unregistered game: keep the full name */
+  }
+  const runItTwiceEvent = [...hand.events].reverse().find((e) => e.t === 'run-it');
+  const offered = hand.events.some((e) => e.t === 'rit-offer');
+  const street = input.game.streets[hand.street];
+  return {
+    handNumber: input.handNumber,
+    gameId: input.game.id,
+    gameName: input.game.name,
+    shortName,
+    family: input.game.family,
+    betting: input.betting,
+    stakes: input.stakes,
+    names: Object.fromEntries(hand.seats.map((x) => [x.seat, rt.nameOf(x.playerId)])),
+    phase: hand.phase,
+    street: hand.street,
+    streetName: street?.name ?? '',
+    button: input.button,
+    buttonDead: input.buttonDead,
+    smallBlind: s.positions?.smallBlind ?? null,
+    bigBlind: s.positions?.bigBlind ?? null,
+    boards: hand.runs.map((run) => run.map((b) => [...b])),
+    pots: engine.pots({ ...hand, seats: hand.seats.map((x) => ({ ...x, total: x.total - x.bet })) }),
+    potTotal: hand.seats.reduce((a, x) => a + x.total, 0),
+    toAct: hand.phase === 'complete' ? null : hand.toAct,
+    currentBet: hand.currentBet,
+    drawMax: hand.phase === 'drawing' ? (street?.drawMaxDiscard ?? null) : null,
+    runItTwice: {
+      offered,
+      votes: Object.fromEntries(hand.seats.filter((x) => !x.folded).map((x) => [x.seat, x.ritVote])),
+      deadline: s.ritDeadline,
+      times: runItTwiceEvent && runItTwiceEvent.t === 'run-it' ? runItTwiceEvent.times : null,
+    },
+    showdown: hand.showdown,
+    bombPot: input.options.bombPot,
+    awards: hand.phase === 'complete' ? hand.awards : [],
+    events: engine.visibleEvents(hand, viewer),
+  };
+}
+
+/** Game and stakes of the next cash hand, without moving the blind schedule. */
+function previewSetup(rt: TableRuntime): TableView['upcoming'] {
+  const settings = rt.state.settings;
+  const rot = settings.game.rotation;
+  const step = rot.enabled && rot.steps.length ? rot.steps[rt.state.rotation.step % rot.steps.length] : null;
+  const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
+  const { centsMode: _c, ...stakes } = settings.stakes;
+  const sched = settings.blindSchedule;
+  if (sched.enabled && sched.levels.length) {
+    const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
+    Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
+  }
+  return { gameId: game.id, gameName: game.name, betting: step?.betting ?? settings.game.betting, stakes: fillStakes(stakes, game) };
+}
+
+function levelView(rt: TableRuntime, now: number): TableView['level'] {
+  const s = rt.state;
+  const sched = s.settings.blindSchedule;
+  if (!sched.enabled || !sched.levels.length) return null;
+  const index = Math.min(s.level.index, sched.levels.length - 1);
+  const level = sched.levels[index];
+  const last = index === sched.levels.length - 1;
+  if (sched.countdown === 'hands') return { index, count: sched.levels.length, endsAt: null, handsLeft: last ? null : Math.max(0, level.hands - s.level.hands) };
+  const elapsed = s.level.elapsedMs + (s.level.runningSince !== null ? now - s.level.runningSince : 0);
+  const endsAt = last || s.level.runningSince === null ? null : now + Math.max(0, level.minutes * 60_000 - elapsed);
+  return { index, count: sched.levels.length, endsAt, handsLeft: null };
+}
+
+/** The parts of a finished hand that history keeps. */
+export function pastHand(record: HandRecord): PastHand {
+  const { hand } = record;
+  return {
+    handNumber: record.handNumber,
+    startedAt: record.startedAt,
+    endedAt: record.endedAt,
+    gameName: hand.input.game.name,
+    betting: hand.input.betting,
+    stakes: hand.input.stakes,
+    button: hand.input.button,
+    seats: hand.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
+    events: hand.events,
+  };
+}
+
+/** A finished hand as one person may see it (their own cards, and whatever was shown). */
+export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId): HandRecordView {
+  const past = 'hand' in record ? pastHand(record) : record;
+  const seat = past.seats.find((x) => x.playerId === playerId)?.seat ?? null;
+  return {
+    handNumber: past.handNumber,
+    startedAt: past.startedAt,
+    endedAt: past.endedAt,
+    gameName: past.gameName,
+    betting: past.betting,
+    stakes: past.stakes,
+    button: past.button,
+    seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
+    // Only events matter for what a viewer may see; the rest of the hand state is not kept.
+    events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
+  };
+}

@@ -1,137 +1,45 @@
-import express from 'express';
-import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { Server, type Socket } from 'socket.io';
-import { ActionError, type Ack, type ClientToServer, type ServerToClient } from '@rsdp/engine';
-import { Room } from './room';
+import { fileURLToPath } from 'node:url';
+import { variants } from '@rsdp/engine/core';
+import { registerAllVariants } from '@rsdp/engine/variants';
+import { createApp } from './app';
+import { closeDb, createDb } from './db';
+import { dbNotes } from './notes';
+import { dbIdentity, dbStore } from './storage';
+import { dbTournamentStore } from './tournament/store';
 
 const PORT = Number(process.env.PORT ?? 3001);
-const ROOM_IDLE_MS = 6 * 60 * 60 * 1000;
+const here = path.dirname(fileURLToPath(import.meta.url));
 
-const app = express();
-const http = createServer(app);
-const io = new Server<ClientToServer, ServerToClient>(http, {
-  cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
-});
+registerAllVariants(variants);
 
-const rooms = new Map<string, Room>();
+// Postgres with DATABASE_URL; otherwise an on-disk PGlite under apps/server/.data so local tables survive a restart.
+const db = await createDb({ pgliteDir: process.env.DATABASE_URL ? undefined : (process.env.PGLITE_DIR ?? path.resolve(here, '../.data/pglite')) });
+const webDist = path.resolve(here, '../../web/dist');
+const server = createApp({ webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db) });
+// Unfinished tournaments carry on, and scheduled ones keep their start time.
+await server.resume();
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, rooms: rooms.size });
-});
+server.http.listen(PORT, () => console.log(`RSDP Poker Live! server on http://localhost:${PORT}`));
 
-// In production the server also serves the built web client.
-const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
-if (existsSync(webDist)) {
-  app.use(express.static(webDist));
-  app.get('*', (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+let stopping = false;
+/** Saves every table and tournament, then exits; gives up after 10 s so a host's restart never hangs. */
+function shutdown(code: number) {
+  if (stopping) return;
+  stopping = true;
+  setTimeout(() => process.exit(code), 10_000).unref();
+  server
+    .close()
+    .then(() => closeDb(db))
+    .catch((e) => console.error('shutdown failed', e))
+    .finally(() => process.exit(code));
 }
 
-/** Public player id derived from the browser's secret token, so the token never leaves the server. */
-function playerIdFor(token: unknown): string | null {
-  if (typeof token !== 'string' || token.length < 16 || token.length > 128) return null;
-  return createHash('sha256').update(token).digest('base64url').slice(0, 16);
-}
-
-function broadcast(room: Room) {
-  for (const s of io.sockets.sockets.values()) {
-    if (s.data.roomId === room.id) s.emit('room:state', room.viewFor(s.data.playerId));
-  }
-}
-
-type Sock = Socket<ClientToServer, ServerToClient, object, { playerId: string; roomId?: string }>;
-
-/** Runs a handler, turning engine errors into an error ack instead of a crash. */
-function guarded<T>(ack: Ack<T> | undefined, fn: () => T | void) {
-  try {
-    const result = fn();
-    ack?.({ ok: true, ...(result ?? {}) } as never);
-  } catch (err) {
-    if (!(err instanceof ActionError)) console.error(err);
-    ack?.({ ok: false, error: err instanceof Error ? err.message : 'something went wrong' });
-  }
-}
-
-io.use((socket, next) => {
-  const playerId = playerIdFor(socket.handshake.auth?.token);
-  if (!playerId) return next(new Error('missing token'));
-  socket.data.playerId = playerId;
-  next();
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => shutdown(0));
+// One stray rejected promise must not end every game in progress.
+process.on('unhandledRejection', (e) => console.error('unhandled rejection', e));
+// Anything worse: save what we can and let the host restart us; tables and tournaments resume.
+process.on('uncaughtException', (e) => {
+  console.error('uncaught exception', e);
+  shutdown(1);
 });
-
-io.on('connection', (socket: Sock) => {
-  const me = socket.data.playerId;
-  const room = () => {
-    const r = socket.data.roomId ? rooms.get(socket.data.roomId) : undefined;
-    if (!r) throw new ActionError('join a table first');
-    return r;
-  };
-  const hostRoom = () => {
-    const r = room();
-    if (!r.isHost(me)) throw new ActionError('only the host can do that');
-    return r;
-  };
-
-  socket.on('room:create', (input, ack) =>
-    guarded(ack, () => {
-      const sb = Math.floor(Number(input.smallBlind));
-      const bb = Math.floor(Number(input.bigBlind));
-      const r = new Room(me, {
-        hostName: String(input.hostName ?? '').slice(0, 20) || 'Host',
-        smallBlind: sb,
-        bigBlind: bb,
-        turnSeconds: 0,
-      });
-      r.settings(sb, bb, Math.floor(Number(input.turnSeconds) || 0));
-      r.onChange = () => broadcast(r);
-      rooms.set(r.id, r);
-      return { roomId: r.id };
-    }),
-  );
-
-  socket.on('room:join', ({ roomId }, ack) =>
-    guarded(ack, () => {
-      const r = rooms.get(String(roomId));
-      if (!r) throw new ActionError('table not found');
-      socket.data.roomId = r.id;
-      socket.emit('room:state', r.viewFor(me));
-    }),
-  );
-
-  socket.on('seat:request', ({ seat, name, stack }, ack) =>
-    guarded(ack, () => room().requestSeat(me, Number(seat), String(name ?? ''), Number(stack))),
-  );
-  socket.on('seat:cancel', () => guarded(undefined, () => room().cancelRequest(me)));
-  socket.on('player:action', (action, ack) => guarded(ack, () => room().act(me, action)));
-  socket.on('player:stand', () => guarded(undefined, () => room().stand(me)));
-  socket.on('player:sitOut', ({ value }) => guarded(undefined, () => room().sitOut(me, !!value)));
-  socket.on('chat:send', ({ text }) => guarded(undefined, () => room().addChat(me, String(text ?? ''))));
-
-  socket.on('host:approve', ({ requestId }, ack) => guarded(ack, () => hostRoom().approve(requestId)));
-  socket.on('host:reject', ({ requestId }) => guarded(undefined, () => hostRoom().reject(requestId)));
-  socket.on('host:start', (ack) => guarded(ack, () => hostRoom().start()));
-  socket.on('host:pause', ({ value }) => guarded(undefined, () => hostRoom().setPaused(!!value)));
-  socket.on('host:settings', ({ smallBlind, bigBlind, turnSeconds }, ack) =>
-    guarded(ack, () => hostRoom().settings(Number(smallBlind), Number(bigBlind), Number(turnSeconds))),
-  );
-  socket.on('host:setStack', ({ playerId, stack }, ack) =>
-    guarded(ack, () => hostRoom().setStack(String(playerId), Number(stack))),
-  );
-  socket.on('host:kick', ({ playerId }) => guarded(undefined, () => hostRoom().stand(String(playerId))));
-});
-
-// Drop tables nobody has touched for a while. State is in memory only for now.
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, r] of rooms) {
-    if (now - r.lastActivity > ROOM_IDLE_MS) {
-      r.dispose();
-      rooms.delete(id);
-    }
-  }
-}, 10 * 60 * 1000).unref();
-
-http.listen(PORT, () => console.log(`RSDP Poker Live! server on http://localhost:${PORT}`));

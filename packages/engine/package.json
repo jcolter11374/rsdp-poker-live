@@ -9,6 +9,18 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "pokersolver": "^2.1.4",
     "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/core/index.ts",
+    "./variants": "./src/variants/index.ts",
+    "./settings": "./src/settings/index.ts",
+    "./modifiers": "./src/modifiers/index.ts",
+    "./wire": "./src/wire.ts"
   }
 }

@@ -27,3 +27,13 @@ describe('evaluate', () => {
     expect(v('2c 3d As Ks Qs Js Ts').score).toBe(v('4c 5d As Ks Qs Js Ts').score);
   });
 });
+
+describe('describe', () => {
+  it('reads hands out loud', () => {
+    expect(v('Kc Kd 2h 7s 9c 3d 4h').description).toBe('Pair of Kings');
+    expect(v('6c 6d 6h 5s 5c 3d 4h').description).toBe('Full House, Sixes full of Fives');
+    expect(v('Ac Kd Qh Js Tc 3d 4h').description).toBe('Straight, Ace high');
+    expect(v('As Ks Qs Js Ts 3d 4h').description).toBe('Royal Flush');
+    expect(v('Jc Jd 9h 9s 2c 3d 4h').description).toBe('Two Pair, Jacks and Nines');
+  });
+});
