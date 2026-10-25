@@ -49,6 +49,18 @@ export function logText(e: LogEvent): string {
       return e.winner ? `🏆 ${e.winner} wins the tournament` : 'The tournament is over';
     case 'cancelled':
       return e.reason === 'host' ? 'The host cancelled the tournament' : 'Cancelled: not enough players';
+    case 'stackSet':
+      return `The host set ${e.name}'s stack to ${chips(e.stack)} (was ${chips(e.previous)})`;
+    case 'seatsSwapped':
+      return `The host swapped the seats of ${e.names.join(' and ')}`;
+    case 'seatMoved':
+      return `The host moved ${e.name} to another seat`;
+    case 'coHostsChanged':
+      return 'The host changed the co-hosts';
+    case 'hostChanged':
+      return `${e.name} is now the host`;
+    case 'archived':
+      return 'The tournament was archived';
     default:
       return '';
   }

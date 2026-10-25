@@ -24,7 +24,14 @@ export type LogEvent =
   | { type: 'resumed' }
   | { type: 'structureEdited' }
   | { type: 'finished'; winner: string | null }
-  | { type: 'cancelled'; reason: 'not-enough-players' | 'host' };
+  | { type: 'cancelled'; reason: 'not-enough-players' | 'host' }
+  /** Host tools: a stack edit once it lands, a swap, a seat move by the host, co-hosts, a new host, archive. */
+  | { type: 'stackSet'; name: string; stack: number; previous: number }
+  | { type: 'seatsSwapped'; names: string[] }
+  | { type: 'seatMoved'; name: string }
+  | { type: 'coHostsChanged' }
+  | { type: 'hostChanged'; name: string }
+  | { type: 'archived' };
 
 export type LobbyItem =
   | { id: string; at: number; kind: 'chat'; playerId: PlayerId; name: string; text: string }
@@ -37,7 +44,10 @@ export const LOBBY_CHAT_MAX = 300;
 export function namesIn(...states: (TournamentState | null | undefined)[]) {
   return (playerId: PlayerId) => {
     for (const s of states) {
-      const n = s?.entries.filter((x) => x.playerId === playerId).at(-1)?.displayName ?? s?.requests.find((r) => r.playerId === playerId)?.displayName;
+      const n =
+        s?.entries.filter((x) => x.playerId === playerId).at(-1)?.displayName ??
+        s?.requests.find((r) => r.playerId === playerId)?.displayName ??
+        s?.coHosts?.find((c) => c.playerId === playerId)?.name;
       if (n) return n;
     }
     return 'A player';
@@ -80,6 +90,19 @@ export function logEvent(e: DirectorEvent, name: (playerId: PlayerId) => string)
       return { type: 'finished', winner: e.standings.find((x) => x.place === 1)?.displayName ?? null };
     case 'cancelled':
       return { type: 'cancelled', reason: e.reason };
+    case 'stackSet':
+      return e.applied ? { type: 'stackSet', name: name(e.playerId), stack: e.stack, previous: e.previous } : null;
+    case 'seatsSwapped':
+      return { type: 'seatsSwapped', names: e.moves.map((m) => name(m.playerId)) };
+    case 'moveSeat':
+      // Balancing moves are routine; a host's move is logged.
+      return e.by ? { type: 'seatMoved', name: name(e.playerId) } : null;
+    case 'coHostsChanged':
+      return { type: 'coHostsChanged' };
+    case 'hostChanged':
+      return { type: 'hostChanged', name: name(e.hostId) };
+    case 'archived':
+      return { type: 'archived' };
     default:
       // Requests and seat moves are not news for the lobby; seating draws show at the tables.
       return null;

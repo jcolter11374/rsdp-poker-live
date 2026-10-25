@@ -7,6 +7,8 @@ import {
   defaultSettings,
   isTournamentStaff,
   lastActivityAt,
+  logEvent,
+  namesIn,
   mayCommand,
   standings,
   tick,
@@ -315,5 +317,23 @@ describe('replayed hands', () => {
     sim.end(t, { p0: -1500, p1: 1500 });
     expect(sim.state.entries).toEqual(before.entries);
     expect(tick(sim.state, T0).events).toEqual([]);
+  });
+});
+
+describe('activity log', () => {
+  it('logs landed stack edits, host moves and swaps, not balancing moves', () => {
+    const sim = new Sim({ seatsPerTable: 6 });
+    sim.register(10);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.do({ type: 'setStack', by: 'host', playerId: 'p0', stack: 50 });
+    const [a, b] = sim.state.tables;
+    const x = sim.seatedAt(a.id)[0];
+    const y = sim.seatedAt(b.id)[0];
+    sim.do({ type: 'movePlayer', by: 'host', playerId: x, tableId: b.id, seat: sim.entry(y).seat! });
+    const name = namesIn(sim.state);
+    const lines = sim.events.map((e) => logEvent(e, name)).filter(Boolean);
+    expect(lines).toContainEqual({ type: 'stackSet', name: 'P0', stack: 50, previous: 1000 });
+    expect(lines).toContainEqual({ type: 'seatsSwapped', names: [name(x), name(y)] });
+    expect(logEvent({ type: 'moveSeat', entryId: 'e', playerId: 'p1', from: { tableId: 't', seat: 0 }, to: { tableId: 'u', seat: 0 }, stack: 1 }, name)).toBeNull();
   });
 });
