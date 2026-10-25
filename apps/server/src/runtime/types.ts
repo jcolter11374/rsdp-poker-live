@@ -168,6 +168,8 @@ export interface RuntimeState {
   history: HandRecord[];
   /** Added after version 1 snapshots; absent means fresh counters. */
   sideGames?: SideGameState;
+  /** Who rabbit hunted the last hand (they alone see its undealt cards). */
+  rabbit?: { handNumber: number; playerIds: PlayerId[] };
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

@@ -35,6 +35,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Settlement runs pot, then run (run it twice), then board (double board), then `awardPortion` from the variants package (high, low, hi-lo halves). Odd chips go to the first eligible seat clockwise from the button; in hi-lo the odd chip goes to the high half.
 - `Modifier`s plug in before the hand (`beforeHand`), at pot award (`potFee`), after settlement (`afterSettle`), and after a post-hand show (`afterShow`, for claims such as the 7-2 bounty), so paid-feature modules never edit the core.
 - `import '@rsdp/engine/modifiers'` registers every modifier's settings section and engine hooks. The server runtime and the web settings dialog both import it, so they parse the same `settings.modifiers` sections. Bomb pots have no engine hook: the runtime decides them between hands (`bombPotDue`), because their posts replace the blinds. A bomb pot takes no blinds: owed blinds stay owed, and the blind positions still move on one seat.
+- Showdown: `HandOptions.showdown` is 'muck-losers' (last aggressor shows first, a hand shows only if it wins chips or beats or ties what is already shown) or 'show-all' (the table setting `play.revealAllAtShowdown`). Absent means show-all, so older stored hands replay unchanged.
 - Betting structures: no-limit, pot-limit and fixed-limit share one `LegalActions` shape. Fixed-limit uses `smallBet`/`bigBet` per street and a raise cap.
 
 ## Table runtime (apps/server)

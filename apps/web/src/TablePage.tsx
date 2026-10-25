@@ -6,6 +6,7 @@ import { getVolume, nextVolume, setVolume, sounds, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { Table, useNow } from './components/Table';
+import { HandExtras } from './components/table/HandExtras';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
@@ -402,6 +403,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               preQueued.current = q;
             }}
           />
+          <HandExtras view={view} />
           {!portrait && seatOptions}
         </section>
         {!portrait && (

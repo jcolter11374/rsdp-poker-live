@@ -443,7 +443,9 @@ export class TableRuntime {
       const left = s.pausedLeft;
       if (left && s.turn && left.turn !== null) {
         s.turn.deadline = now + left.turn;
-        if (s.turn.bankFrom !== null) s.turn.bankFrom = now;
+        // The bank starts where the extended deadline less the whole bank falls (it may still be ahead).
+        const banked = s.seats[s.turn.seat];
+        if (s.turn.bankFrom !== null) s.turn.bankFrom = banked ? s.turn.deadline - banked.timeBank * 1000 : now;
       }
       if (left?.nextHand != null) s.nextHandAt = now + left.nextHand;
       if (left?.rit != null) s.ritDeadline = now + left.rit;
@@ -822,11 +824,39 @@ export class TableRuntime {
     this.afterEngine(false);
   }
 
+  /** The player turns their time bank on: it is added to their clock now and spent only past the normal time. */
+  useTimeBank(playerId: PlayerId) {
+    const hand = this.liveHandFor(playerId);
+    const seat = this.seatOf(playerId)!;
+    const turn = this.state.turn;
+    if (!turn || hand.toAct !== seat.seat || turn.seat !== seat.seat) throw new ActionError('not your turn');
+    if (turn.deadline === null) throw new ActionError('there is no clock at this table');
+    if (turn.usingBank) return;
+    if (seat.timeBank <= 0) throw new ActionError('your time bank is empty');
+    turn.usingBank = true;
+    turn.bankFrom = turn.deadline;
+    turn.deadline += seat.timeBank * 1000;
+    this.sync();
+  }
+
+  /** Anyone at the table may peek at the cards a hand that ended early would have dealt. Only they see them. */
+  rabbitHunt(playerId: PlayerId) {
+    const s = this.state;
+    const hand = s.hand;
+    if (!hand || hand.phase !== 'complete') throw new ActionError('you can rabbit hunt once the hand is over');
+    if (!rabbitCards(hand, s.settings.play.rabbitHunt)) throw new ActionError('there are no cards to rabbit hunt');
+    const r = s.rabbit && s.rabbit.handNumber === hand.input.handNumber ? s.rabbit : (s.rabbit = { handNumber: hand.input.handNumber, playerIds: [] });
+    if (r.playerIds.includes(playerId)) return;
+    r.playerIds.push(playerId);
+    this.onChange();
+  }
+
   /** The time bank pays for whatever time was used past the normal clock. */
   private spendBank(seat: SeatState) {
     const turn = this.state.turn;
     if (!turn || turn.seat !== seat.seat || !turn.usingBank || turn.bankFrom === null) return;
-    const used = Math.ceil((this.clock.now() - turn.bankFrom) / 1000);
+    // Acting before a bank turned on early has started costs nothing.
+    const used = Math.max(0, Math.ceil((this.clock.now() - turn.bankFrom) / 1000));
     seat.timeBank = Math.max(0, seat.timeBank - used);
   }
 
@@ -1057,6 +1087,7 @@ export class TableRuntime {
         boards: 1,
         bombPot,
         runItTwice: this.isTournament ? 'off' : s.settings.play.runItTwice,
+        showdown: s.settings.play.revealAllAtShowdown ? 'show-all' : 'muck-losers',
         fixedLimitCap: s.settings.play.fixedLimitCap,
         uncappedHeadsUp: s.settings.play.uncappedHeadsUp,
       },
@@ -1286,7 +1317,8 @@ export class TableRuntime {
     engine.timeout(hand, seatNo);
     const seat = s.seats[seatNo];
     if (seat) {
-      if (seat.timeBank > 0 && s.turn?.usingBank) seat.timeBank = 0;
+      // Charge only the bank time actually used (a bank turned on early may not have started).
+      this.spendBank(seat);
       seat.timeouts++;
       const limit = s.settings.seating.awayAfterTimeouts;
       if (limit > 0 && seat.timeouts >= limit && !seat.sittingOut) {
@@ -1368,4 +1400,31 @@ function cleanName(name: string) {
   const clean = cleanDisplayName(name, NAME_MAX);
   if (!clean) throw new ActionError('pick a name');
   return clean;
+}
+
+/**
+ * Rabbit hunting: the board cards a flop game would have dealt after a hand
+ * that ended early, one list per board (empty when it reached the river or
+ * the setting is off). Deck order is fixed at the shuffle and nothing is
+ * burned, so these are the real next cards.
+ */
+export function rabbitCards(hand: HandState, enabled: boolean): string[][] | null {
+  if (!enabled || hand.phase !== 'complete' || hand.input.game.family !== 'flop' || hand.runs.length !== 1) return null;
+  const perBoard = hand.input.game.streets.reduce((n, st) => n + st.dealBoard, 0);
+  const missing = perBoard - hand.runs[0][0].length;
+  if (missing <= 0) return null;
+  const boards = hand.runs[0].map(() => [] as string[]);
+  let pos = hand.deckPos;
+  // Street by street, each board in turn, the way the hand would have dealt them.
+  let have = hand.runs[0][0].length;
+  for (const st of hand.input.game.streets) {
+    if (!st.dealBoard) continue;
+    if (have > 0) {
+      have -= st.dealBoard;
+      if (have >= 0) continue;
+    }
+    for (const b of boards) for (let i = 0; i < st.dealBoard; i++) b.push(hand.input.deck[pos++]);
+  }
+  if (pos > hand.input.deck.length) return null;
+  return boards;
 }

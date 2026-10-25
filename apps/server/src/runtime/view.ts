@@ -1,6 +1,6 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import type { HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { fillStakes, type TableRuntime } from './table';
+import { fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand } from './types';
 
 const CHAT_SHOWN = 100;
@@ -101,6 +101,7 @@ export function tableView(
     nextHandAt: s.nextHandAt,
     serverNow: now,
     bombPotNext: !!s.sideGames?.bombPotNext,
+    rabbit: rabbitView(rt, playerId),
     upcoming,
     level: levelView(rt, now),
     requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId)).map((r) => ({ ...r })),
@@ -115,6 +116,14 @@ export function tableView(
     history: s.history.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.hand.input.game.name })),
     watchers: audience.filter((a) => !rt.seatOf(a.playerId)),
   };
+}
+
+function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {
+  const s = rt.state;
+  const cards = s.hand ? rabbitCards(s.hand, s.settings.play.rabbitHunt) : null;
+  if (!cards) return { available: false, cards: null };
+  const asked = s.rabbit?.handNumber === s.hand!.input.handNumber && s.rabbit.playerIds.includes(playerId);
+  return { available: true, cards: asked ? cards : null };
 }
 
 function visibleCard(hand: HandState, viewer: Viewer, seat: number, card: string, up: boolean, shown: boolean) {
