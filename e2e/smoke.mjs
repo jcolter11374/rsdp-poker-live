@@ -76,6 +76,17 @@ try {
     await host.waitForSelector('.seat .hole .playing-card');
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
+
+    // A private note on Bob: saved, shown on his seat, and never shown to Bob.
+    await host.click('.seat:not(.me) .note-badge');
+    await host.click('.note-swatch.red');
+    await host.fill('.note-text', 'Bluffs rivers');
+    await host.click('.modal button:has-text("Save")');
+    await host.waitForSelector('.seat:not(.me) .note-badge.has-note');
+    await host.reload();
+    await host.waitForSelector('.seat:not(.me) .note-badge.has-note');
+    if (await guest.locator('.note-badge.has-note').count()) throw new Error('Bob can see a note');
+    await host.screenshot({ path: path.join(OUT, 'notes.png') });
   });
 
   await step('side games: a PLO bomb pot on two boards at a Hold\'em table', async () => {

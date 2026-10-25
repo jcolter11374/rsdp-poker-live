@@ -1,4 +1,6 @@
 import type { SeatView, TableView } from '@rsdp/engine/wire';
+import { NoteBadge } from './Notes';
+import './extras.css';
 
 /*
  * Mount points on the table for features that live in their own components
@@ -7,12 +9,16 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
  */
 
 /** Extra lines on a seat's nameplate. */
-export function SeatExtras({ seat }: { view: TableView; seat: SeatView }) {
-  if (seat.nit !== 'holder') return null;
+export function SeatExtras({ view, seat }: { view: TableView; seat: SeatView }) {
   return (
-    <span className="tag nit-tag" title="Still holding the nit: win a pot outright to get off it">
-      NIT
-    </span>
+    <>
+      {seat.nit === 'holder' && (
+        <span className="tag nit-tag" title="Still holding the nit: win a pot outright to get off it">
+          NIT
+        </span>
+      )}
+      {seat.playerId !== view.me.playerId && <NoteBadge seat={seat} />}
+    </>
   );
 }
 
