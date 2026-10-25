@@ -90,7 +90,10 @@ export interface AppDeps {
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string> }>;
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; lastExport?: number }>;
+
+/** Least time between two hand downloads from one browser tab. */
+const EXPORT_GAP_MS = 5_000;
 
 const SAVE_DEBOUNCE_MS = 500;
 const NAME_MAX = 20;
@@ -334,10 +337,14 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const rt = current();
-          // Saved hands, plus any still on their way to the database.
+          // Each download reads every hand of the table, so one per socket every few seconds.
+          const now = clock.now();
+          if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
+          socket.data.lastExport = now;
+          // Saved hands, with the copies still in memory winning: they include cards shown after the hand.
           const saved = await store.loadHands(rt.state.id);
           const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
-          for (const h of rt.state.history) if (!byNumber.has(h.handNumber)) byNumber.set(h.handNumber, pastHand(h));
+          for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
           const all = [...byNumber.values()].sort((a, b) => a.handNumber - b.handNumber);
           return { hands: all.map((h) => handRecordView(rt, h, me)) };
         },

@@ -20,7 +20,8 @@ export const fileStem = (tableName: string) =>
   `${tableName.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'table'}-${new Date().toISOString().slice(0, 10)}`;
 
 const csvCell = (v: string | number) => {
-  const s = String(v);
+  // A leading = + - @ would run as a formula in a spreadsheet.
+  const s = typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -46,9 +47,10 @@ export interface Transfer {
  * method gives: the biggest loser pays the biggest winner until one is even.
  * `off` is what the nets fail to add up to (0 when the books balance).
  */
-export function settleUp(rows: { name: string; net: number }[]): { transfers: Transfer[]; off: number } {
-  const owe = rows.filter((r) => r.net < 0).map((r) => ({ name: r.name, left: -r.net }));
-  const get = rows.filter((r) => r.net > 0).map((r) => ({ name: r.name, left: r.net }));
+export function settleUp(rows: { playerId: string; name: string; net: number }[]): { transfers: Transfer[]; off: number } {
+  // Kept per player (two people can share a name); names are only for showing.
+  const owe = rows.filter((r) => r.net < 0).map((r) => ({ id: r.playerId, name: r.name, left: -r.net }));
+  const get = rows.filter((r) => r.net > 0).map((r) => ({ id: r.playerId, name: r.name, left: r.net }));
   const off = rows.reduce((a, r) => a + r.net, 0);
   const transfers: Transfer[] = [];
   for (;;) {
