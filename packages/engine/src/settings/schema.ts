@@ -16,6 +16,8 @@ export const LEVEL_COUNTDOWNS = ['per-level-timer', 'hands'] as const;
 export const RUN_IT_TWICE_OPTIONS = ['off', 'ask', 'always'] as const;
 export const STRADDLE_OPTIONS = ['off', 'utg', 'utg-and-button'] as const;
 export const SHOWDOWN_SECONDS = [3, 6, 9] as const;
+/** Table felt colours the host can pick. Each player may still see their own. */
+export const FELTS = ['green', 'blue', 'red', 'purple', 'charcoal', 'teal'] as const;
 
 export type TableMode = (typeof TABLE_MODES)[number];
 
@@ -84,6 +86,8 @@ const TableSection = z
     maxSeats: int(L.maxSeats),
     /** Cash game, or a table run by the tournament director. */
     mode: z.enum(TABLE_MODES),
+    /** Felt colour everyone sees unless they pick their own (green when left out). */
+    felt: z.enum(FELTS).optional(),
   })
   .strict();
 

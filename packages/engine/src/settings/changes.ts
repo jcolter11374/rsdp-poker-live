@@ -35,6 +35,7 @@ export interface SettingsUpdate {
  */
 export const IMMEDIATE_FIELDS = [
   'table.name',
+  'table.felt',
   'chat',
   'spectators.allowed',
   'seating.requireApproval',

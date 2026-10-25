@@ -4,6 +4,7 @@ import {
   SettingsError,
   applyAtNextHand,
   applyImmediate,
+  parseSettings,
   defaultSettings,
   diffSettings,
   isImmediateField,
@@ -133,7 +134,8 @@ describe('applyAtNextHand', () => {
 
 describe('immediate fields', () => {
   it('names real settings paths', () => {
-    const s = cash() as unknown as Record<string, Record<string, unknown>>;
+    // table.felt is optional, so it is filled in here to count as present.
+    const s = parseSettings({ ...cash(), table: { ...cash().table, felt: 'green' } }) as unknown as Record<string, Record<string, unknown>>;
     for (const path of IMMEDIATE_FIELDS) {
       const [section, field] = path.split('.');
       expect(s[section], path).toBeDefined();
@@ -179,6 +181,13 @@ describe('applyImmediate', () => {
     const next = applyAtNextHand(now.settings, now.deferred);
     expect(next.settings).toEqual(applyAtNextHand(current, edit).settings);
     expect(next.diff.map((c) => c.path)).toEqual(['table.maxSeats', 'stakes.bigBlind', 'spectators.seeAllCards']);
+  });
+
+  it('changes the felt at once and rejects unknown felts', () => {
+    const r = applyImmediate(cash(), { table: { felt: 'blue' } });
+    expect(r.settings.table.felt).toBe('blue');
+    expect(r.deferred).toBeNull();
+    expect(() => applyImmediate(cash(), { table: { felt: 'plaid' as never } })).toThrow();
   });
 
   it('queues nothing when the edit is all immediate', () => {
