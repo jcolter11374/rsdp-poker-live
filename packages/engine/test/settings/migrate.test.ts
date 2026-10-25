@@ -61,7 +61,7 @@ describe('migrateSettings', () => {
 
   it('fills with the defaults of the stored mode', () => {
     const settings = migrateSettings({ version: 1, table: { mode: 'tournament', name: 'Final table' } });
-    expect(settings.table).toEqual({ name: 'Final table', maxSeats: 10, mode: 'tournament' });
+    expect(settings.table).toEqual({ name: 'Final table', maxSeats: 10, mode: 'tournament', felt: 'green' });
     expect(settings.play.runItTwice).toBe('off');
     expect(settings.seating.dealToAway).toBe(true);
   });

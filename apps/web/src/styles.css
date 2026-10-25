@@ -85,7 +85,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   min-height: 320px;
   margin: 64px 56px 36px;
   border-radius: 999px;
-  background: radial-gradient(ellipse at center, #2a8a5d 0%, var(--felt) 60%, var(--felt-edge) 100%);
+  background: radial-gradient(ellipse at center, var(--felt-light, #2a8a5d) 0%, var(--felt) 60%, var(--felt-edge) 100%);
   border: 12px solid #3b2a1d;
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
 }
@@ -192,9 +192,16 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .playing-card.small .rank, .playing-card.small .suit { font-size: 0.95rem; }
 .playing-card.suit-h, .playing-card.suit-d { color: #d0312d; }
 .playing-card.back {
-  background: repeating-linear-gradient(45deg, var(--accent) 0 4px, #a8322a 4px 8px);
+  background: repeating-linear-gradient(45deg, var(--back-a, var(--accent)) 0 4px, var(--back-b, #a8322a) 4px 8px);
   border: 2px solid #fff;
 }
+/* Preferences: card backs and the four-colour deck (clubs green, diamonds blue). */
+[data-back='red'] { --back-a: var(--accent); --back-b: #a8322a; }
+[data-back='blue'] { --back-a: #3b7dd8; --back-b: #2a5ea8; }
+[data-back='green'] { --back-a: #2e9e5b; --back-b: #1f7342; }
+[data-back='black'] { --back-a: #4a4f57; --back-b: #26292e; }
+:root[data-deck='four'] .playing-card.suit-d, :root[data-deck='four'] .log-card.suit-d { color: #1d64d8; }
+:root[data-deck='four'] .playing-card.suit-c, :root[data-deck='four'] .log-card.suit-c { color: #17853a; }
 
 .action-bar { background: var(--panel); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 64px; }
 .action-bar.idle { background: transparent; }
@@ -415,7 +422,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   aspect-ratio: auto;
   margin: 54px 40px 26px;
   border-width: 8px;
-  background: radial-gradient(ellipse at center, #2a8a5d 0%, var(--felt) 65%, var(--felt-edge) 100%);
+  background: radial-gradient(ellipse at center, var(--felt-light, #2a8a5d) 0%, var(--felt) 65%, var(--felt-edge) 100%);
 }
 .felt.compact .felt-brand { top: 18%; font-size: 1rem; }
 .felt.compact .seat, .felt.compact .nameplate { min-width: 0; }
@@ -487,3 +494,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .replayer-controls { display: flex; gap: 6px; justify-content: center; }
 .replayer-controls button { min-width: 48px; padding: 10px; font-size: 1rem; }
 .stats td, .stats th { white-space: nowrap; }
+
+/* ---- table look dialog */
+.look h3 { margin: 14px 0 6px; font-size: 0.9rem; }
+.look h3:first-child { margin-top: 0; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.swatch { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); border: 2px solid transparent; padding: 14px 6px; font-weight: 600; }
+.swatch.active, .back-pick.active { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(242, 184, 75, 0.35); }
+.look-sample { display: flex; gap: 6px; margin-top: 8px; }
+.look-backs { gap: 8px; }
+.back-pick { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 10px; background: transparent; border: 2px solid transparent; }
+.back-pick span { font-size: 0.8rem; }
+.look .toggle { white-space: nowrap; margin-right: 14px; }

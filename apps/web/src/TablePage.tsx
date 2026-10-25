@@ -16,6 +16,7 @@ import { PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
+import { LookDialog } from './components/LookDialog';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -90,7 +91,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | null;
+type Dialog = { kind: 'seat'; seat: number } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -301,6 +302,9 @@ export function TablePage({ tableId }: { tableId: string }) {
               👁 {view.watchers.length}
             </button>
             <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
+            <button onClick={() => setDialog({ kind: 'look' })} title="Felt, deck and card backs" aria-label="Table look">
+              🎨
+            </button>
             <button onClick={copyLink}>{copied ? 'Copied!' : 'Invite'}</button>
             {volumeButton}
             {seatButtons}
@@ -424,6 +428,14 @@ export function TablePage({ tableId }: { tableId: string }) {
             >
               People · {view.watchers.length} watching
             </button>
+            <button
+              onClick={() => {
+                close();
+                setDialog({ kind: 'look' });
+              }}
+            >
+              🎨 Table look
+            </button>
             {volumeButton}
           </div>
           {seatOptions}
@@ -441,6 +453,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'people' && <PeopleDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
     </div>
   );
 }

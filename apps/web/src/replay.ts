@@ -250,7 +250,14 @@ export function handNet(h: HandRecordView, playerId: string): number | null {
 }
 
 /** A TableView for one frame, so the replay is drawn by the same table as live play. */
-export function frameView(tableName: string, seatCount: number, hand: HandRecordView, frame: Frame, myId: string | null): TableView {
+export function frameView(
+  tableName: string,
+  seatCount: number,
+  hand: HandRecordView,
+  frame: Frame,
+  myId: string | null,
+  felt?: TableView['settings']['table']['felt'],
+): TableView {
   const n = Math.max(seatCount, ...hand.seats.map((s) => s.seat + 1));
   const mySeat = hand.seats.find((s) => s.playerId === myId)?.seat ?? null;
   const start = hand.events.find((e): e is Extract<HandEvent, { t: 'hand-start' }> => e.t === 'hand-start');
@@ -292,6 +299,7 @@ export function frameView(tableName: string, seatCount: number, hand: HandRecord
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);
   const settings = defaultSettings('cash');
+  if (felt) settings.table.felt = felt;
   return {
     id: 'replay',
     name: tableName,

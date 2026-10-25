@@ -108,6 +108,7 @@ describe('field ranges', () => {
     ['table.name', ['', '   ', 'x'.repeat(41), 'tab\tname', 'line\nbreak', 5, null], ['x', 'x'.repeat(40)]],
     ['table.maxSeats', [1, 11, 0, -2, 2.5, '10', null], [2, 10]],
     ['table.mode', ['ring', '', 1], ['cash']],
+    ['table.felt', ['plaid', '', 1, null], ['green', 'teal']],
     ['game.gameId', ['', 'has space', 'x'.repeat(41), 'dot.id', 7], ['plo5', 'stud_hilo', 'Razz', 'x'.repeat(40)]],
     ['game.betting', ['spread-limit', 'NL', null], ['pot-limit', 'no-limit']],
     ['game.rotation.enabled', ['yes', 1], [false]],

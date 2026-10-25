@@ -5,6 +5,7 @@ import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
 import { BoardExtras, SeatExtras } from './table/slots';
+import { feltStyle, usePrefs } from '../prefs';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -86,6 +87,7 @@ export function Table({
   discard?: DiscardPick | null;
 }) {
   const felt = useRef<HTMLDivElement>(null);
+  const prefs = usePrefs();
   const size = useSize(felt);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
@@ -186,7 +188,11 @@ export function Table({
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
   return (
-    <div ref={felt} className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}>
+    <div
+      ref={felt}
+      className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}
+      style={feltStyle(prefs, view.settings.table.felt)}
+    >
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>

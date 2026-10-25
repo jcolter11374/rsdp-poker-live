@@ -169,7 +169,7 @@ describe('applyImmediate', () => {
       stakes: { bigBlind: 4 },
     };
     const now = applyImmediate(current, edit);
-    expect(now.settings.table).toEqual({ name: 'Late game', maxSeats: 10, mode: 'cash' });
+    expect(now.settings.table).toEqual({ name: 'Late game', maxSeats: 10, mode: 'cash', felt: 'green' });
     expect(now.settings.chat.guestChat).toBe(false);
     expect(now.settings.spectators).toEqual({ allowed: false, seeAllCards: false, delaySeconds: 0 });
     expect(now.settings.stakes.bigBlind).toBe(2);
@@ -179,6 +179,13 @@ describe('applyImmediate', () => {
     const next = applyAtNextHand(now.settings, now.deferred);
     expect(next.settings).toEqual(applyAtNextHand(current, edit).settings);
     expect(next.diff.map((c) => c.path)).toEqual(['table.maxSeats', 'stakes.bigBlind', 'spectators.seeAllCards']);
+  });
+
+  it('changes the felt at once and rejects unknown felts', () => {
+    const r = applyImmediate(cash(), { table: { felt: 'blue' } });
+    expect(r.settings.table.felt).toBe('blue');
+    expect(r.deferred).toBeNull();
+    expect(() => applyImmediate(cash(), { table: { felt: 'plaid' as never } })).toThrow();
   });
 
   it('queues nothing when the edit is all immediate', () => {
