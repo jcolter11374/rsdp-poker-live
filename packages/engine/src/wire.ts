@@ -192,6 +192,12 @@ export interface TableView {
    * has turned watching off: the hand is hidden until you sit.
    */
   spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
+  /**
+   * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
+   * next hand's server seed (seated browsers answer with fair:seed), and the
+   * one the hand in progress was dealt from.
+   */
+  fair: { nextCommit: string; handCommit: string | null };
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */
@@ -205,6 +211,23 @@ export interface HandRecordView {
   button: number;
   seats: { seat: number; playerId: PlayerId; name: string; stack: number }[];
   events: HandEvent[];
+  /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
+  fair?: FairRecordView | null;
+}
+
+/**
+ * A finished hand's fairness record. serverSeed and handSeed are null until the
+ * hand is revealed (the host stopped the game, or at revealsAt): they give away
+ * every card in the deck, folded hands included.
+ */
+export interface FairRecordView {
+  version: string;
+  handId: string;
+  commit: string;
+  clientSeeds: { playerId: PlayerId; name: string; seed: string }[];
+  serverSeed: string | null;
+  handSeed: string | null;
+  revealsAt: number | null;
 }
 
 /** A hand shared as a link: frozen as the sharer saw it (or with their own cards hidden). */
@@ -259,6 +282,8 @@ export interface ClientToServer {
   'hand:timeBank': (ack: Ack) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
+  /** Add my browser's randomness to the next hand, answering the commitment I was shown (seated players). */
+  'fair:seed': (input: { commit: string; seed: string }, ack: Ack) => void;
   'chat:send': (input: { text: string }, ack?: Ack) => void;
   /** Throw a gesture at a player at my table. */
   'table:gesture': (input: { to: PlayerId; kind: GestureKind }, ack: Ack) => void;

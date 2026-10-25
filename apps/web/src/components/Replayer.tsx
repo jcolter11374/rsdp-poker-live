@@ -1,5 +1,6 @@
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { HandRecordView, TableView } from '@rsdp/engine/wire';
+import { FairCheck } from './FairCheck';
 import { gameLabel, stakesLabel, type Fmt } from '../format';
 import { frameView, handNet, replayFrames } from '../replay';
 import { Table } from './Table';
@@ -65,6 +66,7 @@ function ReplayerView({
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
+  const [checking, setChecking] = useState(false);
   const hand = hands[index];
   const frames = useMemo(() => (hand ? replayFrames(hand, myId, fmt) : []), [hand, myId, fmt]);
   const last = frames.length - 1;
@@ -119,10 +121,16 @@ function ReplayerView({
             <span className="muted"> · {new Date(hand.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             {net !== null && <span className={net > 0 ? 'up' : net < 0 ? 'down' : 'muted'}> · you {net > 0 ? `+${fmt(net)}` : fmt(net)}</span>}
           </div>
-          <button className="icon" aria-label="Close" onClick={onClose}>
-            ✕
-          </button>
+          <span className="replayer-head-buttons">
+            <button onClick={() => setChecking(!checking)} aria-pressed={checking} title="Check that this hand was dealt fairly">
+              🔒 Check this hand
+            </button>
+            <button className="icon" aria-label="Close" onClick={onClose}>
+              ✕
+            </button>
+          </span>
         </div>
+        {checking && <FairCheck hand={hand} />}
         <div className="replayer-table">
           <Table key={hand.handNumber} view={view} skew={0} fmt={fmt} compact={compact} />
         </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { freshDeck, shuffle } from '../../src/cards';
+import { shuffle } from '../../src/cards';
 import { ActionError, engine, modifierRegistry, planForcedBets, variants, type HandInput, type HandState, type PlannerSeat } from '../../src/core';
+import { commitmentOf, deckFromSeed, handSeedOf, verifyHand } from '../../src/fairness';
 import './harness';
 
 /** mulberry32: small seeded RNG so failures can be replayed by seed. */
@@ -73,8 +74,7 @@ function randomHand(seed: number): HandInput {
     button: plan.button,
     buttonDead: plan.buttonDead,
     posts: plan.posts,
-    deck: shuffle(freshDeck(), r.int),
-    reshuffleSeed: seed,
+    ...fairDeal(seed),
     options: {
       boards,
       bombPot: !!bombPot,
@@ -83,6 +83,17 @@ function randomHand(seed: number): HandInput {
       uncappedHeadsUp: r.next() < 0.5,
     },
     modifiers: r.next() < 0.3 ? [{ id: 'fuzz-rake', settings: {} }] : [],
+  };
+}
+
+/** A provably fair deck, seeded from the fuzz seed so failures replay. */
+function fairDeal(seed: number) {
+  const serverSeed = seed.toString(16).padStart(64, '0');
+  const handSeed = handSeedOf(serverSeed, `fuzz-${seed}`, []);
+  return {
+    deck: deckFromSeed(handSeed),
+    reshuffleSeed: 0,
+    fair: { version: 'rsdp-fair-v1' as const, commit: commitmentOf(serverSeed), serverSeed, clientSeeds: [], handSeed },
   };
 }
 
@@ -170,6 +181,11 @@ describe('fuzz: random hands in every game', () => {
       // The event log replays to the same final stacks.
       const end_ = state.events.at(-1)!;
       expect(end_.t, ctx).toBe('hand-end');
+      // Every card dealt checks out against the deck rebuilt from the seed.
+      const fair = state.input.fair!;
+      const check = verifyHand({ handId: state.input.handId, commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: [], handSeed: fair.handSeed, events: state.events });
+      expect(check.checks.filter((c) => !c.ok), ctx).toEqual([]);
+      if (!state.reshuffled) expect(check.unplaced, ctx).toBe(0);
     }
     expect(played).toBeGreaterThan(hands * 0.8);
     for (const id of GAMES) expect(byGame.get(id) ?? 0, id).toBeGreaterThan(50);

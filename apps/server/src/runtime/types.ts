@@ -1,4 +1,4 @@
-import type { BettingKind, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
+import type { BettingKind, HandFairness, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
@@ -121,6 +121,18 @@ export interface PastHand {
   button: number;
   seats: { seat: number; playerId: PlayerId; startStack: number }[];
   events: HandState['events'];
+  /** Missing on hands dealt before provably fair dealing. */
+  handId?: string;
+  fair?: HandFairness;
+}
+
+/** The secret behind the next hand's published commitment. Server-only: never put serverSeed in a view. */
+export interface FairState {
+  next: { serverSeed: string; commit: string };
+  /** Client seeds sent for the next hand, by player. */
+  clientSeeds: Record<PlayerId, string>;
+  /** Hands up to this number are revealed (the host stopped the game after it). */
+  revealedThrough: number;
 }
 
 /** A finished hand kept in memory for the hand log and replayer; the server also stores it. */
@@ -213,6 +225,8 @@ export interface RuntimeState {
   offers?: SeatOffer[];
   /** Players the host has muted in chat. */
   muted?: PlayerId[];
+  /** Provably fair dealing (docs/FAIRNESS.md). Missing in older snapshots; made on first use. */
+  fair?: FairState;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

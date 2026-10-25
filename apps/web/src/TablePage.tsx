@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
+import { contributeSeed } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -123,6 +124,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     const onState = (v: TableView) => {
       if (v.id !== tableId) return;
       setView(v);
+      contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
       if (first) setChatSeen(v.chat.length);

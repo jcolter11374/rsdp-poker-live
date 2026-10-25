@@ -303,6 +303,7 @@ function useAllHands(view: TableView, active: boolean) {
   const [tries, setTries] = useState(0);
   const latest = view.history.at(-1)?.handNumber ?? 0;
   const dealing = view.hand?.handNumber ?? 0;
+  // Stopping the game reveals its hands for checking (docs/FAIRNESS.md), so that fetches them again too.
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
@@ -312,7 +313,7 @@ function useAllHands(view: TableView, active: boolean) {
     return () => {
       live = false;
     };
-  }, [active, latest, dealing, tries]);
+  }, [active, latest, dealing, tries, view.started]);
   return { hands, error, retry: () => setTries((t) => t + 1), setHands };
 }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { cryptoRng, freshDeck, shuffle, type Rng } from '@rsdp/engine';
+import { commitmentOf, cryptoRng, deckFromSeed, FAIR_VERSION, handSeedOf, SEED_RE, shuffle, type Rng } from '@rsdp/engine';
 import {
   ActionError,
   blindsPassed,
@@ -10,6 +10,7 @@ import {
   type Action,
   type BettingKind,
   type GameSpec,
+  type HandFairness,
   type HandInput,
   type HandState,
   type PlannerSeat,
@@ -46,6 +47,8 @@ import { maskProfanity } from './profanity';
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
+/** Hands become checkable this long after they end, if the host hasn't stopped the game sooner (docs/FAIRNESS.md). */
+export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
 const RIT_VOTE_SECONDS = 12;
 const NAME_MAX = 20;
 /** How long a cash table waits for an offline host before handing the table to a seated player. */
@@ -484,10 +487,65 @@ export class TableRuntime {
     this.requireHost(by);
     if (this.isTournament) throw new ActionError('the tournament runs this table');
     this.state.stopAfterHand = true;
-    if (!this.handLive()) this.state.started = false;
+    if (!this.handLive()) {
+      this.state.started = false;
+      this.revealHands();
+    }
     this.state.nextHandAt = null;
     this.log('The host stopped the game');
     this.sync();
+  }
+
+  // ------------------------------------------------------------ provably fair dealing (docs/FAIRNESS.md)
+
+  /** The next hand's seed and who has sent a client seed for it; made on first use. */
+  private fairState() {
+    this.state.fair ??= { next: this.newServerSeed(), clientSeeds: {}, revealedThrough: 0 };
+    return this.state.fair;
+  }
+
+  private newServerSeed() {
+    const bytes = Array.from({ length: 32 }, () => this.rng(256));
+    const serverSeed = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return { serverSeed, commit: commitmentOf(serverSeed) };
+  }
+
+  /** What everyone may see before the deal: the commitment to the next hand's server seed. */
+  nextCommit(): string {
+    return this.fairState().next.commit;
+  }
+
+  /** A seated player's browser adds its own randomness to the next hand, against the commitment it saw. */
+  addClientSeed(playerId: PlayerId, input: { commit: unknown; seed: unknown }) {
+    const f = this.fairState();
+    if (!this.seatOf(playerId)) throw new ActionError('only seated players add to the shuffle');
+    if (typeof input.seed !== 'string' || !SEED_RE.test(input.seed)) throw new ActionError('a seed is 16 to 64 hex characters');
+    if (input.commit !== f.next.commit) throw new ActionError('that hand has already been dealt');
+    f.clientSeeds[playerId] = input.seed;
+  }
+
+  /**
+   * The hand's fairness record: the committed server seed plus the client
+   * seeds of the players dealt in. Then a new server seed is committed for the
+   * hand after, so players have this whole hand to send theirs.
+   */
+  private fairDeal(handId: string, dealtIn: PlayerId[]): HandFairness {
+    const f = this.fairState();
+    const { serverSeed, commit } = f.next;
+    const clientSeeds = dealtIn.filter((p) => f.clientSeeds[p]).map((playerId) => ({ playerId, seed: f.clientSeeds[playerId] }));
+    f.next = this.newServerSeed();
+    f.clientSeeds = {};
+    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, handId, clientSeeds.map((c) => c.seed)) };
+  }
+
+  /** The host stopped the game: every hand so far may be checked. */
+  private revealHands() {
+    this.fairState().revealedThrough = this.state.handNumber;
+  }
+
+  /** A finished hand's server seed may be shown once the game stopped after it, or this long after it ended. */
+  fairRevealed(handNumber: number, endedAt: number): boolean {
+    return handNumber <= (this.state.fair?.revealedThrough ?? 0) || this.clock.now() - endedAt >= FAIR_REVEAL_AFTER_MS;
   }
 
   /** Deal now (when the next hand doesn't start by itself). */
@@ -1278,6 +1336,7 @@ export class TableRuntime {
     if (s.stopAfterHand) {
       s.started = false;
       s.stopAfterHand = false;
+      this.revealHands();
     }
     const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
     const auto = this.isTournament || s.settings.timing.autoStartNextHand;
@@ -1418,8 +1477,10 @@ export class TableRuntime {
     if (s.settings.game.rotation.enabled) s.rotation.hands++;
 
     const dealt = new Set(plan.dealtIn);
+    const handId = `${s.id}-${s.handNumber + 1}`;
+    const fair = this.fairDeal(handId, candidates.filter((x) => dealt.has(x.seat)).map((x) => x.playerId));
     let input: HandInput = {
-      handId: `${s.id}-${s.handNumber + 1}`,
+      handId,
       handNumber: s.handNumber + 1,
       game: setup.game,
       betting: setup.betting,
@@ -1431,8 +1492,10 @@ export class TableRuntime {
       button: plan.button,
       buttonDead: plan.buttonDead,
       posts: plan.posts,
-      deck: shuffle(freshDeck(), this.rng),
-      reshuffleSeed: this.rng(0x7fffffff),
+      deck: deckFromSeed(fair.handSeed),
+      // Only hands dealt before `fair` use this.
+      reshuffleSeed: 0,
+      fair,
       options: {
         boards: 1,
         bombPot,

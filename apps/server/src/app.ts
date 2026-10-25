@@ -667,6 +667,7 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
     on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('fair:seed', (input, ack) => guarded(ack, () => current().addClientSeed(me, input ?? {}), log));
     on('notes:list', (ack) => guarded(ack, async () => ({ notes: await notes.list(me) }), log));
     on('notes:set', (input, ack) =>
       guarded(
