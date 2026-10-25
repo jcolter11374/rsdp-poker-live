@@ -78,6 +78,8 @@ export interface ManagerDeps {
   onEvents?: (state: TournamentState, before: TournamentState | null, events: DirectorEvent[]) => void;
   log: (message: string, err?: unknown) => void;
   rng?: Rng;
+  /** Passed on to the tables (RuntimeDeps.fairLeadMs). */
+  fairLeadMs?: number;
 }
 
 interface Live {
@@ -543,7 +545,7 @@ export class TournamentManager {
 
   private runtimeDeps(live: Live, tableId: TableId) {
     // `log`: failures a table catches itself go to the server log too.
-    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log };
+    return { clock: this.clock, rng: this.deps.rng ?? cryptoRng, tournament: this.hooks(live, tableId), log: this.deps.log, fairLeadMs: this.deps.fairLeadMs };
   }
 
   /**

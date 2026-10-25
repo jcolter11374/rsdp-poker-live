@@ -64,6 +64,8 @@ export function dbStore(db: Db): TableStore {
         button: r.header.input.button,
         seats: r.header.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
         events: r.events,
+        handId: r.header.input.handId,
+        fair: r.header.input.fair,
       }));
     },
   };

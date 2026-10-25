@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
+import { contributeSeed, liveSeedProblem } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -123,6 +124,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     const onState = (v: TableView) => {
       if (v.id !== tableId) return;
       setView(v);
+      contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
       if (first) setChatSeen(v.chat.length);
@@ -417,6 +419,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
+          {liveSeedProblem(view) && <div className="banner warn">⚠ Fair dealing: {liveSeedProblem(view)}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">
