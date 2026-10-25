@@ -630,8 +630,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .seat.me .playing-card { --cw: 56px; }
 .felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -10px; }
 .felt.compact .seat.me .hole.n4 .playing-card + .playing-card { margin-left: -24px; }
-.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 42px; }
-.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -18px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 38px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -15px; }
 .felt.compact .board .playing-card { --cw: 46px; }
 .felt.compact .board .cards { gap: 4px; }
 .felt.compact .board.multi .playing-card { --cw: 34px; }
