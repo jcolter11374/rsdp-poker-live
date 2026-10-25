@@ -6,7 +6,6 @@
 
 import type {
   Action,
-  AwardPortion,
   Chips,
   GameSpec,
   HandEvent,
@@ -18,12 +17,13 @@ import type {
   Pot,
   SeatIndex,
   Stakes,
+  VariantRules,
   Viewer,
 } from './types';
 
 export interface EngineApi {
   /** Posts forced bets, deals the first street and finds the first player to act. */
-  startHand(input: HandInput, awardPortion: AwardPortion): HandState;
+  startHand(input: HandInput, rules: VariantRules): HandState;
   /** Null when it is not this seat's turn. */
   legalActions(state: HandState, seat: SeatIndex): LegalActions | null;
   /** Throws ActionError for anything illegal. `auto` marks actions taken for away or timed-out players. */

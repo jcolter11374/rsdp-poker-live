@@ -91,6 +91,18 @@ export type AwardPortion = (
   board: Card[],
 ) => PortionAward[];
 
+/**
+ * Game-specific rules the engine calls into. Supplied by the variants package
+ * (src/variants); NLH needs only awardPortion.
+ */
+export interface VariantRules {
+  awardPortion: AwardPortion;
+  /** Stud: seat that must bring in, from each live seat's up cards. */
+  bringInSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
+  /** Stud: seat that acts first on later streets, from up cards. */
+  firstToActSeat?(spec: GameSpec, upBySeat: Record<SeatIndex, Card[]>): SeatIndex;
+}
+
 // ---------------------------------------------------------------- stakes and forced bets
 
 export type AnteType = 'none' | 'per-player' | 'big-blind';
