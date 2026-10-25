@@ -63,7 +63,12 @@ export function SeatPersona({ seat }: { seat: SeatView }) {
   return (
     <>
       <span className="seat-avatar">
-        {showAvatar ? (
+        {seat.bot ? (
+          // Practice bots always show the robot, so nobody mistakes one for a person (their names get cut short).
+          <span className="avatar bot-avatar" role="img" aria-label="Practice bot" title={`A practice bot added by ${seat.bot.ownerName}`}>
+            🤖
+          </span>
+        ) : showAvatar ? (
           <Avatar playerId={seat.playerId} avatar={seat.avatar} name={seat.name} />
         ) : (
           <span className="avatar initials" style={{ background: initialsColor(seat.playerId) }} aria-hidden="true">
