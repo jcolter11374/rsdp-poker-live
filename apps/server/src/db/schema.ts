@@ -339,3 +339,22 @@ export const playerNotes = pgTable(
     check('player_notes_color_check', sql`${t.color} in (${oneOf(NOTE_COLORS)})`),
   ],
 );
+
+// ---------------------------------------------------------------- avatars
+
+export const AVATAR_KINDS = ['library', 'upload'] as const;
+export type AvatarKind = (typeof AVATAR_KINDS)[number];
+
+/** Each player's picture: a library id, or an uploaded image kept as a small data: URL. */
+export const playerAvatars = pgTable(
+  'player_avatars',
+  {
+    playerId: text('player_id')
+      .primaryKey()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    value: text('value').notNull(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [check('player_avatars_kind_check', sql`${t.kind} in (${oneOf(AVATAR_KINDS)})`)],
+);

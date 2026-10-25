@@ -295,6 +295,8 @@ export function frameView(
       straddle: false,
       won: 0,
       handName: null,
+      avatar: null,
+      mood: null,
     };
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);

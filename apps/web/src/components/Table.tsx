@@ -4,7 +4,7 @@ import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { fromVars, lerp, px, stadiumPoint, type Point } from './geometry';
-import { BoardExtras, SeatExtras } from './table/slots';
+import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -340,6 +340,8 @@ export function Table({
       })}
 
       {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+
+      <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 
       {flights.map((f) => (
         <div key={f.id} className={`chip-flight ${f.kind}`} style={{ ...px(f.to), ...fromVars(f.from, f.to), animationDelay: `${f.delay}ms` }}>

@@ -15,6 +15,8 @@ export function tableView(
   tournamentId: string | null = null,
   /** Everyone with the table open, seated or not. */
   audience: { playerId: PlayerId; name: string }[] = [],
+  /** Each player's picture, as SeatView.avatar has it. */
+  avatarOf: (playerId: PlayerId) => string | null = () => null,
 ): TableView {
   const s = rt.state;
   const mySeat = rt.seatOf(playerId);
@@ -66,6 +68,8 @@ export function tableView(
       nit: nitRound?.participants.includes(seat.playerId) ? (nitRound.holders.includes(seat.playerId) ? 'holder' : 'clear') : null,
       won: inThisHand ? (won.get(seat.seat) ?? 0) : 0,
       handName: inThisHand ? (handNames.get(seat.seat) ?? null) : null,
+      avatar: avatarOf(seat.playerId),
+      mood: seat.mood ?? null,
     };
   });
 

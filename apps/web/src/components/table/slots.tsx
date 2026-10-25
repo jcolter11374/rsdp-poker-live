@@ -1,10 +1,13 @@
 import type { SeatView, TableView } from '@rsdp/engine/wire';
+import type { Point } from '../geometry';
 import { NoteBadge } from './Notes';
+import { GestureLayer, SeatPersona } from './Persona';
 import './extras.css';
 
 /*
  * Mount points on the table for features that live in their own components
- * (double board, bomb pot and 7-2 badges, rabbit hunt, nit marker, notes).
+ * (double board, bomb pot and 7-2 badges, rabbit hunt, nit marker, notes,
+ * pictures, moods and gestures).
  * Add a line here rather than editing Table.tsx.
  */
 
@@ -18,6 +21,7 @@ export function SeatExtras({ view, seat }: { view: TableView; seat: SeatView }) 
         </span>
       )}
       {seat.playerId !== view.me.playerId && <NoteBadge seat={seat} />}
+      <SeatPersona seat={seat} />
     </>
   );
 }
@@ -25,4 +29,9 @@ export function SeatExtras({ view, seat }: { view: TableView; seat: SeatView }) 
 /** Extra things under the board and pots. */
 export function BoardExtras(_props: { view: TableView }) {
   return null;
+}
+
+/** Things drawn over the whole felt, with the seat positions to aim at. */
+export function FeltExtras({ view, seatPoint, railPoint }: { view: TableView; seatPoint: (seat: number) => Point; railPoint: Point }) {
+  return <GestureLayer view={view} seatPoint={seatPoint} railPoint={railPoint} />;
 }
