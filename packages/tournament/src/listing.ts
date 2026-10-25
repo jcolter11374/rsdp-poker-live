@@ -92,8 +92,8 @@ export function sortListings(list: TournamentListing[]): TournamentListing[] {
  */
 export function listedPublicly(s: TournamentState): boolean {
   if (isArchived(s)) return false;
-  // Invite-only events (formats thread) are found through their link.
-  if ((s.settings as { invites?: { required?: boolean } }).invites?.required) return false;
+  // Invite-only events are found through their link.
+  if (s.settings.invites?.required) return false;
   return isLive(s);
 }
 

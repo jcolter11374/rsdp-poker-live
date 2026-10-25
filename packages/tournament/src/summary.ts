@@ -2,6 +2,7 @@
 // stats, and what a given player may do right now.
 
 import { addOnsOpen, aliveEntries, currentPrizePool, paidPlaces, reEntryOpen, rebuysOpen, registrationOpen } from './director';
+import { checkInActive, checkInGroupOf, checkInScheduledAt, checkedInCount, groupOpensAt, mayCheckIn } from './formats';
 import { clockAt, type LevelRow } from './structure';
 import type { Entry, PendingRequest, PlayerId, TournamentState } from './types';
 
@@ -42,6 +43,19 @@ export interface TournamentSummary {
   rebuysOpen: boolean;
   addOnsOpen: boolean;
   reEntryOpen: boolean;
+  /** Check-in events before the draw; null otherwise. */
+  checkIn: {
+    checkedIn: number;
+    notCheckedIn: number;
+    groupsOpen: number;
+    groups: number;
+    /** Time until the first group opens (null once open, or when the host opens it). */
+    msToOpen: number | null;
+    /** Time until the next group opens, once check-in is open. */
+    msToNextGroup: number | null;
+  } | null;
+  /** Bounty events: money still on heads in play. */
+  bountiesInPlay: number;
 }
 
 /** Elapsed running time on the tournament clock at `now`. */
@@ -91,6 +105,25 @@ export function summarize(s: TournamentState, now: number): TournamentSummary {
     rebuysOpen: rebuysOpen(s),
     addOnsOpen: addOnsOpen(s),
     reEntryOpen: reEntryOpen(s),
+    checkIn: checkInSummary(s, now),
+    bountiesInPlay: alive.reduce((a, e) => a + (e.bounty ?? 0), 0),
+  };
+}
+
+function checkInSummary(s: TournamentState, now: number): TournamentSummary['checkIn'] {
+  const c = s.settings.checkIn;
+  if (!c || !checkInActive(s)) return null;
+  const open = s.checkIn?.groupsOpen ?? 0;
+  const checkedIn = checkedInCount(s);
+  const scheduled = checkInScheduledAt(s);
+  const next = open > 0 && open < c.groups.length ? groupOpensAt(s, open) : null;
+  return {
+    checkedIn,
+    notCheckedIn: s.entries.filter((e) => e.status === 'registered').length - checkedIn,
+    groupsOpen: open,
+    groups: c.groups.length,
+    msToOpen: open === 0 && scheduled !== null ? Math.max(0, scheduled - now) : null,
+    msToNextGroup: next !== null ? Math.max(0, next - now) : null,
   };
 }
 
@@ -104,6 +137,11 @@ export interface PlayerOptions {
   canAddOn: boolean;
   canReEnter: boolean;
   canQuit: boolean;
+  /** Check-in events: may check in now. */
+  canCheckIn: boolean;
+  checkedIn: boolean;
+  /** When this player's check-in group opens (null when it is open, or unknown until the host opens check-in). */
+  checkInOpensAt: number | null;
 }
 
 /** What a player may do now. Mirrors the checks in apply(), for showing buttons. */
@@ -130,5 +168,15 @@ export function playerOptions(s: TournamentState, playerId: PlayerId): PlayerOpt
       (reEntry.max === null || entry.entryNo - 1 < reEntry.max) &&
       !pending.some((r) => r.kind === 're-entry'),
     canQuit: !over && allowQuit && alive && entry!.status !== 'registered',
+    canCheckIn: !over && !!entry && mayCheckIn(s, entry) && checkedInCount(s) < s.settings.maxEntrants,
+    checkedIn: entry?.checkedInAt !== undefined && entry.status === 'registered',
+    checkInOpensAt: myGroupOpensAt(s, entry),
   };
+}
+
+function myGroupOpensAt(s: TournamentState, entry: Entry | null): number | null {
+  if (!entry || !checkInActive(s) || entry.status !== 'registered' || entry.checkedInAt !== undefined) return null;
+  const group = checkInGroupOf(s, entry);
+  if (group < 0 || group < (s.checkIn?.groupsOpen ?? 0)) return null;
+  return groupOpensAt(s, group);
 }

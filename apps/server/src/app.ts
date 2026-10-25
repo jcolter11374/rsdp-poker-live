@@ -212,8 +212,10 @@ export function createApp(deps: AppDeps = {}) {
       },
     },
     onState: (id) => {
-      const view = tournaments.view(id);
-      if (view) for (const s of tournamentWatchers.get(id) ?? []) s.emit('tournament:state', { id, view });
+      for (const s of tournamentWatchers.get(id) ?? []) {
+        const view = tournaments.view(id, s.data.playerId);
+        if (view) s.emit('tournament:state', { id, view });
+      }
     },
     onMoved: (playerId, from, to) => {
       for (const s of playerSockets.get(playerId) ?? []) s.emit('table:moved', { from, to });
@@ -417,7 +419,7 @@ export function createApp(deps: AppDeps = {}) {
           if (!tournamentWatchers.has(id)) tournamentWatchers.set(id, new Set());
           tournamentWatchers.get(id)!.add(socket);
           socket.data.tournaments.add(id);
-          socket.emit('tournament:state', { id, view: tournaments.view(id)! });
+          socket.emit('tournament:state', { id, view: tournaments.view(id, me)! });
         },
         log,
       ),

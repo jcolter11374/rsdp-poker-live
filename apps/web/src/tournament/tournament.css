@@ -51,6 +51,7 @@
 .tn-table tr.tn-me-row td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tn-tag { display: inline-block; margin-left: 6px; font-size: 0.7rem; padding: 0 5px; border-radius: 4px; background: var(--panel-2); color: var(--muted); vertical-align: middle; }
 .tn-tag-warn { color: var(--accent-2); }
+.tn-tag-good { color: var(--good); }
 .tn-search { margin-bottom: 4px; }
 
 .tn-tables { display: grid; grid-template-columns: 1fr; gap: 10px; }
