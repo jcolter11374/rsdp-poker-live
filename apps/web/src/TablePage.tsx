@@ -175,6 +175,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           )}
           {levelText && <> · {levelText}</>}
+          {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
           {view.paused && <b className="paused"> · Paused</b>}
         </span>
         <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>

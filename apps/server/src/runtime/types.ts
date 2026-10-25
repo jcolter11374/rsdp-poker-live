@@ -108,6 +108,14 @@ export interface TurnClock {
   bankFrom: number | null;
 }
 
+/** Side-game progress kept between hands (cash tables). */
+export interface SideGameState {
+  /** Hands dealt since the last bomb pot. */
+  handsSinceBombPot: number;
+  /** The host asked for a bomb pot next hand. */
+  bombPotNext: boolean;
+}
+
 /** Everything about one table. Plain JSON, so it can be snapshotted and restored. */
 export interface RuntimeState {
   version: typeof RUNTIME_VERSION;
@@ -145,6 +153,8 @@ export interface RuntimeState {
   chat: ChatMessage[];
   log: TableLogEntry[];
   history: HandRecord[];
+  /** Added after version 1 snapshots; absent means fresh counters. */
+  sideGames?: SideGameState;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

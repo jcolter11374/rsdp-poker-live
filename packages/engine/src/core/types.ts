@@ -373,6 +373,8 @@ export interface Modifier<Settings = unknown> {
   potFee?(pot: Pot, state: HandState, settings: Settings): Chips;
   /** Side transfers after the pots are awarded (7-2 bounty, nit game). */
   afterSettle?(state: HandState, settings: Settings): Omit<Extract<HandEvent, { t: 'transfer' }>, 'seq'>[];
+  /** Side transfers a show after the hand earns (a 7-2 bounty claimed by showing). Must be idempotent per hand. */
+  afterShow?(state: HandState, settings: Settings, seat: SeatIndex): Omit<Extract<HandEvent, { t: 'transfer' }>, 'seq'>[];
 }
 
 export class ActionError extends Error {}

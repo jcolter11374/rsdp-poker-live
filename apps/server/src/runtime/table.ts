@@ -27,6 +27,7 @@ import {
   type SettingsPatch,
   type TableSettings,
 } from '@rsdp/engine/settings';
+import { bombPotDue, bombPotSchema, bounty72Schema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -34,6 +35,7 @@ import {
   type HandRecord,
   type RuntimeState,
   type SeatRequest,
+  type SideGameState,
   type SeatState,
   type TournamentHooks,
 } from './types';
@@ -386,6 +388,23 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Cash tables: make the next hand a bomb pot (or take that back). */
+  requestBombPot(by: PlayerId, value: boolean) {
+    this.requireHost(by);
+    if (this.isTournament) throw new ActionError('bomb pots are for cash games');
+    const sg = this.sideGames();
+    if (sg.bombPotNext === value) return;
+    sg.bombPotNext = value;
+    this.log(value ? 'The host made the next hand a bomb pot' : 'The host cancelled the bomb pot');
+    this.sync();
+  }
+
+  /** Bomb pot counters; tables saved before they existed start fresh. */
+  sideGames(): SideGameState {
+    this.state.sideGames ??= { handsSinceBombPot: 0, bombPotNext: false };
+    return this.state.sideGames;
+  }
+
   pause(by: PlayerId, value: boolean) {
     this.requireHost(by);
     // Tournament tables hold through the director's gate when the tournament pauses.
@@ -470,6 +489,16 @@ export class TableRuntime {
         throw new ActionError(`unknown game ${id}`);
       }
       if (next.table.maxSeats > spec.maxPlayers) throw new ActionError(`${spec.name} seats at most ${spec.maxPlayers}`);
+    }
+    const bombGame = bombPotSchema.get(next).gameId;
+    if (bombGame) {
+      let spec: GameSpec;
+      try {
+        spec = variants.get(bombGame).spec;
+      } catch {
+        throw new ActionError(`unknown bomb pot game ${bombGame}`);
+      }
+      if (spec.family !== 'flop' || spec.forcedBets !== 'blinds') throw new ActionError(`bomb pots need a game with a flop, not ${spec.name}`);
     }
     const lastTaken = this.state.seats.reduce((m, seat, i) => (seat ? i : m), -1);
     if (next.table.maxSeats <= lastTaken) throw new ActionError(`seat ${lastTaken + 1} is taken; move that player before removing it`);
@@ -636,8 +665,78 @@ export class TableRuntime {
     const hand = this.state.hand;
     const seat = this.seatOf(playerId);
     if (!hand || !seat || !hand.seats.some((x) => x.seat === seat.seat)) throw new ActionError('you were not in the last hand');
+    const from = hand.events.length;
     engine.show(hand, seat.seat, cardIndexes);
+    if (hand.phase === 'complete' && this.state.handStartedAt === null) this.applyLateTransfers(hand, from);
     this.onChange();
+  }
+
+  /**
+   * Transfers a show earned after the hand was settled (a 7-2 bounty claimed
+   * late) move chips between the table's stacks as they are now: a payer
+   * whose stack changed since the hand pays at most what they have, a player
+   * who has left pays out of what they cashed out, and the winner gets only
+   * what was collected.
+   */
+  private applyLateTransfers(hand: HandState, fromEvent: number) {
+    const s = this.state;
+    const playerAt = (seatNo: number) => hand.seats.find((x) => x.seat === seatNo)?.playerId;
+    const take = (seatNo: number, amount: number): number => {
+      const playerId = playerAt(seatNo);
+      if (!playerId) return 0;
+      const seat = this.seatOf(playerId);
+      if (seat) {
+        const paid = Math.min(amount, seat.stack);
+        seat.stack -= paid;
+        if (seat.stack === 0 && seat.pendingChips === 0 && !seat.sittingOut) {
+          seat.sittingOut = true;
+          seat.sitOutReason = 'busted';
+        }
+        return paid;
+      }
+      const row = s.ledger[playerId];
+      const gone = s.departures[playerId];
+      if (!row || !gone) return 0;
+      const paid = Math.min(amount, gone.stack, row.cashOut);
+      row.cashOut -= paid;
+      gone.stack -= paid;
+      return paid;
+    };
+    const give = (seatNo: number, amount: number) => {
+      const playerId = playerAt(seatNo);
+      if (!playerId || amount <= 0) return;
+      const seat = this.seatOf(playerId);
+      if (seat) {
+        seat.stack += amount;
+        if (seat.sitOutReason === 'busted') {
+          seat.sittingOut = false;
+          seat.sitOutReason = null;
+        }
+      } else if (s.ledger[playerId]) {
+        s.ledger[playerId].cashOut += amount;
+        const gone = s.departures[playerId];
+        if (gone) gone.stack += amount;
+      }
+    };
+    let changed = false;
+    for (const e of hand.events.slice(fromEvent)) {
+      if (e.t !== 'transfer') continue;
+      const paid = e.from === 'house' ? e.amount : take(e.from, e.amount);
+      if (e.to !== 'house') give(e.to, paid);
+      // The hand records what really moved, so its history matches the ledger.
+      if (paid !== e.amount) {
+        const short = e.amount - paid;
+        for (const hs of hand.seats) {
+          if (hs.seat === e.from) hs.stack += short;
+          if (hs.seat === e.to) hs.stack -= short;
+        }
+        e.amount = paid;
+      }
+      changed = true;
+    }
+    // Store the hand again so its history has the claim.
+    const record = s.history.find((r) => r.handNumber === hand.input.handNumber);
+    if (changed && record) this.onHandFinished({ ...record, hand });
   }
 
   private liveHandFor(playerId: PlayerId): HandState {
@@ -694,6 +793,7 @@ export class TableRuntime {
     const s = this.state;
     const hand = s.hand!;
     const now = this.clock.now();
+    this.autoShowBounty(hand);
     const record = { handNumber: s.handNumber, startedAt: s.handStartedAt!, endedAt: now, hand };
     s.history.push(record);
     if (s.history.length > HISTORY_LIMIT) s.history.splice(0, s.history.length - HISTORY_LIMIT);
@@ -747,6 +847,15 @@ export class TableRuntime {
     const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
     const auto = this.isTournament || s.settings.timing.autoStartNextHand;
     s.nextHandAt = s.started && auto ? now + delay * 1000 : null;
+  }
+
+  /** 7-2 bounty with auto-show: turn up a winning 7-2 nobody saw, which pays the bounty before stacks are read. */
+  private autoShowBounty(hand: HandState) {
+    const active = hand.input.modifiers.find((m) => m.id === bounty72Schema.id);
+    if (!active) return;
+    const cfg = active.settings as ReturnType<typeof bounty72Schema.get>;
+    if (!cfg.autoShow) return;
+    for (const seat of sevenDeuceWinners(hand, cfg, false)) engine.show(hand, seat, [0, 1]);
   }
 
   /** The between-hands pipeline. Returns false when no hand could start. */
@@ -817,7 +926,7 @@ export class TableRuntime {
     }));
     const maxSeats = s.seats.length;
     const firstButton = candidates[this.rng(candidates.length)].seat;
-    const planFor = (setup: HandSetup) =>
+    const planFor = (setup: HandSetup, bombPot: { amount: number } | null = null) =>
       planForcedBets({
         game: setup.game,
         stakes: setup.stakes,
@@ -828,7 +937,7 @@ export class TableRuntime {
         lastButton: s.positions?.button ?? firstButton,
         mode: this.isTournament ? 'tournament' : 'cash',
         straddles: this.isTournament ? 'off' : s.settings.play.straddle,
-        bombPot: null,
+        bombPot,
       });
     let setup = this.handSetup();
     let plan = planFor(setup);
@@ -839,15 +948,33 @@ export class TableRuntime {
       plan = planFor(setup);
       if (plan.dealtIn.length < 2) return false;
     }
+    const sideGames = this.sideGames();
+    let bombPot = false;
+    if (!this.isTournament) {
+      const cfg = bombPotSchema.get(s.settings);
+      if (bombPotDue(cfg, { handsSince: sideGames.handsSinceBombPot, requested: sideGames.bombPotNext, rng: this.rng })) {
+        const bomb = this.bombPotSetup(setup, cfg.gameId, cfg.betting);
+        const bombPlan = bomb && planFor(bomb, { amount: cfg.bigBlinds * bomb.stakes.bigBlind });
+        if (bomb && bombPlan && bombPlan.dealtIn.length >= 2 && bombPlan.dealtIn.length <= bomb.game.maxPlayers) {
+          setup = bomb;
+          plan = bombPlan;
+          bombPot = true;
+        } else if (sideGames.bombPotNext) {
+          this.log("Couldn't deal a bomb pot: it needs a game with a flop and blinds");
+        }
+      }
+    }
 
     // Players sitting out whom the blinds passed now owe them.
-    if (!this.isTournament && s.positions) {
+    // A bomb pot takes no blinds, so nobody misses one, and debts stay owed until a normal hand.
+    // The blind positions still move on one seat, as after any hand.
+    if (!this.isTournament && s.positions && !bombPot) {
       const sittingOut = s.seats.filter((x): x is SeatState => !!x && !plan.dealtIn.includes(x.seat) && !plan.waiting.includes(x.seat)).map((x) => x.seat);
       const passed = blindsPassed(plan, s.positions.bigBlind, sittingOut, maxSeats);
       for (const seat of passed.missedBig) s.seats[seat]!.missedBigBlind = true;
       for (const seat of passed.missedSmall) s.seats[seat]!.missedSmallBlind = true;
     }
-    for (const seatNo of plan.dealtIn) {
+    for (const seatNo of bombPot ? [] : plan.dealtIn) {
       const seat = s.seats[seatNo]!;
       seat.isNew = false;
       seat.missedBigBlind = false;
@@ -873,7 +1000,7 @@ export class TableRuntime {
       reshuffleSeed: this.rng(0x7fffffff),
       options: {
         boards: 1,
-        bombPot: false,
+        bombPot,
         runItTwice: this.isTournament ? 'off' : s.settings.play.runItTwice,
         fixedLimitCap: s.settings.play.fixedLimitCap,
         uncappedHeadsUp: s.settings.play.uncappedHeadsUp,
@@ -900,6 +1027,10 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    if (!this.isTournament) {
+      sideGames.bombPotNext = false;
+      sideGames.handsSinceBombPot = bombPot ? 0 : sideGames.handsSinceBombPot + 1;
+    }
     s.handStartedAt = now;
     s.positions = { button: plan.button, smallBlind: plan.smallBlindSeat, bigBlind: plan.bigBlindSeat };
     if (s.settings.blindSchedule.enabled) {
@@ -909,6 +1040,20 @@ export class TableRuntime {
     this.tournament?.handStarted(s.handNumber);
     if (hand.phase === 'complete') this.finishHand();
     return true;
+  }
+
+  /** The game a bomb pot is dealt in: the table's, or the bomb pot game. Null when it can't be a bomb pot. */
+  private bombPotSetup(setup: HandSetup, gameId: string, betting: BettingKind): HandSetup | null {
+    let next = setup;
+    if (gameId) {
+      try {
+        next = { ...setup, game: variants.get(gameId).spec, betting };
+      } catch {
+        return null;
+      }
+    }
+    if (next.game.family !== 'flop' || next.game.forcedBets !== 'blinds' || next.stakes.bigBlind < 1) return null;
+    return next;
   }
 
   private offlineFor(seat: SeatState) {
