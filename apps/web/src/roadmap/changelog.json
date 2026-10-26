@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-l",
+      "date": "2026-10-26",
+      "fixes": [
+        "The \"Play money only. Every game and option is free.\" line is gone from the bottom of the home page and info pages."
+      ]
+    },
+    {
       "id": "2026-10-26-k",
       "date": "2026-10-26",
       "fixes": [
