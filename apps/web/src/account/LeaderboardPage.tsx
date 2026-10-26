@@ -34,6 +34,7 @@ export function LeaderboardPage() {
   useEffect(() => {
     let current = true;
     setRows(null);
+    setPicked(null);
     fetchLeaderboard(period)
       .then((r) => current && (setRows(r.rows), setError('')))
       .catch((e: Error) => current && setError(e.message));
@@ -55,8 +56,7 @@ export function LeaderboardPage() {
       : [])
   ).filter((k) => rows?.some((r) => r.key === k && r.games.length));
   const toggle = (key: string) => {
-    const now = onGraph.includes(key) ? onGraph.filter((k) => k !== key) : [...onGraph, key].slice(-3);
-    setPicked(now);
+    setPicked(onGraph.includes(key) ? onGraph.filter((k) => k !== key) : [...onGraph, key]);
   };
 
   return (
@@ -97,7 +97,7 @@ export function LeaderboardPage() {
                       <i className="swatch" style={{ background: SERIES[i] }} /> {rows!.find((r) => r.key === k)!.name}
                     </span>
                   ))}
-                  <span className="muted">Tick the box in a row to compare up to three people.</span>
+                  <span className="muted">Tick the boxes to compare up to three people. Untick one to make room.</span>
                 </div>
               </>
             )}
@@ -121,7 +121,7 @@ export function LeaderboardPage() {
                         type="checkbox"
                         aria-label={`Show ${r.name} on the graph`}
                         checked={onGraph.includes(r.key)}
-                        disabled={!r.games.length}
+                        disabled={!r.games.length || (onGraph.length >= 3 && !onGraph.includes(r.key))}
                         onChange={() => toggle(r.key)}
                         style={onGraph.includes(r.key) ? { accentColor: SERIES[onGraph.indexOf(r.key)] } : undefined}
                       />
