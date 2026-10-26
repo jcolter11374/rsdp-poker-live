@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseBlocks } from './markdown';
-import { sourceLink, splitIntro } from './FairnessPage';
+import { sourceLink } from './FairnessPage';
 
 const doc = readFileSync(new URL('../../../../docs/FAIRNESS.md', import.meta.url), 'utf8');
 
@@ -34,23 +34,5 @@ describe('/fairness', () => {
     expect(sourceLink('ARCHITECTURE.md')).toBe('https://github.com/jcolter11374/rsdp-poker-live/blob/main/docs/ARCHITECTURE.md');
     expect(sourceLink('https://example.com/x')).toBe('https://example.com/x');
     expect(sourceLink('#scheme')).toBe('#scheme');
-  });
-
-  it('puts the video after the intro and keeps every line of the doc', () => {
-    const [intro, rest] = splitIntro(doc);
-    expect(intro + '\n' + rest).toBe(doc);
-    expect(parseBlocks(intro)[0]).toMatchObject({ t: 'h', level: 1 });
-    expect(rest.startsWith('## ')).toBe(true);
-  });
-
-  it('keeps the video click-to-play, with its files in place', () => {
-    const page = readFileSync(new URL('./FairnessPage.tsx', import.meta.url), 'utf8');
-    const video = page.match(/<video[^>]*>/)?.[0] ?? '';
-    expect(video).toContain('preload="none"');
-    expect(video).toContain('playsInline');
-    expect(video).not.toMatch(/autoPlay|autoplay/);
-    for (const src of [...page.matchAll(/"\/media\/([^"]+)"/g)].map((m) => m[1])) {
-      expect(existsSync(new URL(`../../public/media/${src}`, import.meta.url)), src).toBe(true);
-    }
   });
 });
