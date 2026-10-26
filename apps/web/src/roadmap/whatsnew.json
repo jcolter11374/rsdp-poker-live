@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-h",
+      "date": "2026-10-26",
+      "title": "Checking John",
+      "items": [
+        { "title": "A public record of every hand and buy-in", "detail": "Every hand, every buy-in and cash-out, every admin action and every server restart now goes into a public record where each entry is locked to the one before it, and GitHub keeps a copy every hour. Editing something after the fact now shows: Check this hand and the ledger both check themselves against the record, and your browser warns you if the record changed since you last saw it.", "suggestedBy": "John" },
+        { "title": "Proof of which code the site runs", "detail": "GitHub now builds and signs every release from the public code, and checks every hour that the live site runs exactly that build. The new Checking John page (linked at the bottom of the site) shows what it found, every admin action, and what these checks still can't catch." }
+      ]
+    },
+    {
       "id": "2026-10-26-g",
       "date": "2026-10-26",
       "title": "A table with some spark",
