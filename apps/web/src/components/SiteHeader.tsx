@@ -74,6 +74,7 @@ export function SiteFooter() {
       <a href="/hands">Search your hands</a>
       <a href="/roadmap">Roadmap</a>
       <a href="/whats-new">What's new</a>
+      <a href="/changelog">Changelog</a>
       <a href="/roadmap#suggest">Suggest an idea</a>
       <a href="/fairness">Fair dealing</a>
       <span className="muted">Play money only. Every game and option is free.</span>
