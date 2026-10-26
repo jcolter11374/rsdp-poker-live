@@ -1,0 +1,29 @@
+name: Watcher dry run (throwaway)
+on:
+  push:
+    branches: [claude/watcher-dryrun]
+permissions:
+  contents: read
+  attestations: read
+jobs:
+  dry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Read-only look at Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          mkdir out
+          flyctl auth docker
+          flyctl machines list --app rsdp-poker-live --json > machines.json; echo "machines $?"
+          flyctl secrets list --app rsdp-poker-live --json > secrets.json; echo "secrets $?"
+          echo "--- secrets (names only)"; jq -c '[.[] | (.Name // .name)]' secrets.json; jq -c '.[0] | keys' secrets.json
+          echo "--- machine shape"; jq -c '.[] | {id, state, image_ref, env: (.config.env), init: (.config.init), files: (.config.files), events: [.events[]? | {type, status, timestamp}]}' machines.json
+          curl -sf https://rsdp-poker-live.fly.dev/api/version > version.json || echo '{}' > version.json
+          node scripts/transparency/deploys.mjs machines.json version.json secrets.json fly.toml out; echo "deploys exit $?"
+          node scripts/transparency/mirror.mjs https://rsdp-poker-live.fly.dev out; echo "mirror exit $?"
+          cat out/deploys/current.json
