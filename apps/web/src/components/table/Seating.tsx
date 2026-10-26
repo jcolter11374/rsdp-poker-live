@@ -66,7 +66,7 @@ export function SeatingBanners({
       {view.spectator && !view.spectator.blocked && (view.spectator.delaySeconds > 0 || view.spectator.seeAll) && (
         <div className="banner spectating">
           You're watching{view.spectator.seeAll ? ' with every card face up' : ''}
-          {view.spectator.delaySeconds > 0 ? `, ${view.spectator.delaySeconds} seconds behind the table` : ''}.
+          {view.spectator.delaySeconds > 0 ? `, ${delayText(view.spectator.delaySeconds)} behind the table` : ''}.
         </div>
       )}
       {!view.spectator && <CardsWatched view={view} onPeople={onPeople} />}
@@ -104,7 +104,8 @@ function CardsWatched({ view, onPeople }: { view: TableView; onPeople: () => voi
   if (!watched) return null;
   const behind = watched.delaySeconds > 0 ? `${delayText(watched.delaySeconds)} behind the table` : 'live, with no delay';
   const count = `${watched.watchers} ${watched.watchers === 1 ? 'spectator' : 'spectators'} watching`;
-  const fresh = watched.at > 0 && watched.at > seen && view.me.seat !== null;
+  // Whoever can change the settings turned it on themselves (or could have), so the warning is for everyone else.
+  const fresh = watched.at > 0 && watched.at > seen && view.me.seat !== null && !view.powers.includes('settings');
   if (fresh) {
     return (
       <div className="banner watched alert" role="alert">

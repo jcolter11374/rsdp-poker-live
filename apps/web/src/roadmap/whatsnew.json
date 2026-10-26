@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-e",
+      "date": "2026-10-26",
+      "title": "No secret spectators",
+      "items": [
+        { "title": "You're always told when spectators can see your cards", "detail": "If a host lets spectators see every hole card, everyone at the table now gets a warning in chat and on screen. While it's on, the table's rail turns red and a line says how far behind spectators watch and how many are watching. You have to agree to it before you sit down, it can only be turned on between hands, and every other settings change is now announced in the table log." }
+      ]
+    },
+    {
       "id": "2026-10-26-d",
       "date": "2026-10-26",
       "title": "Saved tournament setups, a clearer Nit game and a changelog",
