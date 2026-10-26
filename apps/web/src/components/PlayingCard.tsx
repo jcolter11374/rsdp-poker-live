@@ -60,7 +60,7 @@ export function PlayingCard({
   const rank = card[0] === 'T' ? '10' : card[0];
   const suit = card[1];
   return (
-    <div className={`${cls} suit-${suit}`} style={style} onClick={onClick} title={title} {...a11y}>
+    <div className={`${cls} suit-${suit}${rank === '10' ? ' rank-10' : ''}`} style={style} onClick={onClick} title={title} {...a11y}>
       <span className="rank" aria-hidden="true">{rank}</span>
       <SuitIcon suit={suit} className="suit" />
       <SuitIcon suit={suit} className="pip" />

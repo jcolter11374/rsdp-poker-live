@@ -51,6 +51,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     }
     const won = hand.phase === 'complete' && before.hand?.phase !== 'complete';
     if (won && view.me.seat !== null && hand.awards.some((a) => a.seat === view.me.seat)) sounds.win();
+    else if (won && hand.awards.length) sounds.pot();
     const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
     const wasMyTurn = !!before.legal || !!before.canDraw || before.canVoteRunItTwice;
     // A queued move (check/fold, call any) answers for you, so there is nothing to call you for.

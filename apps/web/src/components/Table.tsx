@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { fromVars, lerp, px, seatFractions, stadiumPoint, type Point } from './geometry';
+import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, stadiumPoint, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { feltStyle, usePrefs } from '../prefs';
 
@@ -35,6 +35,41 @@ function useSize(ref: RefObject<HTMLElement>) {
     return () => ro.disconnect();
   }, [ref]);
   return size;
+}
+
+/**
+ * How far each seat's nameplate and cards reach from its centre, measured after
+ * each render, so bets can sit just clear of them.
+ */
+function useSeatReach(felt: RefObject<HTMLElement>) {
+  const [reach, setReach] = useState<Record<number, Reach>>({});
+  useLayoutEffect(() => {
+    const el = felt.current;
+    if (!el) return;
+    const next: Record<number, Reach> = {};
+    let changed = false;
+    el.querySelectorAll<HTMLElement>('.seat[data-seat]').forEach((seatEl) => {
+      const seat = Number(seatEl.dataset.seat);
+      const box = seatEl.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      let { left, right, top, bottom } = box;
+      const hole = seatEl.querySelector<HTMLElement>('.hole:not(.mucked)');
+      if (hole && hole.childElementCount) {
+        const r = hole.getBoundingClientRect();
+        left = Math.min(left, r.left);
+        right = Math.max(right, r.right);
+        top = Math.min(top, r.top);
+        bottom = Math.max(bottom, r.bottom);
+      }
+      const now = { l: cx - left, r: right - cx, u: cy - top, d: bottom - cy };
+      const was = reach[seat];
+      if (!was || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
+      next[seat] = now;
+    });
+    if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
+  });
+  return reach;
 }
 
 /** A short badge for a seat that is not playing, or null when it is. */
@@ -92,6 +127,7 @@ export function Table({
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
   const size = useSize(felt);
+  const reach = useSeatReach(felt);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
   const offset = view.me.seat ?? 0;
@@ -108,30 +144,44 @@ export function Table({
   const center: Point = { x: w / 2, y: h / 2 };
   // Empty seats keep half a nameplate plus half a seat button clear of players, and some room between each other.
   const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
-  const fractions = seatFractions(
+  const spread = seatFractions(
     view.seats.map((s) => !!s),
     offset,
-    { clear: (compact ? 80 : 115) / perimeter, minGap: (compact ? 44 : 60) / perimeter },
+    { clear: (compact ? 80 : 165) / perimeter, minGap: (compact ? 44 : 80) / perimeter },
   );
+  // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
+  // The band fits the pot, the board rows and a result line, plus the seats either side of it.
+  const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
+  const band = 30 + (boardRows > 1 ? boardRows * 52 : boardRows * 68) + 30 + 100;
+  const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - n * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
-  // Your own bet sits further in, clear of your bigger cards.
-  const betPoint = (seat: number) => lerp(seatPoint(seat), center, seat === view.me.seat ? (compact ? 0.48 : 0.56) : compact ? 0.36 : 0.4);
-  const buttonPoint = (seat: number) => {
-    const p = seatPoint(seat);
-    // Beside the nameplate, square to the line to the middle: clear of the
-    // cards above the plate and the bet in front of it. Downward when that
-    // line is mostly sideways, since the cards sit above.
-    const dx = center.x - p.x;
-    const dy = center.y - p.y;
-    const len = Math.hypot(dx, dy) || 1;
-    let sx = -dy / len;
-    let sy = dx / len;
-    if (sy < 0) (sx = -sx), (sy = -sy);
-    // Clear of the nameplate, which is wider now that it carries the picture.
-    const reach = Math.abs(sx) * (compact ? 58 : 88) + Math.abs(sy) * (compact ? 36 : 44);
-    const inward = compact ? 22 : 10;
-    return { x: p.x + sx * reach + (dx / len) * inward, y: p.y + sy * reach + (dy / len) * inward };
-  };
+  // Desktop seats shrink a little when a full table on a small window leaves them less room than a nameplate.
+  const seatScale = compact ? 1 : Math.round(Math.max(0.72, Math.min(1.06, perimeter / n / 300)) * 100) / 100;
+  // Board cards grow with the felt, so a big window doesn't leave a small board in a sea of green.
+  const boardCard = compact ? null : Math.round(Math.max(56, Math.min(80, w * 0.055, h * 0.15)));
+  // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
+  const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
+  // The board sits midway between the seats above it and below it (your own cards are bigger),
+  // so on a short window it doesn't run into either.
+  let boardShift = 0;
+  if (!compact || w > h) {
+    let above = 0;
+    let below = h;
+    view.seats.forEach((s, seat) => {
+      if (!s) return;
+      const p = seatPoint(seat);
+      const r = reach[seat] ?? guess;
+      if (Math.abs(p.x - center.x) > w * 0.3) return;
+      if (p.y < center.y) above = Math.max(above, p.y + r.d);
+      else below = Math.min(below, p.y - r.u);
+    });
+    boardShift = Math.max(-h * 0.15, Math.min(h * 0.15, (above + below) / 2 - center.y));
+  }
+  const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
+  const betHalf = compact ? { w: 22, h: 10 } : { w: 30, h: 13 };
+  const betPoint = (seat: number) => inFront(seatPoint(seat), boardMiddle, reach[seat] ?? guess, betHalf, compact ? 4 : 8);
+  // The dealer button sits beside where that seat's bet goes, so the two never cover each other.
+  const buttonPoint = (seat: number) => besideBet(betPoint(seat), seatPoint(seat), boardMiddle, betHalf, compact ? 18 : 24);
 
   // Winning cards, per board, and every card any winner used.
   const boardWinners = new Map<string, Set<string>>();
@@ -162,7 +212,7 @@ export function Table({
   const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
   const geometry = useRef({ betPoint, seatPoint, center });
-  geometry.current = { betPoint, seatPoint, center };
+  geometry.current = { betPoint, seatPoint, center: boardMiddle };
   const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';
   // Runs before the effect below stores this view's bets, so lastBets holds the round that just ended.
   useEffect(() => {
@@ -203,12 +253,12 @@ export function Table({
     <div
       ref={felt}
       className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}
-      style={feltStyle(prefs, view.settings.table.felt)}
+      style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}) } as CSSProperties}
     >
       <div className="felt-brand">
         RSDP Poker <span>Live!</span>
       </div>
-      <div className={`board${multiRun || multiBoard ? ' multi' : ''}`}>
+      <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
         {runs.map((run, r) =>
           run.map(
             (cards, b) =>
@@ -229,11 +279,13 @@ export function Table({
         )}
         {live && (
           <div className="pots">
-            {hand!.pots.map((p, i) => (
-              <div className="pot" key={i}>
-                {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
-              </div>
-            ))}
+            <div className="pot-row">
+              {(hand!.pots.length ? hand!.pots : [{ amount: 0 }]).map((p, i) => (
+                <div className="pot" key={i}>
+                  {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
+                </div>
+              ))}
+            </div>
             {bets > 0 && hand!.potTotal > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
           </div>
         )}
@@ -244,6 +296,7 @@ export function Table({
               {w.handName ? ` · ${w.handName}` : ''}
             </div>
           ))}
+        {/* The pot's spot above the board says what happens next between hands. */}
         {!live && view.nextHandAt !== null && view.started && !view.paused && (
           <div className="next-hand">Next hand in {Math.max(0, Math.ceil((view.nextHandAt - now) / 1000))}</div>
         )}
@@ -285,6 +338,9 @@ export function Table({
           (s.sittingOut || !s.online) && 'away',
           won && 'winner',
           isMe && 'me',
+          s.cards.length > 0 && (isMe || !s.folded) && 'has-cards',
+          // Stud and five-card draw hands are too long to tuck beside the nameplate.
+          s.cards.length > 4 && 'long-hand',
           onSeatClick && 'host-click',
         ]
           .filter(Boolean)
@@ -295,7 +351,7 @@ export function Table({
         const muck = fromVars(lerp(pos, center, 0.5), pos);
         return (
           <div key={seat}>
-            <div className={classes} style={px(pos)}>
+            <div className={classes} style={px(pos)} data-seat={seat}>
               <div className={`hole n${s.cards.length} ${s.folded && !isMe ? 'mucked' : ''}`} style={muck}>
                 {s.cards.map((c, i) => {
                   const face = c.card !== '??';

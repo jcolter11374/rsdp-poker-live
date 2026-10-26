@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seatFractions } from './geometry';
+import { besideBet, clearSideBands, inFront, seatFractions, stadiumPoint } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -50,5 +50,59 @@ describe('seatFractions', () => {
 
   it('falls back to even spacing when nobody is seated', () => {
     expect(seatFractions(seats(4, []), 0)).toEqual([0, 0.25, 0.5, 0.75]);
+  });
+});
+
+describe('clearSideBands', () => {
+  const even = (n: number) => Array.from({ length: n }, (_, i) => i / n);
+
+  it('keeps every seat out of the middle of the long sides on a tall table', () => {
+    const [w, h, band] = [300, 600, 160];
+    for (const t of clearSideBands(even(8), w, h, band)) {
+      const p = stadiumPoint(t, w, h);
+      const onSide = Math.abs(Math.abs(p.x - w / 2) - w / 2) < 1;
+      if (onSide) expect(Math.abs(p.y - h / 2)).toBeGreaterThanOrEqual(band / 2 - 0.5);
+    }
+  });
+
+  it('keeps the bottom seat at the bottom and the order round the table', () => {
+    const out = clearSideBands(even(8), 300, 600, 160);
+    expect(out[0]).toBe(0);
+    expect(out.every((t, i) => i === 0 || t > out[i - 1])).toBe(true);
+  });
+
+  it('leaves wide tables alone', () => {
+    expect(clearSideBands(even(6), 800, 500, 160)).toEqual(even(6));
+  });
+});
+
+describe('inFront', () => {
+  const box = { l: 140, r: 140, u: 60, d: 30 };
+  const half = { w: 30, h: 12 };
+
+  it('puts a top seat\'s bet straight below its nameplate, leaning in a little', () => {
+    const p = inFront({ x: 200, y: 0 }, { x: 600, y: 300 }, box, half, 6);
+    expect(p.y).toBe(48);
+    expect(p.x).toBeCloseTo(248);
+  });
+
+  it('puts a seat at the end of the table beside its nameplate', () => {
+    const p = inFront({ x: 0, y: 300 }, { x: 600, y: 300 }, box, half, 6);
+    expect(p).toEqual({ x: 176, y: 300 });
+  });
+
+  it('never goes most of the way to the middle', () => {
+    const p = inFront({ x: 600, y: 560 }, { x: 600, y: 300 }, { ...box, u: 400 }, half, 6);
+    expect(p.y).toBeCloseTo(560 - 260 * 0.8);
+  });
+});
+
+describe('besideBet', () => {
+  it('puts the button beside a top seat\'s bet, away from the middle', () => {
+    expect(besideBet({ x: 250, y: 50 }, { x: 200, y: 0 }, { x: 600, y: 300 }, { w: 30, h: 12 }, 20)).toEqual({ x: 200, y: 50 });
+  });
+
+  it('puts the button above a left seat\'s bet when the seat is above the middle', () => {
+    expect(besideBet({ x: 176, y: 290 }, { x: 0, y: 280 }, { x: 600, y: 300 }, { w: 30, h: 12 }, 20)).toEqual({ x: 176, y: 258 });
   });
 });
