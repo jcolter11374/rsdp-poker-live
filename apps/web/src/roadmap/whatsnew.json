@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-f",
+      "date": "2026-10-26",
+      "title": "Pre-moves that behave like PokerNow",
+      "items": [
+        { "title": "Pre-click your move, and change your mind", "detail": "Before your turn, tap Check / Fold, Check, Call or Call any and it plays the moment your turn comes. Tap it again to cancel. If someone bets first, Check / Fold turns into Fold, and a Check or a Call of an amount that has since been raised clears itself so you decide again. On a computer the keys work too: F, K, C and A tick a pre-move, and pressing the key again unticks it.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026-10-26-e",
       "date": "2026-10-26",
       "title": "No secret spectators",
