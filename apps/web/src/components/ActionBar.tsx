@@ -277,9 +277,24 @@ export function ActionBar({
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
+  // The time bank sits on the bar's top line, so the bar is no taller on turns when it can be used.
+  const canBank = view.turn?.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
+  const bank = canBank && (
+    <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
+      Time bank +{me.timeBank}s
+    </button>
+  );
+
   return (
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
-      {hint}
+      {bank ? (
+        <div className="bar-head">
+          {hint}
+          {bank}
+        </div>
+      ) : (
+        hint
+      )}
       {errorLine}
       {sized && (
         <div className="sizing">

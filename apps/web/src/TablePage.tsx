@@ -24,6 +24,7 @@ import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
+import { Dock } from './components/table/Dock';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -504,19 +505,23 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
-          <ActionBar
-            view={view}
-            fmt={fmt}
-            bigBlind={prefs.units === 'bb' && bigBlind > 0 ? bigBlind : null}
-            skew={skew}
-            discard={discard}
-            clearDiscard={() => setDiscard([])}
-            onPreAction={(q) => {
-              preQueued.current = q;
-            }}
-          />
-          <HandExtras view={view} />
-          {!portrait && seatOptions}
+          <Dock reset={`${portrait}:${view.me.seat}`} seated={view.me.seat !== null && (view.hand ?? view.upcoming)?.betting !== 'fixed-limit'}>
+            <ActionBar
+              view={view}
+              fmt={fmt}
+              bigBlind={prefs.units === 'bb' && bigBlind > 0 ? bigBlind : null}
+              skew={skew}
+              discard={discard}
+              clearDiscard={() => setDiscard([])}
+              onPreAction={(q) => {
+                preQueued.current = q;
+              }}
+            />
+            <div className="dock-row">
+              <HandExtras view={view} />
+              {!portrait && seatOptions}
+            </div>
+          </Dock>
         </section>
         {!portrait && (
           <aside className="side">

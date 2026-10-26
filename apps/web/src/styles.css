@@ -756,3 +756,32 @@ dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
 .sizing .slider .unit { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+/* The area under the table holds its height through a hand (see Dock). On phones the spare room sits above the action bar. */
+.dock, .dock-inner { display: flex; flex-direction: column; gap: inherit; }
+.portrait .dock { justify-content: flex-end; }
+/* Hand extras and seat options share one row, so the area under the table stays short. */
+.dock-row { display: flex; gap: 10px 20px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.dock-row:empty { display: none; }
+.dock-row .hand-extras { margin-top: 0; }
+.bar-head { position: relative; min-height: 26px; display: flex; align-items: center; justify-content: center; }
+.bar-head .time-bank { position: absolute; right: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; }
+/* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
+.dock { flex-shrink: 0; min-height: var(--held, 0px); }
+.dock.seated { min-height: max(190px, var(--held, 0px)); }
+.portrait .dock.seated { min-height: max(205px, var(--held, 0px)); }
+@media (max-height: 500px) { .portrait .dock.seated { min-height: var(--held, 0px); } }
+/* Your own seat draws over empty-seat markers next to it. */
+.seat.me { z-index: 3; }
+/* Shorter windows: a tighter action bar and felt margins give the table the room. */
+@media (max-height: 820px) {
+  .table-page:not(.portrait) .action-bar { padding: 8px 12px; gap: 6px; }
+  .table-page:not(.portrait) .action-bar .buttons button { padding: 10px 12px; }
+  .table-page:not(.portrait) .felt-area > .felt { margin-top: 72px; margin-bottom: 30px; }
+  .dock.seated { min-height: max(166px, var(--held, 0px)); }
+}
+@media (max-height: 760px) {
+  .portrait .action-bar { padding-top: 8px; gap: 6px; }
+  .portrait .action-bar .buttons button { padding: 11px 6px; }
+  .portrait .sizing .presets button { padding: 6px 4px; }
+  .portrait .dock.seated { min-height: max(189px, var(--held, 0px)); }
+}

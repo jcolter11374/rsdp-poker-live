@@ -7,25 +7,22 @@ import { PlayingCard } from '../PlayingCard';
 import './extras.css';
 
 /**
- * Hand aids under the action bar: the time bank button on your turn, and
- * rabbit hunting after a hand that ended before all the cards were out,
- * the Nit game opt-in and round, and the house fee total.
+ * Hand aids under the action bar: rabbit hunting after a hand that ended
+ * before all the cards were out, the Nit game opt-in and round, and the
+ * house fee total. (The time bank button is on the action bar.)
  */
 export function HandExtras({ view }: { view: TableView }) {
   const [error, setError] = useState('');
   const run = (p: Promise<unknown>) => p.then(() => setError('')).catch((e: Error) => setError(e.message));
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
-  const myTurn = !!me && view.turn?.seat === me.seat && !!view.hand && view.hand.phase !== 'complete';
-  const canBank = myTurn && !view.turn!.usingBank && view.turn!.deadline !== null && me!.timeBank > 0;
   const rabbit = view.rabbit ?? { available: false, cards: null };
   const nitOn = view.mode === 'cash' && !!me && nitSchema.get(view.settings).enabled;
   const showRake = view.rakeTotal !== null && view.rakeTotal !== undefined;
-  if (!canBank && !rabbit.available && !nitOn && !view.nit && !showRake) return null;
+  if (!rabbit.available && !nitOn && !view.nit && !showRake) return null;
   const fmt = chipFormat(view.settings.stakes.centsMode);
 
   return (
     <div className="hand-extras">
-      {canBank && <button onClick={() => run(call('hand:timeBank'))}>Time bank +{me!.timeBank}s</button>}
       {rabbit.available && !rabbit.cards && (
         <button title="See the cards that would have come. Only you see them." onClick={() => run(call('hand:rabbit'))}>
           🐇 Rabbit hunt
