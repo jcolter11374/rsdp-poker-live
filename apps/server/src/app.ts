@@ -156,6 +156,13 @@ const GESTURE_WINDOW_MS = 10_000;
 /** Coach tips one player may ask for per window, across all their tabs. */
 const TIP_BURST = 10;
 const TIP_WINDOW_MS = 20_000;
+/**
+ * Time the whole server may spend working out coach tips per window. A tip
+ * holds the event loop for up to about 150 ms, so tips tapped at once at
+ * several practice tables could otherwise hold up turns at every table.
+ */
+const TIP_BUDGET_MS = 300;
+const TIP_BUDGET_WINDOW_MS = 1_000;
 /** Share links one player may make per window. */
 const SHARE_BURST = 20;
 const SHARE_WINDOW_MS = 60_000;
@@ -174,6 +181,31 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
     if (!expected) log?.('handler failed', err);
     if (typeof ack === 'function') ack({ ok: false, error: expected && err instanceof Error ? err.message : 'something went wrong' });
   }
+}
+
+/**
+ * The limits on working out coach tips: TIP_BURST per player per
+ * TIP_WINDOW_MS (across their tabs), and TIP_BUDGET_MS of work per
+ * TIP_BUDGET_WINDOW_MS across the whole server.
+ */
+export function tipLimits(now: () => number) {
+  const times = new Map<PlayerId, number[]>();
+  let work: { at: number; ms: number }[] = [];
+  return {
+    /** Throws if this player, or the server, has had enough for now; otherwise counts the tip and returns what to call with how long it took. */
+    admit(playerId: PlayerId): (ms: number) => void {
+      const t = now();
+      const recent = (times.get(playerId) ?? []).filter((x) => t - x < TIP_WINDOW_MS);
+      if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
+      work = work.filter((w) => t - w.at < TIP_BUDGET_WINDOW_MS);
+      if (work.reduce((sum, w) => sum + w.ms, 0) >= TIP_BUDGET_MS) throw new ActionError('the coach is busy, try again in a moment');
+      times.set(playerId, [...recent, t]);
+      return (ms) => void work.push({ at: t, ms });
+    },
+    forget(playerId: PlayerId) {
+      times.delete(playerId);
+    },
+  };
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -214,7 +246,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
-  const tipTimes = new Map<PlayerId, number[]>();
+  const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
@@ -1015,14 +1047,19 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         () => {
-          const now = clock.now();
-          const recent = (tipTimes.get(me) ?? []).filter((t) => now - t < TIP_WINDOW_MS);
-          if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
-          tipTimes.set(me, [...recent, now]);
           const handNumber = Number(input?.handNumber);
           const at = Number(input?.at);
           if (!Number.isSafeInteger(handNumber) || !Number.isSafeInteger(at)) throw new ActionError('that turn is over');
-          return { tip: current().coachTip(me, handNumber, at) };
+          // Only a tip that is about to be worked out counts: a refused request, or one already cached for this turn, costs
+          // nothing.
+          let spent = (_ms: number) => {};
+          let started = 0;
+          const tip = current().coachTip(me, handNumber, at, () => {
+            spent = tips.admit(me);
+            started = performance.now();
+          });
+          spent(performance.now() - started);
+          return { tip };
         },
         log,
       ),
@@ -1316,7 +1353,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
-        tipTimes.delete(me);
+        tips.forget(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
       }

@@ -21,6 +21,7 @@ beforeAll(() => {
     draw: { screen: 2, final: 4 },
     drawBet: { screen: 2, final: 2 },
     vsRandomUnderMs: 1e9,
+    drawMs: 1e9,
   });
   Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 2, drawFinalSims: 3, drawBetSims: 2, drawBetFinalSims: 2 });
 });

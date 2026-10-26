@@ -79,8 +79,8 @@ export const HOST_HANDOFF_MS = 3 * 60_000;
 export const SEAT_OFFER_MS = 60_000;
 /** A practice bot takes this long, plus up to BOT_THINK_SPREAD_MS, to act. */
 export const BOT_THINK_MS = 700;
-/** A coach tip slower than this is worth knowing about: it is worked out on the event loop, so it holds up the table. */
-const TIP_SLOW_MS = 250;
+/** A coach tip slower than this is worth knowing about: it is worked out on the event loop, so it holds up every table. */
+const TIP_SLOW_MS = 150;
 const BOT_THINK_SPREAD_MS = 1100;
 
 /** A whole number from a turn key, the same on every server: how long a bot thinks, and the deals behind a coach tip. */
@@ -1777,9 +1777,11 @@ export class TableRuntime {
    * it stood at the deal, the rule as it stands now, the seat, the turn and
    * the exact decision asked about. It changes no state, tells nobody, and
    * never touches the table's randomness, so the hand plays out exactly as it
-   * would have.
+   * would have. `beforeWork` runs only when a tip is about to be worked out
+   * (every check passed, nothing cached), so limits count real work only; it
+   * refuses by throwing.
    */
-  coachTip(playerId: PlayerId, handNumber: number, at: number): CoachTip {
+  coachTip(playerId: PlayerId, handNumber: number, at: number, beforeWork: () => void = () => {}): CoachTip {
     const s = this.state;
     if (this.isTournament) throw new ActionError('no tips in tournaments');
     const hand = this.liveHandFor(playerId);
@@ -1796,6 +1798,7 @@ export class TableRuntime {
     if (cached?.key === turn.key && cached.playerId === playerId) return cached.tip;
     const legal = drawing ? null : engine.legalActions(hand, hs.seat);
     if (!drawing && !legal) throw new ActionError('not your turn');
+    beforeWork();
     const started = performance.now();
     const tip = buildCoachTip(seenBy(hand, hs.seat), hs.seat, {
       legal,

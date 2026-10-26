@@ -41,7 +41,9 @@ export interface TipInput {
 const CLOSE_BAND = 0.03;
 /** A chance this far above the pot odds is a call; a big call wants more (see normalDecide). */
 const CALL_MARGIN = 0.03;
-/** Strength (chance against an even share) that raises a hand which is not strong on its own. */
+/** A chance that raises on its own (see normalDecide)... */
+const RAISE_ALONE = 0.7;
+/** ...and a strength (chance against an even share) that raises a hand which is not strong on its own. */
 const FIELD_RAISE = 2.2;
 /** Ways to draw the tip shows. */
 const OPTIONS_SHOWN = 3;
@@ -69,12 +71,12 @@ export function coachTip(seen: Seen, seat: SeatIndex, input: TipInput): CoachTip
 
   if (seen.phase === 'drawing') {
     const field = drawFieldSize(view);
-    const best = bestDraw(view, input.drawMax, rand, coachTuning.draw, field);
+    const best = bestDraw(view, input.drawMax, rand, coachTuning.draw, field, coachTuning.drawMs);
     return {
       ...shared,
       kind: 'draw',
       share: best.equity,
-      se: standardError(best.equity, coachTuning.draw.final),
+      se: standardError(best.equity, best.deals),
       scoop: null,
       vs: field,
       vsRandom: null,
@@ -100,8 +102,9 @@ export function coachTip(seen: Seen, seat: SeatIndex, input: TipInput): CoachTip
   let vsRandom: number | null = null;
   if (view.drawsLeft > 0) {
     const field = drawFieldSize(view);
-    share = bestDraw(view, view.cardsPerPlayer, rand, coachTuning.drawBet, field).equity;
-    deals = coachTuning.drawBet.final;
+    const best = bestDraw(view, view.cardsPerPlayer, rand, coachTuning.drawBet, field, coachTuning.drawMs);
+    share = best.equity;
+    deals = best.deals;
     vs = field;
   } else {
     const started = performance.now();
@@ -113,7 +116,8 @@ export function coachTip(seen: Seen, seat: SeatIndex, input: TipInput): CoachTip
     scoop = split ? main.scoop : null;
     // What the hand would be worth against opponents given no credit for their betting, for the browser to compare
     // against. Only when the betting counted for something, and only when there is time to spare.
-    if (view.reads.some((r) => r > 0) && spent < coachTuning.vsRandomUnderMs) vsRandom = estimateDetail({ ...view, reads: undefined }, rand, coachTuning.vsRandom).equity;
+    // In lowball the draws are left out too: opponents dealt hands that fit what they drew aren't random hands.
+    if (view.reads.some((r) => r > 0) && spent < coachTuning.vsRandomUnderMs) vsRandom = estimateDetail({ ...view, reads: undefined, draws: undefined }, rand, coachTuning.vsRandom).equity;
   }
 
   // Normal's own rules decide, with dice that never bluff, steal or semi-bluff. Chips a short stack cannot cover are
@@ -158,9 +162,10 @@ function coachRule(why: MoveWhy, share: number, opponents: number): CoachRule {
       return 'bet';
     case 'raise':
       // Far ahead of an even share of a big pot, rather than strong enough on its own.
-      return strength >= FIELD_RAISE && share < 0.7 ? 'raise-field' : 'raise';
+      return strength >= FIELD_RAISE && share < RAISE_ALONE ? 'raise-field' : 'raise';
     case 'call':
-      return why.capped ? 'call-capped' : 'call';
+      // Only a hand the tip would have raised before the third raise is held back by the cap; any other call says why.
+      return why.capped && (share >= RAISE_ALONE || strength >= FIELD_RAISE) ? 'call-capped' : 'call';
     case 'fold':
       // The margin a big call wants is what folded it: a smaller bet would have been a call.
       return why.big && why.cost !== undefined && share >= why.cost + CALL_MARGIN ? 'fold-big' : 'fold';
@@ -177,15 +182,32 @@ function coachMove(action: Action, seen: Seen, seat: SeatIndex, legal: LegalActi
   const type: 'bet' | 'raise' | 'complete' = rule === 'complete' ? 'complete' : action.type;
   const fraction: 0.5 | 0.75 | null = rule === 'bet' ? 0.5 : rule === 'raise' || rule === 'raise-field' ? 0.75 : null;
   // Fixed limit has one size, and a size squeezed up to the minimum or down to a stack is its own amount, not a preset.
-  const preset = fraction !== null && seen.input.betting !== 'fixed-limit' && Math.round(seen.currentBet + fraction * (pot + legal.callAmount)) === action.to ? fraction : null;
-  return { type, to: action.to, fraction: preset, allIn: action.to - me.bet >= me.stack };
+  const sized = fraction !== null && seen.input.betting !== 'fixed-limit' && Math.round(seen.currentBet + fraction * (pot + legal.callAmount)) === action.to;
+  // The preset buttons size from the whole pot and round down, so "½ pot (N)" is what the ½ pot button sets.
+  const button = fraction === null ? 0 : Math.max(legal.minTo, Math.min(legal.maxTo, Math.floor(seen.currentBet + fraction * (potOf(seen) + legal.callAmount))));
+  const preset = sized && Math.abs(button - action.to) <= 1 ? fraction : null;
+  const to = preset === null ? action.to : button;
+  return { type, to, fraction: preset, allIn: to - me.bet >= me.stack };
 }
 
-/** The hand with every other seat's chips capped at what I can match: chips a short stack cannot cover are not mine to win. */
+/**
+ * The hand with every other seat's chips capped at what I can match: chips a short stack cannot cover are not mine to
+ * win. Chips posted for the table (a dead small blind, a big blind ante) go to the main pot whoever is in it, as the
+ * engine's pots() has it, so only the live part of each total is capped.
+ */
 function cappedTotals(seen: Seen, seat: SeatIndex, callAmount: number) {
+  const dead = new Map<SeatIndex, number>();
+  for (const e of seen.events) if (e.t === 'post' && (e.kind === 'dead-small-blind' || e.kind === 'big-blind-ante')) dead.set(e.seat, (dead.get(e.seat) ?? 0) + e.amount);
   const me = seen.seats.find((x) => x.seat === seat)!;
-  const cap = me.total + callAmount;
-  return { ...seen, seats: seen.seats.map((x) => (x.seat === seat ? x : { ...x, total: Math.min(x.total, cap) })) };
+  const cap = me.total - (dead.get(seat) ?? 0) + callAmount;
+  return {
+    ...seen,
+    seats: seen.seats.map((x) => {
+      if (x.seat === seat) return x;
+      const d = dead.get(x.seat) ?? 0;
+      return { ...x, total: Math.min(x.total - d, cap) + d };
+    }),
+  };
 }
 
 const potOf = (hand: { seats: { total: number }[] }) => hand.seats.reduce((sum, x) => sum + x.total, 0);

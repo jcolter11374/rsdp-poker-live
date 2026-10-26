@@ -4,7 +4,7 @@ import { io as connect, type Socket } from 'socket.io-client';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { ClientToServer, CoachTip, HandRecordView, ServerToClient } from '@rsdp/engine/wire';
-import { createApp } from '../src/app';
+import { createApp, tipLimits } from '../src/app';
 import { socketClient } from './socket-client';
 
 type Client = Socket<ServerToClient, ClientToServer>;
@@ -88,7 +88,7 @@ describe('socket server', () => {
     await ann.until((x) => !x.seats.some((s) => s?.playerId === playerId && !s.leaving));
   });
 
-  it('answers a coach tip to the one person at a table of bots, and only so many in a row', async () => {
+  it('answers a coach tip to the one person at a table of bots, and the same turn again for nothing', async () => {
     const host = client('tip-host-0123456789');
     const settings = { seating: { requireApproval: false }, timing: { decisionSeconds: 0 } };
     const { tableId } = await host.call<{ tableId: string }>('table:create', { settings, practice: { name: 'John', bots: 2 } });
@@ -100,11 +100,11 @@ describe('socket server', () => {
     expect(tip.share).toBeGreaterThan(0);
     // Nonsense is turned away like a turn that has gone.
     await expect(host.call('hand:tip', { handNumber: 'x', at: 0 })).rejects.toThrow(/that turn is over/);
-    // The limit is per player, not per tab: a second tab of the same browser shares it.
+    // The same turn asked again, from this tab or another, is the tip already worked out, and doesn't count towards the
+    // limit (tipLimits, below).
     const tab = client('tip-host-0123456789');
     await tab.call('table:join', { tableId });
-    for (let i = 0; i < 8; i++) await (i % 2 ? tab : host).call('hand:tip', input);
-    await expect(tab.call('hand:tip', input)).rejects.toThrow(/between tips/);
+    for (let i = 0; i < 14; i++) expect((await (i % 2 ? tab : host).call<{ tip: CoachTip }>('hand:tip', input)).tip).toEqual(tip);
 
     // Once the hand is over, the hands tab and a download carry why the bots played; the full log doesn't ask for them.
     await host.call('hand:act', { type: 'fold' });
@@ -243,6 +243,27 @@ describe('socket server', () => {
     await new Promise((r) => setTimeout(r, 700));
     await host.call('table:join', { tableId });
     expect(host.view().id).toBe(tableId);
+  });
+});
+
+describe('coach tip limits', () => {
+  it('lets one player work out ten tips in 20 s, across their tabs, and the server 300 ms of them a second', () => {
+    let now = 0;
+    const limits = tipLimits(() => now);
+    for (let i = 0; i < 10; i++) limits.admit('ann')(1);
+    expect(() => limits.admit('ann')).toThrow(/between tips/);
+    // Someone else has their own ten.
+    limits.admit('bo')(1);
+    now += 20_000;
+    limits.admit('ann')(1);
+
+    // Tips that took 300 ms between them in the last second keep everyone waiting a moment, whoever asked.
+    now += 20_000;
+    limits.admit('cy')(150);
+    limits.admit('dee')(150);
+    expect(() => limits.admit('eve')).toThrow(/coach is busy/);
+    now += 1_000;
+    limits.admit('eve')(10);
   });
 });
 

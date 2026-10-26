@@ -7,7 +7,7 @@ import { getVariant, registerAllVariants, VARIANT_LIST, type VariantSpec } from 
 import { BOT_LEVELS, BOT_NOTE_RULES, type BotNote } from '@rsdp/engine/wire';
 import { coachTip } from '../src/bots/coach';
 import { botNote, plainNote } from '../src/bots/reasons';
-import { botTuning, coachTuning, explainMove, seededRand, seenBy, type PlayerRead, type MoveWhy } from '../src/bots/strategy';
+import { bestDraw, botTuning, coachTuning, explainMove, seededRand, seenBy, situation, type PlayerRead, type MoveWhy } from '../src/bots/strategy';
 
 beforeAll(() => registerAllVariants(variants));
 
@@ -71,6 +71,7 @@ const SETTLED = {
   draw: { screen: 12, final: 48 },
   drawBet: { screen: 6, final: 24 },
   vsRandomUnderMs: 1e9,
+  drawMs: 1e9,
 };
 /** The same, turned right down: enough for "is it the same answer?", too few for "is it the right answer?". */
 const QUICK = {
@@ -79,6 +80,7 @@ const QUICK = {
   draw: { screen: 3, final: 6 },
   drawBet: { screen: 2, final: 4 },
   vsRandomUnderMs: 1e9,
+  drawMs: 1e9,
 };
 
 function fixTuning(tip: typeof SETTLED) {
@@ -154,6 +156,27 @@ describe('what a coach tip says', () => {
     expect(tipAt(pat, 0)).toMatchObject({ rule: 'pat', move: { type: 'draw', discard: [] } });
   });
 
+  it('stops weighing the ways to draw when its time is up, and says it is rougher for it', () => {
+    const bd = dealt('badugi', ['Ac', 'Kh', '2d', 'Kd', '5h', 'Ks', '3h', 'Qs']);
+    engine.act(bd, 0, { type: 'call' });
+    engine.act(bd, 1, { type: 'check' });
+    const full = tipAt(bd, 0);
+    const was = coachTuning.drawMs;
+    coachTuning.drawMs = 0;
+    try {
+      // Out of time at once: one deal for every way to draw, then one for the finalists.
+      const rushed = tipAt(bd, 0);
+      expect(rushed.kind).toBe('draw');
+      expect(rushed.se).toBeGreaterThan(full.se);
+      expect(rushed.options.length).toBeGreaterThan(0);
+    } finally {
+      coachTuning.drawMs = was;
+    }
+    const view = situation(seenBy(bd, 0), 0);
+    expect(bestDraw(view, 4, seededRand(1), { screen: 5, final: 7 }, 1, 0).deals).toBe(1);
+    expect(bestDraw(view, 4, seededRand(1), { screen: 5, final: 7 }, 1).deals).toBe(7);
+  });
+
   it('counts only the chips it can win when the call is against a short stack', () => {
     // 30 behind against a raise to 100: the big blind's 2 and 30 of the raise are all this hand can win.
     const side = dealt('nlhe', ['Ac', 'Ks', 'Ad', 'Kd', 'Qc', 'Qd'], 3, [30, 200, 200]);
@@ -162,6 +185,100 @@ describe('what a coach tip says', () => {
     const middle = side.seats.reduce((n, x) => n + x.total, 0);
     expect([tip.call, tip.pot, middle]).toEqual([29, 33, 103]);
     expect(tip.cost).toBeCloseTo(29 / 62);
+  });
+
+  it('counts a big blind ante as chips it can win, and sizes a bet as the ½ pot button does', () => {
+    // 1/2 three-handed with a big blind ante of 2. Seat 0 has the button and the first move, holding two aces.
+    const spec = getVariant('nlhe');
+    const cards = ['7c', '8d', 'As', '9c', 'Td', 'Ad', 'Ac', '7h', '2s', '4d', '5c'];
+    const hand = engine.startHand({
+      handId: 'h',
+      handNumber: 1,
+      game: spec,
+      betting: 'no-limit',
+      stakes: { smallBlind: 1, bigBlind: 2, ante: 2, anteType: 'big-blind', bringIn: 1, smallBet: 2, bigBet: 4 },
+      maxSeats: 3,
+      seats: [0, 1, 2].map((seat) => ({ seat, playerId: `p${seat}`, stack: 200, away: false })),
+      button: 0,
+      buttonDead: false,
+      posts: [
+        { seat: 1, kind: 'small-blind', amount: 1, live: true },
+        { seat: 2, kind: 'big-blind', amount: 2, live: true },
+        { seat: 2, kind: 'big-blind-ante', amount: 2, live: false },
+      ],
+      deck: [...cards, ...FULL.filter((c) => !cards.includes(c))],
+      reshuffleSeed: 1,
+      options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
+      modifiers: [],
+    });
+    expect(hand.seats[0].cards.map((c) => c.card)).toEqual(['As', 'Ad']);
+    const pre = tipAt(hand, 0);
+    // The ante is in the middle and nobody's chips are short: 5 in the pot, 2 to call, so the call is 2 in 7.
+    expect([pre.call, pre.pot]).toEqual([2, 5]);
+    expect(pre.cost).toBeCloseTo(2 / 7);
+    engine.act(hand, 0, { type: 'call' });
+    engine.act(hand, 1, { type: 'call' });
+    engine.act(hand, 2, { type: 'check' });
+    engine.act(hand, 1, { type: 'check' });
+    engine.act(hand, 2, { type: 'check' });
+    expect(hand.toAct).toBe(0);
+    const flop = tipAt(hand, 0);
+    expect(flop.pot).toBe(8);
+    expect(flop).toMatchObject({ rule: 'bet', move: { type: 'bet', to: 4, fraction: 0.5 } });
+
+    // An odd pot: the small blind folds, leaving 5. The ½ pot button rounds 2.5 down to 2, and so does the tip.
+    const odd = dealt('nlhe', ['7c', 'As', '8d', '9c', 'Ad', 'Td', 'Ac', '7h', '2s', '4d', '5c'], 3);
+    engine.act(odd, 2, { type: 'call' });
+    engine.act(odd, 0, { type: 'fold' });
+    engine.act(odd, 1, { type: 'check' });
+    engine.act(odd, 1, { type: 'check' });
+    expect(odd.toAct).toBe(2);
+    expect(odd.seats[2].cards.map((c) => c.card)).toEqual(['As', 'Ad']);
+    expect(tipAt(odd, 2)).toMatchObject({ pot: 5, move: { type: 'bet', to: 2, fraction: 0.5 } });
+  });
+
+  it('calls "after 3 raises" only with a hand it would have raised before them', () => {
+    const war = (cards: string[]) => {
+      const hand = dealt('nlhe', cards, 2, [400, 400]);
+      for (const [seat, to] of [[0, 6], [1, 18], [0, 40], [1, 80]] as const) engine.act(hand, seat, { type: 'raise', to });
+      return tipAt(hand, 0);
+    };
+    const weak = war(['Qh', '7c', 'Js', '2d']);
+    expect(weak.share).toBeLessThan(0.7);
+    expect(['call', 'fold']).toContain(weak.rule);
+    // A set of sevens on the flop, in a raise war there.
+    const flop = dealt('nlhe', ['7d', 'Kh', '7h', 'Qd', '7s', 'Kc', '2d'], 2, [400, 400]);
+    engine.act(flop, 0, { type: 'call' });
+    engine.act(flop, 1, { type: 'check' });
+    const first = flop.toAct!;
+    const other = first === 0 ? 1 : 0;
+    engine.act(flop, first, { type: 'bet', to: 4 });
+    for (const [seat, to] of [[other, 12], [first, 30], [other, 70], [first, 120], [other, 200]] as const) engine.act(flop, seat, { type: 'raise', to });
+    expect(flop.toAct).toBe(0);
+    const strong = tipAt(flop, 0);
+    expect(strong.share).toBeGreaterThanOrEqual(0.7);
+    expect(strong.rule).toBe('call-capped');
+  });
+
+  it('compares against random hands in lowball without counting what anyone drew', () => {
+    // 2-7: a nine-low against an opponent who stood pat every time and bets the last round.
+    const td = dealt('td27', ['2c', 'Kh', '3d', 'Kd', '5s', 'Ks', '7c', 'Qh', '9d', 'Qd'], 2);
+    const last = td.input.game.streets.length - 1;
+    for (let i = 0; i < 40 && !(td.street === last && td.phase === 'betting'); i++) {
+      if (td.phase === 'drawing') engine.draw(td, td.toAct!, []);
+      else {
+        const legal = engine.legalActions(td, td.toAct!)!;
+        engine.act(td, td.toAct!, legal.canCheck ? { type: 'check' } : { type: 'call' });
+      }
+    }
+    expect(td.phase).toBe('betting');
+    if (td.toAct !== 1) engine.act(td, td.toAct!, { type: 'check' });
+    engine.act(td, 1, { type: 'bet', to: td.input.stakes.bigBet });
+    const tip = tipAt(td, 0);
+    expect(td.seats[0].cards.map((c) => c.card)).toEqual(['2c', '3d', '5s', '7c', '9d']);
+    expect(tip.reads).toEqual([{ seat: 1, bets: 1 }]);
+    // Against a truly random hand a nine-low wins almost always.
+    expect(tip.vsRandom).toBeGreaterThan(0.9);
   });
 
   it('wants a bigger margin when the call is half the stack, which turns a call into a fold', () => {
