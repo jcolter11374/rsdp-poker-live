@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bbFormat, betFromInput, betToInput } from './format';
+import { bbExactFormat, bbFormat, betFromInput, betToInput } from './format';
 
 describe('bbFormat', () => {
   it('shows amounts in big blinds, to one decimal when it is not whole', () => {
@@ -22,11 +22,20 @@ describe('bet box units', () => {
     expect(betFromInput({ bb: 3 }, 2.5)).toBe(8); // 7.5 chips rounds to 8
     expect(betFromInput({ bb: 2 }, 0.1 + 0.2)).toBe(1);
     expect(betFromInput(unit, NaN)).toBe(0);
+    expect(betFromInput(unit, Infinity)).toBe(Number.MAX_SAFE_INTEGER);
   });
   it('shows chips in the box as big blinds to two places', () => {
     expect(betToInput({ bb: 50 }, 125)).toBe(2.5);
     expect(betToInput({ bb: 150 }, 425)).toBe(2.83);
     expect(betToInput({ bb: 2 }, 6)).toBe(3);
+  });
+  it('shows enough places to name the exact chip amount', () => {
+    expect(betToInput({ bb: 1000 }, 2999)).toBe(2.999);
+    expect(bbExactFormat(1000)(2999)).toBe('2.999 BB');
+    expect(bbExactFormat(150)(425)).toBe('2.83 BB');
+    for (const bb of [3, 7, 25, 150, 1000, 2500]) {
+      for (let chips = 1; chips <= 20000; chips += 7) expect(betFromInput({ bb }, betToInput({ bb }, chips))).toBe(chips);
+    }
   });
   it('round-trips amounts that are whole tenths of a big blind', () => {
     for (const bb of [2, 20, 50, 100, 150, 400]) {
@@ -41,9 +50,5 @@ describe('bet box units', () => {
     expect(betFromInput({ centsMode: false }, 40)).toBe(40);
     expect(betFromInput({ centsMode: true }, 1.25)).toBe(125);
     expect(betToInput({ centsMode: true }, 125)).toBe(1.25);
-  });
-  it('can show more places on the action buttons', () => {
-    expect(bbFormat(150, 2)(425)).toBe('2.83 BB');
-    expect(bbFormat(150)(425)).toBe('2.8 BB');
   });
 });

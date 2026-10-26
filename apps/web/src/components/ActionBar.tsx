@@ -3,7 +3,7 @@ import type { Action } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import './action-bar.css';
-import { bbFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
+import { bbExactFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
@@ -37,7 +37,7 @@ export function ActionBar({
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
   const unit: BetUnit = bigBlind ? { bb: bigBlind } : { centsMode };
-  const fmt = bigBlind ? bbFormat(bigBlind, 2) : chipFmt;
+  const fmt = bigBlind ? bbExactFormat(bigBlind) : chipFmt;
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
   const [amount, setAmountRaw] = useState(0);
   // What's typed in the bet box, kept as text while typing so "2." or "0.5" isn't rewritten mid-word.
@@ -46,6 +46,8 @@ export function ActionBar({
     setTyped(null);
     setAmountRaw(chips);
   };
+  // Switching units (here or in another tab) redraws the box in the new unit.
+  useEffect(() => setTyped(null), [bigBlind]);
   const [error, setError] = useState('');
   const [queued, setQueued] = useState<{ key: string; action: PreAction } | null>(null);
   // Queued moves are for one betting round only.
@@ -300,11 +302,12 @@ export function ActionBar({
               }}
               min={betToInput(unit, legal.minTo)}
               max={betToInput(unit, legal.maxTo)}
-              step={bigBlind ? 0.5 : centsMode ? 0.01 : 1}
+              step={bigBlind ? 'any' : centsMode ? 0.01 : 1}
               value={typed ?? betToInput(unit, amount)}
               onChange={(e) => {
                 setTyped(e.target.value);
-                setAmountRaw(betFromInput(unit, e.target.value === '' ? NaN : +e.target.value));
+                // Text the browser can't read as a number leaves the amount as it was.
+                if (!e.target.validity.badInput) setAmountRaw(betFromInput(unit, e.target.value === '' ? NaN : +e.target.value));
               }}
               onBlur={() => setTyped(null)}
               aria-label={bigBlind ? 'Amount in big blinds' : 'Amount'}

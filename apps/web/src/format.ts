@@ -9,12 +9,12 @@ export function chipFormat(centsMode: boolean): Fmt {
   return (n) => (n / 100).toLocaleString(undefined, { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
-/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. `places` is the decimals shown from 1 BB up. */
-export function bbFormat(bigBlind: number, places = 1): Fmt {
+/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. */
+export function bbFormat(bigBlind: number): Fmt {
   return (n) => {
     const bb = n / bigBlind;
     // Under one big blind, keep enough digits that an ante never shows as 0.
-    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(places, Math.ceil(-Math.log10(bb)) + 1)) : places;
+    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(bb)) + 1)) : 1;
     return `${bb.toLocaleString(undefined, { maximumFractionDigits: digits })} BB`;
   };
 }
@@ -30,11 +30,24 @@ export const fromInput = (centsMode: boolean, value: number) => Math.round(cents
  */
 export type BetUnit = { bb: number } | { centsMode: boolean };
 export function betToInput(unit: BetUnit, chips: number): number {
-  if ('bb' in unit) return Math.round((chips / unit.bb) * 100) / 100;
-  return toInput(unit.centsMode, chips);
+  if (!('bb' in unit)) return toInput(unit.centsMode, chips);
+  // Two places when that names the exact chip amount, more when the big blind is big (2,999 at 1,000 is 2.999, not 3).
+  for (let places = 2; places < 6; places++) {
+    const k = 10 ** places;
+    const v = Math.round((chips / unit.bb) * k) / k;
+    if (Math.round(v * unit.bb) === chips) return v;
+  }
+  return chips / unit.bb;
 }
+/** Chips as big blinds for the action buttons, exact to the chip like the bet box ("Raise to 2.83 BB"). */
+export const bbExactFormat =
+  (bigBlind: number): Fmt =>
+  (n) =>
+    `${betToInput({ bb: bigBlind }, n).toLocaleString(undefined, { maximumFractionDigits: 6 })} BB`;
 export function betFromInput(unit: BetUnit, value: number): number {
-  if (!Number.isFinite(value)) return 0;
+  if (Number.isNaN(value)) return 0;
+  // Something huge means as much as allowed; the caller clamps it to the most it can be.
+  if (!Number.isFinite(value)) return value > 0 ? Number.MAX_SAFE_INTEGER : 0;
   if ('bb' in unit) return Math.round(value * unit.bb);
   return fromInput(unit.centsMode, value);
 }
