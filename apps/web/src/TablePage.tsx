@@ -166,6 +166,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     if (socket.connected) join();
     return () => {
       socket.off('table:state', onState);
+      nextSeen.stop();
       socket.off('table:deleted', onDeleted);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);

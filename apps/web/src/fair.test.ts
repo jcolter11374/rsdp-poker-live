@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: {} }));
-const { seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -29,33 +29,33 @@ describe('the seed under my name', () => {
   });
 
   it('warns when an accepted seed, or one sent in good time, is left out', () => {
-    sent({ seed: 'aa', at: 0 });
+    sent({ seed: 'aa', at: 0, table: 't1' });
     accepted('aa');
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
     store.delete('rsdp.fairSeeds');
     // No answer at all, then dealt 10 s later.
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
     // Sent just before the deal: it could honestly miss.
-    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '-5000' }));
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [`t1#${C}`]: '-5000' }));
     expect(seedProblem(C, listed(), 'me', true, 1_000)).toBeNull();
     // Not dealt in: nothing to say.
     expect(seedProblem(C, listed(), 'me', false, 10_000)).toBeNull();
   });
 
   it('catches a server that turns seeds down and then picks which to use', () => {
-    sent({ seed: 'aa', at: 0, rejected: { after: 50 } });
+    sent({ seed: 'aa', at: 0, table: 't1', rejected: { after: 50 } });
     expect(seedProblem(C, listed('aa'), 'me', true, 10_000)).toMatch(/turned down .* but used it/);
     // Refused at once, whatever the reason given, yet the hand came seconds later: the seed was there in time.
     expect(seedProblem(C, listed(), 'me', true, 10_000)).toMatch(/dealt without it/);
     // Refused because the hand had just been dealt: this browser sees that hand right away.
-    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '-5000' }));
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [`t1#${C}`]: '-5000' }));
     expect(seedProblem(C, listed(), 'me', true, 400)).toBeNull();
     expect(seedProblem(C, listed(), 'me', true, -200)).toBeNull();
   });
 
   it('catches a commitment shown only at the last moment, so every seed is late', () => {
-    store.set('rsdp.fairNextSeen', JSON.stringify({ [C]: '0' }));
-    sent({ seed: 'aa', at: 0, rejected: { after: 50 } });
+    store.set('rsdp.fairNextSeen', JSON.stringify({ [`t1#${C}`]: '0' }));
+    sent({ seed: 'aa', at: 0, table: 't1', rejected: { after: 50 } });
     expect(seedProblem(C, listed(), 'me', true, 1_000)).toMatch(/too soon/);
     expect(seedProblem(C, listed('aa'), 'me', true, 1_000)).toMatch(/but used it/);
   });
@@ -227,10 +227,27 @@ describe('when this browser saw the next commitment appear', () => {
   const view = (next: string, table = 't1') => ({ id: table, fair: { nextCommit: next, handCommit: null } }) as unknown as V;
   let t = 0;
   let sock: string | undefined = 's1';
-  const seen = () => watchNextSeen(() => sock, () => t);
-  // My seed for commitment C went out at `sentAt`, the server turned it down (the hand was already dealt), and the
-  // hand from C came without it at `dealtAt`.
-  const lateSeed = (sentAt: number) => store.set('rsdp.fairSent', JSON.stringify({ C: JSON.stringify({ seed: 'aa', at: sentAt, rejected: { after: 80 } }) }));
+  let tick = () => {};
+  const seen = () =>
+    watchNextSeen(
+      () => sock,
+      () => t,
+      (fn) => {
+        tick = fn;
+        return () => (tick = () => {});
+      },
+    );
+  // Time passing while the page runs normally: its heartbeat ticks every 250 ms.
+  const run = (to: number) => {
+    while (t < to) {
+      t = Math.min(to, t + 250);
+      tick();
+    }
+  };
+  // My seed for commitment C went out at `sentAt` at table t1, the server turned it down (the hand was already dealt),
+  // and the hand from C came without it at `dealtAt`.
+  const lateSeed = (sentAt: number, table: string | null = 't1') =>
+    store.set('rsdp.fairSent', JSON.stringify({ C: JSON.stringify({ seed: 'aa', at: sentAt, table, rejected: { after: 80 } }) }));
   const problem = (dealtAt: number) => seedProblem('C', [], 'me', true, dealtAt);
   beforeEach(() => {
     t = 0;
@@ -239,9 +256,9 @@ describe('when this browser saw the next commitment appear', () => {
 
   it('catches a server that shows a commitment at the last moment to a browser already watching', () => {
     const watch = seen();
-    t = 1_000;
+    run(1_000);
     watch(view('B'));
-    t = 20_000;
+    run(20_000);
     watch(view('C')); // appears...
     lateSeed(20_000);
     expect(problem(20_400)).toMatch(/too soon/); // ...and is dealt 0.4 s later
@@ -252,7 +269,7 @@ describe('when this browser saw the next commitment appear', () => {
   it('says nothing when the commitment was already up as this page arrived, reconnected or sat down', () => {
     // Arrived (or reconnected after a restart) with C already up; the deal followed at once, before my seed got there.
     let watch = seen();
-    t = 20_000;
+    run(20_000);
     watch(view('C'));
     lateSeed(20_000);
     expect(problem(20_100)).toBeNull();
@@ -261,7 +278,7 @@ describe('when this browser saw the next commitment appear', () => {
     watch = seen();
     watch(view('B'));
     sock = 's2';
-    t = 30_000;
+    run(30_000);
     watch(view('C'));
     lateSeed(30_000);
     expect(problem(30_100)).toBeNull();
@@ -269,27 +286,81 @@ describe('when this browser saw the next commitment appear', () => {
     store.clear();
     sock = 's1';
     watch = seen();
-    t = 40_000;
+    run(40_000);
     watch(view('B'));
-    t = 41_000;
+    run(41_000);
     watch(view('C'));
+    run(51_000);
     lateSeed(51_000);
     expect(problem(51_100)).toBeNull();
+    // Offline (no socket id) notes nothing.
+    store.clear();
+    watch = seen();
+    watch(view('B'));
+    sock = undefined;
+    run(60_000);
+    watch(view('C'));
+    sock = 's1';
+    lateSeed(60_000);
+    expect(problem(60_100)).toBeNull();
   });
 
-  it('notes only the first appearance, and keeps going through views with no commitment', () => {
+  it('says nothing after the page itself stalled and its views arrive in a bunch', () => {
     const watch = seen();
-    t = 1_000;
+    run(1_000);
     watch(view('B'));
-    t = 2_000;
-    watch({ id: 't1' } as unknown as V); // a view without a commitment changes nothing
-    t = 3_000;
-    watch(view('C'));
+    // The tab froze for 8 s (an app switch on a phone): no heartbeat. C appeared and was dealt meanwhile; the backlog
+    // arrives at once on waking.
     t = 9_000;
     watch(view('C'));
-    expect(JSON.parse(store.get('rsdp.fairNextSeen')!)).toEqual({ C: '3000' });
-    // Another table's page starts its own watch.
-    watch(view('X', 't2'));
-    expect(JSON.parse(store.get('rsdp.fairNextSeen')!).X).toBeUndefined();
+    lateSeed(9_000);
+    expect(problem(9_010)).toBeNull();
+    // Waking by the heartbeat first is the same.
+    run(10_000);
+    watch(view('D'));
+    t = 20_000;
+    tick();
+    watch(view('E'));
+    // Once running again the watch picks up.
+    run(21_000);
+    watch(view('F'));
+    expect(Object.keys(JSON.parse(store.get('rsdp.fairNextSeen')!))).toEqual(['t1#D', 't1#F']);
+  });
+
+  it('notes only the first appearance, per table, and keeps going through views with no commitment', () => {
+    const watch = seen();
+    run(1_000);
+    watch(view('B'));
+    run(2_000);
+    watch({ id: 't1' } as unknown as V); // a view without a commitment changes nothing
+    run(3_000);
+    watch(view('C'));
+    run(9_000);
+    watch(view('C'));
+    expect(JSON.parse(store.get('rsdp.fairNextSeen')!)).toEqual({ 't1#C': '3000' });
+  });
+
+  it("won't take another table's timing for this one's", () => {
+    // A server shows C early as another table's next commitment, in a tab only watching that table...
+    const other = seen();
+    run(1_000);
+    other(view('B', 't2'));
+    run(2_000);
+    other(view('C', 't2'));
+    // ...and at my table only at the last moment, leaving my seed out.
+    const watch = seen();
+    watch(view('B'));
+    run(30_000);
+    watch(view('C'));
+    lateSeed(30_000);
+    expect(problem(30_300)).toMatch(/too soon/);
+    // A seed record from before tables were noted can't be matched to a table, so it stays quiet.
+    lateSeed(30_000, null);
+    expect(problem(30_300)).toBeNull();
+  });
+
+  it('no longer notes the commitment just for being seated (the old false alarm)', () => {
+    contributeSeed({ id: 't1', fair: { nextCommit: 'C', handCommit: null }, me: { seat: 2, playerId: 'me' }, hand: null } as unknown as V);
+    expect(store.get('rsdp.fairNextSeen')).toBeUndefined();
   });
 });
