@@ -52,3 +52,9 @@
 .seat-options .toggle input[type='checkbox']:checked::after { transform: translateX(14px); background: #fff; }
 .seat-options .toggle input[type='checkbox']:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .seat-options .toggle input[type='checkbox'], .seat-options .toggle input[type='checkbox']::after { transition: none; } }
+
+/* On a computer: the same options as small chips under the action bar. */
+.seat-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.seat-chip { padding: 3px 11px; font-size: 0.8rem; font-weight: 500; border-radius: 999px; color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.seat-chip:hover:not(:disabled) { color: var(--text); }
+.seat-chip[aria-pressed='true'] { color: #fff; background: rgba(46, 160, 92, 0.22); border-color: var(--go); }
