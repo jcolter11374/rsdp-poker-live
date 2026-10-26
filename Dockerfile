@@ -14,7 +14,9 @@ COPY . .
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:22-slim
-ENV NODE_ENV=production PORT=8080 PGLITE_DIR=/data/pglite
+# The commit this image was built from; the deploy workflow passes it, /api/version and the site footer show it.
+ARG BUILD_COMMIT=""
+ENV NODE_ENV=production PORT=8080 PGLITE_DIR=/data/pglite BUILD_COMMIT=$BUILD_COMMIT
 WORKDIR /app
 COPY --from=build /app /app
 EXPOSE 8080
