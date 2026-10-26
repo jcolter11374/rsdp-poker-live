@@ -30,3 +30,4 @@
   .guide-ladder li { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
 .guide-hand .tag { background: var(--good); color: #062814; }
+.guide-showdown h4 { margin: 0 0 4px; color: var(--text); }
