@@ -28,10 +28,10 @@ export function FairnessPage() {
           <Markdown source={intro} link={sourceLink} />
           {/* Click to play: preload="none" so nothing downloads until someone presses play. */}
           <figure className="fairness-video">
-            <video controls preload="none" playsInline poster="/media/fairness-explainer.jpg" aria-label="Video: how a hand is proven fair">
+            <video controls preload="none" playsInline poster="/media/fairness-explainer.jpg" aria-labelledby="fairness-video-caption">
               <source src="/media/fairness-explainer.mp4" type="video/mp4" />
             </video>
-            <figcaption>Watch: how a hand is proven fair (9 min)</figcaption>
+            <figcaption id="fairness-video-caption">Watch: how a hand is proven fair (9 min). Everything it covers is also written out below.</figcaption>
           </figure>
           <Markdown source={rest} link={sourceLink} />
         </article>
