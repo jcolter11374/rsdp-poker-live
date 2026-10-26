@@ -7,7 +7,7 @@ import { commitmentOf, deckFromSeed, handSeedOf, verifyHand } from '@rsdp/engine
 import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { FAIR_REVEAL_AFTER_MS, TableRuntime } from '../src/runtime/table';
+import { FAIR_REVEAL_AFTER_MS, FAIR_SEED_WAIT_MS, TableRuntime } from '../src/runtime/table';
 import { handRecordView, tableView } from '../src/runtime/view';
 import { FakeClock, seeded } from './fake-clock';
 
@@ -151,12 +151,18 @@ describe('provably fair dealing', () => {
     for (const p of IDS) rt.connect(p);
     const first = rt.nextCommit();
     IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200, consent: true }));
+    // Every browser sends its seed at once, as they do.
+    const seeds = () => IDS.forEach((id) => rt.addClientSeed(id, { commit: rt.nextCommit(), seed: 'abcdef0123456789' }));
+    seeds();
     rt.start('host');
     expect(rt.state.hand).toBeNull();
-    clock.advance(2500);
+    clock.advance(2499);
+    expect(rt.state.hand).toBeNull();
+    clock.advance(1);
     expect(hand(rt).input.fair!.commit).toBe(first);
     // A hand over at once: the next one still waits for its own commitment to age.
     const dealtAt = clock.t;
+    seeds();
     rt.act(toActId(rt), { type: 'fold' });
     rt.act(toActId(rt), { type: 'fold' });
     clock.advance(100);
@@ -165,6 +171,68 @@ describe('provably fair dealing', () => {
     expect(hand(rt).input.handNumber).toBe(1);
     clock.advance(1);
     expect(hand(rt).input.handNumber).toBe(2);
+  });
+
+  describe('waits for the seed of every connected player, within limits', () => {
+    function lead() {
+      const clock = new FakeClock();
+      const settings = defaultSettings('cash');
+      settings.seating.requireApproval = false;
+      settings.timing.nextHandDelaySeconds = 0;
+      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(), fairLeadMs: 2500 });
+      for (const p of IDS) rt.connect(p);
+      IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200, consent: true }));
+      const send = (id: string) => rt.addClientSeed(id, { commit: rt.nextCommit(), seed: 'abcdef0123456789' });
+      rt.nextCommit();
+      return { rt, clock, send, committedAt: rt.state.fair!.committedAt! };
+    }
+
+    it('deals as soon as a slow seed comes in, and it counts', () => {
+      const { rt, clock, send, committedAt } = lead();
+      send('host');
+      send('a');
+      rt.start('host');
+      expect(clock.t).toBe(committedAt);
+      clock.advance(6000); // b's connection stalled for 6 s
+      expect(rt.state.hand).toBeNull();
+      send('b');
+      expect(hand(rt).input.fair!.clientSeeds.map((c) => c.playerId).sort()).toEqual(['a', 'b', 'host']);
+    });
+
+    it('waits no longer than the limit for a seed that never comes', () => {
+      const { rt, clock, send, committedAt } = lead();
+      send('host');
+      send('a');
+      rt.start('host');
+      expect(clock.t).toBe(committedAt);
+      clock.advance(FAIR_SEED_WAIT_MS - 1);
+      expect(rt.state.hand).toBeNull();
+      clock.advance(1);
+      expect(hand(rt).input.fair!.clientSeeds.map((c) => c.playerId).sort()).toEqual(['a', 'host']);
+    });
+
+    it("doesn't wait for a player who is offline or goes offline", () => {
+      const { rt, clock, send, committedAt } = lead();
+      send('host');
+      rt.disconnect('a');
+      rt.start('host');
+      expect(clock.t).toBe(committedAt);
+      clock.advance(4000);
+      expect(rt.state.hand).toBeNull(); // still waiting for b
+      rt.disconnect('b');
+      expect(hand(rt).input.fair!.clientSeeds.map((c) => c.playerId)).toEqual(['host']);
+    });
+
+    it('never deals before the lead, even with every seed in', () => {
+      const { rt, clock, send, committedAt } = lead();
+      IDS.forEach(send);
+      rt.start('host');
+      expect(clock.t).toBe(committedAt);
+      clock.advance(2499);
+      expect(rt.state.hand).toBeNull();
+      clock.advance(1);
+      expect(rt.state.hand).not.toBeNull();
+    });
   });
 
   it('commits to a fresh seed after a restart, so a deal lost in a crash is never dealt again', () => {

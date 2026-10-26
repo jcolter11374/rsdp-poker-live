@@ -14,3 +14,10 @@
 .fairness-page th, .fairness-page td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 .fairness-page th { background: var(--panel); }
 .fairness-page > .muted { margin-top: 32px; font-size: 0.9rem; }
+
+/* ---- the public record (audit.ts): a rewritten record, on every page */
+.record-alert { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 16px; background: var(--bad); color: #fff; font-size: 0.9rem; }
+.record-alert a { color: #fff; text-decoration: underline; }
+.record-alert button { margin-left: auto; }
+.transparency-page .up { color: var(--good); }
+.transparency-page .down { color: var(--bad); }
