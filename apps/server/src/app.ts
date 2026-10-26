@@ -288,7 +288,10 @@ export function createApp(deps: AppDeps = {}) {
     (tables.get(id) ? Promise.resolve(tables.get(id)!.state) : store.loadTable(id))
       .then(async (state) => {
         if (!state) return void res.status(404).json({ error: 'No table has that id.' });
-        const realGame = state.realGame ?? (await store.loadHands(id)).some((h) => realGameHand(h.seats));
+        const live = tables.get(id);
+        const realGame =
+          (state.realGame ?? ((await store.loadHands(id)).some((h) => realGameHand(h.seats)) || state.history.some((h) => realGameHand(h.hand.seats)))) ||
+          (!!state.hand && state.hand.phase !== 'complete' && realGameHand(state.hand.seats));
         const people = Object.entries(state.handNames ?? {}).filter(([pid]) => !pid.startsWith('bot-'));
         res.json({
           id,
@@ -298,7 +301,7 @@ export function createApp(deps: AppDeps = {}) {
           hands: state.handNumber,
           players: people.map(([, name]) => name || 'Guest'),
           realGame,
-          live: tables.has(id),
+          live: !!live,
         });
       })
       .catch((e) => {
@@ -311,7 +314,6 @@ export function createApp(deps: AppDeps = {}) {
     if (!isAdmin(req, res)) return;
     const id = adminTableId(req);
     if (!id) return void res.status(404).json({ error: 'No table has that id.' });
-    if (tables.get(id)?.isTournament) return void res.status(409).json({ error: 'Tournament tables are kept with their tournament.' });
     removeTable(id).then(
       (found) => {
         if (!found) return void res.status(404).json({ error: 'No table has that id.' });
@@ -411,6 +413,18 @@ export function createApp(deps: AppDeps = {}) {
     return [...seen].map(([playerId, name]) => ({ playerId, name }));
   }
 
+  /** Saves still running for each table, so deleting it can wait for them. */
+  const inFlight = new Map<string, Set<Promise<unknown>>>();
+  function track(id: string, p: Promise<unknown>) {
+    const set = inFlight.get(id) ?? new Set();
+    inFlight.set(id, set);
+    set.add(p);
+    void p.finally(() => {
+      set.delete(p);
+      if (set.size === 0 && inFlight.get(id) === set) inFlight.delete(id);
+    });
+  }
+
   function scheduleSave(rt: TableRuntime) {
     const id = rt.state.id;
     if (saveTimers.has(id)) return;
@@ -418,7 +432,7 @@ export function createApp(deps: AppDeps = {}) {
       id,
       setTimeout(() => {
         saveTimers.delete(id);
-        (created.get(id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch((e) => log(`saving table ${id} failed`, e));
+        track(id, (created.get(id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch((e) => log(`saving table ${id} failed`, e)));
       }, SAVE_DEBOUNCE_MS),
     );
   }
@@ -435,6 +449,7 @@ export function createApp(deps: AppDeps = {}) {
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      track(id, handSaves);
     };
     return rt;
   }
@@ -447,8 +462,12 @@ export function createApp(deps: AppDeps = {}) {
    * the runtime stops, and its saved state and hands are removed.
    */
   async function removeTable(id: string): Promise<boolean> {
-    deleted.add(id);
     const rt = tables.get(id);
+    // Refused before anything stops: tournament tables go with their tournament.
+    if (rt ? rt.isTournament : (await store.loadTable(id))?.settings.table.mode === 'tournament') {
+      throw new StorageError('conflict', 'tournament tables are kept with their tournament');
+    }
+    deleted.add(id);
     if (rt) {
       rt.onChange = () => {};
       rt.onHandFinished = () => {};
@@ -465,8 +484,16 @@ export function createApp(deps: AppDeps = {}) {
       watchers.delete(id);
     }
     await (created.get(id) ?? Promise.resolve()).catch(() => {});
+    // A hand or table save already under way would race the delete.
+    await Promise.allSettled([...(inFlight.get(id) ?? [])]);
     created.delete(id);
-    return (await store.deleteTable(id)) || !!rt;
+    try {
+      return (await store.deleteTable(id)) || !!rt;
+    } catch (e) {
+      // Nothing was deleted, so the table can be opened again (from its last save).
+      deleted.delete(id);
+      throw e;
+    }
   }
 
   /** Practice tables waiting for their creator to arrive before the first deal: table id → creator. */
