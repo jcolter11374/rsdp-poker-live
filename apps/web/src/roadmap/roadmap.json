@@ -23,6 +23,7 @@
         { "title": "A slicker table", "detail": "Bigger cards in each nameplate, a clean middle, fuller sounds, casino chip colours, keyboard shortcuts and a switch to show everything in big blinds." },
         { "title": "Co-hosts for cash tables", "detail": "Let a friend approve seats and run the game while you play." },
         { "title": "Optional accounts", "detail": "Sign in with a username and password, or with Google, so your name, picture, notes and history follow you to every device. Guests can still play without one." },
+        { "title": "Chat, leaderboards and stats", "detail": "An always-on chat box, a group leaderboard, your profit graph and a hand search." },
         { "title": "Roadmap, suggestions and What's new", "detail": "This page: send your ideas and follow them in the suggestion log. The What's new page lists what each release added." }
       ]
     },

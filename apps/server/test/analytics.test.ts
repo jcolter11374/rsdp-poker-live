@@ -6,7 +6,9 @@ import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from '../src/app';
 import { closeDb, type Db } from '../src/db';
+import { queryRows } from '../src/db/client';
 import { createTestDb } from '../src/db/testing';
+import { sql } from 'drizzle-orm';
 import { dbIdentity, dbStore } from '../src/storage';
 import { socketClient, type Client } from './socket-client';
 
@@ -89,6 +91,24 @@ describe('analytics', () => {
     // Hiding a table takes it off my graph, not off the leaderboard.
     await fetch(`${url}/api/account/tables/hide`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ tableId: first.tableId, hidden: true }) });
     expect((await get<{ sessions: { name: string }[] }>('/api/account/graph')).sessions.map((s) => s.name)).toEqual(['Tuesday']);
+  });
+
+  it('leaves tournament tables out of the graph, the leaderboard and the profile', { timeout: 30_000 }, async () => {
+    // A real game, then the same game saved the way tournament tables are: mode 'tournament', no tournament_id.
+    const { tableId } = await play('Wednesday', 1);
+    const graph = (await get<{ sessions: { tableId: string }[] }>('/api/account/graph')).sessions.map((s) => s.tableId);
+    const listed = (await get<{ tables: { tableId: string }[] }>('/api/account/me')).tables.map((t) => t.tableId);
+    expect(graph).toContain(tableId);
+    expect(listed).toContain(tableId);
+    await queryRows(db, sql`update tables set mode = 'tournament' where id = ${tableId}`);
+    expect((await get<{ sessions: { tableId: string }[] }>('/api/account/graph')).sessions.map((s) => s.tableId)).toEqual(graph.filter((id) => id !== tableId));
+    expect((await get<{ tables: { tableId: string }[] }>('/api/account/me')).tables.map((t) => t.tableId)).toEqual(listed.filter((id) => id !== tableId));
+    // The board caches for a minute per period; this period has not been asked for yet, so it is worked out now.
+    const board = await get<{ rows: { name: string; hands: number }[] }>('/api/leaderboard?period=year');
+    const ann = board.rows.find((r) => r.name === 'Ann');
+    const before = (await get<{ rows: { name: string; hands: number }[] }>('/api/leaderboard?period=all')).rows.find((r) => r.name === 'Ann');
+    // 'all' was cached by the first test, before Wednesday was played.
+    expect(ann?.hands).toBe(before?.hands);
   });
 
   it('answers an empty board for a period with no games', async () => {

@@ -39,7 +39,7 @@ interface HandRow {
   awards: { seat: number; amount: number }[] | null;
 }
 
-/** Light rows for every cash hand. */
+/** Light rows for every cash hand. Tournament tables are saved with mode 'tournament' and no tournament_id, so both are checked. */
 async function cashHands(db: Db): Promise<HandRow[]> {
   return queryRows<HandRow & Record<string, unknown>>(
     db,
@@ -49,7 +49,7 @@ async function cashHands(db: Db): Promise<HandRow[]> {
           (select jsonb_agg(jsonb_build_object('seat', e -> 'seat', 'amount', e -> 'amount'))
              from jsonb_array_elements(h.events) e where e ->> 't' = 'award') as awards
         from hands h join tables t on t.id = h.table_id
-        where t.tournament_id is null
+        where t.tournament_id is null and t.mode <> 'tournament'
         order by h.started_at`,
   );
 }
@@ -97,7 +97,7 @@ export async function profitSessions(db: Db, playerIds: string[]): Promise<Profi
   const myTables = await queryRows<{ table_id: string }>(
     db,
     sql`select distinct h.table_id from hands h join tables t on t.id = h.table_id
-        where t.tournament_id is null and (${dealt})
+        where t.tournament_id is null and t.mode <> 'tournament' and (${dealt})
           and not exists (select 1 from hidden_tables x where x.table_id = h.table_id and x.player_id in (${sql.join(playerIds.map((id) => sql`${id}`), sql`, `)}))`,
   );
   if (myTables.length === 0) return [];

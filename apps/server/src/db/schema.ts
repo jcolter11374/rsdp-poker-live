@@ -277,7 +277,7 @@ export const hands = pgTable(
 
 // ---------------------------------------------------------------- tournaments
 
-/** Tournament director state, saved after every change; its tables live in `tables` with tournament_id set. */
+/** Tournament director state, saved after every change; its tables live in `tables` with mode 'tournament' (tournament_id is not filled in). */
 export const tournaments = pgTable(
   'tournaments',
   {
