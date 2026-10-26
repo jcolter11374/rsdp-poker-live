@@ -36,7 +36,8 @@ export interface CreateDbOptions {
 /**
  * PGlite runs no autovacuum, and a table's snapshot is rewritten on every
  * change, so each save would leave its old copy on disk for good (about
- * 1.5 MB a hand). Vacuuming this often lets new saves reuse that space.
+ * 1.5 MB a hand). Vacuuming this often lets new saves reuse that space, and
+ * the checkpoint after it lets the write-ahead log reuse its files.
  */
 const VACUUM_EVERY_MS = 5 * 60_000;
 
@@ -104,15 +105,23 @@ async function openPglite(dataDir: string | undefined, vacuumEveryMs: number): P
   const db = drizzlePglite(client, { schema });
   try {
     await migratePglite(db, { migrationsFolder: MIGRATIONS_DIR });
-    // Give back what runs without vacuuming left behind. Only the latest snapshot of each table is live, so this is quick.
-    await client.exec('VACUUM FULL table_snapshots');
   } catch (err) {
     await client.close();
     throw err;
   }
-  // PGlite runs one statement at a time, so a vacuum never lands inside someone's transaction.
+  // Give back what runs without vacuuming left behind. Only the latest snapshot of each table is live, so this is
+  // quick, but it needs room for them: on a nearly full disk it fails, and the server still starts.
+  await client.exec('VACUUM FULL table_snapshots').catch(async (err: Error) => {
+    console.error('vacuum full failed', err.message);
+    await client.exec('VACUUM').catch(() => {});
+  });
+  // PGlite also never checkpoints on its own (only when it closes), so its write-ahead log would grow just as fast.
+  // exec, query and transactions share one lock, so neither lands inside someone's transaction.
   const vacuum = setInterval(() => {
-    client.exec('VACUUM').catch((err: Error) => console.error('vacuum failed', err.message));
+    client
+      .exec('VACUUM')
+      .then(() => client.exec('CHECKPOINT'))
+      .catch((err: Error) => console.error('vacuum failed', err.message));
   }, vacuumEveryMs);
   vacuum.unref();
   closers.set(db, async () => {

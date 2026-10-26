@@ -103,6 +103,8 @@ describe('createDb', () => {
       }
       return table.id;
     };
+    const checkpointAt = async (d: Db) =>
+      (await queryRows<{ redo: string }>(d, sql`select redo_lsn::text as redo from pg_control_checkpoint()`))[0].redo;
     const HOUR = 3_600_000;
 
     it('gives back the space old snapshots took when it opens', async () => {
@@ -126,10 +128,15 @@ describe('createDb', () => {
     it('vacuums as it goes, so saving a snapshot over and over does not keep growing the database', async () => {
       const never = await createDb({ ignoreEnv: true, vacuumEveryMs: HOUR });
       try {
+        const neverFrom = await checkpointAt(never);
         await saveOften(never, 120, 5);
         db = await createDb({ ignoreEnv: true, vacuumEveryMs: 20 });
+        const from = await checkpointAt(db);
         await saveOften(db, 120, 5);
         expect(await snapshotBytes(db)).toBeLessThan((await snapshotBytes(never)) / 3);
+        // PGlite only checkpoints when told to, and until it does the write-ahead log keeps every save.
+        expect(await checkpointAt(never)).toBe(neverFrom);
+        expect(await checkpointAt(db)).not.toBe(from);
       } finally {
         await closeDb(never);
       }
