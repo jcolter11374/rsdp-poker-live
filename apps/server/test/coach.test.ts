@@ -399,6 +399,19 @@ describe('what a bot says about its move (botNote)', () => {
     expect(botNote(1, 1, 'normal', why, hand, 'p0').yourBets).toBeUndefined();
   });
 
+  it("doesn't count your bets once you have folded: Hard reads only the players still in", () => {
+    const hand = dealt('nlhe', ['Kc', 'Qs', '9d', 'Jh', '2c', '3d'], 3);
+    // p0 raises, p1 and p2 call, then p0 folds to a bet on the flop.
+    engine.act(hand, 2, { type: 'call' });
+    engine.act(hand, 0, { type: 'raise', to: 6 });
+    while (hand.street === 0) engine.act(hand, hand.toAct!, { type: 'call' });
+    while (hand.toAct !== 0) engine.act(hand, hand.toAct!, hand.currentBet ? { type: 'call' } : { type: 'bet', to: 6 });
+    const why: MoveWhy = { rule: 'fold', equity: 0.05, cost: 0.3 };
+    expect(botNote(1, 1, 'hard', why, hand, 'p0').yourBets).toBe(1);
+    engine.act(hand, 0, { type: 'fold' });
+    expect(botNote(1, 1, 'hard', why, hand, 'p0').yourBets).toBeUndefined();
+  });
+
   it('rounds its guesses and keeps the rest of the numbers', () => {
     const hand = dealt('nlhe', ['Kc', 'Qs', '9d', 'Jh']);
     const why: MoveWhy = { rule: 'call', equity: 0.4231, opponents: 2, cost: 0.2567, need: 0.2867, big: true, capped: true, often: 0.8, split: true, drawsLeft: 2, thrown: 2, alt: { thrown: 1, equity: 0.3812 }, inPosition: true };

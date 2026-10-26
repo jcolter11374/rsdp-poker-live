@@ -44,7 +44,10 @@ export function botNote(seq: number, seat: SeatIndex, level: BotLevel, why: Move
       if (why.foldRate >= FOLDS_OFTEN) note.you = 'folds-often';
       else if (why.foldRate <= CALLS_OFTEN) note.you = 'calls-often';
     }
-    const bets = yourBets(hand, person);
+    // Hard reads only the players still in the hand, so a person who has folded played no part in this move. The bot's
+    // own move can't fold them, so the hand after it says the same as the hand before.
+    const me = hand.seats.find((x) => x.playerId === person);
+    const bets = me && !me.folded ? yourBets(hand, person) : 0;
     if (bets) note.yourBets = bets;
   }
   return note;
