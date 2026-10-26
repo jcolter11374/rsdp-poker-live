@@ -12,7 +12,7 @@ export interface TableHistoryRow {
   /** Chips won (above 0) or lost across the player's ids at this table, from its ledger; null when unknown. */
   net: number | null;
   centsMode: boolean;
-  /** A practice table with bots. */
+  /** Practice, not a real game: a bot was dealt in, or nobody else ever played. Left out of results. */
   practice: boolean;
 }
 
@@ -66,6 +66,7 @@ export async function tableHistory(db: Db, playerIds: string[], limit = 25, opts
     .where(inArray(tableSnapshots.tableId, rows.map((r) => r.tableId)));
   const byTable = new Map(snaps.map((s) => [s.tableId, s.state as LedgerState | undefined]));
   const mine = new Set(playerIds);
+  const real = await realGameTables(db, rows.map((r) => r.tableId));
 
   return rows.map((r) => {
     const state = byTable.get(r.tableId);
@@ -82,9 +83,28 @@ export async function tableHistory(db: Db, playerIds: string[], limit = 25, opts
       lastPlayedAt: new Date(r.lastPlayedAt),
       net,
       centsMode: !!state?.settings?.stakes?.centsMode,
-      practice: Object.keys(state?.bots ?? {}).length > 0,
+      practice: !real.has(r.tableId),
     };
   });
+}
+
+/**
+ * Of these tables, the real games: some hand had two or more people, and no
+ * hand ever had a practice bot. Everything else is practice (play against
+ * bots, or someone trying a table alone) and stays out of results.
+ */
+export async function realGameTables(db: Db, tableIds: string[]): Promise<Set<string>> {
+  if (tableIds.length === 0) return new Set();
+  const rows = await db
+    .select({ tableId: hands.tableId })
+    .from(hands)
+    .where(inArray(hands.tableId, tableIds))
+    .groupBy(hands.tableId)
+    .having(
+      sql`not bool_or(jsonb_path_exists(${hands.header} -> 'seats', '$[*] ? (@.playerId starts with "bot-")'))
+          and max(jsonb_array_length(${hands.header} -> 'seats')) >= 2`,
+    );
+  return new Set(rows.map((r) => r.tableId));
 }
 
 /**

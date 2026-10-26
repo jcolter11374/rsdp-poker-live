@@ -80,11 +80,11 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .leader-table th, .leader-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .leader-table th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
 .leader-table th.on { color: var(--text); }
-.leader-table th:nth-child(-n + 2), .leader-table td:nth-child(-n + 2) { text-align: left; }
+.leader-table th:nth-child(-n + 3), .leader-table td:nth-child(-n + 3) { text-align: left; }
 .leader-table td.name { white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
 .leader-table .up { color: var(--good); }
 .leader-table .down { color: var(--bad); }
-@media (max-width: 480px) { .leader-table th:nth-child(4), .leader-table td:nth-child(4) { display: none; } }
+@media (max-width: 480px) { .leader-table th:nth-child(5), .leader-table td:nth-child(5) { display: none; } }
 
 /* ---- /hands */
 .hand-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
@@ -109,3 +109,20 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .account-narrow .account-form button.primary { align-self: stretch; padding-block: 10px; }
 .account-check > span { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
 .account-check .hint { line-height: 1.4; }
+.profit-empty { background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 16px; }
+.profit-empty svg { width: 100%; max-width: 220px; height: 50px; display: block; margin-bottom: 8px; }
+.profit-empty polyline { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 6; }
+.profit-empty p { margin: 0 0 6px; line-height: 1.45; }
+.leader-chart { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 8px; touch-action: pan-y; }
+.leader-chart svg { display: block; }
+.leader-chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.leader-chart text.end-label { fill: var(--text); font-weight: 600; }
+.leader-chart .grid { stroke: var(--line); opacity: 0.6; }
+.leader-chart .zero { stroke: var(--muted); }
+.leader-chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.leader-chart .dot { stroke: var(--panel); stroke-width: 2; }
+.leader-chart .cross { stroke: var(--muted); stroke-dasharray: 3 3; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.leader-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 0.85rem; margin-bottom: 12px; }
+.leader-legend .muted { flex-basis: 100%; font-size: 0.78rem; }
+.profit-tip .swatch { margin-right: 2px; }

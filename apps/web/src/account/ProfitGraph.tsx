@@ -1,45 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { chipFormat } from '../format';
+import { useEffect, useState } from 'react';
 import { fetchGraph, type ProfitSession } from './api';
+import { signed, ticks, useWidth } from './chart';
 
-/** Amounts come in cents (a chip counts as 100), so one format fits chip and cents tables alike. */
-const fmt = chipFormat(true);
-const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '0');
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 const HEIGHT = 180;
 const PAD = { top: 12, right: 12, bottom: 22, left: 52 };
 
-/** "Nice" round steps for the y axis. */
-function ticks(lo: number, hi: number, count = 4): number[] {
-  const span = hi - lo || 1;
-  const raw = span / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  // Amounts are whole cents, so steps are too.
-  const step = Math.max(1, Math.round([1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw));
-  const out: number[] = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v));
-  return out;
-}
-
 /** My running total across every real cash game, with each night's result on hover. */
-export function ProfitGraph({ refreshKey }: { refreshKey: unknown }) {
+export function ProfitGraph({ refreshKey, practiceGames }: { refreshKey: unknown; practiceGames: number }) {
   const [sessions, setSessions] = useState<ProfitSession[] | null>(null);
   const [error, setError] = useState('');
   const [hover, setHover] = useState<number | null>(null);
   const [listView, setListView] = useState(false);
-  const [width, setWidth] = useState(520);
-  // The chart's box comes and goes (list view, no games yet), so it is measured whenever it appears.
-  const observer = useRef<ResizeObserver | null>(null);
-  const box = useCallback((el: HTMLDivElement | null) => {
-    observer.current?.disconnect();
-    observer.current = null;
-    if (!el) return;
-    const measure = () => setWidth(Math.max(240, el.clientWidth));
-    measure();
-    observer.current = new ResizeObserver(measure);
-    observer.current.observe(el);
-  }, []);
+  const [width, box] = useWidth();
 
   useEffect(() => {
     fetchGraph()
@@ -49,7 +23,23 @@ export function ProfitGraph({ refreshKey }: { refreshKey: unknown }) {
 
   if (error) return <p className="error">{error}</p>;
   if (!sessions) return <p className="muted">Loading…</p>;
-  if (sessions.length === 0) return <p className="muted">Your graph starts after your first real game with friends (practice tables with bots don't count).</p>;
+  if (sessions.length === 0) {
+    return (
+      <div className="profit-empty">
+        <svg viewBox="0 0 200 60" aria-hidden="true">
+          <polyline points="4,44 40,36 72,40 108,22 140,28 196,10" />
+        </svg>
+        <p>
+          <strong>No real games yet.</strong> Your graph starts after your first cash game with at least one other person.
+        </p>
+        <p className="muted">
+          {practiceGames > 0
+            ? `Your ${practiceGames} practice ${practiceGames === 1 ? 'game' : 'games'} (with bots, or on your own) ${practiceGames === 1 ? "isn't" : "aren't"} counted here or on the leaderboard.`
+            : "Practice games with bots never count here or on the leaderboard."}
+        </p>
+      </div>
+    );
+  }
 
   let run = 0;
   const points = sessions.map((s) => ({ ...s, total: (run += s.net) }));
@@ -173,7 +163,7 @@ export function ProfitGraph({ refreshKey }: { refreshKey: unknown }) {
         </div>
       )}
       <p className="hint">
-        Real games with friends only: practice tables with bots and tables you hid are left out. Chips count as whole units, so chip and cents tables add up.{' '}
+        Real games with friends only: practice games (with bots, or on your own) and tables you hid are left out. Chips count as whole units, so chip and cents tables add up.{' '}
         <button className="link" onClick={() => setListView((v) => !v)}>
           {listView ? 'Show the graph' : 'Show as a list'}
         </button>

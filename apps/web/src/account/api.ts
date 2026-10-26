@@ -84,6 +84,8 @@ export interface LeaderRow {
   sessions: number;
   hands: number;
   biggestPot: number;
+  /** Each real game's result in the period, oldest first (ms since 1970, cents). */
+  games: { at: number; net: number }[];
 }
 
 export type LeaderPeriod = 'month' | 'year' | 'all';
