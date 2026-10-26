@@ -221,9 +221,11 @@ Limits, stated plainly:
   connection, and kept running. One that opens the table (including when a
   tournament moves you), reconnects, or wakes from a frozen tab or a sleeping
   device with a commitment already up can't tell how long it was up, so it
-  doesn't warn about that hand being dealt too soon. A server could use a
-  reconnect or a tournament move it caused to hide a last-moment commitment;
-  you'd see the "Reconnecting" or "You've been moved" notice. So this is caught
+  doesn't warn about that hand being dealt too soon; a tab left in the
+  background for a long time, which browsers slow right down, mostly skips
+  this check too. A server could cause a reconnect or a tournament move to hide
+  a last-moment commitment; you might only see a brief "Reconnecting" notice,
+  or the page switching tables. So this is caught
   unless the affected player never looks (say they left right after the hand,
   or play with browser storage blocked), opened the table, reconnected or woke
   the page just before a deal, or sat down in the last moment before a deal.
