@@ -14,7 +14,7 @@ jobs:
   check:
     name: Is anyone playing (read only)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
     steps:
       - name: Tables open and hands played, twice 10 minutes apart
         run: |
@@ -24,6 +24,10 @@ jobs:
             curl -sf "$site/api/health"; echo
             curl -sf "$site/api/leaderboard?period=all" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("hands", sum(r.get("hands",0) for r in d["rows"]))'
           }
-          look
-          sleep 600
-          look
+          # Every 5 minutes for up to an hour, until no table has been open for 45 minutes.
+          for i in $(seq 1 13); do
+            look
+            curl -sf "$site/api/health" | grep -q '"tables":0' && { echo quiet; exit 0; }
+            sleep 300
+          done
+          echo still busy
