@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderSound, seeded, type SoundName } from './soundbank';
 
-const NAMES: SoundName[] = ['deal', 'chips', 'raise', 'allIn', 'pot', 'check', 'fold', 'turn', 'turnBell', 'hurry', 'request', 'chat', 'win'];
+const NAMES: SoundName[] = ['deal', 'flip', 'chips', 'raise', 'allIn', 'pot', 'check', 'fold', 'turn', 'turnBell', 'hurry', 'request', 'chat', 'win'];
 
 describe('renderSound', () => {
   for (const name of NAMES) {
