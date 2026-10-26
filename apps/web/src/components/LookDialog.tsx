@@ -112,6 +112,17 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
                 ? "Your device is set to reduce motion, so the table stays still either way."
                 : 'Thrown cards, counting stacks and sparkles. Turn it off if the table feels slow on your phone.'}
             </p>
+            <label className="toggle">
+              <input type="checkbox" checked={prefs.tips} onChange={(e) => setPrefs({ tips: e.target.checked })} aria-describedby="look-coach-hint" />
+              Coach tips
+            </label>
+            <label className="toggle">
+              <input type="checkbox" checked={prefs.botReasons} onChange={(e) => setPrefs({ botReasons: e.target.checked })} aria-describedby="look-coach-hint" />
+              Bots explain their moves
+            </label>
+            <p className="hint" id="look-coach-hint">
+              Only in hands where everyone else is a practice bot: a Tip button on your turn, and each bot's reasons once the hand is over.
+            </p>
           </>
         )}
         {tab === 'table' && view.powers.includes('settings') && view.mode !== 'tournament' && (

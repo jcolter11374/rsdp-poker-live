@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Action } from '@rsdp/engine/core';
-import type { TableView } from '@rsdp/engine/wire';
+import type { CoachTip, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import './action-bar.css';
 import { bbExactFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
 import { handStrength } from '../strength';
-import { suitSymbol } from './PlayingCard';
+import { tipText } from '../coach';
+import { usePrefs } from '../prefs';
+import { LogText, suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
+import { CoachWhy } from './CoachWhy';
 
 const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}` : '');
 
@@ -22,7 +25,9 @@ export function ActionBar({
   skew,
   discard,
   clearDiscard,
+  setDiscard,
   onPreAction,
+  onRules,
 }: {
   view: TableView;
   fmt: Fmt;
@@ -31,14 +36,20 @@ export function ActionBar({
   skew: number;
   discard: number[];
   clearDiscard: () => void;
+  /** Picks the cards to throw (a coach tip's [Mark]). */
+  setDiscard?: (cards: number[]) => void;
   /** Tells the page whether a move is queued, so it can skip the your-turn sound. */
   onPreAction?: (queued: boolean) => void;
+  /** Opens How to play (from a coach tip's Why sheet). */
+  onRules?: () => void;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
   const unit: BetUnit = bigBlind ? { bb: bigBlind } : { centsMode };
   const fmt = bigBlind ? bbExactFormat(bigBlind) : chipFmt;
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
+  // The bet box and its presets: no-limit and pot-limit, when there's a range to pick from.
+  const sized = !!legal && legal.canRaise && legal.maxTo > legal.minTo;
   const [amount, setAmountRaw] = useState(0);
   // What's typed in the bet box, kept as text while typing so "2." or "0.5" isn't rewritten mid-word.
   const [typed, setTyped] = useState<string | null>(null);
@@ -91,6 +102,57 @@ export function ActionBar({
   const ritDeadline = view.canVoteRunItTwice ? hand?.runItTwice.deadline ?? null : null;
   const now = useNow(ritDeadline !== null, 500) + skew;
 
+  // Coach tips: only when the server says this hand is you against bots alone, on your own turn. One tip per decision
+  // (the hand's event count), asked for when opened and kept, so opening it again sends nothing.
+  const prefs = usePrefs();
+  const tipOn = !!view.tips && prefs.tips && (!!legal || !!view.canDraw) && !view.paused && !!hand && hand.phase !== 'complete';
+  const tipKey = hand ? `${hand.handNumber}:${hand.events.length}` : '';
+  const [tipAt, setTipAt] = useState<string | null>(null);
+  const tipOpen = tipOn && tipAt === tipKey;
+  const [whyAt, setWhyAt] = useState<string | null>(null);
+  const tips = useRef(new Map<string, CoachTip>());
+  const asking = useRef(new Set<string>());
+  const [tipError, setTipError] = useState<{ key: string; message: string } | null>(null);
+  const [, setTipsIn] = useState(0);
+  const askTip = (key: string) => {
+    if (tips.current.has(key) || asking.current.has(key)) return;
+    const [handNumber, at] = key.split(':').map(Number);
+    asking.current.add(key);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const noAnswer = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('no answer from the table')), SEND_TIMEOUT_MS);
+    });
+    Promise.race([call<{ tip: CoachTip }>('hand:tip', { handNumber, at }), noAnswer])
+      .then(({ tip }) => {
+        // Only the answer to this decision: one for a turn that has passed is never shown.
+        if (tip?.handNumber !== handNumber || tip.at !== at) return;
+        tips.current.set(key, tip);
+        for (const k of tips.current.keys()) if (tips.current.size > 12) tips.current.delete(k);
+        setTipsIn((n) => n + 1);
+      })
+      .catch((e: Error) => setTipError({ key, message: e.message }))
+      .finally(() => {
+        clearTimeout(timer);
+        asking.current.delete(key);
+      });
+  };
+  const toggleTip = () => {
+    if (!tipOn) return;
+    if (tipOpen) return setTipAt(null);
+    setTipAt(tipKey);
+    if (tipError?.key === tipKey) setTipError(null);
+    askTip(tipKey);
+  };
+  const tip = tipOpen ? tips.current.get(tipKey) : undefined;
+  // R with the tip open brings the bet box back first.
+  const boxWanted = useRef(false);
+  useEffect(() => {
+    if (tipOpen || !boxWanted.current) return;
+    boxWanted.current = false;
+    amountBox.current?.focus();
+    amountBox.current?.select();
+  }, [tipOpen]);
+
   // One move at a time: a double tap must not send a second move, which could land on the next street
   // (the big blind checking preflop and then first to act on the flop) or queue a pre-move.
   const inFlight = useRef(false);
@@ -108,6 +170,8 @@ export function ActionBar({
   };
   const run = (p: () => Promise<unknown>) => {
     if (inFlight.current) return;
+    setTipAt(null);
+    setWhyAt(null);
     inFlight.current = true;
     lastSent.current = Date.now();
     setSending(true);
@@ -151,11 +215,18 @@ export function ActionBar({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   keys.current = (e) => {
-    if ((!legal && !preOpts) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if ((!legal && !preOpts && !tipOn) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
     // Keys never act behind an open dialog or sheet.
     if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) return;
     const k = e.key.toLowerCase();
+    // T opens the tip on draw turns too, so it comes before the betting keys.
+    if (k === 't' && tipOn) {
+      e.preventDefault();
+      toggleTip();
+      return;
+    }
+    if (!legal && !preOpts) return;
     // Before your turn the same keys tick (or untick) a pre-move.
     if (!legal) {
       const o = preOpts?.find((o) => o.key.toLowerCase() === k);
@@ -169,6 +240,10 @@ export function ActionBar({
       e.preventDefault();
       amountBox.current.focus();
       amountBox.current.select();
+    } else if (k === 'r' && tipOpen && sized) {
+      e.preventDefault();
+      boxWanted.current = true;
+      setTipAt(null);
     } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
     else return;
   };
@@ -193,17 +268,68 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
-  // On your turn (betting or drawing) the time bank sits on the bar's top line, so the bar is no taller for it.
+  // On your turn (betting or drawing) the tip and the time bank sit on the bar's top line, so the bar is no taller for them.
   const canBank = !view.paused && !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
-  const head = canBank ? (
-    <div className="bar-head">
-      {hint}
-      <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
-        Time bank +{me.timeBank}s
-      </button>
-    </div>
-  ) : (
-    hint
+  const head =
+    canBank || tipOn ? (
+      <div className="bar-head">
+        {tipOn && (
+          <button className="play-tip-button" aria-expanded={tipOpen} aria-controls="play-tip" aria-keyshortcuts="T" title="Tip (T)" onClick={toggleTip}>
+            Tip
+            <Key k="T" />
+          </button>
+        )}
+        {hint}
+        {canBank && (
+          <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
+            Time bank +{me.timeBank}s
+          </button>
+        )}
+      </div>
+    ) : (
+      hint
+    );
+  // The sizing block's height, so a tip in its place takes just as much room and nothing below it moves.
+  const sizingBox = useRef<HTMLDivElement>(null);
+  const sizingHeight = useRef(0);
+  useLayoutEffect(() => {
+    if (sizingBox.current) sizingHeight.current = sizingBox.current.offsetHeight;
+  });
+  const tipPanel = (inPlaceOfSizing: boolean) =>
+    tipOpen && (
+      <TipPanel
+        tip={tip}
+        error={tipError?.key === tipKey ? tipError.message : null}
+        view={view}
+        fmt={fmt}
+        minHeight={inPlaceOfSizing ? sizingHeight.current : 0}
+        onSet={
+          inPlaceOfSizing
+            ? (to) => {
+                setAmount(to);
+                setTipAt(null);
+              }
+            : null
+        }
+        onMark={setDiscard ?? null}
+        onWhy={() => setWhyAt(tipKey)}
+      />
+    );
+  const why = tip && whyAt === tipKey && (
+    <CoachWhy
+      tip={tip}
+      view={view}
+      fmt={fmt}
+      skew={skew}
+      onClose={() => setWhyAt(null)}
+      onRules={
+        onRules &&
+        (() => {
+          setWhyAt(null);
+          onRules();
+        })
+      }
+    />
   );
   const errorLine = slow ? (
     <div className="muted sending-note">Sending… your connection seems slow.</div>
@@ -254,9 +380,11 @@ export function ActionBar({
       <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
         {head}
         {errorLine}
-        <div className="prompt">
-          {hand.streetName}: click the cards you want to throw away{view.canDraw.max < myCards.length ? ` (up to ${view.canDraw.max})` : ''}.
-        </div>
+        {tipPanel(false) || (
+          <div className="prompt">
+            {hand.streetName}: click the cards you want to throw away{view.canDraw.max < myCards.length ? ` (up to ${view.canDraw.max})` : ''}.
+          </div>
+        )}
         <div className="buttons">
           <button disabled={n === 0} onClick={clearDiscard}>
             Clear
@@ -269,6 +397,7 @@ export function ActionBar({
             {n === 0 ? 'Stand pat' : `Draw ${n}`}
           </button>
         </div>
+        {why}
       </div>
     );
   }
@@ -315,7 +444,6 @@ export function ActionBar({
   const clamp = (x: number) => Math.max(legal.minTo, Math.min(legal.maxTo, Math.floor(x)));
   // A pot-sized raise: call first, then raise by the size of the pot after the call.
   const potRaise = (fraction: number) => clamp(hand.currentBet + (hand.potTotal + toCall) * fraction);
-  const sized = legal.canRaise && legal.maxTo > legal.minTo;
   const raiseType = legal.raiseKind;
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
@@ -324,8 +452,9 @@ export function ActionBar({
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
       {head}
       {errorLine}
-      {sized && (
-        <div className="sizing">
+      {!sized && tipPanel(false)}
+      {sized && (tipPanel(true) || (
+        <div className="sizing" ref={sizingBox}>
           {hand.betting !== 'fixed-limit' && (
             <div className="presets">
               <button onClick={() => setAmount(potRaise(0.5))}>½ pot</button>
@@ -358,7 +487,7 @@ export function ActionBar({
             {bigBlind && <span className="unit">BB</span>}
           </div>
         </div>
-      )}
+      ))}
       <div className="buttons">
         {legal.canFold && (
           <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F">
@@ -387,6 +516,71 @@ export function ActionBar({
           </button>
         )}
       </div>
+      {why}
+    </div>
+  );
+}
+
+/**
+ * A coach tip on the action bar: the verdict, what it's based on, and small
+ * buttons for Why?, putting the amount in the bet box, or marking the cards to
+ * throw. It is never one of the move buttons, so they never move or dim for it.
+ */
+function TipPanel({
+  tip,
+  error,
+  view,
+  fmt,
+  minHeight,
+  onSet,
+  onMark,
+  onWhy,
+}: {
+  tip: CoachTip | undefined;
+  error: string | null;
+  view: TableView;
+  fmt: Fmt;
+  minHeight: number;
+  onSet: ((to: number) => void) | null;
+  onMark: ((cards: number[]) => void) | null;
+  onWhy: () => void;
+}) {
+  let text: ReturnType<typeof tipText> | null = null;
+  let problem = error;
+  try {
+    if (tip && !error) text = tipText(tip, view, fmt);
+  } catch {
+    problem = 'something went wrong';
+  }
+  return (
+    <div id="play-tip" className="play-tip" role="status" aria-live="polite" style={minHeight ? { minHeight } : undefined}>
+      {problem ? (
+        <div className="play-tip-error">No tip right now: {problem}.</div>
+      ) : !text ? (
+        <div className="play-tip-basis">Working it out…</div>
+      ) : (
+        <>
+          <div className="play-tip-verdict">
+            <LogText text={text.verdict} />
+          </div>
+          <div className="play-tip-basis">
+            {text.basis && <span>{text.basis}</span>}
+            <button data-act="why" onClick={onWhy}>
+              Why?
+            </button>
+            {onSet && text.set && (
+              <button data-act="set" onClick={() => onSet(text.set!.to)}>
+                {text.set.label}
+              </button>
+            )}
+            {onMark && text.mark && (
+              <button data-act="mark" onClick={() => onMark(text.mark!.discard)}>
+                <LogText text={text.mark.label} />
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

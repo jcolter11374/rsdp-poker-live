@@ -583,6 +583,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 @media (max-width: 500px) { .look .toggle { white-space: normal; } }
 .look .toggle + .hint { margin: -4px 0 4px 26px; }
 
+/* Why this tip (coach tips) */
+.modal:has(.coach-why) { width: min(540px, 100%); }
+.coach-why { display: flex; flex-direction: column; gap: 10px; font-size: 0.9rem; line-height: 1.45; }
+.coach-why p { margin: 0; }
+.coach-why h3 { margin: 0 0 2px; font-size: 0.85rem; color: var(--accent-2); }
+.coach-why section p + p { margin-top: 4px; }
+.coach-why-verdict { font-weight: 700; font-size: 1rem; }
+.coach-why-clock { color: var(--muted); font-size: 0.85rem; }
+
 /* Check this hand (provably fair dealing) */
 .replayer-head-buttons { display: flex; gap: 6px; align-items: center; }
 .fair-check { font-size: 0.85rem; max-height: 40vh; overflow-y: auto; border: 1px solid var(--muted); border-radius: 10px; padding: 8px 10px; }
@@ -778,6 +787,15 @@ dl.shortcuts dd { margin: 0; }
 .dock-row .hand-extras { margin-top: 0; }
 .bar-head { position: relative; min-height: 26px; display: flex; align-items: center; justify-content: center; }
 .bar-head .time-bank { position: absolute; right: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; }
+/* Coach tips (hands against bots only): the Tip pill mirrors the time bank on the left, and the tip takes the place of
+   the bet sizing (or the draw prompt), so the move buttons stay put. */
+.bar-head .play-tip-button { position: absolute; left: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; color: var(--accent-2); }
+.bar-head .play-tip-button[aria-expanded='true'] { background: #3a3220; border-color: var(--accent-2); }
+.play-tip { display: flex; flex-direction: column; justify-content: center; gap: 1px; text-align: center; line-height: 1.25; }
+.play-tip-verdict { font-weight: 700; font-size: 0.92rem; }
+.play-tip-basis { color: var(--muted); font-size: 0.8rem; }
+.play-tip-basis button { margin-left: 6px; padding: 0 8px; font-size: 0.78rem; line-height: 1.2; border-radius: 999px; background: transparent; vertical-align: 1px; color: var(--text); }
+.play-tip-error { color: var(--muted); font-size: 0.85rem; }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(190px, var(--held, 0px)); }
@@ -800,11 +818,20 @@ dl.shortcuts dd { margin: 0; }
 /* Fixed-limit games (no bet slider) have a shorter bar. */
 .dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
 .portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
+/* A hand with coach tips: the bar sits at the foot of the dock, so a tip opening above the buttons grows it upwards,
+   and fixed-limit games (where the tip has no sizing block to stand in for) get room for it from the deal: enough
+   for a draw turn, the tallest bar they have. */
+.dock.tips { justify-content: flex-end; }
+.dock.seated.limit.tips { min-height: max(191px, var(--held, 0px)); }
+@media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(167px, var(--held, 0px)); } }
+.portrait .dock.seated.limit.tips { min-height: max(190px, var(--held, 0px)); }
 /* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
-@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit { min-height: var(--held, 0px); } }
-/* On phones the time bank sits beside the hand line instead of over it. */
+@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips { min-height: var(--held, 0px); } }
+/* On phones the time bank and the Tip pill sit beside the hand line instead of over it. */
 .portrait .bar-head { gap: 8px; flex-wrap: wrap; }
-.portrait .bar-head .time-bank { position: static; translate: none; }
+.portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { position: static; translate: none; }
+/* ...and on their side, the tip is the verdict and Why? only. */
+@media (max-height: 500px) { .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; } }
 
 /* "Are you sure?" under a game picker set to unusual betting. */
 .betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }

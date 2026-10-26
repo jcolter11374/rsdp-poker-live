@@ -588,7 +588,12 @@ export function TablePage({ tableId }: { tableId: string }) {
               </div>
             </div>
           )}
-          <Dock reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`} seated={view.me.seat !== null} limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}>
+          <Dock
+            reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`}
+            seated={view.me.seat !== null}
+            limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
+            tips={!!view.tips && prefs.tips}
+          >
             <ActionBar
               view={view}
               fmt={fmt}
@@ -596,9 +601,11 @@ export function TablePage({ tableId }: { tableId: string }) {
               skew={skew}
               discard={discard}
               clearDiscard={() => setDiscard([])}
+              setDiscard={setDiscard}
               onPreAction={(q) => {
                 preQueued.current = q;
               }}
+              onRules={() => setDialog({ kind: 'rules' })}
             />
             <div className="dock-row">
               <HandExtras view={view} />
