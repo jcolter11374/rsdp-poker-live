@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-k",
+      "date": "2026-10-26",
+      "fixes": [
+        "The pot number no longer flickers backwards for a moment when a bet goes in, and the pot keeps pace with the chips instead of lagging behind. Stacks had the same tiny flicker when chips went out.",
+        "The chip pile in the pot grows when the swept bets land on it, rather than jumping as they leave the seats."
+      ]
+    },
+    {
       "id": "2026-10-26-j",
       "date": "2026-10-26",
       "fixes": []
