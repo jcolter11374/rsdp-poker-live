@@ -1,6 +1,16 @@
-.banner.spectating {
+.banner.spectating,
+.banner.watched {
   background: #4a1f2a;
   color: #ffc9d2;
+}
+.banner.watched.alert {
+  background: #6e1f2d;
+  color: #fff;
+  border: 2px solid #ff8a9b;
+}
+/* While spectators see every card the rail turns red, so nobody at the table can miss it. */
+.felt.cards-watched {
+  border-color: #7a1f2b;
 }
 .chat-name {
   cursor: pointer;
@@ -29,4 +39,20 @@ button.link {
 }
 .preset .who {
   flex: 1;
+}
+.watched-consent {
+  background: #4a1f2a;
+  color: #ffc9d2;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.watched-consent p {
+  margin: 0 0 6px;
+}
+.watched-consent label.check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
 }

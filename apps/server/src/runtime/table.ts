@@ -26,6 +26,8 @@ import {
   mergePatches,
   parseSettings,
   SettingsError,
+  settingsNotices,
+  spectatorsSeeCards,
   type SettingsPatch,
   type TableSettings,
 } from '@rsdp/engine/settings';
@@ -132,6 +134,15 @@ export class TableRuntime {
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
+    // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
+    // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.
+    const queued = state.pendingSettings?.spectators;
+    if (queued && 'seeAllCards' in queued) {
+      if (queued.seeAllCards === false) state.settings = { ...state.settings, spectators: { ...state.settings.spectators, seeAllCards: false } };
+      delete queued.seeAllCards;
+      if (!Object.keys(queued).length) delete state.pendingSettings!.spectators;
+      if (!Object.keys(state.pendingSettings!).length) state.pendingSettings = null;
+    }
   }
 
   static create(args: { id?: string; hostId: PlayerId; hostName?: string; settings: TableSettings }, deps: RuntimeDeps = {}) {
@@ -166,6 +177,8 @@ export class TableRuntime {
       log: [],
       history: [],
       realGame: false,
+      // On from the start: everyone who sits agrees first, so there's nobody to warn (at 0).
+      seeAll: spectatorsSeeCards(settings) ? { since: 0, at: 0 } : null,
     };
     return new TableRuntime(state, deps);
   }
@@ -265,8 +278,10 @@ export class TableRuntime {
 
   // ---------------------------------------------------------------- seating
 
-  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number }) {
+  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number; consent?: boolean }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
+    // Nobody sits at a table where spectators see their cards without being told and agreeing.
+    if (spectatorsSeeCards(this.settings) && !input.consent) throw new ActionError('spectators at this table see every hole card: agree to that to sit down');
     const name = cleanName(input.name);
     let { seat } = input;
     const { stack } = input;
@@ -287,7 +302,7 @@ export class TableRuntime {
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
     this.leaveQueue(playerId);
-    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
+    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now(), consent: !!input.consent };
     if (!this.settings.seating.requireApproval || this.can(playerId, 'approve')) {
       this.seatPlayer(request);
     } else {
@@ -309,6 +324,10 @@ export class TableRuntime {
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
+      // Asked before spectators could see every card: they haven't agreed to it, so they must ask again.
+      if (spectatorsSeeCards(this.settings) && !r.consent && !this.botInfo(r.playerId)) {
+        throw new ActionError(`${r.name} asked to sit before spectators could see every card; they need to ask again and agree to it`);
+      }
       let target = seat ?? r.seat!;
       if (seat !== undefined) {
         if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -913,17 +932,29 @@ export class TableRuntime {
     const s = this.state;
     const merged = s.pendingSettings ? mergePatches(s.pendingSettings, patch) : patch;
     let result;
+    let target: TableSettings;
     try {
       // Validate the end result now so the host sees errors immediately.
-      const target = applyAtNextHand(s.settings, merged).settings;
+      target = applyAtNextHand(s.settings, merged).settings;
       this.checkSettings(target);
       result = applyImmediate(s.settings, merged);
     } catch (e) {
       if (e instanceof SettingsError) throw new ActionError(e.issues.map((i) => `${i.path}: ${i.message}`).join('; '));
       throw e;
     }
+    // A hand is played under the card visibility it was dealt with: nobody can open it up partway through.
+    if (!spectatorsSeeCards(s.settings) && spectatorsSeeCards(target) && this.handLive()) {
+      throw new ActionError('spectators can only be shown every hole card between hands; try again when this hand ends');
+    }
+    // Against what was already on its way, so a change queued earlier in the hand isn't announced again.
+    const before = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings : s.settings;
+    for (const n of settingsNotices(before, target, this.nameOf(by), this.handLive())) {
+      this.log(n.text);
+      if (n.loud) this.dealerSays(n.text);
+    }
     s.settings = result.settings;
     s.pendingSettings = result.deferred;
+    this.trackSeeAll();
     const now = this.clock.now();
     if (result.diff.length) s.settingsLog.push({ at: now, by, when: 'now', changes: result.diff });
     if (result.deferred) {
@@ -972,6 +1003,7 @@ export class TableRuntime {
     const before = s.settings;
     s.settings = applyAtNextHand(s.settings, s.pendingSettings).settings;
     s.pendingSettings = null;
+    this.trackSeeAll();
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
@@ -2274,6 +2306,20 @@ export class TableRuntime {
   private clearTimer(key: TimerKey) {
     if (this.timers[key] !== null) this.clock.clearTimeout(this.timers[key]);
     this.timers[key] = null;
+  }
+
+  /** Notes when spectators start or stop seeing every card; only hands dealt from then on are shown to them. */
+  private trackSeeAll() {
+    const s = this.state;
+    const on = spectatorsSeeCards(s.settings);
+    if (on && !s.seeAll) s.seeAll = { since: s.handNumber + 1, at: this.clock.now() };
+    else if (!on && s.seeAll) s.seeAll = null;
+  }
+
+  /** A chat line from the dealer, for things everyone at the table must see. */
+  private dealerSays(text: string) {
+    this.state.chat.push({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+    if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
   }
 
   private log(text: string) {

@@ -30,14 +30,17 @@ export interface SettingsUpdate {
  * the hand in progress: its cards, bets, clocks, who is dealt in, or what
  * anyone can see of it. Everything else waits for the next hand. Entries are
  * path prefixes; none of them may take part in a rule with a next-hand field.
- * Spectator card visibility and delay wait, so a hand is watched under the
- * rules it started with.
+ * Spectators seeing every card applies at once so that turning it off takes
+ * effect mid-hand; the table only lets it be turned on between hands, and
+ * only for hands dealt after that. The spectator delay waits, so a hand is
+ * watched under the delay it started with.
  */
 export const IMMEDIATE_FIELDS = [
   'table.name',
   'table.felt',
   'chat',
   'spectators.allowed',
+  'spectators.seeAllCards',
   'seating.requireApproval',
   'seating.allowRebuys',
   'seating.rebuyRequiresApproval',

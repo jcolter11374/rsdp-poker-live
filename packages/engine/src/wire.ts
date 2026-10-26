@@ -213,6 +213,12 @@ export interface TableView {
    */
   spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
   /**
+   * Set for everyone while spectators can see every hole card: how far behind
+   * they watch, when it was turned on (0 if from the start or not known),
+   * and how many people who aren't players or staff are watching now.
+   */
+  cardsWatched: { delaySeconds: number; at: number; watchers: number } | null;
+  /**
    * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
    * next hand's server seed (seated browsers answer with fair:seed), and the
    * one the hand in progress was dealt from.
@@ -289,7 +295,8 @@ export interface ClientToServer {
   'hand:share': (input: { handNumber: number; hideMine?: boolean }, ack: Ack<{ id: string }>) => void;
   /** Stop a link I made from working. */
   'hand:unshare': (input: { id: string }, ack: Ack) => void;
-  'seat:request': (input: { seat: number; name: string; stack: number }, ack: Ack) => void;
+  /** `consent`: the player agreed to spectators seeing their cards (required while they do). */
+  'seat:request': (input: { seat: number; name: string; stack: number; consent?: boolean }, ack: Ack) => void;
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;

@@ -78,10 +78,45 @@ when they deal at a home game.
   hand whose proof you downloaded can't be changed without the proof no longer
   matching, but nothing else is protected. If amounts matter, keep your own
   tally too.
+- **Show your cards to a spectator without the warnings.** A host can let
+  spectators see every hole card, and the site makes sure everyone is told
+  (see the next section). Those warnings are code too: a changed server could
+  send the cards to someone watching, or to any browser, without them.
 - **Nobody independent has checked this.** The code was written with an AI
   assistant (Claude), and the reviews mentioned below were also done by AI
   reviewers we ran ourselves. No outside auditor or security firm has looked
   at it.
+
+## What a table's host can do
+
+The host of a table (and any co-host they name) runs the game, but the site
+doesn't let them see your cards, and changes to what anyone can see are never
+silent.
+
+- **The host never sees hole cards.** Seated, they see their own cards like
+  everyone else. Not seated, they see the table live but with every hole card
+  face down.
+- **Every settings change is announced in the table log**, with its own line
+  for anything about what people can see or who can talk: the spectator delay,
+  spectator chat, rabbit hunting, showing hands at showdown and who sees the
+  rake.
+- **Host actions on players are logged too**: changing a stack, moving or
+  removing a player, muting someone in chat.
+
+**Spectators seeing every card is the one way a host can open hands up.** It
+is meant for coaching or streaming. While it's on, someone watching could pass
+your cards to a player at the table, so the site makes it hard to miss:
+
+- It can only be turned on between hands, and only hands dealt after that are
+  shown. A hand already played, mucked cards included, stays hidden.
+- Turning it on is posted in the table log and in chat, and every seated
+  player gets a warning they have to dismiss.
+- While it's on, the table has a red rail and a line saying how far behind
+  spectators watch and how many are watching. The invite link's preview says
+  so too, and nobody can sit down without ticking that they agree.
+- Turning it on suggests a two-minute delay, but the host can set it to none.
+  The warnings always say which.
+- Turning it off works at once, even in the middle of a hand.
 
 ## How a hand is dealt (rsdp-fair-v1)
 

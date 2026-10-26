@@ -57,8 +57,10 @@ export function tournamentPreview(s: TournamentState, now: number): Preview {
   return { title: `${s.settings.name} · ${SITE}`, description: `${games} tournament · ${status}.${invite}` };
 }
 
-export function tablePreview(name: string, gameIds: string[], stakes: string, betting?: BettingKind): Preview {
-  return { title: `${name} · ${SITE}`, description: `${gameNames(gameIds, betting)} · ${stakes}. Tap to take a seat. No sign-up.` };
+/** `watched`: spectators see every hole card, which anyone thinking of sitting down should know before they tap. */
+export function tablePreview(name: string, gameIds: string[], stakes: string, betting?: BettingKind, watched = false): Preview {
+  const warning = watched ? ' Spectators here see every hole card.' : '';
+  return { title: `${name} · ${SITE}`, description: `${gameNames(gameIds, betting)} · ${stakes}.${warning} Tap to take a seat. No sign-up.` };
 }
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
