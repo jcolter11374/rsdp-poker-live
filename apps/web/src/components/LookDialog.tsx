@@ -121,7 +121,7 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
               Bots explain their moves
             </label>
             <p className="hint" id="look-coach-hint">
-              Only in hands where everyone else is a practice bot: a Tip button on your turn, and each bot's reasons once the hand is over.
+              A Tip button on your turn, and each bot's reasons once the hand is over. Only in hands where everyone else is a practice bot, and never at a table where people have played each other.
             </p>
           </>
         )}

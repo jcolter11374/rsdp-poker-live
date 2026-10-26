@@ -41,10 +41,17 @@ first, details after.
 - **When hands are revealed** (decided 25 October 2026): when the host stops
   the game, or 12 hours after the hand, whichever comes first. The reveal shows
   the whole deck, including folded and mucked hands, so it waits until the
-  game is over.
+  game is over. Practice bots explain each move to the one person who played
+  that hand against only bots, once it is over. The explanations give rough
+  numbers, never cards, so a folded bot's cards still wait for the reveal.
 - **Your cards stay private during play.** The server sends each person only
   what they may see. Undealt cards, other players' hole cards and the secrets
   never leave the server during a hand.
+- **Coach tips are for practice only.** Tips never show when another person
+  is in the hand, or at a table where people have played each other, or in
+  tournaments, and the server checks this, not your browser. Nothing stops
+  someone using an odds calculator on another device at a table with people;
+  we just never offer one there.
 - **Some of what John could do now leaves public traces.** Since 26 October
   2026, GitHub builds and signs every release, checks every hour which build
   the live site runs, and keeps a copy of a tamper-evident record of every
@@ -67,10 +74,10 @@ when they deal at a home game.
   poker site has it.
 - **Run code that isn't the code on GitHub.** The code is public, but you can't
   confirm the live site runs exactly that code: John can put any version
-  live. A changed server could send cards to him or a friend, or let a
-  practice bot see them. Your browser's seed check is also code the site sends
-  you, so a changed site could switch it off or quietly send a seed the server
-  chose; then the server could pick the deck, and "Check this hand", or even
+  live. A changed server could send cards to him or a friend, let a practice
+  bot see them, or make a coach tip use them. Your browser's seed check is
+  also code the site sends you, so a changed site could switch it off or
+  quietly send a seed the server chose; then the server could pick the deck, and "Check this hand", or even
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
   still pass. Since 26 October 2026 a normal release can be checked: GitHub
   builds it from the public code and signs a record of which commit it came
@@ -387,11 +394,12 @@ Limits, stated plainly:
 | Button draw, seat shuffle, bomb-pot timing | Use the CSPRNG. | OK |
 | Tournament seat draw | A fast non-cryptographic generator (mulberry32) from a secret 32-bit CSPRNG seed that stays on the server. Seats only, never cards. | Acceptable; could move to the seeded scheme later. |
 | All-in equity | Computed in the browser from cards already visible; its seeded sampling only affects the displayed percentages. | OK |
+| Coach tips | Worked out on the server only for the one person dealt into a hand where everyone else is a practice bot, at a cash table where people have never played each other, never in tournaments, from a copy of the hand holding only what that person can see: no deck, no other hole cards, no muck, no seeds (`seenBy()` in apps/server/src/bots/strategy.ts). Sent only to them and never saved. Tests swap every card they can't see and check the tip doesn't change. | OK |
 | `Math.random` | Only in the sound effects. | OK |
-| What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. | OK |
+| What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. Practice bots' explanations stay on the server until the hand ends, then go only to the one person in that hand; they hold numbers, never cards, and sit outside the hand's fingerprint. | OK |
 | After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers. A restart throws away the unused next-hand secret and commits to a fresh one, so a deal lost in a crash is never dealt again. | OK |
 | Host setting "Spectators see every hole card" | With no delay, anyone with the table link sees all hole cards live and could relay them. The host is warned and seated players see a banner. | Use it with a spectator delay. |
-| Practice bots | They decide from their own cards and cards dealt face up only (`situation()` in apps/server/src/bots/strategy.ts), never other hole cards or the deck. Their own random choices don't touch the deck. | OK |
+| Practice bots | They decide from their own cards and cards dealt face up only (`situation()` in apps/server/src/bots/strategy.ts), never other hole cards or the deck. Their own random choices don't touch the deck. Their explanations are their own account of those numbers: nobody can check them. | OK |
 | Separate review of this scheme (a second AI code reviewer we ran ourselves, not an outside auditor) | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. A second review then found that a server could still drop or invent seeds, and that the checker compared the server's revealed record with nothing players saw live: both closed with the browser's own records above. |
 
 ## Statistical tests
