@@ -360,6 +360,26 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
     </div>
   );
+  // On a computer the same options sit under the action bar as small chips, so they don't take a whole row of words.
+  const seatChips = mySeat && cash && (straddleOn || mySeat.waiting) && (
+    <div className="seat-chips">
+      {straddleOn && (
+        <button
+          className="seat-chip"
+          aria-pressed={mySeat.straddle}
+          title="Straddle automatically when you're under the gun"
+          onClick={() => call('seat:prefs', { straddle: !mySeat.straddle })}
+        >
+          {mySeat.straddle && <span aria-hidden>✓ </span>}Straddle
+        </button>
+      )}
+      {mySeat.waiting && (
+        <button className="seat-chip" aria-pressed={mySeat.waitForBigBlind} title="Wait for the big blind before you're dealt in" onClick={() => call('seat:prefs', { waitForBigBlind: !mySeat.waitForBigBlind })}>
+          {mySeat.waitForBigBlind && <span aria-hidden>✓ </span>}Wait for the big blind
+        </button>
+      )}
+    </div>
+  );
   const hostPanel = (view.isHost || view.coHosts.some((c) => c.playerId === view.me.playerId)) && cash && (
     <HostPanel
       view={view}
@@ -574,7 +594,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             />
             <div className="dock-row">
               <HandExtras view={view} />
-              {!portrait && seatOptions}
+              {!portrait && seatChips}
             </div>
           </Dock>
         </section>
