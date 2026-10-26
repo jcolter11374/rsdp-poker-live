@@ -93,10 +93,11 @@ going over your own hands afterwards is welcome. So:
 - **While the game is running and you're in a seat, the hand-history
   downloads are switched off:** the tracker file (OHH), the hands as text or
   JSON, and the full log. They come back as soon as you leave your seat or
-  the host stops the game. The money ledger (CSV) is always available.
-- Someone watching who hasn't played at the table can't download them either
-  until the game stops, so a second phone or laptop can't fetch them for a
-  seated player. The host and co-hosts can while they're not seated.
+  the host stops the game (in a tournament: once you're out, or the event
+  ends). The money ledger (CSV) is always available.
+- Someone watching who hasn't played at the table doesn't get the download
+  buttons either until the game stops. The host and co-hosts do while
+  they're not seated.
 - **The table's own Stats tab stays on.** It shows everyone's VPIP and PFR
   to everyone at the table, so it works like a small HUD, but one every
   player has, so nobody gets an edge from it.
@@ -104,11 +105,15 @@ going over your own hands afterwards is welcome. So:
   gets ahead of the table: each finished hand is sent only once it's over, and
   only as you saw it.
 
-What this can't stop, stated plainly: the hands you see in the app are in your
-browser, so someone who can program could copy them out and build their own
-HUD, or read the screen. Anyone can also jot notes by hand. Turning the
-downloads off makes a live HUD much harder and against the spirit of the
-game, not impossible. If you think someone is doing it, tell the host.
+What this can't stop, stated plainly: switching off the downloads removes the
+buttons, not the hands. Every finished hand still reaches your browser (as you
+saw it) so replays, hand search and the Stats tab work, and someone who can
+program could write a script to collect them, from their own seat or a second
+device, and feed a HUD. Someone could also stand up, download and sit back
+down, read the screen, or jot notes by hand. So this keeps ordinary tracking
+software out of the game and makes a live HUD clearly against the rules, but
+it isn't a lock a determined programmer can't get around. If you think someone
+is doing it, tell the host.
 
 ## How a hand is dealt (rsdp-fair-v1)
 

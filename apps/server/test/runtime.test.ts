@@ -633,3 +633,21 @@ describe('hand-history downloads (no live HUDs)', () => {
     expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([false, false, false, false]);
   });
 });
+
+describe('hand-history downloads at tournament tables', () => {
+  it('stay closed to a player moved to another table until they are out or the event ends', () => {
+    const clock = new FakeClock();
+    let over = false;
+    const alive = new Set(['a', 'b']);
+    const hooks = { busy: () => false, over: () => over, stillPlaying: (p: string) => alive.has(p), gate: () => 'hold' as const, level: () => ({ gameId: 'nlhe', stakes: defaultSettings('tournament').stakes }), handStarted: () => {}, handEnded: () => {} };
+    const rt = TableRuntime.create({ id: 't2', hostId: 'host', settings: defaultSettings('tournament') }, { clock, rng: seeded(), tournament: hooks });
+    // Bob plays at another table now: no seat here, but still in the event.
+    expect(rt.recordsLocked('b')).toBe(true);
+    alive.delete('b');
+    rt.state.handNames = { b: 'Bob' };
+    expect(rt.recordsLocked('b')).toBe(false);
+    over = true;
+    alive.add('b');
+    expect(rt.recordsLocked('b')).toBe(false);
+  });
+});
