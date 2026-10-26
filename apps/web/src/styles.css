@@ -573,7 +573,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .look h3:first-child { margin-top: 0; }
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
 .swatch { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); border: 2px solid transparent; padding: 14px 6px; font-weight: 600; }
-.swatch.active, .back-pick.active { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(242, 184, 75, 0.35); }
+/* :hover too, so the gold border stays on a felt or back just tapped on a phone. */
+.swatch.active, .swatch.active:hover, .back-pick.active, .back-pick.active:hover { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(242, 184, 75, 0.35); }
 .look-sample { display: flex; gap: 6px; margin-top: 8px; }
 .look-backs { gap: 8px; }
 .back-pick { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 10px; background: transparent; border: 2px solid transparent; }
