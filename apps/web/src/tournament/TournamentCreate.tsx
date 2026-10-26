@@ -17,7 +17,7 @@ import {
 } from '@rsdp/tournament';
 import { LocalTournamentClient, tournamentClient } from './client';
 import { GAMES, localTime } from './format';
-import { getVariant } from '@rsdp/engine/variants';
+import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { useSession } from './hooks';
 import { call } from '../socket';
 import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
@@ -231,8 +231,13 @@ export function TournamentCreate({
   };
   // Without a start time the schedule's own messages say why, so the settings check leaves the start out.
   const checked: TournamentSettings = startKind === 'scheduled' && startAt === null ? { ...settings, start: { kind: 'manual' } } : settings;
+  // Stud deals 7 cards each and draw games need cards to draw from, so they seat fewer than 10.
+  const levelGames = structure.flatMap((r) => (r.kind === 'level' && r.gameId ? [r.gameId] : []));
+  const capping = [...new Set([...games, ...levelGames])].flatMap((id) => VARIANT_LIST.filter((v) => v.id === id)).sort((a, b) => a.maxPlayers - b.maxPlayers)[0];
+  const seatCap = capping ? Math.min(10, capping.maxPlayers) : 10;
+  const seatError = seatsPerTable > seatCap ? [`${capping!.name} deals to at most ${seatCap} players, so seats per table must be ${seatCap} or fewer`] : [];
   const errors = [
-    ...new Set([...scheduleErrors, ...(startKind === 'scheduled' && startAt === null && !scheduleErrors.length ? ['That start time has passed'] : []), ...validateSettings(checked)]),
+    ...new Set([...seatError, ...scheduleErrors, ...(startKind === 'scheduled' && startAt === null && !scheduleErrors.length ? ['That start time has passed'] : []), ...validateSettings(checked)]),
   ];
 
   const submit = async (e: React.FormEvent) => {
@@ -249,7 +254,16 @@ export function TournamentCreate({
     }
   };
 
-  const toggleGame = (id: string) => setGames(games.includes(id) ? games.filter((g) => g !== id) : [...games, id]);
+  const [seatNote, setSeatNote] = useState('');
+  const toggleGame = (id: string) => {
+    if (games.includes(id)) return setGames(games.filter((g) => g !== id));
+    setGames([...games, id]);
+    const spec = getVariant(id);
+    if (seatsPerTable > spec.maxPlayers) {
+      setSeats(spec.maxPlayers);
+      setSeatNote(`Seats per table lowered to ${spec.maxPlayers}: ${spec.name} can't deal to more.`);
+    }
+  };
   const expectedEntrants = startKind === 'sng' ? sng.playersNeeded : Math.min(maxEntrants, 30);
 
   if (!session) return <main className="tn-page"><p className="muted">Connecting…</p></main>;
@@ -285,6 +299,7 @@ export function TournamentCreate({
                   </div>
                 ))}
               </div>
+              {seatNote && <p className="muted" role="status">{seatNote}</p>}
             </fieldset>
             <div className="tn-grid3">
               <label>
@@ -293,7 +308,16 @@ export function TournamentCreate({
               </label>
               <label>
                 Seats per table
-                <input type="number" min={2} max={10} value={seatsPerTable} onChange={(e) => setSeats(int(e.target.value, 2))} />
+                <input
+                  type="number"
+                  min={2}
+                  max={seatCap}
+                  value={seatsPerTable}
+                  onChange={(e) => {
+                    setSeats(int(e.target.value, 2));
+                    setSeatNote('');
+                  }}
+                />
               </label>
               <label>
                 Max players
