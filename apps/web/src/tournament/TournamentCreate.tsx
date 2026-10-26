@@ -256,12 +256,14 @@ export function TournamentCreate({
 
   const [seatNote, setSeatNote] = useState('');
   const toggleGame = (id: string) => {
+    setSeatNote('');
     if (games.includes(id)) return setGames(games.filter((g) => g !== id));
     setGames([...games, id]);
     const spec = getVariant(id);
-    if (seatsPerTable > spec.maxPlayers) {
-      setSeats(spec.maxPlayers);
-      setSeatNote(`Seats per table lowered to ${spec.maxPlayers}: ${spec.name} can't deal to more.`);
+    const cap = Math.min(seatCap, spec.maxPlayers);
+    if (seatsPerTable > cap) {
+      setSeats(cap);
+      setSeatNote(`Seats per table lowered to ${cap}: ${(spec.maxPlayers === cap ? spec : capping!).name} can't deal to more.`);
     }
   };
   const expectedEntrants = startKind === 'sng' ? sng.playersNeeded : Math.min(maxEntrants, 30);
