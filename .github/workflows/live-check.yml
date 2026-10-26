@@ -1,10 +1,11 @@
 name: Live check
 
-# Read-only checks against the live site after the coach tips release. run from a side branch.
-# Never create tables, tournaments or players on the live site.
+# Read-only checks against the live site, run from a side branch after a release.
+# Never create tables, tournaments or players on the live site: the browser smoke
+# test (e2e/smoke.mjs) is for CI and local servers only.
 on:
   push:
-    branches: [claude/project-thread-9a25ti]
+    branches: [claude/project-thread-5fh1pm]
 
 permissions:
   contents: read
@@ -18,25 +19,12 @@ jobs:
       - name: Pages and API answer
         run: |
           site=https://rsdp-poker-live.fly.dev
-          curl -sf "$site/api/health" | tee /dev/stderr | grep -q memoryMb || { echo "new server not running"; exit 1; }
-          for path in / /rules/badugi /fairness /roadmap /whats-new /signin /signup /reset /profile /leaderboard /hands /about /changelog /transparency; do
+          curl -sf "$site/api/health"; echo
+          for path in / /rules/badugi /tn/new; do
             curl -sf "$site$path" | grep -q '<div id="root">' || { echo "$path did not serve the app"; exit 1; }
           done
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/admin/tournaments"); echo "admin $code"; [ "$code" = 404 ] || exit 1
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/suggestions/admin"); echo "suggestions admin $code"; [ "$code" = 401 ] || exit 1
-          # The public leaderboard answers (read only).
-          curl -sf "$site/api/leaderboard?period=all" | grep -q '"rows"' || { echo "leaderboard API failed"; exit 1; }
-          echo "leaderboard ok"
-          # Sign in with Google is switched on (both secrets reached Fly).
-          cfg=$(curl -sf "$site/api/auth/config"); echo "auth config $cfg"
-          echo "$cfg" | grep -q '"google":true' || { echo "Google sign-in is off"; exit 1; }
-          # The deployed app carries this release's What's new entry.
-          js=$(curl -sf "$site/" | grep -o 'assets/[^"]*\.js' | head -1)
-          curl -sf "$site/$js" > app.js
-          grep -q '2026-10-26-j' app.js || { echo "release notes not deployed"; exit 1; }
-          echo "release notes deployed"
-          # The app knows how to ask for a coach tip.
-          grep -q 'hand:tip' app.js || { echo 'coach tips missing'; exit 1; }
-          echo "coach tips deployed"
-          # A missing table gives no preview, and the page still serves (no write traffic).
-          curl -sf "$site/t/does-not-exist" | grep -q '<div id="root">' || exit 1
+          # The new tables answer, and the operator endpoint is closed to the internet.
+          for path in api/avatars/nobody api/shared/nothing api/admin/tournaments; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
+            echo "$path $code"; [ "$code" = 404 ] || exit 1
+          done
