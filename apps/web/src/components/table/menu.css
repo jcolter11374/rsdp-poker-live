@@ -57,4 +57,4 @@
 .seat-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .seat-chip { padding: 3px 11px; font-size: 0.8rem; font-weight: 500; border-radius: 999px; color: var(--muted); background: transparent; border: 1px solid var(--line); }
 .seat-chip:hover:not(:disabled) { color: var(--text); }
-.seat-chip[aria-pressed='true'] { color: #fff; background: rgba(46, 160, 92, 0.22); border-color: var(--go); }
+.seat-chip[aria-pressed='true'], .seat-chip[aria-pressed='true']:hover:not(:disabled) { color: #fff; background: rgba(46, 160, 92, 0.22); border-color: var(--go); }
