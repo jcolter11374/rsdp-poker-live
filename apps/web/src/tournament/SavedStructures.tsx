@@ -19,6 +19,7 @@ export function SavedStructures({ current, onLoad }: { current: TournamentSettin
 
   const save = () => {
     const label = cleanSetupName(name) || current.name;
+    if (!tournamentStructures.ready()) return say('Still loading your saved structures. Try again in a moment.', true);
     const errors = savedStructureErrors(structureToSave(current));
     if (errors.length) return say(`Fix this first: ${errors[0]}`, true);
     if (saved.some((s) => s.name === label) && !confirm(`Replace your saved structure “${label}”?`)) return;

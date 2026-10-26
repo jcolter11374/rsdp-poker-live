@@ -324,8 +324,11 @@ export interface ClientToServer {
   'setups:save': (input: { kind: SetupKind; name: string; json: string }, ack: Ack<{ name: string }>) => void;
   'setups:rename': (input: { kind: SetupKind; from: string; to: string }, ack: Ack<{ name: string }>) => void;
   'setups:delete': (input: { kind: SetupKind; name: string }, ack: Ack) => void;
-  /** Brings setups saved in this browser onto the account; a name already taken there gets a number. Bad ones are skipped. */
-  'setups:import': (input: { kind: SetupKind; setups: SavedSetup[] }, ack: Ack<{ added: number }>) => void;
+  /**
+   * Brings setups saved in this browser onto the account; a name already taken there gets a number. Bad ones,
+   * and any past the limit, are left out. `kept` names (as sent) the ones the account now holds.
+   */
+  'setups:import': (input: { kind: SetupKind; setups: SavedSetup[] }, ack: Ack<{ added: number; kept: string[] }>) => void;
   /** Approve a request; `seat` puts a seat request's player in another open seat. */
   'host:approve': (input: { requestId: string; seat?: number }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;

@@ -229,6 +229,7 @@ export function EventPanel({ state, me, send }: { state: TournamentState; me: st
         onClick={() => {
           const name = prompt('Save this structure as', state.settings.name);
           if (name === null) return;
+          if (!tournamentStructures.ready()) return setSaved('Still loading your saved structures. Try again in a moment.');
           if (tournamentStructures.list().some((s) => s.name === cleanSetupName(name)) && !confirm(`Replace your saved structure “${cleanSetupName(name)}”?`)) return;
           saveStructure(name, state.settings).then(
             (kept) => setSaved(`Saved as “${kept}”. Load it from New tournament.`),

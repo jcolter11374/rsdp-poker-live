@@ -14,6 +14,8 @@ export interface SetupList {
   /** Whether they are kept on an account (else in this browser). */
   useOnAccount(): boolean;
   list(): SavedSetup[];
+  /** False while a signed-in list is still coming from the server (so a name check can't be trusted yet). */
+  ready(): boolean;
   /** Saves under the name, replacing one of the same name; resolves with the name as kept. */
   save(name: string, json: string): Promise<string>;
   rename(from: string, to: string): Promise<string>;
@@ -22,6 +24,42 @@ export interface SetupList {
 
 const NONE: SavedSetup[] = [];
 
+/** Which kinds of setup this browser may still bring onto the account it signed in to. */
+const BRING_KEY = 'rsdp.bringSetups';
+
+/**
+ * Called at sign-in (true when it's the player's own device, the "bring over"
+ * box) and at sign-out (false). Only then does the next signed-in session move
+ * the browser's setups onto the account; on a friend's phone they stay theirs.
+ */
+export function bringSetupsOver(yes: boolean) {
+  try {
+    if (yes) localStorage.setItem(BRING_KEY, JSON.stringify(['table', 'tournament']));
+    else localStorage.removeItem(BRING_KEY);
+  } catch {
+    /* storage blocked: nothing to bring */
+  }
+}
+
+function mayBring(kind: SetupKind): boolean {
+  try {
+    const kinds = JSON.parse(localStorage.getItem(BRING_KEY) ?? '[]');
+    return Array.isArray(kinds) && kinds.includes(kind);
+  } catch {
+    return false;
+  }
+}
+
+function broughtOver(kind: SetupKind) {
+  try {
+    const kinds = (JSON.parse(localStorage.getItem(BRING_KEY) ?? '[]') as unknown[]).filter((k) => k !== kind);
+    if (kinds.length) localStorage.setItem(BRING_KEY, JSON.stringify(kinds));
+    else localStorage.removeItem(BRING_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
 export const cleanSetupName = (name: string) => name.replace(/\s+/g, ' ').trim();
 
 /**
@@ -29,15 +67,17 @@ export const cleanSetupName = (name: string) => name.replace(/\s+/g, ' ').trim()
  * inside its JSON) and throws for one that can't be saved.
  */
 export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: SavedSetup) => SavedSetup): SetupList {
+  let local: SavedSetup[] = [];
   const readLocal = (): SavedSetup[] => {
     try {
       const raw = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
       return Array.isArray(raw) ? raw.filter((p) => p && typeof p.name === 'string' && typeof p.json === 'string') : [];
     } catch {
-      return [];
+      // Storage blocked: the list kept for this page.
+      return local;
     }
   };
-  let local = readLocal();
+  local = readLocal();
   /** The account's list while signed in; null for a guest. */
   let remote: SavedSetup[] | null = null;
   let account = !!currentSession()?.account;
@@ -47,8 +87,9 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
   const list = () => (account ? (remote ?? NONE) : local);
   const sorted = (l: SavedSetup[]) => [...l].sort((a, b) => a.name.localeCompare(b.name));
 
-  const storeLocal = (next: SavedSetup[]) => {
-    local = sorted(next);
+  /** Changes the browser's list as stored now, so another tab's change isn't written over. */
+  const updateLocal = (change: (current: SavedSetup[]) => SavedSetup[]) => {
+    local = sorted(change(readLocal()));
     try {
       if (local.length) localStorage.setItem(storageKey, JSON.stringify(local));
       else localStorage.removeItem(storageKey);
@@ -75,25 +116,37 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
     }
     const run = ++syncing;
     try {
-      // What this browser saved as a guest moves onto the account, once.
-      const mine = readLocal();
+      // What this browser saved as a guest moves onto the account once, when it's the player's own device.
+      // Only what the account took leaves the browser; anything refused stays and shows again after sign-out.
+      const mine = mayBring(kind) ? readLocal() : [];
       if (mine.length) {
-        await call('setups:import', { kind, setups: mine });
-        storeLocal(readLocal().filter((p) => !mine.some((m) => m.name === p.name && m.json === p.json)));
+        const { kept } = await call<{ kept: string[] }>('setups:import', { kind, setups: mine });
+        updateLocal((cur) => cur.filter((p) => !(kept.includes(p.name) && mine.some((m) => m.name === p.name && m.json === p.json))));
       }
+      if (mayBring(kind)) broughtOver(kind);
+      const pushedBefore = pushes;
       const r = await call<{ setups: SavedSetup[] }>('setups:list', { kind });
-      if (run === syncing) remote = r.setups;
+      // A push from another tab that came in meanwhile is newer than this answer.
+      if (run === syncing && pushes === pushedBefore) remote = r.setups;
     } catch {
       /* offline or refused: try again on the next session */
     }
     changed();
   };
+  let pushes = 0;
   socket.on('setups', (m) => {
     if (m.kind !== kind || !account) return;
+    pushes++;
     remote = m.setups;
     changed();
   });
   onSession((s) => void sync(s));
+  // A guest tab sees what another tab saved.
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key !== storageKey) return;
+    local = readLocal();
+    changed();
+  });
   const first = currentSession();
   if (first) void sync(first);
 
@@ -106,10 +159,11 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
     use: () => useSyncExternalStore(subscribe, list),
     useOnAccount: () => useSyncExternalStore(subscribe, () => account),
     list,
+    ready: () => !account || remote !== null,
     async save(name, json) {
       const setup = tidy(name, json);
       if (account) return (await call<{ name: string }>('setups:save', { kind, ...setup })).name;
-      storeLocal([...local.filter((p) => p.name !== setup.name), setup]);
+      updateLocal((cur) => [...cur.filter((p) => p.name !== setup.name), setup]);
       return setup.name;
     },
     async rename(from, to) {
@@ -118,12 +172,12 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
       if (!setup) throw new Error('That one is gone');
       const next = tidy(to, setup.json);
       if (next.name !== from && local.some((p) => p.name === next.name)) throw new Error(`You already have one called “${next.name}”`);
-      storeLocal([...local.filter((p) => p.name !== from), next]);
+      updateLocal((cur) => [...cur.filter((p) => p.name !== from), next]);
       return next.name;
     },
     async remove(name) {
       if (account) await call('setups:delete', { kind, name });
-      else storeLocal(local.filter((p) => p.name !== name));
+      else updateLocal((cur) => cur.filter((p) => p.name !== name));
     },
   };
 }

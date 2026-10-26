@@ -1038,7 +1038,10 @@ export function createApp(deps: AppDeps = {}) {
           const to = cleanSetupName(input?.to);
           const setup = (await setups.list(me, kind)).find((x) => x.name === from);
           if (!setup) throw new ActionError('that setup is gone');
-          if (!(await setups.rename(me, kind, from, renamed(kind, setup, to)))) throw new ActionError(`you already have one called “${to}”`);
+          if (!(await setups.rename(me, kind, from, renamed(kind, setup, to)))) {
+            const gone = !(await setups.list(me, kind)).some((x) => x.name === from);
+            throw new ActionError(gone ? 'that setup is gone' : `you already have one called “${to}”`);
+          }
           await pushSetups(kind);
           return { name: to };
         },
@@ -1067,6 +1070,8 @@ export function createApp(deps: AppDeps = {}) {
           const existing = await setups.list(me, kind);
           const taken = new Set(existing.map((x) => x.name));
           let added = 0;
+          // The names (as sent) the account now holds, so the browser forgets only those.
+          const kept: string[] = [];
           for (const raw of list) {
             let setup: SavedSetup;
             try {
@@ -1074,19 +1079,25 @@ export function createApp(deps: AppDeps = {}) {
             } catch {
               continue;
             }
+            const sent = String((raw as SavedSetup).name);
             // The same setup saved twice (two tabs bringing it over) is kept once.
-            if (existing.some((x) => x.name === setup.name && x.json === setup.json)) continue;
+            if (existing.some((x) => x.name === setup.name && x.json === setup.json)) {
+              kept.push(sent);
+              continue;
+            }
             setup = { ...setup, name: freeName(setup.name, taken) };
             try {
               await setups.save(me, kind, setup);
             } catch {
+              // Full: the rest stay in the browser.
               break;
             }
             taken.add(setup.name);
+            kept.push(sent);
             added++;
           }
           if (added) await pushSetups(kind);
-          return { added };
+          return { added, kept };
         },
         log,
       ),

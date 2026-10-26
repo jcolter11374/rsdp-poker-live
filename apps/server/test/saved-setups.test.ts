@@ -93,6 +93,7 @@ describe('saved setups', () => {
 
     await phone.call('setups:save', { kind: 'tournament', name: 'Deep', json: structure('Deep') });
     await expect(phone.call('setups:rename', { kind: 'tournament', from: 'Deep', to: 'Friday turbo' })).rejects.toThrow(/already have one/);
+    await expect(phone.call('setups:rename', { kind: 'tournament', from: 'Nope', to: 'Other' })).rejects.toThrow(/gone/);
     expect(await phone.call('setups:rename', { kind: 'tournament', from: 'Deep', to: 'Sunday deep' })).toMatchObject({ name: 'Sunday deep' });
     await phone.call('setups:delete', { kind: 'tournament', name: 'Friday turbo' });
     expect((await laptop.call<{ setups: SavedSetup[] }>('setups:list', { kind: 'tournament' })).setups.map((s) => s.name)).toEqual(['Sunday deep']);
@@ -119,7 +120,7 @@ describe('saved setups', () => {
   it('brings a browser’s setups onto the account on sign-in, numbering a name already taken and skipping repeats and junk', async () => {
     const { phone } = await signedIn();
     await phone.call('setups:save', { kind: 'tournament', name: 'Turbo', json: structure('A') });
-    const r = await phone.call<{ added: number }>('setups:import', {
+    const r = await phone.call<{ added: number; kept: string[] }>('setups:import', {
       kind: 'tournament',
       setups: [
         { name: 'Turbo', json: structure('B') },
@@ -129,6 +130,8 @@ describe('saved setups', () => {
       ],
     });
     expect(r.added).toBe(2);
+    // The junk one is not kept, so the browser holds on to it.
+    expect(r.kept).toEqual(['Turbo', 'Turbo', 'Deep']);
     const { setups } = await phone.call<{ setups: SavedSetup[] }>('setups:list', { kind: 'tournament' });
     expect(setups.map((s) => [s.name, JSON.parse(s.json).name])).toEqual([
       ['Deep', 'Deep'],
@@ -142,6 +145,13 @@ describe('saved setups', () => {
     const many = Array.from({ length: SETUPS_PER_KIND }, (_, i) => ({ name: `S${i}`, json: structure() }));
     expect((await phone.call<{ added: number }>('setups:import', { kind: 'tournament', setups: many })).added).toBe(SETUPS_PER_KIND);
     await expect(phone.call('setups:save', { kind: 'tournament', name: 'One more', json: structure() })).rejects.toThrow(/up to/);
+    // Bringing more over when full keeps none of them, so the browser keeps them all.
+    const full = await phone.call<{ added: number; kept: string[] }>('setups:import', { kind: 'tournament', setups: [{ name: 'Extra', json: structure() }] });
+    expect(full).toMatchObject({ added: 0, kept: [] });
+    // Several tabs saving at once can't pass the limit.
+    await phone.call('setups:delete', { kind: 'tournament', name: 'S1' });
+    const race = await Promise.allSettled(['A', 'B', 'C'].map((n) => phone.call('setups:save', { kind: 'tournament', name: n, json: structure() })));
+    expect(race.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     // Replacing one is fine.
     await phone.call('setups:save', { kind: 'tournament', name: 'S0', json: structure('Again') });
   });

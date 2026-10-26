@@ -159,8 +159,9 @@ export function TournamentCreate({
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('standard', 600));
   const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
   // '' = not part of a season, 'new' = start one, otherwise an existing season's id.
-  const [seasonPick, setSeasonPick] = useState('');
-  const [seasonName, setSeasonName] = useState('');
+  // A "new season" choice carried over from a starter or saved structure comes back as one.
+  const [seasonPick, setSeasonPick] = useState(initial?.season?.id === '' ? 'new' : '');
+  const [seasonName, setSeasonName] = useState(initial?.season?.id === '' ? initial.season.name : '');
   const [mySeasons, setMySeasons] = useState<{ id: string; name: string; events: number }[]>([]);
   useEffect(() => {
     if (!session || tournamentClient() instanceof LocalTournamentClient) return;

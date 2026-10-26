@@ -105,9 +105,7 @@ export function dbSetups(db: Db): SetupStore {
       return (await listSavedSetups(db, owner, kind)).map((r) => ({ name: r.name, json: r.json }));
     },
     async save(owner, kind, setup) {
-      const existing = await listSavedSetups(db, owner, kind);
-      if (!existing.some((r) => r.name === setup.name) && existing.length >= SETUPS_PER_KIND) throw tooMany();
-      await putSavedSetup(db, { playerId: owner, kind, ...setup });
+      if (!(await putSavedSetup(db, { playerId: owner, kind, ...setup, limit: SETUPS_PER_KIND }))) throw tooMany();
     },
     async rename(owner, kind, from, to) {
       return renameSavedSetup(db, { playerId: owner, kind, from, to: to.name, json: to.json });

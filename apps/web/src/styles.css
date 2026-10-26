@@ -829,3 +829,8 @@ dl.shortcuts dd { margin: 0; }
 .setup-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup-row input { flex: 1; min-width: 0; }
 .setup-row > button { flex: 0 0 auto; }
+/* On a narrow phone the name takes its own line above the buttons. */
+@media (max-width: 420px) {
+  .setup-row { flex-wrap: wrap; }
+  .setup-row .who { flex-basis: 100%; }
+}
