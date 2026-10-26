@@ -33,7 +33,7 @@ import {
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import { gameTitle } from '@rsdp/engine/variants';
-import { BOT_LOOKS } from '@rsdp/engine/wire';
+import { BOT_LEVELS, BOT_LOOKS, type BotLevel } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -50,7 +50,7 @@ import {
 import { cleanName as cleanDisplayName } from '../names';
 import { handOver, hasPower, isStaff, powersOf, RoleError, withCoHost, withoutCoHost, type HostPower } from '@rsdp/engine/roles';
 import { maskProfanity } from './profanity';
-import { chooseMove, seededRand } from '../bots/strategy';
+import { chooseMove, readPlayers, seededRand } from '../bots/strategy';
 
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
@@ -699,16 +699,22 @@ export class TableRuntime {
 
   /**
    * The hand's fairness record: the committed server seed plus the client
-   * seeds of the players dealt in. Then a new server seed is committed for the
-   * hand after, so players have this whole hand to send theirs.
+   * seeds of the players dealt in. The commitment stays the next one until the
+   * hand has really started (fairDealt), so a deal that fails never spends one:
+   * browsers warn about a commitment replaced without a hand dealt from it.
    */
   private fairDeal(dealtIn: PlayerId[]): HandFairness {
     const f = this.fairState();
     const { serverSeed, commit } = f.next;
     const clientSeeds = dealtIn.filter((p) => f.clientSeeds[p]).map((playerId) => ({ playerId, seed: f.clientSeeds[playerId] }));
+    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds.map((c) => c.seed)) };
+  }
+
+  /** The hand is dealt: commit a new server seed for the hand after, so players have this whole hand to send theirs. */
+  private fairDealt() {
+    const f = this.fairState();
     f.next = this.newServerSeed();
     f.clientSeeds = {};
-    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds.map((c) => c.seed)) };
   }
 
   /** The host stopped the game: every hand so far may be checked. */
@@ -1231,9 +1237,11 @@ export class TableRuntime {
    * that off, and they wait for approval like anyone else when the table
    * approves seats. Cash tables only.
    */
-  addBot(by: PlayerId, input: { ownerName?: string; seat?: number; stack?: number } = {}) {
+  addBot(by: PlayerId, input: { ownerName?: string; seat?: number; stack?: number; level?: BotLevel } = {}) {
     if (this.isTournament) throw new ActionError("bots can't play in tournaments");
     if (this.isBot(by)) throw new ActionError("bots can't add bots");
+    const level = input.level ?? 'normal';
+    if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
     // Staff who manage players add bots freely; anyone with approve seats them straight away.
     const host = this.can(by, 'players');
     if (!host) {
@@ -1258,7 +1266,7 @@ export class TableRuntime {
     const playerId = `bot-${randomUUID().slice(0, 8)}`;
     this.checkBuyIn(playerId, stack);
     const { look, name } = this.botLook();
-    (this.state.bots ??= {})[playerId] = { ownerId: by, ownerName, buyIn: stack, look };
+    (this.state.bots ??= {})[playerId] = { ownerId: by, ownerName, buyIn: stack, look, level };
     const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
     if (!this.settings.seating.requireApproval || this.can(by, 'approve')) this.seatPlayer(request);
     else {
@@ -1287,6 +1295,20 @@ export class TableRuntime {
       seat.leaveAfterHand = true;
       this.leaveHand(botId);
     } else this.removeSeat(seat);
+    this.sync();
+  }
+
+  /** The bot's owner or the host changes how well it plays, from its next move on. */
+  setBotLevel(by: PlayerId, botId: PlayerId, level: BotLevel) {
+    const bot = this.botInfo(botId);
+    if (!bot) throw new ActionError('no such bot');
+    if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
+    if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError("only its owner or the host can change a bot's level");
+    if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
+    if ((bot.level ?? 'normal') === level) return;
+    bot.level = level;
+    const name = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name ?? 'The bot';
+    this.log(`${this.nameOf(by)} set ${name} to ${level[0].toUpperCase()}${level.slice(1)}`);
     this.sync();
   }
 
@@ -1392,7 +1414,10 @@ export class TableRuntime {
     const s = this.state;
     const hand = s.hand!;
     try {
-      const move = chooseMove(hand, seatNo, seededRand(this.rng(0x7fffffff)));
+      const level = this.botInfo(s.seats[seatNo]!.playerId)?.level ?? 'normal';
+      // Hard bots learn how each player plays from the hands the table keeps.
+      const players = level === 'hard' ? readPlayers(s.history.map((r) => r.hand)) : undefined;
+      const move = chooseMove(hand, seatNo, seededRand(this.rng(0x7fffffff)), { level, players });
       if (move.kind === 'draw') engine.draw(hand, seatNo, move.discard);
       else engine.act(hand, seatNo, move.action);
     } catch (e) {
@@ -1966,6 +1991,7 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    this.fairDealt();
     s.handNames ??= {};
     for (const x of hand.seats) {
       const seat = s.seats[x.seat];

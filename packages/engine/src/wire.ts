@@ -62,8 +62,8 @@ export interface SeatView {
   avatar: string | null;
   /** An emoji the player shows by their seat, or null. */
   mood: string | null;
-  /** A practice bot: who added it, and its look (an index into BOT_LOOKS). Absent for people. */
-  bot?: { ownerId: PlayerId; ownerName: string; look: number };
+  /** A practice bot: who added it, its look (an index into BOT_LOOKS) and how well it plays (not kept for replays). Absent for people. */
+  bot?: { ownerId: PlayerId; ownerName: string; look: number; level?: BotLevel };
 }
 
 export interface HandView {
@@ -111,8 +111,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
-  /** A practice bot asking for a seat, and who added it (its owner sees the request too). */
-  bot?: { ownerId: PlayerId; ownerName: string };
+  /** A practice bot asking for a seat, who added it (its owner sees the request too) and how well it plays. */
+  bot?: { ownerId: PlayerId; ownerName: string; level: BotLevel };
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -276,8 +276,8 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
-  /** A practice table: seat me with this name and deal straight away against this many bots (1-9). */
-  practice?: { name: string; bots: number };
+  /** A practice table: seat me with this name and deal straight away against this many bots (1-9), at this level (normal if missing). */
+  practice?: { name: string; bots: number; level?: BotLevel };
 }
 
 export interface ClientToServer {
@@ -362,8 +362,10 @@ export interface ClientToServer {
   'host:removeCoHost': (input: { playerId: string }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
-  /** Add a practice bot of mine (it gets its own short name and robot), in this seat or the first free one. */
-  'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
+  /** Add a practice bot of mine (it gets its own short name and robot), in this seat or the first free one, at this level (normal if missing). */
+  'bot:add': (input: { seat?: number; level?: BotLevel }, ack: Ack<{ playerId: string }>) => void;
+  /** Change how well a bot of mine plays (the host can change any); it takes effect on its next move. */
+  'bot:level': (input: { playerId: string; level: BotLevel }, ack: Ack) => void;
   /** Take away a bot I added (the host can take away any). */
   'bot:remove': (input: { playerId: string }, ack: Ack) => void;
 }
@@ -399,6 +401,14 @@ export interface SavedSetup {
 /** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */
 export const GESTURES = ['heart', 'clap', 'cheers', 'fire', 'laugh', 'cry', 'money', 'fish', 'shark', 'clown', 'tomato', 'rose'] as const;
 export type GestureKind = (typeof GESTURES)[number];
+
+/**
+ * How well a practice bot plays. Easy calls a lot, bets only good hands and
+ * keeps its bets small. Normal plays the odds. Hard also reads what bets
+ * mean, learns how each player plays, uses position and bluffs.
+ */
+export const BOT_LEVELS = ['easy', 'normal', 'hard'] as const;
+export type BotLevel = (typeof BOT_LEVELS)[number];
 
 /**
  * Practice bots' names and pictures. Each bot at a table takes the first one no

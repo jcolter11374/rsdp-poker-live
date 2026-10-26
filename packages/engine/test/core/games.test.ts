@@ -122,6 +122,26 @@ describe('draw games', () => {
     expect(s.phase).toBe('complete');
   });
 
+  it('a stand-pat made when the clock runs out is marked automatic; one a player chooses is not', () => {
+    const s = start({ game: 'td27', stacks: [100, 100, 100] });
+    for (let i = 0; i < 10 && s.phase === 'betting'; i++) {
+      const legal = legalActions(s, s.toAct!)!;
+      act(s, s.toAct!, legal.canCheck ? { type: 'check' } : { type: 'call' });
+    }
+    expect(s.phase).toBe('drawing');
+    const first = s.toAct!;
+    engine.timeout(s, first);
+    const second = s.toAct!;
+    engine.draw(s, second, []);
+    const [timedOut, chosen] = eventsOf(s, 'draw');
+    expect(timedOut).toMatchObject({ seat: first, discarded: 0, auto: true });
+    expect(chosen).toMatchObject({ seat: second, discarded: 0 });
+    expect(chosen).not.toHaveProperty('auto');
+    // Everyone at the table sees which was which.
+    const seen = engine.visibleEvents(s, { seat: second, seeAll: false }).find((e) => e.t === 'draw' && e.seat === first);
+    expect(seen).toMatchObject({ auto: true });
+  });
+
   it('an all-in player still draws; no betting once nobody can bet', () => {
     const s = start({ game: 'td27', stacks: [2, 100], stakes: { smallBet: 2, bigBet: 4 } });
     // Seat 0 is all in from the small blind... it has 2: posts 1, calls 1 more all in.

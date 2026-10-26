@@ -115,13 +115,18 @@ describe('tournament tables', () => {
     const { rt, director } = tournamentTable(9, { gameId: 'razz' });
     expect(rt.state.hand).toBeNull();
     expect(rt.state.started).toBe(true);
+    const offered = rt.nextCommit();
     rt.poke();
     rt.poke();
+    // A deal that fails never spends the commitment browsers were shown (they warn about one replaced without a hand).
+    expect(rt.nextCommit()).toBe(offered);
     expect(rt.state.log.filter((l) => l.text.startsWith("Couldn't deal")).map((l) => l.text)).toEqual(["Couldn't deal: Razz deals at most 8 players"]);
     director.gameId = 'nlhe';
     rt.poke();
     expect(rt.state.handNumber).toBe(1);
     expect(rt.state.hand!.input.game.id).toBe('nlhe');
+    expect(rt.state.hand!.input.fair!.commit).toBe(offered);
+    expect(rt.nextCommit()).not.toBe(offered);
   });
 
   it('an unknown game from the level never throws out of the next-hand timer; the table holds until it can deal', () => {

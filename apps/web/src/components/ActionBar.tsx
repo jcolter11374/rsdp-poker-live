@@ -59,6 +59,35 @@ export function ActionBar({
   useEffect(() => {
     onPreAction?.(!!pre);
   }, [!!pre]);
+
+  // Before your turn: the pre-moves on offer, or null when there is nothing to pre-click.
+  const runningOut = !!hand?.events.some((e) => e.t === 'run-it');
+  const waiting =
+    !legal && !!hand && hand.phase === 'betting' && !runningOut && !view.canVoteRunItTwice && !view.canDraw && !!me && me.inHand && !me.folded && !me.allIn;
+  const waitToCall = waiting ? Math.min(hand.currentBet - me.bet, me.stack) : 0;
+  const preOpts: { label: string; key: string; value: PreAction }[] | null = !waiting
+    ? null
+    : waitToCall === 0
+      ? [
+          { label: 'Check / Fold', key: 'F', value: { kind: 'checkFold' } },
+          { label: 'Check', key: 'K', value: { kind: 'check' } },
+          { label: 'Call any', key: 'A', value: { kind: 'callAny' } },
+        ]
+      : [
+          { label: 'Fold', key: 'F', value: { kind: 'fold' } },
+          { label: `Call ${fmt(waitToCall)}`, key: 'C', value: { kind: 'call', amount: waitToCall } },
+          { label: 'Call any', key: 'A', value: { kind: 'callAny' } },
+        ];
+  const isPre = (v: PreAction) => !!pre && JSON.stringify(pre) === JSON.stringify(v);
+  const togglePre = (v: PreAction) => settled() && setPre(isPre(v) ? null : v);
+  // A bet before your turn changes what a pre-move means, as on PokerNow: check/fold becomes fold, while a
+  // check, or a call of an amount someone has since raised, is cleared so you decide again.
+  useEffect(() => {
+    if (!pre || !waiting) return;
+    if (waitToCall > 0 && pre.kind === 'checkFold') setPre({ kind: 'fold' });
+    else if (waitToCall > 0 && pre.kind === 'check') setPre(null);
+    else if (pre.kind === 'call' && pre.amount !== waitToCall) setPre(null);
+  }, [waitToCall, waiting]);
   const ritDeadline = view.canVoteRunItTwice ? hand?.runItTwice.deadline ?? null : null;
   const now = useNow(ritDeadline !== null, 500) + skew;
 
@@ -122,11 +151,17 @@ export function ActionBar({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   keys.current = (e) => {
-    if (!legal || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if ((!legal && !preOpts) || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]');
     // Keys never act behind an open dialog or sheet.
     if (typing || document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) return;
     const k = e.key.toLowerCase();
+    // Before your turn the same keys tick (or untick) a pre-move.
+    if (!legal) {
+      const o = preOpts?.find((o) => o.key.toLowerCase() === k);
+      if (o) togglePre(o.value);
+      return;
+    }
     if (k === 'f' && legal.canFold) fold();
     else if (k === 'k' && legal.canCheck) send({ type: 'check' });
     else if (k === 'c' && !legal.canCheck && !legal.canBringIn) send({ type: 'call' });
@@ -239,7 +274,6 @@ export function ActionBar({
   }
 
   // Once the board is being run out (everyone all in) there is nothing left to bet.
-  const runningOut = hand.events.some((e) => e.t === 'run-it');
   if (!me || !me.inHand || me.folded || me.allIn || hand.phase !== 'betting' || runningOut) {
     const waiting = hand.phase === 'drawing' && me?.inHand && !me.folded ? <div className="muted">Waiting for the draw…</div> : null;
     return (
@@ -251,28 +285,23 @@ export function ActionBar({
   }
 
   if (!legal) {
-    const toCall = Math.min(hand.currentBet - me.bet, me.stack);
-    const opts: { label: string; value: PreAction }[] =
-      toCall === 0
-        ? [
-            { label: 'Check / Fold', value: { kind: 'checkFold' } },
-            { label: 'Check', value: { kind: 'check' } },
-            { label: 'Call any', value: { kind: 'callAny' } },
-          ]
-        : [
-            { label: 'Fold', value: { kind: 'fold' } },
-            { label: `Call ${fmt(toCall)}`, value: { kind: 'call', amount: toCall } },
-            { label: 'Call any', value: { kind: 'callAny' } },
-          ];
+    if (!preOpts) return <div className="action-bar idle">{hint}</div>;
     return (
-      <div className="action-bar pre">
+      <div className="action-bar pre" data-street={streetKey}>
         {hint}
         <div className="buttons">
-          {opts.map((o) => {
-            const on = pre && JSON.stringify(pre) === JSON.stringify(o.value);
+          {preOpts.map((o) => {
+            const on = isPre(o.value);
             return (
-              <button key={o.label} className={on ? 'queued' : ''} onClick={() => settled() && setPre(on ? null : o.value)}>
+              <button
+                key={o.label}
+                className={on ? 'queued' : ''}
+                aria-pressed={on}
+                title={`${on ? 'Click again to cancel' : 'Do this as soon as it is your turn'}. Shortcut: ${o.key}`}
+                onClick={() => togglePre(o.value)}
+              >
                 <span className="box">{on ? '✓' : ''}</span> {o.label}
+                <Key k={o.key} />
               </button>
             );
           })}
@@ -292,7 +321,7 @@ export function ActionBar({
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
   return (
-    <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
+    <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
       {head}
       {errorLine}
       {sized && (

@@ -82,7 +82,9 @@
 .home-cash { scroll-margin-top: 80px; }
 .home-practice .row { flex-wrap: wrap; }
 .home-practice .row > button { flex: 1 1 160px; padding-block: 9px; }
-.home-practice .muted { margin: 0; }
+/* The pickers keep room for their value; on a phone the button goes under them. */
+.home-practice .row > label { flex: 1 0 110px; }
+.home-practice .muted, .home-practice .hint { margin: 0; }
 .home-page .tagline { text-align: center; }
 @media (max-width: 860px) {
   /* One column: tournaments first (they draw the biggest crowd), then the cash form, then practice. */
