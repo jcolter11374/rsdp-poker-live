@@ -32,5 +32,11 @@ jobs:
           echo "$cfg" | grep -q '"google":true' || { echo "Google sign-in is off"; exit 1; }
           # The deployed app carries this release's What's new entry.
           js=$(curl -sf "$site/" | grep -o 'assets/[^"]*\.js' | head -1)
-          curl -sf "$site/$js" | grep -q '2026-10-26-d' || { echo "release notes not deployed"; exit 1; }
+          curl -sf "$site/$js" > app.js
+          grep -q '2026-10-26-e' app.js || { echo "release notes not deployed"; exit 1; }
           echo "release notes deployed"
+          # /fairness carries the new host-powers section.
+          grep -q "What a table's host can do" app.js || { echo "fairness host section missing"; exit 1; }
+          echo "fairness host section deployed"
+          # A missing table gives no preview, and the page still serves (no write traffic).
+          curl -sf "$site/t/does-not-exist" | grep -q '<div id="root">' || exit 1
