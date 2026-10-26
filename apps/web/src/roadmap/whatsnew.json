@@ -1,15 +1,23 @@
 {
   "releases": [
     {
-      "id": "2026-10-25-d",
-      "date": "2026-10-25",
-      "title": "Optional accounts",
+      "id": "2026-10-26-a",
+      "date": "2026-10-26",
+      "title": "A slicker table, co-hosts and optional accounts",
       "items": [
+        { "title": "A slicker table", "detail": "Bigger cards tucked into each player's nameplate, a clean middle with the pot above the board, and bets that sit just outside each seat. The table fills your window, so Stud fits on a laptop screen without scrolling." },
+        { "title": "Fuller sounds", "detail": "New, richer sounds for cards, chips and checks, and a softer marimba to tell you it's your turn." },
+        { "title": "Real chip colours", "detail": "Chip stacks use casino colours that scale with the blinds, so you can read a bet at a glance." },
+        { "title": "Play from the keyboard", "detail": "F folds, K checks and C calls, and R gets a raise ready. Each button shows its key, and \"?\" lists every shortcut." },
+        { "title": "Chips or big blinds", "detail": "Flip the Chips | BB switch at the top of the table (or press B) to see every stack and bet in big blinds." },
+        { "title": "Bots with names", "detail": "Each practice bot gets its own short name and robot picture, like Ace, Lucky or Ducky." },
+        { "title": "Co-hosts for cash tables", "detail": "Open the People list (the 👁 button, or ☰ then People on a phone) and make a friend a co-host. They can approve seats and run the game while you play." },
         { "title": "Sign in on any device", "detail": "Create an account with a username and password, then sign in on your phone, laptop or tablet to play as yourself with the same name, picture and notes. Guests can still play without signing up." },
         { "title": "Your history comes along", "detail": "When you create an account, everything you've played on that device stays yours. Sign in on another device and what you did there as a guest moves into your account too." },
         { "title": "Your profile", "detail": "A new profile page shows your cash games with your result at each table, and your tournament finishes. Change your name, picture or password there, sign out, or delete your account." },
         { "title": "Sign in with Google", "detail": "Skip the password: continue with your Google account, or link it to the account you already have from your profile." },
-        { "title": "Forgot your password?", "detail": "There's no email, so ask the site admin for a one-time reset code and enter it on the Forgot password page." }
+        { "title": "Forgot your password?", "detail": "There's no email, so ask the site admin for a one-time reset code and enter it on the Forgot password page." },
+        { "title": "Small fixes", "detail": "Your mood emoji stays with you when a tournament moves you to a new table, and a hand shown after it ends now appears in the replayer." }
       ]
     },
     {
