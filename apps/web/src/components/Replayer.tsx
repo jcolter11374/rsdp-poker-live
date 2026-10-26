@@ -112,7 +112,10 @@ function ReplayerView({
         else if (e.key === 'ArrowLeft') setStep((s) => Math.max(0, s - 1));
         else setStep(e.key === 'Home' ? 0 : last);
       } else if (e.key === ' ') setPlaying((p) => !p);
-      else if (e.key.toLowerCase() === 'w' && reasons && !e.ctrlKey && !e.metaKey && !e.altKey) setShowWhy((w) => !w);
+      else if (e.key.toLowerCase() === 'w' && reasons && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Held down, it would flick on and off.
+        if (!e.repeat) setShowWhy((w) => !w);
+      }
       else return;
       // The replayer sits on top: keep these keys from the slider, the sheet or the table underneath.
       e.preventDefault();
@@ -142,7 +145,7 @@ function ReplayerView({
           </div>
           <span className="replayer-head-buttons">
             {reasons && (
-              <button onClick={() => setShowWhy(!showWhy)} aria-pressed={showWhy} aria-keyshortcuts="W" title={`Why each bot played as it did (W). ${NOTES_FOOTNOTE}`}>
+              <button onClick={() => setShowWhy(!showWhy)} aria-pressed={showWhy} aria-keyshortcuts="W" title="Why each bot played as it did (W)">
                 Why
               </button>
             )}
@@ -164,9 +167,12 @@ function ReplayerView({
         {/* Room kept for the reasons while they show (see .replayer-why), so the table doesn't jump from step to step. */}
         {whyNow && (
           <div className="replayer-why">
-            {whyLines.map((line, i) => (
-              <p key={i}>{line}</p>
-            ))}
+            <div className="replayer-why-lines">
+              {whyLines.map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
+            <p className="replayer-footnote">{NOTES_FOOTNOTE}</p>
           </div>
         )}
         <input
