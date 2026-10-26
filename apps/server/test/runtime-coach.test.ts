@@ -294,6 +294,44 @@ describe('a tip changes nothing about the hand', () => {
     expect(asked.hands).toEqual(quiet.hands);
     expect(asked.commit).toBe(quiet.commit);
   });
+
+  it("plays the bots' moves the same when writing down their reasons fails", () => {
+    const run = (broken: boolean, gameId: string) => {
+      const { rt, clock, errors } = practice((s) => (s.game.gameId = gameId), 1);
+      rt.start('host');
+      // A reason that can't be kept (a hand-edited snapshot, a bug in the words) throws as it is pushed.
+      const breakNotes = () => {
+        if (broken && rt.state.coach && !('broken' in rt.state.coach.notes))
+          rt.state.coach.notes = Object.assign([], {
+            broken: true,
+            push: () => {
+              throw new Error('no room for a reason');
+            },
+          });
+      };
+      for (let i = 0; i < 20_000 && rt.state.history.length < 8; i++) {
+        breakNotes();
+        const hand = rt.state.hand;
+        const seat = hand && hand.phase !== 'complete' && hand.toAct !== null && rt.state.turn ? rt.state.seats[hand.toAct] : null;
+        if (seat?.playerId === 'host') playOn(rt);
+        else clock.advance(250);
+      }
+      const hands = JSON.stringify(
+        rt.state.history.map((h) => h.hand.events),
+        (_key, value) => (typeof value === 'string' && value.startsWith('bot-') ? 'bot' : value),
+      );
+      rt.dispose();
+      return { hands, errors: errors.map((e) => String((e as unknown[])[0])) };
+    };
+    for (const gameId of ['nlhe', 'badugi']) {
+      const fine = run(false, gameId);
+      const broken = run(true, gameId);
+      expect(fine.errors).toEqual([]);
+      expect(broken.errors.length).toBeGreaterThan(0);
+      expect(broken.errors.every((e) => /reason failed/.test(e))).toBe(true);
+      expect(broken.hands).toEqual(fine.hands);
+    }
+  });
 });
 
 describe('why the bots played that way', () => {

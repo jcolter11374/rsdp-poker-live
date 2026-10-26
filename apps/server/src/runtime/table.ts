@@ -50,7 +50,7 @@ import {
 import { cleanName as cleanDisplayName } from '../names';
 import { handOver, hasPower, isStaff, powersOf, RoleError, withCoHost, withoutCoHost, type HostPower } from '@rsdp/engine/roles';
 import { maskProfanity } from './profanity';
-import { explainMove, readPlayers, seededRand, seenBy } from '../bots/strategy';
+import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../bots/strategy';
 import { coachTip as buildCoachTip } from '../bots/coach';
 import { botNote, plainNote } from '../bots/reasons';
 
@@ -1467,20 +1467,22 @@ export class TableRuntime {
     const level = this.botInfo(s.seats[seatNo]?.playerId ?? '')?.level ?? 'normal';
     // The event the note explains, taken before the move so it points at the move itself.
     const seq = hand.events.length;
+    let why: MoveWhy | null = null;
     try {
       // Hard bots learn how each player plays from the hands the table keeps.
       const players = level === 'hard' ? readPlayers(s.history.map((r) => r.hand)) : undefined;
-      const { move, why } = explainMove(hand, seatNo, seededRand(this.rng(0x7fffffff)), { level, players });
-      if (move.kind === 'draw') engine.draw(hand, seatNo, move.discard);
-      else engine.act(hand, seatNo, move.action);
-      // Only once the move is in: a reason for a move that never happened would point at the wrong event.
-      this.addNote(hand, (person) => botNote(seq, seatNo, level, why, hand, person));
+      const chosen = explainMove(hand, seatNo, seededRand(this.rng(0x7fffffff)), { level, players });
+      if (chosen.move.kind === 'draw') engine.draw(hand, seatNo, chosen.move.discard);
+      else engine.act(hand, seatNo, chosen.move.action);
+      why = chosen.why;
     } catch (e) {
       // A bot must never hold up the table: check or fold instead.
       this.logError(`table ${s.id}: bot in seat ${seatNo + 1} failed to act`, e);
       engine.timeout(hand, seatNo);
-      this.addNote(hand, () => plainNote(seq, seatNo, level, 'fallback'));
     }
+    // Only once the move is in, and outside the try: a fault in a reason loses that note, never changes or repeats the move.
+    const made = why;
+    this.addNote(hand, made ? (person) => botNote(seq, seatNo, level, made, hand, person) : () => plainNote(seq, seatNo, level, 'fallback'));
     s.turn = null;
     this.afterEngine(false);
   }
@@ -1488,7 +1490,13 @@ export class TableRuntime {
   /** Keeps why a bot moved, but only in a hand one person is playing against nothing but bots, and only for them. */
   private addNote(hand: HandState, make: (person: PlayerId) => BotNote) {
     const coach = this.state.coach;
-    if (coach?.handNumber === hand.input.handNumber) coach.notes.push(make(coach.person));
+    if (coach?.handNumber !== hand.input.handNumber) return;
+    // A reason is only words: a fault in one is logged and the note is lost, and play goes on as it would have.
+    try {
+      coach.notes.push(make(coach.person));
+    } catch (e) {
+      this.logError(`table ${this.state.id}: a bot's reason failed`, e);
+    }
   }
 
   // ---------------------------------------------------------------- tournament seating
