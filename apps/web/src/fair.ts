@@ -10,6 +10,7 @@ const SEEDS = 'rsdp.fairSeeds';
 const SENT = 'rsdp.fairSent';
 const LIVE = 'rsdp.fairLive';
 const NEXT = 'rsdp.fairNextSeen';
+const SWAPPED = 'rsdp.fairSwapped';
 const KEEP = 300;
 /** A seed sent this long before the deal had plenty of time to arrive; leaving it out is not an accident. */
 const IN_TIME_MS = 1500;
@@ -126,12 +127,48 @@ export function contributeSeed(view: TableView) {
 }
 
 /**
+ * Watches one table's published commitments while this browser sits there. An
+ * honest server only replaces the next hand's commitment by dealing from it: the
+ * same view then shows that hand. Replacing it without dealing would let a
+ * server look at the deck the seeds made and try again, so it is noted against
+ * the new commitment and warned about when a hand is dealt from it. A server
+ * restart also starts a fresh commitment, but it drops every connection, so the
+ * watch starts over after a reconnect, and with each new watcher (a page left
+ * and opened again, when an idle table may have been put away and reloaded).
+ */
+export function watchCommitments(socketId: () => string | undefined = () => socket.id) {
+  let last: { table: string; commit: string; socket: string | undefined } | null = null;
+  return (view: TableView) => {
+    const commit = view.fair?.nextCommit;
+    // Seated players get every view in order; a spectator's may be delayed and skip some.
+    if (!commit || view.me.seat === null) {
+      last = null;
+      return;
+    }
+    const now = { table: view.id, commit, socket: socketId() };
+    if (last && last.table === now.table && last.socket === now.socket && now.socket && last.commit !== commit && view.fair.handCommit !== last.commit) {
+      save(SWAPPED, commit, last.commit);
+    }
+    last = now;
+  };
+}
+
+/** The commitment the table showed for this hand before it swapped in this one without dealing, if this browser saw that. */
+export function swappedFrom(commit: string): string | null {
+  return load(SWAPPED)[commit] ?? null;
+}
+
+/**
  * What's wrong with the seed listed under my name for a hand, if anything: a
  * seed this browser sent in good time was left out, or one it never sent was
  * listed (either would let a server steer the deck). Null when all is well.
  * `dealtAt` is when the hand was dealt, by this browser's clock if known.
  */
 export function seedProblem(commit: string, listed: { playerId: string; seed: string }[], myId: string, dealtIn: boolean, dealtAt: number | null): string | null {
+  const swapped = swappedFrom(commit);
+  if (swapped) {
+    return `the table showed a different commitment for this hand (${swapped.slice(0, 12)}…) and replaced it with this one (${commit.slice(0, 12)}…) without dealing from it. A server that does that can look at the deck and try again`;
+  }
   const accepted = mySeedFor(commit);
   const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;

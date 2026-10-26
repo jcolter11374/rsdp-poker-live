@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: {} }));
-const { seedProblem } = await import('./fair');
+const { seedProblem, watchCommitments } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -58,5 +58,60 @@ describe('the seed under my name', () => {
     sent({ seed: 'aa', at: 0, rejected: { after: 50 } });
     expect(seedProblem(C, listed(), 'me', true, 1_000)).toMatch(/too soon/);
     expect(seedProblem(C, listed('aa'), 'me', true, 1_000)).toMatch(/but used it/);
+  });
+});
+
+describe('a commitment swapped before the deal', () => {
+  const view = (next: string, hand: string | null, o: { table?: string; seat?: number | null } = {}) =>
+    ({ id: o.table ?? 't1', me: { seat: o.seat === undefined ? 2 : o.seat }, fair: { nextCommit: next, handCommit: hand } }) as unknown as Parameters<ReturnType<typeof watchCommitments>>[0];
+  let sock: string | undefined = 's1';
+  beforeEach(() => {
+    sock = 's1';
+  });
+
+  it('is quiet when every commitment is dealt from', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', null));
+    watch(view('A', null));
+    watch(view('B', 'A'));
+    watch(view('B', null));
+    watch(view('C', 'B'));
+    for (const c of ['A', 'B', 'C']) expect(seedProblem(c, listed(), 'me', false, 10_000)).toBeNull();
+  });
+
+  it('warns about the hand dealt from a commitment that replaced one never dealt', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', null));
+    watch(view('A2', null));
+    watch(view('B', 'A2'));
+    expect(seedProblem('A2', listed('x'), 'me', true, 10_000)).toMatch(/replaced it .* without dealing/);
+    // Even when I sat this hand out: everyone at the table is owed a fair deck.
+    expect(seedProblem('A2', listed(), 'me', false, 10_000)).toMatch(/without dealing/);
+    expect(seedProblem('B', listed(), 'me', false, 10_000)).toBeNull();
+    // Swapped while a hand was on (the next one is published a hand ahead).
+    watch(view('B2', 'A2'));
+    expect(seedProblem('B2', listed('x'), 'me', true, 10_000)).toMatch(/without dealing/);
+  });
+
+  it('starts over after a reconnect, a new page, a stand-up or another table', () => {
+    let watch = watchCommitments(() => sock);
+    watch(view('A', null));
+    sock = 's2'; // the server restarted: a fresh commitment is honest
+    watch(view('A2', null));
+    watch = watchCommitments(() => sock); // page left and opened again
+    watch(view('A3', null));
+    watch(view('A4', null, { seat: null }));
+    watch(view('A5', null));
+    watch(view('X', null, { table: 't2' }));
+    watch(view('A6', null, { table: 't1' }));
+    sock = undefined; // offline: nothing to compare
+    watch(view('A7', null));
+    watch(view('A8', null));
+    for (const c of ['A2', 'A3', 'A4', 'A5', 'X', 'A6', 'A7', 'A8']) expect(seedProblem(c, listed(), 'me', false, 10_000)).toBeNull();
+    // Still watching across those: a plain swap is caught again.
+    sock = 's3';
+    watch(view('A9', null));
+    watch(view('A10', null));
+    expect(seedProblem('A10', listed('x'), 'me', true, 10_000)).toMatch(/without dealing/);
   });
 });

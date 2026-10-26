@@ -24,8 +24,9 @@ first, details after.
   own (below).
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
-  although it was sent in good time, or a seed your browser never sent is
-  listed under your name, the table shows a warning straight away. Your browser
+  although it was sent in good time, a seed your browser never sent is
+  listed under your name, or the commitment for the next hand was swapped for
+  another without being dealt, the table shows a warning straight away. Your browser
   also writes down what it saw during the hand: the button, who was dealt in,
   the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
@@ -68,11 +69,17 @@ when they deal at a home game.
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
   still pass.
 - **Throw away a deck it doesn't like.** The server knows the deck the moment
-  the last seed is in. Even the published code can't stop a changed server
-  from dropping that commitment, publishing a new one, collecting fresh seeds
-  and trying again. Browsers don't warn about a commitment that was replaced
-  without being dealt. Each try costs at least 2.5 seconds, so the sign is a
-  hand that is slow to be dealt for no reason.
+  the last seed is in. It could drop that commitment, publish a new one,
+  collect fresh seeds and try again. Since 26 October 2026 your browser watches
+  for this: while you sit at a table, it remembers each commitment shown for the
+  next hand, and if one is replaced without a hand being dealt from it, the
+  hand dealt instead shows a warning, live and in "Check this hand". What it
+  doesn't cover: a server restart honestly starts a fresh commitment and drops
+  every connection, so the watch starts over after you reconnect, and a server
+  could fake a restart to get one retry (everyone at the table would see it
+  disconnect). It is also blind if nobody at the table is watching, or if
+  browser storage is blocked, and it relies on the browser code being the
+  published code (above).
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
   hand histories live in a database he controls, and he could edit them. A
   hand whose proof you downloaded can't be changed without the proof no longer
@@ -164,6 +171,10 @@ Limits, stated plainly:
   looks (say they left right after the hand, or play with browser storage
   blocked), or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
+- A server could also replace a published commitment without dealing from
+  it, to try another deck. A seated browser warns about the hand dealt from the
+  replacement, unless the connection dropped in between (a restart honestly
+  starts a fresh commitment).
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a
