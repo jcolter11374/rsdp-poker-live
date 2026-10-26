@@ -14,6 +14,8 @@ import { eventLines, type Fmt } from './format';
 export const NAME_CAP = 12;
 export const VERDICT_CAP = 64;
 export const BASIS_CAP = 110;
+/** Line 2 shares its line with [Mark ...] on a draw turn, which takes about 30 characters' room: so it stays one line. */
+export const MARK_BASIS_CAP = 80;
 
 /** Under every set of bot reasons, once. */
 export const NOTES_FOOTNOTE = 'Bots guess quickly, so their numbers can be 5 to 10% off. They never see your cards.';
@@ -180,16 +182,16 @@ function drawsSentence(name: string, done: (number | null)[], badugi: boolean): 
 const fit = (sentences: string[], cap: number) =>
   sentences.filter(Boolean).reduce((out, s) => (!out ? (s.length <= cap ? s : out) : `${out} ${s}`.length <= cap ? `${out} ${s}` : out), '');
 
-function basisOf(tip: CoachTip, view: TableView, name: (seat: number) => string, movedDraws: string): string {
+function basisOf(tip: CoachTip, view: TableView, name: (seat: number) => string, movedDraws: string, cap = BASIS_CAP): string {
   const chance = (x: number) => chanceWords(x, tip.se);
   const scoop = tip.scoop !== null && tip.kind === 'bet' ? `The whole pot ${chance(tip.scoop)} of the time.` : '';
   const lead: string[] = [movedDraws];
   // The rules that change the verdict explain it first.
-  if (tip.rule === 'fold-big' && tip.need !== null) return fit([...lead, `This call is half your chips or more, so the tip wants a margin: about ${pct(tip.need)}.`], BASIS_CAP);
-  if (tip.rule === 'call-capped') return fit([...lead, 'After 3 raises the tip raises again only with a very strong hand.'], BASIS_CAP);
+  if (tip.rule === 'fold-big' && tip.need !== null) return fit([...lead, `This call is half your chips or more, so the tip wants a margin: about ${pct(tip.need)}.`], cap);
+  if (tip.rule === 'call-capped') return fit([...lead, 'After 3 raises the tip raises again only with a very strong hand.'], cap);
   if (tip.rule === 'raise-field') {
     const n = tip.opponents;
-    return fit([...lead, `Against ${others(n)} an even share is ${pct(1 / (n + 1))}, and you have more than twice that.`, scoop], BASIS_CAP);
+    return fit([...lead, `Against ${others(n)} an even share is ${pct(1 / (n + 1))}, and you have more than twice that.`, scoop], cap);
   }
   const badugi = view.hand?.gameId === 'badugi';
   // Someone who stood pat says most, then whoever drew fewest last time.
@@ -204,10 +206,10 @@ function basisOf(tip: CoachTip, view: TableView, name: (seat: number) => string,
     const who = readers.length === 1 ? `${readers[0]} has` : readers.length === 2 ? `${readers[0]} and ${readers[1]} have` : `${readers.length} players have`;
     const random = tip.vsRandom !== null && Math.abs(tip.vsRandom - tip.share) >= 0.05 ? `Against ${randomHands(tip.vs)} you'd have ${chance(tip.vsRandom)}.` : '';
     // In lowball the draws count too, so the gap to random hands isn't all down to the betting.
-    return fit([...lead, `Counting how ${who} bet this hand.`, drawn[0] ?? '', random, scoop], BASIS_CAP);
+    return fit([...lead, `Counting how ${who} bet this hand.`, drawn[0] ?? '', random, scoop], cap);
   }
-  if (drawn.length) return fit([...lead, ...drawn.slice(0, 2)], BASIS_CAP);
-  return fit([...lead, `Against ${randomHands(tip.vs)}: nobody still in has bet or raised.`, scoop], BASIS_CAP);
+  if (drawn.length) return fit([...lead, ...drawn.slice(0, 2)], cap);
+  return fit([...lead, `Against ${randomHands(tip.vs)}: nobody still in has bet or raised.`, scoop], cap);
 }
 
 /** Roughly how many finishes the tip dealt out, from its standard error (se = sqrt(max(p(1-p), .01) / n)). */
@@ -286,15 +288,16 @@ export function tipText(tip: CoachTip, view: TableView, fmt: Fmt): TipText {
   const { verdict, movedDraws } = verdictOf(tip, view, fmt, mine);
   const m = tip.move;
   const sized = view.hand?.betting !== 'fixed-limit';
+  const mark =
+    m.type === 'draw' && m.discard.length && m.discard.every((i) => mine[i] && mine[i] !== '??')
+      ? { discard: m.discard, label: `Mark ${m.discard.map((i) => `[${mine[i]}]`).join(' ')}` }
+      : null;
   return {
     verdict,
-    basis: basisOf(tip, view, name, movedDraws),
+    basis: basisOf(tip, view, name, movedDraws, mark ? MARK_BASIS_CAP : BASIS_CAP),
     why: whyOf(tip, view, fmt, name, coachFacts(view, tip, fmt)),
     set: (m.type === 'bet' || m.type === 'raise' || m.type === 'complete') && sized ? { to: m.to, label: `Set ${fmt(m.to)}` } : null,
-    mark:
-      m.type === 'draw' && m.discard.length && m.discard.every((i) => mine[i] && mine[i] !== '??')
-        ? { discard: m.discard, label: `Mark ${m.discard.map((i) => `[${mine[i]}]`).join(' ')}` }
-        : null,
+    mark,
   };
 }
 

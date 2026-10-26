@@ -808,6 +808,21 @@ dl.shortcuts dd { margin: 0; }
 .play-tip-basis { color: var(--muted); font-size: 0.8rem; }
 .play-tip-basis button { margin-left: 6px; padding: 0 8px; font-size: 0.78rem; line-height: 1.2; border-radius: 999px; background: transparent; vertical-align: 1px; color: var(--text); }
 .play-tip-error { color: var(--muted); font-size: 0.85rem; }
+/* Fixed limit and draw turns: the tip's own place, as tall as the tip (two lines; more on phones), kept from the start of
+   the turn, so opening the tip never pushes the Tip pill up. */
+.play-tip-slot { min-height: 37px; display: flex; flex-direction: column; justify-content: center; }
+/* Phones: up to four lines and a row of buttons (see .dock.seated.limit.tips). */
+.portrait .play-tip-slot { min-height: 94px; }
+.portrait .play-tip { line-height: 1.2; }
+.portrait .play-tip-verdict { font-size: 0.85rem; }
+.portrait .play-tip-basis { font-size: 0.75rem; }
+/* On touch screens the tip's buttons are a real size, with room between them and the move buttons. */
+@media (pointer: coarse) {
+  .play-tip-basis button { min-height: 32px; padding: 4px 10px; margin: 2px 0 0 4px; vertical-align: middle; }
+  .play-tip-slot .play-tip { margin-bottom: 6px; }
+}
+/* The hand line gives way (cut short) rather than wrap the head onto two lines mid-hand. */
+.bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(190px, var(--held, 0px)); }
@@ -834,16 +849,21 @@ dl.shortcuts dd { margin: 0; }
    and fixed-limit games (where the tip has no sizing block to stand in for) get room for it from the deal: enough
    for a draw turn, the tallest bar they have. */
 .dock.tips { justify-content: flex-end; }
-.dock.seated.limit.tips { min-height: max(191px, var(--held, 0px)); }
-@media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(167px, var(--held, 0px)); } }
-.portrait .dock.seated.limit.tips { min-height: max(190px, var(--held, 0px)); }
+.dock.seated.limit.tips { min-height: max(193px, var(--held, 0px)); }
+@media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(169px, var(--held, 0px)); } }
+.portrait .dock.seated.limit.tips { min-height: max(212px, var(--held, 0px)); }
+@media (max-height: 760px) { .portrait .dock.seated.limit.tips { min-height: max(198px, var(--held, 0px)); } }
 /* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
 @media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips { min-height: var(--held, 0px); } }
 /* On phones the time bank and the Tip pill sit beside the hand line instead of over it. */
-.portrait .bar-head { gap: 8px; flex-wrap: wrap; }
+.portrait .bar-head { gap: 8px; flex-wrap: nowrap; }
+.portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { flex-shrink: 0; }
 .portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { position: static; translate: none; }
 /* ...and on their side, the tip is the verdict and Why? only. */
-@media (max-height: 500px) { .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; } }
+@media (max-height: 500px) {
+  .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; }
+  .portrait .play-tip-slot { min-height: 58px; }
+}
 
 /* "Are you sure?" under a game picker set to unusual betting. */
 .betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }

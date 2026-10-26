@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, type BettingKind, type HandEvent, type HandState } from '@rsdp/engine/core';
 import { BOT_NOTE_RULES, COACH_RULES, type BotNote, type CoachMove, type CoachRule, type CoachTip, type HandRecordView, type TableView } from '@rsdp/engine/wire';
 import { STAKES, start } from '../../../packages/engine/test/core/harness';
-import { BASIS_CAP, breakEvenWords, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
+import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
 import { bbExactFormat, eventLines } from './format';
 import { frameView, type Frame } from './replay';
 
@@ -377,7 +377,7 @@ describe('tip text: limits', () => {
                 });
                 const t = tipText(tip, view, fmtUsed);
                 expect(t.verdict.length, t.verdict).toBeLessThanOrEqual(VERDICT_CAP);
-                expect(t.basis.length, t.basis).toBeLessThanOrEqual(BASIS_CAP);
+                expect(t.basis.length, t.basis).toBeLessThanOrEqual(t.mark ? MARK_BASIS_CAP : BASIS_CAP);
                 expect(t.verdict).not.toBe('');
                 all.push(t.verdict, t.basis, ...t.why.flatMap((s) => [s.title, ...s.lines]));
               }

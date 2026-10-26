@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Action } from '@rsdp/engine/core';
 import type { CoachTip, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -315,6 +315,9 @@ export function ActionBar({
         onWhy={() => setWhyAt(tipKey)}
       />
     );
+  // Where there is no sizing block for the tip to stand in for (fixed limit, a draw turn), it gets a place of its own from
+  // the start of the turn, holding the draw prompt (or nothing) until it opens, so opening it moves nothing.
+  const tipSlot = (closed: ReactNode) => (tipOn ? <div className="play-tip-slot">{tipPanel(false) || closed}</div> : closed);
   const why = tip && whyAt === tipKey && (
     <CoachWhy
       tip={tip}
@@ -380,10 +383,10 @@ export function ActionBar({
       <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
         {head}
         {errorLine}
-        {tipPanel(false) || (
+        {tipSlot(
           <div className="prompt">
             {hand.streetName}: click the cards you want to throw away{view.canDraw.max < myCards.length ? ` (up to ${view.canDraw.max})` : ''}.
-          </div>
+          </div>,
         )}
         <div className="buttons">
           <button disabled={n === 0} onClick={clearDiscard}>
@@ -452,7 +455,7 @@ export function ActionBar({
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
       {head}
       {errorLine}
-      {!sized && tipPanel(false)}
+      {!sized && tipSlot(null)}
       {sized && (tipPanel(true) || (
         <div className="sizing" ref={sizingBox}>
           {hand.betting !== 'fixed-limit' && (
