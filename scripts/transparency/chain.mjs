@@ -58,15 +58,31 @@ export function readMirror(dir) {
   );
 }
 
+/** Thrown when a site can't be reached, as opposed to answering with something wrong. */
+export class Unreachable extends Error {}
+
+/** fetch, tried a few times over about a minute before giving up as Unreachable. */
+export async function fetchJson(url, waits = [2_000, 10_000, 45_000]) {
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return await res.json();
+      if (res.status < 500 && res.status !== 429) throw new Unreachable(`${url} answered ${res.status}`);
+      throw new Error(`${url} answered ${res.status}`);
+    } catch (e) {
+      if (e instanceof Unreachable || i >= waits.length) throw e instanceof Unreachable ? e : new Unreachable(String(e?.message ?? e));
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}
+
 /** Reads the whole record, or the part after `after`, from a running site. */
-export async function fetchEntries(site, after = 0, until = Infinity) {
+export async function fetchEntries(site, after = 0, until = Infinity, waits) {
   const out = [];
   for (;;) {
     const from = out.at(-1)?.seq ?? after;
     if (from >= until) return out;
-    const res = await fetch(`${site}/api/audit/entries?after=${from}`);
-    if (!res.ok) throw new Error(`${site} answered ${res.status} for the record`);
-    const { entries } = await res.json();
+    const { entries } = await fetchJson(`${site}/api/audit/entries?after=${from}`, waits);
     if (!entries.length) return out;
     out.push(...entries);
   }

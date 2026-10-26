@@ -45,7 +45,7 @@ first, details after.
 - **Your cards stay private during play.** The server sends each person only
   what they may see. Undealt cards, other players' hole cards and the secrets
   never leave the server during a hand.
-- **Some of what John could do now leaves public traces.** Since 27 October
+- **Some of what John could do now leaves public traces.** Since 26 October
   2026, GitHub builds and signs every release, checks every hour which build
   the live site runs, and keeps a copy of a tamper-evident record of every
   hand, chip total and admin action. See [Checking John](#checking-john) and
@@ -75,8 +75,12 @@ when they deal at a home game.
   still pass. Since 26 October 2026 a normal release can be checked: GitHub
   builds it from the public code and signs a record of which commit it came
   from, and GitHub's hourly watcher checks that the live machine runs exactly
-  that image (see [Checking John](#checking-john)). That catches a quiet
-  redeploy. It doesn't catch changes made from a shell on the running server,
+  that image (see [Checking John](#checking-john)). It also checks the
+  machine's start command, its environment variables against `fly.toml` and
+  the names of its secrets, since a setting like `NODE_OPTIONS` could make the
+  same image run other code. That catches a quiet redeploy or settings change.
+  It can't see the values of secrets, only a fingerprint of each, and it
+  doesn't catch changes made from a shell on the running server,
   which John can open: he could change the code there, or read its memory,
   without a new deploy, and nothing records that.
 - **Throw away a deck it doesn't like.** The server knows the deck the moment
@@ -134,23 +138,30 @@ when they deal at a home game.
 ## Checking John
 
 These checks run outside John's server, mostly on GitHub, so a changed server
-can't also change what they found. John owns the GitHub repository and the
-Fly account, so he could switch them off, but not quietly: the code and its
-history are public, and a check that stops running stops updating its public
-log.
+can't also change what they found. They are independent of the server, not of
+John: he owns the GitHub repository and the Fly account, so he could switch
+them off or rewrite the `transparency` branch. Not quietly, though: the code
+and its history are public, a check that stops running stops updating its
+public log, and anyone can keep a copy John can't touch by cloning or forking
+the repository (and pulling the `transparency` branch now and then).
 
 - **Signed builds.** Every release is built by GitHub Actions from the public
   code on `main` (`.github/workflows/deploy.yml`). GitHub signs a record of the
   image and the commit it came from (build provenance), and Fly runs that
   exact image. The site's footer shows the commit the server says it runs.
 - **The deploy watcher.** Every hour GitHub asks Fly which image the live
-  machine runs and when it last started, checks GitHub's signed record of
-  that image, and writes the result to the
+  machine runs, its settings and secret names, and the starts and stops Fly
+  reports, checks GitHub's signed record of that image, and writes the result
+  to the
   [`transparency` branch](https://github.com/jcolter11374/rsdp-poker-live/tree/transparency/deploys)
   (`.github/workflows/transparency.yml`). An image GitHub didn't build from
-  `main`, a second machine, or a server that names a different commit opens
-  an issue on GitHub, which notifies everyone watching the repository.
-  Restarts are logged too; one after each release is normal.
+  `main`, a second machine, a server that names a different commit, a
+  replaced start command, an environment variable `fly.toml` doesn't set, or
+  a secret the code doesn't use opens an issue on GitHub, which notifies
+  everyone watching the repository. Settings or secrets that change without a
+  new image are noted in the log. Restarts are logged too; one after each
+  release is normal. Fly keeps only its recent events, so a burst of restarts
+  between two checks may show only in part.
 - **The public record.** Every hand, every change to a player's buy-ins and
   cash-outs, every table deleted, every admin action and every server start is
   an entry in an append-only chain (`packages/engine/src/audit.ts`). Each entry
@@ -158,19 +169,29 @@ log.
   an old entry changes every fingerprint after it. Entries hold no names and
   no table links: a table or player appears only as a fingerprint that
   someone at that table can work out. A hand's entry is the fingerprint of the
-  whole hand as "Check this hand" sees it once revealed. Anyone can read the
-  record at `/api/audit/entries`.
-- **GitHub's copy of the record.** The watcher copies new entries every hour
-  to the `transparency` branch, after checking that they follow on from the
-  last ones it copied. If an entry it already copied is changed or gone, it
-  opens an issue.
+  whole hand as "Check this hand" sees it once revealed (a hand shown after it
+  ends is recorded again). Anyone can read the record at `/api/audit/entries`.
+  Privacy: the record names nobody, but anyone with a table's link can find
+  that table's entries and see each player's buy-ins and cash-outs there,
+  without names, and anyone can see when hands were played.
+- **GitHub's copy of the record.** Every hour the watcher reads the whole
+  record again, checks every entry it ever copied is still there unchanged
+  and that the chain is unbroken, and copies the new entries to the
+  `transparency` branch. If an entry it already copied is changed or gone, it
+  opens an issue. If it can't reach the site, it just tries again next hour.
 - **Your browser's checks.** Your browser remembers the latest entry it saw
   and checks, on each visit, that the record still holds it unchanged and
   that everything since follows on; it does the same against GitHub's copy.
   If not, every page shows a warning. "Check this hand" checks a revealed hand
-  against its entry, and the ledger checks every buy-in and cash-out against
-  the record. These checks are code the site sends you, so they are only as
-  honest as that code; GitHub's copy is the one that doesn't depend on it.
+  against its entry, and marks a hand that is missing while hands before and
+  after it are recorded (an honest server only does that if it crashed just
+  as the hand finished). The ledger checks every buy-in and cash-out against
+  the record, and says so if a player's totals were found changed when a
+  closed table was opened again. Those two compare with the record as the
+  site shows it now; it's GitHub's hourly check of the whole record that shows
+  whether those entries were edited since they were copied. These checks are
+  code the site sends you, so they are only as honest as that code; GitHub's
+  copy is the one that doesn't depend on it.
 
 To check it all yourself, with Node 20 or later:
 
@@ -187,6 +208,8 @@ What these checks can't do:
 
 - They can't show what happens inside the running server: a shell on it,
   reading the live deck from memory, or code changed in place.
+- They see secrets only as names and fingerprints, so they show that a
+  secret changed, not what it says.
 - A wrong entry written at the time looks like any other entry. The record
   shows later edits, not lies told on the spot.
 - An edit made before GitHub's next copy, that no browser saw, isn't caught.

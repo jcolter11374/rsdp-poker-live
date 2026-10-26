@@ -9,7 +9,7 @@ const WATCHER = 'https://raw.githubusercontent.com/jcolter11374/rsdp-poker-live/
 
 type Version = { commit: string | null; image: string | null; startedAt: string };
 type Head = { seq: number; hash: string; copied?: string };
-type Watcher = { checked: string; machines: { id: string; state: string; digest: string | null; lastStart: string | null; signed: { commit: string | null } | null }[]; problems: string[] };
+type Watcher = { checked: string; machines: { id: string; state: string; digest: string | null; lastStart: string | null; signed: { commit: string | null } | null }[]; problems: string[]; notes?: string[] };
 
 const json = <T,>(url: string) => fetch(url, { cache: 'no-store' }).then((r) => (r.ok ? (r.json() as Promise<T>) : Promise.reject(new Error(`${r.status}`))));
 const when = (t: string | number) => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -73,7 +73,8 @@ export function TransparencyPage() {
             {version && <>, started {when(version.startedAt)}</>}. That is the server describing itself, so on its own it proves nothing.
           </li>
           <li>
-            GitHub&rsquo;s hourly watcher asks Fly which image the live machine runs, and checks GitHub&rsquo;s own signed record of how that image was built.{' '}
+            GitHub&rsquo;s hourly watcher asks Fly which image the live machine runs, and checks GitHub&rsquo;s own signed record of how that image was built. It also
+            checks the machine&rsquo;s start command, settings and secret names, which could otherwise make the same image run other code.{' '}
             {watcher === null ? (
               'Loading…'
             ) : watcher === 'none' ? (
@@ -91,6 +92,7 @@ export function TransparencyPage() {
             ) : (
               <>Last check: {when(watcher.checked)}.</>
             )}{' '}
+            {watcher && watcher !== 'none' && watcher.notes?.length ? <>Noted: {watcher.notes.join(' ')} </> : null}
             <a href={`${REPO}/tree/transparency/deploys`}>Every check</a>
           </li>
         </ul>
@@ -128,7 +130,7 @@ export function TransparencyPage() {
           </ul>
         )}
         <p className="muted">
-          A restart is normal after a release, or when Fly moves the machine. Admin actions are things like removing a test table. A shell on the server (which John can open) is not
+          The site&rsquo;s record can be wrong about itself, so GitHub&rsquo;s copy is the one to trust. A restart is normal after a release, or when Fly moves the machine. Admin actions are things like removing a test table. A shell on the server (which John can open) is not
           recorded anywhere: Fly doesn&rsquo;t offer a way to show that publicly.
         </p>
 

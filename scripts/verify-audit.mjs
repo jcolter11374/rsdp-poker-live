@@ -8,7 +8,7 @@
 // is the one the record holds.
 
 import { readFileSync } from 'node:fs';
-import { chainProblem, fetchEntries, handDigest, readMirror } from './transparency/chain.mjs';
+import { canonical, chainProblem, fetchEntries, handDigest, readMirror } from './transparency/chain.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -36,7 +36,7 @@ if (copyDir) {
   const copy = readMirror(copyDir);
   const copyProblem = chainProblem(copy);
   copyProblem ? bad(`the GitHub copy is broken: ${copyProblem}`) : ok(`the GitHub copy is one unbroken chain of ${copy.length} entries`);
-  const changed = copy.filter((e) => bySeq.get(e.seq)?.hash !== e.hash);
+  const changed = copy.filter((e) => !bySeq.has(e.seq) || canonical(bySeq.get(e.seq)) !== canonical(e));
   changed.length
     ? bad(`${changed.length} entries GitHub copied are different or missing on the site now, the first being entry ${changed[0].seq}`)
     : ok('every entry GitHub copied is still on the site, unchanged');
@@ -48,9 +48,11 @@ if (proofFile) {
   else {
     const digest = handDigest({ handId: proof.record.handId, commit: proof.commit, button: proof.button, seats: proof.record.seats, events: proof.events });
     const saved = live.filter((e) => e.kind === 'hand' && e.data.table === proof.record.table && e.data.hand === proof.record.handNumber);
+    // A hand shown after it ended is recorded again: the file may hold either version.
+    const match = saved.find((e) => e.data.digest === digest);
     if (!saved.length) bad(`hand ${proof.record.handNumber} is not in the record`);
-    else if (saved.at(-1).data.digest !== digest) bad(`hand ${proof.record.handNumber} in the record is not the hand in this file (entry ${saved.at(-1).seq})`);
-    else ok(`hand ${proof.record.handNumber} is in the record as entry ${saved.at(-1).seq}, exactly as in this file`);
+    else if (!match) bad(`hand ${proof.record.handNumber} in the record is not the hand in this file (entry ${saved.at(-1).seq})`);
+    else ok(`hand ${proof.record.handNumber} is in the record as entry ${match.seq}, exactly as in this file`);
   }
 }
 
