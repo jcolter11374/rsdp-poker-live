@@ -62,56 +62,103 @@ describe('the seed under my name', () => {
 });
 
 describe('a commitment swapped before the deal', () => {
-  const view = (next: string, hand: string | null, o: { table?: string; seat?: number | null } = {}) =>
-    ({ id: o.table ?? 't1', me: { seat: o.seat === undefined ? 2 : o.seat }, fair: { nextCommit: next, handCommit: hand } }) as unknown as Parameters<ReturnType<typeof watchCommitments>>[0];
+  type V = Parameters<ReturnType<typeof watchCommitments>>[0];
+  /** A table view: the next commitment offered, and the hand shown as [handNumber, commitment]. */
+  const view = (next: string | null, hand: [number, string] | null, o: { table?: string; delay?: number | null } = {}) =>
+    ({
+      id: o.table ?? 't1',
+      me: { seat: o.delay == null ? 2 : null },
+      spectator: o.delay == null ? null : { delaySeconds: o.delay, seeAll: false, blocked: false },
+      fair: next === null ? undefined : { nextCommit: next, handCommit: hand?.[1] ?? null },
+      hand: hand && { handNumber: hand[0], fair: { commit: hand[1], clientSeeds: [] } },
+    }) as unknown as V;
+  const quiet = (...commits: string[]) => {
+    for (const c of commits) expect(seedProblem(c, listed(), 'me', false, 10_000), c).toBeNull();
+  };
+  const flagged = (c: string, re = /never dealt from/) => expect(seedProblem(c, listed(), 'me', false, 10_000), c).toMatch(re);
   let sock: string | undefined = 's1';
   beforeEach(() => {
     sock = 's1';
   });
 
-  it('is quiet when every commitment is dealt from', () => {
+  it('is quiet when every commitment is dealt from, in order', () => {
     const watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z'])); // joined after hand 7 (from a commitment offered before I looked)
     watch(view('A', null));
-    watch(view('A', null));
-    watch(view('B', 'A'));
-    watch(view('B', null));
-    watch(view('C', 'B'));
-    for (const c of ['A', 'B', 'C']) expect(seedProblem(c, listed(), 'me', false, 10_000)).toBeNull();
+    watch(view('B', [8, 'A']));
+    watch(view('B', [8, 'A']));
+    watch(view(null, [8, 'A'])); // a view with no commitment changes nothing
+    watch(view('C', [9, 'B']));
+    quiet('Z', 'A', 'B', 'C');
   });
 
-  it('warns about the hand dealt from a commitment that replaced one never dealt', () => {
+  it('warns about the hand dealt after a commitment that was replaced without a deal', () => {
     const watch = watchCommitments(() => sock);
-    watch(view('A', null));
-    watch(view('A2', null));
-    watch(view('B', 'A2'));
-    expect(seedProblem('A2', listed('x'), 'me', true, 10_000)).toMatch(/replaced it .* without dealing/);
-    // Even when I sat this hand out: everyone at the table is owed a fair deck.
-    expect(seedProblem('A2', listed(), 'me', false, 10_000)).toMatch(/without dealing/);
-    expect(seedProblem('B', listed(), 'me', false, 10_000)).toBeNull();
-    // Swapped while a hand was on (the next one is published a hand ahead).
-    watch(view('B2', 'A2'));
-    expect(seedProblem('B2', listed('x'), 'me', true, 10_000)).toMatch(/without dealing/);
+    watch(view('A', [7, 'Z']));
+    watch(view('A2', [7, 'Z']));
+    quiet('A2');
+    watch(view('B', [8, 'A2']));
+    flagged('A2');
+    // Everything after it in the same watch is marked too.
+    watch(view('C', [9, 'B']));
+    flagged('B');
   });
 
-  it('starts over after a reconnect, a new page, a stand-up or another table', () => {
+  it('is not fooled by a summary field, a blank commitment or a moment as a seated-looking spectator', () => {
     let watch = watchCommitments(() => sock);
-    watch(view('A', null));
+    watch(view('A', [7, 'Z']));
+    // A view claiming hand A was dealt, while the hand shown is still hand 7.
+    watch({ ...view('A2', [7, 'Z']), fair: { nextCommit: 'A2', handCommit: 'A' } } as unknown as V);
+    watch(view('B', [8, 'A2']));
+    flagged('A2');
+    store.clear();
+    watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view(null, [7, 'Z']));
+    watch({ ...view('', [7, 'Z']) } as V);
+    watch(view('A2', [7, 'Z']));
+    watch(view('B', [8, 'A2']));
+    flagged('A2');
+    store.clear();
+    watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view('A2', [7, 'Z'], { delay: 0 })); // stood up, live spectator: still watching
+    watch(view('B', [8, 'A2']));
+    flagged('A2');
+  });
+
+  it('warns about a hand from a commitment never offered, and a hand number dealt twice', () => {
+    let watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view('B', [8, 'X']));
+    flagged('X', /never showed as the next hand's/);
+    store.clear();
+    watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view('B', [8, 'A']));
+    watch(view('C', [8, 'B'])); // hand 8 shown again, from another commitment
+    flagged('B');
+  });
+
+  it('starts over after a reconnect, a new page, another table, or a delayed view turning live', () => {
+    let watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
     sock = 's2'; // the server restarted: a fresh commitment is honest
-    watch(view('A2', null));
+    watch(view('A2', [7, 'Z']));
+    watch(view('B', [8, 'A2']));
     watch = watchCommitments(() => sock); // page left and opened again
-    watch(view('A3', null));
-    watch(view('A4', null, { seat: null }));
-    watch(view('A5', null));
-    watch(view('X', null, { table: 't2' }));
-    watch(view('A6', null, { table: 't1' }));
+    watch(view('A3', [8, 'A2']));
+    watch(view('X', [3, 'W'], { table: 't2' }));
+    watch(view('A4', [8, 'A2']));
+    watch(view('B4', [9, 'A4']));
+    // A delayed spectator sees hands late; sitting down, the live hand is newer.
+    watch(view('C4', [9, 'A4'], { delay: 30 }));
+    watch(view('D4', [10, 'C4'], { delay: 30 }));
+    watch(view('E4', [11, 'D4']));
     sock = undefined; // offline: nothing to compare
-    watch(view('A7', null));
-    watch(view('A8', null));
-    for (const c of ['A2', 'A3', 'A4', 'A5', 'X', 'A6', 'A7', 'A8']) expect(seedProblem(c, listed(), 'me', false, 10_000)).toBeNull();
-    // Still watching across those: a plain swap is caught again.
+    watch(view('F4', [11, 'D4']));
     sock = 's3';
-    watch(view('A9', null));
-    watch(view('A10', null));
-    expect(seedProblem('A10', listed('x'), 'me', true, 10_000)).toMatch(/without dealing/);
+    watch(view('G4', [12, 'F4']));
+    quiet('A2', 'A3', 'X', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4');
   });
 });
