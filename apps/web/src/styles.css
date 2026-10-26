@@ -346,16 +346,24 @@ input[type='checkbox'] { width: auto; }
 }
 @keyframes float-up { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .bet { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px; z-index: 2; margin: 0; padding: 2px 10px 2px 3px; background: rgba(0, 0, 0, 0.28); color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; }
-/* A flat chip: white face, red edge spots. */
+/* A flat chip in its denomination's colour (--chip) with edge spots (--spot); red by default. */
 .chip {
+  --chip: #d23a31;
+  --spot: #fff;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   flex: none;
   display: inline-block;
-  background: radial-gradient(circle, #fff 0 42%, transparent 43%), repeating-conic-gradient(#d84a3e 0 30deg, #fff 30deg 60deg);
-  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(0, 0, 0, 0.35);
+  background: radial-gradient(circle, var(--chip) 0 36%, color-mix(in srgb, var(--spot) 70%, transparent) 37% 41%, transparent 42%), repeating-conic-gradient(var(--chip) 0 30deg, var(--spot) 30deg 60deg);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--chip) 75%, #000), 0 1px 2px rgba(0, 0, 0, 0.45);
 }
+/* Bets and pots: a short stack per colour, each chip a little above the last. */
+.chip-stacks { display: inline-flex; align-items: flex-end; gap: 2px; }
+.chip-stack { display: inline-flex; flex-direction: column-reverse; }
+.chip-stack .chip + .chip { margin-bottom: -13px; }
+.pot .chip-stacks { margin-right: 6px; vertical-align: -3px; }
+.felt.compact .chip-stack .chip + .chip { margin-bottom: -10px; }
 
 /* cards */
 .playing-card { position: relative; transition: transform 0.12s; }
@@ -428,7 +436,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 @keyframes bet-in { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 0.4; } to { transform: translate(-50%, -50%); opacity: 1; } }
 .chip-flight { position: absolute; transform: translate(-50%, -50%); display: flex; gap: 1px; z-index: 4; pointer-events: none; animation: chip-fly 0.5s ease-in-out both; }
 .chip-flight.award { animation: chip-fly 0.6s ease-in-out both, fade-out 0.3s 0.9s both; }
-.chip-flight.award .chip { background: var(--good); }
+.chip-flight.award .chip { --chip: var(--good); }
 @keyframes chip-fly { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 1; } 85% { opacity: 1; } to { transform: translate(-50%, -50%); opacity: 0.2; } }
 @keyframes fade-out { to { opacity: 0; } }
 .seat.winner .nameplate { animation: winner-pulse 1s ease-in-out 4; }
@@ -723,3 +731,27 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .action-bar.pre .buttons button.queued { background: #2c3a2f; border-color: var(--go); color: #fff; }
 .action-bar.pre .box { border-radius: 50%; border-color: currentColor; margin-right: 4px; }
 .action-bar.pre button.queued .box { background: var(--go); border-color: var(--go); color: #fff; }
+
+/* Keyboard shortcuts and the chips/BB switch. */
+kbd {
+  display: inline-block; min-width: 1.5em; padding: 1px 5px; border-radius: 4px;
+  background: #2a2f37; border: 1px solid #454c57; border-bottom-width: 2px;
+  font: 600 0.78em/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); text-align: center;
+}
+.key-hint {
+  margin-left: 7px; padding: 0 4px; min-width: 1.3em; font-size: 0.68em; vertical-align: 1px;
+  background: rgba(0, 0, 0, 0.22); border-color: rgba(255, 255, 255, 0.22); color: inherit; opacity: 0.8;
+}
+@media (hover: none), (pointer: coarse) { .key-hint { display: none; } }
+.units-toggle { display: inline-flex; padding: 2px; gap: 0; border-radius: 999px; flex-shrink: 0; }
+.units-toggle span { padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
+.units-toggle span.on { background: var(--accent-2); color: #1b1606; font-weight: 700; }
+.portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
+.banner.tip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 0.9rem; }
+.banner.tip > span { flex: 1 1 auto; }
+.banner.tip button { padding: 4px 10px; font-size: 0.85rem; }
+dl.shortcuts { display: grid; gap: 8px; margin: 4px 0 12px; }
+dl.shortcuts > div { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px; }
+dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
+dl.shortcuts dd { margin: 0; }
+.portrait .topbar .units-toggle { padding: 2px; }

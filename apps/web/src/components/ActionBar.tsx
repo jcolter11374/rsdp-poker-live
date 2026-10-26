@@ -121,7 +121,8 @@ export function ActionBar({
       e.preventDefault();
       amountBox.current.focus();
       amountBox.current.select();
-    } else return;
+    } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
+    else return;
   };
 
   // When it becomes your turn, play the queued move if it still applies.
@@ -297,28 +298,41 @@ export function ActionBar({
       )}
       <div className="buttons">
         {legal.canFold && (
-          <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="F">
+          <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F">
             {confirmFold ? 'Fold anyway?' : 'Fold'}
+            <Key k="F" />
           </button>
         )}
         {legal.canBringIn ? (
           <button onClick={() => send({ type: 'bring-in' })}>Bring in {fmt(hand.stakes.bringIn)}</button>
         ) : legal.canCheck ? (
-          <button className="call" onClick={() => send({ type: 'check' })} title="K">
+          <button className="call" onClick={() => send({ type: 'check' })} title="Shortcut: K">
             Check
+            <Key k="K" />
           </button>
         ) : (
-          <button className="call" onClick={() => send({ type: 'call' })} title="C">
+          <button className="call" onClick={() => send({ type: 'call' })} title="Shortcut: C">
             Call {fmt(legal.callAmount)}
             {legal.callAmount >= me.stack ? ' (all in)' : ''}
+            <Key k="C" />
           </button>
         )}
         {legal.canRaise && (
           <button className="primary" onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })}>
             {raiseLabel(sized ? clamp(amount) : legal.minTo)}
+            <Key k="R" />
           </button>
         )}
       </div>
     </div>
+  );
+}
+
+/** A small keyboard hint on a button; hidden on touch screens. */
+function Key({ k }: { k: string }) {
+  return (
+    <kbd className="key-hint" aria-hidden="true">
+      {k}
+    </kbd>
   );
 }
