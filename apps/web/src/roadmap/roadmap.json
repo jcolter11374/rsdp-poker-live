@@ -22,16 +22,16 @@
         { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a seed from each player's browser. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
         { "title": "A slicker table", "detail": "Bigger cards in each nameplate, a clean middle, fuller sounds, casino chip colours, keyboard shortcuts and a switch to show everything in big blinds." },
         { "title": "Co-hosts for cash tables", "detail": "Let a friend approve seats and run the game while you play." },
-        { "title": "Optional accounts", "detail": "Sign in with a username and password so your name, picture, notes and history follow you to every device. Guests can still play without one." },
+        { "title": "Optional accounts", "detail": "Sign in with a username and password, or with Google, so your name, picture, notes and history follow you to every device. Guests can still play without one." },
         { "title": "Roadmap, suggestions and What's new", "detail": "This page: send your ideas and follow them in the suggestion log. The What's new page lists what each release added." }
       ]
     },
     {
       "id": "next",
       "title": "Coming in the next release",
-      "blurb": "Built and being tested now.",
+      "blurb": "What we're working on next.",
       "items": [
-        { "title": "Sign in with Google", "detail": "Built and tested. It switches on once the Google sign-in keys are set up, so you can skip the password." }
+        { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." }
       ]
     },
     {
@@ -39,7 +39,6 @@
       "title": "Later",
       "blurb": "On the list, roughly in this order.",
       "items": [
-        { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." },
         { "title": "The long tail", "detail": "High hand prizes, a final table mode, accessibility improvements and lots of small touches." },
         { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }
       ]
