@@ -7,7 +7,7 @@ import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, 
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { baseChip, ChipStacks } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
-import { CountUp, FeltEmblem } from './table/Feel';
+import { CountUp, FeltEmblem, useLanded } from './table/Feel';
 import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -289,6 +289,8 @@ export function Table({
     lastBets.current = view.seats.map((s) => s?.bet ?? 0);
   }, [view]);
 
+  // The pile in the pot pill grows when the swept bets land on it, not as they leave the seats.
+  const potPile = useLanded(hand?.pots[0]?.amount ?? 0, 550);
   const bets = view.seats.reduce((s, x) => s + (x?.bet ?? 0), 0);
   const runs = hand?.boards ?? [];
   const multiRun = runs.length > 1;
@@ -339,8 +341,9 @@ export function Table({
               ) : (
                 // One pot: show everything in play, bets in front of the seats included, so it never reads "Pot 0" with chips out.
                 <div className="pot">
-                  <ChipStacks amount={hand!.pots[0]?.amount ?? 0} base={chipBase} />
-                  Pot <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} />
+                  <ChipStacks amount={potPile} base={chipBase} />
+                  {/* The pot counts as fast as a bet is tossed, so it reads right when the chips land. */}
+                  Pot <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} upMs={380} />
                 </div>
               )}
             </div>
