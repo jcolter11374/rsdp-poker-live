@@ -4,7 +4,7 @@
       "id": "2026-10-26-f",
       "date": "2026-10-26",
       "fixes": [
-        "A pre-move ticked straight after one played itself is no longer ignored."
+        "A ticked Check / Fold no longer vanishes from view when someone bets: it shows as Fold, and you can untick it."
       ]
     },
     {

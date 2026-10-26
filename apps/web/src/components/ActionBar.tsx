@@ -186,11 +186,8 @@ export function ActionBar({
     else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
     // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can
     // decide again; say so now, before the page decides whether to call you with the turn sound.
-    if (move) {
-      send(move);
-      // No finger was involved, so a pre-move ticked for the next street straight after counts.
-      lastSent.current = 0;
-    } else onPreAction?.(false);
+    if (move) send(move);
+    else onPreAction?.(false);
   }, [legal]);
 
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
