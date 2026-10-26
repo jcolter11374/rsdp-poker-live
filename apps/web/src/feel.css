@@ -1,0 +1,332 @@
+/*
+ * The table's look and feel, in four parts. prefs.ts puts them on the root element
+ * (data-feel); turning off "Table motion" drops the motion part and the moments' animations,
+ * and so does the device's reduce-motion setting.
+ */
+
+/* ======================================================================
+   1. DEPTH: a lit table. Light from above, felt with a nap, a padded rail,
+   things that sit on the cloth cast shadows.
+   ====================================================================== */
+:root[data-feel~='depth'] {
+  /* A pool of light in the room behind the table. */
+  .felt-area { background: radial-gradient(ellipse 70% 60% at 50% 46%, rgba(255, 255, 255, 0.045), transparent 70%); }
+  .felt {
+    /* The rail: dark, padded, catching the light along its top edge. */
+    border-color: transparent;
+    background:
+      /* the cloth's nap */
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E") padding-box,
+      /* a lamp over the middle, falling off to the rail */
+      radial-gradient(ellipse 62% 58% at 50% 44%, color-mix(in srgb, var(--felt) 78%, #fff) 0%, var(--felt) 46%, color-mix(in srgb, var(--felt) 70%, #000) 88%, color-mix(in srgb, var(--felt) 52%, #000) 100%) padding-box,
+      linear-gradient(180deg, #474d56 0%, #23272d 22%, #15181c 60%, #0c0e10 100%) border-box;
+    background-blend-mode: soft-light, normal, normal;
+    box-shadow:
+      inset 0 0 0 2px rgba(0, 0, 0, 0.45),
+      inset 0 10px 24px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 2px 0 1px rgba(0, 0, 0, 0.6),
+      0 30px 60px rgba(0, 0, 0, 0.6);
+  }
+  .felt.my-turn {
+    box-shadow:
+      inset 0 0 0 2px rgba(0, 0, 0, 0.45),
+      inset 0 10px 24px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 0 0 3px color-mix(in srgb, var(--go) 70%, transparent),
+      0 0 40px color-mix(in srgb, var(--go) 35%, transparent),
+      0 30px 60px rgba(0, 0, 0, 0.6);
+  }
+  /* The betting line, printed on the cloth. */
+  .felt::before {
+    content: '';
+    position: absolute;
+    inset: 13% 9%;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+  }
+  .felt.compact::before { inset: 9% 12%; }
+
+  /* Nameplates: a soft top light, a bevel, a shadow on the cloth. */
+  .nameplate {
+    background: linear-gradient(180deg, #343a43 0%, #262b32 55%, #1f2329 100%) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 6px 16px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+  .seat.me .nameplate { background: linear-gradient(180deg, #3b424c 0%, #2b3139 60%, #23282f 100%) !important; }
+  .seat.folded .nameplate { background: linear-gradient(180deg, #262a30, #1c1f24) !important; }
+  .seat.acting .nameplate { border-color: rgba(255, 255, 255, 0.85) !important; }
+  /* Whoever is acting sits in a pool of light. */
+  .seat.acting::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 340px;
+    height: 220px;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07) 55%, transparent);
+    pointer-events: none;
+    z-index: -1;
+  }
+  .felt.compact .seat.acting::before { width: 170px; height: 130px; }
+
+  /* Cards: a touch of paper, lifted off the cloth. */
+  .playing-card:not(.back, .facedown) { background: linear-gradient(165deg, #ffffff 0%, #f6f7f8 55%, #e7eaed 100%); }
+  .playing-card:not(.facedown) { box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35); }
+  .playing-card.back {
+    box-shadow: inset 0 0 0 calc(var(--cw) * 0.09) var(--back-a, #d84a3e), inset 0 0 0 calc(var(--cw) * 0.15) rgba(255, 255, 255, 0.9), 0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35);
+  }
+  .playing-card.win { box-shadow: 0 0 0 2px var(--good), 0 0 14px var(--good), 0 6px 14px rgba(0, 0, 0, 0.4); }
+
+  /* Chips with an edge you can see, and a shine. */
+  .chip {
+    background:
+      radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.45), transparent 45%),
+      radial-gradient(circle, var(--chip) 0 36%, color-mix(in srgb, var(--spot) 70%, transparent) 37% 41%, transparent 42%),
+      repeating-conic-gradient(var(--chip) 0 30deg, var(--spot) 30deg 60deg);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--chip) 70%, #000), 0 1.5px 0 1.5px color-mix(in srgb, var(--chip) 45%, #000), 0 3px 4px rgba(0, 0, 0, 0.5);
+  }
+  /* The pot and bets sit in a dark, recessed pill. */
+  .pot:not(.total), .bet { background: rgba(0, 0, 0, 0.34); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .pot.result { background: linear-gradient(180deg, #23824f, #17613a); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 6px 16px rgba(0, 0, 0, 0.4); }
+  /* The dealer button: a real disc with a rim. */
+  .dealer {
+    background: radial-gradient(circle at 40% 30%, #ffffff, #e9ecef 55%, #c9ced4 100%);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 0 0 1.5px rgba(0, 0, 0, 0.35), 0 3px 6px rgba(0, 0, 0, 0.55);
+  }
+  /* Empty seats read as places on the cloth, not boxes. */
+  .seat.empty button, .seat.empty span { background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35); }
+  /* The action bar sits on the same lit surface. */
+  .action-bar:not(.idle) { background: linear-gradient(180deg, #23282e, #1b1f24); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35); }
+  .action-bar .buttons button { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 0 rgba(0, 0, 0, 0.35); }
+  .action-bar .buttons button.primary { background: linear-gradient(180deg, #38b874, #279257); }
+}
+
+/* ======================================================================
+   2. MOTION: a living table. Cards come off the button in an arc, the board
+   turns over card by card, chips are tossed, stacks count, the clock runs
+   round the nameplate.
+   ====================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-feel~='motion'] {
+    /* Hole cards: pitched from the dealer, spinning a little, landing with a settle. */
+    .deal-hole { animation: feel-pitch 0.46s cubic-bezier(0.2, 0.7, 0.25, 1) both; }
+    /* Board cards slide off the deck face down and turn over. */
+    .deal-board { animation: feel-turn 0.5s cubic-bezier(0.25, 0.8, 0.3, 1) both; transform-style: preserve-3d; }
+    .deal-board::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: var(--back-a, #d84a3e) repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px);
+      box-shadow: inset 0 0 0 calc(var(--cw) * 0.09) var(--back-a, #d84a3e), inset 0 0 0 calc(var(--cw) * 0.15) rgba(255, 255, 255, 0.9);
+      animation: feel-back 0.5s linear both;
+      animation-delay: inherit;
+    }
+    .flip-in { animation: feel-flip 0.42s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
+    /* Bets are tossed: a little lift in the middle of the throw. */
+    .bet { animation: feel-toss 0.38s cubic-bezier(0.25, 0.8, 0.35, 1) both; }
+    .chip-flight { animation-duration: 0.55s; animation-timing-function: cubic-bezier(0.5, 0, 0.3, 1); }
+    .chip-flight .chip { animation: feel-chip-scatter 0.55s ease-out both; }
+    .chip-flight .chip:nth-child(2) { animation-delay: 40ms; }
+    .chip-flight .chip:nth-child(3) { animation-delay: 80ms; }
+    /* Stacks and the pot count. */
+    .count-up { color: var(--good); }
+    .pot .count-up { color: #fff; }
+    /* The clock runs round the acting seat's nameplate instead of a bar under it. */
+    .seat.acting .nameplate { animation: none; }
+    .seat.acting .nameplate.timed::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 14px;
+      padding: 3px;
+      background: conic-gradient(from 0deg, var(--feel-ring, #5ad08a) calc(var(--t, 1) * 360deg), rgba(255, 255, 255, 0.12) 0);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+      pointer-events: none;
+    }
+    .felt.compact .seat.acting .nameplate::after { border-radius: 11px; }
+    .seat.acting .nameplate:has(.timer-fill.low) { --feel-ring: var(--bad); }
+    .seat.acting .nameplate:has(.timer.bank) { --feel-ring: var(--accent-2); }
+    .seat.acting .nameplate .timer { opacity: 0; }
+    /* The board settles in from the middle rather than popping. */
+    .pot { transition: transform 0.2s; }
+  }
+}
+@keyframes feel-pitch {
+  0% { transform: translate(var(--dx, 0), var(--dy, -12px)) scale(0.5) rotate(-50deg); opacity: 0; }
+  15% { opacity: 1; }
+  70% { transform: translate(calc(var(--dx, 0) * 0.06), calc(var(--dy, 0) * 0.06 - 8px)) scale(1.06) rotate(6deg); }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes feel-turn {
+  0% { transform: translateX(calc(var(--cw) * -1.6)) perspective(400px) rotateY(180deg) scale(0.92); opacity: 0; }
+  20% { opacity: 1; }
+  45% { transform: translateX(0) perspective(400px) rotateY(180deg) scale(1.04); }
+  100% { transform: perspective(400px) rotateY(0) scale(1); opacity: 1; }
+}
+@keyframes feel-back { 0%, 72% { opacity: 1; } 73%, 100% { opacity: 0; } }
+@keyframes feel-flip {
+  0% { transform: perspective(400px) rotateY(90deg) translateY(-6px); }
+  60% { transform: perspective(400px) rotateY(-12deg) translateY(-6px); }
+  100% { transform: none; }
+}
+@keyframes feel-toss {
+  0% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.8); opacity: 0.3; }
+  55% { transform: translate(calc(-50% + var(--dx) * 0.2), calc(-50% + var(--dy) * 0.2 - 10px)) scale(1.12); opacity: 1; }
+  100% { transform: translate(-50%, -50%); opacity: 1; }
+}
+@keyframes feel-chip-scatter { from { translate: 0 0; } 50% { translate: 0 -6px; } to { translate: 0 0; } }
+
+/* ======================================================================
+   3. MOMENTS: showdowns and all-ins land. The winning five cards lift, the
+   result is a banner, an all-in player lights up.
+   ====================================================================== */
+:root[data-feel~='moments'] {
+  .playing-card.win, .playing-card.dim { transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1), filter 0.35s, translate 0.35s cubic-bezier(0.3, 1.4, 0.5, 1); }
+  .felt.showdown .playing-card.win { translate: 0 -10px; box-shadow: 0 0 0 2px #ffd36b, 0 0 18px rgba(255, 211, 107, 0.75), 0 10px 18px rgba(0, 0, 0, 0.45); }
+  .felt.showdown .seat .playing-card.win { translate: 0 -6px; }
+  .felt.showdown .playing-card.dim { filter: brightness(0.5) saturate(0.4); scale: 0.96; }
+  .pot.result {
+    background: linear-gradient(180deg, #ffd978 0%, #f2b84b 55%, #d89a2a 100%);
+    color: #2a1d06;
+    font-weight: 800;
+    font-size: 1.15rem;
+    padding: 7px 22px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(120, 80, 10, 0.5), 0 0 28px rgba(242, 184, 75, 0.45), 0 8px 20px rgba(0, 0, 0, 0.45);
+    position: relative;
+    overflow: hidden;
+  }
+  .felt.compact .pot.result { font-size: 0.85rem; padding: 4px 14px; }
+  .seat.winner .nameplate { border-color: #ffd36b !important; box-shadow: 0 0 0 1px #ffd36b, 0 0 22px rgba(255, 211, 107, 0.6), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
+  .win-float { color: #ffd978; font-size: 1.15rem; }
+  .felt.compact .win-float { font-size: 0.9rem; }
+  /* All in: the seat goes red-hot and the stack line becomes a stamp. */
+  .seat.all-in .nameplate { border-color: #ff6b5e !important; box-shadow: 0 0 0 1px #ff6b5e, 0 0 24px rgba(255, 90, 76, 0.55), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
+  .seat.all-in .stack {
+    display: inline-block;
+    width: max-content;
+    background: linear-gradient(180deg, #ff6b5e, #d9372a);
+    color: #fff;
+    border-radius: 6px;
+    padding: 0 7px;
+    letter-spacing: 0.06em;
+    font-size: 0.95rem !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  /* When someone is all in, the room darkens round the table. */
+  .felt-area { transition: background-color 0.6s; }
+  .felt-area:has(.seat.all-in) { background-color: rgba(0, 0, 0, 0.4); }
+  /* Buttons press in. */
+  .action-bar .buttons button:active:not(:disabled), .sizing .presets button:active:not(:disabled) { transform: translateY(1px) scale(0.97); filter: brightness(0.92); }
+  .action-bar .buttons button { transition: transform 0.08s, filter 0.08s, background 0.12s; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-feel~='moments'][data-motion='on'] {
+    .pot.result { animation: feel-banner 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+    .pot.result::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.75) 50%, transparent 65%);
+      translate: -120% 0;
+      animation: feel-shine 1.1s 0.45s ease-out both;
+    }
+    .seat.winner::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      translate: -50% -50%;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 4;
+      box-shadow:
+        0 -60px 0 -2px #ffd36b, 42px -42px 0 -3px #fff, 60px 0 0 -2px #ffd36b, 42px 42px 0 -3px #fff,
+        0 60px 0 -2px #ffd36b, -42px 42px 0 -3px #fff, -60px 0 0 -2px #ffd36b, -42px -42px 0 -3px #fff,
+        95px -20px 0 -3px #ffd36b, -95px 20px 0 -3px #ffd36b, 20px -80px 0 -4px #fff, -20px 80px 0 -4px #fff;
+      animation: feel-burst 0.9s 0.2s ease-out both;
+    }
+    .seat.all-in .stack { animation: feel-stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+    .action-bar.my-turn { animation: feel-bar-in 0.3s cubic-bezier(0.2, 1.2, 0.4, 1) both; }
+  }
+}
+@keyframes feel-banner { 0% { transform: scale(0.4) translateY(10px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes feel-shine { to { translate: 120% 0; } }
+@keyframes feel-burst { 0% { scale: 0.2; opacity: 1; } 70% { opacity: 1; } 100% { scale: 1.5; opacity: 0; } }
+@keyframes feel-stamp { 0% { transform: scale(2.4) rotate(-8deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes feel-bar-in { from { transform: translateY(14px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+/* ======================================================================
+   4. IDENTITY: our own mark in the felt and on the card backs, numbers in a
+   display face, one gold accent for everything that matters.
+   ====================================================================== */
+:root[data-feel~='identity'] {
+  --feel-gold: #e9b95a;
+  --feel-ring: var(--feel-gold);
+  .felt-emblem {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    height: 74%;
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    color: rgba(255, 255, 255, 0.075);
+    filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.25)) drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.04));
+    pointer-events: none;
+  }
+  .felt-emblem text { fill: currentColor; font-family: 'Barlow Condensed', 'Inter Variable', sans-serif; font-weight: 700; }
+  .felt-emblem .emblem-mark { font-style: italic; font-size: 54px; letter-spacing: -2px; }
+  .felt.compact .felt-emblem { height: auto; width: 78%; }
+
+  /* Numbers that matter in a tall, tight display face. */
+  .nameplate .stack, .pot:not(.total, .result), .bet, .win-float, .board-label, .next-hand {
+    font-family: 'Barlow Condensed', 'Inter Variable', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .felt:not(.compact) .nameplate .stack { font-size: 1.45rem; line-height: 1.05; }
+  .felt.compact .nameplate .stack { font-size: 1.02rem; }
+  .pot:not(.total, .result) { font-size: 1.25rem; }
+  .felt.compact .pot:not(.total, .result) { font-size: 1.02rem; }
+  .bet { font-size: 1.05rem; }
+  .felt.compact .bet { font-size: 0.85rem; }
+  .pot.result { font-family: 'Barlow Condensed', 'Inter Variable', sans-serif; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+  .nameplate .name { letter-spacing: 0.01em; }
+
+  /* One accent: gold hairlines on the pot, the button and whoever is acting. */
+  .pot:not(.result):not(.total) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--feel-gold) 45%, transparent); }
+  .dealer { color: #2a1d06; background: radial-gradient(circle at 40% 30%, #fff3d4, #f0c467 60%, #c8922f); box-shadow: 0 0 0 1.5px rgba(80, 50, 5, 0.6), 0 3px 6px rgba(0, 0, 0, 0.55); font-family: 'Barlow Condensed', sans-serif; font-size: 0.9rem; }
+  .seat.acting .nameplate { border-color: var(--feel-gold) !important; }
+  .timer:not(.bank) .timer-fill:not(.low) { background: var(--feel-gold); }
+
+  /* Our own card back: a framed lattice with the mark in a medallion. */
+  .playing-card.back {
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 70'%3E%3Ccircle cx='25' cy='35' r='11' fill='rgba(0,0,0,0.28)' stroke='rgba(255,255,255,0.85)' stroke-width='1.4'/%3E%3Ctext x='25' y='40' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-style='italic' font-size='13' fill='white'%3ER!%3C/text%3E%3C/svg%3E"),
+      repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.16) 0 1.5px, transparent 1.5px 5px),
+      repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 1.5px, transparent 1.5px 5px),
+      linear-gradient(160deg, color-mix(in srgb, var(--back-a, #d84a3e) 80%, #fff), var(--back-a, #d84a3e) 45%, color-mix(in srgb, var(--back-a, #d84a3e) 70%, #000));
+    background-size: 100% 100%, auto, auto, auto;
+  }
+  .site-header .logo, .topbar .logo { letter-spacing: -0.01em; }
+}
+
+
+/* Table motion switched off: the same as the device asking for less motion. */
+:root[data-motion='off'] {
+  .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
+  .dealer, .seat, .seat .hole, .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
+  .chip-flight { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
+}

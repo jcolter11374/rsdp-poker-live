@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-g",
+      "date": "2026-10-26",
+      "title": "A table with some spark",
+      "items": [
+        { "title": "A lit table", "detail": "A lamp over the felt, a cloth you can almost feel, a padded rail and real shadows under the cards and chips. Whoever is acting sits in a pool of light." },
+        { "title": "Cards and chips that move", "detail": "Cards are thrown from the dealer button, board cards turn over one by one with a snap, bets are tossed in, and stacks count up when you win. Your shot clock runs round your nameplate." },
+        { "title": "Big moments", "detail": "The winning five cards lift and glow, the result is a gold banner, and an all-in player goes red-hot while the cards run out." },
+        { "title": "Our own look", "detail": "An RSDP crest in the felt, our own card back, and bigger, clearer numbers for stacks, bets and the pot. Too much movement on a slow phone? Turn off Table motion under Look, sound and me." }
+      ]
+    },
+    {
       "id": "2026-10-26-f",
       "date": "2026-10-26",
       "title": "Pre-moves that behave like PokerNow, and side games explained",
