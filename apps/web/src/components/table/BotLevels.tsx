@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BOT_LEVELS, type BotLevel, type SeatView, type TableView } from '@rsdp/engine/wire';
 import { call } from '../../socket';
 
@@ -64,7 +64,11 @@ export function BotLevelControl({ view, seat }: { view: TableView; seat: SeatVie
   const [picked, setPicked] = useState<BotLevel | null>(null);
   // The level shown is the live one, wherever the bot sits now.
   const live = view.seats.find((s) => s?.playerId === seat.playerId) ?? seat;
-  const level = picked ?? live.bot?.level ?? 'normal';
+  const current = live.bot?.level ?? 'normal';
+  useEffect(() => {
+    if (picked === current) setPicked(null);
+  }, [picked, current]);
+  const level = picked ?? current;
   return (
     <div className="bot-level">
       <h3>Level</h3>
@@ -75,9 +79,10 @@ export function BotLevelControl({ view, seat }: { view: TableView; seat: SeatVie
           setError('');
           setPicked(next);
           rememberBotLevel(next);
-          call('bot:level', { playerId: seat.playerId, level: next })
-            .catch((err: Error) => setError(err.message))
-            .finally(() => setPicked(null));
+          call('bot:level', { playerId: seat.playerId, level: next }).catch((err: Error) => {
+            setError(err.message);
+            setPicked(null);
+          });
         }}
       />
       {error && <p className="error">{error}</p>}

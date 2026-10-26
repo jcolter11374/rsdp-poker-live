@@ -402,12 +402,14 @@ describe('bot strategy', () => {
   });
 
   it('Hard follows how many cards an opponent draws in 2-7 Triple Draw', () => {
-    // I (seat 1) stand pat with a jack-low three times; they stand pat each time, or draw three each time, then bet the end.
-    const toTheEnd = (theirDraw: number[]) => {
+    // I (seat 1) stand pat with a jack-low three times; they stand pat each time, draw three each time, or let the
+    // clock stand pat for them, then bet the end.
+    const toTheEnd = (theirDraw: number[] | 'timed out') => {
       const hand = dealt('td27', ['Kc', 'Js', 'Qd', '8d', 'Th', '6c', '9s', '4h', 'Kh', '2s']);
       for (let i = 0; i < 40 && hand.phase !== 'complete'; i++) {
         const seat = hand.toAct!;
-        if (hand.phase === 'drawing') engine.draw(hand, seat, seat === 0 ? theirDraw : []);
+        if (hand.phase === 'drawing' && seat === 0 && theirDraw === 'timed out') engine.timeout(hand, 0);
+        else if (hand.phase === 'drawing') engine.draw(hand, seat, seat === 0 ? (theirDraw as number[]) : []);
         else if (seat === 1) break;
         else if (hand.street === hand.input.game.streets.length - 1) engine.act(hand, 0, { type: 'bet', to: 4 });
         else engine.act(hand, 0, engine.legalActions(hand, 0)!.canCheck ? { type: 'check' } : { type: 'call' });
@@ -421,12 +423,75 @@ describe('bot strategy', () => {
     const tuning = { ...botTuning };
     Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 300 });
     try {
-      const calls = (theirDraw: number[], level: 'normal' | 'hard') =>
+      const calls = (theirDraw: number[] | 'timed out', level: 'normal' | 'hard') =>
         Array.from({ length: 8 }, (_, i) => chooseMove(toTheEnd(theirDraw), 1, seededRand(i), { level })).filter((m) => m.kind === 'act' && m.action.type !== 'fold').length;
       // Normal can't tell the two apart; Hard calls the drawer down and gives the pat hand credit.
       expect(calls([], 'normal')).toBe(calls([0, 1, 2], 'normal'));
       expect(calls([0, 1, 2], 'hard')).toBe(8);
       expect(calls([], 'hard')).toBe(0);
+      // A stand-pat the clock made says nothing about their cards.
+      expect(calls('timed out', 'hard')).toBe(8);
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
+  it('Hard reads a draw-game opponent the same wherever they sit', () => {
+    // Four players, button in seat 0. One player raises, stands pat and bets; the other two call and draw three.
+    // I (seat 0) throw two cards and must call or fold. The deck is the same, so my cards are too.
+    const spot = (pat: number, seed: number) => {
+      const spec = getVariant('badugi');
+      const r = seededRand(seed);
+      const deck = 'AKQJT98765432'.split('').flatMap((x) => 'cdhs'.split('').map((s) => x + s));
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(r() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      const hand = engine.startHand({
+        handId: 'h',
+        handNumber: 1,
+        game: spec,
+        betting: spec.defaultBetting,
+        stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 1, smallBet: 2, bigBet: 4 },
+        maxSeats: 4,
+        seats: Array.from({ length: 4 }, (_, i) => ({ seat: i, playerId: `p${i}`, stack: 200, away: false })),
+        button: 0,
+        buttonDead: false,
+        posts: [
+          { seat: 1, kind: 'small-blind', amount: 1, live: true },
+          { seat: 2, kind: 'big-blind', amount: 2, live: true },
+        ],
+        deck,
+        reshuffleSeed: 1,
+        options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
+        modifiers: [],
+      });
+      for (let i = 0; i < 100; i++) {
+        const seat = hand.toAct!;
+        if (hand.phase === 'drawing') engine.draw(hand, seat, seat === pat ? [] : seat === 0 ? [0, 1] : [0, 1, 2]);
+        else if (seat === 0 && hand.street === 1) return hand;
+        else {
+          const legal = engine.legalActions(hand, seat)!;
+          if (seat === pat && legal.canRaise && hand.raisesThisRound < 1) engine.act(hand, seat, { type: legal.raiseKind === 'bet' ? 'bet' : 'raise', to: legal.minTo });
+          else engine.act(hand, seat, legal.canCheck ? { type: 'check' } : { type: 'call' });
+        }
+      }
+      throw new Error('never got to my turn');
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 300 });
+    try {
+      const moves = (pat: number) =>
+        Array.from({ length: 16 }, (_, i) => {
+          const hand = spot(pat, i + 1);
+          expect(hand.currentBet).toBe(2);
+          const move = chooseMove(hand, 0, seededRand(i + 1), { level: 'hard' });
+          return move.kind === 'act' ? move.action.type : 'draw';
+        });
+      const first = moves(1);
+      // It gives the pat hand credit (and calls the drawers down) whether the pat hand sits before or after them.
+      expect(moves(3)).toEqual(first);
+      expect(first.filter((m) => m === 'fold').length).toBeGreaterThanOrEqual(10);
     } finally {
       Object.assign(botTuning, tuning);
     }

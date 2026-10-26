@@ -79,7 +79,7 @@
 .home-practice .row { flex-wrap: wrap; }
 .home-practice .row > button { flex: 1 1 160px; padding-block: 9px; }
 /* The pickers keep room for their value; on a phone the button goes under them. */
-.home-practice .row > label { flex: 1 0 88px; }
+.home-practice .row > label { flex: 1 0 110px; }
 .home-practice .muted, .home-practice .hint { margin: 0; }
 .home-page .tagline { text-align: center; }
 @media (max-width: 860px) {

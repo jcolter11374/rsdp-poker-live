@@ -56,12 +56,13 @@ export const botTuning = {
 };
 
 /**
- * How much longer than Normal each level thinks about its chances. Drawing
- * (which has no time limit) stays at Normal's effort for Hard, whose opponent
- * model already costs more, so a decision stays within a few tens of milliseconds.
+ * How much longer than Normal each level thinks about its chances, and about
+ * how to draw. Hard in lowball draw games weighs only a few ways to draw
+ * (keepOptions), so twice the deals for each still keeps a decision within a
+ * few tens of milliseconds.
  */
 const EFFORT: Record<BotLevel, number> = { easy: 0.5, normal: 1, hard: 1.5 };
-const DRAW_EFFORT: Record<BotLevel, number> = { easy: 0.5, normal: 1, hard: 1 };
+const DRAW_EFFORT: Record<BotLevel, number> = { easy: 0.5, normal: 1, hard: 2 };
 
 export interface BotContext {
   /** Normal if missing. */
@@ -117,8 +118,8 @@ interface Situation {
   drawsInGame: number;
   /** Hard: for each live opponent, how many more random hands to deal them and keep the best of (see handReads). */
   reads?: number[];
-  /** Hard, lowball draw games: each live opponent's discards so far (one count per draw) and draws still to come. */
-  draws?: { done: number[]; left: number }[];
+  /** Hard, lowball draw games: each live opponent's discards so far (one count per draw, null when the table stood pat for them) and draws still to come. */
+  draws?: OpponentDraws[];
 }
 
 function situation(hand: HandState, seat: SeatIndex): Situation {
@@ -197,6 +198,15 @@ class Pool {
     }
     return out;
   }
+  /** Up to `count` random cards of `cards`. */
+  pick(cards: Card[], count: number): Card[] {
+    const out = cards.slice();
+    for (let i = 0; i < count && i < out.length; i++) {
+      const j = i + Math.floor(this.rand() * (out.length - i));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out.slice(0, count);
+  }
 }
 
 /**
@@ -257,7 +267,11 @@ function readHands(view: Situation, pool: Pool, opponents: Card[][], hands: Card
     for (let t = 0; t < tries; t++) {
       // None of the cards anyone else holds in this deal.
       const taken = hands.flat();
-      let other = [...up, ...pool.sample(view.cardsPerPlayer - up.length, taken)];
+      const need = view.cardsPerPlayer - up.length;
+      const fill = pool.sample(need, taken);
+      // A crowded deck may not have enough cards left: the hidden cards this opponent was dealt could be theirs too.
+      if (fill.length < need) fill.push(...pool.pick(hands[i + 1].filter((c) => !up.includes(c)), need - fill.length));
+      let other = [...up, ...fill];
       if (other.length < view.cardsPerPlayer) break;
       if (view.draws) other = replayDraws(view, pool, other, view.draws[i], taken);
       const share = boards.reduce((n, board) => n + potShare(view.spec, [other, hands[i + 1]], board), 0) / boards.length;
@@ -268,13 +282,34 @@ function readHands(view: Situation, pool: Pool, opponents: Card[][], hands: Card
 
 // ---------------------------------------------------------------- Hard: what opponents' draws say
 
+type LowRule = 'deuce-to-seven' | 'badugi';
+
 /** How low a card is in a lowball draw game (aces are high in 2-7, low in Badugi). */
-function lowRank(rule: 'deuce-to-seven' | 'badugi', card: Card) {
-  return rule === 'badugi' && card[0] === 'A' ? 1 : rankOf(card);
+function lowRank(rule: LowRule, card: Card) {
+  return LOW_RANKS[rule][card];
+}
+
+/** Each card's lowRank, worked out once (these run thousands of times a decision). */
+const LOW_RANKS: Record<LowRule, Record<Card, number>> = {
+  'deuce-to-seven': Object.fromEntries(freshDeck().map((c) => [c, rankOf(c)])),
+  badugi: Object.fromEntries(freshDeck().map((c) => [c, c[0] === 'A' ? 1 : rankOf(c)])),
+};
+
+/** A few cards, lowest first (an insertion sort: these hands have four or five cards). */
+function lowestFirst(rule: LowRule, cards: Card[]): Card[] {
+  const rank = LOW_RANKS[rule];
+  const out = cards.slice();
+  for (let i = 1; i < out.length; i++) {
+    const card = out[i];
+    let j = i - 1;
+    for (; j >= 0 && rank[out[j]] > rank[card]; j--) out[j + 1] = out[j];
+    out[j + 1] = card;
+  }
+  return out;
 }
 
 /** The lowball rule of a draw game whose draws Hard can follow, or null. */
-function lowDrawRule(spec: VariantSpec): 'deuce-to-seven' | 'badugi' | null {
+function lowDrawRule(spec: VariantSpec): LowRule | null {
   const low = spec.showdown.low;
   return low === 'deuce-to-seven' || low === 'badugi' ? low : null;
 }
@@ -283,8 +318,8 @@ function lowDrawRule(spec: VariantSpec): 'deuce-to-seven' | 'badugi' | null {
  * The `k` cards a player keeps: the lowest cards of different ranks (and, in
  * Badugi, different suits) first, then the lowest of the rest.
  */
-function keepBest(rule: 'deuce-to-seven' | 'badugi', cards: Card[], k: number): Card[] {
-  const sorted = [...cards].sort((a, b) => lowRank(rule, a) - lowRank(rule, b));
+function keepBest(rule: LowRule, cards: Card[], k: number): Card[] {
+  const sorted = lowestFirst(rule, cards);
   const ranks = new Set<string>();
   const suits = new Set<string>();
   const first: Card[] = [];
@@ -300,28 +335,51 @@ function keepBest(rule: 'deuce-to-seven' | 'badugi', cards: Card[], k: number): 
   return [...first, ...rest].slice(0, Math.max(0, k));
 }
 
-/** The cards a player keeps when they draw again: a 9-low or better 2-7 hand, or a four-card badugi, stands pat. */
-function keepOnDraw(rule: 'deuce-to-seven' | 'badugi', cards: Card[]): Card[] {
-  const sorted = [...cards].sort((a, b) => lowRank(rule, a) - lowRank(rule, b));
+/** The cards a player keeps when they draw again: a 10-low or better 2-7 hand, or a four-card badugi, stands pat. */
+function keepOnDraw(rule: LowRule, cards: Card[]): Card[] {
+  const sorted = lowestFirst(rule, cards);
   const kept: Card[] = [];
   if (rule === 'badugi') {
     // The lowest cards that are all different ranks and suits.
     for (const card of sorted) if (kept.every((c) => c[0] !== card[0] && suitOf(c) !== suitOf(card))) kept.push(card);
     return kept;
   }
-  const paired = new Set(cards.map((c) => c[0])).size < cards.length;
-  if (!paired && lowRank(rule, sorted[sorted.length - 1]) <= 9) return cards;
-  // Different ranks of 8 or lower.
-  for (const card of sorted) if (lowRank(rule, card) <= 8 && kept.every((c) => c[0] !== card[0])) kept.push(card);
+  // Sorted, so a pair sits side by side.
+  const paired = sorted.some((c, i) => i > 0 && c[0] === sorted[i - 1][0]);
+  if (!paired && lowRank(rule, sorted[sorted.length - 1]) <= 10) return cards;
+  // Different ranks of 10 or lower.
+  for (const card of sorted) if (lowRank(rule, card) <= 10 && kept.every((c) => c[0] !== card[0])) kept.push(card);
   return kept;
 }
 
-/** Hard: how many cards each live opponent has thrown at each draw so far, and how many draws they have left. */
-function opponentDraws(hand: HandState, seat: SeatIndex, drawsInGame: number): { done: number[]; left: number }[] {
+/** Ways to draw that keep the best few cards: standing pat first, then throwing one more card at a time. */
+function keepOptions(rule: LowRule, mine: Card[], maxDiscard: number): number[][] {
+  const seen = new Set<string>();
+  const out: number[][] = [];
+  for (let keep = mine.length; keep >= Math.max(0, mine.length - maxDiscard); keep--) {
+    const kept = keepBest(rule, mine, keep);
+    const discard = mine.flatMap((c, i) => (kept.includes(c) ? [] : [i]));
+    const key = discard.join();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(discard);
+    }
+  }
+  return out;
+}
+
+/** How many cards an opponent threw at each draw so far (null when the table stood pat for them while away), and how many draws they have left. */
+interface OpponentDraws {
+  done: (number | null)[];
+  left: number;
+}
+
+/** Hard: each live opponent's draws so far. */
+function opponentDraws(hand: HandState, seat: SeatIndex, drawsInGame: number): OpponentDraws[] {
   return hand.seats
     .filter((x) => x.seat !== seat && !x.folded)
     .map((x) => {
-      const done = hand.events.flatMap((ev) => (ev.t === 'draw' && ev.seat === x.seat ? [ev.discarded] : []));
+      const done = hand.events.flatMap((ev) => (ev.t === 'draw' && ev.seat === x.seat ? [ev.auto ? null : ev.discarded] : []));
       return { done, left: Math.max(0, drawsInGame - done.length) };
     });
 }
@@ -331,13 +389,15 @@ function opponentDraws(hand: HandState, seat: SeatIndex, drawsInGame: number): {
  * At each draw they made, they kept their good cards (keepOnDraw) and threw
  * the rest; when they kept more than that hand has, the extra cards they kept
  * are dealt as good ones too (low, and a rank, or in Badugi a suit, they don't
- * have yet). Draws still to come follow keepOnDraw.
+ * have yet). A stand-pat the table made for them says nothing, so their cards
+ * stay as dealt. Draws still to come follow keepOnDraw.
  */
-function replayDraws(view: Situation, pool: Pool, start: Card[], draws: { done: number[]; left: number }, taken: Card[]): Card[] {
+function replayDraws(view: Situation, pool: Pool, start: Card[], draws: OpponentDraws, taken: Card[]): Card[] {
   const rule = lowDrawRule(view.spec)!;
   const n = start.length;
   let hand = start;
   for (const thrown of draws.done) {
+    if (thrown === null) continue;
     const keep = Math.max(0, n - thrown);
     const kept = keepBest(rule, keepOnDraw(rule, hand), keep);
     if (kept.length < keep) kept.push(...goodCards(rule, pool, kept, keep - kept.length, taken));
@@ -355,13 +415,13 @@ function replayDraws(view: Situation, pool: Pool, start: Card[], draws: { done: 
   return hand;
 }
 
-/** Up to `count` unseen cards of 9 or lower that go with `kept`: new ranks, and in Badugi new suits. */
-function goodCards(rule: 'deuce-to-seven' | 'badugi', pool: Pool, kept: Card[], count: number, taken: Card[]): Card[] {
+/** Up to `count` unseen cards of 10 or lower (Jack or lower in Badugi) that go with `kept`: new ranks, and in Badugi new suits. */
+function goodCards(rule: LowRule, pool: Pool, kept: Card[], count: number, taken: Card[]): Card[] {
   const out: Card[] = [];
   for (const card of pool.sample(16, [...kept, ...taken])) {
     if (out.length >= count) break;
     const have = [...kept, ...out];
-    if (lowRank(rule, card) <= 9 && have.every((c) => c[0] !== card[0] && (rule !== 'badugi' || suitOf(c) !== suitOf(card)))) out.push(card);
+    if (lowRank(rule, card) <= (rule === 'badugi' ? 11 : 10) && have.every((c) => c[0] !== card[0] && (rule !== 'badugi' || suitOf(c) !== suitOf(card)))) out.push(card);
   }
   return out;
 }
@@ -393,6 +453,31 @@ const DRAW_OPPONENTS = 2;
 /** Ways of drawing looked at again more closely. */
 const DRAW_FINALISTS = 4;
 
+/**
+ * The opponents drawing is tried against: the first few, or for Hard the most
+ * dangerous few (the strongest reads, and the fewest cards drawn), so it
+ * doesn't matter where they sit.
+ */
+function drawField(view: Situation): Situation {
+  if (!view.reads || view.opponents.length <= DRAW_OPPONENTS) return { ...view, opponents: view.opponents.slice(0, DRAW_OPPONENTS) };
+  const threat = (i: number) => {
+    const drawn = (view.draws?.[i]?.done ?? []).filter((n): n is number => n !== null);
+    const thrown = drawn.length ? drawn.reduce((a, b) => a + b, 0) / drawn.length : 0;
+    return (view.reads![i] ?? 0) - thrown;
+  };
+  // A stable sort keeps seat order on ties.
+  const picked = view.opponents
+    .map((_, i) => i)
+    .sort((a, b) => threat(b) - threat(a))
+    .slice(0, DRAW_OPPONENTS);
+  return {
+    ...view,
+    opponents: picked.map((i) => view.opponents[i]),
+    reads: picked.map((i) => view.reads![i]),
+    draws: view.draws && picked.map((i) => view.draws![i]),
+  };
+}
+
 /** Equity against `from` opponents, as if each were beaten independently, stretched to `to` of them. */
 function scaleToField(equity: number, from: number, to: number) {
   const used = Math.min(from, to);
@@ -412,7 +497,7 @@ export function bestDraw(
   sims: { screen: number; final: number } = { screen: botTuning.drawSims, final: botTuning.drawFinalSims },
 ): { discard: number[]; equity: number } {
   const cards = view.mine.length;
-  const opponents = view.opponents.slice(0, DRAW_OPPONENTS);
+  const field = drawField(view);
   const seeds = (n: number) => Array.from({ length: n }, () => Math.floor(rand() * 2 ** 31));
   const equityOf = (discard: number[], deals: number[]) => {
     const kept = view.mine.filter((_, i) => !discard.includes(i));
@@ -425,12 +510,14 @@ export function bestDraw(
         const other = [...kept, ...pool.deal(discard.length)];
         if (other.length === mine.length && potShare(view.spec, [other, mine], []) > 0.5) mine = other;
       }
-      sum += simulate(view, pool, mine, opponents);
+      sum += simulate(field, pool, mine, field.opponents);
     }
     return sum / deals.length;
   };
-  const options: number[][] = [];
-  for (let mask = 0; mask < 1 << cards; mask++) {
+  // Hard in lowball games only weighs keeping its best few cards (all of them, all but one...), which is quicker and as good.
+  const rule = view.draws ? lowDrawRule(view.spec) : null;
+  const options: number[][] = rule ? keepOptions(rule, view.mine, maxDiscard) : [];
+  for (let mask = 0; !rule && mask < 1 << cards; mask++) {
     const discard = [...Array(cards).keys()].filter((i) => mask & (1 << i));
     if (discard.length <= maxDiscard) options.push(discard);
   }
