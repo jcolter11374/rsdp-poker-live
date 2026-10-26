@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-f",
+      "date": "2026-10-26",
+      "fixes": [
+        "In draw games, the hand log now says \"stands pat (auto)\" when someone stood pat because they were away or ran out of time, so it doesn't look like a choice."
+      ]
+    },
+    {
       "id": "2026-10-26-e",
       "date": "2026-10-26",
       "fixes": [

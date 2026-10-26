@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-f",
+      "date": "2026-10-26",
+      "title": "Easy, Normal and Hard bots",
+      "items": [
+        { "title": "Pick how good your practice bot is", "detail": "Choose Easy, Normal or Hard when you add a bot or start a practice game, and change it any time from the bot's popup. Easy calls a lot, bets small and never bluffs, which makes it good for learning a new game. Hard reads what your bets mean, learns how you play, uses position and bluffs. In our tests Hard beat Normal, and Normal beat Easy, in every game." },
+        { "title": "Your browser watches for a swapped deck", "detail": "Each hand's deck is sealed before the deal. Your browser now also warns you if the table swaps the sealed deck for the next hand for a different one without dealing it, which is how a dishonest server would hunt for a deck it likes. The Fairness page explains how it works and what it can't catch." }
+      ]
+    },
+    {
       "id": "2026-10-26-e",
       "date": "2026-10-26",
       "title": "No secret spectators",

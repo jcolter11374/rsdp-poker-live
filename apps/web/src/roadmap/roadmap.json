@@ -34,6 +34,7 @@
       "title": "Coming in the next release",
       "blurb": "What we're working on next.",
       "items": [
+        { "title": "Coach tips for practice", "detail": "At a practice table, tap for a tip on your turn: your chance of winning, what the call costs and what to do. Bots explain their moves after each hand." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." }
       ]
     },
