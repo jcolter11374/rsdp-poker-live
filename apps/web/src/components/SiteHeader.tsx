@@ -98,7 +98,6 @@ export function SiteFooter() {
       <a href="/fairness">Fair dealing</a>
       <a href="/transparency">Checking John</a>
       {commit && <a href={`https://github.com/jcolter11374/rsdp-poker-live/commit/${commit}`} title="The code this server says it runs; /transparency shows GitHub's check of it">Build {commit.slice(0, 7)}</a>}
-      <span className="muted">Play money only. Every game and option is free.</span>
     </footer>
   );
 }
