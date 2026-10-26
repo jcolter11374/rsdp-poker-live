@@ -19,6 +19,8 @@ export interface Frozen {
   logCut: number;
   seats: TableView['seats'];
   ledger: TableView['ledger'];
+  me: TableView['me'];
+  nit: TableView['nit'];
 }
 
 /**
@@ -41,8 +43,15 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
     const steps = hand ? runoutSteps(hand.events).length : 0;
     // A hand can also be dealt and run out in one go (a bomb pot with someone all in from the start).
     // The first view after opening the table has nothing to compare with, so it shows the runout finished.
-    if (hand && before && steps && (before.hand?.handNumber !== hand.handNumber || !ranIt(before.hand))) {
-      setReveal({ handNumber: hand.handNumber, steps, before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger } });
+    // Only straight after the hand before, so coming back from a dropped connection doesn't replay an old runout.
+    const prior = before?.hand;
+    const fresh = !!hand && !!prior && (prior.handNumber === hand.handNumber ? !ranIt(prior) : prior.handNumber === hand.handNumber - 1);
+    if (hand && before && steps && fresh) {
+      setReveal({
+        handNumber: hand.handNumber,
+        steps,
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit },
+      });
       setShown(0);
     }
   }
@@ -85,6 +94,9 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     hand: { ...hand, phase: 'betting', showdown: false, awards: [], boards, events, pots, potTotal: Math.max(hand.potTotal, won) },
     seats: seatsDuring(view, before),
     ledger: before.ledger,
+    // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
+    me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
+    nit: before.nit,
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
@@ -110,8 +122,9 @@ function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
     const s = start && live?.playerId !== start.playerId && was?.playerId === start.playerId ? was : live;
     if (!s) return s;
     const stack = start?.playerId === s.playerId ? start.stack - (paid.get(i) ?? 0) : s.stack - s.won;
-    // Sitting out for being busted, leaving and the like are the result too.
-    const prior = was?.playerId === s.playerId ? was : s;
+    // Sitting out for being busted, leaving, coming off the nit and the like are the result too.
+    // Players not in the hand change as they like.
+    const prior = start?.playerId === s.playerId && was?.playerId === s.playerId ? was : s;
     return {
       ...s,
       stack,
@@ -122,6 +135,7 @@ function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
       sitOutReason: prior.sitOutReason,
       leaving: prior.leaving,
       waiting: prior.waiting,
+      nit: prior.nit,
     };
   });
 }

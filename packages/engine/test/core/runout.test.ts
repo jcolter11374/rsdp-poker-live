@@ -41,9 +41,10 @@ describe('runout steps', () => {
 
   it('leaves stud alone: its runout deals to the seats, with a shared card at most', () => {
     const events = [
-      { seq: 1, t: 'run-it', times: 1 },
+      { seq: 1, t: 'street', street: 1, name: '4th street' },
       { seq: 2, t: 'deal', seat: 0, cards: [] },
-      { seq: 3, t: 'board', run: 0, board: 0, cards: ['Ah'] },
+      { seq: 3, t: 'run-it', times: 1 },
+      { seq: 4, t: 'board', run: 0, board: 0, cards: ['Ah'] },
     ] as unknown as Parameters<typeof runoutSteps>[0];
     expect(runoutSteps(events)).toEqual([]);
   });

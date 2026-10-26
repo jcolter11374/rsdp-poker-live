@@ -83,8 +83,11 @@ export function useFollowSeat(currentTable: string | null, seatedHere = false, h
       const next = followMove(move, currentTable, seatedHere);
       if (next === 'go') setHeld(move.to);
       else if (next === 'offer') setReady(move.to);
-      // Keep the link on the seat when the tournament moves it again.
-      else setReady((r) => (r === move.from ? move.to : r));
+      // Keep the link (or the held move) on the seat when the tournament moves it again.
+      else {
+        setReady((r) => (r === move.from ? move.to : r));
+        setHeld((h) => (h === move.from ? move.to : h));
+      }
     };
     socket.on('table:moved', onMoved);
     return () => {

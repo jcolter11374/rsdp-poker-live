@@ -228,7 +228,7 @@ export function Table({
     const f = el.getBoundingClientRect();
     const r = pot.getBoundingClientRect();
     potSpot.current = { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
-  });
+  }, [view, w, h]);
   const potPoint = (): Point => potSpot.current ?? boardMiddle;
   const geometry = useRef({ betPoint, seatPoint, center, potPoint });
   geometry.current = { betPoint, seatPoint, center: boardMiddle, potPoint };

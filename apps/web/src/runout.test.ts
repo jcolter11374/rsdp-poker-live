@@ -35,6 +35,8 @@ function finished(): TableView {
     ledger: [{ playerId: 'a', net: 0 }],
     log: [{ at: 10, text: 'Rosa calls' }, { at: 20, text: 'John wins 100' }],
     history: [{ handNumber: 3 }, { handNumber: 4 }],
+    me: { playerId: 'a', seat: 0 },
+    nit: null,
     canShow: [0, 1],
     nextHandAt: 99,
     rabbit: { available: false, cards: null },
@@ -42,7 +44,7 @@ function finished(): TableView {
 }
 
 /** The table just before the runout. */
-const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [] });
+const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null });
 
 describe('holdBack', () => {
   it('shows no runout cards before the first step, and keeps the result back', () => {
@@ -70,7 +72,8 @@ describe('holdBack', () => {
   it('keeps players at the table who bust or leave when the hand ends', () => {
     const done = finished();
     const busted = { ...done.seats[0]!, stack: 0, won: 0, sittingOut: true, sitOutReason: 'busted' as const };
-    const v = holdBack({ ...done, seats: [busted, null] }, before(), 0);
+    const v = holdBack({ ...done, seats: [busted, null], me: { playerId: 'a', seat: null } }, before(), 0);
+    expect(v.me.seat).toBe(0);
     expect(v.seats[0]).toMatchObject({ playerId: 'a', sittingOut: false, sitOutReason: null, stack: 0, allIn: true });
     expect(v.seats[1]).toMatchObject({ playerId: 'b', stack: 20 });
   });

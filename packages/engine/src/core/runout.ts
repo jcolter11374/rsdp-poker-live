@@ -22,8 +22,10 @@ export function runoutSteps(events: readonly HandEvent[]): BoardEvent[][] {
   const steps: BoardEvent[][] = [];
   let last: BoardEvent | null = null;
   const after = events.slice(start + 1);
-  // Stud runs out by dealing to the seats; those streets aren't paced.
-  if (after.some((e) => e.t === 'deal')) return [];
+  // Stud deals each street to the seats (hold'em and Omaha deal to seats only before the first street),
+  // and its runouts aren't paced, even when a short deck makes the last card a shared one.
+  const firstStreet = events.findIndex((e) => e.t === 'street');
+  if (firstStreet >= 0 && events.slice(firstStreet).some((e) => e.t === 'deal')) return [];
   for (const e of after) {
     if (e.t !== 'board') continue;
     // The engine deals run by run, street by street, board by board: a new street starts
