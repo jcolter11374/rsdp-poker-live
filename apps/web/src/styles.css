@@ -577,6 +577,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .back-pick { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 10px; background: transparent; border: 2px solid transparent; }
 .back-pick span { font-size: 0.8rem; }
 .look .toggle { white-space: nowrap; margin-right: 14px; }
+@media (max-width: 500px) { .look .toggle { white-space: normal; } }
+.look .toggle + .hint { margin: -4px 0 4px 26px; }
 
 /* Check this hand (provably fair dealing) */
 .replayer-head-buttons { display: flex; gap: 6px; align-items: center; }

@@ -208,13 +208,37 @@ export function Table({
     }
   const highlight = (card: string, set: Set<string> | undefined) => (!set || set.size === 0 || card === '??' ? '' : set.has(card) ? 'win' : 'dim');
 
-  // One line per winner: total won and the best hand they won with.
+  // One line per winner: total won and each different hand they won with. With two runs or two boards,
+  // each hand says which run or board it won, so run 2's full house isn't shown as run 1's two pair.
   const results = new Map<number, { amount: number; handName?: string }>();
-  if (done)
+  if (done) {
+    const twoRuns = hand!.boards.length > 1;
+    const twoBoards = (hand!.boards[0]?.length ?? 0) > 1;
+    const slots = hand!.boards.length * (hand!.boards[0]?.length ?? 1);
+    const names = new Map<number, Map<string, string[]>>();
     for (const a of hand!.awards) {
       const prev = results.get(a.seat);
-      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount, handName: prev?.handName ?? a.handName });
+      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount });
+      if (!a.handName) continue;
+      const where = [twoRuns && `Run ${a.run + 1}`, twoBoards && `Board ${a.board + 1}`].filter(Boolean).join(', ');
+      const byName = names.get(a.seat) ?? new Map<string, string[]>();
+      names.set(a.seat, byName);
+      // A hi-lo scoop is named "Flush and 8-6 low": its halves group with high-only or low-only wins elsewhere.
+      for (const name of a.half === 'scoop' ? a.handName.split(' and ') : [a.handName]) {
+        const places = byName.get(name) ?? [];
+        if (where && !places.includes(where)) places.push(where);
+        byName.set(name, places);
+      }
     }
+    for (const [seat, byName] of names) {
+      const list = [...byName.entries()];
+      // Places are named unless every hand was won everywhere (or there's only one run and board).
+      const everywhere = list.every(([, places]) => places.length === 0 || places.length === slots);
+      results.get(seat)!.handName = everywhere
+        ? list.map(([name]) => name).join(' and ')
+        : list.map(([name, places]) => (places.length ? `${places.join(' & ')}: ${name}` : name)).join(' · ');
+    }
+  }
 
   // Chip flights: bets swept in when a betting round ends, the pot pushed to the winners.
   const [flights, setFlights] = useState<Flight[]>([]);

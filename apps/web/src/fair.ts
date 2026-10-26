@@ -16,6 +16,8 @@ const KEEP = 300;
 const IN_TIME_MS = 1500;
 /** The server waits 2.5 s between showing a commitment and dealing from it (FAIR_LEAD_MS); this leaves room for lag. */
 const LEAD_MS = 2000;
+/** A page that went this long without running (a frozen tab, a sleeping laptop) may get a backlog of views at once. */
+const STALL_MS = 1500;
 
 type Store = Record<string, string>;
 
@@ -49,6 +51,8 @@ export function mySeedFor(commit: string): string | null {
 interface Sent {
   seed: string;
   at: number;
+  /** The table it was sent at (older records have none). */
+  table?: string;
   /** The server turned it down this long after it was sent. */
   rejected?: { after: number };
 }
@@ -99,27 +103,61 @@ function recordLive(view: TableView) {
 
 let sent = '';
 let sending = '';
-
+/**
+ * Notes when this browser saw each commitment appear as a table's next hand's, seated or watching: the deal from it
+ * should come well after (seedProblem's "too soon"). That is only known when this page was already showing the table
+ * on the same connection, and kept running, before it appeared. A page that opens the table (including after a
+ * tournament move) or reconnects with a commitment already up can't tell how long it has been up, and an honest server
+ * may deal from it at once, so nothing is noted; nor after the page itself stalled, when views pile up and arrive
+ * together. Noted per table, so a commitment shown early at another table can't vouch for this one. One per table
+ * page, like watchCommitments; call stop() when done.
+ */
+export function watchNextSeen(
+  socketId: () => string | undefined = () => socket.id,
+  now: () => number = Date.now,
+  every: (tick: () => void) => () => void = (tick) => {
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  },
+) {
+  let last: { table: string; socket: string; commit: string } | null = null;
+  // A local heartbeat the server can't touch: a gap in it means this page didn't run for a while.
+  let beat = now();
+  const awake = () => {
+    if (now() - beat > STALL_MS) last = null;
+    beat = now();
+  };
+  const stop = every(awake);
+  const onView = (view: TableView) => {
+    awake();
+    const commit = view.fair?.nextCommit;
+    const sock = socketId();
+    if (!commit || !sock) return;
+    const watching = last && last.table === view.id && last.socket === sock;
+    const key = `${view.id}#${commit}`;
+    if (watching && last!.commit !== commit && !load(NEXT)[key]) save(NEXT, key, String(now()));
+    last = { table: view.id, socket: sock, commit };
+  };
+  return Object.assign(onView, { stop });
+}
 
 /** Call with every table view: sends a fresh seed once per published commitment while seated, and notes what the hand showed. */
 export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
-  // When I first saw this commitment as next while seated: the deal from it should come well after.
-  if (commit && view.me.seat !== null && !load(NEXT)[commit]) save(NEXT, commit, String(Date.now()));
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;
   const seed = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.
   const at = Date.now();
-  save(SENT, commit, JSON.stringify({ seed, at } satisfies Sent));
+  save(SENT, commit, JSON.stringify({ seed, at, table: view.id } satisfies Sent));
   socket.emit('fair:seed', { commit, seed }, (res) => {
     if (sending === commit) sending = '';
     // One seed per commitment, accepted or not: a fresh one after a refusal would let a server pick and choose.
     sent = commit;
     if (!res.ok) {
-      save(SENT, commit, JSON.stringify({ seed, at, rejected: { after: Date.now() - at } } satisfies Sent));
+      save(SENT, commit, JSON.stringify({ seed, at, table: view.id, rejected: { after: Date.now() - at } } satisfies Sent));
       return;
     }
     save(SEEDS, commit, seed);
@@ -253,7 +291,7 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
     return `your browser sent its seed (${accepted ?? sentSeed!.seed}) in good time, but the hand was dealt without it`;
   }
   // Nor may the server show a commitment only at the last moment, so that every seed is "late".
-  const nextSeen = Number(load(NEXT)[commit] ?? NaN);
+  const nextSeen = sentSeed?.table ? Number(load(NEXT)[`${sentSeed.table}#${commit}`] ?? NaN) : NaN;
   if (!under && dealtIn && sentSeed && dealtAt !== null && dealtAt - nextSeen < LEAD_MS) {
     return `the hand was dealt too soon after its commitment appeared for your browser's seed (${sentSeed.seed}) to count`;
   }

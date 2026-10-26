@@ -339,10 +339,20 @@ Limits, stated plainly:
   its seed was left out although sent more than 1.5 seconds before the deal
   (whatever the server answered: an honest server only turns down a seed that
   arrived after the deal); if its seed was left out of a hand dealt less than
-  2 seconds after the commitment first appeared; and if the server uses a seed
-  it said it turned down. So this is caught unless the affected player never
-  looks (say they left right after the hand, or play with browser storage
-  blocked), or sat down in the last moment before a deal.
+  2 seconds after it saw the commitment appear; and if the server uses a seed
+  it said it turned down. The browser only knows when a commitment appeared if
+  it was already showing that table, seated or watching, on the same
+  connection, and kept running. One that opens the table (including when a
+  tournament moves you), reconnects, or wakes from a frozen tab or a sleeping
+  device with a commitment already up can't tell how long it was up, so it
+  doesn't warn about that hand being dealt too soon; a tab left in the
+  background for a long time, which browsers slow right down, mostly skips
+  this check too. A server could cause a reconnect or a tournament move to hide
+  a last-moment commitment; you might only see a brief "Reconnecting" notice,
+  or the page switching tables. So this is caught
+  unless the affected player never looks (say they left right after the hand,
+  or play with browser storage blocked), opened the table, reconnected or woke
+  the page just before a deal, or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
 - A server could also replace a published commitment without dealing from
   it, to try another deck. A browser showing the table live marks the hands
