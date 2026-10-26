@@ -92,6 +92,11 @@ describe('side game guides', () => {
     cash.modifiers.rake = { ...rakeSchema.defaults(), enabled: true };
     expect(extrasOn(cash)).toContain('nit-game');
     expect(extrasOn(cash)).toContain('house-fee');
+    const stud = defaultSettings('cash');
+    stud.game.gameId = 'stud';
+    stud.modifiers['bounty-72'] = { ...bounty72Schema.defaults(), enabled: true };
+    expect(extrasOn(stud)).not.toContain('straddles');
+    expect(extrasOn(stud)).not.toContain('seven-deuce');
     const tourney = defaultSettings('tournament');
     expect(extrasOn(tourney)).toEqual(['rabbit-hunt', 'time-bank', 'showdown']);
   });

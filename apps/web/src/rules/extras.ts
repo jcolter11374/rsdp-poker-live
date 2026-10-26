@@ -1,13 +1,15 @@
 import type { TableSettings } from '@rsdp/engine/settings';
 import { bombPotSchema, bounty72Schema, doubleBoardSchema, nitSchema, rakeSchema } from '@rsdp/engine/modifiers';
+import { getVariant } from '@rsdp/engine/variants';
 import type { CardList } from './guides';
 
 /*
  * Plain-language guides to the side games and house rules: what each one is,
  * how it works here, worked examples and the host settings that change it.
  * The numbers in the examples come from the constants below, and
- * extras.test.ts plays them through the engine, so a guide can't promise a
- * payout or a minimum raise the table would work out differently.
+ * extras.test.ts checks the straddle, bomb pot, 7-2, split-pot and house fee
+ * numbers against the engine, so a guide can't promise a payout or a minimum
+ * raise the table would work out differently.
  */
 
 /** One worked example: a short story with real numbers, and optional cards to show. */
@@ -111,7 +113,7 @@ export const EXTRAS: ExtraGuide[] = [
           `The prize is ${NIT_EX.prizeBigBlinds} big blinds, so ${nitPrize} chips to each player. Ana, Ben, Cy, Dee and Eve are all in, so all five start on the nit.`,
           'Hand 1: Ben bets the flop and everyone folds. He won the pot alone, so he is off the nit.',
           "Hand 2: Ana and Cy split the pot with the same straight. A chop doesn't count, so both are still on.",
-          "Hand 3: Dee is all in and wins the main pot, but Eve wins the side pot that Dee was also in. Dee didn't win every pot she was in, so she stays on. Eve didn't either: she lost the main pot.",
+          'Hand 3: Dee and Eve are all in and run it twice. Dee wins run 1 and Eve wins run 2. Neither won the pot alone, so both stay on.',
           'A few hands later Ana, Cy and Dee have each won a pot on their own. Eve is the last one on the nit.',
           `Eve pays ${nitPrize} to each of the other four: ${nitOwed} in all. The round is over, and a new one starts once enough ticked players are dealt in again.`,
         ],
@@ -277,7 +279,7 @@ export const EXTRAS: ExtraGuide[] = [
     cashOnly: true,
     idea: 'A straddle is an extra blind, double the big blind, posted before the cards by the player just left of the big blind ("under the gun"). It doubles the stakes for that hand.',
     steps: [
-      'Turn on "Straddle when I\'m under the gun" (the Straddle chip on a computer). It then posts for you every time you\'re under the gun.',
+      'Turn on "Straddle when I\'m under the gun" (the Straddle chip on a computer). It then posts for you every time you\'re under the gun. If the host allows button re-straddles, the same switch also straddles for you when you\'re on the button.',
       'The straddle is live: action starts with the player on your left, and you act last before the flop. If nobody raises, you can check or raise.',
       'The smallest raise over a straddle is a whole straddle more.',
       'If the host allows a button re-straddle, the player on the button can straddle too, for double whatever the biggest blind is. Then the small blind acts first and the button acts last before the flop.',
@@ -338,10 +340,10 @@ export const EXTRAS: ExtraGuide[] = [
     steps: [
       'Each turn you have the normal clock: 30 seconds by default.',
       'Your time bank is extra seconds you carry from hand to hand.',
-      'When your normal time runs out, the bank starts by itself (unless the host turned that off). You can also start it early with the "Time bank" button on your turn.',
+      'When your normal time runs out, the bank starts by itself (unless the host turned that off, or you\'re offline or sitting out). You can also start it early with the "Time bank" button on your turn.',
       "You only spend time you use past the normal clock, rounded up to whole seconds. Starting it early and then acting in your normal time costs nothing.",
       "When the bank runs out too, you check if you can, otherwise you fold. Run out of time twice in a row and you're sat out.",
-      'Every so many hands the bank goes back to full, whether you used it or not.',
+      'Every so many hands (counted from the last refill) the bank goes back to full, whether you used it or not.',
       'When the host pauses the game, every clock stops where it is.',
     ],
     examples: [
@@ -350,7 +352,7 @@ export const EXTRAS: ExtraGuide[] = [
         lines: [
           `You think for ${TIME_EX.firstThink} seconds before calling. The first ${TIME_EX.clock} are your normal time, so ${bankUsed} come out of the bank and ${bankLeft} are left.`,
           `Next time you're stuck, you have ${TIME_EX.clock} + ${bankLeft} = ${TIME_EX.clock + bankLeft} seconds before you're checked or folded.`,
-          `After ${TIME_EX.refillHands} hands (the default), the bank is back to ${TIME_EX.bank}.`,
+          `At the next refill (every ${TIME_EX.refillHands} hands by default) the bank is back to ${TIME_EX.bank}.`,
         ],
       },
     ],
@@ -367,7 +369,7 @@ export const EXTRAS: ExtraGuide[] = [
     steps: [
       'When the last bet is called on the river, the last player who bet or raised in that round shows first. If everyone checked, the first player left of the button shows first.',
       'Going round to the left, each hand is shown if it beats or ties the best hand shown so far (on any board, or for either half of a hi-lo pot). Hands that can\'t win anything are mucked unseen.',
-      "A player who is all in always shows. When nobody can bet any more before the river, every hand still in is turned face up straight away.",
+      "A player who is all in always shows. In flop and stud games, when nobody can bet any more before the last card, every hand still in is turned face up straight away.",
       'After the hand, anyone who was dealt in can show all their cards, or just one, with the Show cards buttons, until the next hand starts. In draw games a folded hand can\'t be shown.',
       'The host can switch on "Show every hand at showdown" to turn every hand that reached showdown face up.',
     ],
@@ -398,7 +400,7 @@ export const EXTRAS: ExtraGuide[] = [
       '"No flop, no fee": a hand that ends before the flop pays nothing. In stud and draw games that means a hand that ends in the first betting round.',
       'An optional short-handed rate is used when only a few players are dealt in, with its own cap.',
       'The 7-2 bounty and Nit game payments are never charged.',
-      "The total is shown under the action bar to the host, or to everyone if the host chooses. Each hand's log shows what was taken from it.",
+      "The total is shown under the action bar to the host and co-hosts, or to everyone if the host chooses. Each hand's log shows what was taken from it.",
     ],
     examples: [
       {
@@ -438,7 +440,7 @@ export const EXTRAS: ExtraGuide[] = [
       'When you sit down, you post a big blind to be dealt into the next hand. It\'s live: it counts as your bet, so if nobody raises you can check.',
       'If you sit down where the button or the small blind is about to be, you wait for the big blind to reach you instead. You can also tick "Wait for the big blind" while you wait to come in, so you don\'t post anything extra.',
       'If you sit out and the big blind passes you, you owe it when you come back: a live big blind, plus a dead small blind if you missed that too. The dead small blind goes into the pot and doesn\'t count toward your bet.',
-      'When the table is just starting (fewer than two players have played a hand), everyone is dealt in for free. Bomb pots never collect missed blinds.',
+      'When the table is just starting (fewer than two players have played a hand), new players don\'t have to post or wait to come in. Bomb pots never collect missed blinds.',
     ],
     examples: [
       {
@@ -448,7 +450,7 @@ export const EXTRAS: ExtraGuide[] = [
         ],
       },
     ],
-    settings: ['These rules are the same at every cash table. Tournaments deal everyone in every hand with no posting.'],
+    settings: ['These rules are the same at every cash table. In tournaments everyone is dealt every hand, so nobody waits or posts extra to come back in.'],
   },
 ];
 
@@ -461,13 +463,24 @@ export function extraFor(id: string): ExtraGuide | null {
 /** Guides for the side games and house rules switched on at a table, in guide order. */
 export function extrasOn(settings: TableSettings): string[] {
   const cash = settings.table.mode === 'cash';
+  const rot = settings.game.rotation;
+  const specs = (rot.enabled && rot.steps.length ? rot.steps.map((s) => s.gameId) : [settings.game.gameId]).flatMap((id) => {
+    try {
+      return [getVariant(id)];
+    } catch {
+      return [];
+    }
+  });
+  // Straddles need blinds; the 7-2 bounty needs Hold'em (two hole cards and a board).
+  const blinds = specs.some((g) => g.family !== 'stud');
+  const holdem = specs.some((g) => g.family === 'flop' && g.streets.reduce((n, st) => n + st.dealDown + st.dealUp, 0) === 2);
   const on: Record<string, boolean> = {
     'nit-game': cash && nitSchema.get(settings).enabled,
-    'seven-deuce': cash && bounty72Schema.get(settings).enabled,
+    'seven-deuce': cash && holdem && bounty72Schema.get(settings).enabled,
     'bomb-pots': cash && bombPotSchema.get(settings).enabled,
     'double-board': cash && doubleBoardSchema.get(settings).enabled,
     'run-it-twice': cash && settings.play.runItTwice !== 'off',
-    straddles: cash && settings.play.straddle !== 'off',
+    straddles: cash && blinds && settings.play.straddle !== 'off',
     'rabbit-hunt': settings.play.rabbitHunt,
     'time-bank': settings.timing.decisionSeconds > 0 && settings.timing.timeBankSeconds > 0,
     showdown: true,
