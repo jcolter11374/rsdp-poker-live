@@ -206,8 +206,8 @@ export interface RuntimeState {
   /** Stop after the current hand. */
   stopAfterHand: boolean;
   paused: boolean;
-  /** While paused: how long was left on each clock. */
-  pausedLeft: { turn: number | null; nextHand: number | null; rit: number | null } | null;
+  /** While paused: how long was left on each clock, and when the pause began (missing in older snapshots). */
+  pausedLeft: { at?: number; turn: number | null; nextHand: number | null; rit: number | null } | null;
   handNumber: number;
   hand: HandState | null;
   handStartedAt: number | null;

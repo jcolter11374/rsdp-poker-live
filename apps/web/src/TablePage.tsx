@@ -71,7 +71,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
   const myTurn = !!view?.legal || !!view?.canDraw || !!view?.canVoteRunItTwice;
 
   // A warning beep a few seconds before your clock runs out.
-  const deadline = myTurn && view?.turn?.seat === view?.me.seat ? (view?.turn?.deadline ?? null) : null;
+  const deadline = myTurn && !view?.paused && view?.turn?.seat === view?.me.seat ? (view?.turn?.deadline ?? null) : null;
   useEffect(() => {
     if (deadline === null) return;
     const ms = deadline - skew - HURRY_MS - Date.now();

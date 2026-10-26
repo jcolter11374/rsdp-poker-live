@@ -38,6 +38,8 @@ export function tableView(
     }
   }
   const live = !!hand && hand.phase !== 'complete';
+  // While paused the clocks stand still: each one shows what resuming now would give.
+  const shift = rt.pausedFor(now);
   const waiting = new Set<number>();
   if (live) for (const seat of s.seats) if (seat && !handSeats.has(seat.seat) && !seat.sittingOut && seat.stack > 0) waiting.add(seat.seat);
 
@@ -110,12 +112,12 @@ export function tableView(
     paused: s.paused,
     stopAfterHand: s.stopAfterHand,
     seats,
-    hand: hand && !blocked ? handView(rt, hand, viewer) : null,
+    hand: hand && !blocked ? handView(rt, hand, viewer, now) : null,
     legal: myTurn && hand!.phase === 'betting' ? engine.legalActions(hand!, mine!.seat) : null,
     canDraw: myTurn && hand!.phase === 'drawing' ? { max: hand!.input.game.streets[hand!.street].drawMaxDiscard ?? 0 } : null,
-    canVoteRunItTwice: live && hand!.phase === 'rit-vote' && !!mine && !mine.folded && mine.ritVote === null,
+    canVoteRunItTwice: live && !s.paused && hand!.phase === 'rit-vote' && !!mine && !mine.folded && mine.ritVote === null,
     canShow: hand?.phase === 'complete' && mine ? showable(hand, mine.seat) : [],
-    turn: live && s.turn ? { seat: s.turn.seat, startedAt: s.turn.startedAt, deadline: rt.turnDeadline(), usingBank: s.turn.usingBank } : null,
+    turn: live && s.turn ? { seat: s.turn.seat, startedAt: s.turn.startedAt + shift, deadline: rt.turnDeadline(now), usingBank: s.turn.usingBank } : null,
     nextHandAt: s.nextHandAt,
     serverNow: now,
     bombPotNext: !!s.sideGames?.bombPotNext,
@@ -149,7 +151,7 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming'>;
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow'>;
 
 /** The ledger, hand list and next-hand countdown run behind too, or they would give away how a hand ends. */
 export const delayedPart = (view: TableView): DelayedPart => ({
@@ -160,6 +162,8 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   history: view.history,
   nextHandAt: view.nextHandAt,
   upcoming: view.upcoming,
+  paused: view.paused,
+  serverNow: view.serverNow,
 });
 
 /**
@@ -176,8 +180,10 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
     return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [] };
   }
-  const later = (t: number | null) => (t === null ? null : t + delayMs);
-  const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + delayMs, deadline: later(past.turn.deadline) };
+  // A paused snapshot's clocks stand still: they move on with the time shown, not by the delay.
+  const move = past.paused ? live.serverNow - past.serverNow : delayMs;
+  const later = (t: number | null) => (t === null ? null : t + move);
+  const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + move, deadline: later(past.turn.deadline) };
   const hand = past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
   // Whoever has sat down since still shows in their seat, without cards.
   const seats = live.seats.map((x, i) => {
@@ -194,6 +200,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     history: past.history,
     nextHandAt: later(past.nextHandAt),
     upcoming: past.upcoming,
+    paused: past.paused,
   };
 }
 
@@ -222,7 +229,7 @@ function showable(hand: HandState, seat: number) {
   return hs.cards.map((_, i) => i).filter((i) => !hs.shown.includes(i) && !hs.cards[i].up);
 }
 
-function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
+function handView(rt: TableRuntime, hand: HandState, viewer: Viewer, now: number): HandView {
   const s = rt.state;
   const { input } = hand;
   const runItTwiceEvent = [...hand.events].reverse().find((e) => e.t === 'run-it');
@@ -254,7 +261,7 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer): HandView {
     runItTwice: {
       offered,
       votes: Object.fromEntries(hand.seats.filter((x) => !x.folded).map((x) => [x.seat, x.ritVote])),
-      deadline: s.ritDeadline,
+      deadline: rt.ritDeadlineShown(now),
       times: runItTwiceEvent && runItTwiceEvent.t === 'run-it' ? runItTwiceEvent.times : null,
     },
     showdown: hand.showdown,
