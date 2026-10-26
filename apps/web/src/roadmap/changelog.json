@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-e",
+      "date": "2026-10-26",
+      "fixes": [
+        "The Fairness page has a new section on HUDs and tracking software: what the site does about them, and what it can't stop."
+      ]
+    },
+    {
       "id": "2026-10-26-d",
       "date": "2026-10-26",
       "fixes": [
