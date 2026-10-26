@@ -6,6 +6,7 @@ const KEYS: [string, string][] = [
   ['C', 'Call'],
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
   ['B', 'Show amounts in chips or big blinds'],
+  ['Enter', 'Type in the chat (Esc to leave it)'],
   ['?', 'Show this list'],
 ];
 

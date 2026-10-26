@@ -17,6 +17,7 @@ import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
+import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { Sheet } from './components/Sheet';
 import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -34,7 +35,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     const before = prev.current;
     prev.current = view;
     if (!view || !before) return;
-    if (view.chat.length > before.chat.length && view.chat.at(-1)?.playerId && view.chat.at(-1)?.playerId !== view.me.playerId) sounds.chat();
+    if (newChat(before.chat, view.chat).some((m) => m.playerId && m.playerId !== view.me.playerId)) sounds.chat();
     if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     const hand = view.hand;
     if (!hand) return;
@@ -109,12 +110,13 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [sheet, setSheet] = useState<'menu' | Tab | null>(null);
+  const [sheet, setSheet] = useState<'menu' | 'chat' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
   const volume = useVolume();
   const [discard, setDiscard] = useState<number[]>([]);
-  const [chatSeen, setChatSeen] = useState(0);
+  /** When the newest chat line you have seen was sent, for the unread badge on phones. */
+  const [chatSeenAt, setChatSeenAt] = useState(0);
   const preQueued = useRef(false);
   const portrait = usePortrait();
   useTableEffects(view, skew, preQueued);
@@ -129,7 +131,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
-      if (first) setChatSeen(v.chat.length);
+      if (first) setChatSeenAt(v.chat.at(-1)?.at ?? 0);
       first = false;
     };
     const onConnect = () => {
@@ -169,6 +171,16 @@ export function TablePage({ tableId }: { tableId: string }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === 'Enter') {
+        // Enter on a button presses it; anywhere else it starts a chat message.
+        if (e.target instanceof HTMLElement && e.target.closest('button, a, summary')) return;
+        const box = document.querySelector<HTMLInputElement>('.side .chat-form input');
+        if (box && !document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) {
+          e.preventDefault();
+          box.focus();
+        }
+        return;
+      }
       if (e.key === '?') {
         if (!document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) setDialog({ kind: 'keys' });
         return;
@@ -229,6 +241,13 @@ export function TablePage({ tableId }: { tableId: string }) {
       </main>
     );
   }
+  // At a desk the chat is always on screen; on a phone it's read when its sheet is open.
+  const chatOpen = !portrait || sheet === 'chat';
+  const lastChatAt = view?.chat.at(-1)?.at ?? 0;
+  useEffect(() => {
+    if (chatOpen && lastChatAt > chatSeenAt) setChatSeenAt(lastChatAt);
+  }, [chatOpen, lastChatAt]);
+
   if (!view) return <main className="home">Connecting…</main>;
 
   const copyLink = async () => {
@@ -259,7 +278,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
       })
       .catch((e: Error) => alert(e.message));
-  const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
+  const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt);
   const close = () => setSheet(null);
 
   const game = view.hand
@@ -334,7 +353,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       }}
     />
   );
-  const sidePanel = (tab: Tab) => <SidePanel view={view} fmt={fmt} initialTab={tab} chatSeen={chatSeen} onChatSeen={setChatSeen} />;
+
 
   return (
     <div className={`table-page ${portrait ? 'portrait' : ''}`}>
@@ -376,10 +395,10 @@ export function TablePage({ tableId }: { tableId: string }) {
         )}
         {portrait ? (
           <>
-            <button onClick={() => setSheet('log')}>
-              Log
-              {unread > 0 && <span className="badge">{unread}</span>}
+            <button className="chat-button" onClick={() => setSheet('chat')} aria-label={unread ? `Chat, ${unread} new` : 'Chat'}>
+              💬{unread > 0 && <span className="badge">{unread}</span>}
             </button>
+            <button onClick={() => setSheet('log')}>Log</button>
             <button aria-label="Menu" onClick={() => setSheet('menu')}>
               ☰{pending > 0 && <span className="badge">{pending}</span>}
             </button>
@@ -521,7 +540,8 @@ export function TablePage({ tableId }: { tableId: string }) {
         {!portrait && (
           <aside className="side">
             {hostPanel}
-            {sidePanel('log')}
+            <SidePanel view={view} fmt={fmt} />
+            <ChatBox view={view} />
           </aside>
         )}
       </div>
@@ -561,9 +581,14 @@ export function TablePage({ tableId }: { tableId: string }) {
           {seatOptions}
         </Sheet>
       )}
-      {portrait && sheet && sheet !== 'menu' && (
+      {portrait && sheet === 'chat' && (
+        <Sheet title="Chat" onClose={close} className="chat-sheet">
+          <ChatBox view={view} autoFocus />
+        </Sheet>
+      )}
+      {portrait && sheet && sheet !== 'menu' && sheet !== 'chat' && (
         <Sheet title="Table" onClose={close} tall>
-          {sidePanel(sheet)}
+          <SidePanel view={view} fmt={fmt} initialTab={sheet} />
         </Sheet>
       )}
 

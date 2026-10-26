@@ -3,12 +3,13 @@ import type { Point } from '../geometry';
 import { NoteBadge } from './Notes';
 import { GestureLayer, SeatPersona } from './Persona';
 import { EquityTag } from './Equity';
+import { ChatBubbles } from './Chat';
 import './extras.css';
 
 /*
  * Mount points on the table for features that live in their own components
  * (double board, bomb pot and 7-2 badges, rabbit hunt, nit marker, notes,
- * pictures, moods and gestures, all-in equity).
+ * pictures, moods and gestures, chat bubbles, all-in equity).
  * Add a line here rather than editing Table.tsx.
  */
 
@@ -35,5 +36,10 @@ export function BoardExtras(_props: { view: TableView }) {
 
 /** Things drawn over the whole felt, with the seat positions to aim at. */
 export function FeltExtras({ view, seatPoint, railPoint }: { view: TableView; seatPoint: (seat: number) => Point; railPoint: Point }) {
-  return <GestureLayer view={view} seatPoint={seatPoint} railPoint={railPoint} />;
+  return (
+    <>
+      <GestureLayer view={view} seatPoint={seatPoint} railPoint={railPoint} />
+      <ChatBubbles view={view} seatPoint={seatPoint} width={railPoint.x * 2} height={railPoint.y} />
+    </>
+  );
 }
