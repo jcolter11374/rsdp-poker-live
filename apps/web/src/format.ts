@@ -157,7 +157,7 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
       }
       case 'draw': {
         const drawn = e.cards.filter((c) => c !== '??');
-        if (e.discarded === 0) lines.push(`${name(e.seat)} stands pat`);
+        if (e.discarded === 0) lines.push(`${name(e.seat)} stands pat${e.auto ? ' (auto)' : ''}`);
         else lines.push(`${name(e.seat)} draws ${e.discarded}${drawn.length ? `: ${cardsText(drawn)}` : ''}`);
         break;
       }

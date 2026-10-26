@@ -2,14 +2,14 @@ import { useMemo } from 'react';
 import { verifyHand, type CardEvent } from '@rsdp/engine';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
-import { liveRecordFor, mySeedFor, seedProblem } from '../fair';
+import { liveRecordFor, mySeedFor, seedProblem, shownAs } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
 const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 /** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
-export function FairCheck({ hand, myId }: { hand: HandRecordView; myId: string | null }) {
+export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId: string | null; tableId?: string }) {
   const fair = hand.fair;
   const report = useMemo(() => {
     if (!fair) return null;
@@ -19,7 +19,13 @@ export function FairCheck({ hand, myId }: { hand: HandRecordView; myId: string |
     const extra: { label: string; ok: boolean; detail: string }[] = [];
     const problem = myId ? seedProblem(fair.commit, fair.clientSeeds, myId, seat !== undefined, live?.at ?? null) : null;
     const mine = mySeedFor(fair.commit);
-    if (problem || (mine && seat !== undefined)) extra.push({ label: 'The seed under your name is the one your browser sent', ok: !problem, detail: problem ?? mine! });
+    if (problem || (mine && seat !== undefined)) extra.push({ label: 'Your browser saw nothing wrong with the seeds or commitments', ok: !problem, detail: problem ?? `your seed ${mine!}` });
+    // The record must be the hand this browser watched being dealt, under the commitment it was shown with.
+    const shown = tableId ? shownAs(tableId, hand.handNumber) : null;
+    if (shown) {
+      const same = shown === fair.commit;
+      extra.push({ label: 'It was dealt under the commitment shown at the table', ok: same, detail: same ? `${fair.commit.slice(0, 12)}…` : `the table showed hand #${hand.handNumber} under ${shown === 'none' ? 'no commitment' : `${shown.slice(0, 12)}…`}, but its record says ${fair.commit.slice(0, 12)}… (an honest server only does that if it crashed before saving that deal and dealt that hand number again)` });
+    }
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };
 
@@ -45,7 +51,7 @@ export function FairCheck({ hand, myId }: { hand: HandRecordView; myId: string |
       extra.push({ label: 'It matches what you saw at the table', ok: !wrong.length, detail: wrong.length ? `the record disagrees: ${wrong.join('; ')}` : 'button, seats, board and every card you saw' });
     }
     return { check, extra, missing, proof };
-  }, [fair, hand, myId]);
+  }, [fair, hand, myId, tableId]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
   const checks = [...(check?.checks ?? []), ...extra];

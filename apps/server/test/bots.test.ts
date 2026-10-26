@@ -4,8 +4,8 @@ import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_THINK_MS, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
 import { handRecordView, tableView } from '../src/runtime/view';
-import { BOT_LOOKS } from '@rsdp/engine/wire';
-import { botTuning, chooseMove, seededRand } from '../src/bots/strategy';
+import { BOT_LEVELS, BOT_LOOKS } from '@rsdp/engine/wire';
+import { botTuning, chooseMove, readPlayers, seededRand } from '../src/bots/strategy';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -190,7 +190,7 @@ describe('practice bots', () => {
     back.resume();
     expect([back.seatOf(one)?.name, back.seatOf(two)?.name]).toEqual(['Ace', 'Chip']);
     expect(back.state.ledger[two]).toMatchObject({ name: 'Chip', owner: 'Beth', look: 1 });
-    expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1 });
+    expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1, level: 'normal' });
     expect(back.state.log.slice(-3).map((l) => l.text)).toEqual(["Beth's Poker Bot is now Ace", "Beth's Poker Bot 2 is now Chip", "Ann's Poker Bot is now Lucky"]);
     // The waiting bot sits under its new name, and the hand in progress plays on.
     back.approve('host', back.state.requests.find((r) => r.playerId === three)!.id);
@@ -229,6 +229,34 @@ describe('practice bots', () => {
     const settings = defaultSettings('tournament');
     const t = TableRuntime.create({ id: 't2', hostId: 'host', settings }, { clock: new FakeClock(), rng: seeded() });
     expect(() => t.addBot('host')).toThrow(/tournaments/);
+  });
+
+  it('play at the level they were added at (Normal if none), which their owner or the host can change', () => {
+    const { rt } = table();
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    rt.requestSeat('b', { seat: 2, name: 'Bo', stack: 200 });
+    const plain = rt.addBot('a', { ownerName: 'Ann' });
+    const hard = rt.addBot('a', { ownerName: 'Ann', level: 'hard' });
+    expect(rt.state.bots![plain].level).toBe('normal');
+    expect(tableView(rt, 'b', 0).seats.find((s) => s?.playerId === hard)?.bot).toMatchObject({ ownerName: 'Ann', level: 'hard' });
+    expect(() => rt.addBot('a', { level: 'expert' as never })).toThrow(/no such level/);
+    expect(() => rt.setBotLevel('b', hard, 'easy')).toThrow(/owner or the host/);
+    expect(() => rt.setBotLevel('a', hard, 'expert' as never)).toThrow(/no such level/);
+    rt.setBotLevel('a', hard, 'easy');
+    expect(rt.state.bots![hard].level).toBe('easy');
+    expect(rt.state.log.at(-1)?.text).toBe('Ann set Chip to Easy');
+    rt.setBotLevel('host', plain, 'hard');
+    expect(rt.state.bots![plain].level).toBe('hard');
+    // A co-host with player powers manages players' bots, but not the host's.
+    const hostBot = rt.addBot('host', { ownerName: 'Host' });
+    rt.setCoHost('host', 'b', ['players']);
+    rt.setBotLevel('b', hard, 'normal');
+    expect(rt.state.bots![hard].level).toBe('normal');
+    expect(() => rt.setBotLevel('b', hostBot, 'easy')).toThrow(/only the host/);
+    // Bots saved before levels play as Normal.
+    delete rt.state.bots![plain].level;
+    expect(tableView(rt, 'a', 0).seats.find((s) => s?.playerId === plain)?.bot?.level).toBe('normal');
   });
 
   it('the owner or the host removes a bot; nobody else can, and a bot is never the host', () => {
@@ -292,7 +320,8 @@ describe('practice bots', () => {
           s.timing.decisionSeconds = 0;
         });
         rt.requestSeat('host', { seat: 0, name: 'Host', stack: 300 });
-        for (let i = 0; i < Math.min(spec.maxPlayers, 6) - 1; i++) rt.addBot('host', { ownerName: 'Host' });
+        // Every level plays every game.
+        for (let i = 0; i < Math.min(spec.maxPlayers, 6) - 1; i++) rt.addBot('host', { ownerName: 'Host', level: BOT_LEVELS[i % BOT_LEVELS.length] });
         rt.start('host');
         play(rt, clock, 12);
         expect(errors).toEqual([]);
@@ -340,6 +369,164 @@ describe('bot strategy', () => {
     engine.act(junk, 1, { type: 'raise', to: 40 });
     const fold = chooseMove(junk, 0, seededRand(1));
     expect(fold).toEqual({ kind: 'act', action: { type: 'fold' } });
+  });
+
+  it('Hard reads a big raise from a player who rarely raises as a strong hand; Normal plays it as a random one', () => {
+    // King-nine is ahead of a random hand, but not of the hands people raise ten times the big blind with.
+    const raised = () => {
+      const hand = dealt('nlhe', ['Kc', 'Qs', '9d', 'Jh'], 2);
+      engine.act(hand, 0, { type: 'call' });
+      engine.act(hand, 1, { type: 'raise', to: 20 });
+      return hand;
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 500 });
+    try {
+      let normalCalls = 0;
+      let hardCalls = 0;
+      for (let i = 0; i < 8; i++) {
+        const normal = chooseMove(raised(), 0, seededRand(i));
+        const hard = chooseMove(raised(), 0, seededRand(i), { level: 'hard' });
+        if (normal.kind === 'act' && normal.action.type !== 'fold') normalCalls++;
+        if (hard.kind === 'act' && hard.action.type !== 'fold') hardCalls++;
+      }
+      expect(normalCalls).toBe(8);
+      expect(hardCalls).toBe(0);
+      // Against a player who raises nearly every time, a raise says little: Hard calls too.
+      const maniac = { p1: { acts: 40, aggressive: 36, faced: 10, folds: 0 } };
+      const vsManiac = chooseMove(raised(), 0, seededRand(1), { level: 'hard', players: maniac });
+      expect(vsManiac.kind === 'act' && vsManiac.action.type).not.toBe('fold');
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
+  it('Hard follows how many cards an opponent draws in 2-7 Triple Draw', () => {
+    // I (seat 1) stand pat with a jack-low three times; they stand pat each time, draw three each time, or let the
+    // clock stand pat for them, then bet the end.
+    const toTheEnd = (theirDraw: number[] | 'timed out') => {
+      const hand = dealt('td27', ['Kc', 'Js', 'Qd', '8d', 'Th', '6c', '9s', '4h', 'Kh', '2s']);
+      for (let i = 0; i < 40 && hand.phase !== 'complete'; i++) {
+        const seat = hand.toAct!;
+        if (hand.phase === 'drawing' && seat === 0 && theirDraw === 'timed out') engine.timeout(hand, 0);
+        else if (hand.phase === 'drawing') engine.draw(hand, seat, seat === 0 ? (theirDraw as number[]) : []);
+        else if (seat === 1) break;
+        else if (hand.street === hand.input.game.streets.length - 1) engine.act(hand, 0, { type: 'bet', to: 4 });
+        else engine.act(hand, 0, engine.legalActions(hand, 0)!.canCheck ? { type: 'check' } : { type: 'call' });
+        if (hand.street === hand.input.game.streets.length - 1 && hand.toAct === 1 && hand.currentBet > 0) break;
+        if (hand.toAct === 1 && hand.phase === 'betting') engine.act(hand, 1, { type: 'check' });
+      }
+      expect(hand.toAct).toBe(1);
+      expect(hand.currentBet).toBe(4);
+      return hand;
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 300 });
+    try {
+      const calls = (theirDraw: number[] | 'timed out', level: 'normal' | 'hard') =>
+        Array.from({ length: 8 }, (_, i) => chooseMove(toTheEnd(theirDraw), 1, seededRand(i), { level })).filter((m) => m.kind === 'act' && m.action.type !== 'fold').length;
+      // Normal can't tell the two apart; Hard calls the drawer down and gives the pat hand credit.
+      expect(calls([], 'normal')).toBe(calls([0, 1, 2], 'normal'));
+      expect(calls([0, 1, 2], 'hard')).toBe(8);
+      expect(calls([], 'hard')).toBe(0);
+      // A stand-pat the clock made says nothing about their cards.
+      expect(calls('timed out', 'hard')).toBe(8);
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
+  it('Hard reads a draw-game opponent the same wherever they sit', () => {
+    // Four players, button in seat 0. One player raises, stands pat and bets; the other two call and draw three.
+    // I (seat 0) throw two cards and must call or fold. The deck is the same, so my cards are too.
+    const spot = (pat: number, seed: number) => {
+      const spec = getVariant('badugi');
+      const r = seededRand(seed);
+      const deck = 'AKQJT98765432'.split('').flatMap((x) => 'cdhs'.split('').map((s) => x + s));
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(r() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      const hand = engine.startHand({
+        handId: 'h',
+        handNumber: 1,
+        game: spec,
+        betting: spec.defaultBetting,
+        stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 1, smallBet: 2, bigBet: 4 },
+        maxSeats: 4,
+        seats: Array.from({ length: 4 }, (_, i) => ({ seat: i, playerId: `p${i}`, stack: 200, away: false })),
+        button: 0,
+        buttonDead: false,
+        posts: [
+          { seat: 1, kind: 'small-blind', amount: 1, live: true },
+          { seat: 2, kind: 'big-blind', amount: 2, live: true },
+        ],
+        deck,
+        reshuffleSeed: 1,
+        options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
+        modifiers: [],
+      });
+      for (let i = 0; i < 100; i++) {
+        const seat = hand.toAct!;
+        if (hand.phase === 'drawing') engine.draw(hand, seat, seat === pat ? [] : seat === 0 ? [0, 1] : [0, 1, 2]);
+        else if (seat === 0 && hand.street === 1) return hand;
+        else {
+          const legal = engine.legalActions(hand, seat)!;
+          if (seat === pat && legal.canRaise && hand.raisesThisRound < 1) engine.act(hand, seat, { type: legal.raiseKind === 'bet' ? 'bet' : 'raise', to: legal.minTo });
+          else engine.act(hand, seat, legal.canCheck ? { type: 'check' } : { type: 'call' });
+        }
+      }
+      throw new Error('never got to my turn');
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 300 });
+    try {
+      const moves = (pat: number) =>
+        Array.from({ length: 16 }, (_, i) => {
+          const hand = spot(pat, i + 1);
+          expect(hand.currentBet).toBe(2);
+          const move = chooseMove(hand, 0, seededRand(i + 1), { level: 'hard' });
+          return move.kind === 'act' ? move.action.type : 'draw';
+        });
+      const first = moves(1);
+      // It gives the pat hand credit (and calls the drawers down) whether the pat hand sits before or after them.
+      expect(moves(3)).toEqual(first);
+      expect(first.filter((m) => m === 'fold').length).toBeGreaterThanOrEqual(10);
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
+  it('Hard keeps the bigger badugi round a blocked low card, and breaks up a straight or flush draw in 2-7', () => {
+    // My cards (seat 0, first to draw) and theirs, dealt one each in turn.
+    const throws = (game: string, mine: string[], theirs: string[]) =>
+      Array.from({ length: 4 }, (_, i) => {
+        const hand = dealt(game, mine.flatMap((c, j) => [c, theirs[j]]));
+        engine.act(hand, 0, { type: 'call' });
+        engine.act(hand, 1, { type: 'check' });
+        const move = chooseMove(hand, 0, seededRand(i + 1), { level: 'hard' });
+        return move.kind === 'draw' ? move.discard.map((d) => mine[d]).join(' ') : move.kind;
+      });
+    const all = (cards: string) => Array(4).fill(cards);
+    // The 2c blocks both the 3c and the 2d: throw it for a three-card badugi, not stand pat with two.
+    expect(throws('badugi', ['2c', '3c', '4h', '2d'], ['Kc', 'Qd', 'Js', 'Th'])).toEqual(all('2c'));
+    expect(throws('badugi', ['As', 'Ah', '2s', '3d'], ['Kc', 'Qd', 'Js', 'Th'])).toEqual(all('As'));
+    // 3-4-5-6 would make a straight with a 2 or a 7; 3-4-5-7 only with a 6.
+    expect(throws('td27', ['3d', '4c', '5h', '6s', '7d'], ['Kc', 'Qd', 'Js', 'Th', '9c'])).toEqual(all('6s'));
+    // Keep the 4 of spades, not four diamonds.
+    expect(throws('td27', ['3d', '4d', '7d', '6d', '4s'], ['Kc', 'Qd', 'Js', 'Th', '9c'])).toEqual(all('4d'));
+  });
+
+  it('learns how players play from the hands the table keeps', () => {
+    const hand = dealt('nlhe', ['7c', 'As', '2d', 'Ah'], 2);
+    engine.act(hand, 0, { type: 'call' });
+    engine.act(hand, 1, { type: 'raise', to: 8 });
+    engine.act(hand, 0, { type: 'fold' });
+    expect(readPlayers([hand])).toEqual({
+      // Folding to the raise was facing a bet; calling the big blind alone wasn't.
+      p0: { acts: 2, aggressive: 0, faced: 1, folds: 1 },
+      p1: { acts: 1, aggressive: 1, faced: 0, folds: 0 },
+    });
   });
 
   it('draws sensibly in 2-7 Triple Draw and Badugi', () => {

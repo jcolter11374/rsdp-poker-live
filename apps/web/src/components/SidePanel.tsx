@@ -332,7 +332,7 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
           </div>
         ))}
       {replay !== null && (
-        <Replayer hands={hands} start={replay} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setReplay(null)} />
+        <Replayer hands={hands} start={replay} tableId={view.id} tableName={view.name} seatCount={view.seats.length} myId={view.me.playerId} felt={view.settings.table.felt} fmt={fmt} onClose={() => setReplay(null)} />
       )}
       {fileReplay}
       {sharing && <ShareHandDialog hand={sharing} onClose={() => setSharing(null)} />}

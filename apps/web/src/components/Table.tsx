@@ -8,6 +8,7 @@ import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { baseChip, ChipStacks } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem } from './table/Feel';
+import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -418,11 +419,11 @@ export function Table({
                 style={timeFraction !== null ? ({ '--t': timeFraction } as CSSProperties) : undefined}
               >
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
-                <div className="name" title={s.bot ? (s.bot.ownerName ? `${s.name}, ${s.bot.ownerName}'s practice bot` : `${s.name}, a practice bot`) : undefined}>
+                <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
                   {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
-                  {s.bot && <span className="bot-owner">· {s.bot.ownerName ? <>{s.bot.ownerName}&rsquo;s bot</> : 'bot'}</span>}
+                  {s.bot && <span className="bot-owner">· {botPlateLabel(s.bot)}</span>}
                 </div>
                 <div className="stack">{s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
