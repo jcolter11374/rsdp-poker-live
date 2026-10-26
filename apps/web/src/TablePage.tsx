@@ -23,6 +23,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
+import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -101,7 +102,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -161,16 +162,38 @@ export function TablePage({ tableId }: { tableId: string }) {
   const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
   const feltFmt = useMemo(() => (prefs.units === 'bb' && bigBlind > 0 ? bbFormat(bigBlind) : fmt), [prefs.units, bigBlind, fmt]);
   useWakeLock(prefs.wakeLock && view?.me.seat != null);
-  // B switches between chips and big blinds.
+  // B switches between chips and big blinds; ? lists every shortcut.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'b' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === '?') {
+        if (!document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) setDialog({ kind: 'keys' });
+        return;
+      }
+      if (e.key.toLowerCase() !== 'b') return;
       setPrefs({ units: getPrefs().units === 'bb' ? 'chips' : 'bb' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // A one-time tip about the keyboard shortcuts, for seated players on a computer.
+  const [keysTipSeen, setKeysTipSeen] = useState(() => {
+    try {
+      return localStorage.getItem('rsdp.tip.keys') === '1';
+    } catch {
+      return true;
+    }
+  });
+  const dismissKeysTip = () => {
+    setKeysTipSeen(true);
+    try {
+      localStorage.setItem('rsdp.tip.keys', '1');
+    } catch {
+      /* ignore */
+    }
+  };
+  const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
   // Losing your seat without pressing Leave (the host removed you, or an offline seat was released) gets a word of explanation.
   const wasSeated = useRef(false);
@@ -337,6 +360,17 @@ export function TablePage({ tableId }: { tableId: string }) {
           {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
           {view.paused && <b className="paused"> · Paused</b>}
         </span>
+        {bigBlind > 0 && (
+          <button
+            className="units-toggle"
+            aria-pressed={prefs.units === 'bb'}
+            onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
+            title={`Show amounts in ${prefs.units === 'bb' ? 'chips' : 'big blinds'} (B)`}
+          >
+            <span className={prefs.units === 'bb' ? '' : 'on'}>Chips</span>
+            <span className={prefs.units === 'bb' ? 'on' : ''}>BB</span>
+          </button>
+        )}
         {portrait ? (
           <>
             <button onClick={() => setSheet('log')}>
@@ -353,6 +387,9 @@ export function TablePage({ tableId }: { tableId: string }) {
               👁 {view.watchers.length}
             </button>
             <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
+            <button onClick={() => setDialog({ kind: 'keys' })} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+              ⌨
+            </button>
             <button onClick={() => setDialog({ kind: 'look' })} title="Felt, deck and card backs" aria-label="Table look">
               🎨
             </button>
@@ -368,6 +405,15 @@ export function TablePage({ tableId }: { tableId: string }) {
       <div className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
+          {keysTip && (
+            <div className="banner tip">
+              <span>
+                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises, <kbd>B</kbd> switches chips and big blinds.
+              </span>
+              <button onClick={() => setDialog({ kind: 'keys' })}>All shortcuts</button>
+              <button onClick={dismissKeysTip}>Got it</button>
+            </div>
+          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -457,7 +503,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           />
           <ActionBar
             view={view}
-            fmt={fmt}
+            fmt={feltFmt}
             skew={skew}
             discard={discard}
             clearDiscard={() => setDiscard([])}
@@ -538,6 +584,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'people' && <PeopleDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'keys' && <ShortcutsDialog onClose={() => setDialog(null)} />}
     </div>
   );
 }

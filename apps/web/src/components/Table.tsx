@@ -5,6 +5,7 @@ import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, stadiumPoint, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
+import { baseChip, ChipStacks } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -246,6 +247,9 @@ export function Table({
   const multiRun = runs.length > 1;
   const multiBoard = (runs[0]?.length ?? 0) > 1;
   const stud = hand?.family === 'stud';
+  // Chip colours follow the table's stakes: the smallest forced bet sets the white chip.
+  const stakes = hand?.stakes ?? view.settings.stakes;
+  const chipBase = baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stakes.bringIn].filter((x): x is number => !!x && x > 0), Infinity));
   // Order of seats from the button, so the deal goes round the table.
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
@@ -282,6 +286,7 @@ export function Table({
             <div className="pot-row">
               {(hand!.pots.length ? hand!.pots : [{ amount: 0 }]).map((p, i) => (
                 <div className="pot" key={i}>
+                  <ChipStacks amount={p.amount} base={chipBase} />
                   {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
                 </div>
               ))}
@@ -406,7 +411,7 @@ export function Table({
             </div>
             {s.bet > 0 && (
               <div className="bet" style={{ ...px(betPoint(seat)), ...fromVars(pos, betPoint(seat)) }}>
-                <span className="chip" />
+                <ChipStacks amount={s.bet} base={chipBase} max={2} />
                 {fmt(s.bet)}
               </div>
             )}
