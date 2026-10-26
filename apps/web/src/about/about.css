@@ -1,0 +1,26 @@
+/* ---- /about */
+.about-page { max-width: 960px; margin: 0 auto; padding: 16px 16px 48px; line-height: 1.5; }
+.about-hero { text-align: center; padding: 32px 0 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.about-hero h1 { margin: 0; font-size: clamp(1.8rem, 4.5vw, 2.6rem); font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
+.about-hero h1 span { color: var(--accent); font-style: italic; }
+.about-lede { margin: 0; max-width: 620px; font-size: 1.08rem; color: var(--muted); }
+.about-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
+.about-button { display: inline-block; padding: 10px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-weight: 700; text-decoration: none; }
+.about-button:hover { border-color: #4a525d; background: #2c323a; }
+.about-button.primary { background: var(--go); border-color: var(--go); color: #fff; }
+.about-button.primary:hover { background: var(--go-hover); border-color: var(--go-hover); }
+.about-heading { margin: 20px 0 12px; font-size: 1.2rem; }
+.about-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.about-card { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.about-card strong { font-size: 1.05rem; }
+.about-card > span:not(.about-icon) { color: var(--muted); font-size: 0.94rem; }
+.about-card a { margin-top: auto; padding-top: 4px; font-weight: 600; font-size: 0.92rem; text-decoration: none; }
+.about-card a:hover { text-decoration: underline; }
+.about-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--felt); border: 2px solid var(--felt-edge); font-size: 1.15rem; line-height: 1; }
+.about-more { margin-top: 32px; padding: 18px 20px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--go); border-radius: 12px; }
+.about-more h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.about-more p { margin: 0; }
+@media (max-width: 640px) {
+  .about-hero { padding-top: 20px; }
+  .about-grid { grid-template-columns: minmax(0, 1fr); }
+}
