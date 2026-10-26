@@ -20,7 +20,6 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [smallBlind, setSmallBlind] = useState(1);
   const [bigBlind, setBigBlind] = useState(2);
   const [ante, setAnte] = useState(1);
-  const [turnSeconds, setTurnSeconds] = useState(30);
   const [error, setError] = useState('');
   // Which card the error belongs to, so it shows next to the button that was pressed.
   const [errorFor, setErrorFor] = useState<'cash' | 'practice'>('cash');
@@ -61,7 +60,8 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         ...(stud ? { smallBlind: 0, bigBlind, ante, anteType: ante > 0 ? 'per-player' : 'none', bringIn: 0 } : { smallBlind, bigBlind }),
         ...(betting === 'fixed-limit' ? { smallBet: bigBlind, bigBet: bigBlind * 2 } : {}),
       },
-      timing: { decisionSeconds: turnSeconds },
+      // The turn clock starts at 30 seconds; hosts change it in Table settings > Clock.
+      timing: { decisionSeconds: 30 },
     };
     const settings: SettingsPatch = fromPreset ? { ...fromPreset, table: { ...fromPreset.table, name: quick.table!.name, mode: 'cash' } } : quick;
     if (practice && !name.trim()) {
@@ -161,10 +161,6 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
                     <input type="number" min={1} value={bigBlind} onChange={(e) => setBigBlind(+e.target.value)} />
                   </label>
                 </div>
-                <label>
-                  Seconds to act (0 for no clock)
-                  <input type="number" min={0} max={600} value={turnSeconds} onChange={(e) => setTurnSeconds(+e.target.value)} />
-                </label>
                 <p className="muted">{spec.rules}</p>
               </>
             )}
@@ -172,7 +168,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
             <button className="primary big" disabled={busy}>
               Create table
             </button>
-            <p className="muted">Everything else (run it twice, straddles, rebuys, game rotation) is in Table settings once you're in.</p>
+            <p className="muted">Everything else (turn clock, run it twice, straddles, rebuys, game rotation) is in Table settings once you're in. Players get 30 seconds to act to start with.</p>
           </form>
           <div className="home-side">
             <TournamentList />
