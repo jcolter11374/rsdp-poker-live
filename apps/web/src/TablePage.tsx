@@ -507,6 +507,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           <ActionBar
             view={view}
             fmt={fmt}
+            bigBlind={prefs.units === 'bb' && bigBlind > 0 ? bigBlind : null}
             skew={skew}
             discard={discard}
             clearDiscard={() => setDiscard([])}

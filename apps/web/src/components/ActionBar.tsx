@@ -3,7 +3,7 @@ import type { Action } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import './action-bar.css';
-import { fromInput, toInput, type Fmt } from '../format';
+import { bbFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
@@ -17,7 +17,8 @@ const SEND_TIMEOUT_MS = 8_000;
 
 export function ActionBar({
   view,
-  fmt,
+  fmt: chipFmt,
+  bigBlind = null,
   skew,
   discard,
   clearDiscard,
@@ -25,6 +26,8 @@ export function ActionBar({
 }: {
   view: TableView;
   fmt: Fmt;
+  /** Set when the player has chosen to see amounts in big blinds: the buttons and the bet box then work in BB. */
+  bigBlind?: number | null;
   skew: number;
   discard: number[];
   clearDiscard: () => void;
@@ -33,8 +36,16 @@ export function ActionBar({
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
+  const unit: BetUnit = bigBlind ? { bb: bigBlind } : { centsMode };
+  const fmt = bigBlind ? bbFormat(bigBlind, 2) : chipFmt;
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmountRaw] = useState(0);
+  // What's typed in the bet box, kept as text while typing so "2." or "0.5" isn't rewritten mid-word.
+  const [typed, setTyped] = useState<string | null>(null);
+  const setAmount = (chips: number) => {
+    setTyped(null);
+    setAmountRaw(chips);
+  };
   const [error, setError] = useState('');
   const [queued, setQueued] = useState<{ key: string; action: PreAction } | null>(null);
   // Queued moves are for one betting round only.
@@ -287,12 +298,18 @@ export function ActionBar({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && legal.canRaise) send({ type: raiseType, to: clamp(amount) });
               }}
-              min={toInput(centsMode, legal.minTo)}
-              max={toInput(centsMode, legal.maxTo)}
-              step={centsMode ? 0.01 : 1}
-              value={toInput(centsMode, amount)}
-              onChange={(e) => setAmount(fromInput(centsMode, +e.target.value))}
+              min={betToInput(unit, legal.minTo)}
+              max={betToInput(unit, legal.maxTo)}
+              step={bigBlind ? 0.5 : centsMode ? 0.01 : 1}
+              value={typed ?? betToInput(unit, amount)}
+              onChange={(e) => {
+                setTyped(e.target.value);
+                setAmountRaw(betFromInput(unit, e.target.value === '' ? NaN : +e.target.value));
+              }}
+              onBlur={() => setTyped(null)}
+              aria-label={bigBlind ? 'Amount in big blinds' : 'Amount'}
             />
+            {bigBlind && <span className="unit">BB</span>}
           </div>
         </div>
       )}

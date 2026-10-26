@@ -755,3 +755,4 @@ dl.shortcuts > div { display: grid; grid-template-columns: 44px 1fr; align-items
 dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
+.sizing .slider .unit { color: var(--muted); font-size: 0.85rem; font-weight: 600; }

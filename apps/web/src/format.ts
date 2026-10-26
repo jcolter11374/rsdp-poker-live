@@ -9,12 +9,12 @@ export function chipFormat(centsMode: boolean): Fmt {
   return (n) => (n / 100).toLocaleString(undefined, { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
-/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. */
-export function bbFormat(bigBlind: number): Fmt {
+/** Amounts in big blinds ("12.5 BB"), for players who think in blinds. `places` is the decimals shown from 1 BB up. */
+export function bbFormat(bigBlind: number, places = 1): Fmt {
   return (n) => {
     const bb = n / bigBlind;
     // Under one big blind, keep enough digits that an ante never shows as 0.
-    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(bb)) + 1)) : 1;
+    const digits = n % bigBlind === 0 ? 0 : bb < 1 ? Math.min(3, Math.max(places, Math.ceil(-Math.log10(bb)) + 1)) : places;
     return `${bb.toLocaleString(undefined, { maximumFractionDigits: digits })} BB`;
   };
 }
@@ -22,6 +22,22 @@ export function bbFormat(bigBlind: number): Fmt {
 /** Chips to the number typed in an input, and back (cents mode types dollars). */
 export const toInput = (centsMode: boolean, chips: number) => (centsMode ? chips / 100 : chips);
 export const fromInput = (centsMode: boolean, value: number) => Math.round(centsMode ? value * 100 : value);
+
+/**
+ * What the bet box works in: chips (dollars in cents mode), or big blinds.
+ * A typed amount in big blinds becomes the nearest whole chip, so a bet is
+ * always a real amount the table can take; the caller clamps it to the legal range.
+ */
+export type BetUnit = { bb: number } | { centsMode: boolean };
+export function betToInput(unit: BetUnit, chips: number): number {
+  if ('bb' in unit) return Math.round((chips / unit.bb) * 100) / 100;
+  return toInput(unit.centsMode, chips);
+}
+export function betFromInput(unit: BetUnit, value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if ('bb' in unit) return Math.round(value * unit.bb);
+  return fromInput(unit.centsMode, value);
+}
 
 export const BETTING_NAME: Record<BettingKind, string> = { 'no-limit': 'No Limit', 'pot-limit': 'Pot Limit', 'fixed-limit': 'Limit' };
 
