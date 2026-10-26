@@ -23,6 +23,35 @@ export function bbFormat(bigBlind: number): Fmt {
 export const toInput = (centsMode: boolean, chips: number) => (centsMode ? chips / 100 : chips);
 export const fromInput = (centsMode: boolean, value: number) => Math.round(centsMode ? value * 100 : value);
 
+/**
+ * What the bet box works in: chips (dollars in cents mode), or big blinds.
+ * A typed amount in big blinds becomes the nearest whole chip, so a bet is
+ * always a real amount the table can take; the caller clamps it to the legal range.
+ */
+export type BetUnit = { bb: number } | { centsMode: boolean };
+export function betToInput(unit: BetUnit, chips: number): number {
+  if (!('bb' in unit)) return toInput(unit.centsMode, chips);
+  // Two places when that names the exact chip amount, more when the big blind is big (2,999 at 1,000 is 2.999, not 3).
+  for (let places = 2; places < 6; places++) {
+    const k = 10 ** places;
+    const v = Math.round((chips / unit.bb) * k) / k;
+    if (Math.round(v * unit.bb) === chips) return v;
+  }
+  return chips / unit.bb;
+}
+/** Chips as big blinds for the action buttons, exact to the chip like the bet box ("Raise to 2.83 BB"). */
+export const bbExactFormat =
+  (bigBlind: number): Fmt =>
+  (n) =>
+    `${betToInput({ bb: bigBlind }, n).toLocaleString(undefined, { maximumFractionDigits: 6 })} BB`;
+export function betFromInput(unit: BetUnit, value: number): number {
+  if (Number.isNaN(value)) return 0;
+  // Something huge means as much as allowed; the caller clamps it to the most it can be.
+  if (!Number.isFinite(value)) return value > 0 ? Number.MAX_SAFE_INTEGER : 0;
+  if ('bb' in unit) return Math.round(value * unit.bb);
+  return fromInput(unit.centsMode, value);
+}
+
 export const BETTING_NAME: Record<BettingKind, string> = { 'no-limit': 'No Limit', 'pot-limit': 'Pot Limit', 'fixed-limit': 'Limit' };
 
 /** Short label for the felt and top bar: NLH, PLO8, Stud, NL Badugi. */

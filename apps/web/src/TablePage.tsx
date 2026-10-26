@@ -156,7 +156,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => setDiscard([]), [drawKey]);
 
   const fmt = useMemo(() => chipFormat(!!view?.settings.stakes.centsMode), [view?.settings.stakes.centsMode]);
-  // The felt can show amounts in big blinds; buy-ins, the ledger and the bet box stay in chips.
+  // The felt and the bet box can show amounts in big blinds; buy-ins and the ledger stay in chips.
   const prefs = usePrefs();
   const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
   const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
@@ -507,6 +507,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           <ActionBar
             view={view}
             fmt={fmt}
+            bigBlind={prefs.units === 'bb' && bigBlind > 0 ? bigBlind : null}
             skew={skew}
             discard={discard}
             clearDiscard={() => setDiscard([])}
