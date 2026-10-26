@@ -1,0 +1,73 @@
+name: Transparency watcher
+
+# Every hour, from outside the server: copies the site's public record to the
+# `transparency` branch (so later edits to it show), and checks that the live
+# machine runs an image GitHub built and signed from main. Anything wrong opens
+# an issue, which notifies everyone watching the repo. Read-only on the site.
+# See docs/FAIRNESS.md ("Checking John").
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  attestations: read
+
+concurrency:
+  group: transparency
+  cancel-in-progress: false
+
+env:
+  SITE: https://rsdp-poker-live.fly.dev
+  FLY_APP: rsdp-poker-live
+
+jobs:
+  watch:
+    name: Copy the record and check the deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: The transparency branch
+        run: |
+          if git fetch origin transparency 2>/dev/null; then
+            git worktree add copy origin/transparency
+            git -C copy switch -c transparency
+          else
+            git worktree add --orphan -b transparency copy
+            printf '# Transparency\n\nWritten every hour by the Transparency watcher workflow on main. See docs/FAIRNESS.md.\n\n- audit/: a copy of the public record from %s/api/audit/entries\n- deploys/: what the live machine ran, whether GitHub built and signed it, and when it started\n' "$SITE" > copy/README.md
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Copy the public record
+        id: record
+        continue-on-error: true
+        run: node scripts/transparency/mirror.mjs "$SITE" copy
+      - name: Check what the live machine runs
+        id: deploy
+        continue-on-error: true
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flyctl auth docker
+          flyctl machines list --app "$FLY_APP" --json > machines.json
+          curl -sf "$SITE/api/version" > version.json || echo '{}' > version.json
+          node scripts/transparency/deploys.mjs machines.json version.json copy
+      - name: Save the copy
+        run: |
+          cd copy
+          git add -A
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git -c user.name='Transparency watcher' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Transparency watcher: $(date -u +%FT%TZ)"
+          git push origin transparency
+      - name: Open an issue about a problem
+        if: steps.record.outcome == 'failure' || steps.deploy.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(cat copy/PROBLEM.md copy/deploys/PROBLEM.md 2>/dev/null; echo; echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+          open=$(gh issue list --state open --search 'in:title "Transparency watcher found a problem"' --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$body"; else gh issue create --title 'Transparency watcher found a problem' --body "$body"; fi
+          exit 1
