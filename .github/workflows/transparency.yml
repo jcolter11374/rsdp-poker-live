@@ -15,6 +15,8 @@ permissions:
   contents: write
   issues: write
   attestations: read
+  # To see whether a deploy is running.
+  actions: read
 
 concurrency:
   group: transparency
@@ -27,6 +29,8 @@ env:
 jobs:
   watch:
     name: Copy the record and check the deploy
+    # Only main's own scripts may write the copy.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,13 +66,26 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GH_TOKEN: ${{ github.token }}
+          # Keys the published secret fingerprints; only GitHub has it.
+          WATCH_KEY: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set +e
+          # Mid-deploy, Fly and the site can disagree for a moment: check next hour instead.
+          deploying=$(gh run list --workflow deploy.yml --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$deploying" != "0" ]; then
+            echo "A deploy is running (or gh couldn't say: '$deploying')"; echo "code=2" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           if ! { flyctl auth docker && flyctl machines list --app "$FLY_APP" --json > machines.json && flyctl secrets list --app "$FLY_APP" --json > secrets.json; }; then
             echo "Couldn't reach Fly"; echo "code=2" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          curl -sf --retry 3 --retry-delay 10 "$SITE/api/version" > version.json || echo '{}' > version.json
+          curl -sf --retry 3 --retry-delay 10 "$SITE/api/version" > version.json || : > version.json
           node scripts/transparency/deploys.mjs machines.json version.json secrets.json fly.toml copy
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Check every check still runs
+        id: stale
+        run: |
+          set +e
+          node scripts/transparency/status.mjs copy "${{ steps.record.outputs.code }}" "${{ steps.deploy.outputs.code }}"
           echo "code=$?" >> "$GITHUB_OUTPUT"
       - name: Save the copy
         run: |
@@ -78,11 +95,11 @@ jobs:
           git -c user.name='Transparency watcher' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -q -m "Transparency watcher: $(date -u +%FT%TZ)"
           git push origin transparency
       - name: Open an issue about a problem
-        if: steps.record.outputs.code == '1' || steps.deploy.outputs.code == '1'
+        if: steps.record.outputs.code == '1' || steps.deploy.outputs.code == '1' || steps.stale.outputs.code == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          body=$(cat copy/PROBLEM.md copy/deploys/PROBLEM.md 2>/dev/null; echo; echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+          body=$(cat copy/PROBLEM.md copy/deploys/PROBLEM.md copy/STALE.md 2>/dev/null; echo; echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
           open=$(gh issue list --state open --search 'in:title "Transparency watcher found a problem"' --json number --jq '.[0].number')
           if [ -n "$open" ]; then gh issue comment "$open" --body "$body"; else gh issue create --title 'Transparency watcher found a problem' --body "$body"; fi
           exit 1

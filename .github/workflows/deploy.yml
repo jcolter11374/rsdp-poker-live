@@ -30,9 +30,13 @@ env:
 jobs:
   deploy:
     name: Deploy to Fly.io
+    # Only main. GitHub signs the build record with the newest commit on main,
+    # so a CI run that finished after main moved on is skipped: the newer
+    # commit's own deploy follows, and the record names what was built.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_sha == github.sha)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

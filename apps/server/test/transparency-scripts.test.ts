@@ -4,7 +4,7 @@
 
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -60,13 +60,18 @@ describe('the hourly copy and the standalone checker', () => {
     const other = AuditLog.after(memoryAuditStore(), null, { log: () => {} });
     const b = await serve(other);
     for (const action of ['first', 'second', 'changed', 'fourth', 'fifth']) other.admin(action, null);
+    const verified = await node('scripts/verify-audit.mjs', '--site', b.url, '--copy', dir);
+    expect(verified.code).toBe(1);
+    expect(verified.out).toMatch(/entries GitHub copied are different or missing on the site now, the first being entry 1/);
     const caught = await node('scripts/transparency/mirror.mjs', b.url, dir);
     expect(caught.code).toBe(1);
     expect(caught.out).toMatch(/Entry 1 on the site no longer matches the copy/);
     expect(existsSync(path.join(dir, 'PROBLEM.md'))).toBe(true);
-    const verified = await node('scripts/verify-audit.mjs', '--site', b.url, '--copy', dir);
-    expect(verified.code).toBe(1);
-    expect(verified.out).toMatch(/entries GitHub copied are different or missing on the site now, the first being entry 1/);
+    // The old copy is kept aside, and the next run copies the record as it is now.
+    expect(readdirSync(dir).some((f) => f.startsWith('audit-replaced-'))).toBe(true);
+    const fresh = await node('scripts/transparency/mirror.mjs', b.url, dir);
+    expect(fresh.out).toMatch(/copied 1 to 6/);
+    expect(existsSync(path.join(dir, 'PROBLEM.md'))).toBe(false);
     await b.server.close();
   });
 
@@ -97,6 +102,65 @@ describe('the hourly copy and the standalone checker', () => {
       (e: { code: number }) => e.code,
     );
     expect(gone).toBe(2);
+  });
+});
+
+describe('the deploy check', () => {
+  // A stand-in for the gh CLI: GitHub has signed the image, and verifying it does whatever VERIFY says.
+  const bin = mkdtempSync(path.join(tmpdir(), 'rsdp-gh-'));
+  writeFileSync(
+    path.join(bin, 'gh'),
+    `#!/bin/sh
+case "$1" in
+  api) case "$2" in
+    */compare/*) echo '{"status":"ahead"}';;
+    *) echo '{"attestations":[{}]}';;
+  esac;;
+  attestation) if [ "$VERIFY" = ok ]; then echo '[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"abc1234def","sourceRepositoryRef":"refs/heads/main"}}}}]'; else echo "$VERIFY" >&2; exit 1; fi;;
+esac
+`,
+  );
+  chmodSync(path.join(bin, 'gh'), 0o755);
+  const machine = (env: Record<string, string> = {}) => ({
+    id: 'm1',
+    state: 'started',
+    image_ref: { registry: 'registry.fly.io', repository: 'rsdp-poker-live', digest: 'sha256:aa' },
+    config: { env: { NODE_ENV: 'production', PORT: '8080', PGLITE_DIR: '/data/pglite', PUBLIC_URL: 'https://rsdp-poker-live.fly.dev', FLY_PROCESS_GROUP: 'app', PRIMARY_REGION: 'iad', ...env }, init: {}, mounts: [{ path: '/data' }] },
+    events: [{ type: 'start', status: 'started', timestamp: 1793000699376 }],
+  });
+  async function check(opts: { env?: Record<string, string>; verify?: string; version?: string; secrets?: string[] }) {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-deploys-'));
+    mkdirSync(path.join(dir, 'copy'));
+    writeFileSync(path.join(dir, 'machines.json'), JSON.stringify([machine(opts.env)]));
+    writeFileSync(path.join(dir, 'version.json'), opts.version ?? '{"commit":"abc1234"}');
+    writeFileSync(path.join(dir, 'secrets.json'), JSON.stringify((opts.secrets ?? ['ADMIN_KEY']).map((name) => ({ name, digest: 'd' }))));
+    const args = ['machines.json', 'version.json', 'secrets.json', path.join(root, 'fly.toml'), 'copy'].map((f) => (f.startsWith('/') ? f : path.join(dir, f)));
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, VERIFY: opts.verify ?? 'ok', WATCH_KEY: 'k', WATCH_RETRY_MS: '10' };
+    return run(process.execPath, [path.join(root, 'scripts/transparency/deploys.mjs'), ...args], { env }).then(
+      (r) => ({ code: 0, out: r.stdout + r.stderr, dir }),
+      (e: { code: number; stdout: string; stderr: string }) => ({ code: e.code, out: e.stdout + e.stderr, dir }),
+    );
+  }
+
+  it('passes a signed image with the settings fly.toml gives', { timeout: 30_000 }, async () => {
+    const r = await check({});
+    expect(r.out).toMatch(/from abc1234def/);
+    expect(r.code).toBe(0);
+    // Secret fingerprints are keyed, never Fly's own.
+    expect(readFileSync(path.join(r.dir, 'copy', 'deploys', 'current.json'), 'utf8')).not.toMatch(/"d"/);
+  });
+
+  it('flags settings that could run other code, and a site that won\'t say its commit', { timeout: 30_000 }, async () => {
+    const r = await check({ env: { NODE_OPTIONS: '--require /tmp/x.js' }, secrets: ['ADMIN_KEY', 'DATABASE_URL'], version: '' });
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/sets NODE_OPTIONS/);
+    expect(r.out).toMatch(/secret called DATABASE_URL/);
+    expect(r.out).toMatch(/didn't say which commit/);
+  });
+
+  it('tells a failed signature from a hiccup', { timeout: 60_000 }, async () => {
+    expect((await check({ verify: 'Error: verifying with issuer: failed to verify certificate identity' })).code).toBe(1);
+    expect((await check({ verify: 'Error: failed to fetch manifest: connection reset' })).code).toBe(2);
   });
 });
 

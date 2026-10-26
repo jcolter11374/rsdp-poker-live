@@ -112,7 +112,7 @@ when they deal at a home game.
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
   hand histories live in a database he controls, and he could edit them.
   Since 26 October 2026 every hand, every change to a player's buy-ins and
-  cash-outs, and every admin action also goes into a public, hash-chained
+  cash-outs, and every admin action that changes something also goes into a public, hash-chained
   record, and GitHub copies it every hour. Editing something already in the
   record now shows: in "Check this hand", in the ledger's check against the
   record, in a warning from any browser that saw the record before, and in
@@ -123,7 +123,8 @@ when they deal at a home game.
   and isn't checked separately. If amounts matter, keep your own tally too.
 - **Use admin powers, or a shell on the server.** The admin page can remove
   test tables and answer suggestions; each use now goes in the public record
-  and on [/transparency](/transparency). John can also open a shell on the
+  and on [/transparency](/transparency). Looking is not recorded: the admin
+  page can list tables and who is at them without leaving an entry. John can also open a shell on the
   server through Fly, the hosting company. That isn't recorded anywhere
   players can see, and from there everything in this list is possible.
 - **Show your cards to a spectator without the warnings.** A host can let
@@ -149,6 +150,8 @@ the repository (and pulling the `transparency` branch now and then).
   code on `main` (`.github/workflows/deploy.yml`). GitHub signs a record of the
   image and the commit it came from (build provenance), and Fly runs that
   exact image. The site's footer shows the commit the server says it runs.
+  `main` isn't locked against rewriting, so the watcher also checks that the
+  commit an image was built from is still on `main`.
 - **The deploy watcher.** Every hour GitHub asks Fly which image the live
   machine runs, its settings and secret names, and the starts and stops Fly
   reports, checks GitHub's signed record of that image, and writes the result
@@ -157,13 +160,20 @@ the repository (and pulling the `transparency` branch now and then).
   (`.github/workflows/transparency.yml`). An image GitHub didn't build from
   `main`, a second machine, a server that names a different commit, a
   replaced start command, an environment variable `fly.toml` doesn't set, or
-  a secret the code doesn't use opens an issue on GitHub, which notifies
-  everyone watching the repository. Settings or secrets that change without a
-  new image are noted in the log. Restarts are logged too; one after each
+  a secret the code doesn't use, extra containers, a start command replaced
+  in the machine's settings, settings that change without a new image, or a
+  build from a commit no longer on `main` opens an issue on GitHub, which
+  notifies everyone watching the repository. A secret that changes is noted
+  in the log (by a fingerprint keyed with a secret only GitHub has, so it
+  can't be used to guess the secret). If the watcher can't reach the site,
+  Fly or GitHub, it tries again the next hour, and opens an issue once a check
+  hasn't managed to run for six hours, since switching a check off would look
+  the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
   release is normal. Fly keeps only its recent events, so a burst of restarts
   between two checks may show only in part.
 - **The public record.** Every hand, every change to a player's buy-ins and
-  cash-outs, every table deleted, every admin action and every server start is
+  cash-outs, every table deleted, every admin action that changes something
+  and every server start is
   an entry in an append-only chain (`packages/engine/src/audit.ts`). Each entry
   includes a fingerprint (SHA-256) of the one before, so changing or removing
   an old entry changes every fingerprint after it. Entries hold no names and
@@ -178,7 +188,9 @@ the repository (and pulling the `transparency` branch now and then).
   record again, checks every entry it ever copied is still there unchanged
   and that the chain is unbroken, and copies the new entries to the
   `transparency` branch. If an entry it already copied is changed or gone, it
-  opens an issue. If it can't reach the site, it just tries again next hour.
+  opens an issue, keeps the old copy aside in the branch, and starts copying
+  the record as it is now. The issue stays open until someone closes it, and
+  closing it is public too.
 - **Your browser's checks.** Your browser remembers the latest entry it saw
   and checks, on each visit, that the record still holds it unchanged and
   that everything since follows on; it does the same against GitHub's copy.
@@ -213,6 +225,9 @@ What these checks can't do:
 - A wrong entry written at the time looks like any other entry. The record
   shows later edits, not lies told on the spot.
 - An edit made before GitHub's next copy, that no browser saw, isn't caught.
+- The server saves each entry before showing it, but a hosting failure that
+  loses the last few writes would make it reuse their numbers. Browsers and
+  the watcher would report that as a changed record, as they should.
 - If the database were lost, the record would start again from entry 1, and
   the watcher would report it as a problem. That is the right call; John would
   owe everyone an explanation.

@@ -50,12 +50,15 @@ export function readMirror(dir) {
   } catch {
     return [];
   }
-  return files.flatMap((f) =>
-    readFileSync(path.join(folder, f), 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line)),
-  );
+  // Files are named by each entry's time, which a clock change could put out of order: order by number.
+  return files
+    .flatMap((f) =>
+      readFileSync(path.join(folder, f), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)),
+    )
+    .sort((a, b) => a.seq - b.seq);
 }
 
 /** Thrown when a site can't be reached, as opposed to answering with something wrong. */

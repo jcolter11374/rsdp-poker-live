@@ -2,7 +2,8 @@
  * The public record (packages/engine/src/audit.ts, docs/FAIRNESS.md): hands,
  * chip totals, admin actions and server starts, hash-chained. Entries are
  * numbered and hashed the moment they happen and saved behind, in order; the
- * routes only ever show saved entries, so a crash can't take back one someone saw.
+ * routes only ever show saved entries, so a crash can't take back one someone saw
+ * (unless the disk itself loses writes it said it had made).
  */
 
 import { asc, desc, gt, and, inArray, sql } from 'drizzle-orm';

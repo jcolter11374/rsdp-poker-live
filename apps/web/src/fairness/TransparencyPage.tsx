@@ -48,6 +48,8 @@ export function TransparencyPage() {
   }, []);
 
   const running = watcher && watcher !== 'none' ? watcher.machines.find((m) => m.state === 'started') : null;
+  // The watcher runs hourly; a much older report means it has stopped, or can't get through.
+  const stale = watcher && watcher !== 'none' && Date.now() - new Date(watcher.checked).getTime() > 3 * 3_600_000;
 
   return (
     <div className="site-page">
@@ -93,13 +95,14 @@ export function TransparencyPage() {
               <>Last check: {when(watcher.checked)}.</>
             )}{' '}
             {watcher && watcher !== 'none' && watcher.notes?.length ? <>Noted: {watcher.notes.join(' ')} </> : null}
+            {stale && <span className="down">That is more than three hours ago, so the watcher has stopped or can&rsquo;t get through. </span>}
             <a href={`${REPO}/tree/transparency/deploys`}>Every check</a>
           </li>
         </ul>
 
         <h2>The public record</h2>
         <p>
-          Every hand, every change to a player&rsquo;s buy-ins and cash-outs, every admin action and every server start goes into a chain where each entry includes a fingerprint of the one
+          Every hand, every change to a player&rsquo;s buy-ins and cash-outs, every admin action that changes something and every server start goes into a chain where each entry includes a fingerprint of the one
           before. Editing or removing an old entry breaks every fingerprint after it. The record holds no names and no table links.
         </p>
         <ul>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { tableRef, verifyHand, type CardEvent } from '@rsdp/engine';
-import { handInRecord, tableHand, type HandEntries } from '../audit';
+import { digestOf, handInRecord, tableHand, type HandEntries } from '../audit';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
 import { liveRecordFor, mySeedFor, seedProblem, shownAs } from '../fair';
@@ -12,11 +12,12 @@ const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', h
 /** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
 export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId: string | null; tableId?: string }) {
   const fair = hand.fair;
-  const revealed = !!fair?.events;
+  // Changes when a card shown after the hand ends is added, which is recorded again.
+  const digest = useMemo(() => digestOf(hand), [hand]);
   // The public record of this hand, to check it against once it is revealed.
   const [record, setRecord] = useState<HandEntries | 'failed' | null>(null);
   useEffect(() => {
-    if (!tableId || !revealed) return;
+    if (!tableId || !digest) return;
     let live = true;
     tableHand(tableId, hand.handNumber).then(
       (r) => live && setRecord(r),
@@ -25,7 +26,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     return () => {
       live = false;
     };
-  }, [tableId, revealed, hand.handNumber]);
+  }, [tableId, digest, hand.handNumber]);
   const report = useMemo(() => {
     if (!fair) return null;
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;
