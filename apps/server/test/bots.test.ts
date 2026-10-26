@@ -497,6 +497,26 @@ describe('bot strategy', () => {
     }
   });
 
+  it('Hard keeps the bigger badugi round a blocked low card, and breaks up a straight or flush draw in 2-7', () => {
+    // My cards (seat 0, first to draw) and theirs, dealt one each in turn.
+    const throws = (game: string, mine: string[], theirs: string[]) =>
+      Array.from({ length: 4 }, (_, i) => {
+        const hand = dealt(game, mine.flatMap((c, j) => [c, theirs[j]]));
+        engine.act(hand, 0, { type: 'call' });
+        engine.act(hand, 1, { type: 'check' });
+        const move = chooseMove(hand, 0, seededRand(i + 1), { level: 'hard' });
+        return move.kind === 'draw' ? move.discard.map((d) => mine[d]).join(' ') : move.kind;
+      });
+    const all = (cards: string) => Array(4).fill(cards);
+    // The 2c blocks both the 3c and the 2d: throw it for a three-card badugi, not stand pat with two.
+    expect(throws('badugi', ['2c', '3c', '4h', '2d'], ['Kc', 'Qd', 'Js', 'Th'])).toEqual(all('2c'));
+    expect(throws('badugi', ['As', 'Ah', '2s', '3d'], ['Kc', 'Qd', 'Js', 'Th'])).toEqual(all('As'));
+    // 3-4-5-6 would make a straight with a 2 or a 7; 3-4-5-7 only with a 6.
+    expect(throws('td27', ['3d', '4c', '5h', '6s', '7d'], ['Kc', 'Qd', 'Js', 'Th', '9c'])).toEqual(all('6s'));
+    // Keep the 4 of spades, not four diamonds.
+    expect(throws('td27', ['3d', '4d', '7d', '6d', '4s'], ['Kc', 'Qd', 'Js', 'Th', '9c'])).toEqual(all('4d'));
+  });
+
   it('learns how players play from the hands the table keeps', () => {
     const hand = dealt('nlhe', ['7c', 'As', '2d', 'Ah'], 2);
     engine.act(hand, 0, { type: 'call' });
