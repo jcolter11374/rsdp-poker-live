@@ -3,6 +3,7 @@ import type { TableView } from '@rsdp/engine/wire';
 import { call, socket } from '../socket';
 import type { Fmt } from '../format';
 import { HOST_POWER_LABELS, type HostPower } from '@rsdp/engine/roles';
+import { botOwnerLabel } from './table/BotLevels';
 
 export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt; onSettings: () => void }) {
   const [msg, setMsg] = useState('');
@@ -34,7 +35,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
             <div className="request" key={r.id}>
               <span>
                 <b>{r.name}</b>
-                {r.bot && ` (${r.bot.ownerName}'s practice bot)`} {r.kind === 'seat' ? `wants seat ${(r.seat ?? 0) + 1} with ${fmt(r.amount)}` : `wants to add ${fmt(r.amount)}`}
+                {r.bot && ` (${botOwnerLabel(r.bot, 'practice bot')})`} {r.kind === 'seat' ? `wants seat ${(r.seat ?? 0) + 1} with ${fmt(r.amount)}` : `wants to add ${fmt(r.amount)}`}
               </span>
               <button className="primary" onClick={() => run(call('host:approve', { requestId: r.id }))}>
                 Approve

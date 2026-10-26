@@ -5,6 +5,7 @@ import { call } from '../socket';
 import type { Fmt } from '../format';
 import { Modal } from './SeatDialog';
 import { setChatMuted, useChatMutes } from '../chatMutes';
+import { botPlateLabel } from './table/BotLevels';
 
 /** Who is at the table: seated players and everyone watching. The host can name co-hosts and hand the table over. */
 export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt; onClose: () => void }) {
@@ -72,7 +73,7 @@ export function PeopleDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt
             <span className="who">
               {s.name}
               {tags(s.playerId)}
-              {s.bot && <span className="muted"> · {s.bot.ownerName}&rsquo;s bot</span>}
+              {s.bot && <span className="muted"> · {botPlateLabel(s.bot)}</span>}
             </span>
             <span className="muted">{s.sittingOut ? 'away' : fmt(s.stack)}</span>
             {!s.bot && mutes(s.playerId)}

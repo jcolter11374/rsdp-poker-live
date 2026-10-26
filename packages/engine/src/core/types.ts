@@ -369,8 +369,9 @@ export type HandEvent = { seq: number } & (
    * Draw games. `cards` (the replacements) are private and go on the end of the hand.
    * `positions` are the indexes thrown away, highest first (hands saved before it was added lack it).
    * `reshuffled` when the muck was shuffled in to cover this draw; `pos` only before any reshuffle.
+   * `auto` when the engine stood pat for an away or timed-out player.
    */
-  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[]; positions?: number[]; pos?: number[]; reshuffled?: true }
+  | { t: 'draw'; seat: SeatIndex; discarded: number; cards: Card[]; positions?: number[]; pos?: number[]; reshuffled?: true; auto?: true }
   | { t: 'uncalled'; seat: SeatIndex; amount: Chips }
   | { t: 'rit-offer'; seats: SeatIndex[] }
   | { t: 'rit-vote'; seat: SeatIndex; yes: boolean }
