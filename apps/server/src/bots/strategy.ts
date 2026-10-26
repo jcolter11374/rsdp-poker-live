@@ -11,7 +11,7 @@ import {
   type SeatIndex,
 } from '@rsdp/engine/core';
 import { getVariant, HIGH_EVALUATORS, LOW_EVALUATORS, type VariantSpec } from '@rsdp/engine/variants';
-import type { BotLevel } from '@rsdp/engine/wire';
+import type { BotLevel, BotNoteRule } from '@rsdp/engine/wire';
 
 /**
  * Practice bots: a simple, rule-based player for every game. It estimates
@@ -89,8 +89,8 @@ export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: Bo
   return explainMove(hand, seat, rand, ctx).move;
 }
 
-/** Why a bot made a move: the rule that picked it. */
-export type MoveRule = 'bring-in' | 'complete' | 'steal' | 'check' | 'value' | 'bluff' | 'semi-bluff' | 'raise' | 'call' | 'call-loose' | 'fold' | 'draw' | 'pat';
+/** Why a bot made a move: the rule that picked it (the table adds the rest of BotNoteRule). */
+export type MoveRule = Exclude<BotNoteRule, 'rit-yes' | 'fallback'>;
 
 /** The numbers behind a move, as the bot worked them out (only what it could see). */
 export interface MoveWhy {
