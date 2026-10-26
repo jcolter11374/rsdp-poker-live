@@ -6,6 +6,7 @@ import {
   engine,
   modifierRegistry,
   planForcedBets,
+  runoutMs,
   variants,
   type Action,
   type BettingKind,
@@ -1713,7 +1714,8 @@ export class TableRuntime {
     }
     const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
     const auto = this.isTournament || s.settings.timing.autoStartNextHand;
-    s.nextHandAt = s.started && auto ? now + delay * 1000 : null;
+    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
+    s.nextHandAt = s.started && auto ? now + delay * 1000 + runoutMs(hand.events) : null;
   }
 
   /** 7-2 bounty with auto-show: turn up a winning 7-2 nobody saw, which pays the bounty before stacks are read. */

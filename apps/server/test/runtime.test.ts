@@ -307,7 +307,8 @@ describe('chips and leaving', () => {
     }
     const busted = rt.state.seats.find((s) => s && s.stack === 0)!;
     expect(busted).toMatchObject({ sittingOut: true, sitOutReason: 'busted' });
-    clock.advance(10_000);
+    // Past the showdown pause and the all-in runout, which the next hand waits for.
+    clock.advance(20_000);
     expect(rt.state.hand!.phase).toBe('complete');
     if (busted.playerId !== 'host') {
       rt.rebuy(busted.playerId, 100);

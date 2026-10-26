@@ -28,6 +28,7 @@ import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
+import { useRunoutReveal } from './runout';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -112,7 +113,9 @@ type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'play
 const KEYS_TIP_MS = 20_000;
 
 export function TablePage({ tableId }: { tableId: string }) {
-  const [view, setView] = useState<TableView | null>(null);
+  const [live, setView] = useState<TableView | null>(null);
+  // An all-in runout is dealt a street at a time; everything below sees the table as it is shown.
+  const view = useRunoutReveal(live);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -127,7 +130,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
-  const readyTable = useFollowSeat(tableId, view?.me.seat != null);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
@@ -473,7 +476,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
