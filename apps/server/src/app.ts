@@ -31,6 +31,8 @@ import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
 import { StorageError } from './db/errors';
+import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
+import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
   playerId: PlayerId;
@@ -127,6 +129,10 @@ export interface AppDeps {
   /** Built web client to serve (production). */
   webDist?: string | null;
   log?: (message: string, err?: unknown) => void;
+  /** The public record (audit.ts); defaults to one kept in memory. */
+  audit?: AuditLog;
+  /** What this server says it was built from; production reads it from the environment. */
+  build?: BuildInfo;
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
@@ -176,6 +182,10 @@ export function createApp(deps: AppDeps = {}) {
   const avatarStore = deps.avatars ?? memoryAvatars();
   const sharedStore = deps.shared ?? memorySharedHands();
   const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
+  const audit = deps.audit ?? AuditLog.after(memoryAuditStore(), null, { now: () => clock.now(), log });
+  const build = deps.build ?? buildFromEnv();
+  const startedAt = clock.now();
+  audit.boot(build);
 
   const app = express();
   const http = createServer(app);
@@ -224,8 +234,9 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, tables: tables.size, memoryMb: Math.round(process.memoryUsage().rss / 1_048_576) });
   });
+  auditRoutes(app, audit, build, startedAt, log);
   const isAdmin = adminGate(deps.adminKey ?? process.env.ADMIN_KEY, () => clock.now());
-  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { isAdmin, now: () => clock.now(), log });
+  suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { isAdmin, now: () => clock.now(), log, onAdmin: (action, id) => audit.admin(action, id) });
   const accountHooks: AccountHooks = {
     signedIn: (playerId) => avatars.delete(playerId),
     deleted: (playerIds) => {
@@ -243,7 +254,7 @@ export function createApp(deps: AppDeps = {}) {
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
   };
   const confirmations = googleConfirmations(() => clock.now());
-  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks });
+  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
   handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
@@ -284,7 +295,10 @@ export function createApp(deps: AppDeps = {}) {
   app.post('/api/admin/tournaments/:id/archive', (req, res) => {
     if (!fromServerShell(req)) return void res.status(404).end();
     tournaments.adminArchive(String(req.params.id)).then(
-      (r) => res.json(r),
+      (r) => {
+        audit.admin('archive-tournament', subjectRef('tournament', String(req.params.id)));
+        res.json(r);
+      },
       (e) => res.status(e instanceof ActionError ? 400 : 500).json({ error: e instanceof Error ? e.message : String(e) }),
     );
   });
@@ -331,6 +345,7 @@ export function createApp(deps: AppDeps = {}) {
       (found) => {
         if (!found) return void res.status(404).json({ error: 'No table has that id.' });
         log(`table ${id} deleted by the admin`);
+        audit.deleted(id, 'admin');
         res.json({ ok: true });
       },
       (e) => {
@@ -458,7 +473,9 @@ export function createApp(deps: AppDeps = {}) {
     created.set(id, ready);
     lastWatched.set(id, clock.now());
     lastChange.set(id, clock.now());
+    audit.watchTable(rt.state).catch((e) => log(`reading the public record for table ${id} failed`, e));
     rt.onChange = () => {
+      audit.safely('chip totals', () => audit.tableChanged(rt.state));
       lastChange.set(id, clock.now());
       broadcast(rt);
       scheduleSave(rt);
@@ -466,6 +483,7 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
+      audit.safely('a hand', () => audit.hand(id, record));
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
@@ -515,6 +533,7 @@ export function createApp(deps: AppDeps = {}) {
     rt.onHandFinished = () => {};
     rt.dispose();
     tables.delete(id);
+    audit.forgetTable(id);
     feeds.delete(id);
     watchers.delete(id);
     lastWatched.delete(id);
@@ -623,6 +642,7 @@ export function createApp(deps: AppDeps = {}) {
       },
       detach: (rt) => {
         tables.delete(rt.state.id);
+        audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
@@ -713,6 +733,7 @@ export function createApp(deps: AppDeps = {}) {
     if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
     if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Poker Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
     if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
+    if (/^\/transparency\/?$/.test(pathname)) return { title: 'Checking John · RSDP Poker Live!', description: 'What the site runs, the public record of every hand and admin action, and how to check them from outside the server.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
@@ -1168,6 +1189,7 @@ export function createApp(deps: AppDeps = {}) {
           rt.checkDeletable(me);
           log(`table ${rt.state.id} deleted by its host`);
           await removeTable(rt.state.id);
+          audit.deleted(rt.state.id, 'host');
         },
         log,
       ),
@@ -1308,6 +1330,7 @@ export function createApp(deps: AppDeps = {}) {
       await lobby.flush();
       await Promise.all(open.map((rt) => (created.get(rt.state.id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch(() => {})));
       await new Promise<void>((resolve) => http.close(() => resolve()));
+      await audit.flush();
     },
   };
 }

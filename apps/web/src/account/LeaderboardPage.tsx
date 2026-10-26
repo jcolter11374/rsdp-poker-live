@@ -94,7 +94,7 @@ export function LeaderboardPage() {
                 <div className="leader-legend">
                   {onGraph.map((k, i) => (
                     <span key={k}>
-                      <i className="swatch" style={{ background: SERIES[i] }} /> {rows!.find((r) => r.key === k)!.name}
+                      <i className="legend-swatch" style={{ background: SERIES[i] }} /> {rows!.find((r) => r.key === k)!.name}
                     </span>
                   ))}
                   <span className="muted">Tick the boxes to compare up to three people. Untick one to make room.</span>

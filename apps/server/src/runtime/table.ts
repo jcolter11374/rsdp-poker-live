@@ -62,6 +62,11 @@ export const realGameHand = (seats: readonly { playerId: PlayerId }[]) => seats.
 export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
+/**
+ * A deal also waits, up to this long after the commitment, for the seed of every seated player whose browser is
+ * connected: a slow or stalled connection then gets its seed in rather than missing the hand and warning about it.
+ */
+export const FAIR_SEED_WAIT_MS = 10_000;
 const RIT_VOTE_SECONDS = 12;
 /** A clock paused with less than this left gets this much on resume, so nobody times out the moment play goes on. */
 export const RESUME_MIN_MS = 5_000;
@@ -123,6 +128,8 @@ export class TableRuntime {
   private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
+  /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
+  private seedWait = false;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
 
@@ -695,6 +702,21 @@ export class TableRuntime {
     if (typeof input.seed !== 'string' || !SEED_RE.test(input.seed)) throw new ActionError('a seed is 16 to 64 hex characters');
     if (input.commit !== f.next.commit) throw new ActionError('that hand has already been dealt');
     f.clientSeeds[playerId] = input.seed;
+    // The deal may have been waiting for this one.
+    if (this.seedWait) this.sync();
+  }
+
+  /**
+   * The earliest the next hand may be dealt: FAIR_LEAD_MS after its commitment appeared, or later, up to
+   * FAIR_SEED_WAIT_MS, while a seated player who is connected (not a bot) hasn't sent a seed yet.
+   */
+  private fairReadyAt(): number {
+    const committedAt = this.state.fair?.committedAt ?? 0;
+    const lead = committedAt + this.fairLeadMs;
+    if (this.fairLeadMs === 0) return lead;
+    const seeds = this.state.fair?.clientSeeds ?? {};
+    const waiting = this.state.seats.some((x) => x && !this.isBot(x.playerId) && (this.connections.get(x.playerId) ?? 0) > 0 && !seeds[x.playerId]);
+    return waiting ? Math.max(lead, committedAt + FAIR_SEED_WAIT_MS) : lead;
   }
 
   /**
@@ -2174,11 +2196,22 @@ export class TableRuntime {
       }
       return false;
     }
-    // Browsers warn about a hand dealt too soon after its commitment appeared (docs/FAIRNESS.md).
-    const ready = (s.fair?.committedAt ?? 0) + this.fairLeadMs;
+    // Browsers warn about a hand dealt too soon after its commitment appeared, or without a seed they sent
+    // (docs/FAIRNESS.md).
+    const ready = this.fairReadyAt();
+    // Put back for a seed that has since come in, or for a player who has gone: deal as soon as allowed.
+    if (this.seedWait && s.nextHandAt !== null && ready < s.nextHandAt) {
+      s.nextHandAt = Math.max(ready, now);
+      this.seedWait = false;
+    }
     if (s.nextHandAt !== null && now >= s.nextHandAt) {
-      if (now < ready) s.nextHandAt = ready;
-      else this.deal();
+      if (now < ready) {
+        s.nextHandAt = ready;
+        this.seedWait = ready > (s.fair?.committedAt ?? 0) + this.fairLeadMs;
+      } else {
+        this.seedWait = false;
+        this.deal();
+      }
       return true;
     }
     // Nothing scheduled: a tournament table deals when its gate opens, a running cash
@@ -2187,9 +2220,13 @@ export class TableRuntime {
       const auto = this.tournament || (s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand);
       if (auto && now < ready) {
         s.nextHandAt = ready;
+        this.seedWait = ready > (s.fair?.committedAt ?? 0) + this.fairLeadMs;
         return true;
       }
-      if (auto) return this.deal();
+      if (auto) {
+        this.seedWait = false;
+        return this.deal();
+      }
     }
     return false;
   }

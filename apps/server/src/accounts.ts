@@ -75,7 +75,15 @@ const MESSAGE: Partial<Record<IdentityError['code'], string>> = {
 export function accountRoutes(
   app: express.Express,
   db: Db | null,
-  opts: { hooks: AccountHooks; isAdmin: AdminCheck; confirmations: GoogleConfirmations; now: () => number; log: (message: string, err?: unknown) => void },
+  opts: {
+    hooks: AccountHooks;
+    isAdmin: AdminCheck;
+    confirmations: GoogleConfirmations;
+    now: () => number;
+    log: (message: string, err?: unknown) => void;
+    /** Admin actions go in the public record (audit.ts). */
+    onAdmin?: (action: string) => void;
+  },
 ) {
   const { hooks, isAdmin, confirmations, now, log } = opts;
   const json = express.json({ limit: '4kb' });
@@ -255,6 +263,8 @@ export function accountRoutes(
     route(async (req, res, db) => {
       if (!isAdmin(req, res)) return;
       const issued = await issueResetCode(db, str(req.body?.username).trim(), { now: new Date(now()) });
+      // Which account stays private; that one was issued doesn't.
+      opts.onAdmin?.('password reset code issued for an account');
       res.json({ ok: true, username: issued.username, code: issued.code, expiresAt: issued.expiresAt.toISOString() });
     }),
   );

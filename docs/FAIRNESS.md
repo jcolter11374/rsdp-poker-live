@@ -45,6 +45,11 @@ first, details after.
 - **Your cards stay private during play.** The server sends each person only
   what they may see. Undealt cards, other players' hole cards and the secrets
   never leave the server during a hand.
+- **Some of what John could do now leaves public traces.** Since 26 October
+  2026, GitHub builds and signs every release, checks every hour which build
+  the live site runs, and keeps a copy of a tamper-evident record of every
+  hand, chip total and admin action. See [Checking John](#checking-john) and
+  the [/transparency](/transparency) page.
 - **This doesn't make the developer impossible to cheat.** The next section
   lists, plainly, what John could still do as the person who runs the site.
 
@@ -67,7 +72,17 @@ when they deal at a home game.
   you, so a changed site could switch it off or quietly send a seed the server
   chose; then the server could pick the deck, and "Check this hand", or even
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
-  still pass.
+  still pass. Since 26 October 2026 a normal release can be checked: GitHub
+  builds it from the public code and signs a record of which commit it came
+  from, and GitHub's hourly watcher checks that the live machine runs exactly
+  that image (see [Checking John](#checking-john)). It also checks the
+  machine's start command, its environment variables against `fly.toml` and
+  the names of its secrets, since a setting like `NODE_OPTIONS` could make the
+  same image run other code. That catches a quiet redeploy or settings change.
+  It can't see the values of secrets, only a fingerprint of each, and it
+  doesn't catch changes made from a shell on the running server,
+  which John can open: he could change the code there, or read its memory,
+  without a new deploy, and nothing records that.
 - **Throw away a deck it doesn't like.** The server knows the deck the moment
   the last seed is in. It could drop that commitment, publish a new one,
   collect fresh seeds and try again. Since 26 October 2026 your browser watches
@@ -95,10 +110,23 @@ when they deal at a home game.
   browser storage is blocked. It also relies on the browser code being the
   published code (above).
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
-  hand histories live in a database he controls, and he could edit them. A
-  hand whose proof you downloaded can't be changed without the proof no longer
-  matching, but nothing else is protected. If amounts matter, keep your own
-  tally too.
+  hand histories live in a database he controls, and he could edit them.
+  Since 26 October 2026 every hand, every change to a player's buy-ins and
+  cash-outs, and every admin action that changes something also goes into a public, hash-chained
+  record, and GitHub copies it every hour. Editing something already in the
+  record now shows: in "Check this hand", in the ledger's check against the
+  record, in a warning from any browser that saw the record before, and in
+  the GitHub copy. What it doesn't stop: a false entry written at the time
+  (say, a changed server recording a wrong hand as it happens; you'd see the
+  hand play out differently), an edit in the hour before GitHub copies it
+  that no browser saw, and the leaderboard, which is worked out from hands
+  and isn't checked separately. If amounts matter, keep your own tally too.
+- **Use admin powers, or a shell on the server.** The admin page can remove
+  test tables and answer suggestions; each use now goes in the public record
+  and on [/transparency](/transparency). Looking is not recorded: the admin
+  page can list tables and who is at them without leaving an entry. John can also open a shell on the
+  server through Fly, the hosting company. That isn't recorded anywhere
+  players can see, and from there everything in this list is possible.
 - **Show your cards to a spectator without the warnings.** A host can let
   spectators see every hole card, and the site makes sure everyone is told
   (see the next section). Those warnings are code too: a changed server could
@@ -107,6 +135,103 @@ when they deal at a home game.
   assistant (Claude), and the reviews mentioned below were also done by AI
   reviewers we ran ourselves. No outside auditor or security firm has looked
   at it.
+
+## Checking John
+
+These checks run outside John's server, mostly on GitHub, so a changed server
+can't also change what they found. They are independent of the server, not of
+John: he owns the GitHub repository and the Fly account, so he could switch
+them off or rewrite the `transparency` branch. Not quietly, though: the code
+and its history are public, a check that stops running stops updating its
+public log, and anyone can keep a copy John can't touch by cloning or forking
+the repository (and pulling the `transparency` branch now and then).
+
+- **Signed builds.** Every release is built by GitHub Actions from the public
+  code on `main` (`.github/workflows/deploy.yml`). GitHub signs a record of the
+  image and the commit it came from (build provenance), and Fly runs that
+  exact image. The site's footer shows the commit the server says it runs.
+  `main` isn't locked against rewriting, so the watcher also checks that the
+  commit an image was built from is still on `main`.
+- **The deploy watcher.** Every hour GitHub asks Fly which image the live
+  machine runs, its settings and secret names, and the starts and stops Fly
+  reports, checks GitHub's signed record of that image, and writes the result
+  to the
+  [`transparency` branch](https://github.com/jcolter11374/rsdp-poker-live/tree/transparency/deploys)
+  (`.github/workflows/transparency.yml`). An image GitHub didn't build from
+  `main`, a second machine, a server that names a different commit, a
+  replaced start command, an environment variable `fly.toml` doesn't set, or
+  a secret the code doesn't use, extra containers, a start command replaced
+  in the machine's settings, settings that change without a new image, or a
+  build from a commit no longer on `main` opens an issue on GitHub, which
+  notifies everyone watching the repository. A secret that changes is noted
+  in the log (by a fingerprint keyed with a secret only GitHub has, so it
+  can't be used to guess the secret). If the watcher can't reach the site,
+  Fly or GitHub, it tries again the next hour, and opens an issue once a check
+  hasn't managed to run for six hours, since switching a check off would look
+  the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
+  release is normal. Fly keeps only its recent events, so a burst of restarts
+  between two checks may show only in part.
+- **The public record.** Every hand, every change to a player's buy-ins and
+  cash-outs, every table deleted, every admin action that changes something
+  and every server start is
+  an entry in an append-only chain (`packages/engine/src/audit.ts`). Each entry
+  includes a fingerprint (SHA-256) of the one before, so changing or removing
+  an old entry changes every fingerprint after it. Entries hold no names and
+  no table links: a table or player appears only as a fingerprint that
+  someone at that table can work out. A hand's entry is the fingerprint of the
+  whole hand as "Check this hand" sees it once revealed (a hand shown after it
+  ends is recorded again). It includes the hand's secret server seed, so it
+  can't be used to work out folded cards while the hand is still sealed. Anyone can read the record at `/api/audit/entries`.
+  Privacy: the record names nobody, but anyone with a table's link can find
+  that table's entries and see each player's buy-ins and cash-outs there,
+  without names, and anyone can see when hands were played.
+- **GitHub's copy of the record.** Every hour the watcher reads the whole
+  record again, checks every entry it ever copied is still there unchanged
+  and that the chain is unbroken, and copies the new entries to the
+  `transparency` branch. If an entry it already copied is changed or gone, it
+  opens an issue, keeps the old copy aside in the branch, and starts copying
+  the record as it is now. The issue stays open until someone closes it, and
+  closing it is public too.
+- **Your browser's checks.** Your browser remembers the latest entry it saw
+  and checks, on each visit, that the record still holds it unchanged and
+  that everything since follows on; it does the same against GitHub's copy.
+  If not, every page shows a warning. "Check this hand" checks a revealed hand
+  against its entry, and marks a hand that is missing while hands before and
+  after it are recorded (an honest server only does that if it crashed just
+  as the hand finished). The ledger checks every buy-in and cash-out against
+  the record, and says so if a player's totals were found changed when a
+  closed table was opened again. Those two compare with the record as the
+  site shows it now; it's GitHub's hourly check of the whole record that shows
+  whether those entries were edited since they were copied. These checks are
+  code the site sends you, so they are only as honest as that code; GitHub's
+  copy is the one that doesn't depend on it.
+
+To check it all yourself, with Node 20 or later:
+
+```sh
+git clone https://github.com/jcolter11374/rsdp-poker-live && cd rsdp-poker-live
+git clone -b transparency https://github.com/jcolter11374/rsdp-poker-live copy
+node scripts/verify-audit.mjs --copy copy --proof hand-12-proof.json
+```
+
+It uses Node's own SHA-256 and nothing from the app. To be told when a check
+fails, press **Watch** on the repository's GitHub page (custom: Issues).
+
+What these checks can't do:
+
+- They can't show what happens inside the running server: a shell on it,
+  reading the live deck from memory, or code changed in place.
+- They see secrets only as names and fingerprints, so they show that a
+  secret changed, not what it says.
+- A wrong entry written at the time looks like any other entry. The record
+  shows later edits, not lies told on the spot.
+- An edit made before GitHub's next copy, that no browser saw, isn't caught.
+- The server saves each entry before showing it, but a hosting failure that
+  loses the last few writes would make it reuse their numbers. Browsers and
+  the watcher would report that as a changed record, as they should.
+- If the database were lost, the record would start again from entry 1, and
+  the watcher would report it as a problem. That is the right call; John would
+  owe everyone an explanation.
 
 ## What a table's host can do
 
@@ -211,7 +336,12 @@ Limits, stated plainly:
   a real one, to steer the deck. Each browser checks its own entry, live and
   in "Check this hand". The server never deals sooner than 2.5 seconds after
   showing a hand's commitment, and browsers send their seed the moment they
-  see it. A browser warns if a seed it never sent is listed under its name; if
+  see it (normally one per commitment: a browser's other tabs, or the page
+  after a reload, send the same one again). If a
+  seated player's browser is connected but its seed hasn't arrived yet (a slow
+  or stalled connection), the server waits for it, up to 10 seconds after the
+  commitment appeared; so a player whose page stops sending seeds can slow
+  quick hands down to one every 10 seconds or so. A browser warns if a seed it never sent is listed under its name; if
   its seed was left out although sent more than 1.5 seconds before the deal
   (whatever the server answered: an honest server only turns down a seed that
   arrived after the deal); if its seed was left out of a hand dealt less than

@@ -95,7 +95,7 @@ export function LeaderChart({ rows }: { rows: LeaderRow[] }) {
           <span className="muted">{day(ht)}</span>
           {lines.map((l, i) => (
             <span key={l.row.key}>
-              <i className="swatch" style={{ background: SERIES[i] }} /> {l.row.name} <b>{signed(totalAt(l.points, ht))}</b>
+              <i className="legend-swatch" style={{ background: SERIES[i] }} /> {l.row.name} <b>{signed(totalAt(l.points, ht))}</b>
             </span>
           ))}
         </div>

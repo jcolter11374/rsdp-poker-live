@@ -465,3 +465,26 @@ export const suggestions = pgTable(
   },
   (t) => [check('suggestions_status_check', sql`${t.status} in (${oneOf(SUGGESTION_STATUSES)})`), index('suggestions_status_idx').on(t.status)],
 );
+
+// ---------------------------------------------------------------- public record
+
+/**
+ * The public, hash-chained record (packages/engine/src/audit.ts): fingerprints
+ * of hands, chip totals, admin actions and server starts. Append-only; the
+ * hashes, copied to GitHub every hour, show any later edit.
+ */
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    seq: bigint('seq', { mode: 'number' }).primaryKey(),
+    /** Milliseconds since 1970, exactly as hashed. */
+    at: bigint('at', { mode: 'number' }).notNull(),
+    kind: text('kind').notNull(),
+    /** The table fingerprint (tableRef) for table entries. */
+    subject: text('subject'),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull(),
+    prev: text('prev').notNull(),
+    hash: text('hash').notNull(),
+  },
+  (t) => [index('audit_log_subject_idx').on(t.subject, t.seq), index('audit_log_kind_idx').on(t.kind, t.seq)],
+);
