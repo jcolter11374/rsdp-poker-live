@@ -1,5 +1,6 @@
-// Browser smoke test: a cash table plays a hand, and a tournament seats its
-// players and deals. Runs against a server that serves the built web app.
+// Browser smoke test: a cash table plays a hand, a practice hand against bots
+// gives a coach tip, and a tournament seats its players and deals. Runs against
+// a server that serves the built web app.
 //
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
@@ -17,6 +18,9 @@ if (/fly\.dev/.test(BASE)) {
   console.error('smoke test refused: it would leave test tables and tournaments on the live site');
   process.exit(1);
 }
+// Only the server under test is ever contacted: any other request is blocked and fails the run.
+const LOCAL = new Set(['localhost', '127.0.0.1', '[::1]']);
+const SERVER = new URL(BASE).host;
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
@@ -25,6 +29,12 @@ const browser = await chromium.launch();
 
 async function open(label, viewport = { width: 1280, height: 860 }) {
   const ctx = await browser.newContext({ viewport });
+  await ctx.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    if (LOCAL.has(url.hostname) || url.host === SERVER) return route.continue();
+    errors.push(`${label}: blocked a request to ${url.origin}`);
+    return route.abort();
+  });
   const p = await ctx.newPage();
   p.setDefaultTimeout(15_000);
   p.on('console', (m) => m.type() === 'error' && errors.push(`${label}: ${m.text()}`));
@@ -79,6 +89,11 @@ try {
     await guest.waitForSelector('.seat.me');
     await host.click('button:has-text("Start game")');
     await host.waitForSelector('.seat .hole .playing-card');
+    // Two people in the hand: no coach tip for whoever is to act, not even with the T key.
+    const first = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
+    await first.keyboard.press('t');
+    await first.waitForTimeout(300);
+    for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
 
@@ -142,6 +157,24 @@ try {
     await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
     await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
     await guest.click('.replayer button[aria-label="Close"]');
+  });
+
+  await step('practice: a hand against bots, with a coach tip on your turn', async () => {
+    const p = await open('practice');
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Pia');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    // The bots play on their own, and a hand folded round to Pia's big blind ends without her turn, so allow a few hands.
+    const pill = p.locator('.action-bar.my-turn .play-tip-button');
+    await pill.waitFor({ timeout: 60_000 });
+    await pill.click();
+    const tip = p.locator('#play-tip');
+    await tip.filter({ hasText: /to win|of the pot|Draw|Stand pat/ }).waitFor().catch(async () => {
+      throw new Error(`no tip, the panel said: ${(await tip.innerText().catch(() => 'nothing')).trim()}`);
+    });
+    await p.screenshot({ path: path.join(OUT, 'practice-tip.png') });
+    await p.close();
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {
