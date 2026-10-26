@@ -3,10 +3,11 @@
     {
       "id": "2026-10-26-f",
       "date": "2026-10-26",
-      "title": "Bot levels, better pre-moves and a swapped-deck watch",
+      "title": "Bot levels, better pre-moves and side games explained",
       "items": [
         { "title": "Pick how good your practice bot is", "detail": "Choose Easy, Normal or Hard when you add a bot or start a practice game, and change it any time from the bot's popup. Easy calls a lot, bets small and never bluffs, which makes it good for learning a new game. Hard reads what your bets mean, learns how you play, uses position and bluffs. In our tests Hard beat Normal, and Normal beat Easy, in every game." },
         { "title": "Pre-click your move, and change your mind", "detail": "Before your turn, tap Check / Fold, Check, Call or Call any and it plays the moment your turn comes. Tap it again to cancel. If someone bets first, Check / Fold turns into Fold, and a Check or a Call of an amount that has since been raised clears itself so you decide again. On a computer the keys work too: F, K, C and A tick a pre-move, and pressing the key again unticks it.", "suggestedBy": "John" },
+        { "title": "How to play now covers the side games", "detail": "The How to play guides now explain the Nit game, the 7-2 bounty, bomb pots, double board, run it twice, straddles, rabbit hunting, the time bank, showing and mucking, the house fee and missed blinds. Each one says how it works here, walks through an example with real numbers, and lists the host settings that change it. At a table, How to play shows the ones switched on there first, and the Nit game's ? button links to its full guide." },
         { "title": "Your browser watches for a swapped deck", "detail": "Each hand's deck is sealed before the deal. Your browser now also warns you if the table swaps the sealed deck for the next hand for a different one without dealing it, which is how a dishonest server would hunt for a deck it likes. The Fairness page explains how it works and what it can't catch." }
       ]
     },
