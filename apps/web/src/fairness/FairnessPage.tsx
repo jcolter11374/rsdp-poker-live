@@ -11,29 +11,14 @@ export function sourceLink(href: string): string {
   return new URL(href, `${REPO}docs/`).href;
 }
 
-/** The doc's title and opening paragraph; the explainer video sits between them and the rest. */
-export function splitIntro(md: string): [string, string] {
-  const at = md.indexOf('\n## ');
-  return at < 0 ? [md, ''] : [md.slice(0, at), md.slice(at + 1)];
-}
-
 /** /fairness: how the cards are shuffled, the audit, the test results and how to check a hand. It is docs/FAIRNESS.md, so the two never drift apart. */
 export function FairnessPage() {
-  const [intro, rest] = splitIntro(doc);
   return (
     <div className="site-page">
       <SiteHeader />
       <main className="fairness-page">
         <article>
-          <Markdown source={intro} link={sourceLink} />
-          {/* Click to play: preload="none" so nothing downloads until someone presses play. */}
-          <figure className="fairness-video">
-            <video controls preload="none" playsInline poster="/media/fairness-explainer.jpg" aria-labelledby="fairness-video-caption">
-              <source src="/media/fairness-explainer.mp4" type="video/mp4" />
-            </video>
-            <figcaption id="fairness-video-caption">Watch: how a hand is proven fair (9 min). Everything it covers is also written out below.</figcaption>
-          </figure>
-          <Markdown source={rest} link={sourceLink} />
+          <Markdown source={doc} link={sourceLink} />
         </article>
         <p className="muted">
           Source of this page: <a href={`${REPO}docs/FAIRNESS.md`}>docs/FAIRNESS.md</a> on GitHub, where every file mentioned here can be read.
