@@ -8,9 +8,12 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   // Escape closes the topmost dialog only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
       const all = document.querySelectorAll('.modal-backdrop');
-      if (all[all.length - 1] === backdrop.current) onClose();
+      if (all[all.length - 1] !== backdrop.current) return;
+      // Marks the key as used, so a sheet or another dialog underneath stays open.
+      e.preventDefault();
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -769,7 +769,6 @@ dl.shortcuts dd { margin: 0; }
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(190px, var(--held, 0px)); }
 .portrait .dock.seated { min-height: max(205px, var(--held, 0px)); }
-@media (max-height: 500px) { .portrait .dock.seated { min-height: var(--held, 0px); } }
 /* Your own seat draws over empty-seat markers next to it. */
 .seat.me { z-index: 3; }
 /* Shorter windows: a tighter action bar and felt margins give the table the room. */
@@ -785,3 +784,11 @@ dl.shortcuts dd { margin: 0; }
   .portrait .sizing .presets button { padding: 6px 4px; }
   .portrait .dock.seated { min-height: max(189px, var(--held, 0px)); }
 }
+/* Fixed-limit games (no bet slider) have a shorter bar. */
+.dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
+.portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
+/* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
+@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit { min-height: var(--held, 0px); } }
+/* On phones the time bank sits beside the hand line instead of over it. */
+.portrait .bar-head { gap: 8px; flex-wrap: wrap; }
+.portrait .bar-head .time-bank { position: static; translate: none; }

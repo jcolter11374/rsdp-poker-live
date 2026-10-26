@@ -158,6 +158,18 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
+  // On your turn (betting or drawing) the time bank sits on the bar's top line, so the bar is no taller for it.
+  const canBank = !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
+  const head = canBank ? (
+    <div className="bar-head">
+      {hint}
+      <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
+        Time bank +{me.timeBank}s
+      </button>
+    </div>
+  ) : (
+    hint
+  );
   const errorLine = slow ? (
     <div className="muted sending-note">Sending… your connection seems slow.</div>
   ) : (
@@ -205,7 +217,7 @@ export function ActionBar({
     const n = discard.length;
     return (
       <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
-        {hint}
+        {head}
         {errorLine}
         <div className="prompt">
           {hand.streetName}: click the cards you want to throw away{view.canDraw.max < myCards.length ? ` (up to ${view.canDraw.max})` : ''}.
@@ -277,24 +289,9 @@ export function ActionBar({
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
-  // The time bank sits on the bar's top line, so the bar is no taller on turns when it can be used.
-  const canBank = view.turn?.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
-  const bank = canBank && (
-    <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
-      Time bank +{me.timeBank}s
-    </button>
-  );
-
   return (
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
-      {bank ? (
-        <div className="bar-head">
-          {hint}
-          {bank}
-        </div>
-      ) : (
-        hint
-      )}
+      {head}
       {errorLine}
       {sized && (
         <div className="sizing">

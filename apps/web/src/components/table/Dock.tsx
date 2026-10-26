@@ -4,17 +4,21 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
  * The action bar and the options under the table. It keeps the tallest height
  * it has reached (as --held), so the table above doesn't grow and shrink as the
  * action bar changes during a hand. It lets go when the window resizes or
- * `reset` changes. A seated player starts with room for a full action bar
+ * `reset` changes (a new hand or a seat change, so something tall in one hand
+ * doesn't shrink the next). A seated player starts with room for a full action bar
  * (see .dock.seated), so even the first turn of the session doesn't move the table.
  */
 export function Dock({
   reset,
   seated,
+  limit,
   children,
 }: {
   reset: unknown;
-  /** A seated player in a game with a bet slider: start with room for the full bar. */
+  /** A seated player starts with room for a full action bar on their turn (see .dock.seated). */
   seated: boolean;
+  /** Fixed-limit games have no bet slider, so their full bar is shorter. */
+  limit: boolean;
   children: ReactNode;
 }) {
   const outer = useRef<HTMLDivElement>(null);
@@ -46,7 +50,7 @@ export function Dock({
     };
   }, [reset]);
   return (
-    <div className={seated ? 'dock seated' : 'dock'} ref={outer}>
+    <div className={['dock', seated && 'seated', limit && 'limit'].filter(Boolean).join(' ')} ref={outer}>
       <div className="dock-inner" ref={inner}>
         {children}
       </div>

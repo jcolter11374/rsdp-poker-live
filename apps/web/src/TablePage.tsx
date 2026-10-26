@@ -505,7 +505,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
-          <Dock reset={`${portrait}:${view.me.seat}`} seated={view.me.seat !== null && (view.hand ?? view.upcoming)?.betting !== 'fixed-limit'}>
+          <Dock reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`} seated={view.me.seat !== null} limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}>
             <ActionBar
               view={view}
               fmt={fmt}
