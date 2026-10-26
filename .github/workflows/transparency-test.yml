@@ -43,8 +43,8 @@ jobs:
           gh attestation verify "oci://registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/transparency-test.yml" --source-ref "$GITHUB_REF" --format json | jq '.[0].verificationResult.signature.certificate | {sourceRepositoryDigest, sourceRepositoryRef, runInvocationURI}'
       - name: Image runs and reports its commit
         run: |
-          docker run -d --name t -p 8080:8080 -e PGLITE_DIR=/tmp/pg "registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}"
-          for i in $(seq 1 60); do curl -sf localhost:8080/api/version && break; sleep 2; done
+          docker run -d --name rsdp-test -p 8080:8080 -e PGLITE_DIR=/tmp/pg "registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}"
+          for i in $(seq 1 60); do curl -sf localhost:8080/api/version && break; sleep 2; done; docker logs rsdp-test | tail -20
           curl -sf localhost:8080/api/version | jq -e --arg c "$GITHUB_SHA" '.commit == $c'
           curl -sf localhost:8080/api/audit/head; echo
           mkdir copy && node scripts/transparency/mirror.mjs http://localhost:8080 copy && cat copy/audit/head.json

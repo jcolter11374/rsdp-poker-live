@@ -49,6 +49,7 @@ function ReplayerView({
   felt,
   fmt,
   onClose,
+  tableId,
 }: {
   hands: HandRecordView[];
   /** Index in `hands` to open first. */
@@ -60,6 +61,8 @@ function ReplayerView({
   felt?: TableView['settings']['table']['felt'];
   fmt: Fmt;
   onClose: () => void;
+  /** The table the hands are from, so "Check this hand" can look them up in the public record. */
+  tableId?: string;
 }) {
   const compact = usePortrait();
   const [index, setIndex] = useState(start);
@@ -130,7 +133,7 @@ function ReplayerView({
             </button>
           </span>
         </div>
-        {checking && <FairCheck hand={hand} myId={myId} />}
+        {checking && <FairCheck hand={hand} myId={myId} tableId={tableId} />}
         <div className="replayer-table">
           <Table key={hand.handNumber} view={view} skew={0} fmt={fmt} compact={compact} />
         </div>
