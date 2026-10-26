@@ -52,22 +52,29 @@ export function dbStore(db: Db): TableStore {
       });
     },
     async loadHands(tableId) {
-      type Header = { input: Omit<HandRecord['hand']['input'], 'deck'>; seats: PastHand['seats'] };
-      const rows = await allHandsOfTable<Header, PastHand['events'][number]>(db, tableId);
-      return rows.map((r) => ({
-        handNumber: r.number,
-        startedAt: r.startedAt.getTime(),
-        endedAt: (r.endedAt ?? r.startedAt).getTime(),
-        gameName: gameTitle(r.header.input.game.id, r.header.input.betting),
-        betting: r.header.input.betting,
-        stakes: r.header.input.stakes,
-        button: r.header.input.button,
-        seats: r.header.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
-        events: r.events,
-        handId: r.header.input.handId,
-        fair: r.header.input.fair,
-      }));
+      const rows = await allHandsOfTable<SavedHeader, PastHand['events'][number]>(db, tableId);
+      return rows.map(pastHandFromRow);
     },
     deleteTable: (tableId) => deleteTableForGood(db, tableId),
+  };
+}
+
+/** What a saved hand's header holds (see saveHand above). */
+export type SavedHeader = { input: Omit<HandRecord['hand']['input'], 'deck'>; seats: PastHand['seats'] };
+
+/** A saved hand row back into the runtime's shape. */
+export function pastHandFromRow(r: { number: number; startedAt: Date; endedAt: Date | null; header: SavedHeader; events: PastHand['events'] }): PastHand {
+  return {
+    handNumber: r.number,
+    startedAt: r.startedAt.getTime(),
+    endedAt: (r.endedAt ?? r.startedAt).getTime(),
+    gameName: gameTitle(r.header.input.game.id, r.header.input.betting),
+    betting: r.header.input.betting,
+    stakes: r.header.input.stakes,
+    button: r.header.input.button,
+    seats: r.header.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, startStack: x.startStack })),
+    events: r.events,
+    handId: r.header.input.handId,
+    fair: r.header.input.fair,
   };
 }

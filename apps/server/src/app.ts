@@ -26,6 +26,7 @@ import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './sug
 import { newId } from './db/ids';
 import { adminGate } from './admin';
 import { accountRoutes, type AccountHooks } from './accounts';
+import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
 import { StorageError } from './db/errors';
@@ -232,6 +233,7 @@ export function createApp(deps: AppDeps = {}) {
   };
   const confirmations = googleConfirmations(() => clock.now());
   accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks });
+  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {

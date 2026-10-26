@@ -5,6 +5,7 @@ import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
 import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
 import '../components/table/extras.css';
+import { ProfitGraph } from './ProfitGraph';
 import './account.css';
 
 /** The session the server sent, or null before it arrives. */
@@ -34,7 +35,7 @@ export function AccountLink() {
   );
 }
 
-function Shell({ title, children }: { title: string; children: ReactNode }) {
+export function Shell({ title, children }: { title: string; children: ReactNode }) {
   useEffect(() => {
     document.title = `${title} · RSDP Poker Live!`;
   }, [title]);
@@ -328,6 +329,14 @@ export function ProfilePage() {
 
       <section className="account-section">
         <MyProfile view={null} />
+      </section>
+
+      <section className="account-section">
+        <h2>Profit graph</h2>
+        {session && <ProfitGraph refreshKey={profile} />}
+        <p className="hint">
+          See how everyone's doing on the <a href="/leaderboard">leaderboard</a>, or <a href="/hands">search your hands</a>.
+        </p>
       </section>
 
       <section className="account-section">

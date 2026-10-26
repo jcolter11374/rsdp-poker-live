@@ -169,6 +169,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         Or <a href="/tn/new">host a tournament</a>: schedule it and it starts on its own.
       </p>
       <p className="tagline">
+        Who's up? See the <a href="/leaderboard">leaderboard</a>, or <a href="/hands">search your hands</a>.
+      </p>
+      <p className="tagline">
         New to Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
       </p>
       <p className="tagline">
