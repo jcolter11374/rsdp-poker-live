@@ -4,7 +4,6 @@ import { call } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
-import { ledgerMismatches, tableChips, changedWhileClosed } from '../audit';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
@@ -183,50 +182,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
           </tfoot>
         </table>
       )}
-      {!view.spectator && <LedgerRecord view={view} />}
     </div>
-  );
-}
-
-/** Whether the ledger's buy-ins and cash-outs are the ones in the public record (docs/FAIRNESS.md, "Checking John"). */
-function LedgerRecord({ view }: { view: TableView }) {
-  const [state, setState] = useState<{ key: string; wrong: string[]; reloaded: string[] } | null>(null);
-  const key = JSON.stringify(view.ledger.map((r) => [r.playerId, r.buyIn, r.cashOut]));
-  useEffect(() => {
-    let live = true;
-    const check = (again: boolean) =>
-      tableChips(view.id).then((entries) => {
-        if (!live) return;
-        const wrong = ledgerMismatches(view.id, view.ledger, entries);
-        // A change can reach the ledger a moment before the record saves it: look once more before saying so.
-        if (wrong.length && again) return void (t = setTimeout(() => check(false), 3000));
-        setState({ key, wrong: wrong.map((r) => r.name), reloaded: changedWhileClosed(view.id, view.ledger, entries).map((r) => r.name) });
-      }, () => {});
-    let t = setTimeout(() => check(true), 1000);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-    // The ledger rows are in the key.
-  }, [view.id, key]);
-  if (!state || state.key !== key) return null;
-  return (
-    <>
-      {state.wrong.length ? (
-        <p className="error">
-          ✗ The public record has different buy-ins or cash-outs for {state.wrong.join(', ')}. <a href="/transparency">What this means</a>
-        </p>
-      ) : (
-        <p className="hint">
-          ✓ Every buy-in and cash-out here matches the <a href="/transparency">public record</a>.
-        </p>
-      )}
-      {state.reloaded.length > 0 && (
-        <p className="error">
-          ✗ The buy-ins or cash-outs for {state.reloaded.join(', ')} changed while the table was closed (an honest server only does that if it crashed just after a change). <a href="/transparency">What this means</a>
-        </p>
-      )}
-    </>
   );
 }
 

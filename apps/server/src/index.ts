@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from './app';
-import { AuditLog, dbAuditStore } from './audit';
 import { closeDb, createDb } from './db';
 import { dbNotes } from './notes';
 import { dbSetups } from './savedSetups';
@@ -24,9 +23,7 @@ registerAllVariants(variants);
 // Postgres with DATABASE_URL; otherwise an on-disk PGlite under apps/server/.data so local tables survive a restart.
 const db = await createDb({ pgliteDir: process.env.DATABASE_URL ? undefined : (process.env.PGLITE_DIR ?? path.resolve(here, '../.data/pglite')) });
 const webDist = path.resolve(here, '../../web/dist');
-// The public record carries on from its last entry; a server start is its own entry.
-const audit = await AuditLog.open(dbAuditStore(db));
-const server = createApp({ audit, fairLeadMs: FAIR_LEAD_MS, webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db), setups: dbSetups(db), lobby: dbLobbyStore(db), avatars: dbAvatars(db), shared: dbSharedHands(db), suggestions: dbSuggestions(db), accounts: db, google: googleFromEnv() });
+const server = createApp({ fairLeadMs: FAIR_LEAD_MS, webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db), setups: dbSetups(db), lobby: dbLobbyStore(db), avatars: dbAvatars(db), shared: dbSharedHands(db), suggestions: dbSuggestions(db), accounts: db, google: googleFromEnv() });
 // Unfinished tournaments carry on, and scheduled ones keep their start time.
 await server.resume();
 

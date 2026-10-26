@@ -13,7 +13,6 @@ export function createTestDb(): Promise<Db> {
 /** Empties every table (TRUNCATE bypasses the ledger's append-only trigger, which guards rows, not tables). */
 export async function resetTestDb(db: Db): Promise<void> {
   const names = [
-    'audit_log',
     'suggestions',
     'player_notes',
     'saved_setups',

@@ -1,13 +1,6 @@
 {
   "releases": [
     {
-      "id": "2026-10-26-h",
-      "date": "2026-10-26",
-      "fixes": [
-        "The site footer shows which build the server says it runs, linked to that code on GitHub."
-      ]
-    },
-    {
       "id": "2026-10-26-g",
       "date": "2026-10-26",
       "fixes": [
