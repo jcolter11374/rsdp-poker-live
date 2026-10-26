@@ -218,8 +218,8 @@ const CODE: number[] = [];
 'cdhs'.split('').forEach((x, i) => (CODE[x.charCodeAt(0)] = i));
 const cardNo = (card: Card) => CODE[card.charCodeAt(0)] * 4 + CODE[card.charCodeAt(1)];
 
-/** Marks for markCards: a card is marked when its stamp is the current one. */
-const stamps = new Uint32Array(64);
+/** Marks for markCards: a card is marked when its stamp is the current one. Doubles, so the count never wraps (whole numbers are exact up to 2^53). */
+const stamps = new Float64Array(64);
 let stamp = 0;
 
 /** Marks these cards, and returns a test for whether a card is one of them (until the next call). */
