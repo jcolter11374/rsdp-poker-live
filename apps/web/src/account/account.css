@@ -123,7 +123,7 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .leader-chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; }
 .leader-chart .dot { stroke: var(--panel); stroke-width: 2; }
 .leader-chart .cross { stroke: var(--muted); stroke-dasharray: 3 3; }
-.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
 .leader-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 0.85rem; margin-bottom: 12px; }
 .leader-legend .muted { flex-basis: 100%; font-size: 0.78rem; }
-.profit-tip .swatch { margin-right: 2px; }
+.profit-tip .legend-swatch { margin-right: 2px; }
