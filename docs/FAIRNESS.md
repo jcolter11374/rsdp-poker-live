@@ -75,8 +75,8 @@ when they deal at a home game.
   delay): it remembers each commitment offered for the next hand and checks the
   hands actually dealt against them. If a commitment is skipped, a hand comes
   from a commitment never offered or is shown without one, or a hand number
-  reappears with a different commitment, that hand and every later one you see
-  there are marked. Seated players get the warning live; anyone who watched
+  reappears with a different commitment while you stay connected, that hand
+  and every later one you see there are marked. Seated players get the warning live; anyone who watched
   gets it in "Check this hand". "Check this hand", opened from the table's hand
   list, also checks that the hand's record carries the commitment the hand was
   shown under at the table, and the first commitment a hand number was shown

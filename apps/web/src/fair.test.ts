@@ -158,15 +158,16 @@ describe('a commitment swapped before the deal', () => {
     quiet('A');
   });
 
-  it('never lets a second commitment for a hand number replace the first, even across a reconnect', () => {
+  it('never lets a second commitment for a hand number replace the first, across a reconnect too', () => {
     let watch = watchCommitments(() => sock);
     watch(view('A', [7, 'Z']));
     watch(view('B', [8, 'A']));
     sock = 's2'; // forced reconnect, then hand 8 again from another commitment
     watch = watchCommitments(() => sock);
     watch(view('C', [8, 'A2']));
+    // Kept for Check this hand, which compares the record with it; not a live alarm, as a crash that lost a save looks the same.
     expect(shownAs('t1', 8)).toBe('A');
-    flagged('A2', /shown again from a different commitment/);
+    quiet('A2');
   });
 
   it('writes nothing from views that hide or delay the hands', () => {

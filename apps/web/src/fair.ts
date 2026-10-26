@@ -156,7 +156,7 @@ const SHOWN = 'rsdp.fairShownAs';
  * delayed spectator, or watching turned off) turns live.
  */
 export function watchCommitments(socketId: () => string | undefined = () => socket.id) {
-  type Watch = { table: string; socket: string; offered: string[]; dealt: Set<string>; tainted: string | null; first: number | null };
+  type Watch = { table: string; socket: string; offered: string[]; dealt: Set<string>; shown: Map<number, string>; tainted: string | null; first: number | null };
   let w: Watch | null = null;
   let wasLive = false;
   return (view: TableView) => {
@@ -167,7 +167,7 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
       return;
     }
     if (!w || w.table !== view.id || w.socket !== sock || (live && !wasLive)) {
-      w = { table: view.id, socket: sock, offered: [], dealt: new Set(), tainted: null, first: view.hand?.handNumber ?? null };
+      w = { table: view.id, socket: sock, offered: [], dealt: new Set(), shown: new Map(), tainted: null, first: view.hand?.handNumber ?? null };
     }
     wasLive = live;
     if (!live) return;
@@ -180,11 +180,14 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
     const hand = view.hand;
     const commit = hand?.fair?.commit;
     if (hand) {
-      // The first commitment a hand number was shown under stays, across watches: a second one is flagged, never written over.
+      // The first commitment a hand number was shown under stays for "Check this hand", never written over. Within one
+      // watch a second one is flagged here; across a reconnect it can honestly happen (a crash that lost the save of a
+      // deal), so it is left to "Check this hand", which says so.
       const key = `${view.id}#${hand.handNumber}`;
-      const was = load(SHOWN)[key];
-      if (!was) save(SHOWN, key, commit ?? NO_COMMIT);
-      else if (commit && was !== commit) flag(commit, AGAIN + was);
+      if (!load(SHOWN)[key]) save(SHOWN, key, commit ?? NO_COMMIT);
+      const here = watch.shown.get(hand.handNumber);
+      if (here === undefined) watch.shown.set(hand.handNumber, commit ?? NO_COMMIT);
+      else if (commit && here !== commit) flag(commit, AGAIN + here);
     }
     // Only a hand dealt before provably fair dealing has none, and it can only be the one in play when the watch began.
     if (hand && !commit && hand.handNumber !== watch.first) watch.tainted ??= NO_COMMIT;
