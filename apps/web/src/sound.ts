@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { GestureKind } from '@rsdp/engine/wire';
-import { getPrefs } from './prefs';
+import { getPrefs, tableMotion } from './prefs';
 import { renderSound, type SoundName } from './soundbank';
 
 const VOLUME_KEY = 'rsdp.volume';
@@ -154,6 +154,12 @@ const quietWhenHidden =
 
 export const sounds = {
   deal: quietWhenHidden(() => play('deal')),
+  /** Board cards turning over: one snap per card, timed to the card turning face up on screen (feel.css feel-turn). */
+  flip: (count: number) =>
+    quietWhenHidden(() => {
+      const moving = tableMotion();
+      for (let i = 0; i < Math.min(count, 5); i++) setTimeout(() => play('flip'), moving ? 360 + i * 160 : i * 90);
+    })(),
   chips: quietWhenHidden(() => play('chips')),
   raise: quietWhenHidden(() => play('raise')),
   allIn: quietWhenHidden(() => play('allIn')),

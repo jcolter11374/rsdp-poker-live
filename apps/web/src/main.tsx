@@ -6,7 +6,6 @@ import '@fontsource-variable/inter';
 import '@fontsource/barlow-condensed/latin-700.css';
 import './styles.css';
 import './components/site.css';
-import './feel';
 import './feel.css';
 
 registerServiceWorker();

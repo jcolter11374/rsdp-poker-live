@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Fmt } from '../../format';
-
-const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { tableMotion } from '../../prefs';
 
 /** A number that runs up (or down) to its new value instead of jumping, like a stack being counted. */
 export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
@@ -10,7 +9,7 @@ export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
   const [dir, setDir] = useState<'' | 'up' | 'down'>('');
   useEffect(() => {
     const start = from.current;
-    if (start === value || reducedMotion() || document.hidden) {
+    if (start === value || !tableMotion() || document.hidden) {
       from.current = value;
       setShown(value);
       return;

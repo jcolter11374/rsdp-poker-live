@@ -7,7 +7,6 @@ import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, 
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { baseChip, ChipStacks } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
-import { hasFeel } from '../feel';
 import { CountUp, FeltEmblem } from './table/Feel';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
@@ -282,13 +281,7 @@ export function Table({
       className={['felt', compact && 'compact', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}) } as CSSProperties}
     >
-      {hasFeel('identity') ? (
-        <FeltEmblem />
-      ) : (
-        <div className="felt-brand">
-          RSDP Poker <span>Live!</span>
-        </div>
-      )}
+      <FeltEmblem />
       <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
         {runs.map((run, r) =>
           run.map(
@@ -301,7 +294,7 @@ export function Table({
                       key={`${hand!.handNumber}-${r}-${b}-${c}`}
                       card={c}
                       className={`deal-board ${highlight(c, boardWinners.get(`${r}-${b}`))}`}
-                      style={{ animationDelay: `${cards.length <= 3 ? i * 110 : 0}ms` }}
+                      style={{ animationDelay: `${cards.length <= 3 ? i * 160 : 0}ms` }}
                     />
                   ))}
                 </div>
@@ -322,7 +315,7 @@ export function Table({
                 // One pot: show everything in play, bets in front of the seats included, so it never reads "Pot 0" with chips out.
                 <div className="pot">
                   <ChipStacks amount={hand!.pots[0]?.amount ?? 0} base={chipBase} />
-                  Pot {hasFeel('motion') ? <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} /> : fmt(Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0))}
+                  Pot <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} />
                 </div>
               )}
             </div>
@@ -388,8 +381,8 @@ export function Table({
           .join(' ');
         const pickable = isMe && !!discard;
         const shown = done && !won && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null;
-        // Motion pack: cards come off the dealer button rather than the middle of the table.
-        const toMiddle = fromVars(hasFeel('motion') && hand && !stud ? buttonPoint(hand.button) : center, pos);
+        // Cards come off the dealer button (stud has none, so the middle of the table).
+        const toMiddle = fromVars(hand && !stud ? buttonPoint(hand.button) : center, pos);
         const muck = fromVars(lerp(pos, center, 0.5), pos);
         return (
           <div key={seat}>
@@ -431,7 +424,7 @@ export function Table({
                   {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
                   {s.bot && <span className="bot-owner">· {s.bot.ownerName ? <>{s.bot.ownerName}&rsquo;s bot</> : 'bot'}</span>}
                 </div>
-                <div className="stack">{s.allIn ? 'ALL IN' : hasFeel('motion') ? <CountUp value={s.stack} fmt={fmt} /> : fmt(s.stack)}</div>
+                <div className="stack">{s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
                 {shown && <div className="status">{shown}</div>}
