@@ -97,6 +97,9 @@ going over your own hands afterwards is welcome. So:
 - Someone watching who hasn't played at the table can't download them either
   until the game stops, so a second phone or laptop can't fetch them for a
   seated player. The host and co-hosts can while they're not seated.
+- **The table's own Stats tab stays on.** It shows everyone's VPIP and PFR
+  to everyone at the table, so it works like a small HUD, but one every
+  player has, so nobody gets an edge from it.
 - **Replays and the Hands tab work the whole time.** Nothing the site sends
   gets ahead of the table: each finished hand is sent only once it's over, and
   only as you saw it.
