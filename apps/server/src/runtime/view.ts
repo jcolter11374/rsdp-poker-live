@@ -87,6 +87,9 @@ export function tableView(
   const myHandSeat = mySeat && hand ? handSeats.get(mySeat.seat) : undefined;
   const mine = myHandSeat && myHandSeat.playerId === playerId ? myHandSeat : undefined;
   const myTurn = live && !s.paused && !!mine && hand!.toAct === mine.seat;
+  // Coach tips and the bots' reasons: the server decides (TableRuntime.soloPersonOf at the deal, and again at every
+  // request), so all the browser does is show or hide the button. It stays on after the hand, until the next deal.
+  const tips = !!hand && !!mine && s.coach?.handNumber === hand.input.handNumber && s.coach.person === playerId;
   const settings = s.settings;
   let upcoming: TableView['upcoming'] = null;
   if (!live && !rt.tournament) {
@@ -120,6 +123,7 @@ export function tableView(
     canDraw: myTurn && hand!.phase === 'drawing' ? { max: hand!.input.game.streets[hand!.street].drawMaxDiscard ?? 0 } : null,
     canVoteRunItTwice: live && !s.paused && hand!.phase === 'rit-vote' && !!mine && !mine.folded && mine.ritVote === null,
     canShow: hand?.phase === 'complete' && mine ? showable(hand, mine.seat) : [],
+    ...(tips ? { tips: true } : {}),
     turn: live && s.turn ? { seat: s.turn.seat, startedAt: s.turn.startedAt + shift, deadline: rt.turnDeadline(now), usingBank: s.turn.usingBank } : null,
     nextHandAt: s.nextHandAt,
     serverNow: now,
@@ -325,14 +329,18 @@ export function pastHand(record: HandRecord): PastHand {
     events: hand.events,
     handId: hand.input.handId,
     fair: hand.input.fair,
+    ...(record.coach ? { coach: { person: record.coach.person, notes: record.coach.notes.map((n) => ({ ...n })) } } : {}),
   };
 }
 
 /** A finished hand as one person may see it (their own cards, and whatever was shown). */
-export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId, opts: { hideMine?: boolean } = {}): HandRecordView {
+export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId, opts: { hideMine?: boolean; notes?: boolean } = {}): HandRecordView {
   const past = 'hand' in record ? pastHand(record) : record;
   // hideMine: as someone who wasn't in the hand sees it, so only shown cards are face up.
   const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
+  // Why the bots played as they did, for the one person in the hand, and only where the caller asks: a caller that
+  // doesn't (a share link, a full-log download) shows none.
+  const notes = opts.notes && !opts.hideMine && past.coach?.person === playerId ? past.coach.notes : [];
   return {
     handNumber: past.handNumber,
     startedAt: past.startedAt,
@@ -349,6 +357,7 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
     fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealed(past.handNumber, past.endedAt), (id) => rt.nameOf(id)),
+    ...(notes.length ? { botNotes: notes.map((n) => ({ ...n })) } : {}),
   };
 }
 
