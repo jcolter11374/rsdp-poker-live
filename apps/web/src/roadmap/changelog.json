@@ -40,16 +40,15 @@
       "fixes": [
         "Fixes for players leaving while all in, tables shrinking and phones dropping out.",
         "The action bar no longer locks up if the server's answer gets lost.",
-        "Empty seats keep clear of players' nameplates.",
-        "Test games are kept off the live site."
+        "Empty seats keep clear of players' nameplates."
       ]
     },
     {
       "id": "2026-10-25-b",
       "date": "2026-10-25",
       "fixes": [
-        "Bounty money is never lost, and side pots don't share a bounty.",
-        "Spectators with a delay see the hand history behind the delay too.",
+        "Bounty money is never lost, even when there are side pots.",
+        "If a table delays what spectators see, the hand history is delayed too.",
         "Moving a player or editing a stack during a tournament no longer risks a crash."
       ]
     },
