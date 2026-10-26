@@ -3,11 +3,12 @@
     {
       "id": "2026-10-26-d",
       "date": "2026-10-26",
-      "title": "Saved tournament setups and a changelog",
+      "title": "Saved tournament setups, a clearer Nit game and a changelog",
       "items": [
         { "title": "Save your favourite tournament setups", "detail": "Save a tournament's setup under a name and load it in one tap when you make a new one. You can also save one from the lobby's Host tab, and rename or delete them any time." },
         { "title": "Turbo, Standard and Deep stack starters", "detail": "Three ready-made setups that fill in the starting stack, blind levels and late registration for you." },
         { "title": "Presets follow your account", "detail": "When you're signed in, your saved tournament setups and cash table presets come with you to every device. Guests keep them in their browser." },
+        { "title": "The Nit game explains itself", "detail": "The Nit game box under the action bar now says where the round stands: how many more players it needs, or whether you're on the nit. A ? button explains the rules, and the NIT tag on a seat shows in purple." },
         { "title": "A changelog for the small stuff", "detail": "Small fixes now have their own Changelog page, linked at the bottom of the site, so What's new stays about new features and changes you'll notice." }
       ]
     },

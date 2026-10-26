@@ -3,7 +3,10 @@
     {
       "id": "2026-10-26-d",
       "date": "2026-10-26",
-      "fixes": []
+      "fixes": [
+        "When the host pauses during a hand, the turn clock now stands still on every screen. It already did behind the scenes, so nobody was ever folded for it.",
+        "A turn paused with under five seconds left gets five seconds when play resumes."
+      ]
     },
     {
       "id": "2026-10-26-c",
