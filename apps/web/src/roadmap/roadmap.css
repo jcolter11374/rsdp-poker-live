@@ -1,6 +1,5 @@
 /* ---- /roadmap */
 .roadmap-page { max-width: 720px; margin: 0 auto; padding: 16px 16px 48px; }
-.roadmap-page header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .roadmap-page h1 { margin: 0 0 6px; font-size: 1.6rem; }
 .roadmap-intro { margin: 0 0 4px; line-height: 1.45; }
 .roadmap-section { margin-top: 24px; }

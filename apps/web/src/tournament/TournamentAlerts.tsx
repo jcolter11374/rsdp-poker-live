@@ -96,9 +96,11 @@ export function TournamentAlerts() {
 }
 
 /** Turns background alerts on or off for this browser. */
-export function AlertsToggle({ className = '' }: { className?: string }) {
+export function AlertsToggle({ className = '', quietWhenBlocked = false }: { className?: string; quietWhenBlocked?: boolean }) {
   const state = useNotifyState();
   if (state === 'unsupported') return null;
+  // On the home page a first-time visitor shouldn't open on a warning about their browser.
+  if (state === 'denied' && quietWhenBlocked) return null;
   if (state === 'denied')
     return (
       <span className={`muted ${className}`} title="Allow notifications for this site in your browser's settings">

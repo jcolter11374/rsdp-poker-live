@@ -40,7 +40,8 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
   const [target, setTarget] = useState(180);
   const [anteType, setAnteType] = useState<AnteType>('per-player');
   // Collapsed by default on phones, where 20+ level cards make a very long page.
-  const [open, setOpen] = useState(() => typeof matchMedia === 'function' && matchMedia('(min-width: 720px)').matches);
+  // Closed to start with: the summary line above says what's in it, and 20-odd rows make the form very long.
+  const [open, setOpen] = useState(false);
   const { errors, warnings } = validateStructure(rows, { maxRebuys });
   const editable = (i: number) => i > lockedThrough;
 
@@ -107,7 +108,7 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
       </p>
 
       <details className="tn-details" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary>{open ? 'Hide levels' : `Show and edit all ${rows.length} rows`}</summary>
+      <summary>{open ? 'Hide levels' : `Edit levels (${rows.length} rows)`}</summary>
       <div className="tn-rows" role="table">
         <div className="tn-row tn-row-head" role="row">
           <span>#</span>

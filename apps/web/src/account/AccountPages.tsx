@@ -7,6 +7,7 @@ import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, hideTable
 import '../components/table/extras.css';
 import { ProfitGraph } from './ProfitGraph';
 import './account.css';
+import { SiteHeader } from '../components/SiteHeader';
 
 /** The session the server sent, or null before it arrives. */
 export function useSession() {
@@ -35,21 +36,18 @@ export function AccountLink() {
   );
 }
 
-export function Shell({ title, children }: { title: string; children: ReactNode }) {
+export function Shell({ title, children, narrow = false }: { title: string; children: ReactNode; /** Sign-in style pages: a short centred column. */ narrow?: boolean }) {
   useEffect(() => {
     document.title = `${title} · RSDP Poker Live!`;
   }, [title]);
   return (
-    <main className="account-page">
-      <header>
-        <a className="logo small" href="/">
-          RSDP Poker <span>Live!</span>
-        </a>
-        <a href="/">Back to the games</a>
-      </header>
-      <h1>{title}</h1>
-      {children}
-    </main>
+    <div className="site-page">
+      <SiteHeader />
+      <main className={`account-page ${narrow ? 'account-narrow' : ''}`}>
+        <h1>{title}</h1>
+        {children}
+      </main>
+    </div>
   );
 }
 
@@ -119,7 +117,7 @@ export function SignUpPage() {
 
   if (session?.account) return <AlreadySignedIn username={session.account.username} />;
   return (
-    <Shell title="Create an account">
+    <Shell title="Create an account" narrow>
       <p className="account-intro">
         Accounts are optional. You can keep playing as a guest. With an account, your name, picture, notes and history come with you to any phone or computer you sign in on.
       </p>
@@ -178,7 +176,7 @@ export function SignInPage() {
 
   if (session?.account) return <AlreadySignedIn username={session.account.username} />;
   return (
-    <Shell title="Sign in">
+    <Shell title="Sign in" narrow>
       <p className="account-intro">Sign in to play as yourself on this device, with your name, picture, notes and history.</p>
       {google && (
         <div className="account-google">
@@ -198,7 +196,8 @@ export function SignInPage() {
         <label className="account-check">
           <input type="checkbox" checked={bringOver} onChange={(e) => setBringOver(e.target.checked)} />
           <span>
-            This is my device: move what I did here as a guest (notes, picture, tables and tournaments) into my account. Untick this on a friend's phone so their stuff stays theirs.
+            Keep what I played here as a guest
+            <span className="hint">Your notes, picture, tables and tournaments on this device move into your account. Untick this on a friend's phone so their things stay theirs.</span>
           </span>
         </label>
         {error && <p className="error">{error}</p>}
@@ -215,7 +214,7 @@ export function SignInPage() {
 
 function AlreadySignedIn({ username }: { username: string }) {
   return (
-    <Shell title="You're signed in">
+    <Shell title="You're signed in" narrow>
       <p className="account-intro">
         You're signed in as <strong>{username}</strong>. <a href="/profile">Go to your profile</a> to sign out first.
       </p>
@@ -239,7 +238,7 @@ export function ResetPage() {
   };
 
   return (
-    <Shell title="Reset your password">
+    <Shell title="Reset your password" narrow>
       {done ? (
         <p className="account-intro">
           Done. Your new password works now, and every device was signed out. <a href="/signin">Sign in</a>.
