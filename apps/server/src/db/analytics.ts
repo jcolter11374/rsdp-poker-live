@@ -39,8 +39,8 @@ interface HandRow {
   awards: { seat: number; amount: number }[] | null;
 }
 
-/** Light rows for every cash hand since `since` (all of them without it). */
-async function cashHands(db: Db, since?: Date): Promise<HandRow[]> {
+/** Light rows for every cash hand. */
+async function cashHands(db: Db): Promise<HandRow[]> {
   return queryRows<HandRow & Record<string, unknown>>(
     db,
     sql`select h.table_id, h.started_at,
@@ -49,7 +49,7 @@ async function cashHands(db: Db, since?: Date): Promise<HandRow[]> {
           (select jsonb_agg(jsonb_build_object('seat', e -> 'seat', 'amount', e -> 'amount'))
              from jsonb_array_elements(h.events) e where e ->> 't' = 'award') as awards
         from hands h join tables t on t.id = h.table_id
-        where t.tournament_id is null ${since ? sql`and h.started_at >= ${since}` : sql``}
+        where t.tournament_id is null
         order by h.started_at`,
   );
 }

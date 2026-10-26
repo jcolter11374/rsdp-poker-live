@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { chipFormat } from '../format';
 import { fetchGraph, type ProfitSession } from './api';
 
@@ -15,7 +15,8 @@ function ticks(lo: number, hi: number, count = 4): number[] {
   const span = hi - lo || 1;
   const raw = span / count;
   const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
+  // Amounts are whole cents, so steps are too.
+  const step = Math.max(1, Math.round([1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw));
   const out: number[] = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v));
   return out;
@@ -27,24 +28,24 @@ export function ProfitGraph({ refreshKey }: { refreshKey: unknown }) {
   const [error, setError] = useState('');
   const [hover, setHover] = useState<number | null>(null);
   const [listView, setListView] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(520);
+  // The chart's box comes and goes (list view, no games yet), so it is measured whenever it appears.
+  const observer = useRef<ResizeObserver | null>(null);
+  const box = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!el) return;
+    const measure = () => setWidth(Math.max(240, el.clientWidth));
+    measure();
+    observer.current = new ResizeObserver(measure);
+    observer.current.observe(el);
+  }, []);
 
   useEffect(() => {
     fetchGraph()
       .then((g) => (setSessions(g.sessions), setError('')))
       .catch((e: Error) => setError(e.message));
   }, [refreshKey]);
-
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const measure = () => setWidth(Math.max(240, el.clientWidth));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [sessions !== null]);
 
   if (error) return <p className="error">{error}</p>;
   if (!sessions) return <p className="muted">Loading…</p>;

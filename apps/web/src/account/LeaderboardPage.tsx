@@ -29,11 +29,16 @@ export function LeaderboardPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let current = true;
     setRows(null);
     fetchLeaderboard(period)
-      .then((r) => (setRows(r.rows), setError('')))
-      .catch((e: Error) => setError(e.message));
+      .then((r) => current && (setRows(r.rows), setError('')))
+      .catch((e: Error) => current && setError(e.message));
     history.replaceState(null, '', period === 'month' ? '/leaderboard' : `/leaderboard?period=${period}`);
+    // A slower answer for the period picked before must not land on this one.
+    return () => {
+      current = false;
+    };
   }, [period]);
 
   const sorted = rows && [...rows].sort((a, b) => b[sort] - a[sort] || b.hands - a.hands);

@@ -29,6 +29,8 @@ export function HandSearchPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<FoundHand | null>(null);
+  /** The query the results on screen came from: further pages carry on with it, not with edits not yet searched. */
+  const [shown, setShown] = useState<HandQuery>({ result: '' });
 
   useEffect(() => {
     fetchHandGames()
@@ -41,7 +43,9 @@ export function HandSearchPage() {
     setBusy(true);
     setError('');
     try {
-      const page = await searchHands(q, more ? next : null);
+      const asked = more ? shown : q;
+      const page = await searchHands(asked, more ? next : null);
+      setShown(asked);
       setFound((f) => (more && f ? [...f, ...page.hands] : page.hands));
       setNext(page.next);
     } catch (e) {
