@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseBlocks } from './markdown';
-import { sourceLink } from './FairnessPage';
+import { sourceLink, splitIntro } from './FairnessPage';
 
 const doc = readFileSync(new URL('../../../../docs/FAIRNESS.md', import.meta.url), 'utf8');
 
@@ -34,5 +34,12 @@ describe('/fairness', () => {
     expect(sourceLink('ARCHITECTURE.md')).toBe('https://github.com/jcolter11374/rsdp-poker-live/blob/main/docs/ARCHITECTURE.md');
     expect(sourceLink('https://example.com/x')).toBe('https://example.com/x');
     expect(sourceLink('#scheme')).toBe('#scheme');
+  });
+
+  it('puts the video after the intro and keeps every line of the doc', () => {
+    const [intro, rest] = splitIntro(doc);
+    expect(intro + '\n' + rest).toBe(doc);
+    expect(parseBlocks(intro)[0]).toMatchObject({ t: 'h', level: 1 });
+    expect(rest.startsWith('## ')).toBe(true);
   });
 });

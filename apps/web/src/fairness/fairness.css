@@ -13,4 +13,7 @@
 .fairness-page table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 .fairness-page th, .fairness-page td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 .fairness-page th { background: var(--panel); }
+.fairness-video { margin: 14px 0 6px; max-width: 520px; }
+.fairness-video video { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+.fairness-video figcaption { margin-top: 6px; font-size: 0.9rem; color: var(--muted); }
 .fairness-page > .muted { margin-top: 32px; font-size: 0.9rem; }
