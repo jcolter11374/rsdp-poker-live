@@ -121,7 +121,7 @@ export function ActionBar({
       e.preventDefault();
       amountBox.current.focus();
       amountBox.current.select();
-    } else if (k === 'r' && legal.canRaise && legal.maxTo <= legal.minTo) send({ type: legal.raiseKind, to: legal.minTo });
+    } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
     else return;
   };
 

@@ -249,7 +249,7 @@ export function Table({
   const stud = hand?.family === 'stud';
   // Chip colours follow the table's stakes: the smallest forced bet sets the white chip.
   const stakes = hand?.stakes ?? view.settings.stakes;
-  const chipBase = baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stakes.bringIn].filter((x): x is number => !!x && x > 0), Infinity));
+  const chipBase = baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stud ? stakes.bringIn : 0].filter((x): x is number => !!x && x > 0), Infinity));
   // Order of seats from the button, so the deal goes round the table.
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 

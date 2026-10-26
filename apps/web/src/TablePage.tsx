@@ -160,6 +160,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const prefs = usePrefs();
   const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
   const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
+  const bigBlindRef = useRef(bigBlind);
+  bigBlindRef.current = bigBlind;
   const feltFmt = useMemo(() => (prefs.units === 'bb' && bigBlind > 0 ? bbFormat(bigBlind) : fmt), [prefs.units, bigBlind, fmt]);
   useWakeLock(prefs.wakeLock && view?.me.seat != null);
   // B switches between chips and big blinds; ? lists every shortcut.
@@ -171,7 +173,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         if (!document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) setDialog({ kind: 'keys' });
         return;
       }
-      if (e.key.toLowerCase() !== 'b') return;
+      if (e.key.toLowerCase() !== 'b' || !bigBlindRef.current) return;
       setPrefs({ units: getPrefs().units === 'bb' ? 'chips' : 'bb' });
     };
     window.addEventListener('keydown', onKey);
@@ -364,6 +366,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           <button
             className="units-toggle"
             aria-pressed={prefs.units === 'bb'}
+            aria-label="Amounts in big blinds"
             onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
             title={`Show amounts in ${prefs.units === 'bb' ? 'chips' : 'big blinds'} (B)`}
           >
@@ -408,7 +411,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           {keysTip && (
             <div className="banner tip">
               <span>
-                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises, <kbd>B</kbd> switches chips and big blinds.
+                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
               </span>
               <button onClick={() => setDialog({ kind: 'keys' })}>All shortcuts</button>
               <button onClick={dismissKeysTip}>Got it</button>
@@ -503,7 +506,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           />
           <ActionBar
             view={view}
-            fmt={feltFmt}
+            fmt={fmt}
             skew={skew}
             discard={discard}
             clearDiscard={() => setDiscard([])}
