@@ -4,6 +4,7 @@ import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
+import { BettingNudge } from './components/BettingNudge';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
 import { WhatsNewBanner } from './roadmap/WhatsNewPage';
@@ -80,6 +81,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
             RSDP Poker <span>Live!</span>
           </h1>
           <p className="home-lede">Start a table, send the link, and play with friends. No sign-up needed.</p>
+          <p className="home-about">
+            Every game and option is free. <a href="/about">See what you can do here</a>.
+          </p>
           <div className="home-choices">
             <a className="home-choice" href="#cash" onClick={focusCash}>
               <strong>Start a cash game</strong>
@@ -136,6 +140,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
                     </select>
                   </label>
                 </div>
+                <BettingNudge gameId={gameId} betting={betting} onSwitch={setBetting} />
                 <div className="row">
                   {stud ? (
                     <label>

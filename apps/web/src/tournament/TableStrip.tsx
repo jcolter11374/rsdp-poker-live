@@ -9,8 +9,12 @@ import { followMissedMove, navigate, useNow, useSession, useTournament } from '.
  * are left, and the player's own rebuy and add-on choices. Points the player
  * to their seat when it is at another table than `tableId`, the one on screen.
  */
-export function TableStrip({ tournamentId, tableId, seatedHere }: { tournamentId: string; tableId: string; seatedHere: boolean }) {
-  const { state, skew } = useTournament(tournamentId);
+export function TableStrip({ tournamentId, tableId, seatedHere, holding = false }: { tournamentId: string; tableId: string; seatedHere: boolean; holding?: boolean }) {
+  const { state: latest, skew } = useTournament(tournamentId);
+  // While an all-in runout is dealt here the strip stays as it was: places, rebuy offers and moves are the result.
+  const kept = useRef(latest);
+  if (!holding) kept.current = latest;
+  const state = holding ? kept.current : latest;
   const session = useSession();
   const now = useNow(500) + skew;
   const [error, setError] = useState('');

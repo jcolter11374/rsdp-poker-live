@@ -11,6 +11,8 @@ export interface TableRow {
   net: number | null;
   centsMode: boolean;
   practice: boolean;
+  /** People at the table right now (0 when it's closed; it opens again from its link). */
+  playingNow?: number;
 }
 
 export interface TournamentRow {
@@ -84,6 +86,8 @@ export interface LeaderRow {
   sessions: number;
   hands: number;
   biggestPot: number;
+  /** Each real game's result in the period, oldest first (ms since 1970, cents). */
+  games: { at: number; net: number }[];
 }
 
 export type LeaderPeriod = 'month' | 'year' | 'all';

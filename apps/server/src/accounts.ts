@@ -48,6 +48,8 @@ export interface AccountHooks {
   deleted(playerIds: string[]): void;
   /** The account's sign-ins ended (new password): drop these players' connections, except the browser with `keepGuestToken`. */
   signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
+  /** How many people have this table open right now (0 when nobody is at it). */
+  peopleAt?(tableId: string): number;
 }
 
 const HTTP_STATUS: Partial<Record<IdentityError['code'], number>> = {
@@ -309,13 +311,13 @@ export function accountRoutes(
       if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const who = await identify(req, db);
       const ids = await myPlayerIds(who, db);
-      const [tables, hidden, tournaments] = await Promise.all([tableHistory(db, ids), tableHistory(db, ids, 25, { hidden: true }), tournamentRows<TournamentState>(db, ids)]);
+      const [tables, hidden, tournaments] = await Promise.all([tableHistory(db, ids, 50), tableHistory(db, ids, 25, { hidden: true }), tournamentRows<TournamentState>(db, ids)]);
       const mine = new Set(ids);
       res.json({
         playerId: who.player.id,
         displayName: who.player.displayName,
         account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length, ...(await signInMethods(db, who.account.id)) },
-        tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
+        tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString(), playingNow: hooks.peopleAt?.(t.tableId) ?? 0 })),
         hiddenTables: hidden.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
         tournaments: tournaments.flatMap((row) => {
           const s = row.state;
