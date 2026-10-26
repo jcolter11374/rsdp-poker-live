@@ -353,9 +353,27 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             <span className="hint">Off: only seated players and the host can chat.</span>
             {toggle('Hide swear words in chat', draft.chat.profanityFilter, (profanityFilter) => set('chat', { profanityFilter }))}
             <h4>Watching</h4>
-            {toggle('Let people watch', draft.spectators.allowed, (allowed) => set('spectators', { allowed }))}
+            {toggle(
+              'Let people watch',
+              draft.spectators.allowed,
+              (allowed) => set('spectators', { allowed }),
+              // Watching again would show every card of the hand in progress.
+              handLive && !view.settings.spectators.allowed && view.settings.spectators.seeAllCards && !draft.spectators.allowed,
+            )}
             <span className="hint">Off: people who aren't seated see the seats but not the hand.</span>
-            {toggle('Spectators see every hole card', draft.spectators.seeAllCards, (seeAllCards) => set('spectators', { seeAllCards }), !draft.spectators.allowed)}
+            {toggle(
+              'Spectators see every hole card',
+              draft.spectators.seeAllCards,
+              // Turning it on starts with a two-minute delay, so nobody watching can pass cards on during the hand.
+              (seeAllCards) => set('spectators', seeAllCards && draft.spectators.delaySeconds === 0 ? { seeAllCards, delaySeconds: 120 } : { seeAllCards }),
+              !draft.spectators.allowed || (handLive && !view.settings.spectators.seeAllCards && !draft.spectators.seeAllCards),
+            )}
+            <span className="hint">
+              {handLive && !view.settings.spectators.seeAllCards
+                ? 'You can turn this on between hands. '
+                : ''}
+              Everyone at the table is told when it goes on, sees a red rail and a reminder while it's on, and must agree to it before sitting down.
+            </span>
             {numberField('Spectators run behind by (seconds)', draft.spectators.delaySeconds, (v) => set('spectators', { delaySeconds: v }), 0, 600, 'A delay stops anyone passing on what they see. 0 = live.')}
             {draft.spectators.seeAllCards && draft.spectators.delaySeconds === 0 && <p className="error">With no delay, anyone watching can tell a player what everyone holds.</p>}
           </>

@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-e",
+      "date": "2026-10-26",
+      "fixes": [
+        "Turning off spectators seeing every card now works straight away, even in the middle of a hand, and spectators with a delay don't get to watch the rest of that hand face up.",
+        "A hand dealt before spectators could see every card stays hidden from them, mucked cards included."
+      ]
+    },
+    {
       "id": "2026-10-26-d",
       "date": "2026-10-26",
       "fixes": [

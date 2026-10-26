@@ -54,3 +54,4 @@ export {
   type ModifierSection,
   type RegisteredModifier,
 } from './modifiers';
+export { behindText, delayText, settingsNotices, spectatorsSeeCards, type SettingsNotice } from './notices';

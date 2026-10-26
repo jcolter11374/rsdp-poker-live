@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
-import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError } from '@rsdp/engine/settings';
+import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
@@ -193,7 +193,7 @@ export function createApp(deps: AppDeps = {}) {
   const playerSockets = new Map<PlayerId, Set<Sock>>();
   const pendingBroadcast = new Set<string>();
   /** Spectator delay: what each table looked like to spectators, oldest first. */
-  const feeds = new Map<string, { at: number; part: DelayedPart }[]>();
+  const feeds = new Map<string, { at: number; part: DelayedPart; cards: boolean }[]>();
   const saveTimers = new Map<string, NodeJS.Timeout>();
   /** Saves wait for the table's row to exist. */
   const created = new Map<string, Promise<void>>();
@@ -374,9 +374,11 @@ export function createApp(deps: AppDeps = {}) {
       const delayMs = rt.settings.spectators.delaySeconds * 1000;
       if (delayMs > 0) {
         // Remember what spectators would see now, and show it to them once the delay has passed.
-        const feed = feeds.get(id) ?? [];
+        const cards = spectatorsSeeCards(rt.settings);
+        // Once the host stops spectators seeing every card, the snapshots that show them are dropped, not played out.
+        const feed = (feeds.get(id) ?? []).filter((f) => cards || !f.cards);
         feeds.set(id, feed);
-        feed.push({ at: now, part: delayedPart(tableView(rt, '', now, null, [], avatarOf)) });
+        feed.push({ at: now, part: delayedPart(tableView(rt, '', now, null, [], avatarOf)), cards });
         // Keep only the newest snapshot old enough to show, and the ones after it.
         let old = 0;
         while (old + 1 < feed.length && feed[old + 1].at <= now - delayMs) old++;
@@ -704,7 +706,7 @@ export function createApp(deps: AppDeps = {}) {
       const state = tables.get(t[1])?.state ?? (await store.loadTable(t[1]));
       if (!state) return null;
       const { settings } = state;
-      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting);
+      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting, spectatorsSeeCards(settings));
     }
     if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/changelog\/?$/.test(pathname)) return { title: 'Changelog · RSDP Poker Live!', description: 'Every release of RSDP Poker Live! and the small fixes in it.' };
@@ -776,7 +778,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!name) throw new ActionError('pick a name');
       if (!socket.data.session.displayName) await rename(name).catch(() => {});
       const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
-      rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
+      rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn(), consent: true });
       for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
       // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
       practiceStarts.set(rt.state.id, me);
@@ -952,7 +954,7 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         async () => {
-          current().requestSeat(me, { seat: Number(input?.seat), name: String(input?.name ?? ''), stack: Number(input?.stack) });
+          current().requestSeat(me, { seat: Number(input?.seat), name: String(input?.name ?? ''), stack: Number(input?.stack), consent: input?.consent === true });
           // The name you sit with is the name you register for tournaments with.
           if (!socket.data.session.displayName) await rename(input?.name).catch(() => {});
         },

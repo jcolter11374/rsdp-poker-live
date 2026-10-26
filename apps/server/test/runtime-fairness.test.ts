@@ -24,7 +24,7 @@ function table(patch: (s: TableSettings) => void = () => {}) {
   patch(settings);
   const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded() });
   for (const p of [...IDS, 'watcher']) rt.connect(p);
-  IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+  IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200, consent: true }));
   return { rt, clock };
 }
 
@@ -150,7 +150,7 @@ describe('provably fair dealing', () => {
     const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(), fairLeadMs: 2500 });
     for (const p of IDS) rt.connect(p);
     const first = rt.nextCommit();
-    IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+    IDS.forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200, consent: true }));
     rt.start('host');
     expect(rt.state.hand).toBeNull();
     clock.advance(2500);
