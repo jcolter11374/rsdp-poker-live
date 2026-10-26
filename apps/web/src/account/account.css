@@ -48,3 +48,6 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .account-google { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 4px 0 14px; }
 .google-button { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #1f1f1f; border-color: #dadce0; font-weight: 600; padding: 8px 14px; }
 .google-button:hover:not(:disabled) { background: #f3f4f6; border-color: #c4c7cc; }
+.account-hidden { margin-top: 10px; }
+.account-hidden > summary { cursor: pointer; color: var(--muted); margin-bottom: 6px; }
+.account-list button.link { background: none; border: none; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }

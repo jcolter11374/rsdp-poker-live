@@ -30,6 +30,8 @@ export interface Profile {
   displayName: string;
   account: { username: string; createdAt: string; devices: number; hasPassword: boolean; google: boolean } | null;
   tables: TableRow[];
+  /** Tables I hid from my profile. */
+  hiddenTables: TableRow[];
   tournaments: TournamentRow[];
 }
 
@@ -62,6 +64,25 @@ export function reloadTo(to: string) {
 }
 
 export const fetchProfile = () => request<Profile>('GET', '/api/account/me');
+
+/** Hides a cash table from my profile (or shows it again). Nobody else's records change. */
+export const hideTable = (tableId: string, hidden: boolean) => request('POST', '/api/account/tables/hide', { tableId, hidden });
+
+/** What the admin sees about a table before deleting it. */
+export interface AdminTable {
+  id: string;
+  name: string;
+  mode: 'cash' | 'tournament';
+  createdAt: string;
+  hands: number;
+  players: string[];
+  realGame: boolean;
+  live: boolean;
+}
+
+export const adminLookUpTable = (adminKey: string, id: string) => request<AdminTable>('GET', `/api/admin/tables/${encodeURIComponent(id)}`, undefined, { 'x-admin-key': adminKey });
+
+export const adminDeleteTable = (adminKey: string, id: string) => request('POST', `/api/admin/tables/${encodeURIComponent(id)}/delete`, undefined, { 'x-admin-key': adminKey });
 
 export async function signUp(username: string, password: string) {
   const res = await request<{ session: string; username: string }>('POST', '/api/account/signup', { username, password });

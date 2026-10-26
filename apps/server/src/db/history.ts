@@ -1,8 +1,8 @@
 /** A player's own record across tables and tournaments, for the profile page. */
 
-import { and, desc, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { hands, tables, tableSnapshots, tournaments } from './schema';
+import { hands, hiddenTables, tables, tableSnapshots, tournaments } from './schema';
 
 export interface TableHistoryRow {
   tableId: string;
@@ -37,10 +37,14 @@ interface LedgerState {
   settings?: { stakes?: { centsMode?: boolean } };
 }
 
-/** Cash tables where any of `playerIds` was dealt a hand, most recent first. */
-export async function tableHistory(db: Db, playerIds: string[], limit = 25): Promise<TableHistoryRow[]> {
+/**
+ * Cash tables where any of `playerIds` was dealt a hand, most recent first.
+ * Tables any of them hid are left out, or with `hidden`, are the only ones listed.
+ */
+export async function tableHistory(db: Db, playerIds: string[], limit = 25, opts: { hidden?: boolean } = {}): Promise<TableHistoryRow[]> {
   if (playerIds.length === 0) return [];
   const dealt = or(...playerIds.map((id) => sql`${hands.header} -> 'seats' @> ${JSON.stringify([{ playerId: id }])}::jsonb`));
+  const hiddenByMe = sql`exists (select 1 from ${hiddenTables} where ${hiddenTables.tableId} = ${hands.tableId} and ${inArray(hiddenTables.playerId, playerIds)})`;
   const rows = await db
     .select({
       tableId: hands.tableId,
@@ -50,7 +54,7 @@ export async function tableHistory(db: Db, playerIds: string[], limit = 25): Pro
     })
     .from(hands)
     .innerJoin(tables, sql`${tables.id} = ${hands.tableId}`)
-    .where(and(isNull(tables.tournamentId), dealt))
+    .where(and(isNull(tables.tournamentId), dealt, opts.hidden ? hiddenByMe : sql`not ${hiddenByMe}`))
     .groupBy(hands.tableId, tables.settings)
     .orderBy(desc(sql`max(${hands.startedAt})`))
     .limit(limit);
@@ -81,6 +85,19 @@ export async function tableHistory(db: Db, playerIds: string[], limit = 25): Pro
       practice: Object.keys(state?.bots ?? {}).length > 0,
     };
   });
+}
+
+/**
+ * Hides a cash table from a player's profile, or shows it again. Showing it
+ * again clears the mark from every id in `playerIds` (an account's devices).
+ * Returns false when there is no such table.
+ */
+export async function setTableHidden(db: Db, playerId: string, playerIds: string[], tableId: string, hidden: boolean): Promise<boolean> {
+  const [table] = await db.select({ id: tables.id }).from(tables).where(eq(tables.id, tableId));
+  if (!table) return false;
+  if (hidden) await db.insert(hiddenTables).values({ playerId, tableId }).onConflictDoNothing();
+  else await db.delete(hiddenTables).where(and(eq(hiddenTables.tableId, tableId), inArray(hiddenTables.playerId, [...new Set([playerId, ...playerIds])])));
+  return true;
 }
 
 /** Rows of `tournaments` that any of `playerIds` hosted or entered, newest first. */

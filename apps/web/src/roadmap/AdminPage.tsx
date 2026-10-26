@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { StatusPill } from './Suggestions';
 import { ApiError, checkAdminKey, deleteSuggestion, fetchSuggestions, logOrder, shortDate, STATUS_LABEL, STATUSES, updateSuggestion, type Suggestion } from './suggestions';
-import { issueResetCode } from '../account/api';
+import { adminDeleteTable, adminLookUpTable, issueResetCode, type AdminTable } from '../account/api';
 import './roadmap.css';
 
 const KEY = 'rsdp.adminKey';
@@ -92,6 +92,7 @@ export function RoadmapAdminPage() {
             Changes show on the public log right away. <button onClick={signOut}>Sign out</button>
           </p>
           <ResetCodeForm adminKey={key} />
+          <DeleteTableForm adminKey={key} />
           <h2>Suggestions</h2>
           {error && <p className="error">{error}</p>}
           {list.length === 0 && <p className="muted">No suggestions yet.</p>}
@@ -208,6 +209,83 @@ function ResetCodeForm({ adminKey }: { adminKey: string }) {
         </p>
       )}
       <button disabled={busy || !username.trim()}>Make a code</button>
+    </form>
+  );
+}
+
+/** A table's id from a pasted link (…/t/abc123) or the id itself. */
+function tableIdFrom(text: string) {
+  const t = text.trim();
+  return /\/t\/([\w-]+)/.exec(t)?.[1] ?? t;
+}
+
+/** Test tables and mistakes: look a cash table up by its link, then delete it for good. */
+function DeleteTableForm({ adminKey }: { adminKey: string }) {
+  const [link, setLink] = useState('');
+  const [found, setFound] = useState<AdminTable | null>(null);
+  const [done, setDone] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function lookUp(e: FormEvent) {
+    e.preventDefault();
+    setFound(null);
+    setDone('');
+    void run(async () => setFound(await adminLookUpTable(adminKey, tableIdFrom(link))));
+  }
+
+  function remove(t: AdminTable) {
+    const warning = t.realGame
+      ? `"${t.name || 'Table'}" had a real game (${t.players.join(', ') || 'several people'}). Deleting it removes it from everyone's profile and ledger. Delete it for good?`
+      : `Delete "${t.name || 'Table'}" for good?`;
+    if (!confirm(warning)) return;
+    void run(async () => {
+      await adminDeleteTable(adminKey, t.id);
+      setFound(null);
+      setLink('');
+      setDone(`Deleted "${t.name || 'Table'}".`);
+    });
+  }
+
+  return (
+    <form className="suggest-form" onSubmit={lookUp}>
+      <strong>Delete a table</strong>
+      <span className="muted">For test tables and mistakes. Paste the table's link. Real games stay unless you're sure: friends' records and ledgers depend on them.</span>
+      <label>
+        Table link or id
+        <input value={link} spellCheck={false} autoCapitalize="none" required onChange={(e) => (setLink(e.target.value), setFound(null))} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      {done && <p className="suggest-thanks">{done}</p>}
+      {found && (
+        <div className="suggest-thanks">
+          <strong>{found.name || 'Table'}</strong> · {found.mode === 'tournament' ? 'tournament table' : 'cash'} · made {shortDate(found.createdAt)} · {found.hands}{' '}
+          {found.hands === 1 ? 'hand' : 'hands'}
+          {found.players.length > 0 && ` · ${found.players.join(', ')}`}
+          {found.realGame ? ' · real game' : ' · no real game'}
+          {found.live && ' · open now (anyone there is sent away)'}
+          {found.mode === 'cash' && (
+            <div>
+              <button type="button" className="danger" disabled={busy} onClick={() => remove(found)}>
+                Delete for good
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      <button disabled={busy || !link.trim()}>Look it up</button>
     </form>
   );
 }

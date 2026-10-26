@@ -71,6 +71,13 @@
       "when": 1793000100000,
       "tag": "0009_google_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793000200000,
+      "tag": "0010_hidden_tables",
+      "breakpoints": true
     }
   ]
 }

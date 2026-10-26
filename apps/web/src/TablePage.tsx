@@ -137,7 +137,9 @@ export function TablePage({ tableId }: { tableId: string }) {
       join();
     };
     const onDisconnect = () => setConnected(false);
+    const onDeleted = ({ id }: { id: string }) => id === tableId && setError('deleted');
     socket.on('table:state', onState);
+    socket.on('table:deleted', onDeleted);
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     // The socket may have connected after the first render but before this ran, so its connect event is gone.
@@ -145,6 +147,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     if (socket.connected) join();
     return () => {
       socket.off('table:state', onState);
+      socket.off('table:deleted', onDeleted);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.emit('table:leave');
@@ -219,7 +222,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         <h1 className="logo">
           RSDP Poker <span>Live!</span>
         </h1>
-        <p className="error">{error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
+        <p className="error">{error === 'deleted' ? 'This table was deleted.' : error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
         {tournament && (
           <p>
             <a href={`/tn/${tournament}`}>Back to the tournament lobby</a>
