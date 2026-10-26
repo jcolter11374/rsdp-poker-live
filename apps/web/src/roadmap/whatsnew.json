@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-b",
+      "date": "2026-10-26",
+      "title": "Chat, leaderboards and your profit graph",
+      "items": [
+        { "title": "Table chat you can't miss", "detail": "Chat now has its own box under the log, with one-tap replies like gg and nh. On a phone, tap the chat button at the top (it shows how many messages you've missed). New messages pop up beside the player's seat for a few seconds, and Enter jumps to the chat box." },
+        { "title": "Bet in big blinds", "detail": "With the Chips | BB switch on BB, you can type and bet in big blinds too. Type 3 to raise to three big blinds." },
+        { "title": "A steadier table", "detail": "The table keeps one size through a hand instead of shifting when the flop comes, and Escape now closes the People list." },
+        { "title": "Leaderboard", "detail": "See who's up this month, this year or all time on the new Leaderboard page, ranked by profit, hands played or biggest pot. Only real cash games count: practice tables with bots and tournaments are left out. Anyone with the link can see it." },
+        { "title": "Your profit graph", "detail": "Your profile now draws your results game by game, so you can see how your nights add up." },
+        { "title": "Search your hands", "detail": "Find hands you played by your cards (like AA or AKs), who you played with, the game, pot size or how it went, then replay or share them." },
+        { "title": "Tidy up your records", "detail": "Hide a cash table from your profile (it stays for everyone else), and hosts can delete a test table nobody really played at." },
+        { "title": "Small fixes", "detail": "Tournament tables no longer show up in your list of cash games." }
+      ]
+    },
+    {
       "id": "2026-10-26-a",
       "date": "2026-10-26",
       "title": "A slicker table, co-hosts and optional accounts",
