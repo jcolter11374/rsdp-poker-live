@@ -119,6 +119,8 @@ export interface AppDeps {
   rng?: Rng;
   /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
   fairLeadMs?: number;
+  /** A cash table nobody has had open for this long is saved and let go from memory (0 keeps every table loaded). */
+  idleUnloadMs?: number;
   /** Built web client to serve (production). */
   webDist?: string | null;
   log?: (message: string, err?: unknown) => void;
@@ -135,6 +137,10 @@ const LOBBY_CHAT_GAP_MS = 1_000;
 const EXPORT_GAP_MS = 5_000;
 
 const SAVE_DEBOUNCE_MS = 500;
+/** How long a cash table sits with nobody at it before it is put away (saved, and loaded again when its link is opened). */
+const IDLE_UNLOAD_MS = 45 * 60_000;
+/** How often the server looks for tables to put away. */
+const IDLE_SWEEP_MS = 5 * 60_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
@@ -212,7 +218,7 @@ export function createApp(deps: AppDeps = {}) {
   }
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, tables: tables.size });
+    res.json({ ok: true, tables: tables.size, memoryMb: Math.round(process.memoryUsage().rss / 1_048_576) });
   });
   const isAdmin = adminGate(deps.adminKey ?? process.env.ADMIN_KEY, () => clock.now());
   suggestionRoutes(app, deps.suggestions ?? memorySuggestions(), { isAdmin, now: () => clock.now(), log });
@@ -230,6 +236,7 @@ export function createApp(deps: AppDeps = {}) {
       // Those tabs reload and connect again as whoever they are now.
       for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
     },
+    peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
   };
   const confirmations = googleConfirmations(() => clock.now());
   accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks });
@@ -443,7 +450,10 @@ export function createApp(deps: AppDeps = {}) {
     const id = rt.state.id;
     tables.set(id, rt);
     created.set(id, ready);
+    lastWatched.set(id, clock.now());
+    lastChange.set(id, clock.now());
     rt.onChange = () => {
+      lastChange.set(id, clock.now());
       broadcast(rt);
       scheduleSave(rt);
     };
@@ -458,6 +468,84 @@ export function createApp(deps: AppDeps = {}) {
 
   /** Cash tables deleted since the server started, so a join racing the delete can't load one back. */
   const deleted = new Set<string>();
+
+  /** When someone last had each loaded table open, and when it last changed. */
+  const lastWatched = new Map<string, number>();
+  const lastChange = new Map<string, number>();
+  /** Final saves of tables being put away; opening one waits for its save before loading it again. */
+  const unloading = new Map<string, Promise<void>>();
+
+  /**
+   * Puts away cash tables nobody has had open for a while, so old tables don't
+   * fill the server's memory. Each is saved as it is and stops; its link loads
+   * it again with everything kept (seats, stacks, ledger, chat, hands). A hand
+   * still being played waits until it is over, unless the table has not changed
+   * for as long (a hand nobody can finish).
+   */
+  function unloadIdle(): string[] {
+    const idleMs = deps.idleUnloadMs ?? IDLE_UNLOAD_MS;
+    if (idleMs <= 0) return [];
+    const now = clock.now();
+    const gone: string[] = [];
+    for (const rt of [...tables.values()]) {
+      const id = rt.state.id;
+      if (rt.isTournament) continue;
+      if (watchers.get(id)?.size) {
+        lastWatched.set(id, now);
+        continue;
+      }
+      if (now - (lastWatched.get(id) ?? now) < idleMs) continue;
+      const hand = rt.state.hand;
+      if (hand && hand.phase !== 'complete' && now - (lastChange.get(id) ?? now) < idleMs) continue;
+      unload(rt);
+      gone.push(id);
+    }
+    return gone;
+  }
+
+  function unload(rt: TableRuntime) {
+    const id = rt.state.id;
+    rt.onChange = () => {};
+    rt.onHandFinished = () => {};
+    rt.dispose();
+    tables.delete(id);
+    feeds.delete(id);
+    watchers.delete(id);
+    lastWatched.delete(id);
+    lastChange.delete(id);
+    // practiceStarts stays: a creator who opens the link later still gets the first deal.
+    clearTimeout(saveTimers.get(id));
+    saveTimers.delete(id);
+    // Saves already under way finish first, so the last one written is this one.
+    const earlier = [...(inFlight.get(id) ?? [])];
+    const done = (created.get(id) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => Promise.allSettled(earlier))
+      .then(() => store.saveTable(rt.state))
+      .catch((e) => {
+        log(`saving idle table ${id} failed`, e);
+        // Its newest state is only in memory: keep it loaded, to be saved on its next change or put away again later.
+        if (!tables.has(id) && !deleted.has(id)) {
+          attach(rt);
+          rt.resume();
+        }
+      })
+      .finally(() => {
+        if (unloading.get(id) === done) unloading.delete(id);
+        if (!tables.has(id)) created.delete(id);
+      });
+    unloading.set(id, done);
+    track(id, done);
+  }
+
+  const sweep = deps.idleUnloadMs === 0 ? null : setInterval(() => {
+    try {
+      unloadIdle();
+    } catch (e) {
+      log('putting idle tables away failed', e);
+    }
+  }, Math.min(IDLE_SWEEP_MS, Math.max(1_000, (deps.idleUnloadMs ?? IDLE_UNLOAD_MS) / 3)));
+  sweep?.unref();
 
   /**
    * Deletes a cash table for good: everyone with it open is told and let go,
@@ -476,6 +564,8 @@ export function createApp(deps: AppDeps = {}) {
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
+      lastWatched.delete(id);
+      lastChange.delete(id);
       practiceStarts.delete(id);
       clearTimeout(saveTimers.get(id));
       saveTimers.delete(id);
@@ -528,6 +618,8 @@ export function createApp(deps: AppDeps = {}) {
       detach: (rt) => {
         tables.delete(rt.state.id);
         feeds.delete(rt.state.id);
+        lastWatched.delete(rt.state.id);
+        lastChange.delete(rt.state.id);
         // Save the final state so the table's history stays readable.
         store.saveTable(rt.state).catch(() => {});
         broadcast(rt);
@@ -568,6 +660,10 @@ export function createApp(deps: AppDeps = {}) {
   async function getTable(id: string): Promise<TableRuntime | null> {
     const live = tables.get(id);
     if (live) return live;
+    if (deleted.has(id)) return null;
+    // A table being put away is read back once its last save is written.
+    await unloading.get(id);
+    if (tables.has(id)) return tables.get(id)!;
     if (deleted.has(id)) return null;
     // Tournament tables come back with their tournament, which gives them their clock and seats.
     if (await tournaments.loadTableOwner(id)) return tables.get(id) ?? null;
@@ -650,6 +746,7 @@ export function createApp(deps: AppDeps = {}) {
       const id = socket.data.tableId;
       if (!id) return;
       watchers.get(id)?.delete(socket);
+      if (tables.has(id)) lastWatched.set(id, clock.now());
       tables.get(id)?.disconnect(me);
       socket.data.tableId = undefined;
     };
@@ -1073,6 +1170,8 @@ export function createApp(deps: AppDeps = {}) {
     tables,
     tournaments,
     getTable,
+    /** Puts away idle cash tables now (the server also does this every few minutes); the ids put away. */
+    unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: () => tournaments.resumeAll(),
     async close() {
@@ -1082,6 +1181,8 @@ export function createApp(deps: AppDeps = {}) {
       for (const s of io.of('/').sockets.values()) s.removeAllListeners('disconnect');
       io.close();
       tournaments.dispose();
+      if (sweep) clearInterval(sweep);
+      await Promise.allSettled([...unloading.values()]);
       const open = [...tables.values()];
       for (const rt of open) rt.dispose();
       for (const t of saveTimers.values()) clearTimeout(t);

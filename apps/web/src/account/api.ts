@@ -11,6 +11,8 @@ export interface TableRow {
   net: number | null;
   centsMode: boolean;
   practice: boolean;
+  /** People at the table right now (0 when it's closed; it opens again from its link). */
+  playingNow?: number;
 }
 
 export interface TournamentRow {
