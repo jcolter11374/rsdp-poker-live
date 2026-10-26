@@ -27,7 +27,7 @@ export const FEATURES: Feature[] = [
   {
     icon: '🤖',
     title: 'Practice bots',
-    detail: 'Trying a new game? Add bots to the empty seats of a cash table and play with play chips, taking your time with nobody waiting on you. Bots never play in tournaments.',
+    detail: "Trying a new game? Add bots to the empty seats of a cash table and play with play chips, taking your time with nobody waiting on you. In a hand with only bots, tap Tip on your turn for a rough guide, and after the hand each bot says why it played as it did. Tips are for practice: never at a table where people have played each other, and bots never play in tournaments.",
   },
   {
     icon: '📈',

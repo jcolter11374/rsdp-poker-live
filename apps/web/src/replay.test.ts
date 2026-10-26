@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { engine, type HandState } from '@rsdp/engine/core';
-import type { HandRecordView } from '@rsdp/engine/wire';
+import type { BotNote, HandRecordView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
 import { finalStacks, isReplayable, playerStats, replayFrames } from './replay';
 
@@ -69,6 +69,56 @@ describe('replayFrames', () => {
   });
 });
 
+describe('Frame.why', () => {
+  /** A three-handed hand where the bots (seats 1 and 2) each have a reason for every move. */
+  function withNotes() {
+    const s = start({ stacks: [100, 100, 100] });
+    passive(s);
+    const h = record(s, 0);
+    const notes: BotNote[] = h.events
+      .filter((e) => e.t === 'action' && e.seat !== 0)
+      .map((e) => ({ seq: e.seq, seat: (e as { seat: number }).seat, level: 'normal', rule: 'call', share: 0.4, cost: 0.25, need: 0.28 }));
+    return { h, notes };
+  }
+
+  it('puts each reason on the frame that plays its move', () => {
+    const { h, notes } = withNotes();
+    expect(notes.length).toBeGreaterThan(2);
+    // Given out of order, as nothing promises otherwise.
+    h.botNotes = [...notes].reverse();
+    const frames = replayFrames(h, 'p0', fmt);
+    let from = 0;
+    for (const f of frames) {
+      for (const n of f.why) expect(n.seq >= from && n.seq < f.upTo).toBe(true);
+      // An action has a frame of its own, with its log line.
+      for (const n of f.why) expect(f.caption).toContain(`p${n.seat}`);
+      from = f.upTo;
+    }
+    expect(frames.flatMap((f) => f.why.map((n) => n.seq))).toEqual(notes.map((n) => n.seq));
+  });
+
+  it('keeps a reason whose step was merged into the next or left out', () => {
+    const { h } = withNotes();
+    // Events that end no step: all but the last deal (the deals show as one step), and any that change nothing seen.
+    const ends = new Set(replayFrames(h, 'p0', fmt).map((f) => f.upTo - 1));
+    const hidden = h.events.map((e) => e.seq).filter((seq) => !ends.has(seq));
+    const deals = h.events.filter((e) => e.t === 'deal').map((e) => e.seq);
+    expect(hidden).toEqual(expect.arrayContaining(deals.slice(0, -1)));
+    h.botNotes = hidden.map((seq) => ({ seq, seat: 1, level: 'normal', rule: 'fallback' }));
+    const frames = replayFrames(h, 'p0', fmt);
+    for (const seq of hidden) {
+      const at = frames.findIndex((f) => f.why.some((n) => n.seq === seq));
+      expect(at).toBe(frames.findIndex((f) => f.upTo > seq));
+    }
+    expect(frames.flatMap((f) => f.why)).toHaveLength(hidden.length);
+  });
+
+  it('is empty for a hand without reasons', () => {
+    const { h } = withNotes();
+    expect(replayFrames(h, 'p0', fmt).every((f) => f.why.length === 0)).toBe(true);
+  });
+});
+
 describe('playerStats and finalStacks', () => {
   it('counts calls and raises on the first round only', () => {
     const s = start({ stacks: [100, 100, 100] });
@@ -101,5 +151,14 @@ describe('isReplayable', () => {
     expect(isReplayable({ ...h, seats: [{ ...h.seats[0], seat: 1e9 }] }, fmt)).toBe(false);
     expect(isReplayable({ ...h, events: 'nope' }, fmt)).toBe(false);
     expect(isReplayable(null, fmt)).toBe(false);
+  });
+
+  it('drops any bots’ reasons from a file', () => {
+    const s = start({ stacks: [100, 100] });
+    passive(s);
+    const h: HandRecordView = { ...record(s, 0), botNotes: [{ seq: 5, seat: 1, level: 'hard', rule: 'fold' }] };
+    expect(isReplayable(h, fmt)).toBe(true);
+    expect(h.botNotes).toBeUndefined();
+    expect(replayFrames(h, 'p0', fmt).every((f) => f.why.length === 0)).toBe(true);
   });
 });

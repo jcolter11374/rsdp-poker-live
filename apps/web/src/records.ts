@@ -72,6 +72,20 @@ export function settleUp(rows: { playerId: string; name: string; net: number; bo
   return { transfers, off, bots };
 }
 
+/**
+ * The hands file (the Hands tab's JSON download), which the replayer opens
+ * again. The bots' reasons stay out: they were for the one person in each
+ * hand, and a file gets passed around.
+ */
+export function handsJson(tableName: string, centsMode: boolean, hands: HandRecordView[], exportedAt = new Date()): string {
+  const plain = hands.map((h) => {
+    const copy = { ...h };
+    delete copy.botNotes;
+    return copy;
+  });
+  return JSON.stringify({ format: 'rsdp-hands', version: 1, table: tableName, exportedAt: exportedAt.toISOString(), centsMode, hands: plain }, null, 1);
+}
+
 /** Every hand as a readable text log, the same lines as the table's log. */
 export function handHistoryText(tableName: string, hands: HandRecordView[], myId: string, fmt: Fmt): string {
   const out = [`${tableName} — hand history (${hands.length} hands)`, ''];

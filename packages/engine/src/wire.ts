@@ -169,6 +169,13 @@ export interface TableView {
   canVoteRunItTwice: boolean;
   /** My card indexes I may still show (after the hand). */
   canShow: number[];
+  /**
+   * Coach tips (hand:tip) and the bots' reasons are on for me: I'm the only
+   * person dealt into this hand, everyone else is a practice bot, at a cash
+   * table where no two people have played a hand. Stays on after the hand
+   * until the next deal. Absent otherwise.
+   */
+  tips?: boolean;
   turn: { seat: number; startedAt: number; deadline: number | null; usingBank: boolean } | null;
   nextHandAt: number | null;
   /** Server clock when the view was built, to correct for skew. */
@@ -240,6 +247,8 @@ export interface HandRecordView {
   events: HandEvent[];
   /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
   fair?: FairRecordView | null;
+  /** Why each practice bot played as it did: only for the one person in a hand where everyone else was a bot, once it is over. */
+  botNotes?: BotNote[];
 }
 
 /**
@@ -314,6 +323,12 @@ export interface ClientToServer {
   'hand:timeBank': (ack: Ack) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
+  /**
+   * A coach tip for my decision now, when the view says tips: answered to me
+   * alone, and never kept. `at` is the number of events in the hand when I
+   * asked (view.hand.events.length), so an answer to an old turn is refused.
+   */
+  'hand:tip': (input: { handNumber: number; at: number }, ack: Ack<{ tip: CoachTip }>) => void;
   /** Add my browser's randomness to the next hand, answering the commitment I was shown (seated players). */
   'fair:seed': (input: { commit: string; seed: string }, ack: Ack) => void;
   'chat:send': (input: { text: string }, ack?: Ack) => void;
@@ -383,6 +398,112 @@ export interface ServerToClient {
   notes: (notes: PlayerNote[]) => void;
   /** All my saved setups of one kind again, after one changed in any of my tabs. */
   setups: (input: { kind: SetupKind; setups: SavedSetup[] }) => void;
+}
+
+/**
+ * The rule behind a coach tip. `raise-field` raises because the hand is far
+ * ahead of an even share against several opponents rather than on its own
+ * chance; `call-capped` calls a hand it would raise before three raises;
+ * `fold-big` folds a hand that would call a smaller bet (the call is half my
+ * chips or more).
+ */
+export const COACH_RULES = ['bring-in', 'complete', 'check', 'bet', 'raise', 'raise-field', 'call', 'call-capped', 'fold', 'fold-big', 'draw', 'pat'] as const;
+export type CoachRule = (typeof COACH_RULES)[number];
+
+/** What a coach tip suggests. Bet sizes are totals for this round, like Action; `fraction` is of the pot (the ½ and ¾ pot presets), null in fixed limit. */
+export type CoachMove =
+  | { type: 'fold' | 'check' | 'call' | 'bring-in' }
+  | { type: 'bet' | 'raise' | 'complete'; to: number; fraction: 0.5 | 0.75 | null; allIn: boolean }
+  /** Indexes into my own cards. */
+  | { type: 'draw'; discard: number[] };
+
+/**
+ * A coach tip: numbers only, worked out on the server from what I can see
+ * (my cards, up cards, the boards, the betting and how many cards each player
+ * drew). The browser writes every sentence. Shares are 0-1.
+ */
+export interface CoachTip {
+  /** The decision it answers (hand:tip's input). */
+  handNumber: number;
+  at: number;
+  kind: 'bet' | 'draw';
+  /** My chance of winning: my share of the pot, ties and halves included... */
+  share: number;
+  /** ...and its standard error, for how roughly to say it. */
+  se: number;
+  /** The pot is split (hi-lo, or two boards): say "of the pot". */
+  split: boolean;
+  /** Hi-lo: how often I win the whole pot. Null otherwise. */
+  scoop: number | null;
+  /** Opponents dealt out in each finish (a crowded deck can't deal everyone)... */
+  vs: number;
+  /** ...and live opponents. */
+  opponents: number;
+  /** My share against random hands, when this hand's betting was counted and changed it. Null otherwise. */
+  vsRandom: number | null;
+  /** Draws still to come (draw games). */
+  drawsLeft: number;
+  /** Chips to call (0 when I can check)... */
+  call: number;
+  /** ...the chips in the middle I can win, before my call... */
+  pot: number;
+  /** ...the call as a share of the pot once called (null with nothing to call)... */
+  cost: number | null;
+  /** ...and the share the tip wants before calling. */
+  need: number | null;
+  /** The call is half my chips or more, so the tip wants a margin. */
+  big: boolean;
+  /** My share is within the noise of what calling needs: call or fold are both fine. */
+  close: boolean;
+  move: CoachMove;
+  rule: CoachRule;
+  /** Draws: the best few ways to draw, best first (discard indexes into my cards). */
+  options: { discard: number[]; share: number }[];
+  /** Live opponents whose betting this hand the tip counted, and how much (a bet or raise counts 1, a call after the first round about a third). */
+  reads: { seat: number; bets: number }[];
+  /** Lowball draw games: how many cards each live opponent threw at each draw (null when the table stood pat for them). */
+  draws: { seat: number; done: (number | null)[] }[];
+}
+
+/** The rule behind a practice bot's move. `rit-yes`: bots always agree to run it twice; `fallback`: it couldn't decide, so the table checked or folded for it. */
+export const BOT_NOTE_RULES = ['bring-in', 'complete', 'steal', 'check', 'value', 'bluff', 'semi-bluff', 'raise', 'call', 'call-loose', 'fold', 'draw', 'pat', 'rit-yes', 'fallback'] as const;
+export type BotNoteRule = (typeof BOT_NOTE_RULES)[number];
+
+/**
+ * Why a practice bot made one move, in its own rough numbers. Numbers and
+ * fixed words only: never a card, a discard position or anything about
+ * another person.
+ */
+export interface BotNote {
+  /** The event it explains (its action, draw or run-it-twice vote) and the bot's seat. */
+  seq: number;
+  seat: number;
+  level: BotLevel;
+  rule: BotNoteRule;
+  /** Its chance of winning, to the nearest 0.05. */
+  share?: number;
+  /** The pot is split (hi-lo, or two boards). */
+  split?: true;
+  /** Opponents it was against. */
+  vs?: number;
+  drawsLeft?: number;
+  /** Facing a bet: the call as a share of the pot once called, and the share it wanted (to 0.01). */
+  cost?: number;
+  need?: number;
+  /** The call was half its chips or more. */
+  big?: true;
+  /** After three raises it raises again only with a very strong hand. */
+  capped?: true;
+  /** The chance of the coin flip that picked the play, to 0.01. */
+  often?: number;
+  /** Draws: how many cards it threw, and the next best way it weighed. */
+  thrown?: number;
+  alt?: { thrown: number; share: number };
+  /** Hard: acts last for the rest of the hand. */
+  last?: true;
+  /** Hard: what it made of how you (the one person in the hand) play, and how often you bet or raised this hand. */
+  you?: 'folds-often' | 'calls-often';
+  yourBets?: number;
 }
 
 /** What a saved setup is for: a cash table preset or a tournament structure. */

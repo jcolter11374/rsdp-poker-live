@@ -33,7 +33,7 @@ import {
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import { gameTitle } from '@rsdp/engine/variants';
-import { BOT_LEVELS, BOT_LOOKS, type BotLevel } from '@rsdp/engine/wire';
+import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -50,7 +50,9 @@ import {
 import { cleanName as cleanDisplayName } from '../names';
 import { handOver, hasPower, isStaff, powersOf, RoleError, withCoHost, withoutCoHost, type HostPower } from '@rsdp/engine/roles';
 import { maskProfanity } from './profanity';
-import { chooseMove, readPlayers, seededRand } from '../bots/strategy';
+import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../bots/strategy';
+import { coachTip as buildCoachTip } from '../bots/coach';
+import { botNote, plainNote } from '../bots/reasons';
 
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
@@ -77,7 +79,16 @@ export const HOST_HANDOFF_MS = 3 * 60_000;
 export const SEAT_OFFER_MS = 60_000;
 /** A practice bot takes this long, plus up to BOT_THINK_SPREAD_MS, to act. */
 export const BOT_THINK_MS = 700;
+/** A coach tip slower than this is worth knowing about: it is worked out on the event loop, so it holds up every table. */
+const TIP_SLOW_MS = 150;
 const BOT_THINK_SPREAD_MS = 1100;
+
+/** A whole number from a turn key, the same on every server: how long a bot thinks, and the deals behind a coach tip. */
+export function hashKey(key: string): number {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
 /** Bots a player who is not the host may have at one table. */
 export const BOTS_PER_PLAYER = 3;
 
@@ -130,6 +141,10 @@ export class TableRuntime {
   private hostTimer: unknown = null;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
   private seedWait = false;
+  /** The coach tip for one turn, so asking again (or from another tab) costs nothing. Never saved. */
+  private tipCache: { key: string; playerId: PlayerId; tip: CoachTip } | null = null;
+  /** A slow tip is reported once, not on every turn. */
+  private tipSlowLogged = false;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
 
@@ -253,6 +268,24 @@ export class TableRuntime {
 
   botInfo(playerId: PlayerId): BotInfo | null {
     return this.isBot(playerId) ? this.state.bots![playerId] : null;
+  }
+
+  /**
+   * The one person dealt into this hand against nothing but practice bots, for
+   * coach tips and the bots' reasons, or null. It is decided from hand.seats,
+   * the list dealt in at the start, which never changes during the hand, and
+   * it fails closed: a bot the table has forgotten counts as a person, so does
+   * anyone dealt in while away, and a table where two people have been dealt
+   * into a hand (realGame) never gets tips again, so nobody gets help at a
+   * table where people play each other. It does not keep chips won from bots
+   * with help out of the ledger: those count when people settle up, as all
+   * chips won from bots do. Membership of state.bots decides, never the 'bot-'
+   * prefix: a person's id could start with it.
+   */
+  private soloPersonOf(hand: HandState): PlayerId | null {
+    if (this.isTournament || this.state.realGame || hand.seats.length < 2) return null;
+    const people = hand.seats.filter((x) => !this.isBot(x.playerId));
+    return people.length === 1 ? people[0].playerId : null;
   }
 
   // ---------------------------------------------------------------- connections
@@ -1427,28 +1460,45 @@ export class TableRuntime {
     if (s.paused || !hand || hand.phase === 'complete' || hand.phase === 'rit-vote' || hand.toAct === null || !s.turn) return null;
     const seat = s.seats[hand.toAct];
     if (!seat || !this.isBot(seat.playerId) || s.turn.seat !== hand.toAct) return null;
-    let h = 0;
-    for (const ch of s.turn.key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return s.turn.startedAt + BOT_THINK_MS + (h % BOT_THINK_SPREAD_MS);
+    return s.turn.startedAt + BOT_THINK_MS + (hashKey(s.turn.key) % BOT_THINK_SPREAD_MS);
   }
 
   private botMove(seatNo: number) {
     const s = this.state;
     const hand = s.hand!;
+    const level = this.botInfo(s.seats[seatNo]?.playerId ?? '')?.level ?? 'normal';
+    // The event the note explains, taken before the move so it points at the move itself.
+    const seq = hand.events.length;
+    let why: MoveWhy | null = null;
     try {
-      const level = this.botInfo(s.seats[seatNo]!.playerId)?.level ?? 'normal';
       // Hard bots learn how each player plays from the hands the table keeps.
       const players = level === 'hard' ? readPlayers(s.history.map((r) => r.hand)) : undefined;
-      const move = chooseMove(hand, seatNo, seededRand(this.rng(0x7fffffff)), { level, players });
-      if (move.kind === 'draw') engine.draw(hand, seatNo, move.discard);
-      else engine.act(hand, seatNo, move.action);
+      const chosen = explainMove(hand, seatNo, seededRand(this.rng(0x7fffffff)), { level, players });
+      if (chosen.move.kind === 'draw') engine.draw(hand, seatNo, chosen.move.discard);
+      else engine.act(hand, seatNo, chosen.move.action);
+      why = chosen.why;
     } catch (e) {
       // A bot must never hold up the table: check or fold instead.
       this.logError(`table ${s.id}: bot in seat ${seatNo + 1} failed to act`, e);
       engine.timeout(hand, seatNo);
     }
+    // Only once the move is in, and outside the try: a fault in a reason loses that note, never changes or repeats the move.
+    const made = why;
+    this.addNote(hand, made ? (person) => botNote(seq, seatNo, level, made, hand, person) : () => plainNote(seq, seatNo, level, 'fallback'));
     s.turn = null;
     this.afterEngine(false);
+  }
+
+  /** Keeps why a bot moved, but only in a hand one person is playing against nothing but bots, and only for them. */
+  private addNote(hand: HandState, make: (person: PlayerId) => BotNote) {
+    const coach = this.state.coach;
+    if (coach?.handNumber !== hand.input.handNumber) return;
+    // A reason is only words: a fault in one is logged and the note is lost, and play goes on as it would have.
+    try {
+      coach.notes.push(make(coach.person));
+    } catch (e) {
+      this.logError(`table ${this.state.id}: a bot's reason failed`, e);
+    }
   }
 
   // ---------------------------------------------------------------- tournament seating
@@ -1720,6 +1770,53 @@ export class TableRuntime {
     this.sync();
   }
 
+  /**
+   * A coach tip for this player's decision now (hand:tip). It is for the one
+   * person dealt into a hand against nothing but practice bots, and every
+   * check is made again here, so an edited browser gets nothing: the rule as
+   * it stood at the deal, the rule as it stands now, the seat, the turn and
+   * the exact decision asked about. It changes no state, tells nobody, and
+   * never touches the table's randomness, so the hand plays out exactly as it
+   * would have. `beforeWork` runs only when a tip is about to be worked out
+   * (every check passed, nothing cached), so limits count real work only; it
+   * refuses by throwing.
+   */
+  coachTip(playerId: PlayerId, handNumber: number, at: number, beforeWork: () => void = () => {}): CoachTip {
+    const s = this.state;
+    if (this.isTournament) throw new ActionError('no tips in tournaments');
+    const hand = this.liveHandFor(playerId);
+    if (s.coach?.handNumber !== hand.input.handNumber || s.coach.person !== playerId || this.soloPersonOf(hand) !== playerId)
+      throw new ActionError('tips are only for hands where everyone else is a bot');
+    // By player and by seat: a seat shuffled or taken over since the deal is not this hand's.
+    const seat = this.seatOf(playerId)!;
+    const hs = hand.seats.find((x) => x.playerId === playerId);
+    const turn = s.turn;
+    const drawing = hand.phase === 'drawing';
+    if (!hs || !turn || hs.seat !== seat.seat || turn.seat !== hs.seat || hand.toAct !== hs.seat || (!drawing && hand.phase !== 'betting')) throw new ActionError('not your turn');
+    if (handNumber !== hand.input.handNumber || at !== hand.events.length) throw new ActionError('that turn is over');
+    const cached = this.tipCache;
+    if (cached?.key === turn.key && cached.playerId === playerId) return cached.tip;
+    const legal = drawing ? null : engine.legalActions(hand, hs.seat);
+    if (!drawing && !legal) throw new ActionError('not your turn');
+    beforeWork();
+    const started = performance.now();
+    const tip = buildCoachTip(seenBy(hand, hs.seat), hs.seat, {
+      legal,
+      drawMax: drawing ? (hand.input.game.streets[hand.street]?.drawMaxDiscard ?? 0) : 0,
+      // Its own stream, from the turn and the player: the table's randomness is for the deal and the bots.
+      rand: seededRand(hashKey(`${turn.key}|${playerId}`)),
+      handNumber,
+      at,
+    });
+    const spent = performance.now() - started;
+    if (spent > TIP_SLOW_MS && !this.tipSlowLogged) {
+      this.tipSlowLogged = true;
+      this.logError(`table ${s.id}: a coach tip took ${Math.round(spent)} ms`);
+    }
+    this.tipCache = { key: turn.key, playerId, tip };
+    return tip;
+  }
+
   /** Anyone at the table may peek at the cards a hand that ended early would have dealt. Only they see them. */
   rabbitHunt(playerId: PlayerId) {
     const s = this.state;
@@ -1760,7 +1857,10 @@ export class TableRuntime {
     const hand = s.hand!;
     const now = this.clock.now();
     this.autoShowBounty(hand);
-    const record = { handNumber: s.handNumber, startedAt: s.handStartedAt!, endedAt: now, hand };
+    // The bots' reasons go with the hand they explain. s.coach stays until the next deal, so the view keeps the flag
+    // that shows the button for them.
+    const coach = s.coach?.handNumber === hand.input.handNumber ? { person: s.coach.person, notes: [...s.coach.notes] } : undefined;
+    const record: HandRecord = { handNumber: s.handNumber, startedAt: s.handStartedAt!, endedAt: now, hand, ...(coach ? { coach } : {}) };
     s.history.push(record);
     if (s.history.length > HISTORY_LIMIT) s.history.splice(0, s.history.length - HISTORY_LIMIT);
     if (realGameHand(hand.seats)) s.realGame = true;
@@ -2013,6 +2113,13 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    // Two people dealt in, counted by who is really a bot (a person's id may start with 'bot-'), and at the deal, so a
+    // hand that never finishes still counts: tips are off here for good.
+    if (hand.seats.filter((x) => !this.isBot(x.playerId)).length >= 2) s.realGame = true;
+    // Coach tips and the bots' reasons are settled here, for this hand only, from who was dealt in.
+    const person = this.soloPersonOf(hand);
+    s.coach = person ? { handNumber: input.handNumber, person, notes: [] } : null;
+    this.tipCache = null;
     this.fairDealt();
     s.handNames ??= {};
     for (const x of hand.seats) {
@@ -2158,7 +2265,10 @@ export class TableRuntime {
         // Bots always say yes to running it twice.
         const botVoter = hand.seats.find((x) => !x.folded && x.ritVote === null && this.isBot(x.playerId));
         if (botVoter) {
+          const seq = hand.events.length;
           engine.voteRunItTwice(hand, botVoter.seat, true);
+          const level = this.botInfo(botVoter.playerId)?.level ?? 'normal';
+          this.addNote(hand, () => plainNote(seq, botVoter.seat, level, 'rit-yes'));
           this.afterEngine(false);
           return true;
         }

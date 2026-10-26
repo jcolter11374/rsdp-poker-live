@@ -1,7 +1,17 @@
 import { freshDeck, suitOf, type Card } from '@rsdp/engine';
-import { engine, type Action, type HandSeat, type HandState, type LegalActions, type PlayerId, type SeatIndex } from '@rsdp/engine/core';
+import {
+  engine,
+  HIDDEN_CARD,
+  type Action,
+  type HandEvent,
+  type HandSeat,
+  type HandState,
+  type LegalActions,
+  type PlayerId,
+  type SeatIndex,
+} from '@rsdp/engine/core';
 import { getVariant, HIGH_EVALUATORS, LOW_EVALUATORS, type VariantSpec } from '@rsdp/engine/variants';
-import type { BotLevel } from '@rsdp/engine/wire';
+import type { BotLevel, BotNoteRule } from '@rsdp/engine/wire';
 
 /**
  * Practice bots: a simple, rule-based player for every game. It estimates
@@ -16,6 +26,10 @@ import type { BotLevel } from '@rsdp/engine/wire';
  * raises as holding a better hand than a random one (less so for a player
  * who bets everything), bets thinner for value against players who call a
  * lot, bluffs players who fold a lot, and uses position.
+ *
+ * Every coin flip goes through Dice, and each decision fills in a MoveWhy, so
+ * a bot can say why it played as it did (explainMove), and a coach tip can
+ * run Normal's rules with dice that never bluff (tipDice).
  */
 
 /** What a bot does when it is its turn. */
@@ -72,8 +86,77 @@ export interface BotContext {
 }
 
 export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: BotContext = {}): BotMove {
+  return explainMove(hand, seat, rand, ctx).move;
+}
+
+/** Why a bot made a move: the rule that picked it (the table adds the rest of BotNoteRule). */
+export type MoveRule = Exclude<BotNoteRule, 'rit-yes' | 'fallback'>;
+
+/** The numbers behind a move, as the bot worked them out (only what it could see). */
+export interface MoveWhy {
+  rule: MoveRule;
+  /** Its chance of winning: its share of the pot, ties and halves included. */
+  equity?: number;
+  /** Live opponents. */
+  opponents?: number;
+  /** Draws still to come (draw games), counting one in progress. */
+  drawsLeft?: number;
+  /** The pot is split: a hi-lo game, or two boards. */
+  split?: boolean;
+  /** Facing a bet: the call as a share of the pot once called... */
+  cost?: number;
+  /** ...and the chance of winning the bot wanted before calling. */
+  need?: number;
+  /** The call is half its chips or more, so it wanted a margin. */
+  big?: boolean;
+  /** It may raise, but not with this hand after this many raises. */
+  capped?: boolean;
+  /** The chance of the coin flip that picked this play (a bluff, a raise it makes some of the time). */
+  often?: number;
+  /** Hard: acts last for the rest of the hand... */
+  inPosition?: boolean;
+  /** ...is on the last betting round... */
+  lastRound?: boolean;
+  /** ...and how often the most stubborn opponent folds to a bet, and who that is. */
+  foldRate?: number;
+  foldFrom?: PlayerId;
+  /** Draws: how many cards it threw, and the next best way to draw it weighed. */
+  thrown?: number;
+  alt?: { thrown: number; equity: number };
+}
+
+/** What a coin flip decides. */
+export type RollLabel = 'bluff' | 'size' | 'raise-band' | 'value' | 'steal' | 'semi-bluff';
+interface Roll {
+  label: RollLabel;
+  p: number;
+  hit: boolean;
+}
+
+/** The bots' coin flips. */
+export interface Dice {
+  /** True with chance p. */
+  roll(label: RollLabel, p: number): boolean;
+  /** A number from base up to base + span. */
+  between(label: RollLabel, base: number, span: number): number;
+}
+
+/** A bot's dice: exactly one rand() per call, so it plays the same as when it called rand() itself. */
+const botDice = (rand: Rand, rolls: Roll[]): Dice => ({
+  roll: (label, p) => {
+    const v = rand();
+    rolls.push({ label, p, hit: v < p });
+    return v < p;
+  },
+  between: (_label, base, span) => base + span * rand(),
+});
+
+/** A tip's dice: it never bluffs, steals or semi-bluffs, always takes a raise it makes some of the time, and bets the smallest size. */
+export const tipDice: Dice = { roll: (label) => label === 'raise-band', between: (_label, base) => base };
+
+/** A bot's move, and the numbers and rule behind it. */
+export function explainMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: BotContext = {}): { move: BotMove; why: MoveWhy } {
   const level = ctx.level ?? 'normal';
-  const effort = EFFORT[level] ?? 1;
   const drawEffort = DRAW_EFFORT[level] ?? 1;
   const view = situation(hand, seat);
   if (level === 'hard') {
@@ -81,27 +164,47 @@ export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: Bo
     if (view.spec.family === 'draw' && lowDrawRule(view.spec)) view.draws = opponentDraws(hand, seat, view.drawsInGame);
   }
   const sims = (screen: number, final: number) => ({ screen: Math.max(1, Math.round(screen * drawEffort)), final: Math.max(1, Math.round(final * drawEffort)) });
+  const opponents = view.opponents.length;
+  const split = (!!view.spec.showdown.high && !!view.spec.showdown.low) || view.boards.length > 1;
+  const why: MoveWhy = { rule: 'check', opponents, drawsLeft: view.drawsLeft, split };
   if (hand.phase === 'drawing') {
     const max = hand.input.game.streets[hand.street].drawMaxDiscard ?? 0;
-    return { kind: 'draw', discard: bestDraw(view, max, rand, sims(botTuning.drawSims, botTuning.drawFinalSims)).discard };
+    const best = bestDraw(view, max, rand, sims(botTuning.drawSims, botTuning.drawFinalSims));
+    const alt = best.finalists[1];
+    why.rule = best.discard.length ? 'draw' : 'pat';
+    why.equity = best.equity;
+    why.thrown = best.discard.length;
+    if (alt) why.alt = { thrown: alt.discard.length, equity: alt.equity };
+    return { move: { kind: 'draw', discard: best.discard }, why };
   }
   const legal = engine.legalActions(hand, seat);
   if (!legal) throw new Error('not the bot’s turn');
+  const equity = sizeUp(view, rand, level, sims);
+  why.equity = equity;
+  const rolls: Roll[] = [];
+  const dice = botDice(rand, rolls);
+  let action: Action;
+  if (level === 'easy') action = decideEasy(hand, seat, legal, equity, opponents, dice, why);
+  else if (level === 'hard') action = decideHard(hand, seat, legal, equity, ctx.players ?? {}, dice, why);
+  else action = decide(hand, seat, legal, equity, opponents, dice, why);
+  // The flip that picked the play, if one did: a raise some of the time is the raise band, the rest go by their own name.
+  const picked = rolls.find((r) => r.hit && r.label === (why.rule === 'raise' ? 'raise-band' : why.rule));
+  if (picked) why.often = picked.p;
+  return { move: { kind: 'act', action }, why };
+}
+
+/** The bot's chance of winning, to bet on. */
+function sizeUp(view: Situation, rand: Rand, level: BotLevel, sims: (screen: number, final: number) => DrawSims): number {
   // With draws to come, Normal sizes up its chances against two opponents and stretches that to the rest; Hard plays it out against everyone.
   const field = level === 'hard' ? drawFieldSize(view) : DRAW_OPPONENTS;
-  const equity =
-    view.drawsLeft > 0
-      ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, sims(botTuning.drawBetSims, botTuning.drawBetFinalSims), field).equity, field, view.opponents.length)
-      : estimateEquity(view, rand, effort);
-  const opponents = view.opponents.length;
-  if (level === 'easy') return { kind: 'act', action: decideEasy(hand, seat, legal, equity, opponents, rand) };
-  if (level === 'hard') return { kind: 'act', action: decideHard(hand, seat, legal, equity, ctx.players ?? {}, rand) };
-  return { kind: 'act', action: decide(hand, seat, legal, equity, opponents, rand) };
+  return view.drawsLeft > 0
+    ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, sims(botTuning.drawBetSims, botTuning.drawBetFinalSims), field).equity, field, view.opponents.length)
+    : estimateEquity(view, rand, EFFORT[level] ?? 1);
 }
 
 // ---------------------------------------------------------------- what the bot can see
 
-interface Situation {
+export interface Situation {
   spec: VariantSpec;
   mine: Card[];
   /** Community cards so far, one list per board. */
@@ -124,7 +227,7 @@ interface Situation {
   draws?: OpponentDraws[];
 }
 
-function situation(hand: HandState, seat: SeatIndex): Situation {
+export function situation(hand: HandState, seat: SeatIndex): Situation {
   const game = hand.input.game;
   const spec = getVariant(game.id);
   const me = hand.seats.find((x) => x.seat === seat)!;
@@ -147,6 +250,76 @@ function situation(hand: HandState, seat: SeatIndex): Situation {
     drawsLeft,
     drawsInGame: drawStreets.length,
   };
+}
+
+/** A hand as one seat sees it (seenBy); a coach tip takes nothing else. */
+declare const SEEN: unique symbol;
+export type Seen = HandState & { readonly [SEEN]: true };
+
+/**
+ * A copy of the hand holding only what the player in `seat` can see: their own
+ * cards, everyone's up cards, the boards and the betting. No deck, muck or
+ * seeds, and no other player's face-down card. It is built field by field,
+ * never spread, so a field added to HandState later stays out until someone
+ * adds it here on purpose.
+ */
+export function seenBy(hand: HandState, seat: SeatIndex): Seen {
+  const input = hand.input;
+  const out: HandState = {
+    input: {
+      handId: input.handId,
+      handNumber: input.handNumber,
+      game: input.game,
+      betting: input.betting,
+      stakes: { ...input.stakes },
+      maxSeats: input.maxSeats,
+      seats: input.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, stack: x.stack, away: x.away })),
+      button: input.button,
+      buttonDead: input.buttonDead,
+      posts: input.posts.map((x) => ({ seat: x.seat, kind: x.kind, amount: x.amount, live: x.live })),
+      deck: [],
+      reshuffleSeed: 0,
+      options: { ...input.options },
+      modifiers: [],
+    },
+    phase: hand.phase,
+    street: hand.street,
+    seats: hand.seats.map((x) => ({
+      seat: x.seat,
+      playerId: x.playerId,
+      startStack: x.startStack,
+      stack: x.stack,
+      cards: x.cards.map((c) => (x.seat === seat || c.up ? { card: c.card, up: c.up } : { card: HIDDEN_CARD, up: false })),
+      away: x.away,
+      folded: x.folded,
+      allIn: x.allIn,
+      bet: x.bet,
+      total: x.total,
+      hasActed: x.hasActed,
+      canRaise: x.canRaise,
+      lastAction: x.lastAction,
+      shown: x.seat === seat ? [...x.shown] : [],
+      ritVote: x.ritVote,
+    })),
+    deckPos: 0,
+    runs: hand.runs.map((run) => run.map((board) => [...board])),
+    muck: [],
+    toAct: hand.toAct,
+    currentBet: hand.currentBet,
+    lastFullRaise: hand.lastFullRaise,
+    raisesThisRound: hand.raisesThisRound,
+    runout: hand.runout,
+    showdown: hand.showdown,
+    awards: [],
+    // Where each card sat in the deck is for checking a revealed hand, not for playing one.
+    events: engine.visibleEvents(hand, { seat, seeAll: false }).map((e) => ('pos' in e ? withoutPos(e) : e)),
+  };
+  return out as Seen;
+}
+
+function withoutPos(e: HandEvent): HandEvent {
+  const { pos: _pos, ...rest } = e as HandEvent & { pos?: number[] };
+  return rest as HandEvent;
 }
 
 // ---------------------------------------------------------------- equity
@@ -302,7 +475,7 @@ function readHands(view: Situation, pool: Pool, opponents: Card[][], hands: Card
 
 // ---------------------------------------------------------------- Hard: what opponents' draws say
 
-type LowRule = 'deuce-to-seven' | 'badugi';
+export type LowRule = 'deuce-to-seven' | 'badugi';
 
 /** How low a card is in a lowball draw game (aces are high in 2-7, low in Badugi). */
 function lowRank(rule: LowRule, card: Card) {
@@ -324,7 +497,7 @@ function lowestFirst(rule: LowRule, cards: Card[]): Card[] {
 }
 
 /** The lowball rule of a draw game whose draws Hard can follow, or null. */
-function lowDrawRule(spec: VariantSpec): LowRule | null {
+export function lowDrawRule(spec: VariantSpec): LowRule | null {
   const low = spec.showdown.low;
   return low === 'deuce-to-seven' || low === 'badugi' ? low : null;
 }
@@ -437,13 +610,13 @@ function lower(a: number[], b: number[]) {
 }
 
 /** How many cards an opponent threw at each draw so far (null when the table stood pat for them while away), and how many draws they have left. */
-interface OpponentDraws {
+export interface OpponentDraws {
   done: (number | null)[];
   left: number;
 }
 
 /** Hard: each live opponent's draws so far. */
-function opponentDraws(hand: HandState, seat: SeatIndex, drawsInGame: number): OpponentDraws[] {
+export function opponentDraws(hand: HandState, seat: SeatIndex, drawsInGame: number): OpponentDraws[] {
   return hand.seats
     .filter((x) => x.seat !== seat && !x.folded)
     .map((x) => {
@@ -516,13 +689,71 @@ export function estimateEquity(view: Situation, rand: Rand, effort = 1): number 
   return sum / n;
 }
 
+/** How long and how hard estimateDetail deals out finishes. */
+export interface EquityTuning {
+  thinkMs: number;
+  minSims: number;
+  maxSims: number;
+}
+
+/**
+ * For coach tips: estimateEquity's loop at the tuning given, which also says
+ * how many finishes it dealt (n), against how many opponents (vs: a crowded
+ * deck can't deal everyone in), and how often it took the whole pot (scoop).
+ */
+export function estimateDetail(view: Situation, rand: Rand, tuning: EquityTuning): { equity: number; n: number; vs: number; scoop: number } {
+  const pool = new Pool(seenCards(view), rand);
+  const myMissing = Math.max(0, view.cardsPerPlayer - view.mine.length);
+  const opponents = view.opponents.slice(0, opponentsThatFit(view, pool.size, myMissing));
+  const start = performance.now();
+  let sum = 0;
+  let scoops = 0;
+  let n = 0;
+  while (n < tuning.maxSims) {
+    const spent = performance.now() - start;
+    if (n >= 1 && spent >= tuning.thinkMs * 3) break;
+    if (n >= tuning.minSims && spent >= tuning.thinkMs) break;
+    pool.reset();
+    const share = simulate(view, pool, [...view.mine, ...pool.deal(myMissing)], opponents);
+    sum += share;
+    if (share === 1) scoops++;
+    n++;
+  }
+  return { equity: sum / n, n, vs: opponents.length, scoop: scoops / n };
+}
+
+/**
+ * How hard a coach tip thinks. Apart from botTuning (which tests turn down):
+ * a tip is worked out once for a decision, when asked, so it deals out more.
+ * Equity stops by 120 ms, the random-hands comparison by 45 ms, and the ways
+ * to draw by drawMs (it is all on the event loop, so it holds up every table).
+ */
+export const coachTuning = {
+  equity: { thinkMs: 40, minSims: 80, maxSims: 1600 },
+  vsRandom: { thinkMs: 15, minSims: 40, maxSims: 600 },
+  /** Deals for each way to draw, then for the best few. */
+  draw: { screen: 40, final: 240 },
+  /** The same, sizing up the hand for a bet with draws to come. */
+  drawBet: { screen: 24, final: 96 },
+  /** The comparison against hands given no credit for their betting only runs when the main one took less than this. */
+  vsRandomUnderMs: 60,
+  /** Weighing the ways to draw stops dealing after this long, with fewer deals and so a rougher answer. */
+  drawMs: 100,
+};
+
+/** Deals for each way to draw (screen), and for the best few (final). */
+export interface DrawSims {
+  screen: number;
+  final: number;
+}
+
 /** Drawing is tried against at most this many opponents (and so is Normal's betting with draws to come), to keep it quick. */
 const DRAW_OPPONENTS = 2;
 /** Ways of drawing looked at again more closely. */
 const DRAW_FINALISTS = 4;
 
 /** Every live opponent, if the deck can deal them all out along with every draw the bot has left. */
-function drawFieldSize(view: Situation): number {
+export function drawFieldSize(view: Situation): number {
   return opponentsThatFit(view, freshDeck().length - seenCards(view).length, view.drawsLeft * view.mine.length);
 }
 
@@ -562,32 +793,45 @@ function scaleToField(equity: number, from: number, to: number) {
 /**
  * Draw games: tries every allowed set of cards to throw away with a few
  * deals (the same ones for each, so they compare fairly), then looks harder
- * at the best few with more deals and keeps the best.
+ * at the best few with more deals and keeps the best. Given a time budget (a
+ * coach tip), it stops dealing once the screen has had half of it and the
+ * finalists the rest, after at least one deal each, and says how many final
+ * deals it made; without one it always makes them all.
  */
 export function bestDraw(
   view: Situation,
   maxDiscard: number,
   rand: Rand,
-  sims: { screen: number; final: number } = { screen: botTuning.drawSims, final: botTuning.drawFinalSims },
+  sims: DrawSims = { screen: botTuning.drawSims, final: botTuning.drawFinalSims },
   opponents = DRAW_OPPONENTS,
-): { discard: number[]; equity: number } {
+  budgetMs?: number,
+): { discard: number[]; equity: number; finalists: { discard: number[]; equity: number }[]; deals: number } {
+  const started = performance.now();
   const cards = view.mine.length;
   const field = drawField(view, opponents);
   const seeds = (n: number) => Array.from({ length: n }, () => Math.floor(rand() * 2 ** 31));
-  const equityOf = (discard: number[], deals: number[]) => {
+  const dealOnce = (discard: number[], seed: number) => {
     const kept = view.mine.filter((_, i) => !discard.includes(i));
-    let sum = 0;
-    for (const seed of deals) {
-      const pool = new Pool(seenCards(view), seededRand(seed));
-      // Later draws are a few more tries at the same cards.
-      let mine = [...kept, ...pool.deal(discard.length)];
-      for (let i = 1; i < view.drawsLeft && discard.length; i++) {
-        const other = [...kept, ...pool.deal(discard.length)];
-        if (other.length === mine.length && potShare(view.spec, [other, mine], []) > 0.5) mine = other;
-      }
-      sum += simulate(field, pool, mine, field.opponents);
+    const pool = new Pool(seenCards(view), seededRand(seed));
+    // Later draws are a few more tries at the same cards.
+    let mine = [...kept, ...pool.deal(discard.length)];
+    for (let i = 1; i < view.drawsLeft && discard.length; i++) {
+      const other = [...kept, ...pool.deal(discard.length)];
+      if (other.length === mine.length && potShare(view.spec, [other, mine], []) > 0.5) mine = other;
     }
-    return sum / deals.length;
+    return simulate(field, pool, mine, field.opponents);
+  };
+  // Each deal is played for every option before the next, so options always share the same deals however many fit the
+  // budget. Each option's sum still runs in deal order, so with no budget the answer is what one option at a time gave.
+  const equities = (options: number[][], deals: number[], by: number) => {
+    const sums = options.map(() => 0);
+    let n = 0;
+    for (const seed of deals) {
+      if (n > 0 && performance.now() >= by) break;
+      options.forEach((discard, k) => (sums[k] += dealOnce(discard, seed)));
+      n++;
+    }
+    return { shares: sums.map((sum) => sum / n), n };
   };
   // Hard in lowball games only weighs keeping its best few cards (keepOptions). That is quicker, and played better than
   // weighing every way to draw: the more ways it compares on a few deals each, the likelier a lucky-looking bad one wins.
@@ -598,20 +842,27 @@ export function bestDraw(
     if (discard.length <= maxDiscard) options.push(discard);
   }
   const screen = seeds(sims.screen);
+  const screened = equities(options, screen, budgetMs === undefined ? Infinity : started + budgetMs / 2);
   // A stable sort keeps the smaller draw (standing pat comes first) on ties.
-  const ranked = options.map((discard) => ({ discard, equity: equityOf(discard, screen) })).sort((a, b) => b.equity - a.equity);
+  const ranked = options.map((discard, k) => ({ discard, equity: screened.shares[k] })).sort((a, b) => b.equity - a.equity);
   const final = seeds(sims.final);
+  const picked = ranked.slice(0, DRAW_FINALISTS).map(({ discard }) => discard);
+  const finals = equities(picked, final, budgetMs === undefined ? Infinity : started + budgetMs);
+  const finalists = picked.map((discard, k) => ({ discard, equity: finals.shares[k] }));
   let best = { discard: [] as number[], equity: -1 };
-  for (const { discard } of ranked.slice(0, DRAW_FINALISTS)) {
-    const equity = equityOf(discard, final);
-    if (equity > best.equity + 1e-9) best = { discard, equity };
-  }
-  return best;
+  for (const f of finalists) if (f.equity > best.equity + 1e-9) best = f;
+  // The one it picked first, then the others it looked at closely, best first.
+  return { ...best, finalists: [best, ...finalists.filter((f) => f !== best).sort((a, b) => b.equity - a.equity)], deals: finals.n };
 }
 
 // ---------------------------------------------------------------- betting
 
-function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, opponents: number, rand: Rand): Action {
+/**
+ * Normal: bets good hands, bluffs now and then heads-up after the first round,
+ * and calls when its chance beats the pot odds by a margin. Coach tips use it
+ * too (normalDecide), with dice that never bluff.
+ */
+function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, opponents: number, dice: Dice, why: MoveWhy): Action {
   const me = hand.seats.find((x) => x.seat === seat)!;
   const pot = hand.seats.reduce((n, x) => n + x.total, 0);
   const fair = 1 / (opponents + 1);
@@ -625,29 +876,44 @@ function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: n
 
   if (legal.canBringIn) {
     // Stud: complete with a strong start, otherwise bring it in for the minimum.
-    return legal.canRaise && strength >= 1.5 ? raise(0) : { type: 'bring-in' };
+    const complete = legal.canRaise && strength >= 1.5;
+    why.rule = complete ? 'complete' : 'bring-in';
+    return complete ? raise(0) : { type: 'bring-in' };
   }
   // Keep re-raising wars short: each raise past the third needs a stronger hand, and past the seventh none is strong enough
   // (heads-up fixed limit has no cap, and two strong hands would otherwise raise each other all in a bet at a time).
   const raiseBar = hand.raisesThisRound < 3 ? 0 : 0.85 + 0.04 * (hand.raisesThisRound - 3);
   const mayRaise = legal.canRaise && equity >= raiseBar;
+  why.capped = legal.canRaise && !mayRaise;
 
   if (legal.canCheck) {
     const value = strength >= 1.45 || equity >= 0.62;
-    const bluff = !firstRound && opponents === 1 && rand() < 0.07;
-    if (mayRaise && (value || bluff)) return raise(0.5 + 0.25 * rand());
+    const bluff = !firstRound && opponents === 1 && dice.roll('bluff', 0.07);
+    if (mayRaise && (value || bluff)) {
+      why.rule = value ? 'value' : 'bluff';
+      return raise(dice.between('size', 0.5, 0.25));
+    }
+    why.rule = 'check';
     return { type: 'check' };
   }
 
   const odds = legal.callAmount / (pot + legal.callAmount);
   const margin = legal.callAmount >= me.stack * 0.5 ? 0.08 : 0.03;
-  if (mayRaise && (equity >= 0.8 || ((equity >= 0.7 || strength >= 2.2) && rand() < 0.8))) return raise(0.75);
+  why.cost = odds;
+  why.need = odds + margin;
+  why.big = legal.callAmount >= me.stack * 0.5;
+  if (mayRaise && (equity >= 0.8 || ((equity >= 0.7 || strength >= 2.2) && dice.roll('raise-band', 0.8)))) {
+    why.rule = 'raise';
+    return raise(0.75);
+  }
+  why.rule = equity >= odds + margin ? 'call' : 'fold';
   if (equity >= odds + margin) return { type: 'call' };
   return { type: 'fold' };
 }
+export { decide as normalDecide };
 
 /** Easy: calls small bets with almost anything, bets only good hands and small, raises only the best, and never bluffs. */
-function decideEasy(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, opponents: number, rand: Rand): Action {
+function decideEasy(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, opponents: number, dice: Dice, why: MoveWhy): Action {
   const me = hand.seats.find((x) => x.seat === seat)!;
   const pot = hand.seats.reduce((n, x) => n + x.total, 0);
   const strength = equity * (opponents + 1);
@@ -655,16 +921,33 @@ function decideEasy(hand: HandState, seat: SeatIndex, legal: LegalActions, equit
     const to = sizeTo(legal, hand.currentBet + fraction * (pot + legal.callAmount));
     return legal.raiseKind === 'bet' ? { type: 'bet', to } : { type: 'raise', to };
   };
-  if (legal.canBringIn) return legal.canRaise && strength >= 2 ? raise(0) : { type: 'bring-in' };
+  if (legal.canBringIn) {
+    const complete = legal.canRaise && strength >= 2;
+    why.rule = complete ? 'complete' : 'bring-in';
+    return complete ? raise(0) : { type: 'bring-in' };
+  }
   const mayRaise = legal.canRaise && hand.raisesThisRound < 3;
+  why.capped = legal.canRaise && !mayRaise;
   if (legal.canCheck) {
-    if (mayRaise && (strength >= 1.7 || equity >= 0.72) && rand() < 0.75) return raise(0.3 + 0.2 * rand());
+    if (mayRaise && (strength >= 1.7 || equity >= 0.72) && dice.roll('value', 0.75)) {
+      why.rule = 'value';
+      return raise(dice.between('size', 0.3, 0.2));
+    }
+    why.rule = 'check';
     return { type: 'check' };
   }
-  if (mayRaise && equity >= 0.85 && rand() < 0.6) return raise(0.5);
   const odds = legal.callAmount / (pot + legal.callAmount);
+  why.cost = odds;
+  if (mayRaise && equity >= 0.85 && dice.roll('raise-band', 0.6)) {
+    why.rule = 'raise';
+    return raise(0.5);
+  }
   // Curious about small bets; careful with its stack.
   const slack = legal.callAmount >= me.stack * 0.5 ? 0 : legal.callAmount <= pot * 0.6 ? 0.1 : 0.04;
+  why.need = odds - slack;
+  why.big = legal.callAmount >= me.stack * 0.5;
+  // A call it makes only thanks to the slack is a loose one.
+  why.rule = equity >= odds - slack ? (equity >= odds ? 'call' : 'call-loose') : 'fold';
   if (equity >= odds - slack) return { type: 'call' };
   return { type: 'fold' };
 }
@@ -731,7 +1014,7 @@ function styleOf(read: PlayerRead | undefined) {
  * after the first round a little. A player who bets and raises most of the
  * time says less. (How many cards they draw is followed by replayDraws.)
  */
-function handReads(hand: HandState, seat: SeatIndex, players: Record<PlayerId, PlayerRead>): number[] {
+export function handReads(hand: HandState, seat: SeatIndex, players: Record<PlayerId, PlayerRead>): number[] {
   const live = hand.seats.filter((x) => x.seat !== seat && !x.folded);
   return live.map((x) => {
     let shown = 0;
@@ -758,7 +1041,7 @@ function actsLast(hand: HandState, seat: SeatIndex): boolean {
 }
 
 /** Hard: the odds as Normal plays them, against what opponents have shown, adjusted to position and to how they play. */
-function decideHard(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, players: Record<PlayerId, PlayerRead>, rand: Rand): Action {
+function decideHard(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, players: Record<PlayerId, PlayerRead>, dice: Dice, why: MoveWhy): Action {
   const me = hand.seats.find((x) => x.seat === seat)!;
   const live: HandSeat[] = hand.seats.filter((x) => x.seat !== seat && !x.folded);
   const opponents = live.length;
@@ -767,27 +1050,41 @@ function decideHard(hand: HandState, seat: SeatIndex, legal: LegalActions, equit
   const lastRound = hand.street === hand.input.game.streets.length - 1;
   const inPosition = actsLast(hand, seat);
   // How often these opponents fold to a bet: the most stubborn one decides.
-  const foldRate = Math.min(1, ...live.map((x) => styleOf(players[x.playerId]).foldRate));
+  const foldRates = live.map((x) => styleOf(players[x.playerId]).foldRate);
+  const foldRate = Math.min(1, ...foldRates);
+  why.inPosition = inPosition;
+  why.lastRound = lastRound;
+  why.foldRate = foldRate;
+  why.foldFrom = live[foldRates.indexOf(foldRate)]?.playerId;
   const raise = (fraction: number): Action => {
     const to = sizeTo(legal, hand.currentBet + fraction * (pot + legal.callAmount));
     return legal.raiseKind === 'bet' ? { type: 'bet', to } : { type: 'raise', to };
   };
 
   if (legal.canBringIn) {
-    const steal = opponents <= 2 && rand() < Math.max(0, foldRate - 0.35);
+    const steal = opponents <= 2 && dice.roll('steal', Math.max(0, foldRate - 0.35));
+    why.rule = legal.canRaise && strength >= 1.35 ? 'complete' : legal.canRaise && steal ? 'steal' : 'bring-in';
     return legal.canRaise && (strength >= 1.35 || steal) ? raise(0) : { type: 'bring-in' };
   }
   const raiseBar = hand.raisesThisRound < 3 ? 0 : 0.85 + 0.04 * (hand.raisesThisRound - 3);
   const mayRaise = legal.canRaise && equity >= raiseBar;
+  why.capped = legal.canRaise && !mayRaise;
 
   if (legal.canCheck) {
     // Bets thinner against players who call, and bigger with the best hands.
     const value = opponents === 1 ? equity >= Math.max(0.54, Math.min(0.64, 0.6 - 0.15 * (0.35 - foldRate))) : strength >= 1.35 || equity >= 0.6;
-    if (mayRaise && value) return raise(equity >= 0.8 ? 0.75 + 0.25 * rand() : 0.5 + 0.25 * rand());
+    if (mayRaise && value) {
+      why.rule = 'value';
+      return raise(equity >= 0.8 ? dice.between('size', 0.75, 0.25) : dice.between('size', 0.5, 0.25));
+    }
     // Bluffs (and bets its draws) when folds pay for it: more in position, rarely into two players, never more.
     let bluff = Math.max(0, Math.min(0.35, (foldRate - 0.33) * 1.5)) * (inPosition ? 1.3 : 0.7) * (opponents === 1 ? 1 : opponents === 2 ? 0.35 : 0);
     if (!lastRound) bluff *= 1 + equity;
-    if (mayRaise && rand() < Math.min(0.4, bluff)) return raise(0.55 + 0.2 * rand());
+    if (mayRaise && dice.roll('bluff', Math.min(0.4, bluff))) {
+      why.rule = 'bluff';
+      return raise(dice.between('size', 0.55, 0.2));
+    }
+    why.rule = 'check';
     return { type: 'check' };
   }
 
@@ -795,14 +1092,24 @@ function decideHard(hand: HandState, seat: SeatIndex, legal: LegalActions, equit
   // Calls a little wider in position with cards to come, a little tighter out of it.
   let margin = legal.callAmount >= me.stack * 0.5 ? 0.05 : 0.015;
   if (!lastRound) margin += inPosition ? -0.02 : 0.01;
-  if (mayRaise && (equity >= 0.78 || ((equity >= 0.66 || strength >= 2) && rand() < 0.7))) return raise(equity >= 0.85 ? 0.9 : 0.7);
-  if (mayRaise && !lastRound && opponents === 1 && equity >= 0.35 && rand() < Math.max(0, foldRate - 0.4) * 0.5) return raise(0.7);
+  why.cost = odds;
+  why.need = odds + margin;
+  why.big = legal.callAmount >= me.stack * 0.5;
+  if (mayRaise && (equity >= 0.78 || ((equity >= 0.66 || strength >= 2) && dice.roll('raise-band', 0.7)))) {
+    why.rule = 'raise';
+    return raise(equity >= 0.85 ? 0.9 : 0.7);
+  }
+  if (mayRaise && !lastRound && opponents === 1 && equity >= 0.35 && dice.roll('semi-bluff', Math.max(0, foldRate - 0.4) * 0.5)) {
+    why.rule = 'semi-bluff';
+    return raise(0.7);
+  }
+  why.rule = equity >= odds + margin ? 'call' : 'fold';
   if (equity >= odds + margin) return { type: 'call' };
   return { type: 'fold' };
 }
 
 /** A legal total for this round near `target`: at least the minimum, at most the maximum, all in when nearly there. */
-function sizeTo(legal: LegalActions, target: number): number {
+export function sizeTo(legal: LegalActions, target: number): number {
   if (legal.maxTo <= legal.minTo) return legal.maxTo;
   const to = Math.max(legal.minTo, Math.min(legal.maxTo, Math.round(target)));
   return to > legal.maxTo * 0.85 ? legal.maxTo : to;

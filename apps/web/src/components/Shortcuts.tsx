@@ -7,6 +7,8 @@ const KEYS: [string, string][] = [
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
   ['A', 'Call any (before your turn)'],
   ['B', 'Show amounts in chips or big blinds'],
+  ['T', 'Tip on your turn (hands with only bots)'],
+  ['W', 'In the replayer: why the bots played'],
   ['Enter', 'Type in the chat (Esc to leave it)'],
   ['?', 'Show this list'],
 ];

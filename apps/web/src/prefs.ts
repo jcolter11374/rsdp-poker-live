@@ -32,6 +32,10 @@ export interface Prefs {
   wakeLock: boolean;
   /** Table motion: thrown cards, counting stacks, sparkles. Off keeps the look and drops the movement. */
   tableMotion: boolean;
+  /** The Tip button on your turn, in hands where everyone else is a practice bot. */
+  tips: boolean;
+  /** After such a hand, why each bot played as it did (the Hands tab, the replayer). */
+  botReasons: boolean;
 }
 
 export const FELT_COLORS: Record<Felt, { name: string; light: string; felt: string; edge: string }> = {
@@ -59,6 +63,8 @@ const DEFAULTS: Prefs = {
   hiddenAvatars: [],
   wakeLock: true,
   tableMotion: true,
+  tips: true,
+  botReasons: true,
 };
 const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
@@ -78,6 +84,8 @@ function load(): Prefs {
       hiddenAvatars: Array.isArray(raw.hiddenAvatars) ? raw.hiddenAvatars.filter((x: unknown) => typeof x === 'string').slice(0, 500) : [],
       wakeLock: flag(raw.wakeLock, DEFAULTS.wakeLock),
       tableMotion: flag(raw.tableMotion, DEFAULTS.tableMotion),
+      tips: flag(raw.tips, DEFAULTS.tips),
+      botReasons: flag(raw.botReasons, DEFAULTS.botReasons),
     };
   } catch {
     return DEFAULTS;

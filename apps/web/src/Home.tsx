@@ -178,7 +178,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
             <TournamentList />
             <section className="card-panel home-practice" aria-label="Practice">
               <h2>Practice first</h2>
-              <p className="muted">New to a game? Play the game picked under Start a cash game against practice bots, with play chips. The cards are dealt straight away.</p>
+              <p className="muted">New to a game? Play the game picked under Start a cash game against practice bots, with play chips. The cards are dealt straight away. Tap Tip on your turn for a hint.</p>
               {error && errorFor === 'practice' && <p className="error">{error}</p>}
               <div className="row">
                 <label>

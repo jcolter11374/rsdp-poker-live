@@ -1,6 +1,6 @@
 import type { Award, HandEvent } from '@rsdp/engine/core';
 import { getVariant } from '@rsdp/engine/variants';
-import type { HandRecordView, HandView, SeatView, TableView, WireCard } from '@rsdp/engine/wire';
+import type { BotNote, HandRecordView, HandView, SeatView, TableView, WireCard } from '@rsdp/engine/wire';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { eventLines, type Fmt } from './format';
 
@@ -18,6 +18,8 @@ export interface Frame {
   caption: string;
   /** How many of the hand's events this frame has played. */
   upTo: number;
+  /** The bots' reasons for the moves this frame plays (hands that came with them). */
+  why: BotNote[];
 }
 
 interface ReplaySeat {
@@ -69,6 +71,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     done: false,
     caption: '',
     upTo: 0,
+    why: [],
   };
   const lines = (upTo: number) => eventLines(hand.events.slice(0, upTo), (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat);
   const gather = () => {
@@ -100,7 +103,15 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     }
   });
   // Nothing to see in a frame that changed nothing visible and says nothing.
-  return frames.filter((fr, i) => i === 0 || fr.caption || fr.done);
+  const shown = frames.filter((fr, i) => i === 0 || fr.caption || fr.done);
+  // Each reason goes on the frame that plays its move, or the next one shown if that one was left out.
+  const notes = [...(hand.botNotes ?? [])].sort((a, b) => a.seq - b.seq);
+  let from = 0;
+  for (const fr of shown) {
+    fr.why = notes.filter((n) => n.seq >= from && n.seq < fr.upTo);
+    from = fr.upTo;
+  }
+  return shown;
 }
 
 function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null) {
@@ -213,11 +224,15 @@ const isSeat = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v a
 
 /**
  * Whether a hand read from a file has the shape the replayer draws from.
- * Files are hand-editable, so this checks before anything renders.
+ * Files are hand-editable, so this checks before anything renders (and
+ * drops any bots' reasons, which a download never has).
  */
 export function isReplayable(h: unknown, fmt: Fmt): h is HandRecordView {
   const x = h as HandRecordView;
   if (!x || typeof x !== 'object' || !isNum(x.handNumber) || !isNum(x.startedAt) || typeof x.gameName !== 'string') return false;
+  // The bots' reasons are only ever sent to the one person in the hand, and the download leaves them out, so any in a
+  // file were written by someone else: never show them as the bots' own.
+  delete x.botNotes;
   if (!x.stakes || typeof x.stakes !== 'object' || !Object.values(x.stakes).every((v) => isNum(v) || typeof v === 'boolean' || typeof v === 'string')) return false;
   if (!isSeat(x.button) || !Array.isArray(x.seats) || !x.seats.length || x.seats.length > 10) return false;
   if (!x.seats.every((s) => s && isSeat(s.seat) && typeof s.playerId === 'string' && typeof s.name === 'string' && isNum(s.stack))) return false;
