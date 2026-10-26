@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
-import { verifyHand, type CardEvent } from '@rsdp/engine';
+import { useEffect, useMemo, useState } from 'react';
+import { tableRef, verifyHand, type AuditEntry, type CardEvent } from '@rsdp/engine';
+import { handInRecord, tableRecord } from '../audit';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
-import { liveRecordFor, mySeedFor, seedProblem, shownAs } from '../fair';
+import { liveRecordFor, mySeedFor, seedProblem } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
@@ -11,6 +12,20 @@ const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', h
 /** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
 export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId: string | null; tableId?: string }) {
   const fair = hand.fair;
+  const revealed = !!fair?.events;
+  // The public record of this table, to check the hand against once it is revealed.
+  const [record, setRecord] = useState<AuditEntry[] | 'failed' | null>(null);
+  useEffect(() => {
+    if (!tableId || !revealed) return;
+    let live = true;
+    tableRecord(tableId).then(
+      (entries) => live && setRecord(entries),
+      () => live && setRecord('failed'),
+    );
+    return () => {
+      live = false;
+    };
+  }, [tableId, revealed, hand.handNumber]);
   const report = useMemo(() => {
     if (!fair) return null;
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;
@@ -19,17 +34,21 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     const extra: { label: string; ok: boolean; detail: string }[] = [];
     const problem = myId ? seedProblem(fair.commit, fair.clientSeeds, myId, seat !== undefined, live?.at ?? null) : null;
     const mine = mySeedFor(fair.commit);
-    if (problem || (mine && seat !== undefined)) extra.push({ label: 'Your browser saw nothing wrong with the seeds or commitments', ok: !problem, detail: problem ?? `your seed ${mine!}` });
-    // The record must be the hand this browser watched being dealt, under the commitment it was shown with.
-    const shown = tableId ? shownAs(tableId, hand.handNumber) : null;
-    if (shown) {
-      const same = shown === fair.commit;
-      extra.push({ label: 'It was dealt under the commitment shown at the table', ok: same, detail: same ? `${fair.commit.slice(0, 12)}…` : `the table showed hand #${hand.handNumber} under ${shown === 'none' ? 'no commitment' : `${shown.slice(0, 12)}…`}, but its record says ${fair.commit.slice(0, 12)}… (an honest server only does that if it crashed before saving that deal and dealt that hand number again)` });
-    }
+    if (problem || (mine && seat !== undefined)) extra.push({ label: 'The seed under your name is the one your browser sent', ok: !problem, detail: problem ?? mine! });
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };
 
-    const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, button: hand.button, seats: hand.seats.map((s) => s.seat), events: fair.events as CardEvent[] };
+    const proof = {
+      commit: fair.commit,
+      serverSeed: fair.serverSeed,
+      clientSeeds: fair.clientSeeds.map((c) => c.seed),
+      handSeed: fair.handSeed,
+      button: hand.button,
+      seats: hand.seats.map((s) => s.seat),
+      events: fair.events as CardEvent[],
+      // For scripts/verify-audit.mjs: what the public record's fingerprint of this hand covers.
+      ...(tableId ? { record: { handId: fair.handId, table: tableRef(tableId), handNumber: hand.handNumber, seats: hand.seats.map((s) => ({ seat: s.seat, playerId: s.playerId, stack: s.stack })) } } : {}),
+    };
     const check = verifyHand(proof);
     // The full record must be the one this hand's history shows.
     const asSeen = visibleEvents({ events: fair.events } as HandState, { seat: seat ?? null, seeAll: false });
@@ -50,8 +69,13 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
       for (const [s, cards] of Object.entries(live.cards)) for (const c of cards) if (!dealt.get(+s)?.has(c)) wrong.push(`seat ${+s + 1} had ${c}`);
       extra.push({ label: 'It matches what you saw at the table', ok: !wrong.length, detail: wrong.length ? `the record disagrees: ${wrong.join('; ')}` : 'button, seats, board and every card you saw' });
     }
+    // Left out when the hand isn't from a table here, while it is looked up, or when the record can't be reached.
+    if (tableId && record && record !== 'failed') {
+      const inRecord = handInRecord(tableId, hand, record);
+      if (inRecord.ok !== null) extra.push({ label: 'It is in the public record, unchanged', ok: inRecord.ok, detail: inRecord.detail });
+    }
     return { check, extra, missing, proof };
-  }, [fair, hand, myId, tableId]);
+  }, [fair, hand, myId, tableId, record]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
   const checks = [...(check?.checks ?? []), ...extra];
