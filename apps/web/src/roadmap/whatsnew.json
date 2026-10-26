@@ -3,9 +3,10 @@
     {
       "id": "2026-10-26-f",
       "date": "2026-10-26",
-      "title": "Easy, Normal and Hard bots",
+      "title": "Bot levels, better pre-moves and a swapped-deck watch",
       "items": [
         { "title": "Pick how good your practice bot is", "detail": "Choose Easy, Normal or Hard when you add a bot or start a practice game, and change it any time from the bot's popup. Easy calls a lot, bets small and never bluffs, which makes it good for learning a new game. Hard reads what your bets mean, learns how you play, uses position and bluffs. In our tests Hard beat Normal, and Normal beat Easy, in every game." },
+        { "title": "Pre-click your move, and change your mind", "detail": "Before your turn, tap Check / Fold, Check, Call or Call any and it plays the moment your turn comes. Tap it again to cancel. If someone bets first, Check / Fold turns into Fold, and a Check or a Call of an amount that has since been raised clears itself so you decide again. On a computer the keys work too: F, K, C and A tick a pre-move, and pressing the key again unticks it.", "suggestedBy": "John" },
         { "title": "Your browser watches for a swapped deck", "detail": "Each hand's deck is sealed before the deal. Your browser now also warns you if the table swaps the sealed deck for the next hand for a different one without dealing it, which is how a dishonest server would hunt for a deck it likes. The Fairness page explains how it works and what it can't catch." }
       ]
     },
