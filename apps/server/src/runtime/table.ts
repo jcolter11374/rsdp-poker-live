@@ -26,6 +26,8 @@ import {
   mergePatches,
   parseSettings,
   SettingsError,
+  settingsNotices,
+  spectatorsSeeCards,
   type SettingsPatch,
   type TableSettings,
 } from '@rsdp/engine/settings';
@@ -166,6 +168,7 @@ export class TableRuntime {
       log: [],
       history: [],
       realGame: false,
+      seeAll: spectatorsSeeCards(settings) ? { since: 0, at: clock.now() } : null,
     };
     return new TableRuntime(state, deps);
   }
@@ -265,8 +268,10 @@ export class TableRuntime {
 
   // ---------------------------------------------------------------- seating
 
-  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number }) {
+  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number; consent?: boolean }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
+    // Nobody sits at a table where spectators see their cards without being told and agreeing.
+    if (spectatorsSeeCards(this.settings) && !input.consent) throw new ActionError('spectators at this table see every hole card: agree to that to sit down');
     const name = cleanName(input.name);
     let { seat } = input;
     const { stack } = input;
@@ -913,17 +918,27 @@ export class TableRuntime {
     const s = this.state;
     const merged = s.pendingSettings ? mergePatches(s.pendingSettings, patch) : patch;
     let result;
+    let target: TableSettings;
     try {
       // Validate the end result now so the host sees errors immediately.
-      const target = applyAtNextHand(s.settings, merged).settings;
+      target = applyAtNextHand(s.settings, merged).settings;
       this.checkSettings(target);
       result = applyImmediate(s.settings, merged);
     } catch (e) {
       if (e instanceof SettingsError) throw new ActionError(e.issues.map((i) => `${i.path}: ${i.message}`).join('; '));
       throw e;
     }
+    // A hand is played under the card visibility it was dealt with: nobody can open it up partway through.
+    if (!spectatorsSeeCards(s.settings) && spectatorsSeeCards(target) && this.handLive()) {
+      throw new ActionError('spectators can only be shown every hole card between hands; try again when this hand ends');
+    }
+    for (const n of settingsNotices(s.settings, target, this.nameOf(by), this.handLive())) {
+      this.log(n.text);
+      if (n.loud) this.dealerSays(n.text);
+    }
     s.settings = result.settings;
     s.pendingSettings = result.deferred;
+    this.trackSeeAll();
     const now = this.clock.now();
     if (result.diff.length) s.settingsLog.push({ at: now, by, when: 'now', changes: result.diff });
     if (result.deferred) {
@@ -972,6 +987,7 @@ export class TableRuntime {
     const before = s.settings;
     s.settings = applyAtNextHand(s.settings, s.pendingSettings).settings;
     s.pendingSettings = null;
+    this.trackSeeAll();
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
@@ -2274,6 +2290,20 @@ export class TableRuntime {
   private clearTimer(key: TimerKey) {
     if (this.timers[key] !== null) this.clock.clearTimeout(this.timers[key]);
     this.timers[key] = null;
+  }
+
+  /** Notes when spectators start or stop seeing every card; only hands dealt from then on are shown to them. */
+  private trackSeeAll() {
+    const s = this.state;
+    const on = spectatorsSeeCards(s.settings);
+    if (on && !s.seeAll) s.seeAll = { since: s.handNumber + 1, at: this.clock.now() };
+    else if (!on && s.seeAll) s.seeAll = null;
+  }
+
+  /** A chat line from the dealer, for things everyone at the table must see. */
+  private dealerSays(text: string) {
+    this.state.chat.push({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+    if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
   }
 
   private log(text: string) {

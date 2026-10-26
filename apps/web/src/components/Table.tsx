@@ -277,7 +277,7 @@ export function Table({
   return (
     <div
       ref={felt}
-      className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn'].filter(Boolean).join(' ')}
+      className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}) } as CSSProperties}
     >
       <div className="felt-brand">

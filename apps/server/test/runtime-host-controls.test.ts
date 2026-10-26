@@ -23,7 +23,7 @@ function table(patch: (s: TableSettings) => void = () => {}) {
 
 /** Fills seats 0..n-1 with the first n people. */
 function fill(rt: TableRuntime, n: number, stack = 200) {
-  PEOPLE.slice(0, n).forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack }));
+  PEOPLE.slice(0, n).forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack, consent: true }));
 }
 
 const seatOf = (rt: TableRuntime, id: string) => rt.seatOf(id)?.seat ?? null;
@@ -291,6 +291,83 @@ describe('spectators', () => {
     const player = tableView(rt, 'a', clock.now());
     expect(player.spectator).toBeNull();
     expect(player.seats.filter((s) => s && s.playerId !== 'a').every((s) => s!.cards.every((c) => c.card === '??'))).toBe(true);
+  });
+
+  const hidden = (v: ReturnType<typeof tableView>) => v.seats.filter(Boolean).every((x) => x!.cards.every((c) => c.card === '??'));
+  const faceUp = (v: ReturnType<typeof tableView>) => v.seats.filter((x) => x?.inHand).every((x) => x!.cards.length > 0 && x!.cards.every((c) => c.card !== '??'));
+  const nextHand = (rt: TableRuntime, clock: FakeClock) => {
+    const n = rt.state.handNumber;
+    for (let i = 0; i < 200 && rt.state.handNumber === n; i++) clock.advance(250);
+    expect(rt.state.handNumber).toBe(n + 1);
+  };
+
+  it('need everyone sitting down to agree to it', () => {
+    const { rt } = table((s) => {
+      s.spectators.seeAllCards = true;
+    });
+    expect(() => rt.requestSeat('a', { seat: 0, name: 'A', stack: 200 })).toThrow(/agree/);
+    rt.requestSeat('a', { seat: 0, name: 'A', stack: 200, consent: true });
+    expect(rt.seatOf('a')).not.toBeNull();
+  });
+
+  it('can only be turned on between hands, is announced, and only shows hands dealt after', () => {
+    const { rt, clock } = table();
+    fill(rt, 3);
+    rt.start('host');
+    expect(() => rt.updateSettings('host', { spectators: { seeAllCards: true } })).toThrow(/between hands/);
+    // Allowing watching again can't open up the hand either.
+    rt.updateSettings('host', { spectators: { allowed: false } });
+    rt.state.settings.spectators.seeAllCards = true;
+    expect(() => rt.updateSettings('host', { spectators: { allowed: true } })).toThrow(/between hands/);
+    rt.state.settings.spectators.seeAllCards = false;
+    rt.updateSettings('host', { spectators: { allowed: true } });
+    expect(tableView(rt, 'a', clock.now()).cardsWatched).toBeNull();
+
+    foldOut(rt);
+    rt.updateSettings('host', { spectators: { seeAllCards: true, delaySeconds: 120 } });
+    expect(rt.state.log.at(-1)!.text).toMatch(/turned on spectators seeing hole cards.*2 minutes behind the table/);
+    expect(rt.state.chat.at(-1)).toMatchObject({ playerId: null, name: 'Dealer' });
+    expect(rt.state.chat.at(-1)!.text).toMatch(/every player's cards/);
+    const player = tableView(rt, 'a', clock.now(), null, [{ playerId: 'e', name: 'E' }, { playerId: 'host', name: 'H' }]);
+    // The host doesn't count: staff never see the cards.
+    expect(player.cardsWatched).toEqual({ delaySeconds: 120, at: clock.now(), watchers: 1 });
+    // The hand that just ended was dealt before: its cards, mucked ones too, stay hidden.
+    expect(hidden(tableView(rt, 'e', clock.now()))).toBe(true);
+    nextHand(rt, clock);
+    expect(faceUp(tableView(rt, 'e', clock.now()))).toBe(true);
+  });
+
+  it('can be turned off in the middle of a hand, at once', () => {
+    const { rt, clock } = table((s) => {
+      s.spectators.seeAllCards = true;
+    });
+    fill(rt, 3);
+    rt.start('host');
+    expect(faceUp(tableView(rt, 'e', clock.now()))).toBe(true);
+    rt.updateSettings('host', { spectators: { seeAllCards: false } });
+    expect(hidden(tableView(rt, 'e', clock.now()))).toBe(true);
+    expect(tableView(rt, 'a', clock.now()).cardsWatched).toBeNull();
+    expect(rt.state.chat.at(-1)!.text).toMatch(/turned off spectators seeing hole cards/);
+  });
+
+  it('tells the table about every change to what people can see', () => {
+    const { rt } = table((s) => {
+      s.spectators.seeAllCards = true;
+      s.spectators.delaySeconds = 300;
+      s.chat.guestChat = false;
+      s.play.rabbitHunt = true;
+    });
+    fill(rt, 3);
+    rt.start('host');
+    const chats = rt.state.chat.length;
+    rt.updateSettings('host', { spectators: { delaySeconds: 30 }, chat: { guestChat: true }, play: { rabbitHunt: false }, stakes: { bigBlind: 4 } });
+    const log = rt.state.log.map((l) => l.text);
+    expect(log).toContain('⚠️ HOST set spectators to watch 30 seconds behind the table from the next hand (it was 5 minutes behind). They see every hole card.');
+    expect(log).toContain("HOST let people who aren't seated chat, and spectators here see every hole card.");
+    expect(log.some((l) => /rabbit hunting off from the next hand/.test(l))).toBe(true);
+    expect(log).toContain('HOST changed the table settings: stakes (from the next hand).');
+    // A shorter delay and spectators chatting go to chat too.
+    expect(rt.state.chat.length).toBe(chats + 2);
   });
 
   it('see nothing of the hand when watching is off', () => {

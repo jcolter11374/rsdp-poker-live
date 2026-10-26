@@ -4,6 +4,7 @@ import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } fr
 import { FAIR_REVEAL_AFTER_MS, fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
+import { spectatorsSeeCards } from '@rsdp/engine/settings';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -27,7 +28,9 @@ export function tableView(
   const staff = rt.isStaff(playerId);
   const isSpectator = !mySeat && !staff;
   const blocked = isSpectator && !s.settings.spectators.allowed;
-  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && s.settings.spectators.seeAllCards };
+  // Only hands dealt since it was turned on: the cards of an earlier one, mucked ones included, stay hidden.
+  const seeAll = spectatorsSeeCards(s.settings) && (!hand || hand.input.handNumber >= (s.seeAll?.since ?? 0));
+  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && seeAll };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
   const won = new Map<number, number>();
   const handNames = new Map<number, string>();
@@ -145,6 +148,13 @@ export function tableView(
     waitlist: (s.waitlist ?? []).map((w) => ({ playerId: w.playerId, name: w.name })),
     offers: (s.offers ?? []).map((o) => ({ ...o, name: s.waitlist?.find((w) => w.playerId === o.playerId)?.name ?? rt.nameOf(o.playerId) })),
     muted: [...(s.muted ?? [])],
+    cardsWatched: spectatorsSeeCards(settings)
+      ? {
+          delaySeconds: settings.spectators.delaySeconds,
+          at: s.seeAll?.at ?? 0,
+          watchers: audience.filter((a) => !rt.seatOf(a.playerId) && !rt.isStaff(a.playerId)).length,
+        }
+      : null,
     spectator: isSpectator ? { delaySeconds: s.settings.spectators.delaySeconds, seeAll: viewer.seeAll, blocked } : null,
     fair: { nextCommit: rt.nextCommit(), handCommit: hand?.input.fair?.commit ?? null },
   };
