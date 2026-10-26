@@ -4,6 +4,7 @@ import { currentSession, onSession } from '../socket';
 const LINKS: [href: string, label: string][] = [
   ['/', 'Play'],
   ['/tn/new', 'Host a tournament'],
+  ['/leaderboard', 'Leaderboard'],
   ['/rules', 'Learn the games'],
   ['/whats-new', "What's new"],
 ];
@@ -69,6 +70,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <a href="/rules">How to play</a>
+      <a href="/hands">Search your hands</a>
       <a href="/roadmap">Roadmap</a>
       <a href="/whats-new">What's new</a>
       <a href="/roadmap#suggest">Suggest an idea</a>
