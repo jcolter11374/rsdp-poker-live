@@ -282,6 +282,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .tabs button.active, .tabs button.active:hover:not(:disabled) { background: var(--panel-2); color: var(--text); font-weight: 700; }
 .scroll { flex: 1; overflow-y: auto; max-height: 50vh; font-size: 0.85rem; display: flex; flex-direction: column; gap: 3px; }
 .log-hand { color: var(--accent); font-weight: 700; margin-top: 8px; }
+/* A practice bot's reason, under its move in a finished hand's log. */
+.log-why { color: var(--muted); font-size: 0.8rem; line-height: 1.35; margin: 0 0 3px 6px; padding-left: 8px; border-left: 2px solid var(--line); }
+.log-why-note { color: var(--muted); font-size: 0.8rem; margin-top: 10px; }
 .ledger { width: 100%; border-collapse: collapse; }
 .ledger th, .ledger td { text-align: left; padding: 4px; border-bottom: 1px solid var(--line); }
 .ledger td button { padding: 2px 6px; font-size: 0.75rem; margin-right: 2px; }
@@ -557,12 +560,21 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 
 /* ---- replayer */
 .replayer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 30; display: grid; place-items: center; padding: 12px; }
-.replayer { background: var(--bg); border-radius: 14px; width: min(1000px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+/* Never taller than the screen (less the backdrop's padding): the table gives way, so the controls stay on screen. */
+.replayer { background: var(--bg); border-radius: 14px; width: min(1000px, 100%); max-height: calc(100dvh - 24px); display: flex; flex-direction: column; gap: 8px; padding: 12px; }
 .replayer.compact { height: 100%; padding: 8px; }
 .replayer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.9rem; }
 .replayer-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .replayer:not(.compact) .replayer-table .felt { margin: 64px 70px 36px; }
 .replayer-caption { text-align: center; min-height: 1.4em; font-size: 0.95rem; }
+/* Why the bots played as they did: two lines kept free while it shows, so the table doesn't jump from step to step, and
+   under them, always, how rough the bots' numbers are. */
+.replayer-why { text-align: center; font-size: 0.85rem; line-height: 1.3; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.replayer-why p { margin: 0; }
+.replayer-why-lines { min-height: 2.6em; }
+.replayer-footnote { font-size: 0.75rem; opacity: 0.8; }
+/* Phones wrap a reason over more lines: keep four, enough for the longest. */
+.replayer.compact .replayer-why-lines { min-height: 5.2em; }
 .replayer-scrub { width: 100%; }
 .replayer-controls { display: flex; gap: 6px; justify-content: center; }
 .replayer-controls button { min-width: 48px; padding: 10px; font-size: 1rem; }
@@ -582,6 +594,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .look .toggle { white-space: nowrap; margin-right: 14px; }
 @media (max-width: 500px) { .look .toggle { white-space: normal; } }
 .look .toggle + .hint { margin: -4px 0 4px 26px; }
+
+/* Why this tip (coach tips) */
+.modal:has(.coach-why) { width: min(540px, 100%); }
+.coach-why { display: flex; flex-direction: column; gap: 10px; font-size: 0.9rem; line-height: 1.45; }
+.coach-why p { margin: 0; }
+.coach-why h3 { margin: 0 0 2px; font-size: 0.85rem; color: var(--accent-2); }
+.coach-why section p + p { margin-top: 4px; }
+.coach-why-verdict { font-weight: 700; font-size: 1rem; }
+.coach-why-clock { color: var(--muted); font-size: 0.85rem; }
 
 /* Check this hand (provably fair dealing) */
 .replayer-head-buttons { display: flex; gap: 6px; align-items: center; }
@@ -778,6 +799,30 @@ dl.shortcuts dd { margin: 0; }
 .dock-row .hand-extras { margin-top: 0; }
 .bar-head { position: relative; min-height: 26px; display: flex; align-items: center; justify-content: center; }
 .bar-head .time-bank { position: absolute; right: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; }
+/* Coach tips (hands against bots only): the Tip pill mirrors the time bank on the left, and the tip takes the place of
+   the bet sizing (or the draw prompt), so the move buttons stay put. */
+.bar-head .play-tip-button { position: absolute; left: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; color: var(--accent-2); }
+.bar-head .play-tip-button[aria-expanded='true'] { background: #3a3220; border-color: var(--accent-2); }
+.play-tip { display: flex; flex-direction: column; justify-content: center; gap: 1px; text-align: center; line-height: 1.25; }
+.play-tip-verdict { font-weight: 700; font-size: 0.92rem; }
+.play-tip-basis { color: var(--muted); font-size: 0.8rem; }
+.play-tip-basis button { margin-left: 6px; padding: 0 8px; font-size: 0.78rem; line-height: 1.2; border-radius: 999px; background: transparent; vertical-align: 1px; color: var(--text); }
+.play-tip-error { color: var(--muted); font-size: 0.85rem; }
+/* Fixed limit and draw turns: the tip's own place, as tall as the tip (two lines; more on phones), kept from the start of
+   the turn, so opening the tip never pushes the Tip pill up. */
+.play-tip-slot { min-height: 37px; display: flex; flex-direction: column; justify-content: center; }
+/* Phones: up to four lines and a row of buttons (see .dock.seated.limit.tips). */
+.portrait .play-tip-slot { min-height: 94px; }
+.portrait .play-tip { line-height: 1.2; }
+.portrait .play-tip-verdict { font-size: 0.85rem; }
+.portrait .play-tip-basis { font-size: 0.75rem; }
+/* On touch screens the tip's buttons are a real size, with room between them and the move buttons. */
+@media (pointer: coarse) {
+  .play-tip-basis button { min-height: 32px; padding: 4px 10px; margin: 2px 0 0 4px; vertical-align: middle; }
+  .play-tip-slot .play-tip { margin-bottom: 6px; }
+}
+/* The hand line gives way (cut short) rather than wrap the head onto two lines mid-hand. */
+.bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(190px, var(--held, 0px)); }
@@ -800,11 +845,25 @@ dl.shortcuts dd { margin: 0; }
 /* Fixed-limit games (no bet slider) have a shorter bar. */
 .dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
 .portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
+/* A hand with coach tips: the bar sits at the foot of the dock, so a tip opening above the buttons grows it upwards,
+   and fixed-limit games (where the tip has no sizing block to stand in for) get room for it from the deal: enough
+   for a draw turn, the tallest bar they have. */
+.dock.tips { justify-content: flex-end; }
+.dock.seated.limit.tips { min-height: max(193px, var(--held, 0px)); }
+@media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(169px, var(--held, 0px)); } }
+.portrait .dock.seated.limit.tips { min-height: max(212px, var(--held, 0px)); }
+@media (max-height: 760px) { .portrait .dock.seated.limit.tips { min-height: max(198px, var(--held, 0px)); } }
 /* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
-@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit { min-height: var(--held, 0px); } }
-/* On phones the time bank sits beside the hand line instead of over it. */
-.portrait .bar-head { gap: 8px; flex-wrap: wrap; }
-.portrait .bar-head .time-bank { position: static; translate: none; }
+@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips { min-height: var(--held, 0px); } }
+/* On phones the time bank and the Tip pill sit beside the hand line instead of over it. */
+.portrait .bar-head { gap: 8px; flex-wrap: nowrap; }
+.portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { flex-shrink: 0; }
+.portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { position: static; translate: none; }
+/* ...and on their side, the tip is the verdict and Why? only. */
+@media (max-height: 500px) {
+  .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; }
+  .portrait .play-tip-slot { min-height: 58px; }
+}
 
 /* "Are you sure?" under a game picker set to unusual betting. */
 .betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }

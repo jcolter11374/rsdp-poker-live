@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-j",
+      "date": "2026-10-26",
+      "title": "Coach tips for practice",
+      "items": [
+        { "title": "Tap Tip on your turn", "detail": "In a hand where everyone else is a bot, tap Tip (or press T) on your turn for a rough guide, like \"About 35% to win, the call costs 25%: call\". In draw games it says which cards to throw, and in 8 or better games it gives your share of the pot. It only uses what you can see: your cards, the up cards and the board, the betting and how many cards each player drew. Tap Why? for the maths. Tips never show when another person is in the hand, or at a table where people have played each other, or in tournaments." },
+        { "title": "Bots say why", "detail": "After each hand, the Hands tab and the replayer show why each bot did what it did, like \"Ace called: it guessed about 40% to win, and the call cost 25%\". Bots guess quickly, so their numbers are rough, and they never name cards. Only you see them, and only for hands where you were the only person." }
+      ]
+    },
+    {
       "id": "2026-10-26-h",
       "date": "2026-10-26",
       "title": "Checking John",

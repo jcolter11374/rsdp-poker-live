@@ -155,6 +155,16 @@ const IDLE_SWEEP_MS = 5 * 60_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
+/** Coach tips one player may ask for per window, across all their tabs. */
+const TIP_BURST = 10;
+const TIP_WINDOW_MS = 20_000;
+/**
+ * Time the whole server may spend working out coach tips per window. A tip
+ * holds the event loop for up to about 150 ms, so tips tapped at once at
+ * several practice tables could otherwise hold up turns at every table.
+ */
+const TIP_BUDGET_MS = 300;
+const TIP_BUDGET_WINDOW_MS = 1_000;
 /** Share links one player may make per window. */
 const SHARE_BURST = 20;
 const SHARE_WINDOW_MS = 60_000;
@@ -173,6 +183,31 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
     if (!expected) log?.('handler failed', err);
     if (typeof ack === 'function') ack({ ok: false, error: expected && err instanceof Error ? err.message : 'something went wrong' });
   }
+}
+
+/**
+ * The limits on working out coach tips: TIP_BURST per player per
+ * TIP_WINDOW_MS (across their tabs), and TIP_BUDGET_MS of work per
+ * TIP_BUDGET_WINDOW_MS across the whole server.
+ */
+export function tipLimits(now: () => number) {
+  const times = new Map<PlayerId, number[]>();
+  let work: { at: number; ms: number }[] = [];
+  return {
+    /** Throws if this player, or the server, has had enough for now; otherwise counts the tip and returns what to call with how long it took. */
+    admit(playerId: PlayerId): (ms: number) => void {
+      const t = now();
+      const recent = (times.get(playerId) ?? []).filter((x) => t - x < TIP_WINDOW_MS);
+      if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
+      work = work.filter((w) => t - w.at < TIP_BUDGET_WINDOW_MS);
+      if (work.reduce((sum, w) => sum + w.ms, 0) >= TIP_BUDGET_MS) throw new ActionError('the coach is busy, try again in a moment');
+      times.set(playerId, [...recent, t]);
+      return (ms) => void work.push({ at: t, ms });
+    },
+    forget(playerId: PlayerId) {
+      times.delete(playerId);
+    },
+  };
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -213,6 +248,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
+  const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
@@ -709,14 +745,14 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   /** Every finished hand of a table as one player may see it (spectators only those past the delay): saved hands, with the copies still in memory winning (they include cards shown after the hand). */
-  async function allHandViews(rt: TableRuntime, playerId: PlayerId, cutoff = Infinity) {
+  async function allHandViews(rt: TableRuntime, playerId: PlayerId, cutoff = Infinity, notes = false) {
     const saved = await store.loadHands(rt.state.id);
     const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
     for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
     return [...byNumber.values()]
       .sort((a, b) => a.handNumber - b.handNumber)
       .filter((h) => h.endedAt <= cutoff)
-      .map((h) => handRecordView(rt, h, playerId));
+      .map((h) => handRecordView(rt, h, playerId, { notes }));
   }
 
   async function getTable(id: string): Promise<TableRuntime | null> {
@@ -919,7 +955,7 @@ export function createApp(deps: AppDeps = {}) {
           const record = rt.state.history.find((h) => h.handNumber === Number(handNumber));
           if (!record) throw new ActionError('that hand is no longer available');
           if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
-          return { hand: handRecordView(rt, record, me) };
+          return { hand: handRecordView(rt, record, me, { notes: true }) };
         },
         log,
       ),
@@ -935,7 +971,7 @@ export function createApp(deps: AppDeps = {}) {
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           socket.data.lastExport = now;
-          return { hands: await allHandViews(rt, me, cutoff) };
+          return { hands: await allHandViews(rt, me, cutoff, true) };
         },
         log,
       ),
@@ -1043,6 +1079,27 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
     on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('hand:tip', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const handNumber = Number(input?.handNumber);
+          const at = Number(input?.at);
+          if (!Number.isSafeInteger(handNumber) || !Number.isSafeInteger(at)) throw new ActionError('that turn is over');
+          // Only a tip that is about to be worked out counts: a refused request, or one already cached for this turn, costs
+          // nothing.
+          let spent = (_ms: number) => {};
+          let started = 0;
+          const tip = current().coachTip(me, handNumber, at, () => {
+            spent = tips.admit(me);
+            started = performance.now();
+          });
+          spent(performance.now() - started);
+          return { tip };
+        },
+        log,
+      ),
+    );
     on('fair:seed', (input, ack) => guarded(ack, () => current().addClientSeed(me, input ?? {}), log));
     on('notes:list', (ack) => guarded(ack, async () => ({ notes: await notes.list(me) }), log));
     on('notes:set', (input, ack) =>
@@ -1332,6 +1389,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
+        tips.forget(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
       }

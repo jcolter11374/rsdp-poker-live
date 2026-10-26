@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { HandRecordView, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
-import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
+import { download, fileStem, handHistoryText, handsJson, ledgerCsv, settleUp } from '../records';
+import { linesWithWhy, NOTES_FOOTNOTE } from '../coach';
+import { usePrefs } from '../prefs';
 import { ledgerMismatches, tableChips, changedWhileClosed } from '../audit';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
@@ -288,6 +290,7 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const { hands, error: loadError, retry, setHands } = useAllHands(view, true);
   const [error, setError] = useState('');
   const [fromFile, setFromFile] = useState<HandRecordView[] | null>(null);
+  const prefs = usePrefs();
   const opener = (
     <OpenHandsFile
       fmt={fmt}
@@ -302,7 +305,10 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   if (open) {
     const names = new Map(open.seats.map((s) => [s.seat, s.name]));
     const mySeat = open.seats.find((s) => s.playerId === view.me.playerId)?.seat ?? null;
-    const lines = eventLines(open.events, (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat);
+    const name = (seat: number) => names.get(seat) ?? `Seat ${seat + 1}`;
+    // The bots' reasons (only in a hand where everyone else was a bot) go under their moves.
+    const lines = prefs.botReasons ? linesWithWhy(open, name, fmt, mySeat) : eventLines(open.events, name, fmt, mySeat).map((text) => ({ text, why: [] }));
+    const anyWhy = lines.some((l) => l.why.length > 0);
     return (
       <div className="hand-record">
         <button onClick={() => setOpen(null)}>← All hands</button>
@@ -310,10 +316,18 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
           {new Date(open.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {open.seats.map((s) => `${s.name} ${fmt(s.stack)}`).join(', ')}
         </div>
         {lines.map((line, i) => (
-          <div key={i} className={line.startsWith('---') ? 'log-hand' : ''}>
-            <LogText text={line.replace(/^--- /, '')} />
-          </div>
+          <Fragment key={i}>
+            <div className={line.text.startsWith('---') ? 'log-hand' : ''}>
+              <LogText text={line.text.replace(/^--- /, '')} />
+            </div>
+            {line.why.map((why, j) => (
+              <div key={j} className="log-why">
+                {why}
+              </div>
+            ))}
+          </Fragment>
         ))}
+        {anyWhy && <p className="log-why-note">{NOTES_FOOTNOTE}</p>}
       </div>
     );
   }
@@ -340,7 +354,7 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
       /* use what's loaded */
     }
     const stem = `${fileStem(view.name)}-hands`;
-    if (kind === 'json') download(`${stem}.json`, JSON.stringify({ format: 'rsdp-hands', version: 1, table: view.name, exportedAt: new Date().toISOString(), centsMode: view.settings.stakes.centsMode, hands: all }, null, 1), 'application/json');
+    if (kind === 'json') download(`${stem}.json`, handsJson(view.name, view.settings.stakes.centsMode, all), 'application/json');
     else download(`${stem}.txt`, handHistoryText(view.name, all, view.me.playerId, fmt));
   };
   return (

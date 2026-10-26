@@ -4,7 +4,8 @@ import type { HandRecordView } from '@rsdp/engine/wire';
 import { deckWith, start } from '../../../packages/engine/test/core/harness';
 import { findHighlights } from './highlights';
 import { ohhFile } from './ohh';
-import { fullLogCsv, fullLogLines } from './records';
+import { fullLogCsv, fullLogLines, handsJson } from './records';
+import { isReplayable } from './replay';
 
 const fmt = (n: number) => String(n);
 const record = (s: HandState, seat: number | null, handNumber = 1): HandRecordView => ({
@@ -94,5 +95,20 @@ describe('full log', () => {
     expect(lines.at(-1)!.text).toBe('The host paused');
     expect(lines.some((l) => l.kind === 'hand' && /7♣/.test(l.text))).toBe(true);
     expect(fullLogCsv(lines)).toContain('"Bob: gl, ""all"""');
+  });
+});
+
+describe('hands file', () => {
+  it('leaves the bots’ reasons out, and opens again in the replayer', () => {
+    const s = sevenDeuceCracksKings();
+    const h: HandRecordView = { ...record(s, 0), botNotes: [{ seq: 6, seat: 1, level: 'normal', rule: 'call', share: 0.8, cost: 0.33, need: 0.36 }] };
+    const file = JSON.parse(handsJson('Test', false, [h, record(s, 0, 2)], new Date(0)));
+    expect(file).toMatchObject({ format: 'rsdp-hands', version: 1, table: 'Test', exportedAt: '1970-01-01T00:00:00.000Z', centsMode: false });
+    expect(file.hands).toHaveLength(2);
+    for (const x of file.hands) expect('botNotes' in x).toBe(false);
+    expect(file.hands[0].events).toEqual(h.events);
+    // The hand shown on screen keeps them.
+    expect(h.botNotes).toHaveLength(1);
+    expect(file.hands.every((x: unknown) => isReplayable(x, fmt))).toBe(true);
   });
 });
