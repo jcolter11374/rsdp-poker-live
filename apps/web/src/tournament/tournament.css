@@ -227,3 +227,11 @@
 .tn-game-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tn-game-group > span { width: 76px; flex: none; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 @media (max-width: 600px) { .tn-game-group > span { width: 100%; } }
+
+/* Saved structures and starters at the top of the new-tournament form */
+.tn-saved .tn-chip { font: inherit; font-size: 0.9rem; }
+.tn-saved-hint { margin: 0; font-size: 0.85rem; }
+.tn-saved-list { display: flex; flex-direction: column; gap: 6px; }
+.tn-saved-list h3 { margin: 0 0 2px; }
+.tn-saved-save input { flex: 1; min-width: 0; }
+.tn-saved-save > button { flex: 0 0 auto; }

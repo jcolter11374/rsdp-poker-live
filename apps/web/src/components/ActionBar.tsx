@@ -159,7 +159,7 @@ export function ActionBar({
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
   // On your turn (betting or drawing) the time bank sits on the bar's top line, so the bar is no taller for it.
-  const canBank = !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
+  const canBank = !view.paused && !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
   const head = canBank ? (
     <div className="bar-head">
       {hint}

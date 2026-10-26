@@ -6,6 +6,7 @@ import { LeaderboardPage } from './account/LeaderboardPage';
 import { HandSearchPage } from './account/HandSearchPage';
 import { RoadmapPage } from './roadmap/RoadmapPage';
 import { WhatsNewPage } from './roadmap/WhatsNewPage';
+import { ChangelogPage } from './roadmap/ChangelogPage';
 import { FairnessPage } from './fairness/FairnessPage';
 import { AboutPage } from './about/AboutPage';
 import { RulesPage } from './rules/RulesPage';
@@ -45,6 +46,7 @@ function Page() {
   if (/^\/roadmap\/?$/.test(path)) return <RoadmapPage />;
   if (/^\/roadmap\/admin\/?$/.test(path)) return <RoadmapAdminPage />;
   if (/^\/whats-new\/?$/.test(path)) return <WhatsNewPage />;
+  if (/^\/changelog\/?$/.test(path)) return <ChangelogPage />;
   if (/^\/fairness\/?$/.test(path)) return <FairnessPage />;
   if (/^\/about\/?$/.test(path)) return <AboutPage />;
   if (/^\/signin\/?$/.test(path)) return <SignInPage />;

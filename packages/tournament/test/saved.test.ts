@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+import {
+  applyStarter,
+  defaultSettings,
+  readSavedStructure,
+  savedStructureErrors,
+  STARTERS,
+  structureToSave,
+  validateSettings,
+  type TournamentSettings,
+} from '../src';
+
+const DAY = 24 * 3600_000;
+const NOW = Date.parse('2026-10-26T12:00:00Z');
+
+describe('saved structures', () => {
+  it('come back exactly as saved when nothing has passed', () => {
+    const s = defaultSettings({ name: 'Friday turbo', games: ['nlhe', 'plo'], bounty: { amount: 500, progressivePercent: 50 } });
+    const back = readSavedStructure(JSON.stringify(structureToSave(s)), NOW);
+    expect(back).toEqual(s);
+  });
+
+  it('move a weekly series to its next date, and keep a passed one-off at the same time on a day still to come', () => {
+    const weekly: TournamentSettings = defaultSettings({
+      start: { kind: 'scheduled', startAt: NOW - 30 * DAY, schedule: { timeZone: 'UTC', startDate: '2026-09-25', time: '19:30', repeat: { freq: 'weekly', weekdays: [5] } } },
+    });
+    const back = readSavedStructure(JSON.stringify(structureToSave(weekly)), NOW);
+    expect(back.start.kind === 'scheduled' && back.start.startAt).toBe(Date.parse('2026-10-30T19:30:00Z'));
+    // The form could not work out a start time (it had passed): it is saved as 0 and worked out on load.
+    const oneOff = defaultSettings({ start: { kind: 'scheduled', startAt: NaN, schedule: { timeZone: 'UTC', startDate: '2026-10-01', time: '20:00', repeat: null } } });
+    const saved = structureToSave(oneOff);
+    expect(saved.start.kind === 'scheduled' && saved.start.startAt).toBe(0);
+    expect(savedStructureErrors(saved)).toEqual([]);
+    const loaded = readSavedStructure(JSON.stringify(saved), NOW);
+    expect(loaded.start.kind === 'scheduled' && loaded.start.startAt).toBe(Date.parse('2026-10-26T20:00:00Z'));
+  });
+
+  it('fill in settings added since they were saved, and refuse what is not one', () => {
+    const { handForHand: _h, graceMinutes: _g, ...old } = defaultSettings({ name: 'Old' });
+    const back = readSavedStructure(JSON.stringify(old), NOW);
+    expect(back).toMatchObject({ name: 'Old', handForHand: true, graceMinutes: 15 });
+    expect(() => readSavedStructure('{nope', NOW)).toThrow(/damaged/);
+    expect(() => readSavedStructure('[1]', NOW)).toThrow(/damaged/);
+    expect(() => readSavedStructure('"x"'.padEnd(70_000, ' '), NOW)).toThrow(/too big/);
+  });
+});
+
+describe('starters', () => {
+  it('set the stack, levels and late registration and keep the rest', () => {
+    const current = defaultSettings({ name: 'Mine', games: ['plo'], maxEntrants: 40, allowQuit: true });
+    for (const { id } of STARTERS) {
+      const s = applyStarter(current, id);
+      expect(validateSettings(s)).toEqual([]);
+      expect(s).toMatchObject({ name: 'Mine', games: ['plo'], maxEntrants: 40, allowQuit: true, lateRegistration: { enabled: true } });
+    }
+    expect(applyStarter(current, 'deep').startingStack).toBe(20_000);
+    const first = (id: 'turbo' | 'standard' | 'deep') => applyStarter(current, id).structure[0];
+    expect(first('turbo')).toMatchObject({ bb: 200, minutes: 8 });
+    expect(first('standard')).toMatchObject({ bb: 100, minutes: 15 });
+    expect(first('deep')).toMatchObject({ bb: 100, minutes: 20 });
+  });
+
+  it('keep rebuys and add-ons on, with levels and a break that offer them', () => {
+    const current = defaultSettings({ rebuy: { max: 2, chips: 5000, approval: true, offerSeconds: 15 }, addOn: { max: 1, chips: 5000, approval: false } });
+    for (const { id } of STARTERS) {
+      const s = applyStarter(current, id);
+      expect(validateSettings(s)).toEqual([]);
+      expect(s.rebuy).toMatchObject({ max: 2, approval: true, chips: s.startingStack });
+      expect(s.structure.filter((r) => r.kind === 'level' && r.rebuy)).toHaveLength(4);
+      expect(s.structure.some((r) => r.kind === 'break' && r.addOn)).toBe(true);
+    }
+    // A Sit & Go for two ends before the first break; the add-on still gets one.
+    const tiny = applyStarter({ ...current, maxEntrants: 2, start: { kind: 'sng', playersNeeded: 2, startDelaySeconds: 0, autoSpawn: false } }, 'turbo');
+    expect(validateSettings(tiny)).toEqual([]);
+  });
+});

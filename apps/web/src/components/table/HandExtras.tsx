@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { TableView } from '@rsdp/engine/wire';
 import { nitSchema } from '@rsdp/engine/modifiers';
 import { chipFormat } from '../../format';
+import { nitStatus } from '../../nit';
 import { call } from '../../socket';
 import { PlayingCard } from '../PlayingCard';
+import { Modal } from '../SeatDialog';
 import './extras.css';
 
 /**
@@ -41,19 +43,56 @@ export function HandExtras({ view }: { view: TableView }) {
           ))}
         </div>
       )}
-      {nitOn && (
-        <label className="toggle">
-          <input type="checkbox" checked={me!.nitOptIn} onChange={(e) => run(call('seat:prefs', { nitGame: e.target.checked }))} />
-          Play the Nit game
-        </label>
-      )}
-      {view.nit && (
-        <span className="muted">
-          Nit game: {view.nit.holders} of {view.nit.participants} still holding · the last pays {fmt(view.nit.prize)} each
-        </span>
-      )}
+      {(nitOn || view.nit) && <NitRow view={view} me={me} fmt={fmt} canTick={nitOn} onTick={(v) => run(call('seat:prefs', { nitGame: v }))} />}
       {showRake && <span className="muted">House fees: {fmt(view.rakeTotal!)}</span>}
       {error && <span className="error">{error}</span>}
+    </div>
+  );
+}
+
+function NitRow(props: {
+  view: TableView;
+  me: TableView['seats'][number];
+  fmt: (n: number) => string;
+  canTick: boolean;
+  onTick: (v: boolean) => void;
+}) {
+  const { view, me, fmt, canTick } = props;
+  const [help, setHelp] = useState(false);
+  const nit = nitStatus(view, me, fmt);
+  const cfg = nitSchema.get(view.settings);
+  const prize = fmt(view.nit?.prize ?? cfg.prizeBigBlinds * view.settings.stakes.bigBlind);
+  return (
+    <div className="nit-row">
+      <div className="nit-line">
+        {canTick && (
+          <label className="toggle" title="Ticking or unticking only changes the next round, never the one being played">
+            <input type="checkbox" checked={me!.nitOptIn} onChange={(e) => props.onTick(e.target.checked)} />
+            {nit.label}
+          </label>
+        )}
+        <button className="nit-help-button" aria-label="How the Nit game works" title="How the Nit game works" onClick={() => setHelp(true)}>
+          ?
+        </button>
+        <span className="muted nit-status">{nit.status}</span>
+      </div>
+      {nit.locked && canTick && <span className="hint">Locked in until this round ends. {me!.nitOptIn ? 'Untick to skip the next one.' : "You'll skip the next one."}</span>}
+      {help && (
+        <Modal title="The Nit game" onClose={() => setHelp(false)}>
+          <ol className="nit-help">
+            <li>Tick the box to join. Once {cfg.minPlayers} ticked players are dealt into a hand, a round starts and everyone in it is on the nit (the NIT tag on their seat).</li>
+            <li>Win a pot all by yourself to get off the nit. A chop, a split hi-lo pot or a run-it-twice split doesn't count.</li>
+            <li>When only one player is still on the nit, they pay {prize} to each of the others and the round ends.</li>
+            <li>Once a round starts you're in it until it ends. Unticking only keeps you out of the next round. Leaving the table while you're on the nit pays everyone straight away.</li>
+            <li>The host sets the prize and how many players are needed. Turning the game off cancels a round, and nobody pays.</li>
+          </ol>
+          <div className="row">
+            <button className="primary" onClick={() => setHelp(false)}>
+              Got it
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

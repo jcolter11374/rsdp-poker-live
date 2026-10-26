@@ -23,6 +23,7 @@ import { call } from '../socket';
 import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
 import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
+import { SavedStructures } from './SavedStructures';
 import { SiteHeader } from '../components/SiteHeader';
 
 type StartKind = 'scheduled' | 'sng' | 'manual';
@@ -81,9 +82,10 @@ function startFields(initial: TournamentSettings | undefined) {
   };
 }
 
-/** `/tn/new?from=<id>`: the form filled in from another tournament. */
+/** `/tn/new?from=<id>`: the form filled in from another tournament. Loading a starter or saved structure fills it in again. */
 export function TournamentCreatePage({ from, onCreated }: { from: string | null; onCreated: (id: string) => void }) {
-  const [initial, setInitial] = useState<TournamentSettings | null>(null);
+  const [copied, setCopied] = useState<TournamentSettings | null>(null);
+  const [loaded, setLoaded] = useState<{ settings: TournamentSettings; note: string; n: number } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!from) return;
@@ -93,7 +95,7 @@ export function TournamentCreatePage({ from, onCreated }: { from: string | null;
     off = tournamentClient().subscribe(
       from,
       (v) => {
-        setInitial((prev) => prev ?? copySettings(v.state.settings, v.serverNow));
+        setCopied((prev) => prev ?? copySettings(v.state.settings, v.serverNow));
         done = true;
         off?.();
       },
@@ -102,13 +104,27 @@ export function TournamentCreatePage({ from, onCreated }: { from: string | null;
     if (done) off();
     return () => off?.();
   }, [from]);
-  if (!from) return <TournamentCreate onCreated={onCreated} />;
+  const onLoad = (settings: TournamentSettings, note: string) => setLoaded((prev) => ({ settings, note, n: (prev?.n ?? 0) + 1 }));
+  if (loaded) return <TournamentCreate key={loaded.n} onCreated={onCreated} initial={loaded.settings} note={loaded.note} onLoad={onLoad} />;
+  if (!from) return <TournamentCreate onCreated={onCreated} onLoad={onLoad} />;
   if (error) return <main className="tn-page"><p className="error">Couldn't copy that tournament: {error}</p><a href="/tn/new">Start from scratch</a></main>;
-  if (!initial) return <main className="tn-page"><p className="muted">Copying settings…</p></main>;
-  return <TournamentCreate onCreated={onCreated} initial={initial} />;
+  if (!copied) return <main className="tn-page"><p className="muted">Copying settings…</p></main>;
+  return <TournamentCreate onCreated={onCreated} initial={copied} note="Copied from another tournament. Check the start time, then create." onLoad={onLoad} />;
 }
 
-export function TournamentCreate({ onCreated, initial }: { onCreated: (id: string) => void; initial?: TournamentSettings }) {
+export function TournamentCreate({
+  onCreated,
+  initial,
+  note,
+  onLoad,
+}: {
+  onCreated: (id: string) => void;
+  initial?: TournamentSettings;
+  /** Where the form's settings came from, shown under the heading. */
+  note?: string;
+  /** Fill the form in again from these settings (a starter or a saved structure). */
+  onLoad?: (settings: TournamentSettings, note: string) => void;
+}) {
   const session = useSession();
   const first = useMemo(() => startFields(initial), [initial]);
   const [name, setName] = useState(initial?.name ?? 'Friday Night Tournament');
@@ -143,8 +159,9 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('standard', 600));
   const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
   // '' = not part of a season, 'new' = start one, otherwise an existing season's id.
-  const [seasonPick, setSeasonPick] = useState('');
-  const [seasonName, setSeasonName] = useState('');
+  // A "new season" choice carried over from a starter or saved structure comes back as one.
+  const [seasonPick, setSeasonPick] = useState(initial?.season?.id === '' ? 'new' : '');
+  const [seasonName, setSeasonName] = useState(initial?.season?.id === '' ? initial.season.name : '');
   const [mySeasons, setMySeasons] = useState<{ id: string; name: string; events: number }[]>([]);
   useEffect(() => {
     if (!session || tournamentClient() instanceof LocalTournamentClient) return;
@@ -243,9 +260,10 @@ export function TournamentCreate({ onCreated, initial }: { onCreated: (id: strin
       <main className="tn-page">
         <header className="tn-header">
           <h1>New tournament</h1>
-          {initial && <p className="muted">Copied from another tournament. Check the start time, then create.</p>}
+          {note && <p className="muted" role="status">{note}</p>}
         </header>
         <form className="tn-form" onSubmit={submit} noValidate>
+          {onLoad && <SavedStructures current={settings} onLoad={onLoad} />}
           <section className="tn-card">
             <h2>Basics</h2>
             <label>

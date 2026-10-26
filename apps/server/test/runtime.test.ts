@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
+import { HOST_HANDOFF_MS, RESUME_MIN_MS, TableRuntime } from '../src/runtime/table';
+import { behind, delayedPart, tableView, type DelayedPart } from '../src/runtime/view';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -195,6 +196,141 @@ describe('clocks', () => {
     expect(hand(rt).toAct).toBe(seat);
     clock.advance(1_000);
     expect(hand(rt).toAct).not.toBe(seat);
+  });
+
+  it('while paused the clock everyone sees stands still, with its bar where it stopped', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 30;
+      s.timing.timeBankSeconds = 0;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    clock.advance(10_000);
+    rt.pause('host', true);
+    for (const wait of [0, 45_000, 600_000]) {
+      clock.advance(wait);
+      const turn = tableView(rt, 'a', clock.now()).turn!;
+      expect(turn.deadline! - clock.now()).toBe(20_000);
+      expect(turn.deadline! - turn.startedAt).toBe(30_000);
+    }
+    // A table saved before the pause time was kept shows the same.
+    delete rt.state.pausedLeft!.at;
+    clock.advance(5_000);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(20_000);
+    rt.pause('host', false);
+    const turn = tableView(rt, 'a', clock.now()).turn!;
+    expect(turn.deadline! - clock.now()).toBe(20_000);
+    expect(turn.deadline! - turn.startedAt).toBe(30_000);
+  });
+
+  it('a clock paused in its last seconds gets a few back on resume', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 30;
+      s.timing.timeBankSeconds = 0;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    const seat = hand(rt).toAct!;
+    clock.advance(29_500);
+    rt.pause('host', true);
+    clock.advance(60_000);
+    expect(hand(rt).toAct).toBe(seat);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(RESUME_MIN_MS);
+    rt.pause('host', false);
+    expect(rt.state.turn!.deadline! - clock.now()).toBe(RESUME_MIN_MS);
+    clock.advance(RESUME_MIN_MS - 1);
+    expect(hand(rt).toAct).toBe(seat);
+  });
+
+  it('a time bank running when the game is paused is frozen, and charged only for time played', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 20;
+      s.timing.timeBankSeconds = 30;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    const id = toActId(rt);
+    clock.advance(25_000);
+    expect(rt.state.turn!.usingBank).toBe(true);
+    rt.pause('host', true);
+    expect(() => rt.useTimeBank(id)).toThrow(/paused/);
+    clock.advance(300_000);
+    expect(rt.seatOf(id)!.timeBank).toBe(30);
+    rt.pause('host', false);
+    expect(rt.state.turn!.deadline! - clock.now()).toBe(25_000);
+    clock.advance(5_000);
+    rt.act(id, { type: 'fold' });
+    expect(rt.seatOf(id)!.timeBank).toBe(20);
+  });
+
+  it('an offline player is not folded while paused, and gets their grace period after', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 0;
+      s.seating.offlineGraceSeconds = 15;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    const id = toActId(rt);
+    rt.disconnect(id);
+    clock.advance(10_000);
+    rt.pause('host', true);
+    clock.advance(120_000);
+    expect(toActId(rt)).toBe(id);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(15_000);
+    rt.pause('host', false);
+    clock.advance(14_000);
+    expect(toActId(rt)).toBe(id);
+    clock.advance(1_000);
+    expect(rt.state.hand!.seats.find((s) => s.playerId === id)!.folded).toBe(true);
+  });
+
+  it('delayed spectators see the clock stand still through a pause, and pick up after it', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 30;
+      s.timing.timeBankSeconds = 0;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    const delay = 30_000;
+    const snap = () => ({ at: clock.now(), part: delayedPart(tableView(rt, '', clock.now())) });
+    const shown = (feed: { at: number; part: DelayedPart }, now: number) => {
+      const v = behind(tableView(rt, '', now), feed.part, delay);
+      return v.turn!.deadline! - (v.paused ? v.serverNow : now);
+    };
+    clock.advance(10_000);
+    rt.pause('host', true);
+    const paused = snap();
+    clock.advance(120_000);
+    // The pause snapshot, shown 30 s after it and again much later, still says 20 s.
+    expect(shown(paused, paused.at + delay)).toBe(20_000);
+    expect(shown(paused, clock.now())).toBe(20_000);
+    rt.pause('host', false);
+    const resumed = snap();
+    clock.advance(delay);
+    expect(shown(resumed, clock.now())).toBe(20_000);
+  });
+
+  it('a run it twice vote waits out a pause with its time left', () => {
+    const { rt, clock } = table((s) => (s.play.runItTwice = 'ask'));
+    seatPlayers(rt, 2);
+    rt.start('host');
+    const a = toActId(rt);
+    rt.act(a, { type: 'raise', to: 200 });
+    const b = toActId(rt);
+    rt.act(b, { type: 'call' });
+    expect(hand(rt).phase).toBe('rit-vote');
+    clock.advance(4_000);
+    rt.pause('host', true);
+    clock.advance(120_000);
+    expect(hand(rt).phase).toBe('rit-vote');
+    const view = tableView(rt, a, clock.now());
+    expect(view.canVoteRunItTwice).toBe(false);
+    expect(view.hand!.runItTwice.deadline! - clock.now()).toBe(8_000);
+    expect(() => rt.voteRunItTwice(a, true)).toThrow(/paused/);
+    rt.pause('host', false);
+    rt.voteRunItTwice(a, true);
+    rt.voteRunItTwice(b, true);
+    expect(hand(rt).runs).toHaveLength(2);
   });
 
   it('run it twice: missing votes count as no when time runs out', () => {

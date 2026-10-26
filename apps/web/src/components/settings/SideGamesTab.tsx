@@ -114,7 +114,7 @@ export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
 
       <h4>Nit game</h4>
       <p className="hint">
-        Players opt in from their seat. Once enough are dealt in, a round starts: win a pot outright to get off the nit. The last player still on it pays the prize to each of the others. Leaving while on the nit pays straight away.
+        Players opt in from their seat. Once enough are dealt in, a round starts: win a pot outright to get off the nit. The last player still on it pays the prize to each of the others. Once a round starts, players are in it until it ends (unticking only skips the next round). Leaving while on the nit pays straight away. Turning the game off cancels a round with nobody paying.
       </p>
       <Toggle label="Play the Nit game" checked={nit.enabled} onChange={(enabled) => setNit({ enabled })} />
       <div className="row">

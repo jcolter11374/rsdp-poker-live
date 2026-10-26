@@ -25,6 +25,7 @@
         { "title": "Optional accounts", "detail": "Sign in with a username and password, or with Google, so your name, picture, notes and history follow you to every device. Guests can still play without one." },
         { "title": "Chat, leaderboards and stats", "detail": "An always-on chat box, a group leaderboard with a running profit chart, your profit graph and a hand search. Practice games never count." },
         { "title": "About page", "detail": "A quick introduction for friends who are new to the site." },
+        { "title": "Saved tournament setups", "detail": "Save your favourite structures, or start from Turbo, Standard or Deep stack." },
         { "title": "Roadmap, suggestions and What's new", "detail": "This page: send your ideas and follow them in the suggestion log. The What's new page lists what each release added." }
       ]
     },
