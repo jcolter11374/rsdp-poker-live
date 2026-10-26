@@ -238,7 +238,9 @@ export function ActionBar({
     );
   }
 
-  if (!me || !me.inHand || me.folded || me.allIn || hand.phase !== 'betting') {
+  // Once the board is being run out (everyone all in) there is nothing left to bet.
+  const runningOut = hand.events.some((e) => e.t === 'run-it');
+  if (!me || !me.inHand || me.folded || me.allIn || hand.phase !== 'betting' || runningOut) {
     const waiting = hand.phase === 'drawing' && me?.inHand && !me.folded ? <div className="muted">Waiting for the draw…</div> : null;
     return (
       <div className="action-bar idle">

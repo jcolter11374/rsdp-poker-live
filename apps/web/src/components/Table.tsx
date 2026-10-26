@@ -216,8 +216,17 @@ export function Table({
   const lastBets = useRef<number[]>([]);
   const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
-  const geometry = useRef({ betPoint, seatPoint, center });
-  geometry.current = { betPoint, seatPoint, center: boardMiddle };
+  // Chips fly to the pot pill itself (measured), not the middle of the board, so they land on it rather than on the cards.
+  const potPoint = (): Point => {
+    const el = felt.current;
+    const pot = el?.querySelector<HTMLElement>('.board .pot-row .pot') ?? el?.querySelector<HTMLElement>('.board .pot');
+    if (!el || !pot) return boardMiddle;
+    const f = el.getBoundingClientRect();
+    const r = pot.getBoundingClientRect();
+    return { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
+  };
+  const geometry = useRef({ betPoint, seatPoint, center, potPoint });
+  geometry.current = { betPoint, seatPoint, center: boardMiddle, potPoint };
   const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';
   // Runs before the effect below stores this view's bets, so lastBets holds the round that just ended.
   useEffect(() => {
@@ -225,13 +234,14 @@ export function Table({
     lastRound.current = hand ? { key: roundKey, hand: hand.handNumber } : null;
     if (!hand || !before || before.key === roundKey || before.hand !== hand.handNumber || document.hidden) return;
     const g = geometry.current;
+    const pot = g.potPoint();
     const next: Flight[] = [];
     lastBets.current.forEach((amount, seat) => {
-      if (amount > 0) next.push({ id: ++flightId, from: g.betPoint(seat), to: g.center, delay: 0, kind: 'sweep' });
+      if (amount > 0) next.push({ id: ++flightId, from: g.betPoint(seat), to: pot, delay: 0, kind: 'sweep' });
     });
     if (done) {
       const winners = [...new Set(hand.awards.map((a) => a.seat))];
-      for (const seat of winners) next.push({ id: ++flightId, from: g.center, to: g.seatPoint(seat), delay: next.length ? 350 : 100, kind: 'award' });
+      for (const seat of winners) next.push({ id: ++flightId, from: pot, to: g.seatPoint(seat), delay: next.length ? 350 : 100, kind: 'award' });
     }
     if (!next.length) return;
     setFlights((f) => [...f, ...next]);
