@@ -29,6 +29,8 @@ const swatch = (f: Felt) => ({ background: FELT_COLORS[f].felt, boxShadow: `inse
  */
 export function LookDialog({ view, onClose, initialTab = 'table' }: { view: TableView; onClose: () => void; initialTab?: LookTab }) {
   const prefs = usePrefs();
+  // The device's own reduce-motion setting wins over the Table motion switch (feel.css), so say so.
+  const deviceStill = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const volume = useVolume();
   const [tab, setTab] = useState<LookTab>(initialTab);
   const [error, setError] = useState('');
@@ -103,8 +105,13 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
             </label>
             <label className="toggle">
               <input type="checkbox" checked={prefs.tableMotion} onChange={(e) => setPrefs({ tableMotion: e.target.checked })} />
-              Table motion (thrown cards, counting stacks, sparkles)
+              Table motion
             </label>
+            <p className="hint">
+              {deviceStill
+                ? "Your device is set to reduce motion, so the table stays still either way."
+                : 'Thrown cards, counting stacks and sparkles. Turn it off if the table feels slow on your phone.'}
+            </p>
           </>
         )}
         {tab === 'table' && view.powers.includes('settings') && view.mode !== 'tournament' && (

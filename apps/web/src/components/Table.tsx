@@ -208,13 +208,30 @@ export function Table({
     }
   const highlight = (card: string, set: Set<string> | undefined) => (!set || set.size === 0 || card === '??' ? '' : set.has(card) ? 'win' : 'dim');
 
-  // One line per winner: total won and the best hand they won with.
+  // One line per winner: total won and each different hand they won with. With two runs or two boards,
+  // each hand says which run or board it won, so run 2's full house isn't shown as run 1's two pair.
   const results = new Map<number, { amount: number; handName?: string }>();
-  if (done)
+  if (done) {
+    const runs = hand!.boards.length > 1;
+    const boards = (hand!.boards[0]?.length ?? 0) > 1;
+    const names = new Map<number, Map<string, string[]>>();
     for (const a of hand!.awards) {
       const prev = results.get(a.seat);
-      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount, handName: prev?.handName ?? a.handName });
+      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount });
+      if (!a.handName) continue;
+      const where = [runs && `Run ${a.run + 1}`, boards && `Board ${a.board + 1}`].filter(Boolean).join(', ');
+      const byName = names.get(a.seat) ?? new Map<string, string[]>();
+      names.set(a.seat, byName);
+      const places = byName.get(a.handName) ?? [];
+      if (where && !places.includes(where)) places.push(where);
+      byName.set(a.handName, places);
     }
+    for (const [seat, byName] of names) {
+      const list = [...byName.entries()];
+      results.get(seat)!.handName =
+        list.length === 1 ? list[0][0] : list.map(([name, places]) => (places.length ? `${places.join(' & ')}: ${name}` : name)).join(' · ');
+    }
+  }
 
   // Chip flights: bets swept in when a betting round ends, the pot pushed to the winners.
   const [flights, setFlights] = useState<Flight[]>([]);

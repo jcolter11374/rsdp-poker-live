@@ -142,16 +142,19 @@
     .seat.acting .nameplate.timed::after {
       content: '';
       position: absolute;
-      inset: -3px;
-      border-radius: 14px;
-      padding: 3px;
-      background: conic-gradient(from 0deg, var(--feel-ring, #5ad08a) calc(var(--t, 1) * 360deg), rgba(255, 255, 255, 0.12) 0);
+      inset: -4px;
+      border-radius: 15px;
+      padding: 4px;
+      /* Starts at 3 o'clock, clear of the cards tucked into the left of the plate; the time used is dark, so what's left stands out. */
+      background: conic-gradient(from 90deg, var(--feel-ring, #5ad08a) calc(var(--t, 1) * 360deg), rgba(0, 0, 0, 0.55) 0);
       -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite: xor;
       mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
       pointer-events: none;
     }
-    .felt.compact .seat.acting .nameplate::after { border-radius: 11px; }
+    .felt.compact .seat.acting .nameplate::after { border-radius: 12px; }
+    /* The ring is the highlight, so the plate's own border steps back. */
+    .seat.acting .nameplate.timed { border-color: transparent !important; }
     .seat.acting .nameplate:has(.timer-fill.low) { --feel-ring: var(--bad); }
     .seat.acting .nameplate:has(.timer.bank) { --feel-ring: var(--accent-2); }
     .seat.acting .nameplate .timer { opacity: 0; }
@@ -207,7 +210,11 @@
   .seat.winner .nameplate { border-color: #ffd36b !important; box-shadow: 0 0 0 1px #ffd36b, 0 0 22px rgba(255, 211, 107, 0.6), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .win-float { color: #ffd978; font-size: 1.15rem; }
   .felt.compact .win-float { font-size: 0.9rem; }
+  /* Above the winner's own cards, which sit over the plate on phones, on a dark pill so it reads over them. */
+  .win-float { z-index: 4; }
+  .felt.compact .win-float { background: rgba(10, 12, 14, 0.82); padding: 1px 7px; border-radius: 999px; text-shadow: none; }
   /* All in: the seat goes red-hot and the stack line becomes a stamp. */
+  .seat.all-in .last-action { display: none; }
   .seat.all-in .nameplate { border-color: #ff6b5e !important; box-shadow: 0 0 0 1px #ff6b5e, 0 0 24px rgba(255, 90, 76, 0.55), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .seat.all-in .stack {
     display: inline-block;
@@ -324,9 +331,12 @@
 /* Table motion switched off: the same as the device asking for less motion. */
 :root[data-motion='off'] {
   .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
-  .dealer, .seat, .seat .hole, .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
+  .dealer, .seat, .seat .hole, .playing-card, .felt-area, .action-bar .buttons button, .timer-fill { transition: none !important; }
   .chip-flight { display: none; }
+  .chat-bubble { animation: chat-fade 0.4s 5.6s ease-in both; }
+  .gesture-flight { animation: gesture-land 1.5s ease-out both; }
+  .tip-toast { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
+  .playing-card, .felt-area, .action-bar .buttons button, .timer-fill { transition: none !important; }
 }
