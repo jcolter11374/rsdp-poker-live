@@ -47,7 +47,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     const seen = fresh ? -1 : (before.hand?.events.at(-1)?.seq ?? -1);
     const events = hand.events.filter((e) => e.seq > seen);
     if (events.some((e) => e.t === 'deal')) sounds.deal();
-    const turned = events.reduce((n, e) => n + (e.t === 'board' ? e.cards.length : 0), 0);
+    const turned = events.reduce((n, e) => Math.max(n, e.t === 'board' ? e.cards.length : 0), 0);
     if (turned) sounds.flip(turned);
     for (const e of events) {
       if (e.t !== 'action') continue;

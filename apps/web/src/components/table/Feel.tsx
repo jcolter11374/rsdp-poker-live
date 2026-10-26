@@ -12,6 +12,7 @@ export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
     if (start === value || !tableMotion() || document.hidden) {
       from.current = value;
       setShown(value);
+      setDir('');
       return;
     }
     // Winnings count up slowly enough to watch; chips going out tick down quickly.
@@ -29,7 +30,10 @@ export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
       else setDir('');
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      setDir('');
+    };
   }, [value]);
   return <span className={`count${dir ? ` count-${dir}` : ''}`}>{fmt(shown)}</span>;
 }

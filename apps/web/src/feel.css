@@ -75,8 +75,8 @@
   .felt.compact .seat.acting::before { width: 170px; height: 130px; }
 
   /* Cards: a touch of paper, lifted off the cloth. */
-  .playing-card:not(.back) { background: linear-gradient(165deg, #ffffff 0%, #f6f7f8 55%, #e7eaed 100%); }
-  .playing-card { box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35); }
+  .playing-card:not(.back, .facedown) { background: linear-gradient(165deg, #ffffff 0%, #f6f7f8 55%, #e7eaed 100%); }
+  .playing-card:not(.facedown) { box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35); }
   .playing-card.back {
     box-shadow: inset 0 0 0 calc(var(--cw) * 0.09) var(--back-a, #d84a3e), inset 0 0 0 calc(var(--cw) * 0.15) rgba(255, 255, 255, 0.9), 0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35);
   }
@@ -91,7 +91,7 @@
     box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--chip) 70%, #000), 0 1.5px 0 1.5px color-mix(in srgb, var(--chip) 45%, #000), 0 3px 4px rgba(0, 0, 0, 0.5);
   }
   /* The pot and bets sit in a dark, recessed pill. */
-  .pot, .bet { background: rgba(0, 0, 0, 0.34); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .pot:not(.total), .bet { background: rgba(0, 0, 0, 0.34); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.06); }
   .pot.result { background: linear-gradient(180deg, #23824f, #17613a); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 6px 16px rgba(0, 0, 0, 0.4); }
   /* The dealer button: a real disc with a rim. */
   .dealer {
@@ -139,7 +139,7 @@
     .pot .count-up { color: #fff; }
     /* The clock runs round the acting seat's nameplate instead of a bar under it. */
     .seat.acting .nameplate { animation: none; }
-    .seat.acting .nameplate::after {
+    .seat.acting .nameplate.timed::after {
       content: '';
       position: absolute;
       inset: -3px;
@@ -150,7 +150,6 @@
       -webkit-mask-composite: xor;
       mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
       pointer-events: none;
-      animation: feel-breathe 1.8s ease-in-out infinite;
     }
     .felt.compact .seat.acting .nameplate::after { border-radius: 11px; }
     .seat.acting .nameplate:has(.timer-fill.low) { --feel-ring: var(--bad); }
@@ -184,7 +183,6 @@
   100% { transform: translate(-50%, -50%); opacity: 1; }
 }
 @keyframes feel-chip-scatter { from { translate: 0 0; } 50% { translate: 0 -6px; } to { translate: 0 0; } }
-@keyframes feel-breathe { 50% { filter: drop-shadow(0 0 6px var(--feel-ring, #5ad08a)); } }
 
 /* ======================================================================
    3. MOMENTS: showdowns and all-ins land. The winning five cards lift, the
@@ -208,6 +206,7 @@
   .felt.compact .pot.result { font-size: 0.85rem; padding: 4px 14px; }
   .seat.winner .nameplate { border-color: #ffd36b !important; box-shadow: 0 0 0 1px #ffd36b, 0 0 22px rgba(255, 211, 107, 0.6), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .win-float { color: #ffd978; font-size: 1.15rem; }
+  .felt.compact .win-float { font-size: 0.9rem; }
   /* All in: the seat goes red-hot and the stack line becomes a stamp. */
   .seat.all-in .nameplate { border-color: #ff6b5e !important; box-shadow: 0 0 0 1px #ff6b5e, 0 0 24px rgba(255, 90, 76, 0.55), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .seat.all-in .stack {
@@ -257,7 +256,6 @@
       animation: feel-burst 0.9s 0.2s ease-out both;
     }
     .seat.all-in .stack { animation: feel-stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
-    .seat.all-in .nameplate { animation: feel-hot 1.4s ease-in-out infinite !important; }
     .action-bar.my-turn { animation: feel-bar-in 0.3s cubic-bezier(0.2, 1.2, 0.4, 1) both; }
   }
 }
@@ -265,7 +263,6 @@
 @keyframes feel-shine { to { translate: 120% 0; } }
 @keyframes feel-burst { 0% { scale: 0.2; opacity: 1; } 70% { opacity: 1; } 100% { scale: 1.5; opacity: 0; } }
 @keyframes feel-stamp { 0% { transform: scale(2.4) rotate(-8deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
-@keyframes feel-hot { 50% { box-shadow: 0 0 0 1px #ff6b5e, 0 0 34px rgba(255, 90, 76, 0.85), 0 6px 16px rgba(0, 0, 0, 0.45); } }
 @keyframes feel-bar-in { from { transform: translateY(14px); opacity: 0.6; } to { transform: none; opacity: 1; } }
 
 /* ======================================================================
@@ -291,16 +288,17 @@
   .felt.compact .felt-emblem { height: auto; width: 78%; }
 
   /* Numbers that matter in a tall, tight display face. */
-  .nameplate .stack, .pot, .bet, .win-float, .board-label, .next-hand {
+  .nameplate .stack, .pot:not(.total), .bet, .win-float, .board-label, .next-hand {
     font-family: 'Barlow Condensed', 'Inter Variable', sans-serif;
     font-weight: 700;
     letter-spacing: 0.01em;
   }
   .felt:not(.compact) .nameplate .stack { font-size: 1.45rem; line-height: 1.05; }
   .felt.compact .nameplate .stack { font-size: 1.02rem; }
-  .pot { font-size: 1.25rem; }
+  .pot:not(.total) { font-size: 1.25rem; }
   .felt.compact .pot { font-size: 1.02rem; }
   .bet { font-size: 1.05rem; }
+  .felt.compact .bet { font-size: 0.85rem; }
   .pot.result { font-family: 'Barlow Condensed', 'Inter Variable', sans-serif; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
   .nameplate .name { letter-spacing: 0.01em; }
 
@@ -308,7 +306,7 @@
   .pot:not(.result):not(.total) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--feel-gold) 45%, transparent); }
   .dealer { color: #2a1d06; background: radial-gradient(circle at 40% 30%, #fff3d4, #f0c467 60%, #c8922f); box-shadow: 0 0 0 1.5px rgba(80, 50, 5, 0.6), 0 3px 6px rgba(0, 0, 0, 0.55); font-family: 'Barlow Condensed', sans-serif; font-size: 0.9rem; }
   .seat.acting .nameplate { border-color: var(--feel-gold) !important; }
-  .timer-fill { background: var(--feel-gold); }
+  .timer:not(.bank) .timer-fill:not(.low) { background: var(--feel-gold); }
 
   /* Our own card back: a framed lattice with the mark in a medallion. */
   .playing-card.back {
@@ -326,6 +324,9 @@
 /* Table motion switched off: the same as the device asking for less motion. */
 :root[data-motion='off'] {
   .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate { animation: none !important; }
-  .dealer, .seat, .seat .hole { transition: none; }
+  .dealer, .seat, .seat .hole, .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
   .chip-flight { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .playing-card, .felt-area, .action-bar .buttons button { transition: none !important; }
 }

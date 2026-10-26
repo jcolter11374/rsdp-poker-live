@@ -413,7 +413,7 @@ export function Table({
                 })}
               </div>
               <div
-                className="nameplate"
+                className={`nameplate${timeFraction !== null ? ' timed' : ''}`}
                 onClick={onSeatClick ? () => onSeatClick(s) : undefined}
                 style={timeFraction !== null ? ({ '--t': timeFraction } as CSSProperties) : undefined}
               >
