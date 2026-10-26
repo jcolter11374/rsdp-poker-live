@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-f",
+      "date": "2026-10-26",
+      "fixes": [
+        "A pre-move ticked straight after one played itself is no longer ignored."
+      ]
+    },
+    {
       "id": "2026-10-26-e",
       "date": "2026-10-26",
       "fixes": [
