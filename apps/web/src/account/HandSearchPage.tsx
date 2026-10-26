@@ -135,7 +135,6 @@ export function HandSearchPage() {
         <Replayer
           hands={[open.hand]}
           start={0}
-          tableId={open.tableId}
           tableName={open.tableName || 'Table'}
           seatCount={open.seatCount}
           myId={open.myId}

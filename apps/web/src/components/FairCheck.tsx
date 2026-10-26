@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { tableRef, verifyHand, type CardEvent } from '@rsdp/engine';
-import { digestOf, handInRecord, tableHand, type HandEntries } from '../audit';
+import { useMemo } from 'react';
+import { verifyHand, type CardEvent } from '@rsdp/engine';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
 import { liveRecordFor, mySeedFor, seedProblem, shownAs } from '../fair';
@@ -12,21 +11,6 @@ const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', h
 /** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
 export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId: string | null; tableId?: string }) {
   const fair = hand.fair;
-  // Changes when a card shown after the hand ends is added, which is recorded again.
-  const digest = useMemo(() => digestOf(hand), [hand]);
-  // The public record of this hand, to check it against once it is revealed.
-  const [record, setRecord] = useState<HandEntries | 'failed' | null>(null);
-  useEffect(() => {
-    if (!tableId || !digest) return;
-    let live = true;
-    tableHand(tableId, hand.handNumber).then(
-      (r) => live && setRecord(r),
-      () => live && setRecord('failed'),
-    );
-    return () => {
-      live = false;
-    };
-  }, [tableId, digest, hand.handNumber]);
   const report = useMemo(() => {
     if (!fair) return null;
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;
@@ -45,17 +29,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };
 
-    const proof = {
-      commit: fair.commit,
-      serverSeed: fair.serverSeed,
-      clientSeeds: fair.clientSeeds.map((c) => c.seed),
-      handSeed: fair.handSeed,
-      button: hand.button,
-      seats: hand.seats.map((s) => s.seat),
-      events: fair.events as CardEvent[],
-      // For scripts/verify-audit.mjs: what the public record's fingerprint of this hand covers.
-      ...(tableId ? { record: { handId: fair.handId, table: tableRef(tableId), handNumber: hand.handNumber, seats: hand.seats.map((s) => ({ seat: s.seat, playerId: s.playerId, stack: s.stack })) } } : {}),
-    };
+    const proof = { commit: fair.commit, serverSeed: fair.serverSeed, clientSeeds: fair.clientSeeds.map((c) => c.seed), handSeed: fair.handSeed, button: hand.button, seats: hand.seats.map((s) => s.seat), events: fair.events as CardEvent[] };
     const check = verifyHand(proof);
     // The full record must be the one this hand's history shows.
     const asSeen = visibleEvents({ events: fair.events } as HandState, { seat: seat ?? null, seeAll: false });
@@ -76,13 +50,8 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
       for (const [s, cards] of Object.entries(live.cards)) for (const c of cards) if (!dealt.get(+s)?.has(c)) wrong.push(`seat ${+s + 1} had ${c}`);
       extra.push({ label: 'It matches what you saw at the table', ok: !wrong.length, detail: wrong.length ? `the record disagrees: ${wrong.join('; ')}` : 'button, seats, board and every card you saw' });
     }
-    // Left out when the hand isn't from a table here, while it is looked up, or when the record can't be reached.
-    if (tableId && record && record !== 'failed') {
-      const inRecord = handInRecord(hand, record);
-      if (inRecord.ok !== null) extra.push({ label: 'It is in the public record, unchanged', ok: inRecord.ok, detail: inRecord.detail });
-    }
     return { check, extra, missing, proof };
-  }, [fair, hand, myId, tableId, record]);
+  }, [fair, hand, myId, tableId]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
   const checks = [...(check?.checks ?? []), ...extra];

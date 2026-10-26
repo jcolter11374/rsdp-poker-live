@@ -65,27 +65,8 @@ export function SiteHeader() {
   );
 }
 
-let build: Promise<string | null> | null = null;
-/** The commit the server says it runs (/api/version), asked once per page load. */
-function useBuild() {
-  const [commit, setCommit] = useState<string | null>(null);
-  useEffect(() => {
-    build ??= fetch('/api/version')
-      .then((r) => (r.ok ? (r.json() as Promise<{ commit: string | null }>) : null))
-      .then((v) => v?.commit ?? null)
-      .catch(() => null);
-    let live = true;
-    void build.then((c) => live && setCommit(c));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return commit;
-}
-
 /** The links at the bottom of the home page and the info pages. */
 export function SiteFooter() {
-  const commit = useBuild();
   return (
     <footer className="site-footer">
       <a href="/about">About</a>
@@ -96,8 +77,6 @@ export function SiteFooter() {
       <a href="/changelog">Changelog</a>
       <a href="/roadmap#suggest">Suggest an idea</a>
       <a href="/fairness">Fair dealing</a>
-      <a href="/transparency">Checking John</a>
-      {commit && <a href={`https://github.com/jcolter11374/rsdp-poker-live/commit/${commit}`} title="The code this server says it runs; /transparency shows GitHub's check of it">Build {commit.slice(0, 7)}</a>}
       <span className="muted">Play money only. Every game and option is free.</span>
     </footer>
   );

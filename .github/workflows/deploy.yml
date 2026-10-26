@@ -1,9 +1,6 @@
 name: Deploy
 
 # Deploys main to Fly.io after CI passes on it. Can also be run by hand.
-# GitHub builds the image here from the public code, signs a record of which
-# commit it came from (build provenance), and Fly runs that exact image. The
-# hourly Transparency watcher checks the live machine against these records.
 on:
   workflow_run:
     workflows: [CI]
@@ -13,9 +10,6 @@ on:
 
 permissions:
   contents: read
-  # For the signed build record.
-  id-token: write
-  attestations: write
 
 # Never run two deploys at once, and never cancel one halfway.
 concurrency:
@@ -30,13 +24,9 @@ env:
 jobs:
   deploy:
     name: Deploy to Fly.io
-    # Only main. GitHub signs the build record with the newest commit on main,
-    # so a CI run that finished after main moved on is skipped: the newer
-    # commit's own deploy follows, and the record names what was built.
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_sha == github.sha)
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -75,25 +65,7 @@ jobs:
             flyctl secrets unset GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET --stage --app "$FLY_APP" 2>/dev/null || true
             echo "No Google keys; Sign in with Google is off."
           fi
-      - name: Sign in to Fly's image registry
-        run: flyctl auth docker
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the image
-        id: image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: registry.fly.io/${{ env.FLY_APP }}:deploy-${{ github.event.workflow_run.head_sha || github.sha }}
-          build-args: BUILD_COMMIT=${{ github.event.workflow_run.head_sha || github.sha }}
-          provenance: false
-      - name: Sign the build record
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: registry.fly.io/${{ env.FLY_APP }}
-          subject-digest: ${{ steps.image.outputs.digest }}
-      # The exact image just built and signed, by its digest.
-      - run: flyctl deploy --image "registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}" --ha=false --wait-timeout 10m
+      - run: flyctl deploy --remote-only --ha=false --wait-timeout 10m
       - name: Health check
         run: |
           for i in $(seq 1 30); do
