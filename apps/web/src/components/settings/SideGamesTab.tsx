@@ -15,6 +15,7 @@ import type { TableSettings } from '@rsdp/engine/settings';
 import { VARIANT_LIST } from '@rsdp/engine/variants';
 import { BETTING_NAME } from '../../format';
 import { ChipsField, Field, NumberField, Toggle } from './fields';
+import { BettingNudge } from '../BettingNudge';
 import './settings.css';
 
 const BETTINGS: BettingKind[] = ['no-limit', 'pot-limit', 'fixed-limit'];
@@ -85,6 +86,7 @@ export function SideGamesTab({ draft, cents, setModifier }: SideGamesProps) {
           </Field>
         )}
       </div>
+      {bomb.gameId && <BettingNudge gameId={bomb.gameId} betting={bomb.betting} onSwitch={(betting) => setBomb({ betting })} />}
 
       <h4>Double board</h4>
       <Toggle label="Deal two boards" checked={board.enabled} onChange={(enabled) => setBoard({ enabled })} />

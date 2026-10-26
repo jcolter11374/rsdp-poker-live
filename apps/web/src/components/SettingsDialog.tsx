@@ -7,6 +7,7 @@ import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import { BETTING_NAME, fromInput, toInput } from '../format';
 import { Modal } from './SeatDialog';
+import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
@@ -149,6 +150,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </select>
                   </Field>
                 </div>
+                {!rot.enabled && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={(betting) => set('game', { betting })} />}
                 {numberField('Seats', Math.min(draft.table.maxSeats, seatLimit), (v) => set('table', { maxSeats: v }), Math.max(2, seated), seatLimit, `Up to ${seatLimit} for ${games.length > 1 ? 'these games' : 'this game'}.`)}
                 {toggle('Rotate games (mixed games)', rot.enabled, (enabled) =>
                   set('game', {
@@ -161,33 +163,36 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                       const update = (p: Partial<typeof st>) =>
                         set('game', { rotation: { ...rot, steps: rot.steps.map((x, j) => (j === i ? { ...x, ...p } : x)) } });
                       return (
-                        <div className="row" key={i}>
-                          <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
-                            {VARIANT_LIST.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select value={st.betting} onChange={(e) => update({ betting: e.target.value as BettingKind })}>
-                            {BETTINGS.map((b) => (
-                              <option key={b} value={b}>
-                                {BETTING_NAME[b]}
-                              </option>
-                            ))}
-                          </select>
-                          <input type="number" min={1} value={st.length} onChange={(e) => update({ length: Math.max(1, Math.round(+e.target.value)) })} />
-                          <select value={st.unit} onChange={(e) => update({ unit: e.target.value as 'hands' | 'orbits' })}>
-                            <option value="hands">hands</option>
-                            <option value="orbits">orbits</option>
-                          </select>
-                          <button
-                            type="button"
-                            disabled={rot.steps.length <= 1}
-                            onClick={() => set('game', { rotation: { ...rot, steps: rot.steps.filter((_, j) => j !== i) } })}
-                          >
-                            ✕
-                          </button>
+                        <div key={i}>
+                          <div className="row">
+                            <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
+                              {VARIANT_LIST.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select value={st.betting} onChange={(e) => update({ betting: e.target.value as BettingKind })}>
+                              {BETTINGS.map((b) => (
+                                <option key={b} value={b}>
+                                  {BETTING_NAME[b]}
+                                </option>
+                              ))}
+                            </select>
+                            <input type="number" min={1} value={st.length} onChange={(e) => update({ length: Math.max(1, Math.round(+e.target.value)) })} />
+                            <select value={st.unit} onChange={(e) => update({ unit: e.target.value as 'hands' | 'orbits' })}>
+                              <option value="hands">hands</option>
+                              <option value="orbits">orbits</option>
+                            </select>
+                            <button
+                              type="button"
+                              disabled={rot.steps.length <= 1}
+                              onClick={() => set('game', { rotation: { ...rot, steps: rot.steps.filter((_, j) => j !== i) } })}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <BettingNudge gameId={st.gameId} betting={st.betting} onSwitch={(betting) => update({ betting })} />
                         </div>
                       );
                     })}

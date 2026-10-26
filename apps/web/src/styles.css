@@ -816,3 +816,10 @@ dl.shortcuts dd { margin: 0; }
 /* On phones the time bank sits beside the hand line instead of over it. */
 .portrait .bar-head { gap: 8px; flex-wrap: wrap; }
 .portrait .bar-head .time-bank { position: static; translate: none; }
+
+/* "Are you sure?" under a game picker set to unusual betting. */
+.betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }
+.betting-nudge.uncommon { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+.betting-nudge p { margin: 0 0 6px; }
+.betting-nudge-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.betting-nudge-actions button { padding: 4px 10px; font-size: 0.85rem; }
