@@ -54,6 +54,7 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
       const box = seatEl.getBoundingClientRect();
       const cx = box.left + box.width / 2;
       const cy = box.top + box.height / 2;
+      const pod = box.width / 2;
       let { left, right, top, bottom } = box;
       const hole = seatEl.querySelector<HTMLElement>('.hole:not(.mucked)');
       if (hole && hole.childElementCount) {
@@ -63,9 +64,9 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
         top = Math.min(top, r.top);
         bottom = Math.max(bottom, r.bottom);
       }
-      const now = { l: cx - left, r: right - cx, u: cy - top, d: bottom - cy };
+      const now = { l: cx - left, r: right - cx, u: cy - top, d: bottom - cy, pod };
       const was = reach[seat];
-      if (!was || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
+      if (!was || Math.abs(was.pod! - pod) > 4 || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
       next[seat] = now;
     });
     if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
@@ -143,10 +144,10 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  // Empty seats keep half the widest nameplate (as measured, cards included) plus half an empty seat clear of
+  // Empty seats keep half the widest nameplate (as measured, without cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
   const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
-  const podHalf = Math.max(compact ? 60 : 120, ...view.seats.map((s, seat) => (s && reach[seat] ? Math.max(reach[seat].l, reach[seat].r) : 0)));
+  const podHalf = Math.max(compact ? 60 : 120, ...view.seats.map((s, seat) => (s && reach[seat]?.pod ? reach[seat].pod! : 0)));
   const emptyHalf = compact ? 34 : 58;
   const spread = seatFractions(
     view.seats.map((s) => !!s),

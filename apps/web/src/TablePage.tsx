@@ -209,10 +209,11 @@ export function TablePage({ tableId }: { tableId: string }) {
       return true;
     }
   });
-  const dismissKeysTip = () => {
+  /** Gone for good after "Got it" or opening the shortcuts; a timeout only hides it until the next visit. */
+  const dismissKeysTip = (forGood = true) => {
     setKeysTipSeen(true);
     try {
-      localStorage.setItem('rsdp.tip.keys', '1');
+      if (forGood) localStorage.setItem('rsdp.tip.keys', '1');
     } catch {
       /* ignore */
     }
@@ -221,7 +222,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
-    const t = setTimeout(dismissKeysTip, KEYS_TIP_MS);
+    const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
     return () => clearTimeout(t);
   }, [keysTip]);
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
@@ -453,15 +454,6 @@ export function TablePage({ tableId }: { tableId: string }) {
       <div className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
-          {keysTip && (
-            <div className="tip-toast" role="status">
-              <span>
-                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
-              </span>
-              <button onClick={() => setDialog({ kind: 'keys' })}>All shortcuts</button>
-              <button onClick={dismissKeysTip}>Got it</button>
-            </div>
-          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -549,6 +541,25 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
+          {keysTip && !dialog && (
+            // A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner.
+            <div className="tip-anchor">
+              <div className="tip-toast" role="status">
+                <span>
+                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
+                </span>
+                <button
+                  onClick={() => {
+                    dismissKeysTip();
+                    setDialog({ kind: 'keys' });
+                  }}
+                >
+                  All shortcuts
+                </button>
+                <button onClick={() => dismissKeysTip()}>Got it</button>
+              </div>
+            </div>
+          )}
           <Dock reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`} seated={view.me.seat !== null} limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}>
             <ActionBar
               view={view}

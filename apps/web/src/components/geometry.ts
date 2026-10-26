@@ -133,6 +133,8 @@ export interface Reach {
   r: number;
   u: number;
   d: number;
+  /** Half the nameplate's width, without cards, so layout doesn't shift as cards come and go. */
+  pod?: number;
 }
 
 /**

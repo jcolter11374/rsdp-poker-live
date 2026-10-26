@@ -749,14 +749,15 @@ kbd {
 .units-toggle span { padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
 .units-toggle span.on { background: var(--accent-2); color: #1b1606; font-weight: 700; }
 .portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
-/* The one-time keyboard tip: a small note over the page rather than in it. It sits over the bottom of the
-   side column, clear of the action bar; when the side column moves under the table, it sits under the top bar. */
+/* The one-time keyboard tip: a small note over the felt's bottom corner rather than in the page, so it covers
+   no buttons (action bar, chat, host requests) and sits below any dialog. */
+.tip-anchor { position: relative; height: 0; margin-top: -10px; }
 .tip-toast {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 30;
-  max-width: 420px;
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  z-index: 9;
+  max-width: min(340px, calc(100vw - 32px));
   display: flex;
   align-items: center;
   gap: 8px 10px;
@@ -771,7 +772,6 @@ kbd {
 }
 .tip-toast > span { flex: 1 1 100%; line-height: 1.5; }
 .tip-toast button { padding: 4px 10px; font-size: 0.82rem; }
-@media (max-width: 1180px) { .tip-toast { bottom: auto; top: 64px; } }
 @keyframes tip-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .tip-toast { animation: none; } }
 dl.shortcuts { display: grid; gap: 8px; margin: 4px 0 12px; }
