@@ -12,3 +12,4 @@ export * as schema from './schema';
 export type { AvatarKind, JobStatus, MovementKind, NoteColor, TableMode, TableStatus } from './schema';
 export * from './tournaments';
 export * from './tournamentLog';
+export * from './history';

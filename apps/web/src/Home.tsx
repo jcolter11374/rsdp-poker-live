@@ -7,6 +7,7 @@ import { BETTING_NAME } from './format';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
 import { WhatsNewBanner } from './roadmap/WhatsNewPage';
+import { AccountLink } from './account/AccountPages';
 import { TournamentList } from './tournament/TournamentList';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
@@ -67,10 +68,11 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
 
   return (
     <main className="home">
+      <AccountLink />
       <h1 className="logo">
         RSDP Poker <span>Live!</span>
       </h1>
-      <p className="tagline">Start a table, send the link, and play with friends. No sign-up.</p>
+      <p className="tagline">Start a table, send the link, and play with friends. No sign-up needed.</p>
       <WhatsNewBanner />
       <TournamentList />
       <form className="card-panel" onSubmit={create}>

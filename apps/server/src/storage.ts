@@ -1,16 +1,16 @@
 import type { Db } from './db';
 import { allHandsOfTable, createTable, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
-import { resolveToken, setDisplayName } from './identity';
+import { setDisplayName, whoIs } from './identity';
 import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
 import type { IdentityService, TableStore } from './app';
 
-/** Browser secrets map to persistent guest players; accounts come with the account pages. */
+/** Browser secrets map to persistent guest players; a signed-in browser plays as its account's player. */
 export function dbIdentity(db: Db): IdentityService {
   return {
-    async resolve(token) {
-      const player = await resolveToken(db, token);
-      return { playerId: player.id, displayName: player.displayName, account: null };
+    async resolve(token, session) {
+      const { player, account } = await whoIs(db, token, session);
+      return { playerId: player.id, displayName: player.displayName, account: account && { username: account.username } };
     },
     async rename(playerId, name) {
       await setDisplayName(db, playerId, name);

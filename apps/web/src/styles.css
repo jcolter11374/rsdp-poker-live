@@ -86,8 +86,20 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .topbar .stakes { flex: 1; color: var(--muted); }
 .paused { color: var(--accent-2); }
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+/* Below about 1180px wide the side column would squeeze the table, so it moves under it. */
+@media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
 .felt-area { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Desktop: the table fills the window height, so every seat, the board and the
+   action bar are on one screen. The side column scrolls on its own. */
+.table-page:not(.portrait) { height: 100dvh; min-height: 500px; }
+.table-page:not(.portrait) .layout { grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.table-page:not(.portrait) .felt-area { min-height: 0; }
+.table-page:not(.portrait) .side { min-height: 0; overflow-y: auto; }
+.table-page:not(.portrait) .felt-area > .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 84px 100px 40px; }
+/* Never taller than about 4:3, so a narrow window doesn't stand the table on its end. */
+@media (min-width: 1181px) { .table-page:not(.portrait) .felt-area > .felt { max-height: max(280px, calc((100vw - 376px - 2 * clamp(110px, 9vw, 175px)) * 0.75)); } }
+.table-page:not(.portrait) .felt-area > :not(.felt) { flex-shrink: 0; }
+@media (max-width: 1180px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt-area > .felt { aspect-ratio: 16 / 10; flex: none; max-height: max(360px, 100dvh - 300px); } }
 .banner { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; text-align: center; }
 
 .felt {
@@ -164,12 +176,15 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .nameplate .clock { font-size: 0.75rem; color: var(--bad); }
 .tag { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 5px; vertical-align: 1px; }
 .tag.bot { background: #5b6b7a; }
+/* On a nameplate a bot reads "Ace · Beth's bot". */
+.nameplate .name .bot-owner { margin-left: 5px; font-size: 0.72rem; font-weight: 400; line-height: 1; color: var(--muted); }
 .seat.empty .add-bot { font-size: 0.7rem; padding: 2px 8px; margin-top: 4px; opacity: 0.8; }
 .seat.empty .add-bot:hover { opacity: 1; }
 .seat.acting .nameplate { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, 0.35); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 0 1px var(--good), 0 0 14px var(--good); }
 .seat.folded .hole { opacity: 0.25; }
-.seat.folded .nameplate { opacity: 0.55; }
+.seat.folded .nameplate > * { opacity: 0.55; }
+.seat.folded .nameplate { background: #1f2329; }
 .seat.away { opacity: 0.55; }
 .seat.me .nameplate { background: #2b3139; }
 .dealer {
@@ -331,16 +346,24 @@ input[type='checkbox'] { width: auto; }
 }
 @keyframes float-up { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .bet { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px; z-index: 2; margin: 0; padding: 2px 10px 2px 3px; background: rgba(0, 0, 0, 0.28); color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; }
-/* A flat chip: white face, red edge spots. */
+/* A flat chip in its denomination's colour (--chip) with edge spots (--spot); red by default. */
 .chip {
+  --chip: #d23a31;
+  --spot: #fff;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   flex: none;
   display: inline-block;
-  background: radial-gradient(circle, #fff 0 42%, transparent 43%), repeating-conic-gradient(#d84a3e 0 30deg, #fff 30deg 60deg);
-  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(0, 0, 0, 0.35);
+  background: radial-gradient(circle, var(--chip) 0 36%, color-mix(in srgb, var(--spot) 70%, transparent) 37% 41%, transparent 42%), repeating-conic-gradient(var(--chip) 0 30deg, var(--spot) 30deg 60deg);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--chip) 75%, #000), 0 1px 2px rgba(0, 0, 0, 0.45);
 }
+/* Bets and pots: a short stack per colour, each chip a little above the last. */
+.chip-stacks { display: inline-flex; align-items: flex-end; gap: 2px; }
+.chip-stack { display: inline-flex; flex-direction: column-reverse; }
+.chip-stack .chip + .chip { margin-bottom: -13px; }
+.pot .chip-stacks { margin-right: 6px; vertical-align: -3px; }
+.felt.compact .chip-stack .chip + .chip { margin-bottom: -10px; }
 
 /* cards */
 .playing-card { position: relative; transition: transform 0.12s; }
@@ -350,7 +373,7 @@ input[type='checkbox'] { width: auto; }
 /* Your own face-down stud cards: visible to you, marked as hidden from others. */
 .playing-card.facedown:not(.back) { background: #dfe6ee; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 2px 4px rgba(0, 0, 0, 0.4); }
 .playing-card.win { box-shadow: 0 0 0 2px var(--good), 0 0 12px var(--good); }
-.playing-card.dim { filter: brightness(0.5) saturate(0.6); }
+.playing-card.dim { filter: brightness(0.72) saturate(0.6); }
 .deal-board { animation: deal-in 0.25s ease-out both; }
 @keyframes deal-in { from { transform: translateY(-12px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Hole cards fly in from the middle of the table (--dx/--dy point back to it). */
@@ -413,7 +436,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 @keyframes bet-in { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 0.4; } to { transform: translate(-50%, -50%); opacity: 1; } }
 .chip-flight { position: absolute; transform: translate(-50%, -50%); display: flex; gap: 1px; z-index: 4; pointer-events: none; animation: chip-fly 0.5s ease-in-out both; }
 .chip-flight.award { animation: chip-fly 0.6s ease-in-out both, fade-out 0.3s 0.9s both; }
-.chip-flight.award .chip { background: var(--good); }
+.chip-flight.award .chip { --chip: var(--good); }
 @keyframes chip-fly { from { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 1; } 85% { opacity: 1; } to { transform: translate(-50%, -50%); opacity: 0.2; } }
 @keyframes fade-out { to { opacity: 0; } }
 .seat.winner .nameplate { animation: winner-pulse 1s ease-in-out 4; }
@@ -473,15 +496,15 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   flex: 1;
   min-height: 0;
   aspect-ratio: auto;
-  margin: 54px 40px 26px;
+  margin: 62px 50px 26px;
   border-width: 10px;
 }
 .felt.compact .felt-brand { top: 64%; font-size: 1rem; }
 .felt.compact .seat, .felt.compact .nameplate { min-width: 0; }
 .felt.compact .nameplate { padding: 4px 8px 5px 5px; column-gap: 5px; border-radius: 9px; min-width: 76px; max-width: 100px; }
 .felt.compact .nameplate .name .tag { display: none; }
-/* Bots stay marked on phones too. */
-.felt.compact .nameplate .name .tag.bot { display: inline-block; font-size: 0.5rem; padding: 0 3px; margin-left: 3px; }
+/* Phones mark bots on their picture instead (extras.css), so the name is never cut short. */
+.felt.compact .nameplate .name .bot-owner { display: none; }
 .felt.compact .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .name { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .stack { font-size: 0.85rem; }
@@ -527,6 +550,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .person { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 .person .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person button { padding: 2px 8px; font-size: 0.8rem; }
+.cohost { background: var(--panel-2); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.cohost .check { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dot.on { background: var(--good); }
 .dot.off { background: var(--bad); }
@@ -577,3 +602,156 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .fair-facts { margin: 6px 0; }
 .fair-facts dt { font-weight: 600; margin-top: 4px; }
 .fair-facts dd { margin: 0; }
+
+/* ---- table look: a lit felt in a thick dark rail, the pot above the board, big cards */
+.felt {
+  border: 16px solid #191c21;
+  background: radial-gradient(120% 90% at 50% 38%, color-mix(in srgb, var(--felt) 84%, #fff) 0%, var(--felt) 52%, color-mix(in srgb, var(--felt) 78%, #000) 100%);
+  box-shadow: inset 0 0 0 3px var(--felt-edge), inset 0 14px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px #2c3138, 0 22px 48px rgba(0, 0, 0, 0.45);
+}
+.felt.my-turn { box-shadow: inset 0 0 0 3px var(--felt-edge), inset 0 0 60px rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.55), 0 22px 48px rgba(0, 0, 0, 0.45); }
+.felt.compact { border-width: 11px; }
+.board { gap: 10px; }
+.board .pots, .board .next-hand { order: -1; }
+.next-hand { font-weight: 600; letter-spacing: 0.02em; }
+.board .pots { flex-direction: column; align-items: center; gap: 2px; }
+.pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.pot.total { padding: 0; font-size: 0.8rem; }
+.pot.result { background: #1d6b41; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
+.pot.result { max-width: min(440px, 80%); }
+.felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }
+.pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
+.board .playing-card { --cw: var(--board-cw, 62px); }
+.board .cards { gap: 6px; }
+.board.multi .playing-card { --cw: calc(var(--board-cw, 62px) * 0.8); }
+.felt-brand { font-size: 1.5rem; color: rgba(255, 255, 255, 0.06); top: 76%; }
+.seat.empty button, .seat.empty span { border-radius: 12px; min-width: 110px; padding: 12px 18px; background: rgba(0, 0, 0, 0.18); border-color: rgba(255, 255, 255, 0.22); }
+.felt.compact .seat.empty button, .felt.compact .seat.empty span { min-width: 64px; padding: 6px 10px; }
+
+/* Cards: a jumbo index (big rank, suit under it) that reads at a glance. */
+.playing-card .rank { font-size: calc(var(--cw) * 0.58); top: calc(var(--cw) * 0.05); }
+.playing-card .suit { top: calc(var(--cw) * 0.66); width: calc(var(--cw) * 0.34); height: calc(var(--cw) * 0.34); }
+.playing-card { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
+
+/* Phones: bigger cards for everyone, your own the biggest. */
+.felt.compact .playing-card.small { --cw: 30px; }
+.felt.compact .seat .hole { height: 42px; }
+.felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -10px; }
+.felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -13px; }
+.felt.compact .seat.me .playing-card { --cw: 56px; }
+.felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -10px; }
+.felt.compact .seat.me .hole.n4 .playing-card + .playing-card { margin-left: -24px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 38px; }
+.felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -15px; }
+.felt.compact .board .playing-card { --cw: 46px; }
+.felt.compact .board .cards { gap: 4px; }
+.felt.compact .board.multi .playing-card { --cw: 34px; }
+
+/* Desktop seats: wide dark nameplates with the cards tucked in on the left. */
+.table-page:not(.portrait) .felt-area > .felt { margin-left: clamp(110px, 9vw, 175px); margin-right: clamp(110px, 9vw, 175px); }
+/* Scaled inside the transform, so the seat stays centred on its spot. */
+.felt:not(.compact) .seat { transform: translate(-50%, -50%) scale(var(--seat-scale, 1)); }
+.felt:not(.compact) {
+  .nameplate { grid-template-columns: minmax(0, 1fr) auto; min-width: 200px; max-width: 290px; min-height: 60px; padding: 9px 12px 9px 16px; border-radius: 12px; background: #23282f; border-color: #343a43; }
+  .nameplate > :not(.seat-avatar, .timer, .equity-tag, .note-badge, .seat-mood) { grid-column: 1; }
+  .nameplate .seat-avatar { grid-column: 2; }
+  .nameplate .name { font-size: 0.9rem; color: #d3d9e0; }
+  .nameplate .stack { font-size: 1.2rem; }
+  .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seat.me .nameplate { background: #2a3038; }
+  /* Hold'em and Omaha: cards tucked into the left of the nameplate, fanned a little. */
+  .seat.has-cards:not(.long-hand) {
+    --cw: 54px;
+    --tuck: 112px;
+    .nameplate { padding-left: var(--tuck); min-width: calc(var(--tuck) + 150px); }
+    .hole { left: 10px; right: auto; translate: none; bottom: 8px; height: auto; z-index: 3; }
+    .playing-card.small { --cw: inherit; }
+    .playing-card.small .pip { display: block; }
+    .playing-card.small .rank { left: calc(var(--cw) * 0.1); font-size: calc(var(--cw) * 0.58); }
+    .playing-card.small .suit { left: calc(var(--cw) * 0.12); top: calc(var(--cw) * 0.66); width: calc(var(--cw) * 0.34); height: calc(var(--cw) * 0.34); }
+    .hole .playing-card + .playing-card { margin-left: -14px; }
+    .hole.n2 .playing-card:first-child { rotate: -4deg; }
+    .hole.n2 .playing-card + .playing-card { rotate: 4deg; }
+    .hole.n3 { --cw: 50px; }
+    .hole.n3 .playing-card + .playing-card { margin-left: -22px; }
+    .hole.n4 { --cw: 48px; }
+    .hole.n4 .playing-card + .playing-card { margin-left: -20px; }
+    .hole:is(.n3, .n4) .playing-card:not(:last-child) .pip { display: none; }
+  }
+  .seat.has-cards:not(.long-hand):has(.hole.n3) { --tuck: 136px; }
+  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 158px; }
+  .seat.me.has-cards:not(.long-hand) { --cw: 62px; --tuck: 128px; }
+  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 172px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 { --cw: 54px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 .playing-card + .playing-card { margin-left: -22px; }
+  /* Stud and draw: a row of cards over the nameplate. */
+  .seat.long-hand .hole { height: auto; bottom: calc(100% - 6px); }
+  .seat.long-hand .playing-card.small { --cw: 44px; }
+  .seat.long-hand .hole .playing-card + .playing-card { margin-left: -17px; }
+  .seat.long-hand.me .playing-card.small { --cw: 54px; }
+  .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -22px; }
+  .seat.long-hand.me .nameplate { min-width: 230px; }
+  /* Seat state wins over the plain desktop nameplate. */
+  .seat.acting .nameplate { border-color: #fff; }
+  .seat.winner .nameplate { border-color: var(--good); }
+  .seat.folded .nameplate { background: #1f2329; }
+}
+
+/* Your own face-down stud cards sit a little lower than your up cards, so you can tell them apart. */
+.seat.me .playing-card.facedown:not(.back) { translate: 0 8px; }
+/* Card backs: a fine original lattice instead of a flat colour. */
+.playing-card.back {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px);
+}
+/* A two-digit 10 is set tighter, so it fits the visible corner of an overlapped card. */
+.playing-card.rank-10 .rank { letter-spacing: -0.12em !important; font-size: calc(var(--cw) * 0.5) !important; }
+/* The notes button only shows on hover, or when there's a note. */
+.felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0; }
+.felt:not(.compact) .nameplate:is(:hover, :focus-within) .note-badge { opacity: 1; }
+@media (hover: none) { .felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0.55; } }
+/* Phones on their side: a short table, so smaller cards keep your hand clear of the board. */
+@media (max-height: 500px) {
+  .felt.compact .seat.me .playing-card { --cw: 40px; }
+  .felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 34px; }
+  .felt.compact .board .playing-card { --cw: 36px; }
+  .felt.compact .board.multi .playing-card { --cw: 28px; }
+  .felt.compact .playing-card.small { --cw: 24px; }
+  .felt.compact .seat .hole { height: 34px; }
+  /* Your cards go beside your nameplate, leaving the short table's middle to the board. */
+  .felt.compact .seat.me .hole { bottom: auto; top: 50%; left: auto; right: 100%; translate: 0 -50%; margin-right: 4px; }
+  /* Pot, total and status share one line. */
+  .felt.compact .board { gap: 4px; }
+  .felt.compact .board .pots { flex-direction: row; gap: 8px; align-items: baseline; }
+  .felt.compact .next-hand { font-size: 0.72rem; }
+  .portrait .action-bar .strength { display: none; }
+}
+/* Pre-moves look like the real buttons, dimmer until armed; the row stays a sensible width. */
+.action-bar .buttons { width: 100%; max-width: 780px; margin: 0 auto; }
+.action-bar.pre .buttons button { background: var(--panel-2); border-color: var(--line); color: var(--muted); }
+.action-bar.pre .buttons button.queued { background: #2c3a2f; border-color: var(--go); color: #fff; }
+.action-bar.pre .box { border-radius: 50%; border-color: currentColor; margin-right: 4px; }
+.action-bar.pre button.queued .box { background: var(--go); border-color: var(--go); color: #fff; }
+
+/* Keyboard shortcuts and the chips/BB switch. */
+kbd {
+  display: inline-block; min-width: 1.5em; padding: 1px 5px; border-radius: 4px;
+  background: #2a2f37; border: 1px solid #454c57; border-bottom-width: 2px;
+  font: 600 0.78em/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); text-align: center;
+}
+.key-hint {
+  margin-left: 7px; padding: 0 4px; min-width: 1.3em; font-size: 0.68em; vertical-align: 1px;
+  background: rgba(0, 0, 0, 0.22); border-color: rgba(255, 255, 255, 0.22); color: inherit; opacity: 0.8;
+}
+@media (hover: none), (pointer: coarse) { .key-hint { display: none; } }
+.units-toggle { display: inline-flex; padding: 2px; gap: 0; border-radius: 999px; flex-shrink: 0; }
+.units-toggle span { padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
+.units-toggle span.on { background: var(--accent-2); color: #1b1606; font-weight: 700; }
+.portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
+.banner.tip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 0.9rem; }
+.banner.tip > span { flex: 1 1 auto; }
+.banner.tip button { padding: 4px 10px; font-size: 0.85rem; }
+dl.shortcuts { display: grid; gap: 8px; margin: 4px 0 12px; }
+dl.shortcuts > div { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px; }
+dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
+dl.shortcuts dd { margin: 0; }
+.portrait .topbar .units-toggle { padding: 2px; }

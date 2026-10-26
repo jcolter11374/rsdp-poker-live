@@ -6,7 +6,7 @@ describe('settle up with practice bots', () => {
     const r = settleUp([
       { playerId: 'a', name: 'Ann', net: -100 },
       { playerId: 'b', name: 'Bo', net: 60 },
-      { playerId: 'x', name: "Ann's Poker Bot", net: 40, bot: true },
+      { playerId: 'x', name: 'Ace', net: 40, bot: true },
     ]);
     expect(r).toEqual({ transfers: [{ from: 'Ann', to: 'Bo', amount: 60 }], off: 0, bots: 40 });
   });

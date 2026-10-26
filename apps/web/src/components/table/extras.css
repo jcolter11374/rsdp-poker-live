@@ -13,9 +13,13 @@
 /* Pictures, moods and gestures (Persona.tsx). */
 .avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; line-height: 1; box-sizing: border-box; }
 .avatar.initials { width: 36px; height: 36px; color: #fff; font-weight: 700; font-size: 15px; }
-.avatar.bot-avatar { width: 36px; height: 36px; background: #3c4652; font-size: 20px; }
+.avatar.bot-avatar { overflow: hidden; }
+.avatar.bot-avatar svg { display: block; }
+/* Phones have no room for "· Beth's bot" beside the name, so the robot wears the label. */
+.seat-avatar .bot-badge { display: none; }
+.felt.compact .seat-avatar .bot-badge { display: block; position: absolute; left: 50%; bottom: -5px; translate: -50% 0; font-size: 0.45rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; padding: 1px 3px; border-radius: 3px; background: #5b6b7a; color: #fff; }
 /* The picture sits at the left of the nameplate, beside the name and stack. */
-.nameplate .seat-avatar { grid-column: 1; grid-row: 1 / span 8; display: flex; align-self: center; pointer-events: none; }
+.nameplate .seat-avatar { grid-column: 1; grid-row: 1 / span 8; display: flex; align-self: center; pointer-events: none; position: relative; }
 .felt.compact .nameplate .seat-avatar .avatar { width: 26px !important; height: 26px !important; font-size: 13px !important; }
 .nameplate .seat-mood { position: absolute; right: -10px; bottom: -10px; font-size: 18px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); pointer-events: none; }
 .felt.compact .nameplate .seat-mood { font-size: 14px; right: -7px; bottom: -8px; }

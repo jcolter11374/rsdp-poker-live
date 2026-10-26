@@ -24,7 +24,8 @@ export function tableView(
   const isHost = rt.isHost(playerId);
   const hand = s.hand;
   // The host keeps the live table whether seated or not; everyone else unseated is a spectator.
-  const isSpectator = !mySeat && !isHost;
+  const staff = rt.isStaff(playerId);
+  const isSpectator = !mySeat && !staff;
   const blocked = isSpectator && !s.settings.spectators.allowed;
   const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && s.settings.spectators.seeAllCards };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
@@ -99,6 +100,8 @@ export function tableView(
     tournamentId,
     hostId: s.hostId,
     isHost,
+    powers: rt.powersOf(playerId),
+    coHosts: (s.coHosts ?? []).map((c) => ({ ...c, powers: [...c.powers] })),
     me: { playerId, seat: mySeat?.seat ?? null },
     settings,
     pendingSettings: s.pendingSettings,
@@ -117,14 +120,14 @@ export function tableView(
     bombPotNext: !!s.sideGames?.bombPotNext,
     rabbit: rabbitView(rt, playerId),
     nit: nitRound ? { prize: nitRound.prize, participants: nitRound.participants.length, holders: nitRound.holders.length } : null,
-    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (isHost || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
+    rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (staff || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
     level: levelView(rt, now),
     // Besides their own, a player sees the requests of bots they added, so they can take them back.
-    requests: (isHost ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => ({
-      ...r,
-      ...(rt.isBot(r.playerId) ? { bot: true as const } : {}),
-    })),
+    requests: (rt.can(playerId, 'approve') ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => {
+      const bot = rt.botInfo(r.playerId);
+      return { ...r, ...(bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName } } : {}) };
+    }),
     // Bot rows are flagged: they play for nothing, so settle-up pays only between people.
     ledger: Object.values(s.ledger).map((row) => {
       const seat = rt.seatOf(row.playerId);
@@ -195,7 +198,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
 
 function botTag(rt: TableRuntime, playerId: PlayerId): Pick<SeatView, 'bot'> {
   const bot = rt.botInfo(playerId);
-  return bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName } } : {};
+  return bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName, look: bot.look ?? 0 } } : {};
 }
 
 function rabbitView(rt: TableRuntime, playerId: PlayerId): TableView['rabbit'] {
@@ -320,7 +323,10 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     betting: past.betting,
     stakes: past.stakes,
     button: past.button,
-    seats: past.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack })),
+    seats: past.seats.map((x) => {
+      const bot = rt.botBadge(x.playerId);
+      return { seat: x.seat, playerId: x.playerId, name: rt.nameOf(x.playerId), stack: x.startStack, ...(bot ? { bot } : {}) };
+    }),
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.

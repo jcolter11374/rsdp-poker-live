@@ -1,5 +1,6 @@
 import type { BettingKind, HandFairness, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
+import type { CoHost } from '@rsdp/engine/roles';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
 export const RUNTIME_VERSION = 1;
@@ -89,6 +90,9 @@ export interface LedgerRow {
   cashOut: number;
   /** A practice bot's chips: kept for the chip count, but no money is owed to or by a bot. */
   bot?: true;
+  /** A bot's owner and look (BOT_LOOKS), kept so its old hands still show whose robot it was. */
+  owner?: string;
+  look?: number;
 }
 
 export interface ChatMessage {
@@ -229,17 +233,21 @@ export interface RuntimeState {
   offers?: SeatOffer[];
   /** Players the host has muted in chat. */
   muted?: PlayerId[];
+  /** Co-hosts and the powers the host gave each (cash tables). Absent in older snapshots. */
+  coHosts?: CoHost[] | null;
   /** Provably fair dealing (docs/FAIRNESS.md). Missing in older snapshots; made on first use. */
   fair?: FairState;
   /** Practice bots at this table (seated or asking for a seat), by their player id. */
   bots?: Record<PlayerId, BotInfo>;
 }
 
-/** A practice bot: who added it, and what it buys in (and rebuys) for. */
+/** A practice bot: who added it, what it buys in (and rebuys) for, and how it looks. */
 export interface BotInfo {
   ownerId: PlayerId;
   ownerName: string;
   buyIn: number;
+  /** Index into BOT_LOOKS: its name and picture. Missing for bots saved before bots had looks. */
+  look?: number;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

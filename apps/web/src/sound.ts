@@ -1,8 +1,9 @@
-/** Tiny synthesized sound effects, so the app ships no audio files. */
+/** Synthesized sound effects, so the app ships no audio files. */
 
 import { useSyncExternalStore } from 'react';
 import type { GestureKind } from '@rsdp/engine/wire';
 import { getPrefs } from './prefs';
+import { renderSound, type SoundName } from './soundbank';
 
 const VOLUME_KEY = 'rsdp.volume';
 /** Where the first version kept a plain on/off switch. */
@@ -113,6 +114,34 @@ function noise(start: number, dur: number, gain = 0.2, filter = 2000) {
   src.start(t);
 }
 
+/** Each table sound is rendered a few times with different randomness, so repeats don't sound mechanical. */
+const VARIANTS = 3;
+const rendered = new Map<SoundName, AudioBuffer[]>();
+
+/** How loud each sound plays against the others (the master volume sits on top). */
+const LEVEL: Partial<Record<SoundName, number>> = { turn: 0.55, turnBell: 0.55, hurry: 0.5, request: 0.5, chat: 0.6 };
+
+function play(name: SoundName) {
+  const a = audio();
+  if (!a || !master) return;
+  const bufs = rendered.get(name) ?? [];
+  rendered.set(name, bufs);
+  let buf: AudioBuffer;
+  if (bufs.length < VARIANTS) {
+    // Rendered on first use, one variant per play, so no single play waits for all of them.
+    const data = renderSound(name, a.sampleRate);
+    buf = a.createBuffer(1, data.length, a.sampleRate);
+    buf.getChannelData(0).set(data);
+    bufs.push(buf);
+  } else buf = bufs[Math.floor(Math.random() * bufs.length)];
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const g = a.createGain();
+  g.gain.value = LEVEL[name] ?? 0.42;
+  src.connect(g).connect(master);
+  src.start();
+}
+
 /**
  * Table noises are skipped in a background tab, so they don't pile up, and
  * when the player turned table sounds off; alerts always play.
@@ -124,59 +153,28 @@ const quietWhenHidden =
   };
 
 export const sounds = {
-  deal: quietWhenHidden(() => {
-    noise(0, 0.06, 0.25, 3000);
-    noise(0.09, 0.06, 0.25, 3000);
-  }),
-  chips: quietWhenHidden(() => {
-    tone(2400, 0, 0.05, 'triangle', 0.08);
-    tone(2900, 0.04, 0.05, 'triangle', 0.08);
-    tone(2600, 0.08, 0.06, 'triangle', 0.06);
-  }),
-  raise: quietWhenHidden(() => {
-    tone(2400, 0, 0.05, 'triangle', 0.09);
-    tone(2900, 0.04, 0.05, 'triangle', 0.09);
-    tone(2600, 0.08, 0.06, 'triangle', 0.08);
-    tone(3100, 0.13, 0.06, 'triangle', 0.08);
-    tone(2700, 0.18, 0.08, 'triangle', 0.06);
-  }),
-  allIn: quietWhenHidden(() => {
-    for (let i = 0; i < 7; i++) tone(2200 + ((i * 370) % 900), i * 0.035, 0.07, 'triangle', 0.08);
-    tone(196, 0, 0.35, 'sine', 0.12);
-  }),
-  check: quietWhenHidden(() => {
-    noise(0, 0.04, 0.5, 400);
-    noise(0.12, 0.04, 0.5, 400);
-  }),
-  fold: quietWhenHidden(() => noise(0, 0.15, 0.15, 1200)),
+  deal: quietWhenHidden(() => play('deal')),
+  chips: quietWhenHidden(() => play('chips')),
+  raise: quietWhenHidden(() => play('raise')),
+  allIn: quietWhenHidden(() => play('allIn')),
+  check: quietWhenHidden(() => play('check')),
+  fold: quietWhenHidden(() => play('fold')),
+  /** The pot pushed to someone else. */
+  pot: quietWhenHidden(() => play('pot')),
   chat: () => {
-    if (!document.hidden && getPrefs().chatSound) tone(1560, 0, 0.08, 'sine', 0.06);
+    if (!document.hidden && getPrefs().chatSound) play('chat');
   },
   /** A gesture landing on a seat. */
   gesture: (kind: GestureKind) => {
     if (document.hidden || getPrefs().gestures !== 'sound') return;
     GESTURE_SOUNDS[kind]();
   },
-  turn: () => {
-    tone(880, 0, 0.12, 'sine', 0.12);
-    tone(1320, 0.12, 0.18, 'sine', 0.12);
-  },
+  turn: () => play('turn'),
   /** A few seconds left on your clock. */
-  hurry: () => {
-    tone(1760, 0, 0.08, 'square', 0.05);
-    tone(1760, 0.16, 0.08, 'square', 0.05);
-    tone(1760, 0.32, 0.08, 'square', 0.05);
-  },
+  hurry: () => play('hurry'),
   /** Someone asked the host for a seat or chips. */
-  request: () => {
-    tone(1047, 0, 0.1, 'sine', 0.1);
-    tone(784, 0.1, 0.16, 'sine', 0.1);
-  },
-  win: quietWhenHidden(() => {
-    tone(660, 0, 0.12, 'triangle');
-    tone(880, 0.1, 0.12, 'triangle');
-    tone(1100, 0.2, 0.25, 'triangle');
-  }),
+  request: () => play('request'),
+  win: quietWhenHidden(() => play('win')),
 };
 
 const chime = (notes: number[], gap = 0.08, type: OscillatorType = 'sine', gain = 0.08) => () => notes.forEach((f, i) => tone(f, i * gap, 0.14, type, gain));

@@ -23,6 +23,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
+import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -34,7 +35,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     prev.current = view;
     if (!view || !before) return;
     if (view.chat.length > before.chat.length && view.chat.at(-1)?.playerId && view.chat.at(-1)?.playerId !== view.me.playerId) sounds.chat();
-    if (view.isHost && view.requests.length > before.requests.length) sounds.request();
+    if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     const hand = view.hand;
     if (!hand) return;
     const fresh = hand.handNumber !== before.hand?.handNumber;
@@ -51,6 +52,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     }
     const won = hand.phase === 'complete' && before.hand?.phase !== 'complete';
     if (won && view.me.seat !== null && hand.awards.some((a) => a.seat === view.me.seat)) sounds.win();
+    else if (won && hand.awards.length) sounds.pot();
     const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
     const wasMyTurn = !!before.legal || !!before.canDraw || before.canVoteRunItTwice;
     // A queued move (check/fold, call any) answers for you, so there is nothing to call you for.
@@ -100,7 +102,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -158,18 +160,42 @@ export function TablePage({ tableId }: { tableId: string }) {
   const prefs = usePrefs();
   const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
   const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
+  const bigBlindRef = useRef(bigBlind);
+  bigBlindRef.current = bigBlind;
   const feltFmt = useMemo(() => (prefs.units === 'bb' && bigBlind > 0 ? bbFormat(bigBlind) : fmt), [prefs.units, bigBlind, fmt]);
   useWakeLock(prefs.wakeLock && view?.me.seat != null);
-  // B switches between chips and big blinds.
+  // B switches between chips and big blinds; ? lists every shortcut.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'b' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === '?') {
+        if (!document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) setDialog({ kind: 'keys' });
+        return;
+      }
+      if (e.key.toLowerCase() !== 'b' || !bigBlindRef.current) return;
       setPrefs({ units: getPrefs().units === 'bb' ? 'chips' : 'bb' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // A one-time tip about the keyboard shortcuts, for seated players on a computer.
+  const [keysTipSeen, setKeysTipSeen] = useState(() => {
+    try {
+      return localStorage.getItem('rsdp.tip.keys') === '1';
+    } catch {
+      return true;
+    }
+  });
+  const dismissKeysTip = () => {
+    setKeysTipSeen(true);
+    try {
+      localStorage.setItem('rsdp.tip.keys', '1');
+    } catch {
+      /* ignore */
+    }
+  };
+  const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
   // Losing your seat without pressing Leave (the host removed you, or an offline seat was released) gets a word of explanation.
   const wasSeated = useRef(false);
@@ -219,18 +245,18 @@ export function TablePage({ tableId }: { tableId: string }) {
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
-  const pending = view.isHost ? view.requests.length : 0;
+  const pending = view.powers.includes('approve') ? view.requests.length : 0;
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
   // A player sees only their own bots' requests; the host sees everyone's and never has to ask.
-  const myBotRequests = view.isHost ? [] : view.requests.filter((r) => r.bot);
+  const myBotRequests = view.powers.includes('approve') ? [] : view.requests.filter((r) => r.bot);
   const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
-  const canAddBot = cash && (view.isHost || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
+  const canAddBot = cash && (view.powers.includes('players') || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
   const addBot = (seat: number) =>
     call('bot:add', { seat })
       .then(() => {
-        if (view.settings.seating.requireApproval && !view.isHost) alert('Your bot is waiting for the host to approve it.');
+        if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
       })
       .catch((e: Error) => alert(e.message));
   const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
@@ -298,7 +324,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
     </div>
   );
-  const hostPanel = view.isHost && cash && (
+  const hostPanel = (view.isHost || view.coHosts.some((c) => c.playerId === view.me.playerId)) && cash && (
     <HostPanel
       view={view}
       fmt={fmt}
@@ -336,6 +362,18 @@ export function TablePage({ tableId }: { tableId: string }) {
           {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
           {view.paused && <b className="paused"> · Paused</b>}
         </span>
+        {bigBlind > 0 && (
+          <button
+            className="units-toggle"
+            aria-pressed={prefs.units === 'bb'}
+            aria-label="Amounts in big blinds"
+            onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
+            title={`Show amounts in ${prefs.units === 'bb' ? 'chips' : 'big blinds'} (B)`}
+          >
+            <span className={prefs.units === 'bb' ? '' : 'on'}>Chips</span>
+            <span className={prefs.units === 'bb' ? 'on' : ''}>BB</span>
+          </button>
+        )}
         {portrait ? (
           <>
             <button onClick={() => setSheet('log')}>
@@ -352,6 +390,9 @@ export function TablePage({ tableId }: { tableId: string }) {
               👁 {view.watchers.length}
             </button>
             <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
+            <button onClick={() => setDialog({ kind: 'keys' })} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+              ⌨
+            </button>
             <button onClick={() => setDialog({ kind: 'look' })} title="Felt, deck and card backs" aria-label="Table look">
               🎨
             </button>
@@ -367,6 +408,15 @@ export function TablePage({ tableId }: { tableId: string }) {
       <div className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
+          {keysTip && (
+            <div className="banner tip">
+              <span>
+                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
+              </span>
+              <button onClick={() => setDialog({ kind: 'keys' })}>All shortcuts</button>
+              <button onClick={dismissKeysTip}>Got it</button>
+            </div>
+          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -390,10 +440,10 @@ export function TablePage({ tableId }: { tableId: string }) {
           {cash && !view.started && (
             <div className="banner">
               {view.history.length > 0
-                ? view.isHost
+                ? view.powers.includes('run')
                   ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : 'Press Start game to deal again'}.`
                   : 'The game is stopped. Waiting for the host to start it again.'
-                : view.isHost
+                : view.powers.includes('run')
                   ? portrait
                     ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
                     : 'Take a seat, send friends the invite link, then press Start game.'
@@ -414,7 +464,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
           {myBotRequests.map((r) => (
             <div className="banner" key={r.id}>
-              {r.name} is waiting for the host to let it sit…{' '}
+              Your bot {r.name} is waiting for the host to let it sit…{' '}
               <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
             </div>
           ))}
@@ -518,12 +568,13 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'player' &&
-        (view.isHost && cash ? (
+        (view.powers.length > 0 && cash ? (
           <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)}>
             <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
           </PlayerDialog>
         ) : (
           <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
+            {dialog.seat.bot && dialog.seat.bot.ownerId !== view.me.playerId && <p className="muted">{dialog.seat.bot.ownerName}&rsquo;s practice bot.</p>}
             <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
             {dialog.seat.bot?.ownerId === view.me.playerId && <RemoveBot seat={dialog.seat} onDone={() => setDialog(null)} />}
             <div className="row">
@@ -536,6 +587,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'people' && <PeopleDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'keys' && <ShortcutsDialog onClose={() => setDialog(null)} />}
     </div>
   );
 }

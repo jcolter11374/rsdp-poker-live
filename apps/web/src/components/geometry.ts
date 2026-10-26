@@ -101,3 +101,66 @@ export const px = (p: Point) => ({ left: `${p.x}px`, top: `${p.y}px` });
 /** CSS variables for an animation that starts at `from` and ends where the element is (`to`). */
 export const fromVars = (from: Point, to: Point) =>
   ({ '--dx': `${from.x - to.x}px`, '--dy': `${from.y - to.y}px` }) as CSSProperties;
+
+/**
+ * On a tall (phone) table, keeps a band of `band` pixels clear of seats in the
+ * middle of each long side, so the board and pot have the full width of the
+ * felt. Fractions from `seatFractions` are spread over what is left of the way
+ * round. Wide tables, and bands that don't fit, are returned unchanged.
+ */
+export function clearSideBands(fractions: readonly number[], w: number, h: number, band: number): number[] {
+  const straight = h - w;
+  const b = Math.min(band, straight * 0.9);
+  if (straight <= 0 || b <= 0) return [...fractions];
+  const r = w / 2;
+  const total = 2 * straight + 2 * Math.PI * r;
+  // Where the bands start, measured round from the bottom centre.
+  const quarter = (Math.PI * r) / 2;
+  const left = quarter + (straight - b) / 2;
+  const right = quarter + straight + Math.PI * r + (straight - b) / 2;
+  const usable = total - 2 * b;
+  return fractions.map((f) => {
+    let d = (((f % 1) + 1) % 1) * usable;
+    if (d >= left) d += b;
+    if (d >= right) d += b;
+    return d / total;
+  });
+}
+
+/** A box around a point: how far it reaches left, right, up and down. */
+export interface Reach {
+  l: number;
+  r: number;
+  u: number;
+  d: number;
+}
+
+/**
+ * Where a seat's bet goes: just in front of its nameplate and cards (`box`,
+ * around `from`), towards the middle (`to`). Seats above or below the middle
+ * get it straight below or above them, seats at the ends straight beside
+ * them, leaning a little towards the middle, the way chips sit on a real
+ * table. `half` is the bet's half-size; it never goes more than `most` of
+ * the way.
+ */
+export function inFront(from: Point, to: Point, box: Reach, half: { w: number; h: number }, gap: number, lean = 0.12, most = 0.8): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  // `to` is the middle, so it is also half the felt's width and height.
+  const vertical = Math.abs(dy) / Math.max(1, to.y) >= Math.abs(dx) / Math.max(1, to.x);
+  if (vertical) {
+    const reach = Math.min((dy >= 0 ? box.d : box.u) + half.h + gap, Math.abs(dy) * most);
+    return { x: from.x + dx * lean, y: from.y + Math.sign(dy || 1) * reach };
+  }
+  const reach = Math.min((dx >= 0 ? box.r : box.l) + half.w + gap, Math.abs(dx) * most);
+  return { x: from.x + Math.sign(dx) * reach, y: from.y + dy * lean };
+}
+
+/** The dealer button: beside the seat's bet spot, on the side away from the middle. */
+export function besideBet(bet: Point, from: Point, to: Point, half: { w: number; h: number }, gap: number): Point {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const vertical = Math.abs(dy) / Math.max(1, to.y) >= Math.abs(dx) / Math.max(1, to.x);
+  if (vertical) return { x: bet.x - Math.sign(dx || 1) * (half.w + gap), y: bet.y };
+  return { x: bet.x, y: bet.y - Math.sign(dy || -1) * (half.h + gap) };
+}

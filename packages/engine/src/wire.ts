@@ -15,6 +15,7 @@ import type {
   Stakes,
 } from './core/types';
 import type { SettingsChange, SettingsPatch, TableSettings } from './settings';
+import type { CoHost, HostPower } from './roles';
 
 /** A card as one viewer sees it: '??' when hidden. */
 export interface WireCard {
@@ -61,8 +62,8 @@ export interface SeatView {
   avatar: string | null;
   /** An emoji the player shows by their seat, or null. */
   mood: string | null;
-  /** A practice bot, and who added it (absent for people). */
-  bot?: { ownerId: PlayerId; ownerName: string };
+  /** A practice bot: who added it, and its look (an index into BOT_LOOKS). Absent for people. */
+  bot?: { ownerId: PlayerId; ownerName: string; look: number };
 }
 
 export interface HandView {
@@ -110,8 +111,8 @@ export interface HandView {
 export interface RequestView {
   id: string;
   kind: 'seat' | 'rebuy';
-  /** A practice bot asking for a seat (its owner sees it too). */
-  bot?: true;
+  /** A practice bot asking for a seat, and who added it (its owner sees the request too). */
+  bot?: { ownerId: PlayerId; ownerName: string };
   playerId: PlayerId;
   name: string;
   seat: number | null;
@@ -145,7 +146,12 @@ export interface TableView {
   /** Set on tournament tables. */
   tournamentId: string | null;
   hostId: PlayerId;
+  /** I am the host (co-hosts are not). */
   isHost: boolean;
+  /** The host powers I hold: all of them for the host, the ones given for a co-host, none otherwise. */
+  powers: HostPower[];
+  /** Cash tables: the host's co-hosts and their powers. */
+  coHosts: CoHost[];
   me: { playerId: PlayerId; seat: number | null };
   settings: TableSettings;
   /** Host edits waiting for the next hand. */
@@ -221,7 +227,8 @@ export interface HandRecordView {
   betting: BettingKind;
   stakes: Stakes;
   button: number;
-  seats: { seat: number; playerId: PlayerId; name: string; stack: number }[];
+  /** `bot` marks a practice bot: whose it was and its look (BOT_LOOKS). */
+  seats: { seat: number; playerId: PlayerId; name: string; stack: number; bot?: { ownerName: string; look: number } }[];
   events: HandEvent[];
   /** How the deck was made; null or missing for hands dealt (or shared) before provably fair dealing. */
   fair?: FairRecordView | null;
@@ -327,9 +334,13 @@ export interface ClientToServer {
   'host:shuffle': (ack: Ack) => void;
   /** Move a player who is not in the hand to an empty seat. */
   'host:move': (input: { playerId: string; seat: number }, ack: Ack) => void;
+  /** Host only: make someone a co-host, or change a co-host's powers. */
+  'host:coHost': (input: { playerId: string; powers: HostPower[] }, ack: Ack) => void;
+  /** Host: remove a co-host. A co-host may remove themselves (step down). */
+  'host:removeCoHost': (input: { playerId: string }, ack: Ack) => void;
   /** Mute (or unmute) someone's chat for everyone. */
   'host:mute': (input: { playerId: string; value: boolean }, ack: Ack) => void;
-  /** Add a practice bot named after me, in this seat or the first free one. */
+  /** Add a practice bot of mine (it gets its own short name and robot), in this seat or the first free one. */
   'bot:add': (input: { seat?: number }, ack: Ack<{ playerId: string }>) => void;
   /** Take away a bot I added (the host can take away any). */
   'bot:remove': (input: { playerId: string }, ack: Ack) => void;
@@ -349,6 +360,28 @@ export interface ServerToClient {
 /** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */
 export const GESTURES = ['heart', 'clap', 'cheers', 'fire', 'laugh', 'cry', 'money', 'fish', 'shark', 'clown', 'tomato', 'rose'] as const;
 export type GestureKind = (typeof GESTURES)[number];
+
+/**
+ * Practice bots' names and pictures. Each bot at a table takes the first one no
+ * other bot there has, so bots are easy to tell apart at a glance. The order
+ * puts the most different colours first. Names stay at five letters or fewer
+ * so they fit a phone nameplate. The web client draws the robot from `color`
+ * and `face` (0-3).
+ */
+export const BOT_LOOKS: readonly { name: string; color: string; face: number }[] = [
+  { name: 'Ace', color: '#e5484d', face: 0 },
+  { name: 'Chip', color: '#2f8ee8', face: 1 },
+  { name: 'Lucky', color: '#2f9e5b', face: 2 },
+  { name: 'Ducky', color: '#f2b705', face: 3 },
+  { name: 'Slick', color: '#9b4dca', face: 1 },
+  { name: 'Rocky', color: '#f76b15', face: 2 },
+  { name: 'Deuce', color: '#0f9f95', face: 0 },
+  { name: 'Hooks', color: '#e0457b', face: 3 },
+  { name: 'Quads', color: '#9a6a3c', face: 2 },
+  { name: 'Shark', color: '#5b5bd6', face: 0 },
+  { name: 'Spike', color: '#7cab1f', face: 1 },
+  { name: 'Trips', color: '#7d8a99', face: 3 },
+];
 
 /** The built-in avatar library: id → emoji and background colour. All our own picks, free for everyone. */
 export const AVATARS: Record<string, { emoji: string; bg: string }> = {
