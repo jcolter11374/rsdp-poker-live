@@ -8,6 +8,8 @@ import { socket } from './socket';
 
 const SEEDS = 'rsdp.fairSeeds';
 const SENT = 'rsdp.fairSent';
+/** Every seed this browser made for a commitment, space-separated: two tabs can each make one at the same moment. */
+const SENT_ALL = 'rsdp.fairSentAll';
 const LIVE = 'rsdp.fairLive';
 const NEXT = 'rsdp.fairNextSeen';
 const SWAPPED = 'rsdp.fairSwapped';
@@ -53,6 +55,8 @@ interface Sent {
   at: number;
   /** The table it was sent at (older records have none). */
   table?: string;
+  /** Who sent it (older records have none). */
+  player?: string;
   /** The server turned it down this long after it was sent. */
   rejected?: { after: number };
 }
@@ -147,23 +151,28 @@ export function contributeSeed(view: TableView) {
   const commit = view.fair?.nextCommit;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
-  // Already sent from another tab of this browser, or before a reload: the server keeps the last seed it gets, so a
-  // second, different one would replace the one on record here.
-  if (sentFor(commit)) {
+  // Another tab of this browser, or this page before a reload, already made a seed for this commitment: send that
+  // same one again (harmless if it got there) rather than a second one the server would keep instead. A refused seed
+  // stays refused: a fresh one after a refusal would let a server pick and choose.
+  const before = sentFor(commit);
+  if (before?.rejected && before.player === view.me.playerId) {
     sent = commit;
     return;
   }
+  const again = before && before.player === view.me.playerId ? before : null;
   sending = commit;
-  const seed = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const seed = again?.seed ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (!again) save(SENT_ALL, commit, [load(SENT_ALL)[commit], seed].filter(Boolean).join(' '));
   // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.
   const at = Date.now();
-  save(SENT, commit, JSON.stringify({ seed, at, table: view.id } satisfies Sent));
+  const record: Sent = { seed, at, table: view.id, player: view.me.playerId };
+  save(SENT, commit, JSON.stringify(record));
   socket.emit('fair:seed', { commit, seed }, (res) => {
     if (sending === commit) sending = '';
-    // One seed per commitment, accepted or not: a fresh one after a refusal would let a server pick and choose.
     sent = commit;
     if (!res.ok) {
-      save(SENT, commit, JSON.stringify({ seed, at, table: view.id, rejected: { after: Date.now() - at } } satisfies Sent));
+      // A repeat turned down says nothing: the first may have got there in time and been used.
+      if (!again) save(SENT, commit, JSON.stringify({ ...record, rejected: { after: Date.now() - at } } satisfies Sent));
       return;
     }
     save(SEEDS, commit, seed);
@@ -286,7 +295,8 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;
   const rejected = sentSeed?.rejected;
-  if (under && under !== accepted && under !== sentSeed?.seed) {
+  const madeHere = (load(SENT_ALL)[commit] ?? '').split(' ');
+  if (under && under !== accepted && under !== sentSeed?.seed && !madeHere.includes(under)) {
     return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
   }
   if (rejected && under === sentSeed!.seed) return `the server turned down your browser's seed (${under}) but used it anyway`;
