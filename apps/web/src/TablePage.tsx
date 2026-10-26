@@ -18,6 +18,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
+import { useChatMutes } from './chatMutes';
 import { Sheet } from './components/Sheet';
 import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -119,6 +120,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [chatSeenAt, setChatSeenAt] = useState(0);
   const preQueued = useRef(false);
   const portrait = usePortrait();
+  const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null);
 
@@ -173,7 +175,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
       if (e.key === 'Enter') {
         // Enter on a button presses it; anywhere else it starts a chat message.
-        if (e.target instanceof HTMLElement && e.target.closest('button, a, summary')) return;
+        if (e.defaultPrevented || (e.target instanceof HTMLElement && e.target.closest('button, a, summary, [role=button]'))) return;
         const box = document.querySelector<HTMLInputElement>('.side .chat-form input');
         if (box && !document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) {
           e.preventDefault();
@@ -223,6 +225,13 @@ export function TablePage({ tableId }: { tableId: string }) {
     wasSeated.current = seated;
   }, [view?.me.seat]);
 
+  // At a desk the chat is always on screen; on a phone it's read when its sheet is open.
+  const chatOpen = !portrait || sheet === 'chat';
+  const lastChatAt = view?.chat.at(-1)?.at ?? 0;
+  useEffect(() => {
+    if (chatOpen && lastChatAt > chatSeenAt) setChatSeenAt(lastChatAt);
+  }, [chatOpen, lastChatAt]);
+
   if (error) {
     // A tournament table closes when it breaks; the lobby knows the new seat.
     const tournament = error === 'table not found' ? tournamentOfTable(tableId) : null;
@@ -241,13 +250,6 @@ export function TablePage({ tableId }: { tableId: string }) {
       </main>
     );
   }
-  // At a desk the chat is always on screen; on a phone it's read when its sheet is open.
-  const chatOpen = !portrait || sheet === 'chat';
-  const lastChatAt = view?.chat.at(-1)?.at ?? 0;
-  useEffect(() => {
-    if (chatOpen && lastChatAt > chatSeenAt) setChatSeenAt(lastChatAt);
-  }, [chatOpen, lastChatAt]);
-
   if (!view) return <main className="home">Connecting…</main>;
 
   const copyLink = async () => {
@@ -278,7 +280,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
       })
       .catch((e: Error) => alert(e.message));
-  const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt);
+  const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt, chatMutes);
   const close = () => setSheet(null);
 
   const game = view.hand

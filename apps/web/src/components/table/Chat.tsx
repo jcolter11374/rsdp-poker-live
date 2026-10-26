@@ -25,9 +25,9 @@ export function newChat(before: ChatView[], after: ChatView[]): ChatView[] {
   return after.filter((m) => m.at > last.at);
 }
 
-/** Messages from other people since `seenAt`. */
-export function unreadChat(view: TableView, seenAt: number) {
-  return view.chat.filter((m) => m.at > seenAt && m.playerId && m.playerId !== view.me.playerId).length;
+/** Messages from other people since `seenAt`, leaving out anyone you muted. */
+export function unreadChat(view: TableView, seenAt: number, mutes: string[]) {
+  return view.chat.filter((m) => m.at > seenAt && m.playerId && m.playerId !== view.me.playerId && !mutes.includes(m.playerId)).length;
 }
 
 /** The table chat: messages, a box to type in and quick replies. Always on screen at a desk; a sheet on a phone. */
@@ -124,7 +124,7 @@ function ChatNotes({ view, mutes, mutedByHost, quiet, error }: { view: TableView
   );
 }
 
-type Bubble = { id: number; seat: number; text: string };
+type Bubble = { id: number; playerId: string; text: string };
 let bubbleId = 0;
 
 /** New messages pop up beside the speaker's seat for a few seconds, so nobody has to watch the chat box. */
@@ -144,14 +144,11 @@ export function ChatBubbles({ view, seatPoint, width, height }: { view: TableVie
     // Your own lines don't pop up on your screen: you just typed them, and they'd cover your cards.
     const fresh = newChat(old, view.chat).filter((m) => m.playerId && m.playerId !== view.me.playerId && !muted.current.includes(m.playerId));
     const add: Bubble[] = [];
-    for (const m of fresh) {
-      const seat = view.seats.find((s) => s?.playerId === m.playerId);
-      if (seat) add.push({ id: ++bubbleId, seat: seat.seat, text: m.text });
-    }
+    for (const m of fresh) if (view.seats.some((s) => s?.playerId === m.playerId)) add.push({ id: ++bubbleId, playerId: m.playerId!, text: m.text });
     if (!add.length) return;
-    // One bubble per seat: a new line replaces that seat's last one.
-    const seats = new Set(add.map((b) => b.seat));
-    setBubbles((bs) => [...bs.filter((b) => !seats.has(b.seat)), ...add.filter((b, i) => !add.slice(i + 1).some((x) => x.seat === b.seat))]);
+    // One bubble per player: a new line replaces their last one.
+    const speakers = new Set(add.map((b) => b.playerId));
+    setBubbles((bs) => [...bs.filter((b) => !speakers.has(b.playerId)), ...add.filter((b, i) => !add.slice(i + 1).some((x) => x.playerId === b.playerId))]);
     for (const b of add) {
       const t = setTimeout(() => {
         timers.current.delete(t);
@@ -165,7 +162,10 @@ export function ChatBubbles({ view, seatPoint, width, height }: { view: TableVie
   return (
     <>
       {bubbles.map((b) => {
-        const p = seatPoint(b.seat);
+        // The bubble follows its speaker, and goes if they leave the table.
+        const seat = view.seats.find((s) => s?.playerId === b.playerId);
+        if (!seat) return null;
+        const p = seatPoint(seat.seat);
         // Seats in the top half speak downwards, toward the middle; the rest speak upwards.
         // Side seats lean their bubble inwards so it stays on the screen.
         const below = p.y < height / 2;

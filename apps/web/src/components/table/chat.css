@@ -1,7 +1,7 @@
 /* Table chat (Chat.tsx): the always-on chat box, quick replies and speech bubbles. */
-.chat-box { flex: 1 1 0; min-height: 220px; gap: 8px; }
+.chat-box { gap: 8px; }
 .chat-title { font-weight: 700; font-size: 0.95rem; }
-.chat-scroll { min-height: 0; max-height: none; gap: 4px; }
+.chat-scroll { min-height: 0; gap: 4px; }
 .chat-line { overflow-wrap: anywhere; line-height: 1.35; }
 .chat-line.mine b { color: var(--accent); }
 .chat-name { cursor: pointer; }
@@ -10,9 +10,14 @@
 .quick-replies { display: flex; flex-wrap: wrap; gap: 4px; }
 .quick-replies button { min-height: 0; padding: 2px 9px; border-radius: 999px; font-size: 0.8rem; }
 
-/* At a desk the log tabs and the chat share the side column. */
-.table-page:not(.portrait) .side .side-panel { flex: 1 1 0; min-height: 200px; }
-.table-page:not(.portrait) .side .side-panel .scroll { max-height: none; }
+/* On a wide desk the log tabs and the chat share the full-height side column; narrower
+   windows stack the column under the table, where the usual 50vh scroll cap applies. */
+@media (min-width: 1181px) {
+  .table-page:not(.portrait) .side .side-panel { flex: 1 1 0; min-height: 200px; }
+  .table-page:not(.portrait) .side .chat-box { flex: 1 1 0; min-height: 220px; }
+  .table-page:not(.portrait) .side .scroll { max-height: none; }
+}
+.sheet-body .chat-scroll { max-height: none; }
 
 /* Phone: the chat sheet holds only the chat. */
 .sheet.chat-sheet { height: 60dvh; }
