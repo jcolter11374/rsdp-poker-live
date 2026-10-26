@@ -1,0 +1,59 @@
+name: Transparency test
+
+# Throwaway: tries the signed build and the deploy watcher's checks without deploying. Never touches the live site except to read.
+on:
+  push:
+    branches: [claude/transparency-test]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  FLY_APP: rsdp-poker-live
+
+jobs:
+  try:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl auth docker
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: registry.fly.io/${{ env.FLY_APP }}:test-${{ github.sha }}
+          build-args: BUILD_COMMIT=${{ github.sha }}
+          provenance: false
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: registry.fly.io/${{ env.FLY_APP }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+      - name: Verify the signed record like the watcher does
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify "oci://registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/transparency-test.yml" --source-ref "$GITHUB_REF" --format json | jq '.[0].verificationResult.signature.certificate | {sourceRepositoryDigest, sourceRepositoryRef, runInvocationURI}'
+      - name: Image runs and reports its commit
+        run: |
+          docker run -d --name t -p 8080:8080 -e PGLITE_DIR=/tmp/pg "registry.fly.io/$FLY_APP@${{ steps.image.outputs.digest }}"
+          for i in $(seq 1 60); do curl -sf localhost:8080/api/version && break; sleep 2; done
+          curl -sf localhost:8080/api/version | jq -e --arg c "$GITHUB_SHA" '.commit == $c'
+          curl -sf localhost:8080/api/audit/head; echo
+          mkdir copy && node scripts/transparency/mirror.mjs http://localhost:8080 copy && cat copy/audit/head.json
+      - name: Deploy watcher dry run against the live machine (read only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flyctl machines list --app "$FLY_APP" --json > machines.json
+          jq '[.[] | {id, state, image_ref, events: (.events // [] | .[0:3])}]' machines.json
+          echo '{}' > version.json
+          node scripts/transparency/deploys.mjs machines.json version.json watch || true
+          cat watch/deploys/current.json
