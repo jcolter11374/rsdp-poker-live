@@ -3,7 +3,7 @@ import type { Fmt } from '../../format';
 import { tableMotion } from '../../prefs';
 
 /** A number that runs up (or down) to its new value instead of jumping, like a stack being counted. */
-export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
+export function CountUp({ value, fmt, upMs = 900 }: { value: number; fmt: Fmt; /** How long a rise takes to count. */ upMs?: number }) {
   const [shown, setShown] = useState(value);
   const from = useRef(value);
   const [dir, setDir] = useState<'' | 'up' | 'down'>('');
@@ -16,11 +16,14 @@ export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
       return;
     }
     // Winnings count up slowly enough to watch; chips going out tick down quickly.
-    const ms = value > start ? 900 : 320;
+    const ms = value > start ? upMs : 320;
     setDir(value > start ? 'up' : 'down');
-    const t0 = performance.now();
+    // The clock starts on the first frame: a frame's time can be from just before this effect ran,
+    // and counting from performance.now() would make the first step run backwards for a moment.
+    let t0 = -1;
     let raf = 0;
     const step = (t: number) => {
+      if (t0 < 0) t0 = t;
       const k = Math.min(1, (t - t0) / ms);
       const eased = 1 - Math.pow(1 - k, 3);
       const v = Math.round(start + (value - start) * eased);
@@ -34,8 +37,25 @@ export function CountUp({ value, fmt }: { value: number; fmt: Fmt }) {
       cancelAnimationFrame(raf);
       setDir('');
     };
-  }, [value]);
+  }, [value, upMs]);
   return <span className={`count${dir ? ` count-${dir}` : ''}`}>{fmt(shown)}</span>;
+}
+
+/**
+ * A value that, when it rises, only takes the new amount once chips flying to it have landed,
+ * so the pot's pile doesn't change shape (and nudge the number beside it) while the chips are in the air.
+ */
+export function useLanded(value: number, ms: number): number {
+  const [shown, setShown] = useState(value);
+  useEffect(() => {
+    if (value <= shown || !tableMotion() || document.hidden) {
+      setShown(value);
+      return;
+    }
+    const t = setTimeout(() => setShown(value), ms);
+    return () => clearTimeout(t);
+  }, [value]);
+  return value < shown ? value : shown;
 }
 
 /** The table's own mark, pressed into the middle of the felt. Original artwork. */
