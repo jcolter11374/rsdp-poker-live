@@ -192,7 +192,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                               ✕
                             </button>
                           </div>
-                          <BettingNudge gameId={st.gameId} betting={st.betting} onSwitch={(betting) => update({ betting })} />
+                          {/* Rows are keyed by position, so a removed row would hand its note to the next one: start them afresh. */}
+                          <BettingNudge key={rot.steps.length} gameId={st.gameId} betting={st.betting} onSwitch={(betting) => update({ betting })} />
                         </div>
                       );
                     })}
