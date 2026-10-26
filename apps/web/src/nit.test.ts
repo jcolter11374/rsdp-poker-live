@@ -3,13 +3,13 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { nitStatus } from './nit';
 
 const fmt = (n: number) => String(n);
-const seat = (over: Partial<SeatView>) => ({ nitOptIn: false, nit: null, sittingOut: false, ...over }) as SeatView;
+const seat = (over: Partial<SeatView>) => ({ nitOptIn: false, nit: null, sittingOut: false, waiting: false, ...over }) as SeatView;
 const view = (seats: SeatView[], nit: TableView['nit'] = null) =>
   ({ settings: { stakes: { bigBlind: 2 }, modifiers: { nit: { enabled: true, prizeBigBlinds: 10, minPlayers: 3 } } }, seats, nit }) as unknown as TableView;
 
 describe('nitStatus', () => {
-  it('counts ticked players before a round, leaving out anyone sitting out', () => {
-    const seats = [seat({ nitOptIn: true }), seat({ nitOptIn: true, sittingOut: true }), seat({})];
+  it('counts ticked players before a round, leaving out anyone sitting out or waiting to come in', () => {
+    const seats = [seat({ nitOptIn: true }), seat({ nitOptIn: true, sittingOut: true }), seat({ nitOptIn: true, waiting: true }), seat({})];
     const s = nitStatus(view(seats), seats[0], fmt);
     expect(s.status).toBe('1 of 3 players ticked. A round starts once 2 more join. Prize: 20 to each player.');
     expect(s.locked).toBe(false);
@@ -17,7 +17,7 @@ describe('nitStatus', () => {
 
   it('says a round starts next hand once enough have ticked', () => {
     const seats = [0, 1, 2].map(() => seat({ nitOptIn: true }));
-    expect(nitStatus(view(seats), seats[0], fmt).status).toMatch(/^3 players ticked: a round starts with the next hand/);
+    expect(nitStatus(view(seats), seats[0], fmt).status).toMatch(/^3 players ticked: a round starts with the next hand they're all dealt into/);
   });
 
   it('tells a player in the round they are locked in, on the nit or off it', () => {

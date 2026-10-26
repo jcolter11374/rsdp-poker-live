@@ -34,12 +34,13 @@ export function nitStatus(view: TableView, me: SeatView | null, fmt: (n: number)
     const next = !me ? '' : me.nitOptIn ? " You're in the next one." : ' Tick to join the next one.';
     return { label, status: `A Nit round is on without you (${left}).${next}`, locked: false };
   }
-  const ready = view.seats.filter((s) => s && s.nitOptIn && !s.sittingOut).length;
+  // The server counts only players dealt in, so anyone sitting out or waiting to come in doesn't count yet.
+  const ready = view.seats.filter((s) => s && s.nitOptIn && !s.sittingOut && !s.waiting).length;
   const need = cfg.minPlayers - ready;
   const prize = fmt(cfg.prizeBigBlinds * view.settings.stakes.bigBlind);
   const status =
     need > 0
       ? `${ready} of ${cfg.minPlayers} players ticked. A round starts once ${need} more ${need === 1 ? 'joins' : 'join'}. Prize: ${prize} to each player.`
-      : `${ready} players ticked: a round starts with the next hand. Prize: ${prize} to each player.`;
+      : `${ready} players ticked: a round starts with the next hand they're all dealt into. Prize: ${prize} to each player.`;
   return { label, status, locked: false };
 }
