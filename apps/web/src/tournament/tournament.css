@@ -65,7 +65,7 @@
 
 /* Forms */
 .tn-form { display: flex; flex-direction: column; gap: 12px; }
-.tn-form select, .tn-page select { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-height: 40px; }
+.tn-form select, .tn-page select { font: inherit; color: var(--text); background-color: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 34px 8px 10px; width: 100%; min-height: 40px; }
 .tn-form input, .tn-page input:not([type='checkbox']) { min-height: 40px; }
 .tn-grid3 { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: end; }
 .tn-fieldset { border: 0; padding: 0; margin: 0; }
@@ -219,7 +219,7 @@
 .tn-host-start button { min-width: 140px; }
 /* On a phone the tab row scrolls; its fading edge says there are more tabs. */
 @media (max-width: 600px) {
-  .tn-tabs { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); padding-right: 40px; }
+  .tn-page .tn-tabs { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); padding-right: 40px; }
 }
 
 /* Games in the setup form, grouped by family. */

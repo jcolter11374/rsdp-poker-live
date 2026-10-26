@@ -38,6 +38,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const create = (e: React.FormEvent | null, practice = false) => {
     e?.preventDefault();
     setErrorFor(practice ? 'practice' : 'cash');
+    setError('');
     setBusy(true);
     saveName(name);
     let fromPreset: SettingsPatch | null = null;
@@ -61,7 +62,8 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
     const settings: SettingsPatch = fromPreset ? { ...fromPreset, table: { ...fromPreset.table, name: quick.table!.name, mode: 'cash' } } : quick;
     if (practice && !name.trim()) {
       setBusy(false);
-      return setError('Pick a name first');
+      document.getElementById('home-name')?.focus();
+      return setError('Pick a name first (under Start a cash game)');
     }
     call<{ tableId: string }>('table:create', { settings, ...(practice ? { practice: { name, bots } } : {}) })
       .then((res) => onCreated(res.tableId))

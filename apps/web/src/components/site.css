@@ -63,12 +63,13 @@
   text-align: left;
   transition: border-color 0.12s, background 0.12s, transform 0.12s;
 }
-.home-choice:first-child { background: var(--go); border-color: var(--go); }
-.home-choice:first-child span { color: rgba(255, 255, 255, 0.85); }
+/* A deeper green than the buttons, so white text on it is easy to read. */
+.home-choice:first-child { background: #1d7a47; border-color: #1d7a47; }
+.home-choice:first-child span { color: #fff; }
 .home-choice strong { font-size: 1.15rem; }
 .home-choice span { color: var(--muted); font-size: 0.9rem; }
 .home-choice:hover { border-color: #4a525d; transform: translateY(-1px); }
-.home-choice:first-child:hover { background: var(--go-hover); border-color: var(--go-hover); }
+.home-choice:first-child:hover { background: #22874f; border-color: #22874f; }
 .home-hero .whats-new-banner { width: 100%; max-width: 640px; margin: 4px 0 0; text-align: left; }
 .home-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .home-grid h2 { margin: 0; font-size: 1.1rem; }
@@ -93,8 +94,9 @@
 
 /* ---- one set of controls everywhere: green ticks, dark date and time pickers */
 :root { color-scheme: dark; }
-input[type='checkbox'], input[type='radio'] { accent-color: var(--go); }
-input[type='checkbox'] { width: 18px; height: 18px; margin: 0; flex: none; cursor: pointer; }
+/* :where() keeps these at zero specificity, so any page's own checkbox rule still wins. */
+:where(input[type='checkbox'], input[type='radio']) { accent-color: var(--go); }
+:where(input[type='checkbox']) { width: 18px; height: 18px; flex: none; cursor: pointer; }
 select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa4af' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -103,9 +105,10 @@ select {
   padding-right: 34px;
   cursor: pointer;
 }
-input::placeholder { color: #6b7480; }
-input:focus, select:focus, textarea:focus { border-color: #5a6470; outline: none; }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--go); outline-offset: 1px; }
+select:disabled { cursor: default; }
+/* Narrow selects in a row (game rotation) keep their text clear of the arrow. */
+.list-editor select { padding-right: 24px; background-position: right 7px center; }
+input::placeholder { color: #7d8792; }
 input[type='date']::-webkit-calendar-picker-indicator, input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
 /* A quiet button: a link that looks like a button but doesn't shout. */
 button.quiet, a.button.quiet { background: transparent; border-color: transparent; color: var(--muted); }

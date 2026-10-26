@@ -35,10 +35,7 @@ a.button:hover { border-color: #4a525d; background: #2c323a; }
 a.button.primary { background: var(--go); border-color: var(--go); color: #fff; font-weight: 700; }
 a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hover); }
 
-/* ---- the home page's account link */
-.account-link { display: flex; justify-content: flex-end; gap: 14px; min-height: 1.5em; margin: -32px 0 18px; font-size: 0.92rem; }
-.account-link a { text-decoration: none; }
-.account-link a:hover { text-decoration: underline; }
+/* ---- the signed-in dot by your name in the header */
 .account-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--go); vertical-align: 1px; }
 .account-guest .row > * { flex: 0 0 auto; }
 .account-inline > button, .account-section .my-profile .row > button { flex: 0 0 auto; }

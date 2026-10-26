@@ -14,28 +14,6 @@ export function useSession() {
   return useSyncExternalStore(onSession, currentSession);
 }
 
-/** The small "Sign in" or "Mike" link at the top of the home page. */
-export function AccountLink() {
-  const session = useSession();
-  if (!session) return <nav className="account-link" />;
-  return (
-    <nav className="account-link">
-      {session.account ? (
-        <a href="/profile" title="Your profile">
-          <span className="account-dot" aria-hidden /> {session.account.username}
-        </a>
-      ) : (
-        <>
-          <a href="/profile">Your history</a>
-          <a href="/signin" className="account-signin">
-            Sign in
-          </a>
-        </>
-      )}
-    </nav>
-  );
-}
-
 export function Shell({ title, children, narrow = false }: { title: string; children: ReactNode; /** Sign-in style pages: a short centred column. */ narrow?: boolean }) {
   useEffect(() => {
     document.title = `${title} · RSDP Poker Live!`;

@@ -66,8 +66,13 @@ export function TournamentLobby({ id }: { id: string }) {
   const log = useLobbyLog(id);
   const unread = useUnreadChat(log, tab === 'chat', session?.playerId, skew);
 
-  if (error) return <main className="tn-page"><p className="error">{error}</p><a href="/">Home</a></main>;
-  if (!state) return <main className="tn-page"><p className="muted">Loading…</p></main>;
+  if (error || !state)
+    return (
+      <div className="site-page">
+        <SiteHeader />
+        <main className="tn-page">{error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}</main>
+      </div>
+    );
 
   // The host and co-hosts see the host tools, each with their own powers.
   const isHost = isTournamentStaff(state, session?.playerId);
@@ -150,14 +155,18 @@ export function TournamentLobby({ id }: { id: string }) {
 
 /** The host's Start button, up by the clock where it's easy to find, not only in the Host tab. */
 function HostStart({ state, by, send }: { state: TournamentState; by: string; send: (c: Command) => Promise<boolean> }) {
-  const n = state.entries.length;
+  // With check-in on, only checked-in players count towards the two needed to start.
+  const n = state.entries.filter((e) => e.status === 'registered' && (!state.settings.checkIn || e.checkedInAt !== undefined)).length;
   return (
     <div className="tn-card tn-host-start">
       <span>
-        You're the host. {state.settings.start.kind === 'manual' ? 'Start when everyone is in.' : 'You can start early if everyone is here.'}
-        <span className="muted"> {n} {n === 1 ? 'player' : 'players'} registered.</span>
+        {state.settings.start.kind === 'manual' ? 'Start the tournament when everyone is in.' : 'You can start early if everyone is here.'}
+        <span className="muted">
+          {' '}
+          {n} {n === 1 ? 'player' : 'players'} {state.settings.checkIn ? 'checked in' : 'registered'}.
+        </span>
       </span>
-      <button className="primary" disabled={n < 2} onClick={() => send({ type: 'startNow', by })}>
+      <button className="primary" disabled={state.status === 'registering' && n < 2} onClick={() => send({ type: 'startNow', by })}>
         Start now
       </button>
     </div>
