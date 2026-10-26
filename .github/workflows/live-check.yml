@@ -16,9 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Is anyone playing? (read only)
+      - name: Why did the backup download fail? (read only)
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
         run: |
           site=https://rsdp-poker-live.fly.dev
           date -u +%H:%M
+          echo "secret length: ${#ADMIN_KEY}"
           curl -sf "$site/api/health"; echo
-          curl -sf "$site/api/leaderboard?period=all" | jq '[.rows[].hands] | add'
+          # The copy itself is never kept: only its size and status are printed.
+          code=$(curl -s --max-time 120 -H "X-Admin-Key: $ADMIN_KEY" "$site/api/admin/backup" -o b.gz -w '%{http_code}') || echo "curl exit $?"
+          echo "status $code, $(wc -c < b.gz) bytes"
+          [ "$code" = 200 ] && { gzip -t b.gz && echo "gzip ok"; } || head -c 300 b.gz; echo
+          rm -f b.gz
