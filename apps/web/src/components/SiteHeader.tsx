@@ -2,7 +2,6 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { currentSession, onSession } from '../socket';
 
 const LINKS: [href: string, label: string][] = [
-  ['/', 'Play'],
   ['/tn/new', 'Host a tournament'],
   ['/leaderboard', 'Leaderboard'],
   ['/rules', 'Learn the games'],
@@ -12,7 +11,7 @@ const LINKS: [href: string, label: string][] = [
 
 /** Which link is the page you're on. */
 function current(href: string, path: string): boolean {
-  return href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`);
+  return path === href || path.startsWith(`${href}/`);
 }
 
 /**
@@ -33,7 +32,7 @@ export function SiteHeader() {
 
   return (
     <header className={`site-header ${open ? 'open' : ''}`}>
-      <a className="logo small" href="/">
+      <a className="logo small" href="/" title="Home">
         RSDP Poker <span>Live!</span>
       </a>
       <button className="site-menu-button" aria-expanded={open} aria-controls="site-nav" aria-label="Menu" onClick={() => setOpen(!open)}>
