@@ -80,6 +80,9 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
             RSDP Poker <span>Live!</span>
           </h1>
           <p className="home-lede">Start a table, send the link, and play with friends. No sign-up needed.</p>
+          <p className="home-about">
+            Every game and option is free. <a href="/about">See what you can do here</a>.
+          </p>
           <div className="home-choices">
             <a className="home-choice" href="#cash" onClick={focusCash}>
               <strong>Start a cash game</strong>

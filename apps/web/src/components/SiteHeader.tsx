@@ -7,6 +7,7 @@ const LINKS: [href: string, label: string][] = [
   ['/leaderboard', 'Leaderboard'],
   ['/rules', 'Learn the games'],
   ['/whats-new', "What's new"],
+  ['/about', 'About'],
 ];
 
 /** Which link is the page you're on. */
@@ -69,6 +70,7 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
+      <a href="/about">About</a>
       <a href="/rules">How to play</a>
       <a href="/hands">Search your hands</a>
       <a href="/roadmap">Roadmap</a>
