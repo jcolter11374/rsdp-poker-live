@@ -13,3 +13,4 @@ export type { AvatarKind, JobStatus, MovementKind, NoteColor, TableMode, TableSt
 export * from './tournaments';
 export * from './tournamentLog';
 export * from './history';
+export * from './analytics';

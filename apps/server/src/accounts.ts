@@ -6,7 +6,7 @@
 
 import express from 'express';
 import { standings, type TournamentState } from '@rsdp/tournament';
-import { setTableHidden, tableHistory, tournamentRows, type Db } from './db';
+import { leaderboard, profitSessions, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
 import {
   adoptGuest,
   checkPassword,
@@ -38,6 +38,8 @@ const SIGN_UPS_PER_HOUR = 5;
 const RESET_TRIES = 10;
 /** Profile loads one address may make per minute (each one reads hand history). */
 const PROFILE_PER_MINUTE = 30;
+/** How long a worked-out leaderboard is served before it is worked out again. */
+const LEADERBOARD_CACHE_MS = 60_000;
 
 export interface AccountHooks {
   /** A browser now plays as `playerId` (its picture may have come over from the guest). */
@@ -252,6 +254,37 @@ export function accountRoutes(
       if (!isAdmin(req, res)) return;
       const issued = await issueResetCode(db, str(req.body?.username).trim(), { now: new Date(now()) });
       res.json({ ok: true, username: issued.username, code: issued.code, expiresAt: issued.expiresAt.toISOString() });
+    }),
+  );
+
+  // My result at each real cash game, for the profit graph on my profile.
+  app.get(
+    '/api/account/graph',
+    route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
+      const who = await identify(req, db);
+      const sessions = await profitSessions(db, await myPlayerIds(who, db));
+      res.json({ sessions: sessions.map((x) => ({ ...x, at: x.at.toISOString() })) });
+    }),
+  );
+
+  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period.
+  const boards = new Map<string, { at: number; rows: Promise<LeaderRow[]> }>();
+  app.get(
+    '/api/leaderboard',
+    route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
+      const period = ['month', 'year', 'all'].includes(String(req.query.period)) ? String(req.query.period) : 'month';
+      const t = now();
+      const d = new Date(t);
+      const since = period === 'month' ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) : period === 'year' ? new Date(Date.UTC(d.getUTCFullYear(), 0, 1)) : undefined;
+      let cached = boards.get(period);
+      if (!cached || t - cached.at >= LEADERBOARD_CACHE_MS) {
+        cached = { at: t, rows: leaderboard(db, since) };
+        boards.set(period, cached);
+        cached.rows.catch(() => boards.get(period) === cached && boards.delete(period));
+      }
+      res.json({ period, since: since?.toISOString() ?? null, rows: await cached.rows });
     }),
   );
 

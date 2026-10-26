@@ -51,3 +51,55 @@ a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hov
 .account-hidden { margin-top: 10px; }
 .account-hidden > summary { cursor: pointer; color: var(--muted); margin-bottom: 6px; }
 .account-list button.link { background: none; border: none; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ---- profit graph on /profile */
+.profit-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.profit-tiles > div { display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.profit-tiles .muted { font-size: 0.78rem; }
+.profit-tiles strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.profit .up { color: var(--good); }
+.profit .down { color: var(--bad); }
+.profit-chart { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; touch-action: pan-y; }
+.profit-chart svg { display: block; }
+.profit-chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.profit-chart .grid { stroke: var(--line); stroke-width: 1; opacity: 0.6; }
+.profit-chart .zero { stroke: var(--muted); stroke-width: 1; }
+.profit-chart .line { fill: none; stroke: #5a95e8; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.profit-chart .dot { fill: #5a95e8; stroke: var(--panel); stroke-width: 2; }
+.profit-chart .dot.on { stroke-width: 2; }
+.profit-chart .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.profit-tip { position: absolute; top: 8px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 0.8rem; pointer-events: none; white-space: nowrap; }
+.profit-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.profit-table th, .profit-table td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.profit-table th:not(:first-child), .profit-table td:not(:first-child) { text-align: right; }
+.profit .hint button.link, .leaders button.link { background: none; border: none; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ---- /leaderboard */
+.leader-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.leader-controls .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.leader-controls .segmented button { border: none; border-radius: 0; background: var(--panel); padding: 6px 12px; }
+.leader-controls .segmented button.on { background: var(--call); color: var(--text); font-weight: 600; }
+.leader-controls select { width: auto; }
+.leader-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.leader-table th, .leader-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.leader-table th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.leader-table th.on { color: var(--text); }
+.leader-table th:nth-child(-n + 2), .leader-table td:nth-child(-n + 2) { text-align: left; }
+.leader-table td.name { white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
+.leader-table .up { color: var(--good); }
+.leader-table .down { color: var(--bad); }
+@media (max-width: 480px) { .leader-table th:nth-child(4), .leader-table td:nth-child(4) { display: none; } }
+
+/* ---- /hands */
+.hand-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.hand-search label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.hand-search-bb { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.hand-search-bb input { width: 80px; }
+.found-hands { margin-top: 14px; }
+.found-hands li { grid-template-areas: 'name net' 'meta net' 'act act'; }
+.found-hands .found-title { grid-area: name; font-weight: 600; }
+.found-hands .found-cards { font-weight: 700; }
+.found-hands .muted { overflow-wrap: anywhere; }
+.found-actions { grid-area: act; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.found-actions button { padding: 4px 10px; font-size: 0.85rem; }
+.account-page .more { margin-top: 12px; }
