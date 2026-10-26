@@ -513,6 +513,7 @@ export function createApp(deps: AppDeps = {}) {
     watchers.delete(id);
     lastWatched.delete(id);
     lastChange.delete(id);
+    // practiceStarts stays: a creator who opens the link later still gets the first deal.
     clearTimeout(saveTimers.get(id));
     saveTimers.delete(id);
     // Saves already under way finish first, so the last one written is this one.
@@ -521,7 +522,14 @@ export function createApp(deps: AppDeps = {}) {
       .catch(() => {})
       .then(() => Promise.allSettled(earlier))
       .then(() => store.saveTable(rt.state))
-      .catch((e) => log(`saving idle table ${id} failed`, e))
+      .catch((e) => {
+        log(`saving idle table ${id} failed`, e);
+        // Its newest state is only in memory: keep it loaded, to be saved on its next change or put away again later.
+        if (!tables.has(id) && !deleted.has(id)) {
+          attach(rt);
+          rt.resume();
+        }
+      })
       .finally(() => {
         if (unloading.get(id) === done) unloading.delete(id);
         if (!tables.has(id)) created.delete(id);
@@ -610,6 +618,8 @@ export function createApp(deps: AppDeps = {}) {
       detach: (rt) => {
         tables.delete(rt.state.id);
         feeds.delete(rt.state.id);
+        lastWatched.delete(rt.state.id);
+        lastChange.delete(rt.state.id);
         // Save the final state so the table's history stays readable.
         store.saveTable(rt.state).catch(() => {});
         broadcast(rt);
@@ -736,6 +746,7 @@ export function createApp(deps: AppDeps = {}) {
       const id = socket.data.tableId;
       if (!id) return;
       watchers.get(id)?.delete(socket);
+      if (tables.has(id)) lastWatched.set(id, clock.now());
       tables.get(id)?.disconnect(me);
       socket.data.tableId = undefined;
     };

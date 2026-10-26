@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { createApp } from '../src/app';
+import { createApp, memoryStore } from '../src/app';
 import { closeDb, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { dbIdentity, dbStore } from '../src/storage';
@@ -130,5 +130,31 @@ describe('putting idle cash tables away', () => {
 
     clock.advance(10 * MINUTE);
     expect(server.unloadIdle()).toContain(tableId);
+  });
+
+  it('keeps a table loaded when its last save fails, so nothing is lost', async () => {
+    const store = memoryStore();
+    let failing = false;
+    const flaky = { ...store, saveTable: (st: Parameters<typeof store.saveTable>[0]) => (failing ? Promise.reject(new Error('db down')) : store.saveTable(st)) };
+    const own = new FakeClock();
+    const app2 = createApp({ clock: own, store: flaky, idleUnloadMs: 45 * MINUTE, log: () => {} });
+    await new Promise<void>((resolve) => app2.http.listen(0, resolve));
+    const c = socketClient(`http://localhost:${(app2.http.address() as AddressInfo).port}`, 'flaky-save-secret-0123456789', clients);
+    const { tableId } = await c.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Flaky' } } });
+    await c.call('table:join', { tableId });
+    await c.call('chat:send', { text: 'only in memory' });
+    await closeClient(c);
+    failing = true;
+    own.advance(46 * MINUTE);
+    expect(app2.unloadIdle()).toEqual([tableId]);
+    await pause(50);
+    expect(app2.tables.get(tableId)?.state.chat.map((m) => m.text)).toContain('only in memory');
+    // Once saving works again it goes on the next sweep.
+    failing = false;
+    own.advance(46 * MINUTE);
+    expect(app2.unloadIdle()).toEqual([tableId]);
+    await pause(50);
+    expect((await store.loadTable(tableId))?.chat.map((m) => m.text)).toContain('only in memory');
+    await app2.close();
   });
 });
