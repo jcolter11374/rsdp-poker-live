@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: {} }));
-const { seedProblem, shownAs, watchCommitments } = await import('./fair');
+const { seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -219,5 +219,77 @@ describe('a commitment swapped before the deal', () => {
     sock = 's3';
     watch(view('G4', [12, 'F4']));
     quiet('A2', 'A3', 'X', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4');
+  });
+});
+
+describe('when this browser saw the next commitment appear', () => {
+  type V = Parameters<ReturnType<typeof watchNextSeen>>[0];
+  const view = (next: string, table = 't1') => ({ id: table, fair: { nextCommit: next, handCommit: null } }) as unknown as V;
+  let t = 0;
+  let sock: string | undefined = 's1';
+  const seen = () => watchNextSeen(() => sock, () => t);
+  // My seed for commitment C went out at `sentAt`, the server turned it down (the hand was already dealt), and the
+  // hand from C came without it at `dealtAt`.
+  const lateSeed = (sentAt: number) => store.set('rsdp.fairSent', JSON.stringify({ C: JSON.stringify({ seed: 'aa', at: sentAt, rejected: { after: 80 } }) }));
+  const problem = (dealtAt: number) => seedProblem('C', [], 'me', true, dealtAt);
+  beforeEach(() => {
+    t = 0;
+    sock = 's1';
+  });
+
+  it('catches a server that shows a commitment at the last moment to a browser already watching', () => {
+    const watch = seen();
+    t = 1_000;
+    watch(view('B'));
+    t = 20_000;
+    watch(view('C')); // appears...
+    lateSeed(20_000);
+    expect(problem(20_400)).toMatch(/too soon/); // ...and is dealt 0.4 s later
+    // After an honest 2.5 s lead the deal isn't too soon (dropping a seed sent that early is caught another way).
+    expect(problem(22_600)).not.toMatch(/too soon/);
+  });
+
+  it('says nothing when the commitment was already up as this page arrived, reconnected or sat down', () => {
+    // Arrived (or reconnected after a restart) with C already up; the deal followed at once, before my seed got there.
+    let watch = seen();
+    t = 20_000;
+    watch(view('C'));
+    lateSeed(20_000);
+    expect(problem(20_100)).toBeNull();
+    // Same after a reconnect on a page that was already watching: the new connection can't tell how long C was up.
+    store.clear();
+    watch = seen();
+    watch(view('B'));
+    sock = 's2';
+    t = 30_000;
+    watch(view('C'));
+    lateSeed(30_000);
+    expect(problem(30_100)).toBeNull();
+    // Watching as a spectator counts: C appeared 10 s before I sat down, just before the host started.
+    store.clear();
+    sock = 's1';
+    watch = seen();
+    t = 40_000;
+    watch(view('B'));
+    t = 41_000;
+    watch(view('C'));
+    lateSeed(51_000);
+    expect(problem(51_100)).toBeNull();
+  });
+
+  it('notes only the first appearance, and keeps going through views with no commitment', () => {
+    const watch = seen();
+    t = 1_000;
+    watch(view('B'));
+    t = 2_000;
+    watch({ id: 't1' } as unknown as V); // a view without a commitment changes nothing
+    t = 3_000;
+    watch(view('C'));
+    t = 9_000;
+    watch(view('C'));
+    expect(JSON.parse(store.get('rsdp.fairNextSeen')!)).toEqual({ C: '3000' });
+    // Another table's page starts its own watch.
+    watch(view('X', 't2'));
+    expect(JSON.parse(store.get('rsdp.fairNextSeen')!).X).toBeUndefined();
   });
 });

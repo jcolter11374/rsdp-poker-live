@@ -99,14 +99,29 @@ function recordLive(view: TableView) {
 
 let sent = '';
 let sending = '';
-
+/**
+ * Notes when this browser saw each commitment appear as the next hand's, seated or watching: the deal from it should
+ * come well after (seedProblem's "too soon"). That is only known when this page was already showing the table on the
+ * same connection before it appeared. A browser that arrives, reconnects or sits down with a commitment already up
+ * can't tell how long it has been up, and an honest server may deal from it at once, so nothing is noted (the same
+ * reconnect blind spot docs/FAIRNESS.md admits). One per table page, like watchCommitments.
+ */
+export function watchNextSeen(socketId: () => string | undefined = () => socket.id, now: () => number = Date.now) {
+  let last: { table: string; socket: string; commit: string } | null = null;
+  return (view: TableView) => {
+    const commit = view.fair?.nextCommit;
+    const sock = socketId();
+    if (!commit || !sock) return;
+    const watching = last && last.table === view.id && last.socket === sock;
+    if (watching && last!.commit !== commit && !load(NEXT)[commit]) save(NEXT, commit, String(now()));
+    last = { table: view.id, socket: sock, commit };
+  };
+}
 
 /** Call with every table view: sends a fresh seed once per published commitment while seated, and notes what the hand showed. */
 export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
-  // When I first saw this commitment as next while seated: the deal from it should come well after.
-  if (commit && view.me.seat !== null && !load(NEXT)[commit]) save(NEXT, commit, String(Date.now()));
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
   sending = commit;

@@ -215,10 +215,15 @@ Limits, stated plainly:
   its seed was left out although sent more than 1.5 seconds before the deal
   (whatever the server answered: an honest server only turns down a seed that
   arrived after the deal); if its seed was left out of a hand dealt less than
-  2 seconds after the commitment first appeared; and if the server uses a seed
-  it said it turned down. So this is caught unless the affected player never
-  looks (say they left right after the hand, or play with browser storage
-  blocked), or sat down in the last moment before a deal.
+  2 seconds after it saw the commitment appear; and if the server uses a seed
+  it said it turned down. The browser only knows when a commitment appeared if
+  it was already showing the table, seated or watching, on the same
+  connection; one that opens the table, reconnects or sits down with a
+  commitment already up can't tell how long it was up, so it doesn't warn about
+  that hand being dealt too soon. So this is caught unless the affected player
+  never looks (say they left right after the hand, or play with browser storage
+  blocked), opened the table or reconnected just before a deal, or sat down in
+  the last moment before a deal.
   "Check this hand" also lists who sent no seed.
 - A server could also replace a published commitment without dealing from
   it, to try another deck. A browser showing the table live marks the hands
