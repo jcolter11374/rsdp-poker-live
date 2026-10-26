@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from '../socket';
 import { fromInput, toInput, type Fmt } from '../format';
+import { BotLevelControl, botOwnerLabel, lastBotLevel, LevelPicker, rememberBotLevel } from './table/BotLevels';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const backdrop = useRef<HTMLDivElement>(null);
@@ -151,8 +152,9 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
       <div className="form">
         <p className="muted">
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
-          {seat.bot && ` · ${seat.bot.ownerName}'s practice bot`}
+          {seat.bot && ` · ${botOwnerLabel(seat.bot, 'practice bot')}`}
         </p>
+        {bot && !tournament && (can('players') || seat.bot?.ownerId === view.me.playerId) && <BotLevelControl view={view} seat={seat} />}
         {!tournament && can('chips') && !onHost && (
           <form
             className="row"
@@ -211,12 +213,13 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
   );
 }
 
-/** A player's own practice bot: they can take it away. */
-export function RemoveBot({ seat, onDone }: { seat: SeatView; onDone: () => void }) {
+/** A player's own practice bot: they can change its level or take it away. */
+export function MyBot({ view, seat, onDone }: { view: TableView; seat: SeatView; onDone: () => void }) {
   const [error, setError] = useState('');
   return (
     <div className="form">
-      <p className="muted">Your practice bot. It plays simple, steady poker.{seat.inHand ? ' Removing it now folds its hand.' : ''}</p>
+      <p className="muted">Your practice bot.{seat.inHand ? ' Removing it now folds its hand.' : ''}</p>
+      <BotLevelControl view={view} seat={seat} />
       {error && <p className="error">{error}</p>}
       <button
         className="danger"
@@ -229,5 +232,38 @@ export function RemoveBot({ seat, onDone }: { seat: SeatView; onDone: () => void
         Remove bot
       </button>
     </div>
+  );
+}
+
+/** "+ Bot" on an empty seat: pick how well it plays, then add it. */
+export function AddBotDialog({ view, seat, onClose }: { view: TableView; seat: number; onClose: () => void }) {
+  const [level, setLevel] = useState(lastBotLevel);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = () => {
+    setBusy(true);
+    setError('');
+    rememberBotLevel(level);
+    call('bot:add', { seat, level })
+      .then(() => {
+        onClose();
+        if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Modal title={`Add a practice bot to seat ${seat + 1}`} onClose={onClose}>
+      <div className="form">
+        <LevelPicker name="add-bot-level" value={level} onPick={setLevel} disabled={busy} />
+        {error && <p className="error">{error}</p>}
+        <div className="row">
+          <button className="primary" disabled={busy} onClick={add}>
+            Add {level} bot
+          </button>
+          <button onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
   );
 }

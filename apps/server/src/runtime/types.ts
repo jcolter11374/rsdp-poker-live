@@ -1,6 +1,7 @@
 import type { BettingKind, HandFairness, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
 import type { CoHost } from '@rsdp/engine/roles';
+import type { BotLevel } from '@rsdp/engine/wire';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
 export const RUNTIME_VERSION = 1;
@@ -247,13 +248,15 @@ export interface RuntimeState {
   realGame?: boolean;
 }
 
-/** A practice bot: who added it, what it buys in (and rebuys) for, and how it looks. */
+/** A practice bot: who added it, what it buys in (and rebuys) for, how it looks and how well it plays. */
 export interface BotInfo {
   ownerId: PlayerId;
   ownerName: string;
   buyIn: number;
   /** Index into BOT_LOOKS: its name and picture. Missing for bots saved before bots had looks. */
   look?: number;
+  /** Missing for bots saved before bots had levels: they play as Normal. */
+  level?: BotLevel;
 }
 
 /** What a tournament table needs from the tournament runtime. Cash tables have none. */

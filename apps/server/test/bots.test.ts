@@ -4,8 +4,8 @@ import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_THINK_MS, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
 import { handRecordView, tableView } from '../src/runtime/view';
-import { BOT_LOOKS } from '@rsdp/engine/wire';
-import { botTuning, chooseMove, seededRand } from '../src/bots/strategy';
+import { BOT_LEVELS, BOT_LOOKS } from '@rsdp/engine/wire';
+import { botTuning, chooseMove, readPlayers, seededRand } from '../src/bots/strategy';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -190,7 +190,7 @@ describe('practice bots', () => {
     back.resume();
     expect([back.seatOf(one)?.name, back.seatOf(two)?.name]).toEqual(['Ace', 'Chip']);
     expect(back.state.ledger[two]).toMatchObject({ name: 'Chip', owner: 'Beth', look: 1 });
-    expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1 });
+    expect(tableView(back, 'host', 0).seats[2]?.bot).toEqual({ ownerId: 'host', ownerName: 'Beth', look: 1, level: 'normal' });
     expect(back.state.log.slice(-3).map((l) => l.text)).toEqual(["Beth's Poker Bot is now Ace", "Beth's Poker Bot 2 is now Chip", "Ann's Poker Bot is now Lucky"]);
     // The waiting bot sits under its new name, and the hand in progress plays on.
     back.approve('host', back.state.requests.find((r) => r.playerId === three)!.id);
@@ -229,6 +229,28 @@ describe('practice bots', () => {
     const settings = defaultSettings('tournament');
     const t = TableRuntime.create({ id: 't2', hostId: 'host', settings }, { clock: new FakeClock(), rng: seeded() });
     expect(() => t.addBot('host')).toThrow(/tournaments/);
+  });
+
+  it('play at the level they were added at (Normal if none), which their owner or the host can change', () => {
+    const { rt } = table();
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 200 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 200 });
+    rt.requestSeat('b', { seat: 2, name: 'Bo', stack: 200 });
+    const plain = rt.addBot('a', { ownerName: 'Ann' });
+    const hard = rt.addBot('a', { ownerName: 'Ann', level: 'hard' });
+    expect(rt.state.bots![plain].level).toBe('normal');
+    expect(tableView(rt, 'b', 0).seats.find((s) => s?.playerId === hard)?.bot).toMatchObject({ ownerName: 'Ann', level: 'hard' });
+    expect(() => rt.addBot('a', { level: 'expert' as never })).toThrow(/no such level/);
+    expect(() => rt.setBotLevel('b', hard, 'easy')).toThrow(/owner or the host/);
+    expect(() => rt.setBotLevel('a', hard, 'expert' as never)).toThrow(/no such level/);
+    rt.setBotLevel('a', hard, 'easy');
+    expect(rt.state.bots![hard].level).toBe('easy');
+    expect(rt.state.log.at(-1)?.text).toBe('Ann set Chip to Easy');
+    rt.setBotLevel('host', plain, 'hard');
+    expect(rt.state.bots![plain].level).toBe('hard');
+    // Bots saved before levels play as Normal.
+    delete rt.state.bots![plain].level;
+    expect(tableView(rt, 'a', 0).seats.find((s) => s?.playerId === plain)?.bot?.level).toBe('normal');
   });
 
   it('the owner or the host removes a bot; nobody else can, and a bot is never the host', () => {
@@ -292,7 +314,8 @@ describe('practice bots', () => {
           s.timing.decisionSeconds = 0;
         });
         rt.requestSeat('host', { seat: 0, name: 'Host', stack: 300 });
-        for (let i = 0; i < Math.min(spec.maxPlayers, 6) - 1; i++) rt.addBot('host', { ownerName: 'Host' });
+        // Every level plays every game.
+        for (let i = 0; i < Math.min(spec.maxPlayers, 6) - 1; i++) rt.addBot('host', { ownerName: 'Host', level: BOT_LEVELS[i % BOT_LEVELS.length] });
         rt.start('host');
         play(rt, clock, 12);
         expect(errors).toEqual([]);
@@ -340,6 +363,48 @@ describe('bot strategy', () => {
     engine.act(junk, 1, { type: 'raise', to: 40 });
     const fold = chooseMove(junk, 0, seededRand(1));
     expect(fold).toEqual({ kind: 'act', action: { type: 'fold' } });
+  });
+
+  it('Hard reads a big raise from a player who rarely raises as a strong hand; Normal plays it as a random one', () => {
+    // King-nine is ahead of a random hand, but not of the hands people raise ten times the big blind with.
+    const raised = () => {
+      const hand = dealt('nlhe', ['Kc', 'Qs', '9d', 'Jh'], 2);
+      engine.act(hand, 0, { type: 'call' });
+      engine.act(hand, 1, { type: 'raise', to: 20 });
+      return hand;
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 500 });
+    try {
+      let normalCalls = 0;
+      let hardCalls = 0;
+      for (let i = 0; i < 8; i++) {
+        const normal = chooseMove(raised(), 0, seededRand(i));
+        const hard = chooseMove(raised(), 0, seededRand(i), { level: 'hard' });
+        if (normal.kind === 'act' && normal.action.type !== 'fold') normalCalls++;
+        if (hard.kind === 'act' && hard.action.type !== 'fold') hardCalls++;
+      }
+      expect(normalCalls).toBe(8);
+      expect(hardCalls).toBe(0);
+      // Against a player who raises nearly every time, a raise says little: Hard calls too.
+      const maniac = { p1: { acts: 40, aggressive: 36, faced: 10, folds: 0 } };
+      const vsManiac = chooseMove(raised(), 0, seededRand(1), { level: 'hard', players: maniac });
+      expect(vsManiac.kind === 'act' && vsManiac.action.type).not.toBe('fold');
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
+  it('learns how players play from the hands the table keeps', () => {
+    const hand = dealt('nlhe', ['7c', 'As', '2d', 'Ah'], 2);
+    engine.act(hand, 0, { type: 'call' });
+    engine.act(hand, 1, { type: 'raise', to: 8 });
+    engine.act(hand, 0, { type: 'fold' });
+    expect(readPlayers([hand])).toEqual({
+      // Calling the big blind and folding to the raise were both facing a bet.
+      p0: { acts: 2, aggressive: 0, faced: 2, folds: 1 },
+      p1: { acts: 1, aggressive: 1, faced: 0, folds: 0 },
+    });
   });
 
   it('draws sensibly in 2-7 Triple Draw and Badugi', () => {

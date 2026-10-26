@@ -1,13 +1,20 @@
 import { freshDeck, type Card } from '@rsdp/engine';
-import { engine, type Action, type HandState, type LegalActions, type SeatIndex } from '@rsdp/engine/core';
+import { engine, type Action, type HandSeat, type HandState, type LegalActions, type PlayerId, type SeatIndex } from '@rsdp/engine/core';
 import { getVariant, HIGH_EVALUATORS, LOW_EVALUATORS, type VariantSpec } from '@rsdp/engine/variants';
+import type { BotLevel } from '@rsdp/engine/wire';
 
 /**
  * Practice bots: a simple, rule-based player for every game. It estimates
  * its chance of winning by dealing the unseen cards out at random many times
  * (vs random hands), then bets, calls or folds against the pot odds. It only
- * looks at what a player in its seat could see: its own cards, up cards and
- * the boards.
+ * looks at what a player in its seat could see: its own cards, up cards, the
+ * boards and how everyone has bet.
+ *
+ * Levels: Normal is the player above. Easy calls more, bets only good hands
+ * and bets small. Hard thinks twice as long, plays an opponent who bets and
+ * raises as holding a better hand than a random one (less so for a player
+ * who bets everything), bets thinner for value against players who call a
+ * lot, bluffs players who fold a lot, and uses position.
  */
 
 /** What a bot does when it is its turn. */
@@ -47,16 +54,36 @@ export const botTuning = {
   drawBetFinalSims: 24,
 };
 
-export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand): BotMove {
+/** How much longer than Normal each level thinks. */
+const EFFORT: Record<BotLevel, number> = { easy: 0.5, normal: 1, hard: 2 };
+
+export interface BotContext {
+  /** Normal if missing. */
+  level?: BotLevel;
+  /** How the players at the table have played lately (readPlayers); Hard uses it. */
+  players?: Record<PlayerId, PlayerRead>;
+}
+
+export function chooseMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: BotContext = {}): BotMove {
+  const level = ctx.level ?? 'normal';
+  const effort = EFFORT[level] ?? 1;
   const view = situation(hand, seat);
+  if (level === 'hard') view.reads = handReads(hand, seat, ctx.players ?? {});
+  const sims = (screen: number, final: number) => ({ screen: Math.max(1, Math.round(screen * effort)), final: Math.max(1, Math.round(final * effort)) });
   if (hand.phase === 'drawing') {
     const max = hand.input.game.streets[hand.street].drawMaxDiscard ?? 0;
-    return { kind: 'draw', discard: bestDraw(view, max, rand).discard };
+    return { kind: 'draw', discard: bestDraw(view, max, rand, sims(botTuning.drawSims, botTuning.drawFinalSims)).discard };
   }
   const legal = engine.legalActions(hand, seat);
   if (!legal) throw new Error('not the bot’s turn');
-  const equity = view.drawsLeft > 0 ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, { screen: botTuning.drawBetSims, final: botTuning.drawBetFinalSims }).equity, DRAW_OPPONENTS, view.opponents.length) : estimateEquity(view, rand);
-  return { kind: 'act', action: decide(hand, seat, legal, equity, view.opponents.length, rand) };
+  const equity =
+    view.drawsLeft > 0
+      ? scaleToField(bestDraw(view, view.cardsPerPlayer, rand, sims(botTuning.drawBetSims, botTuning.drawBetFinalSims)).equity, DRAW_OPPONENTS, view.opponents.length)
+      : estimateEquity(view, rand, effort);
+  const opponents = view.opponents.length;
+  if (level === 'easy') return { kind: 'act', action: decideEasy(hand, seat, legal, equity, opponents, rand) };
+  if (level === 'hard') return { kind: 'act', action: decideHard(hand, seat, legal, equity, ctx.players ?? {}, rand) };
+  return { kind: 'act', action: decide(hand, seat, legal, equity, opponents, rand) };
 }
 
 // ---------------------------------------------------------------- what the bot can see
@@ -78,6 +105,8 @@ interface Situation {
   drawsLeft: number;
   /** Draws in the whole game, for how strong a finished hand should be. */
   drawsInGame: number;
+  /** Hard: for each live opponent, how many more random hands to deal them and keep the best of (see handReads). */
+  reads?: number[];
 }
 
 function situation(hand: HandState, seat: SeatIndex): Situation {
@@ -126,7 +155,7 @@ function part(scores: number[]): number {
 class Pool {
   private readonly cards: Card[];
   private n = 0;
-  constructor(seen: Card[], private readonly rand: Rand) {
+  constructor(seen: Card[], readonly rand: Rand) {
     const known = new Set(seen);
     this.cards = freshDeck().filter((c) => !known.has(c));
   }
@@ -197,27 +226,44 @@ function seenCards(view: Situation) {
 function simulate(view: Situation, pool: Pool, myHand: Card[], opponents: Card[][]): number {
   const dealt = opponents.map((up) => [...up, ...pool.deal(view.cardsPerPlayer - up.length)]);
   const hands = [myHand, ...dealt.map((h) => improve(view, pool, h))];
-  let total = 0;
-  for (const board of view.boards) {
-    const full = [...board, ...pool.deal(view.boardCards - board.length)];
-    total += potShare(view.spec, hands, full);
-  }
-  return total / view.boards.length;
+  const boards = view.boards.map((board) => [...board, ...pool.deal(view.boardCards - board.length)]);
+  if (view.reads) readHands(view, pool, opponents, hands, boards);
+  return boards.reduce((n, board) => n + potShare(view.spec, hands, board), 0) / boards.length;
 }
 
-/** Chance of winning (share of the pot) against random hands for every live opponent. */
-export function estimateEquity(view: Situation, rand: Rand): number {
+/**
+ * Hard: an opponent who has shown strength gets more random hands, and plays
+ * the best of them on the boards as they finish. A fraction of a read is a
+ * chance of one more.
+ */
+function readHands(view: Situation, pool: Pool, opponents: Card[][], hands: Card[][], boards: Card[][]) {
+  opponents.forEach((up, i) => {
+    const read = view.reads![i] ?? 0;
+    const tries = Math.floor(read) + (pool.rand() < read % 1 ? 1 : 0);
+    for (let t = 0; t < tries; t++) {
+      const other = [...up, ...pool.sample(view.cardsPerPlayer - up.length)];
+      if (other.length < view.cardsPerPlayer) break;
+      const share = boards.reduce((n, board) => n + potShare(view.spec, [other, hands[i + 1]], board), 0) / boards.length;
+      if (share > 0.5) hands[i + 1] = other;
+    }
+  });
+}
+
+/** Chance of winning (share of the pot) against random hands for every live opponent (stronger ones, with reads). */
+export function estimateEquity(view: Situation, rand: Rand, effort = 1): number {
   const pool = new Pool(seenCards(view), rand);
   const myMissing = Math.max(0, view.cardsPerPlayer - view.mine.length);
   const opponents = view.opponents.slice(0, opponentsThatFit(view, pool.size, myMissing));
+  const thinkMs = botTuning.thinkMs * effort;
+  const minSims = botTuning.minSims * effort;
   const start = performance.now();
   let sum = 0;
   let n = 0;
-  while (n < botTuning.maxSims) {
+  while (n < botTuning.maxSims * effort) {
     // Think for thinkMs once minSims are done; an expensive game (big hi-lo Omaha fields) stops at three times that regardless.
     const spent = performance.now() - start;
-    if (n >= 1 && spent >= botTuning.thinkMs * 3) break;
-    if (n >= botTuning.minSims && spent >= botTuning.thinkMs) break;
+    if (n >= 1 && spent >= thinkMs * 3) break;
+    if (n >= minSims && spent >= thinkMs) break;
     pool.reset();
     sum += simulate(view, pool, [...view.mine, ...pool.deal(myMissing)], opponents);
     n++;
@@ -316,6 +362,161 @@ function decide(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: n
   const odds = legal.callAmount / (pot + legal.callAmount);
   const margin = legal.callAmount >= me.stack * 0.5 ? 0.08 : 0.03;
   if (mayRaise && (equity >= 0.8 || ((equity >= 0.7 || strength >= 2.2) && rand() < 0.8))) return raise(0.75);
+  if (equity >= odds + margin) return { type: 'call' };
+  return { type: 'fold' };
+}
+
+/** Easy: calls small bets with almost anything, bets only good hands and small, raises only the best, and never bluffs. */
+function decideEasy(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, opponents: number, rand: Rand): Action {
+  const me = hand.seats.find((x) => x.seat === seat)!;
+  const pot = hand.seats.reduce((n, x) => n + x.total, 0);
+  const strength = equity * (opponents + 1);
+  const raise = (fraction: number): Action => {
+    const to = sizeTo(legal, hand.currentBet + fraction * (pot + legal.callAmount));
+    return legal.raiseKind === 'bet' ? { type: 'bet', to } : { type: 'raise', to };
+  };
+  if (legal.canBringIn) return legal.canRaise && strength >= 2 ? raise(0) : { type: 'bring-in' };
+  const mayRaise = legal.canRaise && hand.raisesThisRound < 3;
+  if (legal.canCheck) {
+    if (mayRaise && (strength >= 1.7 || equity >= 0.72) && rand() < 0.75) return raise(0.3 + 0.2 * rand());
+    return { type: 'check' };
+  }
+  if (mayRaise && equity >= 0.85 && rand() < 0.6) return raise(0.5);
+  const odds = legal.callAmount / (pot + legal.callAmount);
+  // Curious about small bets; careful with its stack.
+  const slack = legal.callAmount >= me.stack * 0.5 ? 0 : legal.callAmount <= pot * 0.6 ? 0.1 : 0.04;
+  if (equity >= odds - slack) return { type: 'call' };
+  return { type: 'fold' };
+}
+
+/** How a player has played in recent hands: betting actions they chose, and what they did facing a bet. */
+export interface PlayerRead {
+  /** Folds, checks, calls, bets and raises they chose (not ones made for them). */
+  acts: number;
+  /** Bets, raises and completes. */
+  aggressive: number;
+  /** Times they acted facing a bet... */
+  faced: number;
+  /** ...and folded. */
+  folds: number;
+}
+
+/** What each player did in these hands, for Hard bots to learn how they play. */
+export function readPlayers(hands: HandState[]): Record<PlayerId, PlayerRead> {
+  const out: Record<PlayerId, PlayerRead> = {};
+  for (const hand of hands) {
+    const ids = new Map(hand.seats.map((x) => [x.seat, x.playerId]));
+    const bets = new Map<SeatIndex, number>();
+    let top = 0;
+    for (const ev of hand.events) {
+      if (ev.t === 'street') {
+        bets.clear();
+        top = 0;
+      } else if (ev.t === 'post' && ev.live) {
+        const bet = (bets.get(ev.seat) ?? 0) + ev.amount;
+        bets.set(ev.seat, bet);
+        top = Math.max(top, bet);
+      } else if (ev.t === 'action') {
+        const facing = top > (bets.get(ev.seat) ?? 0);
+        bets.set(ev.seat, ev.to);
+        top = Math.max(top, ev.to);
+        const id = ids.get(ev.seat);
+        if (ev.auto || ev.action === 'bring-in' || !id) continue;
+        const read = (out[id] ??= { acts: 0, aggressive: 0, faced: 0, folds: 0 });
+        read.acts++;
+        if (ev.action === 'bet' || ev.action === 'raise' || ev.action === 'complete') read.aggressive++;
+        if (facing) {
+          read.faced++;
+          if (ev.action === 'fold') read.folds++;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** A player's style, with what most players do filling in until there's enough to go on. */
+function styleOf(read: PlayerRead | undefined) {
+  const r = read ?? { acts: 0, aggressive: 0, faced: 0, folds: 0 };
+  return { aggression: (r.aggressive + 1.6) / (r.acts + 8), foldRate: (r.folds + 2.1) / (r.faced + 6) };
+}
+
+/**
+ * Hard: how much stronger than a random hand each live opponent has shown
+ * (in the order of Situation.opponents). Bets and raises count most, calls
+ * after the first round a little, and in draw games so does standing pat or
+ * drawing one. A player who bets and raises most of the time says less.
+ */
+function handReads(hand: HandState, seat: SeatIndex, players: Record<PlayerId, PlayerRead>): number[] {
+  const live = hand.seats.filter((x) => x.seat !== seat && !x.folded);
+  return live.map((x) => {
+    let shown = 0;
+    let street = 0;
+    let drew: number | null = null;
+    for (const ev of hand.events) {
+      if (ev.t === 'street') street = ev.street;
+      else if (ev.t === 'draw' && ev.seat === x.seat) drew = ev.discarded;
+      else if (ev.t === 'action' && ev.seat === x.seat && !ev.auto) {
+        if (ev.action === 'bet' || ev.action === 'raise' || ev.action === 'complete') shown += 1;
+        else if (ev.action === 'call' && street > 0) shown += 0.35;
+      }
+    }
+    if (drew === 0) shown += 1.2;
+    else if (drew === 1) shown += 0.4;
+    const { aggression } = styleOf(players[x.playerId]);
+    const believed = Math.max(0, Math.min(1, (0.55 - aggression) / 0.3));
+    return Math.min(3, shown * believed);
+  });
+}
+
+/** Acts after every opponent still to act for the rest of the hand (flop and draw games, where the button sets the order). */
+function actsLast(hand: HandState, seat: SeatIndex): boolean {
+  if (hand.input.game.family === 'stud') return false;
+  const { maxSeats, button } = hand.input;
+  const order = (s: SeatIndex) => (s - button - 1 + maxSeats) % maxSeats;
+  return hand.seats.every((x) => x.seat === seat || x.folded || x.allIn || order(x.seat) < order(seat));
+}
+
+/** Hard: the odds as Normal plays them, against what opponents have shown, adjusted to position and to how they play. */
+function decideHard(hand: HandState, seat: SeatIndex, legal: LegalActions, equity: number, players: Record<PlayerId, PlayerRead>, rand: Rand): Action {
+  const me = hand.seats.find((x) => x.seat === seat)!;
+  const live: HandSeat[] = hand.seats.filter((x) => x.seat !== seat && !x.folded);
+  const opponents = live.length;
+  const pot = hand.seats.reduce((n, x) => n + x.total, 0);
+  const strength = equity * (opponents + 1);
+  const lastRound = hand.street === hand.input.game.streets.length - 1;
+  const inPosition = actsLast(hand, seat);
+  // How often these opponents fold to a bet: the most stubborn one decides.
+  const foldRate = Math.min(1, ...live.map((x) => styleOf(players[x.playerId]).foldRate));
+  const raise = (fraction: number): Action => {
+    const to = sizeTo(legal, hand.currentBet + fraction * (pot + legal.callAmount));
+    return legal.raiseKind === 'bet' ? { type: 'bet', to } : { type: 'raise', to };
+  };
+
+  if (legal.canBringIn) {
+    const steal = opponents <= 2 && rand() < Math.max(0, foldRate - 0.35);
+    return legal.canRaise && (strength >= 1.35 || steal) ? raise(0) : { type: 'bring-in' };
+  }
+  const raiseBar = hand.raisesThisRound < 3 ? 0 : 0.85 + 0.04 * (hand.raisesThisRound - 3);
+  const mayRaise = legal.canRaise && equity >= raiseBar;
+
+  if (legal.canCheck) {
+    // Bets thinner against players who call, and bigger with the best hands.
+    const value = opponents === 1 ? equity >= Math.max(0.54, Math.min(0.64, 0.6 - 0.15 * (0.35 - foldRate))) : strength >= 1.35 || equity >= 0.6;
+    if (mayRaise && value) return raise(equity >= 0.8 ? 0.75 + 0.25 * rand() : 0.5 + 0.25 * rand());
+    // Bluffs (and bets its draws) when folds pay for it: more in position, rarely into two players, never more.
+    let bluff = Math.max(0, Math.min(0.35, (foldRate - 0.33) * 1.5)) * (inPosition ? 1.3 : 0.7) * (opponents === 1 ? 1 : opponents === 2 ? 0.35 : 0);
+    if (!lastRound) bluff *= 1 + equity;
+    if (mayRaise && rand() < bluff) return raise(0.55 + 0.2 * rand());
+    return { type: 'check' };
+  }
+
+  const odds = legal.callAmount / (pot + legal.callAmount);
+  // Calls a little wider in position with cards to come, a little tighter out of it.
+  let margin = legal.callAmount >= me.stack * 0.5 ? 0.05 : 0.015;
+  if (!lastRound) margin += inPosition ? -0.02 : 0.01;
+  if (mayRaise && (equity >= 0.78 || ((equity >= 0.66 || strength >= 2) && rand() < 0.7))) return raise(equity >= 0.85 ? 0.9 : 0.7);
+  if (mayRaise && !lastRound && opponents === 1 && equity >= 0.35 && rand() < Math.max(0, foldRate - 0.4) * 0.5) return raise(0.7);
   if (equity >= odds + margin) return { type: 'call' };
   return { type: 'fold' };
 }

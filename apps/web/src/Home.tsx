@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { BettingKind } from '@rsdp/engine/core';
 import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
+import { BOT_LEVELS, type BotLevel } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from './socket';
 import { BETTING_NAME } from './format';
 import { InstallApp } from './pwa';
@@ -9,6 +10,7 @@ import { presetSettings, usePresets } from './presets';
 import { WhatsNewBanner } from './roadmap/WhatsNewPage';
 import { SiteFooter, SiteHeader } from './components/SiteHeader';
 import { TournamentList } from './tournament/TournamentList';
+import { LEVEL_INFO, lastBotLevel, rememberBotLevel } from './components/table/BotLevels';
 
 export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [name, setName] = useState(savedName);
@@ -23,6 +25,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [errorFor, setErrorFor] = useState<'cash' | 'practice'>('cash');
   const [busy, setBusy] = useState(false);
   const [bots, setBots] = useState(3);
+  const [botLevel, setBotLevel] = useState(lastBotLevel);
   const presets = usePresets();
   const [presetName, setPresetName] = useState('');
   const preset = presets.find((p) => p.name === presetName) ?? null;
@@ -65,7 +68,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       document.getElementById('home-name')?.focus();
       return setError('Pick a name first (under Start a cash game)');
     }
-    call<{ tableId: string }>('table:create', { settings, ...(practice ? { practice: { name, bots } } : {}) })
+    call<{ tableId: string }>('table:create', { settings, ...(practice ? { practice: { name, bots, level: botLevel } } : {}) })
       .then((res) => onCreated(res.tableId))
       .catch((err: Error) => setError(err.message))
       .finally(() => setBusy(false));
@@ -183,10 +186,27 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
                     ))}
                   </select>
                 </label>
+                <label>
+                  Level
+                  <select
+                    value={botLevel}
+                    onChange={(e) => {
+                      setBotLevel(e.target.value as BotLevel);
+                      rememberBotLevel(e.target.value as BotLevel);
+                    }}
+                  >
+                    {BOT_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {LEVEL_INFO[level].label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button type="button" disabled={busy} onClick={() => create(null, true)}>
                   Practice with bots
                 </button>
               </div>
+              <p className="hint">{LEVEL_INFO[botLevel].about}</p>
               <p className="muted">
                 Stud, Razz, Triple Draw or Badugi? <a href="/rules">Learn the games</a>.
               </p>
