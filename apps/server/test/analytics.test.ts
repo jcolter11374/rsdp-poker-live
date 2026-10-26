@@ -94,20 +94,21 @@ describe('analytics', () => {
   });
 
   it('leaves tournament tables out of the graph, the leaderboard and the profile', { timeout: 30_000 }, async () => {
-    const before = {
-      graph: await get<{ sessions: unknown[] }>('/api/account/graph'),
-      board: await get<{ rows: unknown[] }>('/api/leaderboard?period=all'),
-      me: await get<{ tables: unknown[] }>('/api/account/me'),
-    };
-    // A copy of a real game saved the way tournament tables are: mode 'tournament', no tournament_id.
+    // A real game, then the same game saved the way tournament tables are: mode 'tournament', no tournament_id.
     const { tableId } = await play('Wednesday', 1);
+    const graph = (await get<{ sessions: { tableId: string }[] }>('/api/account/graph')).sessions.map((s) => s.tableId);
+    const listed = (await get<{ tables: { tableId: string }[] }>('/api/account/me')).tables.map((t) => t.tableId);
+    expect(graph).toContain(tableId);
+    expect(listed).toContain(tableId);
     await queryRows(db, sql`update tables set mode = 'tournament' where id = ${tableId}`);
-    expect((await get<{ sessions: unknown[] }>('/api/account/graph')).sessions).toEqual(before.graph.sessions);
-    expect((await get<{ tables: unknown[] }>('/api/account/me')).tables).toEqual(before.me.tables);
-    // The board caches for a minute; a fresh period is worked out now.
+    expect((await get<{ sessions: { tableId: string }[] }>('/api/account/graph')).sessions.map((s) => s.tableId)).toEqual(graph.filter((id) => id !== tableId));
+    expect((await get<{ tables: { tableId: string }[] }>('/api/account/me')).tables.map((t) => t.tableId)).toEqual(listed.filter((id) => id !== tableId));
+    // The board caches for a minute per period; this period has not been asked for yet, so it is worked out now.
     const board = await get<{ rows: { name: string; hands: number }[] }>('/api/leaderboard?period=year');
-    expect(board.rows.every((r) => r.hands === 3)).toBe(true);
-    expect(before.board.rows.length).toBeGreaterThan(0);
+    const ann = board.rows.find((r) => r.name === 'Ann');
+    const before = (await get<{ rows: { name: string; hands: number }[] }>('/api/leaderboard?period=all')).rows.find((r) => r.name === 'Ann');
+    // 'all' was cached by the first test, before Wednesday was played.
+    expect(ann?.hands).toBe(before?.hands);
   });
 
   it('answers an empty board for a period with no games', async () => {
