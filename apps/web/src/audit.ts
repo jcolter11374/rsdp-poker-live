@@ -39,9 +39,11 @@ export function recordProblem(): { at: number; text: string } | null {
   return read(PROBLEM);
 }
 
+/** Forgets the problem and the entry it was about, so the record is remembered afresh from the next check. */
 export function dismissRecordProblem() {
   try {
     localStorage.removeItem(PROBLEM);
+    localStorage.removeItem(SEEN);
   } catch {
     /* ignore */
   }

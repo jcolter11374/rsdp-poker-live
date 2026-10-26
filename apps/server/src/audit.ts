@@ -94,6 +94,8 @@ const RETRY_MS = [1_000, 5_000, 30_000];
 
 export class AuditLog {
   private head: { seq: number; hash: string };
+  /** The latest entry saved: what the record shows, so a crash can never take back an entry someone saw. */
+  private saved: { seq: number; hash: string };
   /** Numbered and hashed, not saved yet, oldest first. */
   private unsaved: AuditEntry[] = [];
   private saving: Promise<void> | null = null;
@@ -107,6 +109,7 @@ export class AuditLog {
     private log: (message: string, err?: unknown) => void,
   ) {
     this.head = last ? { seq: last.seq, hash: last.hash } : { seq: 0, hash: AUDIT_GENESIS };
+    this.saved = { ...this.head };
   }
 
   static async open(store: AuditStore, opts: AuditOptions = {}) {
@@ -127,8 +130,9 @@ export class AuditLog {
     return entry;
   }
 
+  /** The latest saved entry. */
   latest() {
-    return { ...this.head };
+    return { ...this.saved };
   }
 
   private save() {
@@ -138,7 +142,8 @@ export class AuditLog {
       while (this.unsaved.length) {
         try {
           await this.store.append(this.unsaved[0]);
-          this.unsaved.shift();
+          const done = this.unsaved.shift()!;
+          this.saved = { seq: done.seq, hash: done.hash };
           tries = 0;
         } catch (e) {
           this.log(`saving public record entry ${this.unsaved[0].seq} failed`, e);
