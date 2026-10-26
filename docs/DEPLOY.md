@@ -37,8 +37,35 @@ A deploy restarts the process:
 
 ## Backups
 
-- **Managed Postgres:** use the provider's backups or point-in-time restore.
-- **Volume:** use the host's volume snapshots. Alternatively, stop the app and copy `/data/pglite`.
+The live site is backed up every night, off Fly, by GitHub Actions (`.github/workflows/backup.yml`, about 09:41 UTC):
+
+1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action, because a copy holds any hand being played at that moment.
+2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
+3. It locks the copy with AES-256 (`openssl enc`, PBKDF2 with 600,000 rounds) using the `BACKUP_KEY` repository secret, or `ADMIN_KEY` when that isn't set, and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the password is what keeps the copy private: use a long random one, and keep a copy of it outside GitHub (a password manager), or the backups can't be opened.
+4. A failure opens the issue "Nightly backup failed", mentioning John; the next good run closes it.
+
+Fly's own daily volume snapshots carry on as a second copy (same company, same region).
+
+**Format:** gzipped JSON lines: a header (format version, time, number of migrations, tables), one line per row (`row_to_json`, so jsonb, timestamps and big numbers come back exactly), and an end line with each table's row count, which is how a restore knows the copy wasn't cut short. A backup restores into a fresh database of the same or a newer schema, PGlite or Postgres.
+
+**Restoring:**
+
+```bash
+# 1. Download the artifact (Actions → Nightly backup → a run → Artifacts), unzip it, and unlock it (asks for the password):
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in rsdp-backup-….jsonl.gz.enc -out backup.jsonl.gz
+# 2. Test it on your own machine: restores into memory and prints the rows per table.
+npx tsx apps/server/src/restore.ts backup.jsonl.gz --check
+# 3. Into a new PGlite folder (or a postgres:// URL of an empty database). Nothing is written unless all of it restores.
+npx tsx apps/server/src/restore.ts backup.jsonl.gz /data/pglite-restored
+```
+
+On Fly: copy the file up (`fly ssh sftp shell`, `put backup.jsonl.gz /data/backup.jsonl.gz`), then in `fly ssh console` run step 3 from `/app/apps/server` (`node --import tsx src/restore.ts /data/backup.jsonl.gz /data/pglite-restored`), swap the folders (`mv /data/pglite /data/pglite-old && mv /data/pglite-restored /data/pglite`) and restart the machine (`fly machine restart`). The server opens the restored data on start; delete `/data/pglite-old` once all is well. If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the night of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended).
+
+- **Managed Postgres:** use the provider's backups or point-in-time restore as well.
+
+## Site-down alert
+
+`.github/workflows/uptime.yml` asks `/api/health` every 5 minutes (GitHub sometimes runs it later). If the site doesn't answer for about 3 minutes and no deploy is running, it opens the issue "The site is down", mentioning John so GitHub emails him, and closes it when the site answers again. GitHub turns off scheduled workflows in a public repo after 60 days without a commit; re-enable them under Actions if that happens.
 
 ## Local check of the production image
 

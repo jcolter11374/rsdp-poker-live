@@ -1,0 +1,98 @@
+name: Nightly backup
+
+# Every night, from outside Fly: downloads a copy of the whole database from the
+# live site, proves it restores (a real server boots on the copy and gives the
+# same leaderboard and public record as the site), locks it with a password and
+# keeps it on GitHub for 90 days. A failure opens an issue. See docs/DEPLOY.md,
+# "Backups". Read-only on the site; costs nothing (public repos run Actions free).
+on:
+  schedule:
+    # 09:41 UTC is about 5 am in New York, the quietest time for games. GitHub can start it late.
+    - cron: '41 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+env:
+  SITE: https://rsdp-poker-live.fly.dev
+
+jobs:
+  backup:
+    name: Back up, test the restore, keep the copy
+    # Only main's own scripts may hold the key.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download a backup
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          cd "$RUNNER_TEMP/backup"
+          # What the restore should give back, read just before the copy.
+          "$GITHUB_WORKSPACE/scripts/backup/expect.sh" "$SITE" > before.json
+          curl -sf --retry 3 --retry-delay 30 --retry-all-errors -H "X-Admin-Key: $ADMIN_KEY" "$SITE/api/admin/backup" -o backup.jsonl.gz
+          gzip -t backup.jsonl.gz
+          echo "Downloaded $(du -h backup.jsonl.gz | cut -f1)"
+          # The leaderboard is worked out at most once a minute: if it is the same a minute after
+          # the copy as just before, nothing changed in between and the copy must match it exactly.
+          sleep 61
+          "$GITHUB_WORKSPACE/scripts/backup/expect.sh" "$SITE" > after.json
+          if [ "$(jq -S .leaderboard before.json)" = "$(jq -S .leaderboard after.json)" ]; then
+            cp before.json expected.json
+          else
+            echo "::notice::Someone finished a hand during the backup, so the drill checks only the public record this time."
+            jq '.leaderboard = null' before.json > expected.json
+          fi
+      - name: Restore it and start a server on it
+        run: scripts/backup/drill.sh "$RUNNER_TEMP/backup/backup.jsonl.gz" "$RUNNER_TEMP/backup/expected.json"
+      - name: Lock it with the password
+        env:
+          # BACKUP_KEY when it is set, otherwise the admin key. Without it the copy can't be opened, so keep it somewhere safe.
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_KEY || secrets.ADMIN_KEY }}
+        run: |
+          cd "$RUNNER_TEMP/backup"
+          name="rsdp-backup-$(date -u +%Y-%m-%dT%H%MZ)"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:BACKUP_PASSWORD -in backup.jsonl.gz -out "$name.jsonl.gz.enc"
+          # The locked copy opens again to the same bytes.
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:BACKUP_PASSWORD -in "$name.jsonl.gz.enc" | cmp - backup.jsonl.gz
+          sha256sum "$name.jsonl.gz.enc"
+          # Only the locked copy leaves this machine.
+          rm backup.jsonl.gz
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ runner.temp }}/backup/${{ env.NAME }}.jsonl.gz.enc
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+      - name: Open an issue if the backup failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="@jcolter11374 last night's backup didn't finish. The live site is unaffected; the run below says which step failed, and the next run is tomorrow (or start one from Actions → Nightly backup → Run workflow).
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          open=$(gh issue list --state open --search 'in:title "Nightly backup failed"' --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$body"; else gh issue create --title 'Nightly backup failed' --body "$body"; fi
+      - name: Close the issue once a backup works again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh issue list --state open --search 'in:title "Nightly backup failed"' --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue close "$open" --comment "Backups work again: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
+import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
@@ -31,6 +32,7 @@ import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
 import { StorageError } from './db/errors';
+import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
 import { subjectRef } from '@rsdp/engine';
 
@@ -354,6 +356,36 @@ export function createApp(deps: AppDeps = {}) {
         res.status(500).json({ error: 'Something went wrong. Try again.' });
       },
     );
+  });
+  // The nightly off-site backup (GitHub Actions, backup.yml) downloads the whole database here. Each copy goes in the
+  // public record: it holds any hand being played at that moment.
+  let backingUp = false;
+  app.get('/api/admin/backup', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isAdmin(req, res)) return;
+    const db = deps.accounts;
+    if (!db) return void res.status(404).json({ error: 'This server has no database to back up.' });
+    if (backingUp) return void res.status(429).json({ error: 'A backup is already running.' });
+    backingUp = true;
+    res.set({ 'Content-Type': 'application/gzip', 'Content-Disposition': 'attachment; filename="rsdp-backup.jsonl.gz"' });
+    const gzip = createGzip();
+    gzip.pipe(res);
+    let closed = false;
+    res.on('close', () => (closed = true));
+    writeBackup(db, (line) => {
+      if (closed) throw new Error('the download was closed');
+      if (!gzip.write(line)) return new Promise<void>((done) => gzip.once('drain', done));
+    })
+      .then((summary) => {
+        audit.admin('backup', `${Object.values(summary.rows).reduce((a, b) => a + b, 0)} rows`);
+        gzip.end();
+      })
+      .catch((e) => {
+        log('backup failed', e);
+        // Without its end line the download reads as cut short.
+        res.destroy();
+      })
+      .finally(() => (backingUp = false));
   });
   if (deps.webDist && existsSync(deps.webDist)) {
     const dist = deps.webDist;

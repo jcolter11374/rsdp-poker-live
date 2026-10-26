@@ -124,7 +124,11 @@ when they deal at a home game.
 - **Use admin powers, or a shell on the server.** The admin page can remove
   test tables and answer suggestions; each use now goes in the public record
   and on [/transparency](/transparency). Looking is not recorded: the admin
-  page can list tables and who is at them without leaving an entry. John can also open a shell on the
+  page can list tables and who is at them without leaving an entry. Every
+  night GitHub downloads a backup of the whole database with the admin key,
+  locked with a password John holds. It includes any hand being played at that
+  moment, cards and all, so John could open it and look; each download goes in
+  the public record, so you can see when one was taken. John can also open a shell on the
   server through Fly, the hosting company. That isn't recorded anywhere
   players can see, and from there everything in this list is possible.
 - **Show your cards to a spectator without the warnings.** A host can let

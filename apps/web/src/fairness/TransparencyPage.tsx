@@ -18,6 +18,7 @@ const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) : 'unkn
 function describe(e: AuditEntry): string {
   if (e.kind === 'boot') return `The server started${e.data.commit ? `, running commit ${short(String(e.data.commit))}` : ''}`;
   if (e.kind === 'deleted') return `A table was deleted by ${e.data.by === 'admin' ? 'the admin (John)' : 'its host'}`;
+  if (e.data.action === 'backup') return `Nightly backup: the whole database was downloaded with the admin key${e.data.target ? ` (${e.data.target})` : ''}`;
   return `Admin (John): ${e.data.action}${e.data.target ? ` (${e.data.target})` : ''}`;
 }
 
