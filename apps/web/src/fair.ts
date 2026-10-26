@@ -8,6 +8,35 @@ import { socket } from './socket';
 
 const SEEDS = 'rsdp.fairSeeds';
 const SENT = 'rsdp.fairSent';
+/**
+ * Every seed this browser made, one storage key each (`<prefix><commit>:<seed>`): two tabs can each make one for the
+ * same commitment at the same moment, and separate keys can't overwrite each other the way one shared map could.
+ */
+const MADE = 'rsdp.fairMade:';
+
+function noteMade(commit: string, seed: string) {
+  try {
+    localStorage.setItem(`${MADE}${commit}:${seed}`, String(Date.now()));
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(MADE)) keys.push(k);
+    }
+    if (keys.length <= KEEP) return;
+    keys.sort((a, b) => Number(localStorage.getItem(a)) - Number(localStorage.getItem(b)));
+    for (const k of keys.slice(0, keys.length - KEEP)) localStorage.removeItem(k);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+function madeHere(commit: string, seed: string): boolean {
+  try {
+    return localStorage.getItem(`${MADE}${commit}:${seed}`) !== null;
+  } catch {
+    return false;
+  }
+}
 const LIVE = 'rsdp.fairLive';
 const NEXT = 'rsdp.fairNextSeen';
 const SWAPPED = 'rsdp.fairSwapped';
@@ -53,6 +82,8 @@ interface Sent {
   at: number;
   /** The table it was sent at (older records have none). */
   table?: string;
+  /** Who sent it (older records have none). */
+  player?: string;
   /** The server turned it down this long after it was sent. */
   rejected?: { after: number };
 }
@@ -147,17 +178,30 @@ export function contributeSeed(view: TableView) {
   const commit = view.fair?.nextCommit;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
+  // Another tab of this browser, or this page before a reload, already made a seed for this commitment: send that
+  // same one again (harmless if it got there) rather than a second one the server would keep instead. A refused seed
+  // stays refused: a fresh one after a refusal would let a server pick and choose.
+  const before = sentFor(commit);
+  // Records from before players were noted are taken as mine: a second seed would give the server two to choose from.
+  const again = before && (before.player ?? view.me.playerId) === view.me.playerId ? before : null;
+  if (again?.rejected) {
+    sent = commit;
+    return;
+  }
   sending = commit;
-  const seed = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-  // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.
-  const at = Date.now();
-  save(SENT, commit, JSON.stringify({ seed, at, table: view.id } satisfies Sent));
+  const seed = again?.seed ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (!again) noteMade(commit, seed);
+  // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught. A repeat
+  // keeps the first send's time: the server can choose when a second tab sees the commitment.
+  const at = Math.min(again?.at ?? Infinity, Date.now());
+  const record: Sent = { seed, at, table: view.id, player: view.me.playerId };
+  save(SENT, commit, JSON.stringify(record));
   socket.emit('fair:seed', { commit, seed }, (res) => {
     if (sending === commit) sending = '';
-    // One seed per commitment, accepted or not: a fresh one after a refusal would let a server pick and choose.
     sent = commit;
     if (!res.ok) {
-      save(SENT, commit, JSON.stringify({ seed, at, table: view.id, rejected: { after: Date.now() - at } } satisfies Sent));
+      // A repeat turned down says nothing: the first may have got there in time and been used.
+      if (!again) save(SENT, commit, JSON.stringify({ ...record, rejected: { after: Date.now() - at } } satisfies Sent));
       return;
     }
     save(SEEDS, commit, seed);
@@ -280,10 +324,11 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;
   const rejected = sentSeed?.rejected;
-  if (under && under !== accepted && under !== sentSeed?.seed) {
+  if (under && under !== accepted && under !== sentSeed?.seed && !madeHere(commit, under)) {
     return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
   }
-  if (rejected && under === sentSeed!.seed) return `the server turned down your browser's seed (${under}) but used it anyway`;
+  // Another tab's copy of the same seed may have got in first and been accepted.
+  if (rejected && under === sentSeed!.seed && under !== accepted) return `the server turned down your browser's seed (${under}) but used it anyway`;
   // Whatever the server answered, it saw the seed: an honest server only refuses one that arrived after the deal, and
   // then this browser sees the hand at about the time it sent it. Seen much later means the seed was there in time.
   const inTime = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS;

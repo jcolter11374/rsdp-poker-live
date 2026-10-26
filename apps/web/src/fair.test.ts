@@ -1,12 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./socket', () => ({ socket: {} }));
+const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
+vi.mock('./socket', () => ({ socket: mockSocket }));
 const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
   store.clear();
-  vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+    key: (i: number) => [...store.keys()][i] ?? null,
+    get length() {
+      return store.size;
+    },
+  });
 });
 
 const C = 'commit';
@@ -362,5 +371,84 @@ describe('when this browser saw the next commitment appear', () => {
   it('no longer notes the commitment just for being seated (the old false alarm)', () => {
     contributeSeed({ id: 't1', fair: { nextCommit: 'C', handCommit: null }, me: { seat: 2, playerId: 'me' }, hand: null } as unknown as V);
     expect(store.get('rsdp.fairNextSeen')).toBeUndefined();
+  });
+});
+
+describe('sending my seed', () => {
+  type V = Parameters<typeof contributeSeed>[0];
+  const seated = (next: string) => ({ id: 't1', fair: { nextCommit: next, handCommit: null }, me: { seat: 2, playerId: 'me' }, hand: null }) as unknown as V;
+  const emitted: { commit: string; seed: string }[] = [];
+  beforeEach(() => {
+    emitted.length = 0;
+    mockSocket.connected = true;
+    mockSocket.emit = (_event: unknown, payload: unknown) => void emitted.push(payload as { commit: string; seed: string });
+  });
+  afterEach(() => {
+    mockSocket.connected = false;
+  });
+
+  it('sends one seed per commitment, and repeats another tab\'s rather than making a second', () => {
+    contributeSeed(seated('T1'));
+    contributeSeed(seated('T1'));
+    expect(emitted.map((e) => e.commit)).toEqual(['T1']);
+    // Another tab of this browser (same storage), or this page before a reload, made 'aa' for T2: send that again,
+    // so the server keeps it whether or not the first got there.
+    store.set('rsdp.fairSent', JSON.stringify({ T2: JSON.stringify({ seed: 'aa', at: 0, table: 't1', player: 'me' }) }));
+    contributeSeed(seated('T2'));
+    expect(emitted.at(-1)).toEqual({ commit: 'T2', seed: 'aa' });
+    expect(seedProblem('T2', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toBeNull();
+  });
+
+  it("doesn't repeat a refused seed, nor another player's", () => {
+    store.set('rsdp.fairSent', JSON.stringify({ T3: JSON.stringify({ seed: 'aa', at: 0, table: 't1', player: 'me', rejected: { after: 9 } }) }));
+    contributeSeed(seated('T3'));
+    expect(emitted).toEqual([]);
+    // Signed in as someone else in another tab: that seed isn't mine to repeat.
+    store.set('rsdp.fairSent', JSON.stringify({ T4: JSON.stringify({ seed: 'bb', at: 0, table: 't1', player: 'other' }) }));
+    contributeSeed(seated('T4'));
+    expect(emitted.map((e) => e.commit)).toEqual(['T4']);
+    expect(emitted[0].seed).not.toBe('bb');
+  });
+
+  it('a repeat turned down is no sign of a cheat, and two tabs that each made a seed at once are both mine', () => {
+    mockSocket.emit = (_e: unknown, payload: unknown, ack?: unknown) => {
+      emitted.push(payload as { commit: string; seed: string });
+      (ack as (r: { ok: boolean }) => void)({ ok: false });
+    };
+    store.set('rsdp.fairSent', JSON.stringify({ T5: JSON.stringify({ seed: 'aa', at: 0, table: 't1', player: 'me' }) }));
+    contributeSeed(seated('T5'));
+    // The first got there and was used; the repeat came after the deal and was turned down.
+    expect(seedProblem('T5', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toBeNull();
+    // Two tabs raced: both made a seed, the other tab's write won here, the server kept mine.
+    mockSocket.emit = (_e: unknown, payload: unknown) => void emitted.push(payload as { commit: string; seed: string });
+    contributeSeed(seated('T6'));
+    const mine = emitted.at(-1)!.seed;
+    store.set('rsdp.fairSent', JSON.stringify({ T6: JSON.stringify({ seed: 'cc', at: 0, table: 't1', player: 'me' }) }));
+    expect(seedProblem('T6', [{ playerId: 'me', seed: mine }], 'me', true, 10_000)).toBeNull();
+    expect(seedProblem('T6', [{ playerId: 'me', seed: 'dd' }], 'me', true, 10_000)).toMatch(/didn't send/);
+  });
+
+  it("a seed refused in one tab but accepted from another is fine, and a repeat keeps the first send's time", () => {
+    // Tab 2 repeated X and got in; tab 1's own copy arrived after the deal and was refused.
+    store.set('rsdp.fairSent', JSON.stringify({ T7: JSON.stringify({ seed: 'aa', at: 0, table: 't1', player: 'me', rejected: { after: 3000 } }) }));
+    store.set('rsdp.fairSeeds', JSON.stringify({ T7: 'aa' }));
+    expect(seedProblem('T7', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toBeNull();
+    // Refused everywhere and used anyway is still caught.
+    store.delete('rsdp.fairSeeds');
+    expect(seedProblem('T7', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toMatch(/but used it/);
+    // A repeat seen late (the server picks when a second tab sees the commitment) can't make an early seed look late.
+    store.set('rsdp.fairSent', JSON.stringify({ T8: JSON.stringify({ seed: 'bb', at: 1, table: 't1', player: 'me' }) }));
+    contributeSeed(seated('T8'));
+    expect(JSON.parse(JSON.parse(store.get('rsdp.fairSent')!).T8).at).toBe(1);
+    expect(seedProblem('T8', [], 'me', true, 10_000)).toMatch(/in good time/);
+  });
+
+  it('takes a record from before players were noted as mine', () => {
+    store.set('rsdp.fairSent', JSON.stringify({ T9: JSON.stringify({ seed: 'aa', at: 0, table: 't1' }) }));
+    contributeSeed(seated('T9'));
+    expect(emitted).toEqual([{ commit: 'T9', seed: 'aa' }]);
+    store.set('rsdp.fairSent', JSON.stringify({ T10: JSON.stringify({ seed: 'aa', at: 0, rejected: { after: 5 } }) }));
+    contributeSeed(seated('T10'));
+    expect(emitted).toHaveLength(1);
   });
 });
