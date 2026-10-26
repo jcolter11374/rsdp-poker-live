@@ -22,6 +22,7 @@ describe('createDb', () => {
     );
     expect(rows.map((r) => r.table_name)).toEqual([
       'accounts',
+      'audit_log',
       'chip_movements',
       'hands',
       'hidden_tables',

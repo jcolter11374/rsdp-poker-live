@@ -90,9 +90,16 @@ function clean(v: unknown, max: number, multiline = false): string | null {
 export function suggestionRoutes(
   app: express.Express,
   store: SuggestionStore,
-  opts: { isAdmin: AdminCheck; now: () => number; log: (message: string, err?: unknown) => void },
+  opts: {
+    isAdmin: AdminCheck;
+    now: () => number;
+    log: (message: string, err?: unknown) => void;
+    /** Admin changes go in the public record (audit.ts). */
+    onAdmin?: (action: string, target: string) => void;
+  },
 ) {
   const { now, log, isAdmin } = opts;
+  const onAdmin = opts.onAdmin ?? (() => {});
   const perAddress = limiter(SEND_BURST, SEND_WINDOW_MS, now);
   const site = limiter(SITE_PER_HOUR, 60 * 60_000, now);
   const json = express.json({ limit: '8kb' });
@@ -154,7 +161,11 @@ export function suggestionRoutes(
     if (!Number.isSafeInteger(id) || id < 1) return void res.status(404).json({ error: 'not found' });
     store
       .update(id, patch)
-      .then((s) => (s ? res.json({ ok: true, suggestion: s }) : res.status(404).json({ error: 'not found' })))
+      .then((s) => {
+        if (!s) return void res.status(404).json({ error: 'not found' });
+        onAdmin(`suggestion ${patch.status ? `marked ${patch.status}` : 'answered'}`, `#${id}`);
+        res.json({ ok: true, suggestion: s });
+      })
       .catch(failed(res));
   });
 
@@ -165,7 +176,11 @@ export function suggestionRoutes(
     if (!Number.isSafeInteger(id) || id < 1) return void res.status(404).json({ error: 'not found' });
     store
       .remove(id)
-      .then((ok) => (ok ? res.json({ ok: true }) : res.status(404).json({ error: 'not found' })))
+      .then((ok) => {
+        if (!ok) return void res.status(404).json({ error: 'not found' });
+        onAdmin('suggestion removed', `#${id}`);
+        res.json({ ok: true });
+      })
       .catch(failed(res));
   });
 }

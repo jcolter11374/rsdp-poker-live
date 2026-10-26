@@ -90,7 +90,13 @@ export function Markdown({ source, link }: { source: string; link: (href: string
         switch (b.t) {
           case 'h': {
             const H = `h${Math.min(b.level, 4)}` as 'h1';
-            return <H key={i}>{md(b.text)}</H>;
+            // An id from the words, so a section can be linked (#checking-john).
+            const id = b.text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            return (
+              <H key={i} id={id}>
+                {md(b.text)}
+              </H>
+            );
           }
           case 'p':
             return <p key={i}>{md(b.text)}</p>;
