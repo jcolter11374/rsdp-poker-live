@@ -613,3 +613,23 @@ describe('late shows', () => {
     expect(rt.state.history.at(-1)!.hand.seats.find((x) => x.playerId === folder)!.shown?.length).toBe(2);
   });
 });
+
+describe('hand-history downloads (no live HUDs)', () => {
+  it('are closed to seated players and onlookers who never played while the game runs, and open when they leave or it stops', () => {
+    const { rt } = table();
+    seatPlayers(rt, 3);
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([false, false, false, false]);
+    rt.start('host');
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([true, true, true, true]);
+    expect(tableView(rt, 'a', 0).recordsLocked).toBe(true);
+    checkDown(rt);
+    rt.stand('a');
+    // Ann played here and left: she can take her hands home. Cy only watched, so a second device can't fetch them.
+    expect(rt.recordsLocked('a')).toBe(false);
+    expect(rt.recordsLocked('c')).toBe(true);
+    rt.stand('host');
+    expect(rt.recordsLocked('host')).toBe(false);
+    rt.stop('host');
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([false, false, false, false]);
+  });
+});

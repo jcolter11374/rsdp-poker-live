@@ -263,6 +263,8 @@ export interface TournamentHooks {
    * nothing on its own (turn clocks, deals), so no hand ends before chips or seats on their way arrive.
    */
   busy(): boolean;
+  /** The event has finished or been cancelled (missing in older test doubles: never over). */
+  over?(): boolean;
   gate(now: number): 'deal' | 'hold';
   level(): { gameId: string; betting?: BettingKind; stakes: Stakes };
   handStarted(handNumber: number): void;

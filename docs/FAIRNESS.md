@@ -83,6 +83,30 @@ when they deal at a home game.
   reviewers we ran ourselves. No outside auditor or security firm has looked
   at it.
 
+## HUDs and tracking software
+
+A HUD is a program (PokerTracker, Holdem Manager and the like) that reads hand
+histories as you play and puts numbers on every opponent, such as how often
+they play a hand or raise. We don't want those running at our tables, but
+going over your own hands afterwards is welcome. So:
+
+- **While the game is running and you're in a seat, the hand-history
+  downloads are switched off:** the tracker file (OHH), the hands as text or
+  JSON, and the full log. They come back as soon as you leave your seat or
+  the host stops the game. The money ledger (CSV) is always available.
+- Someone watching who hasn't played at the table can't download them either
+  until the game stops, so a second phone or laptop can't fetch them for a
+  seated player. The host and co-hosts can while they're not seated.
+- **Replays and the Hands tab work the whole time.** Nothing the site sends
+  gets ahead of the table: each finished hand is sent only once it's over, and
+  only as you saw it.
+
+What this can't stop, stated plainly: the hands you see in the app are in your
+browser, so someone who can program could copy them out and build their own
+HUD, or read the screen. Anyone can also jot notes by hand. Turning the
+downloads off makes a live HUD much harder and against the spirit of the
+game, not impossible. If you think someone is doing it, tell the host.
+
 ## How a hand is dealt (rsdp-fair-v1)
 
 1. The table keeps a secret `serverSeed` for the next hand: 32 bytes from the

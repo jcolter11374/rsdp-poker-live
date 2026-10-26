@@ -222,6 +222,22 @@ export class TableRuntime {
     return this.state.seats.find((s) => s?.playerId === playerId) ?? null;
   }
 
+  /**
+   * Hand-history downloads are closed to this person for now (no live HUDs):
+   * while the game runs, for anyone seated, and for anyone who hasn't played
+   * here (so a second device watching can't fetch them for a seated player).
+   * They open once you leave your seat or the game stops; the host and
+   * co-hosts off their seat keep them. Replaying hands in the app is never closed.
+   */
+  recordsLocked(playerId: PlayerId): boolean {
+    const s = this.state;
+    const running = this.tournament ? !this.tournament.over?.() : s.started || this.handLive();
+    if (!running) return false;
+    if (this.seatOf(playerId)) return true;
+    if (this.isStaff(playerId)) return false;
+    return !(s.handNames && Object.hasOwn(s.handNames, playerId)) && !Object.hasOwn(s.ledger, playerId);
+  }
+
   /** Bots are always there. */
   isOnline(playerId: PlayerId) {
     return this.isBot(playerId) || (this.connections.get(playerId) ?? 0) > 0;

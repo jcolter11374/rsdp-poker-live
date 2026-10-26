@@ -871,6 +871,8 @@ export function createApp(deps: AppDeps = {}) {
           const rt = current();
           const cutoff = spectatorCutoff(rt, socket);
           // Each download reads every hand of the table, so one per socket every few seconds.
+          // It also feeds the Hands and Stats tabs, so it stays open while seated (see recordsLocked):
+          // only finished hands, as this person saw them, never sooner than the table showed them.
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           socket.data.lastExport = now;
@@ -885,6 +887,7 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const rt = current();
+          if (rt.recordsLocked(me)) throw new ActionError('downloads open once you leave your seat or the game stops');
           const now = clock.now();
           if (now - (socket.data.lastFullLog ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           const cutoff = spectatorCutoff(rt, socket);

@@ -350,6 +350,7 @@ export function frameView(
     started: true,
     paused: false,
     stopAfterHand: false,
+    recordsLocked: false,
     legal: null,
     canDraw: null,
     canVoteRunItTwice: false,

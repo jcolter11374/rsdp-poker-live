@@ -7,7 +7,7 @@ import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../rec
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
-import { FullLogDownload, Highlights, ohhDownload, ShareHandDialog } from './table/Records';
+import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -302,11 +302,17 @@ function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
   return (
     <>
       <div className="row wrap ledger-actions">
-        <button onClick={() => void exportAll('txt')}>Download all hands</button>
-        <button onClick={() => void exportAll('json')}>JSON</button>
-        <button onClick={() => setError(ohhDownload(view, hands) ?? '')} title="Open Hand History, for PokerTracker, Holdem Manager and other trackers (Hold'em and Omaha)">
-          Tracker (OHH)
-        </button>
+        {view.recordsLocked ? (
+          <RecordsLockedNote />
+        ) : (
+          <>
+            <button onClick={() => void exportAll('txt')}>Download all hands</button>
+            <button onClick={() => void exportAll('json')}>JSON</button>
+            <button onClick={() => setError(ohhDownload(view, hands) ?? '')} title="Open Hand History, for PokerTracker, Holdem Manager and other trackers (Hold'em and Omaha)">
+              Tracker (OHH)
+            </button>
+          </>
+        )}
         {opener}
       </div>
       {(error || loadError) && <p className="error">{error || loadError}</p>}
