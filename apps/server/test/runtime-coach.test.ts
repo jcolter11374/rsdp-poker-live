@@ -216,10 +216,28 @@ describe('who gets a coach tip', () => {
     play(rt, clock, 1);
     const hand = toTurn(rt, clock);
     expect(hand.seats.some((x) => x.playerId === 'ann')).toBe(false);
-    // Chips won with a tip's help already count when people settle up, so the table keeps tips off for good.
+    // Once people have played each other here, the table keeps tips off for good.
     expect(rt.state.coach).toBeNull();
     expect(tableView(rt, 'host', clock.now()).tips).toBeFalsy();
     expect(() => rt.coachTip('host', hand.input.handNumber, hand.events.length)).toThrow(/everyone else is a bot/);
+  });
+
+  it("counts a person whose id starts with 'bot-' as a person, from the deal", () => {
+    const { rt, clock } = practice();
+    rt.connect('bot-Xy9_k2PqLm3nRt5vW');
+    rt.requestSeat('bot-Xy9_k2PqLm3nRt5vW', { seat: 5, name: 'Xy', stack: 200, consent: true });
+    rt.start('host');
+    toTurn(rt, clock);
+    // Set as the hand is dealt, not when it ends.
+    expect(rt.state.realGame).toBe(true);
+    play(rt, clock, 1);
+    rt.stand('bot-Xy9_k2PqLm3nRt5vW');
+    play(rt, clock, 1);
+    const hand = toTurn(rt, clock);
+    expect(hand.seats.some((x) => x.playerId.startsWith('bot-Xy9'))).toBe(false);
+    expect(rt.state.coach).toBeNull();
+    expect(() => rt.coachTip('host', hand.input.handNumber, hand.events.length)).toThrow(/everyone else is a bot/);
+    rt.dispose();
   });
 
   it('refuses a tournament table, and a hand restored without the rule settled', () => {

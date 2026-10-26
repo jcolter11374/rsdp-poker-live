@@ -263,8 +263,10 @@ export interface RuntimeState {
   coach?: { handNumber: number; person: PlayerId; notes: BotNote[] } | null;
   /**
    * A hand here was dealt to two or more people (not bots), so friends' records
-   * depend on the table and the host can't delete it. Missing in older
-   * snapshots; the server works it out from saved hands when it loads one.
+   * depend on the table and the host can't delete it, and coach tips are off
+   * for good. Set at the deal by who is in state.bots, and when a hand ends by
+   * the 'bot-' prefix (all a saved hand can tell). Missing in older snapshots;
+   * the server works it out from saved hands when it loads one.
    */
   realGame?: boolean;
 }

@@ -275,10 +275,12 @@ export class TableRuntime {
    * coach tips and the bots' reasons, or null. It is decided from hand.seats,
    * the list dealt in at the start, which never changes during the hand, and
    * it fails closed: a bot the table has forgotten counts as a person, so does
-   * anyone dealt in while away, and a table where two people have played a
-   * hand (realGame) never gets tips again, so chips won with help can't change
-   * who pays whom. Membership of state.bots decides, never the 'bot-' prefix:
-   * a person's id could start with it.
+   * anyone dealt in while away, and a table where two people have been dealt
+   * into a hand (realGame) never gets tips again, so nobody gets help at a
+   * table where people play each other. It does not keep chips won from bots
+   * with help out of the ledger: those count when people settle up, as all
+   * chips won from bots do. Membership of state.bots decides, never the 'bot-'
+   * prefix: a person's id could start with it.
    */
   private soloPersonOf(hand: HandState): PlayerId | null {
     if (this.isTournament || this.state.realGame || hand.seats.length < 2) return null;
@@ -2108,6 +2110,9 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    // Two people dealt in, counted by who is really a bot (a person's id may start with 'bot-'), and at the deal, so a
+    // hand that never finishes still counts: tips are off here for good.
+    if (hand.seats.filter((x) => !this.isBot(x.playerId)).length >= 2) s.realGame = true;
     // Coach tips and the bots' reasons are settled here, for this hand only, from who was dealt in.
     const person = this.soloPersonOf(hand);
     s.coach = person ? { handNumber: input.handNumber, person, notes: [] } : null;
