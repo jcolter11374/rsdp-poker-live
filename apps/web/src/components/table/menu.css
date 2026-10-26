@@ -1,0 +1,54 @@
+/* ---- the table's top bar: Invite stands out, the rest lives in Menu */
+.topbar .invite-button { background: var(--go); border-color: var(--go); color: #fff; font-weight: 700; }
+.topbar .invite-button:hover:not(:disabled) { background: var(--go-hover); border-color: var(--go-hover); }
+.table-menu { position: relative; }
+.table-menu > button span { font-size: 0.7em; margin-left: 2px; color: var(--muted); }
+.table-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.table-menu-list button { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: transparent; border-color: transparent; text-align: left; padding: 9px 10px; white-space: nowrap; }
+.table-menu-list button:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+.table-menu-hint { color: var(--muted); font-size: 0.85rem; }
+
+/* ---- the action bar: a sensible width on big windows, so the bet slider isn't a mile long */
+.table-page:not(.portrait) .dock-inner { width: 100%; max-width: 880px; margin-inline: auto; }
+
+/* Seat options under the bar (straddle, wait for the big blind) as small switches. */
+.seat-options .toggle { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+.seat-options .toggle input[type='checkbox'] {
+  appearance: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+}
+.seat-options .toggle input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.seat-options .toggle input[type='checkbox']:checked { background: var(--go); border-color: var(--go); }
+.seat-options .toggle input[type='checkbox']:checked::after { transform: translateX(14px); background: #fff; }
+.seat-options .toggle input[type='checkbox']:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .seat-options .toggle input[type='checkbox'], .seat-options .toggle input[type='checkbox']::after { transition: none; } }

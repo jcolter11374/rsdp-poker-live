@@ -6,6 +6,7 @@ import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
+import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, ShareHandDialog } from './table/Records';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
@@ -40,8 +41,8 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
         {tab === 'log' && (
           <>
             <FullLogDownload view={view} fmt={fmt} />
-            {view.log.map((l, i) => (
-              <div key={`t${i}`} className="log-table">
+            {groupLog(view.log).map((l, i) => (
+              <div key={`t${i}`} className="log-table" title={l.full}>
                 {l.text}
               </div>
             ))}

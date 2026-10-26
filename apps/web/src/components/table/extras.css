@@ -41,3 +41,8 @@
 .hand-row.highlight .hand-name { white-space: normal; }
 .share-hand .row input { flex: 1; min-width: 0; }
 .shared-hand { max-width: none; }
+/* Phones: the "+" note button would sit on the player's name, so it lives in the seat pop-up instead.
+   A seat you've noted keeps a small dot in its note colour. */
+.felt.compact .nameplate .note-badge:not(.has-note) { display: none; }
+.felt.compact .nameplate .note-badge.has-note { top: -4px; right: -4px; width: 12px; height: 12px; font-size: 0; line-height: 0; border-width: 1.5px; border-color: var(--panel); }
+.note-button { align-self: flex-start; margin-top: 4px; }

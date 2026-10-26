@@ -18,6 +18,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
+import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
 import { Sheet } from './components/Sheet';
 import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
@@ -106,6 +107,9 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 const HURRY_MS = 5000;
 
 type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
+
+/** How long the keyboard tip stays up if nobody presses Got it. */
+const KEYS_TIP_MS = 20_000;
 
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
@@ -214,6 +218,12 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
+  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  useEffect(() => {
+    if (!keysTip) return;
+    const t = setTimeout(dismissKeysTip, KEYS_TIP_MS);
+    return () => clearTimeout(t);
+  }, [keysTip]);
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
   // Losing your seat without pressing Leave (the host removed you, or an offline seat was released) gets a word of explanation.
   const wasSeated = useRef(false);
@@ -376,7 +386,8 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </a>
         <span className="stakes">
-          <b>{view.name}</b>
+          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
+          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
           {game && (
             <>
               {portrait ? <br /> : ' · '}
@@ -411,19 +422,28 @@ export function TablePage({ tableId }: { tableId: string }) {
           </>
         ) : (
           <>
-            <button onClick={() => setDialog({ kind: 'people' })} title="Players and spectators">
-              👁 {view.watchers.length}
+            <button className="invite-button" onClick={copyLink}>
+              {copied ? 'Link copied' : 'Invite'}
             </button>
-            <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
-            <button onClick={() => setDialog({ kind: 'keys' })} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
-              ⌨
-            </button>
-            <button onClick={() => setDialog({ kind: 'look' })} title="Felt, deck and card backs" aria-label="Table look">
-              🎨
-            </button>
-            <button onClick={copyLink}>{copied ? 'Copied!' : 'Invite'}</button>
-            {volumeButton}
             {seatButtons}
+            <TableMenu
+              items={[
+                { label: 'People', hint: `${view.watchers.length} watching`, onClick: () => setDialog({ kind: 'people' }) },
+                { label: 'How to play', onClick: () => setDialog({ kind: 'rules' }) },
+                { label: 'Keyboard shortcuts', hint: <kbd>?</kbd>, onClick: () => setDialog({ kind: 'keys' }) },
+                { label: 'Look, sound and me', onClick: () => setDialog({ kind: 'look' }) },
+                {
+                  label: `Sound: ${VOLUME_NAME[volume].replace(/^Sound /, '')}`,
+                  hint: volume === 0 ? '🔇' : volume < 0.5 ? '🔈' : volume < 1 ? '🔉' : '🔊',
+                  keepOpen: true,
+                  onClick: () => {
+                    const v = nextVolume(volume);
+                    setVolume(v);
+                    if (v > 0) sounds.chips();
+                  },
+                },
+              ]}
+            />
           </>
         )}
       </header>
@@ -434,7 +454,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
           {keysTip && (
-            <div className="banner tip">
+            <div className="tip-toast" role="status">
               <span>
                 Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
               </span>
