@@ -56,7 +56,9 @@ jobs:
               echo "::error::The ADMIN_KEY secret must be at least 12 characters; the server ignores shorter keys."
               exit 1
             fi
-            printf 'ADMIN_KEY=%s\n' "$ADMIN_KEY" | flyctl secrets import --stage --app "$FLY_APP"
+            # Set as given, never through `secrets import`: that reads a .env file, where a # starts a comment and the
+            # rest of the key would be cut off, so the site would expect a different key from the one in GitHub.
+            flyctl secrets set --stage --app "$FLY_APP" "ADMIN_KEY=$ADMIN_KEY" > /dev/null
           else
             # Removing the repository secret turns the admin page off again.
             flyctl secrets unset ADMIN_KEY --stage --app "$FLY_APP" 2>/dev/null || true
