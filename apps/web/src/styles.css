@@ -294,7 +294,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 
 /* ---- table: felt, board, seats */
 select { width: 100%; }
-input[type='checkbox'] { width: auto; }
+input[type='checkbox'],
+input[type='radio'] { width: auto; }
 .board-row { align-items: center; }
 .board-label { font-size: 0.7rem; color: rgba(255, 255, 255, 0.6); width: 46px; text-align: right; margin-right: 4px; }
 .pots { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
@@ -386,6 +387,7 @@ input[type='checkbox'] { width: auto; }
 .row.wrap > * { flex: 0 1 auto; }
 button.danger { background: #3a2323; border-color: #5a3030; }
 .toggle { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+.toggle input[type='checkbox'], .toggle input[type='radio'] { flex: none; }
 .hint { font-size: 0.75rem; color: var(--muted); }
 .badge { background: var(--accent); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 0.7rem; margin-left: 4px; }
 .log-table { color: var(--muted); }
