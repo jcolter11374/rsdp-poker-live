@@ -5,8 +5,20 @@ import type { TableView } from '@rsdp/engine/wire';
 interface Reveal {
   handNumber: number;
   steps: number;
-  /** The newest log line before the runout: later ones (who won) wait for the result. */
+  /** The table just before the runout (Frozen) comes from it. */
+  before: Frozen;
+}
+
+/**
+ * What the server changes as soon as the hand is over, kept as it was until
+ * the result shows: the log (who won), seats (busted players sit out, leavers
+ * go, tournaments knock players out) and the ledger.
+ */
+export interface Frozen {
+  /** The newest log line before the runout. */
   logCut: number;
+  seats: TableView['seats'];
+  ledger: TableView['ledger'];
 }
 
 /**
@@ -27,8 +39,10 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
     if (reveal && reveal.handNumber !== hand?.handNumber) setReveal(null);
     const ranIt = (h: TableView['hand']) => !!h?.events.some((e) => e.t === 'run-it');
     const steps = hand ? runoutSteps(hand.events).length : 0;
-    if (hand && before?.hand?.handNumber === hand.handNumber && !ranIt(before.hand) && steps) {
-      setReveal({ handNumber: hand.handNumber, steps, logCut: before.log.at(-1)?.at ?? 0 });
+    // A hand can also be dealt and run out in one go (a bomb pot with someone all in from the start).
+    // The first view after opening the table has nothing to compare with, so it shows the runout finished.
+    if (hand && before && steps && (before.hand?.handNumber !== hand.handNumber || !ranIt(before.hand))) {
+      setReveal({ handNumber: hand.handNumber, steps, before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger } });
       setShown(0);
     }
   }
@@ -41,11 +55,11 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
     return () => clearTimeout(t);
   }, [reveal, shown]);
 
-  return useMemo(() => (live && reveal && live.hand?.handNumber === reveal.handNumber ? holdBack(live, reveal, shown) : live), [live, reveal, shown]);
+  return useMemo(() => (live && reveal && live.hand?.handNumber === reveal.handNumber ? holdBack(live, reveal.before, shown) : live), [live, reveal, shown]);
 }
 
 /** The table as it was with only the first `shown` runout steps dealt. */
-export function holdBack(view: TableView, reveal: Pick<Reveal, 'logCut'>, shown: number): TableView {
+export function holdBack(view: TableView, before: Frozen, shown: number): TableView {
   const hand = view.hand!;
   const steps = runoutSteps(hand.events);
   const hidden = new Set(steps.slice(shown).flat().map((e) => e.seq));
@@ -69,11 +83,45 @@ export function holdBack(view: TableView, reveal: Pick<Reveal, 'logCut'>, shown:
   return {
     ...view,
     hand: { ...hand, phase: 'betting', showdown: false, awards: [], boards, events, pots, potTotal: Math.max(hand.potTotal, won) },
-    seats: view.seats.map((s) => s && { ...s, stack: s.stack - s.won, won: 0, handName: null }),
-    log: view.log.filter((l) => l.at <= reveal.logCut),
+    seats: seatsDuring(view, before),
+    ledger: before.ledger,
+    log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
     nextHandAt: null,
     rabbit: { available: false, cards: null },
   };
+}
+
+/** Seats as they stand with everything in the middle and nothing paid out yet. */
+function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
+  const events = view.hand!.events;
+  const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
+  const paid = new Map<number, number>();
+  const pay = (seat: number, n: number) => paid.set(seat, (paid.get(seat) ?? 0) + n);
+  for (const e of events) {
+    if (e.t === 'post' || e.t === 'action') pay(e.seat, e.amount);
+    else if (e.t === 'uncalled') pay(e.seat, -e.amount);
+  }
+  return view.seats.map((live, i) => {
+    const was = before.seats[i] ?? null;
+    const start = dealt.find((d) => d.seat === i);
+    // Someone dealt in who has since gone (left after the hand, knocked out) is still at the table until the result.
+    const s = start && live?.playerId !== start.playerId && was?.playerId === start.playerId ? was : live;
+    if (!s) return s;
+    const stack = start?.playerId === s.playerId ? start.stack - (paid.get(i) ?? 0) : s.stack - s.won;
+    // Sitting out for being busted, leaving and the like are the result too.
+    const prior = was?.playerId === s.playerId ? was : s;
+    return {
+      ...s,
+      stack,
+      won: 0,
+      handName: null,
+      allIn: s.inHand && !s.folded && stack === 0,
+      sittingOut: prior.sittingOut,
+      sitOutReason: prior.sitOutReason,
+      leaving: prior.leaving,
+      waiting: prior.waiting,
+    };
+  });
 }

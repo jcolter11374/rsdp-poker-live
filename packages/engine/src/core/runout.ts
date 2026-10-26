@@ -21,7 +21,10 @@ export function runoutSteps(events: readonly HandEvent[]): BoardEvent[][] {
   if (start < 0) return [];
   const steps: BoardEvent[][] = [];
   let last: BoardEvent | null = null;
-  for (const e of events.slice(start + 1)) {
+  const after = events.slice(start + 1);
+  // Stud runs out by dealing to the seats; those streets aren't paced.
+  if (after.some((e) => e.t === 'deal')) return [];
+  for (const e of after) {
     if (e.t !== 'board') continue;
     // The engine deals run by run, street by street, board by board: a new street starts
     // when the run changes or the board index goes back to the first.

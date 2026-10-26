@@ -74,12 +74,14 @@ export function followMove(move: { from: string; to: string }, currentTable: str
  * and along with them when they are moved from the table on screen. Returns
  * the first seat it left alone because the player is seated here, for a link.
  */
-export function useFollowSeat(currentTable: string | null, seatedHere = false): string | null {
+export function useFollowSeat(currentTable: string | null, seatedHere = false, holding = false): string | null {
   const [ready, setReady] = useState<string | null>(null);
+  // A move that lands while an all-in runout is still being dealt here waits for it to finish.
+  const [held, setHeld] = useState<string | null>(null);
   useEffect(() => {
     const onMoved = (move: { from: string; to: string }) => {
       const next = followMove(move, currentTable, seatedHere);
-      if (next === 'go') navigate(`/t/${move.to}`);
+      if (next === 'go') setHeld(move.to);
       else if (next === 'offer') setReady(move.to);
       // Keep the link on the seat when the tournament moves it again.
       else setReady((r) => (r === move.from ? move.to : r));
@@ -89,6 +91,11 @@ export function useFollowSeat(currentTable: string | null, seatedHere = false): 
       socket.off('table:moved', onMoved);
     };
   }, [currentTable, seatedHere]);
+  useEffect(() => {
+    if (!held || holding) return;
+    setHeld(null);
+    navigate(`/t/${held}`);
+  }, [held, holding]);
   return ready;
 }
 

@@ -15,8 +15,10 @@ const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
 /** Re-renders on an interval while something on screen is counting down. */
 export function useNow(active: boolean, ms = 200) {
   const [now, setNow] = useState(Date.now());
-  useEffect(() => {
+  // Catch up before painting when it starts again, so a countdown doesn't open on a stale time.
+  useLayoutEffect(() => {
     if (!active) return;
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), ms);
     return () => clearInterval(t);
   }, [active, ms]);
@@ -216,15 +218,18 @@ export function Table({
   const lastBets = useRef<number[]>([]);
   const flightTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => flightTimers.current.forEach(clearTimeout), []);
-  // Chips fly to the pot pill itself (measured), not the middle of the board, so they land on it rather than on the cards.
-  const potPoint = (): Point => {
+  // Chips fly to the pot pill itself, not the middle of the board, so they land on it rather than on the cards.
+  // The pill is gone once the hand is over, so its spot is kept from the last time it was on screen.
+  const potSpot = useRef<Point | null>(null);
+  useLayoutEffect(() => {
     const el = felt.current;
-    const pot = el?.querySelector<HTMLElement>('.board .pot-row .pot') ?? el?.querySelector<HTMLElement>('.board .pot');
-    if (!el || !pot) return boardMiddle;
+    const pot = el?.querySelector<HTMLElement>('.board .pot-row .pot');
+    if (!el || !pot) return;
     const f = el.getBoundingClientRect();
     const r = pot.getBoundingClientRect();
-    return { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
-  };
+    potSpot.current = { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
+  });
+  const potPoint = (): Point => potSpot.current ?? boardMiddle;
   const geometry = useRef({ betPoint, seatPoint, center, potPoint });
   geometry.current = { betPoint, seatPoint, center: boardMiddle, potPoint };
   const roundKey = hand ? `${hand.handNumber}:${hand.street}:${done ? 'done' : 'live'}` : '';

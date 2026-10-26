@@ -130,7 +130,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
-  const readyTable = useFollowSeat(tableId, view?.me.seat != null);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
