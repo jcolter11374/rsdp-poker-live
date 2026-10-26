@@ -79,12 +79,16 @@ when they deal at a home game.
   there are marked. Seated players get the warning live; anyone who watched
   gets it in "Check this hand". "Check this hand", opened from the table's hand
   list, also checks that the hand's record carries the commitment the hand was
-  shown under at the table, so a server can't show you one commitment and
+  shown under at the table, and the first commitment a hand number was shown
+  under is never replaced, so a server can't show you one commitment and
   record another. What it doesn't cover: a server restart honestly starts a
   fresh commitment and drops every connection, so the watch starts over
-  whenever your connection drops and comes back. A server could drop the
-  connection on purpose to get one retry each time, which you'd notice as a
-  brief "reconnecting". The watch also starts over when you leave or reload the
+  whenever your connection drops and comes back. A server that drops the
+  connection on purpose just as a hand is dealt can deal that hand from any
+  deck it likes, without the players' seeds; you'd notice a brief
+  "reconnecting", and "Check this hand" would list no seeds for it. A server
+  could also leave a hand you watched out of the hand list, or file it under
+  another number, so there's nothing to compare. The watch also starts over when you leave or reload the
   page, or when a view that hid the hands (a delayed spectator, or watching
   turned off) turns live, so a server could get a retry by showing you that
   way for a moment. It is blind if nobody at the table is watching, or if
@@ -187,8 +191,9 @@ Limits, stated plainly:
   connection (a restart honestly starts a fresh commitment), a reload, or a
   moment in a view that hid the hands. "Check this hand" also flags a hand
   recorded under a different commitment from the one shown at the table; an
-  honest server only does that if it crashed right after a deal and dealt that
-  hand number again.
+  honest server only does that if it crashed before saving a deal and dealt
+  that hand number again. A connection dropped just as a hand is dealt lets a
+  server deal that hand without the players' seeds; it then lists none.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a

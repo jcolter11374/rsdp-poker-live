@@ -24,7 +24,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     const shown = tableId ? shownAs(tableId, hand.handNumber) : null;
     if (shown) {
       const same = shown === fair.commit;
-      extra.push({ label: 'It was dealt under the commitment shown at the table', ok: same, detail: same ? `${fair.commit.slice(0, 12)}…` : `the table showed hand #${hand.handNumber} under ${shown === 'none' ? 'no commitment' : `${shown.slice(0, 12)}…`}, but its record says ${fair.commit.slice(0, 12)}… (an honest server only does that if it crashed right after dealing it and dealt that hand number again)` });
+      extra.push({ label: 'It was dealt under the commitment shown at the table', ok: same, detail: same ? `${fair.commit.slice(0, 12)}…` : `the table showed hand #${hand.handNumber} under ${shown === 'none' ? 'no commitment' : `${shown.slice(0, 12)}…`}, but its record says ${fair.commit.slice(0, 12)}… (an honest server only does that if it crashed before saving that deal and dealt that hand number again)` });
     }
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };

@@ -156,7 +156,7 @@ const SHOWN = 'rsdp.fairShownAs';
  * delayed spectator, or watching turned off) turns live.
  */
 export function watchCommitments(socketId: () => string | undefined = () => socket.id) {
-  type Watch = { table: string; socket: string; offered: string[]; dealt: Set<string>; byNumber: Map<number, string>; tainted: string | null };
+  type Watch = { table: string; socket: string; offered: string[]; dealt: Set<string>; tainted: string | null; first: number | null };
   let w: Watch | null = null;
   let wasLive = false;
   return (view: TableView) => {
@@ -167,7 +167,7 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
       return;
     }
     if (!w || w.table !== view.id || w.socket !== sock || (live && !wasLive)) {
-      w = { table: view.id, socket: sock, offered: [], dealt: new Set(), byNumber: new Map(), tainted: null };
+      w = { table: view.id, socket: sock, offered: [], dealt: new Set(), tainted: null, first: view.hand?.handNumber ?? null };
     }
     wasLive = live;
     if (!live) return;
@@ -179,13 +179,16 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
     };
     const hand = view.hand;
     const commit = hand?.fair?.commit;
-    if (hand) save(SHOWN, `${view.id}#${hand.handNumber}`, commit ?? NO_COMMIT);
-    // Only hands dealt before provably fair dealing have none, and only the first view after an upgrade can show one.
-    if (hand && !commit && !fresh) watch.tainted ??= NO_COMMIT;
+    if (hand) {
+      // The first commitment a hand number was shown under stays, across watches: a second one is flagged, never written over.
+      const key = `${view.id}#${hand.handNumber}`;
+      const was = load(SHOWN)[key];
+      if (!was) save(SHOWN, key, commit ?? NO_COMMIT);
+      else if (commit && was !== commit) flag(commit, AGAIN + was);
+    }
+    // Only a hand dealt before provably fair dealing has none, and it can only be the one in play when the watch began.
+    if (hand && !commit && hand.handNumber !== watch.first) watch.tainted ??= NO_COMMIT;
     if (hand && commit) {
-      const before = watch.byNumber.get(hand.handNumber);
-      if (before && before !== commit) flag(commit, AGAIN + before);
-      watch.byNumber.set(hand.handNumber, commit);
       if (!watch.dealt.has(commit)) {
         watch.dealt.add(commit);
         const at = watch.offered.indexOf(commit);
@@ -257,11 +260,6 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
 /** The live warning for the hand in progress, if the seeds listed for it don't add up for me. */
 export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
-  if (view.me.seat === null) return null;
-  // Every hand dealt since provably fair dealing carries its commitment; one being played without it can't be checked.
-  if (view.hand && !fair && view.fair?.nextCommit && view.hand.phase !== 'complete') {
-    return 'this hand is being dealt without a commitment, so nobody can check it';
-  }
-  if (!fair) return null;
+  if (!fair || view.me.seat === null) return null;
   return seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
 }

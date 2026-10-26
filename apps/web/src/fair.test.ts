@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: {} }));
-const { liveSeedProblem, seedProblem, shownAs, watchCommitments } = await import('./fair');
+const { seedProblem, shownAs, watchCommitments } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -141,14 +141,40 @@ describe('a commitment swapped before the deal', () => {
     flagged('B', /shown again from a different commitment/);
   });
 
-  it('warns about a hand shown without its commitment, live and on every hand after it', () => {
+  it('marks the hands after one shown without its commitment', () => {
     const watch = watchCommitments(() => sock);
     watch(view('A', [7, 'Z']));
-    const bare = view('A', [8, null]);
-    watch(bare);
-    expect(liveSeedProblem(bare)).toMatch(/without a commitment/);
+    watch(view('A', [8, null]));
     watch(view('B', [9, 'A']));
     flagged('A', /shown without its commitment/);
+  });
+
+  it('lets a hand from before provably fair dealing finish quietly when it is the one in play on arrival', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', [7, null]));
+    watch(view('A', [7, null]));
+    watch(view('A', [7, null]));
+    watch(view('B', [8, 'A']));
+    quiet('A');
+  });
+
+  it('never lets a second commitment for a hand number replace the first, even across a reconnect', () => {
+    let watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view('B', [8, 'A']));
+    sock = 's2'; // forced reconnect, then hand 8 again from another commitment
+    watch = watchCommitments(() => sock);
+    watch(view('C', [8, 'A2']));
+    expect(shownAs('t1', 8)).toBe('A');
+    flagged('A2', /shown again from a different commitment/);
+  });
+
+  it('writes nothing from views that hide or delay the hands', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('B', [8, 'A'], { delay: 30 }));
+    watch(view('C', [9, 'B'], { delay: 0, blocked: true }));
+    expect(shownAs('t1', 8)).toBeNull();
+    expect(shownAs('t1', 9)).toBeNull();
   });
 
   it('remembers which commitment each hand number was shown under, for Check this hand', () => {
