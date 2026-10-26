@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUDIT_GENESIS, auditHash, handDigest, playerRef, tableRef, type AuditEntry } from '@rsdp/engine';
 import type { HandRecordView, LedgerView } from '@rsdp/engine/wire';
-import { checkRecord, GITHUB_COPY, handInRecord, ledgerMismatches, recordProblem } from './audit';
+import { changedWhileClosed, checkRecord, GITHUB_COPY, handInRecord, ledgerMismatches, recordProblem } from './audit';
 
 const store = new Map<string, string>();
 let site: AuditEntry[] = [];
@@ -20,6 +20,7 @@ beforeEach(() => {
   store.clear();
   copy = null;
   vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) });
+  vi.stubGlobal('location', { hostname: 'rsdp-poker-live.fly.dev' });
   vi.stubGlobal('fetch', async (url: string) => {
     const ok = (body: unknown) => ({ ok: true, json: async () => body });
     if (url === GITHUB_COPY) return copy ? ok(copy) : { ok: false, status: 404 };
@@ -62,6 +63,34 @@ describe('remembering the public record', () => {
     expect(recordProblem()?.text).toMatch(/copy on GitHub: Entry 2/);
   });
 
+  it('warns when an entry was edited in place, keeping its old hash', async () => {
+    site = chain(['a', 'b']);
+    await checkRecord(true);
+    site = chain(['a', 'b']);
+    site[1] = { ...site[1], data: { action: 'edited', target: null } };
+    await checkRecord(true);
+    expect(recordProblem()?.text).toMatch(/entry 2 was changed after it was written/);
+  });
+
+  it('only compares with GitHub on the live site', async () => {
+    vi.stubGlobal('location', { hostname: 'localhost' });
+    copy = { seq: 2, hash: chain(['a', 'b'])[1].hash };
+    site = chain(['other', 'c']);
+    await checkRecord(true);
+    expect(recordProblem()).toBeNull();
+  });
+
+  it('remembers nothing new from a check that could not finish', async () => {
+    site = chain(['a', 'b']);
+    await checkRecord(true);
+    site = chain(['a', 'b', 'c']);
+    const real = fetch;
+    vi.stubGlobal('fetch', async (url: string) => (url.includes('after=2') ? Promise.reject(new Error('offline')) : real(url)));
+    await checkRecord(true);
+    expect(recordProblem()).toBeNull();
+    expect(JSON.parse(store.get('rsdp.auditSeen')!).seq).toBe(2);
+  });
+
   it('checks at most every few minutes unless asked', async () => {
     site = chain(['a']);
     await checkRecord();
@@ -77,10 +106,15 @@ describe('a hand and a ledger against the record', () => {
   const digest = handDigest({ handId: 'h3', commit: 'c', button: 0, seats: [{ seat: 0, playerId: 'p1', stack: 100 }], events });
   const entry = (data: AuditEntry['data'], seq = 9): AuditEntry => ({ seq, at: 0, kind: data.digest ? 'hand' : 'chips', data, prev: '', hash: '' });
 
-  it('finds a revealed hand with the same fingerprint', () => {
-    expect(handInRecord('t1', hand, [entry({ table: tableRef('t1'), hand: 3, digest })]).ok).toBe(true);
-    expect(handInRecord('t1', hand, [entry({ table: tableRef('t1'), hand: 3, digest: 'other' })]).ok).toBe(false);
-    expect(handInRecord('t1', hand, []).ok).toBeNull();
+  it('finds a revealed hand with the same fingerprint, in any of its entries', () => {
+    const rec = (entries: AuditEntry[], before = false, after = false) => ({ entries, before, after });
+    expect(handInRecord(hand, rec([entry({ table: tableRef('t1'), hand: 3, digest })])).ok).toBe(true);
+    // Shown after it ended: recorded again, and the browser may have either version.
+    expect(handInRecord(hand, rec([entry({ table: tableRef('t1'), hand: 3, digest }, 8), entry({ table: tableRef('t1'), hand: 3, digest: 'later' })])).ok).toBe(true);
+    expect(handInRecord(hand, rec([entry({ table: tableRef('t1'), hand: 3, digest: 'other' })])).ok).toBe(false);
+    expect(handInRecord(hand, rec([])).ok).toBeNull();
+    expect(handInRecord(hand, rec([], true, false)).ok).toBeNull();
+    expect(handInRecord(hand, rec([], true, true)).ok).toBe(false);
   });
 
   it('compares each player with their latest chip totals', () => {
@@ -90,10 +124,11 @@ describe('a hand and a ledger against the record', () => {
       { playerId: 'bot-1', name: 'Robo', buyIn: 100, cashOut: 0, bot: true },
     ] as LedgerView[];
     const entries = [
-      entry({ table: tableRef('t1'), player: playerRef('t1', 'p1'), buyIn: 200, cashOut: 0 }, 3),
-      entry({ table: tableRef('t1'), player: playerRef('t1', 'p2'), buyIn: 100, cashOut: 40 }, 2),
       entry({ table: tableRef('t1'), player: playerRef('t1', 'p1'), buyIn: 100, cashOut: 0 }, 1),
+      entry({ table: tableRef('t1'), player: playerRef('t1', 'p2'), buyIn: 100, cashOut: 40 }, 2),
+      entry({ table: tableRef('t1'), player: playerRef('t1', 'p1'), buyIn: 200, cashOut: 0 }, 3),
     ];
     expect(ledgerMismatches('t1', ledger, entries).map((r) => r.name)).toEqual(['Bo']);
+    expect(changedWhileClosed('t1', ledger, [entry({ table: tableRef('t1'), player: playerRef('t1', 'p2'), buyIn: 100, cashOut: 50, loaded: true })]).map((r) => r.name)).toEqual(['Bo']);
   });
 });

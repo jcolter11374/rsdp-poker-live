@@ -105,9 +105,8 @@ describe('what the server records', () => {
     expect(await get('/api/version')).toMatchObject({ commit: 'abc1234' });
 
     const ref = tableRef(tableId);
-    const { entries } = await get<{ entries: AuditEntry[] }>(`/api/audit/table/${ref}`);
+    const { entries: chips } = await get<{ entries: AuditEntry[] }>(`/api/audit/table/${ref}/chips`);
     const view = host.view();
-    const chips = entries.filter((e) => e.kind === 'chips');
     expect(chips).toHaveLength(2);
     for (const row of view.ledger) expect(chips.find((e) => e.data.player === playerRef(tableId, row.playerId))?.data).toMatchObject({ buyIn: 100, cashOut: 0 });
 
@@ -116,8 +115,10 @@ describe('what the server records', () => {
     const { hand } = await host.call<{ hand: HandRecordView }>('table:history', { handNumber: 1 });
     expect(hand.fair?.events).toBeTruthy();
     const digest = handDigest({ handId: hand.fair!.handId, commit: hand.fair!.commit, button: hand.button, seats: hand.seats, events: hand.fair!.events! });
-    const recorded = entries.find((e) => e.kind === 'hand' && e.data.hand === 1);
-    expect(recorded?.data.digest).toBe(digest);
+    const recorded = await get<{ entries: AuditEntry[]; before: boolean; after: boolean }>(`/api/audit/table/${ref}/hand/1`);
+    expect(recorded.entries.map((e) => e.data.digest)).toContain(digest);
+    expect(recorded).toMatchObject({ before: false });
+    expect((await get<{ entries: AuditEntry[] }>(`/api/audit/table/${ref}/hand/99`)).entries).toEqual([]);
   });
 
   it('records chips again when a total changes, and only then', { timeout: 20_000 }, async () => {
@@ -127,9 +128,9 @@ describe('what the server records', () => {
     await host.until((v) => v.seats.filter(Boolean).length === 1);
     await pause(100);
     const ref = tableRef(tableId);
-    const { entries } = await get<{ entries: AuditEntry[] }>(`/api/audit/table/${ref}`);
+    const { entries } = await get<{ entries: AuditEntry[] }>(`/api/audit/table/${ref}/chips`);
     const guestId = host.view().ledger.find((r) => r.name === 'Guest')!.playerId;
-    const latest = entries.find((e) => e.kind === 'chips' && e.data.player === playerRef(tableId, guestId));
+    const latest = entries.find((e) => e.data.player === playerRef(tableId, guestId));
     expect(Number(latest?.data.cashOut)).toBeGreaterThan(0);
     // Leaving moves one total; nothing else was recorded twice.
     expect((await everything()).length - before).toBe(1);
@@ -152,7 +153,7 @@ describe('what the server records', () => {
     const after = await get<{ entries: AuditEntry[] }>(`/api/audit/entries?after=${head.seq - 1}`);
     expect(chainProblem(after.entries.slice(1), head)).toBeNull();
     expect(after.entries[1]).toMatchObject({ seq: head.seq + 1, kind: 'boot' });
-    expect(after.entries.find((e) => e.kind === 'chips')?.data).toMatchObject({ player: playerRef(tableId, someone), buyIn: 5 });
+    expect(after.entries.find((e) => e.kind === 'chips')?.data).toMatchObject({ player: playerRef(tableId, someone), buyIn: 5, loaded: true });
   });
 
   it('records deleted tables and admin actions', { timeout: 20_000 }, async () => {

@@ -1,15 +1,15 @@
 /**
  * The public record (packages/engine/src/audit.ts, docs/FAIRNESS.md): hands,
  * chip totals, admin actions and server starts, hash-chained. Entries are
- * numbered and hashed the moment they happen, so a table view never shows a
- * change the record doesn't have yet; saving runs behind, in order.
+ * numbered and hashed the moment they happen and saved behind, in order; the
+ * routes only ever show saved entries, so a crash can't take back one someone saw.
  */
 
-import { asc, desc, eq, gt, and, inArray } from 'drizzle-orm';
+import { asc, desc, gt, and, inArray, sql } from 'drizzle-orm';
 import express from 'express';
 import { AUDIT_GENESIS, auditHash, handDigest, playerRef, tableRef, type AuditEntry, type AuditKind, type AuditValue } from '@rsdp/engine';
 import type { Db } from './db';
-import { schema } from './db';
+import { queryRows, schema } from './db';
 import type { HandRecord, RuntimeState } from './runtime/types';
 
 export interface AuditStore {
@@ -17,8 +17,16 @@ export interface AuditStore {
   append(entry: AuditEntry): Promise<void>;
   /** Entries after `seq`, oldest first, optionally of some kinds only. */
   after(seq: number, limit: number, kinds?: AuditKind[]): Promise<AuditEntry[]>;
-  /** The latest entries about one table, newest first. */
-  bySubject(subject: string, limit: number): Promise<AuditEntry[]>;
+  /** Each player's latest chip totals at one table. */
+  latestChips(table: string): Promise<AuditEntry[]>;
+  /** Every entry for one hand at a table (a late show adds another), and whether the table has hand entries before and after it. */
+  hand(table: string, hand: number): Promise<HandEntries>;
+}
+
+export interface HandEntries {
+  entries: AuditEntry[];
+  before: boolean;
+  after: boolean;
 }
 
 export function memoryAuditStore(): AuditStore {
@@ -33,11 +41,14 @@ export function memoryAuditStore(): AuditStore {
     async after(seq, limit, kinds) {
       return rows.filter((e) => e.seq > seq && (!kinds || kinds.includes(e.kind))).slice(0, limit);
     },
-    async bySubject(subject, limit) {
-      return rows
-        .filter((e) => e.data.table === subject)
-        .reverse()
-        .slice(0, limit);
+    async latestChips(table) {
+      const latest = new Map<unknown, AuditEntry>();
+      for (const e of rows) if (e.kind === 'chips' && e.data.table === table) latest.set(e.data.player, e);
+      return [...latest.values()];
+    },
+    async hand(table, hand) {
+      const hands = rows.filter((e) => e.kind === 'hand' && e.data.table === table);
+      return { entries: hands.filter((e) => e.data.hand === hand), before: hands.some((e) => Number(e.data.hand) < hand), after: hands.some((e) => Number(e.data.hand) > hand) };
     },
   };
 }
@@ -53,7 +64,7 @@ export function dbAuditStore(db: Db): AuditStore {
     },
     async append(e) {
       const subject = typeof e.data.table === 'string' ? e.data.table : null;
-      await db.insert(t).values({ ...e, subject }).onConflictDoNothing();
+      await db.insert(t).values({ ...e, subject });
     },
     async after(seq, limit, kinds) {
       const rows = await db
@@ -64,9 +75,26 @@ export function dbAuditStore(db: Db): AuditStore {
         .limit(limit);
       return rows.map(toEntry);
     },
-    async bySubject(subject, limit) {
-      const rows = await db.select().from(t).where(eq(t.subject, subject)).orderBy(desc(t.seq)).limit(limit);
-      return rows.map(toEntry);
+    async latestChips(table) {
+      const rows = await queryRows<{ seq: string | number }>(
+        db,
+        sql`select distinct on (data->>'player') seq from audit_log where subject = ${table} and kind = 'chips' order by data->>'player', seq desc`,
+      );
+      if (!rows.length) return [];
+      const full = await db.select().from(t).where(inArray(t.seq, rows.map((r) => Number(r.seq)))).orderBy(asc(t.seq));
+      return full.map(toEntry);
+    },
+    async hand(table, hand) {
+      const rows = await db
+        .select()
+        .from(t)
+        .where(and(sql`${t.subject} = ${table}`, sql`${t.kind} = 'hand'`, sql`(${t.data}->>'hand')::int = ${hand}`))
+        .orderBy(asc(t.seq));
+      const [around] = await queryRows<{ before: boolean; after: boolean }>(
+        db,
+        sql`select bool_or((data->>'hand')::int < ${hand}) as before, bool_or((data->>'hand')::int > ${hand}) as after from audit_log where subject = ${table} and kind = 'hand'`,
+      );
+      return { entries: rows.map(toEntry), before: !!around?.before, after: !!around?.after };
     },
   };
 }
@@ -91,6 +119,8 @@ export interface AuditOptions {
 }
 
 const RETRY_MS = [1_000, 5_000, 30_000];
+/** Reads wait at most this long for entries still being saved. */
+const SETTLE_MS = 2_000;
 
 export class AuditLog {
   private head: { seq: number; hash: string };
@@ -161,14 +191,35 @@ export class AuditLog {
     while (this.saving) await this.saving;
   }
 
-  async after(seq: number, limit: number, kinds?: AuditKind[]) {
-    await this.flush();
-    return this.store.after(seq, limit, kinds);
+  /** Gives entries being saved a moment, so a read right after a change sees it; never waits on a database that keeps failing. */
+  private settle() {
+    return Promise.race([this.flush(), new Promise((r) => setTimeout(r, SETTLE_MS).unref?.())]);
   }
 
-  async bySubject(subject: string, limit: number) {
-    await this.flush();
-    return this.store.bySubject(subject, limit);
+  /** Saved entries after `seq`, oldest first (only up to the latest saved one). */
+  async after(seq: number, limit: number, kinds?: AuditKind[]) {
+    await this.settle();
+    const upTo = this.saved.seq;
+    return (await this.store.after(seq, limit, kinds)).filter((e) => e.seq <= upTo);
+  }
+
+  async latestChips(table: string) {
+    await this.settle();
+    return this.store.latestChips(table);
+  }
+
+  async handEntries(table: string, hand: number) {
+    await this.settle();
+    return this.store.hand(table, hand);
+  }
+
+  /** Runs a recording step without ever letting a problem with the record break the game. */
+  safely(what: string, fn: () => void) {
+    try {
+      fn();
+    } catch (e) {
+      this.log(`recording ${what} in the public record failed`, e);
+    }
   }
 
   // ------------------------------------------------------------ what gets recorded
@@ -193,33 +244,43 @@ export class AuditLog {
 
   /**
    * A table was loaded: from now on its chip totals are recorded whenever they
-   * change. Totals that differ from the last ones recorded (say, edited while the
-   * server was down) are recorded straight away.
+   * change. Totals that differ from the last ones recorded are recorded straight
+   * away and marked `loaded`: they changed while the table was put away (a
+   * crash between saves, or someone editing the database).
    */
   async watchTable(state: RuntimeState) {
-    const ref = tableRef(state.id);
     const seen = new Map<string, string>();
-    const latest = await this.bySubject(ref, 5_000);
-    const refs = new Map(Object.keys(state.ledger).map((id) => [playerRef(state.id, id), id]));
-    for (const e of latest) {
-      if (e.kind !== 'chips') continue;
-      const id = refs.get(String(e.data.player));
-      if (id && !seen.has(id)) seen.set(id, `${e.data.buyIn}/${e.data.cashOut}`);
+    try {
+      const refs = new Map(Object.keys(state.ledger).map((id) => [playerRef(state.id, id), id]));
+      for (const e of await this.latestChips(tableRef(state.id))) {
+        const id = refs.get(String(e.data.player));
+        if (id) seen.set(id, `${e.data.buyIn}/${e.data.cashOut}`);
+      }
+    } catch (e) {
+      // Recorded again from scratch rather than not at all.
+      this.log(`reading the public record for table ${state.id} failed`, e);
     }
     this.chips.set(state.id, seen);
-    this.tableChanged(state);
+    this.tableChanged(state, true);
   }
 
   /** Records the chip totals that changed. Practice bots play for nothing and aren't recorded. */
-  tableChanged(state: RuntimeState) {
+  tableChanged(state: RuntimeState, loaded = false) {
     const seen = this.chips.get(state.id);
     if (!seen) return;
     for (const row of Object.values(state.ledger)) {
       if (row.bot) continue;
       const now = `${row.buyIn}/${row.cashOut}`;
-      if (seen.get(row.playerId) === now) continue;
+      const before = seen.get(row.playerId);
+      if (before === now) continue;
       seen.set(row.playerId, now);
-      this.record('chips', { table: tableRef(state.id), player: playerRef(state.id, row.playerId), buyIn: row.buyIn, cashOut: row.cashOut });
+      this.record('chips', {
+        table: tableRef(state.id),
+        player: playerRef(state.id, row.playerId),
+        buyIn: row.buyIn,
+        cashOut: row.cashOut,
+        ...(loaded && before !== undefined ? { loaded: true } : {}),
+      });
     }
   }
 
@@ -261,10 +322,22 @@ export function auditRoutes(app: express.Express, audit: AuditLog, build: BuildI
     const kinds = typeof req.query.kind === 'string' ? req.query.kind.split(',').filter((k): k is AuditKind => KINDS.includes(k as AuditKind)) : undefined;
     audit.after(after, limit, kinds?.length ? kinds : undefined).then((entries) => res.json({ entries }), fail(res));
   });
-  app.get('/api/audit/table/:ref', (req, res) => {
+  const tableRefOf = (req: express.Request, res: express.Response) => {
     res.set('Cache-Control', 'no-store');
     const ref = String(req.params.ref);
-    if (!/^[0-9a-f]{32}$/.test(ref)) return void res.status(404).json({ error: 'No such table.' });
-    audit.bySubject(ref, 5_000).then((entries) => res.json({ entries }), fail(res));
+    if (/^[0-9a-f]{32}$/.test(ref)) return ref;
+    res.status(404).json({ error: 'No such table.' });
+    return null;
+  };
+  app.get('/api/audit/table/:ref/chips', (req, res) => {
+    const ref = tableRefOf(req, res);
+    if (ref) audit.latestChips(ref).then((entries) => res.json({ entries }), fail(res));
+  });
+  app.get('/api/audit/table/:ref/hand/:n', (req, res) => {
+    const ref = tableRefOf(req, res);
+    const n = Number(req.params.n);
+    if (!ref) return;
+    if (!Number.isSafeInteger(n) || n < 0) return void res.status(404).json({ error: 'No such hand.' });
+    audit.handEntries(ref, n).then((r) => res.json(r), fail(res));
   });
 }

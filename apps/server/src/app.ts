@@ -254,7 +254,7 @@ export function createApp(deps: AppDeps = {}) {
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
   };
   const confirmations = googleConfirmations(() => clock.now());
-  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks });
+  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
   handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
@@ -475,7 +475,7 @@ export function createApp(deps: AppDeps = {}) {
     lastChange.set(id, clock.now());
     audit.watchTable(rt.state).catch((e) => log(`reading the public record for table ${id} failed`, e));
     rt.onChange = () => {
-      audit.tableChanged(rt.state);
+      audit.safely('chip totals', () => audit.tableChanged(rt.state));
       lastChange.set(id, clock.now());
       broadcast(rt);
       scheduleSave(rt);
@@ -483,7 +483,7 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      audit.hand(id, record);
+      audit.safely('a hand', () => audit.hand(id, record));
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
@@ -642,6 +642,7 @@ export function createApp(deps: AppDeps = {}) {
       },
       detach: (rt) => {
         tables.delete(rt.state.id);
+        audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
