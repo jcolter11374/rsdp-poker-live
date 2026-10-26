@@ -86,6 +86,9 @@ function NitRow(props: {
             <li>Once a round starts you're in it until it ends. Unticking only keeps you out of the next round. Leaving the table while you're on the nit pays everyone straight away.</li>
             <li>The host sets the prize and how many players are needed. Turning the game off cancels a round, and nobody pays.</li>
           </ol>
+          <a className="nit-help-more" href="/rules/nit-game" target="_blank" rel="noreferrer">
+            Full guide with examples
+          </a>
           <div className="row">
             <button className="primary" onClick={() => setHelp(false)}>
               Got it
