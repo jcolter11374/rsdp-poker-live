@@ -4,6 +4,7 @@ import { call, currentSession, onSession, socket } from '../../socket';
 import { setPrefs, usePrefs } from '../../prefs';
 import { sounds } from '../../sound';
 import { fromVars, px, type Point } from '../geometry';
+import { NoteButton } from './Notes';
 
 /*
  * Who a player is at the table, beyond their name: a picture (from the
@@ -300,6 +301,7 @@ export function PlayerExtras({ view, seat: tapped, onDone }: { view: TableView; 
           Hide {seat.name}'s picture (only for me)
         </label>
       )}
+      <NoteButton seat={seat} />
       {error && <p className="error">{error}</p>}
     </div>
   );

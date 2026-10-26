@@ -66,6 +66,20 @@ export function NoteBadge({ seat }: { seat: SeatView }) {
   );
 }
 
+/** "Add a private note" in the seat pop-up, for phones, where the badge on the nameplate is hidden. */
+export function NoteButton({ seat }: { seat: SeatView }) {
+  const note = useNote(seat.playerId);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="note-button" onClick={() => setOpen(true)}>
+        {note ? '✎ Edit your private note' : '+ Add a private note'}
+      </button>
+      {open && createPortal(<NoteEditor seat={seat} note={note} onClose={() => setOpen(false)} />, document.body)}
+    </>
+  );
+}
+
 function NoteEditor({ seat, note, onClose }: { seat: SeatView; note: PlayerNote | undefined; onClose: () => void }) {
   const [text, setText] = useState(note?.text ?? '');
   const [color, setColor] = useState<NoteColor>(note?.color ?? 'none');
