@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: {} }));
-const { seedProblem, watchCommitments } = await import('./fair');
+const { liveSeedProblem, seedProblem, shownAs, watchCommitments } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -64,13 +64,14 @@ describe('the seed under my name', () => {
 describe('a commitment swapped before the deal', () => {
   type V = Parameters<ReturnType<typeof watchCommitments>>[0];
   /** A table view: the next commitment offered, and the hand shown as [handNumber, commitment]. */
-  const view = (next: string | null, hand: [number, string] | null, o: { table?: string; delay?: number | null } = {}) =>
+  const view = (next: string | null, hand: [number, string | null] | null, o: { table?: string; delay?: number | null; blocked?: boolean } = {}) =>
     ({
       id: o.table ?? 't1',
-      me: { seat: o.delay == null ? 2 : null },
-      spectator: o.delay == null ? null : { delaySeconds: o.delay, seeAll: false, blocked: false },
+      me: { seat: o.delay == null ? 2 : null, playerId: 'me' },
+      spectator: o.delay == null ? null : { delaySeconds: o.delay, seeAll: false, blocked: !!o.blocked },
       fair: next === null ? undefined : { nextCommit: next, handCommit: hand?.[1] ?? null },
-      hand: hand && { handNumber: hand[0], fair: { commit: hand[1], clientSeeds: [] } },
+      // A blocked spectator sees no hand at all.
+      hand: hand && !o.blocked ? { handNumber: hand[0], phase: 'betting', names: { 2: 'me' }, ...(hand[1] ? { fair: { commit: hand[1], clientSeeds: [] } } : {}) } : null,
     }) as unknown as V;
   const quiet = (...commits: string[]) => {
     for (const c of commits) expect(seedProblem(c, listed(), 'me', false, 10_000), c).toBeNull();
@@ -137,7 +138,38 @@ describe('a commitment swapped before the deal', () => {
     watch(view('A', [7, 'Z']));
     watch(view('B', [8, 'A']));
     watch(view('C', [8, 'B'])); // hand 8 shown again, from another commitment
-    flagged('B');
+    flagged('B', /shown again from a different commitment/);
+  });
+
+  it('warns about a hand shown without its commitment, live and on every hand after it', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    const bare = view('A', [8, null]);
+    watch(bare);
+    expect(liveSeedProblem(bare)).toMatch(/without a commitment/);
+    watch(view('B', [9, 'A']));
+    flagged('A', /shown without its commitment/);
+  });
+
+  it('remembers which commitment each hand number was shown under, for Check this hand', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', [7, 'Z']));
+    watch(view('B', [8, 'A']));
+    expect(shownAs('t1', 8)).toBe('A');
+    expect(shownAs('t1', 9)).toBeNull();
+    expect(shownAs('t2', 8)).toBeNull();
+    watch(view('B', [9, null]));
+    expect(shownAs('t1', 9)).toBe('none');
+  });
+
+  it('starts over when hands were hidden: watching turned off, then a seat', () => {
+    const watch = watchCommitments(() => sock);
+    watch(view('A', null, { delay: 0, blocked: true }));
+    watch(view('B', [7, 'A'], { delay: 0, blocked: true }));
+    watch(view('C', [8, 'B'], { delay: 0, blocked: true }));
+    watch(view('D', [9, 'C'])); // sat down: the first hand seen is from C
+    watch(view('E', [10, 'D']));
+    quiet('C', 'D');
   });
 
   it('starts over after a reconnect, a new page, another table, or a delayed view turning live', () => {

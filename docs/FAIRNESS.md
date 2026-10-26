@@ -74,17 +74,22 @@ when they deal at a home game.
   for this while it shows you the table live (seated, or watching with no
   delay): it remembers each commitment offered for the next hand and checks the
   hands actually dealt against them. If a commitment is skipped, a hand comes
-  from a commitment never offered, or a hand number reappears with a different
-  commitment, that hand and every later one you see there get a warning, live
-  and in "Check this hand". What it doesn't cover: a server restart honestly
-  starts a fresh commitment and drops every connection, so the watch starts
-  over whenever your connection drops and comes back. A server could drop the
+  from a commitment never offered or is shown without one, or a hand number
+  reappears with a different commitment, that hand and every later one you see
+  there are marked. Seated players get the warning live; anyone who watched
+  gets it in "Check this hand". "Check this hand", opened from the table's hand
+  list, also checks that the hand's record carries the commitment the hand was
+  shown under at the table, so a server can't show you one commitment and
+  record another. What it doesn't cover: a server restart honestly starts a
+  fresh commitment and drops every connection, so the watch starts over
+  whenever your connection drops and comes back. A server could drop the
   connection on purpose to get one retry each time, which you'd notice as a
   brief "reconnecting". The watch also starts over when you leave or reload the
-  page, or when a delayed spectator view turns live, so a server could get a
-  retry by showing you, for a moment, as a spectator. It is blind if nobody at
-  the table is watching, or if browser storage is blocked. It also relies on
-  the browser code being the published code (above).
+  page, or when a view that hid the hands (a delayed spectator, or watching
+  turned off) turns live, so a server could get a retry by showing you that
+  way for a moment. It is blind if nobody at the table is watching, or if
+  browser storage is blocked. It also relies on the browser code being the
+  published code (above).
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
   hand histories live in a database he controls, and he could edit them. A
   hand whose proof you downloaded can't be changed without the proof no longer
@@ -177,10 +182,13 @@ Limits, stated plainly:
   blocked), or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
 - A server could also replace a published commitment without dealing from
-  it, to try another deck. A browser showing the table live warns about the
-  hands dealt after that, unless its watch started over in between: after a
-  dropped connection (a restart honestly starts a fresh commitment), a reload,
-  or a moment shown as a delayed spectator.
+  it, to try another deck. A browser showing the table live marks the hands
+  dealt after that, unless its watch started over in between: after a dropped
+  connection (a restart honestly starts a fresh commitment), a reload, or a
+  moment in a view that hid the hands. "Check this hand" also flags a hand
+  recorded under a different commitment from the one shown at the table; an
+  honest server only does that if it crashed right after a deal and dealt that
+  hand number again.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a

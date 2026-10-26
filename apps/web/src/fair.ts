@@ -126,33 +126,41 @@ export function contributeSeed(view: TableView) {
   });
 }
 
-/** Recorded against a hand dealt from a commitment this browser never saw offered as the next one. */
+// What a watch noted, recorded against the hands dealt after it: a commitment that was dropped, or one of these.
+/** A hand dealt from a commitment this browser never saw offered as the next one. */
 const UNSEEN = 'unseen';
+/** A hand shown at the table without its commitment. */
+const NO_COMMIT = 'no-commit';
+/** A hand number shown again from a second commitment (followed by the first one). */
+const AGAIN = 'again:';
+
+/** The commitment each hand was shown under at the table, by table and hand number ("Check this hand" compares the record with it). */
+const SHOWN = 'rsdp.fairShownAs';
 
 /**
  * Watches one table's commitments while this browser sees it live (seated, or
- * as a spectator with no delay). An honest server publishes each hand's
- * commitment before the hand, deals the hands in the order it published them,
- * and never changes a hand's commitment once shown. A server that dropped a
- * commitment without dealing from it could look at the deck the seeds made and
- * try again; a hand dealt from a commitment never offered, or a hand number
- * shown with a second commitment, would hide the same thing. Each is noted
- * against the hand dealt, and every later hand in the same watch is marked too.
- * The watch is judged from the hands shown, not from any summary field, and a
- * view with no commitment changes nothing.
+ * as a spectator with no delay and watching allowed). An honest server
+ * publishes each hand's commitment before the hand, deals the hands in the
+ * order it published them, and never changes a hand's commitment once shown. A
+ * server that dropped a commitment without dealing from it could look at the
+ * deck the seeds made and try again; a hand dealt from a commitment never
+ * offered, shown without one, or a hand number shown with a second one, would
+ * hide the same thing. Each is noted against the hand dealt, and every later
+ * hand in the same watch is marked too. The watch is judged from the hands
+ * shown, not from any summary field.
  *
  * A server restart honestly starts a fresh commitment but drops every
  * connection, so the watch starts over after a reconnect, on another table,
  * with each new watcher (a page left and opened again, when an idle table may
- * have been put away and reloaded), and when a delayed spectator view (whose
- * hands run behind) turns live.
+ * have been put away and reloaded), and when a view that hid the hands (a
+ * delayed spectator, or watching turned off) turns live.
  */
 export function watchCommitments(socketId: () => string | undefined = () => socket.id) {
   type Watch = { table: string; socket: string; offered: string[]; dealt: Set<string>; byNumber: Map<number, string>; tainted: string | null };
   let w: Watch | null = null;
   let wasLive = false;
   return (view: TableView) => {
-    const live = !view.spectator || view.spectator.delaySeconds === 0;
+    const live = !view.spectator || (view.spectator.delaySeconds === 0 && !view.spectator.blocked);
     const sock = socketId();
     if (!sock) {
       w = null;
@@ -164,16 +172,19 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
     wasLive = live;
     if (!live) return;
     const watch = w;
+    const fresh = watch.offered.length === 0 && watch.dealt.size === 0;
     const flag = (commit: string, from: string) => {
       watch.tainted ??= from;
       save(SWAPPED, commit, watch.tainted);
     };
     const hand = view.hand;
     const commit = hand?.fair?.commit;
+    if (hand) save(SHOWN, `${view.id}#${hand.handNumber}`, commit ?? NO_COMMIT);
+    // Only hands dealt before provably fair dealing have none, and only the first view after an upgrade can show one.
+    if (hand && !commit && !fresh) watch.tainted ??= NO_COMMIT;
     if (hand && commit) {
-      const fresh = watch.offered.length === 0 && watch.dealt.size === 0;
       const before = watch.byNumber.get(hand.handNumber);
-      if (before && before !== commit) flag(commit, before);
+      if (before && before !== commit) flag(commit, AGAIN + before);
       watch.byNumber.set(hand.handNumber, commit);
       if (!watch.dealt.has(commit)) {
         watch.dealt.add(commit);
@@ -190,9 +201,26 @@ export function watchCommitments(socketId: () => string | undefined = () => sock
   };
 }
 
-/** The commitment the table showed for this hand before it swapped in this one without dealing, if this browser saw that. */
+/** What a watch noted against this hand's commitment, if anything (see watchCommitments). */
 export function swappedFrom(commit: string): string | null {
   return load(SWAPPED)[commit] ?? null;
+}
+
+/** The commitment hand `handNumber` of a table was shown under while this browser watched it live, if it did. */
+export function shownAs(tableId: string, handNumber: number): string | null {
+  const c = load(SHOWN)[`${tableId}#${handNumber}`];
+  return c ? (c === NO_COMMIT ? 'none' : c) : null;
+}
+
+const short = (c: string) => `${c.slice(0, 12)}…`;
+
+/** The warning for a hand dealt during or after something a watch noted. */
+function swapWarning(commit: string, from: string): string {
+  const after = `A server that does that can look at a deck and try again`;
+  if (from === UNSEEN) return `this hand (${short(commit)}), or one before it at this table, was dealt from a commitment the table never showed as the next hand's. ${after}`;
+  if (from === NO_COMMIT) return `a hand at this table was shown without its commitment, and this hand (${short(commit)}) came after it. ${after}`;
+  if (from.startsWith(AGAIN)) return `a hand number at this table was shown again from a different commitment (first ${short(from.slice(AGAIN.length))}, then this hand's or an earlier one's). ${after}`;
+  return `the table showed a commitment (${short(from)}) that was never dealt from, and this hand (${short(commit)}) came after it. ${after}`;
 }
 
 /**
@@ -203,12 +231,7 @@ export function swappedFrom(commit: string): string | null {
  */
 export function seedProblem(commit: string, listed: { playerId: string; seed: string }[], myId: string, dealtIn: boolean, dealtAt: number | null): string | null {
   const swapped = swappedFrom(commit);
-  if (swapped === UNSEEN) {
-    return `this hand was dealt from a commitment (${commit.slice(0, 12)}…) the table never showed as the next hand's, or after one that was. A server that does that can look at a deck and try again`;
-  }
-  if (swapped) {
-    return `the table showed a commitment (${swapped.slice(0, 12)}…) that was never dealt from, and this hand (${commit.slice(0, 12)}…) came after it. A server that does that can look at the deck and try again`;
-  }
+  if (swapped) return swapWarning(commit, swapped);
   const accepted = mySeedFor(commit);
   const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;
@@ -234,6 +257,11 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
 /** The live warning for the hand in progress, if the seeds listed for it don't add up for me. */
 export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
-  if (!fair || view.me.seat === null) return null;
+  if (view.me.seat === null) return null;
+  // Every hand dealt since provably fair dealing carries its commitment; one being played without it can't be checked.
+  if (view.hand && !fair && view.fair?.nextCommit && view.hand.phase !== 'complete') {
+    return 'this hand is being dealt without a commitment, so nobody can check it';
+  }
+  if (!fair) return null;
   return seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
 }
