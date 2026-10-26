@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, type BettingKind, type HandEvent, type HandState } from '@rsdp/engine/core';
 import { BOT_NOTE_RULES, COACH_RULES, type BotNote, type CoachMove, type CoachRule, type CoachTip, type HandRecordView, type TableView } from '@rsdp/engine/wire';
 import { STAKES, start } from '../../../packages/engine/test/core/harness';
-import { BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
+import { BASIS_CAP, breakEvenWords, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
 import { bbExactFormat, eventLines } from './format';
 import { frameView, type Frame } from './replay';
 
@@ -127,6 +127,23 @@ describe('chance words', () => {
     expect(oftenWords(0.5)).toBe('1 time in 2');
     expect(oftenWords(0.07)).toBe('about 1 time in 14');
     expect(oftenWords(0.66)).toBe('about 2 times in 3');
+    // Not 1 time in 3: that would be a third, well short of 40%.
+    expect(oftenWords(0.4)).toBe('2 times in 5');
+    expect(oftenWords(0.3)).toBe('3 times in 10');
+  });
+
+  it('never makes a call look cheaper than it is', () => {
+    expect(breakEvenWords(0.4)).toBe('2 times in 5');
+    expect(breakEvenWords(0.25)).toBe('1 time in 4');
+    expect(breakEvenWords(2 / 7)).toBe('2 times in 7');
+    expect(breakEvenWords(0.29)).toBe('about 3 times in 10');
+    expect(breakEvenWords(0.07)).toBe('about 1 time in 14');
+    expect(breakEvenWords(0.45)).toBe('about 1 time in 2');
+    for (let c = 0.02; c < 0.5; c += 0.003) {
+      const [, n, d] = breakEvenWords(c).match(/(\d+) times? in (\d+)/)!.map(Number);
+      expect(n / d, `${c}`).toBeGreaterThanOrEqual(c - 1e-9);
+      expect(n / d - c, `${c}`).toBeLessThan(0.06);
+    }
   });
 });
 
@@ -145,6 +162,10 @@ describe('tip text: the examples', () => {
     expect(why['Your chance'][0]).toMatch(/^About 50% to win\. The tip dealt out the cards you can't see [\d,]+ times, giving Bo hands that fit how Bo has bet\.$/);
     expect(why['Worth knowing']).toEqual(['Flush draw: 9 hearts are still unseen.']);
     expect(why['What the tip can’t know'][0]).toMatch(/^It never sees anyone else's cards or the deck\..*Use it as a guide, not a rule\.$/);
+
+    // A pot-sized bet costs 40% to call: that is 2 times in 5, never "1 time in 3".
+    const big = textOf(view, tipOf(facing(0.35, 0.4)));
+    expect(big.why[0].lines[0]).toBe('The pot will be 25 once you call 10. 10 is 40% of 25, so calling pays off over time if you win more than 2 times in 5.');
   });
 
   it('works out how many times it dealt from the standard error', () => {
@@ -180,7 +201,7 @@ describe('tip text: the examples', () => {
     const tip = tipOf({ ...facing(0.35, 0.25), split: true, scoop: 0.15, vs: 1 });
     const t = textOf(view, tip);
     expect(t.verdict).toBe('About 35% of the pot, the call costs 25%: call.');
-    expect(t.basis).toBe('Against a random hand: nobody has bet yet. The whole pot about 15% of the time.');
+    expect(t.basis).toBe('Against a random hand: nobody still in has bet or raised. The whole pot about 15% of the time.');
     expect(coachFacts(view, tip).map((f) => f.text)).toEqual(["You have no cards 8 or lower, so you're playing for high: if someone makes a low you win half at best."]);
     expect(t.why.find((s) => s.title === 'Your chance')!.lines).toContain("That counts the times you'd split it: you'd win the whole pot about 15% of the time.");
   });
@@ -209,7 +230,7 @@ describe('tip text: the examples', () => {
     const tip = tipOf({ ...facing(0.4, 0.2), split: true, scoop: 0.2, vs: 2, opponents: 2 });
     const t = textOf(view, tip);
     expect(t.verdict).toBe('About 40% of the pot, the call costs 20%: call.');
-    expect(t.basis).toBe('Against 2 random hands: nobody has bet yet. The whole pot about 20% of the time.');
+    expect(t.basis).toBe('Against 2 random hands: nobody still in has bet or raised. The whole pot about 20% of the time.');
     expect(codes(view, tip)).toEqual(['high-only']);
   });
 
@@ -242,7 +263,11 @@ describe('tip text: the examples', () => {
     expect(textOf(view, third).basis).toBe('Bo stood pat twice, so Bo probably has a made hand.');
     expect(textOf(view, tipOf({ ...third, draws: [{ seat: 1, done: [3, 2] }] })).basis).toBe('Bo drew 3, then 2: still looking for a hand.');
     expect(textOf(view, tipOf({ ...third, draws: [{ seat: 1, done: [3, 0] }] })).basis).toBe('Bo drew 3, then stood pat, so Bo probably has a made hand.');
-    expect(textOf(view, tipOf({ ...third, draws: [{ seat: 1, done: [null] }] })).basis).toBe('Against a random hand: nobody has bet yet.');
+    expect(textOf(view, tipOf({ ...third, draws: [{ seat: 1, done: [null] }] })).basis).toBe('Against a random hand: nobody still in has bet or raised.');
+    // A bet and the draws both count: the draws are said too, not put down to the bet.
+    const pats = tipOf({ ...facing(0.3, 0.17), drawsLeft: 0, reads: [{ seat: 1, bets: 1 }], vsRandom: 0.95, draws: [{ seat: 1, done: [0, 0, 0] }] });
+    expect(textOf(view, pats).basis).toBe('Counting how Bo has bet this hand. Bo stood pat three times, so Bo probably has a made hand.');
+    expect(textOf(view, pats).why.find((x) => x.title === 'Your chance')!.lines[0]).toMatch(/giving Bo hands that fit how Bo has bet and drawn\.$/);
 
     expect(textOf(view, tipOf(facing(0.3, 0.17))).verdict).toBe('About 30% to win, the call costs 17%: call.');
     expect(textOf(view, tipOf({ ...facing(0.4, 0.2), drawsLeft: 2 })).verdict).toBe('About 40% to win with 2 draws to come, the call costs 20%: call.');
@@ -289,7 +314,7 @@ describe('tip text: the basis line', () => {
     // Against random hands only when that's a different answer.
     expect(textOf(view, tip([1], 0.54)).basis).toBe('Counting how Bo has bet this hand.');
     expect(textOf(view, tip([1], 0.55)).basis).toBe("Counting how Bo has bet this hand. Against 4 random hands you'd have about 55%.");
-    expect(textOf(view, tipOf({ reads: [{ seat: 1, bets: 0 }] })).basis).toBe('Against a random hand: nobody has bet yet.');
+    expect(textOf(view, tipOf({ reads: [{ seat: 1, bets: 0 }] })).basis).toBe('Against a random hand: nobody still in has bet or raised.');
   });
 
   it('explains the verdicts that need a margin, the raise bar or the field', () => {
@@ -304,7 +329,7 @@ describe('tip text: the basis line', () => {
   it('moves the draws to line 2 when the verdict would be too long', () => {
     const t = textOf(viewOf({ game: 'td27', mine: ['2c', '3d', '4h', '8s', 'Kd'] }), tipOf({ ...facing(0.4, 0.2), se: 0.03, drawsLeft: 3, close: true, rule: 'call' }));
     expect(t.verdict).toBe('Roughly 40% to win, the call costs 20%: close, call or fold.');
-    expect(t.basis).toBe('With 3 draws to come. Against a random hand: nobody has bet yet.');
+    expect(t.basis).toBe('With 3 draws to come. Against a random hand: nobody still in has bet or raised.');
   });
 });
 
@@ -374,7 +399,7 @@ describe('facts', () => {
   const throws = (game: string, mine: string[], discard: number[]) => coachFacts(viewOf({ game, mine }), draw(discard)).map((f) => f.text);
 
   it('says why each card goes in 2-7', () => {
-    expect(throws('td27', ['2c', '4d', '4h', '7s', '8c'], [2])).toEqual(['Your [4h] pairs your [4d], and in 2-7 any hand without a pair beats a pair.']);
+    expect(throws('td27', ['2c', '4d', '4h', '7s', '8c'], [2])).toEqual(["Your [4h] pairs your [4d], and in 2-7 a pair loses to five different cards that aren't a straight or flush."]);
     expect(throws('td27', ['2c', '3d', '4h', '7s', 'Ac'], [4])).toEqual(['Aces are high in 2-7, not low.']);
     expect(throws('td27', ['2c', '3d', '4h', '7s', 'Qc'], [4])).toEqual(['A queen is far too high in 2-7.']);
     expect(throws('td27', ['2c', '3d', '4h', '7s', 'Tc'], [4])).toEqual(['A ten is too high in 2-7.']);

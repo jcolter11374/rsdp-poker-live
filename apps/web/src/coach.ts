@@ -49,22 +49,40 @@ export function chanceWords(share: number, se: number): string {
   return `roughly ${clamp(Math.round(share * 10) * 10, 10, 90)}%`;
 }
 
-/** How often, for a chance: "4 times in 5", "3 times in 4", "about 1 time in 14". */
+/** How often, for a chance: "4 times in 5", "3 times in 4", "about 1 time in 14", "2 times in 5". */
 export function oftenWords(p: number): string {
   if (!(p > 0)) return 'never';
   if (p >= 0.995) return 'every time';
-  const say = (n: number, d: number) => `${n} ${n === 1 ? 'time' : 'times'} in ${d}`;
+  // Small chances read best as 1 time in d, when that is close; the rest as halves to tenths.
   if (p < 0.5) {
     const d = Math.round(1 / p);
-    return `${Math.abs(1 / d - p) < 0.001 ? '' : 'about '}${say(1, d)}`;
+    if (Math.abs(1 / d - p) <= 0.05 * p) return `${Math.abs(1 / d - p) < 0.001 ? '' : 'about '}${timesIn(1, d)}`;
   }
-  // Halves to tenths read best.
-  const ways = [2, 3, 4, 5, 10].map((d) => ({ n: Math.round(p * d), d })).map((w) => ({ ...w, off: Math.abs(w.n / w.d - p) }));
+  const ways = (p < 0.5 ? [2, 3, 4, 5, 6, 7, 8, 9, 10] : [2, 3, 4, 5, 10]).map((d) => ({ n: Math.max(1, Math.round(p * d)), d })).map((w) => ({ ...w, off: Math.abs(w.n / w.d - p) }));
   const exact = ways.find((w) => w.off < 0.001);
-  if (exact) return say(exact.n, exact.d);
+  if (exact) return timesIn(exact.n, exact.d);
   const near = ways.reduce((a, b) => (b.off < a.off ? b : a));
-  return `about ${say(near.n, near.d)}`;
+  return `about ${timesIn(near.n, near.d)}`;
 }
+
+/**
+ * How often a call has to win to pay, for "pays off if you win more than
+ * ...": never rounded down, so a call never looks cheaper than it is. "2 times
+ * in 5", "about 3 times in 10" (for 29%), "1 time in 14".
+ */
+export function breakEvenWords(p: number): string {
+  if (!(p > 0)) return 'never';
+  if (p >= 0.995) return 'every time';
+  // At or just above p: n/d with n rounded up for small denominators, and 1 time in d for small chances.
+  const ways = [2, 3, 4, 5, 6, 7, 8, 9, 10].map((d) => ({ n: Math.ceil(p * d - 1e-9), d }));
+  if (Math.floor(1 / p) > 10) ways.push({ n: 1, d: Math.floor(1 / p) });
+  const usable = ways.filter((w) => w.n < w.d);
+  if (!usable.length) return `${Math.ceil(p * 100)}% of the time`;
+  const best = usable.reduce((a, b) => (b.n / b.d - p < a.n / a.d - p - 1e-9 ? b : a));
+  return `${best.n / best.d - p < 0.001 ? '' : 'about '}${timesIn(best.n, best.d)}`;
+}
+
+const timesIn = (n: number, d: number) => `${n} ${n === 1 ? 'time' : 'times'} in ${d}`;
 
 // ---------------------------------------------------------------- tips
 
@@ -173,12 +191,6 @@ function basisOf(tip: CoachTip, view: TableView, name: (seat: number) => string,
     const n = tip.opponents;
     return fit([...lead, `Against ${others(n)} an even share is ${pct(1 / (n + 1))}, and you have more than twice that.`, scoop], BASIS_CAP);
   }
-  const readers = tip.reads.filter((r) => r.bets > 0).map((r) => name(r.seat));
-  if (readers.length) {
-    const who = readers.length === 1 ? `${readers[0]} has` : readers.length === 2 ? `${readers[0]} and ${readers[1]} have` : `${readers.length} players have`;
-    const random = tip.vsRandom !== null && Math.abs(tip.vsRandom - tip.share) >= 0.05 ? `Against ${randomHands(tip.vs)} you'd have ${chance(tip.vsRandom)}.` : '';
-    return fit([...lead, `Counting how ${who} bet this hand.`, random, scoop], BASIS_CAP);
-  }
   const badugi = view.hand?.gameId === 'badugi';
   // Someone who stood pat says most, then whoever drew fewest last time.
   const drawn = tip.draws
@@ -187,8 +199,15 @@ function basisOf(tip: CoachTip, view: TableView, name: (seat: number) => string,
     .sort((a, b) => a.known.at(-1)! - b.known.at(-1)!)
     .map((x) => drawsSentence(name(x.d.seat), x.d.done, badugi))
     .filter((s): s is string => !!s);
+  const readers = tip.reads.filter((r) => r.bets > 0).map((r) => name(r.seat));
+  if (readers.length) {
+    const who = readers.length === 1 ? `${readers[0]} has` : readers.length === 2 ? `${readers[0]} and ${readers[1]} have` : `${readers.length} players have`;
+    const random = tip.vsRandom !== null && Math.abs(tip.vsRandom - tip.share) >= 0.05 ? `Against ${randomHands(tip.vs)} you'd have ${chance(tip.vsRandom)}.` : '';
+    // In lowball the draws count too, so the gap to random hands isn't all down to the betting.
+    return fit([...lead, `Counting how ${who} bet this hand.`, drawn[0] ?? '', random, scoop], BASIS_CAP);
+  }
   if (drawn.length) return fit([...lead, ...drawn.slice(0, 2)], BASIS_CAP);
-  return fit([...lead, `Against ${randomHands(tip.vs)}: nobody has bet yet.`, scoop], BASIS_CAP);
+  return fit([...lead, `Against ${randomHands(tip.vs)}: nobody still in has bet or raised.`, scoop], BASIS_CAP);
 }
 
 /** Roughly how many finishes the tip dealt out, from its standard error (se = sqrt(max(p(1-p), .01) / n)). */
@@ -210,7 +229,7 @@ function whyOf(tip: CoachTip, view: TableView, fmt: Fmt, name: (seat: number) =>
     maths.push(`You must start the betting: bring it in for ${fmt(view.hand?.stakes.bringIn ?? 0)}${complete}. The tip completes only with a strong start.`);
   } else if (tip.kind === 'bet' && tip.call > 0 && tip.cost !== null) {
     const after = tip.pot + tip.call;
-    maths.push(`The pot will be ${fmt(after)} once you call ${fmt(tip.call)}. ${fmt(tip.call)} is ${pct(tip.cost)} of ${fmt(after)}, so calling pays off over time if you win more than ${oftenWords(tip.cost)}.`);
+    maths.push(`The pot will be ${fmt(after)} once you call ${fmt(tip.call)}. ${fmt(tip.call)} is ${pct(tip.cost)} of ${fmt(after)}, so calling pays off over time if you win more than ${breakEvenWords(tip.cost)}.`);
     if (tip.need !== null && tip.big) maths.push(`This call is half your chips or more, so the tip wants a margin: about ${pct(tip.need)}.`);
     else if (tip.need !== null) maths.push(`The tip calls from about ${pct(tip.need)}, a little over the cost, because its chance is only a guess.`);
     if (tip.rule === 'raise' || tip.rule === 'raise-field') maths.push('The tip raises from about 70%, or with more than twice an even share against several players.');
@@ -225,8 +244,8 @@ function whyOf(tip: CoachTip, view: TableView, fmt: Fmt, name: (seat: number) =>
   const lowball = tip.draws.some((d) => d.done.some((n) => n !== null));
   const giving = readers.length
     ? readers.length === 1
-      ? `giving ${readers[0]} hands that fit how ${readers[0]} has bet`
-      : `giving the players still in hands that fit how they have bet`
+      ? `giving ${readers[0]} hands that fit how ${readers[0]} has bet${lowball ? ' and drawn' : ''}`
+      : `giving the players still in hands that fit how they have bet${lowball ? ' and drawn' : ''}`
     : lowball
       ? 'giving the others hands that fit how many cards they drew'
       : 'giving everyone else random hands';
@@ -310,7 +329,7 @@ function throwFacts(game: 'td27' | 'badugi', mine: string[], discard: number[]):
     const rest = [...kept, ...mine.filter((_, j) => j !== i && discard.includes(j))].filter(isCard);
     const pair = rest.find((k) => k[0] === c[0]);
     const suited = rest.find((k) => k[1] === c[1]);
-    if (pair) out.push(game === 'td27' ? `Your [${c}] pairs your [${pair}], and in 2-7 any hand without a pair beats a pair.` : `Your [${c}] pairs your [${pair}]; only one can count.`);
+    if (pair) out.push(game === 'td27' ? `Your [${c}] pairs your [${pair}], and in 2-7 a pair loses to five different cards that aren't a straight or flush.` : `Your [${c}] pairs your [${pair}]; only one can count.`);
     else if (game === 'td27' && c[0] === 'A') out.push('Aces are high in 2-7, not low.');
     else if (game === 'badugi' && suited) {
       const lower = kept.includes(suited) && 'A23456789TJQK'.indexOf(suited[0]) < 'A23456789TJQK'.indexOf(c[0]);
