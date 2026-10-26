@@ -15,6 +15,9 @@ import { createTable, loadSnapshot, saveSnapshot } from '../src/db/tables';
 import { resetTestDb } from '../src/db/testing';
 import { createAccount, login, resolveSession, resolveToken } from '../src/identity';
 import { Scheduler } from '../src/scheduler';
+import { restoreBackup } from '../src/db/backup';
+import { createTestDb } from '../src/db/testing';
+import { backupOf, everything, fill, linesOf } from './backup-fixture';
 
 const url = process.env.TEST_DATABASE_URL;
 
@@ -79,4 +82,20 @@ describe.skipIf(!url)('on Postgres (node-postgres)', () => {
     expect(runs.size).toBe(40);
     expect([...runs.values()].every((c) => c === 1)).toBe(true);
   });
+
+  it('backs up and restores the whole database between Postgres and PGlite, both ways', async () => {
+    const copy = await createTestDb();
+    try {
+      await resetTestDb(a);
+      await fill(a);
+      await restoreBackup(copy, linesOf((await backupOf(a)).text));
+      expect(await everything(copy)).toEqual(await everything(a));
+      await resetTestDb(a);
+      await restoreBackup(a, linesOf((await backupOf(copy)).text));
+      expect(await everything(a)).toEqual(await everything(copy));
+    } finally {
+      await resetTestDb(a);
+      await closeDb(copy);
+    }
+  }, 30_000);
 });
