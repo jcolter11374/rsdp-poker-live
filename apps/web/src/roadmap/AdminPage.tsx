@@ -3,6 +3,7 @@ import { StatusPill } from './Suggestions';
 import { ApiError, checkAdminKey, deleteSuggestion, fetchSuggestions, logOrder, shortDate, STATUS_LABEL, STATUSES, updateSuggestion, type Suggestion } from './suggestions';
 import { adminDeleteTable, adminLookUpTable, issueResetCode, type AdminTable } from '../account/api';
 import './roadmap.css';
+import { SiteHeader } from '../components/SiteHeader';
 
 const KEY = 'rsdp.adminKey';
 
@@ -67,43 +68,43 @@ export function RoadmapAdminPage() {
   const replace = (s: Suggestion) => setList((l) => l.map((x) => (x.id === s.id ? s : x)));
 
   return (
-    <main className="roadmap-page">
-      <header>
-        <a className="logo small" href="/">
-          RSDP Poker <span>Live!</span>
-        </a>
-        <a href="/roadmap">Back to the roadmap</a>
-      </header>
-      <h1>Admin</h1>
-      {!ok ? (
-        <form className="suggest-form" onSubmit={signIn}>
-          <label>
-            Admin key
-            <input type="password" value={entered} onChange={(e) => setEntered(e.target.value)} autoComplete="current-password" />
-          </label>
-          {error && <p className="error">{error}</p>}
-          <button className="primary" disabled={!entered}>
-            Open
-          </button>
-        </form>
-      ) : (
-        <>
-          <p className="muted">
-            Changes show on the public log right away. <button onClick={signOut}>Sign out</button>
-          </p>
-          <ResetCodeForm adminKey={key} />
-          <DeleteTableForm adminKey={key} />
-          <h2>Suggestions</h2>
-          {error && <p className="error">{error}</p>}
-          {list.length === 0 && <p className="muted">No suggestions yet.</p>}
-          <ul className="admin-list">
-            {logOrder(list).map((s) => (
-              <AdminRow key={s.id} s={s} adminKey={key} onSaved={replace} onDeleted={() => setList((l) => l.filter((x) => x.id !== s.id))} onError={setError} />
-            ))}
-          </ul>
-        </>
-      )}
-    </main>
+    <div className="site-page">
+      <SiteHeader />
+        <main className="roadmap-page">
+        <p className="muted">
+          <a href="/roadmap">Back to the roadmap</a>
+        </p>
+        <h1>Admin</h1>
+        {!ok ? (
+          <form className="suggest-form" onSubmit={signIn}>
+            <label>
+              Admin key
+              <input type="password" value={entered} onChange={(e) => setEntered(e.target.value)} autoComplete="current-password" />
+            </label>
+            {error && <p className="error">{error}</p>}
+            <button className="primary" disabled={!entered}>
+              Open
+            </button>
+          </form>
+        ) : (
+          <>
+            <p className="muted">
+              Changes show on the public log right away. <button onClick={signOut}>Sign out</button>
+            </p>
+            <ResetCodeForm adminKey={key} />
+            <DeleteTableForm adminKey={key} />
+            <h2>Suggestions</h2>
+            {error && <p className="error">{error}</p>}
+            {list.length === 0 && <p className="muted">No suggestions yet.</p>}
+            <ul className="admin-list">
+              {logOrder(list).map((s) => (
+                <AdminRow key={s.id} s={s} adminKey={key} onSaved={replace} onDeleted={() => setList((l) => l.filter((x) => x.id !== s.id))} onError={setError} />
+              ))}
+            </ul>
+          </>
+        )}
+      </main>
+    </div>
   );
 }
 

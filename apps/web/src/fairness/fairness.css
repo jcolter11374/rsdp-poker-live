@@ -1,6 +1,5 @@
 /* ---- /fairness */
 .fairness-page { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; line-height: 1.5; }
-.fairness-page header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .fairness-page h1 { margin: 0 0 8px; font-size: 1.6rem; }
 .fairness-page h2 { margin: 28px 0 8px; font-size: 1.2rem; }
 .fairness-page h3 { margin: 20px 0 6px; font-size: 1.02rem; }

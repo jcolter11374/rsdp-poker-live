@@ -65,7 +65,7 @@ export function TournamentList() {
     <section className="card-panel tn-list" aria-label="Tournaments">
       <div className="tn-list-head">
         <h2>Tournaments</h2>
-        <AlertsToggle />
+        <AlertsToggle quietWhenBlocked />
         <a
           href="/tn/new"
           onClick={(e) => {

@@ -25,8 +25,7 @@
 .guide-hand .who { width: 44px; font-size: 0.85rem; color: var(--muted); }
 .guide-hand.won .who { color: var(--text); font-weight: 700; }
 .rules-page { max-width: 720px; margin: 0 auto; padding: 16px; }
-.rules-page header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.rules-page h1 { margin: 0; font-size: 1.4rem; }
+.rules-page h1 { margin: 0 0 14px; font-size: 1.6rem; }
 @media (max-width: 480px) {
   .guide-ladder li { flex-direction: column; align-items: flex-start; gap: 2px; }
 }

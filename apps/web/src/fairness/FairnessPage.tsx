@@ -1,6 +1,7 @@
 import doc from '../../../../docs/FAIRNESS.md?raw';
 import { Markdown } from './markdown';
 import './fairness.css';
+import { SiteFooter, SiteHeader } from '../components/SiteHeader';
 
 const REPO = 'https://github.com/jcolter11374/rsdp-poker-live/blob/main/';
 
@@ -13,19 +14,17 @@ export function sourceLink(href: string): string {
 /** /fairness: how the cards are shuffled, the audit, the test results and how to check a hand. It is docs/FAIRNESS.md, so the two never drift apart. */
 export function FairnessPage() {
   return (
-    <main className="fairness-page">
-      <header>
-        <a className="logo small" href="/">
-          RSDP Poker <span>Live!</span>
-        </a>
-        <a href="/">Play now</a>
-      </header>
-      <article>
-        <Markdown source={doc} link={sourceLink} />
-      </article>
-      <p className="muted">
-        Source of this page: <a href={`${REPO}docs/FAIRNESS.md`}>docs/FAIRNESS.md</a> on GitHub, where every file mentioned here can be read.
-      </p>
-    </main>
+    <div className="site-page">
+      <SiteHeader />
+      <main className="fairness-page">
+        <article>
+          <Markdown source={doc} link={sourceLink} />
+        </article>
+        <p className="muted">
+          Source of this page: <a href={`${REPO}docs/FAIRNESS.md`}>docs/FAIRNESS.md</a> on GitHub, where every file mentioned here can be read.
+        </p>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
