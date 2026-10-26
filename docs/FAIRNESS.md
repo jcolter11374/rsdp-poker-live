@@ -335,7 +335,8 @@ Limits, stated plainly:
   a real one, to steer the deck. Each browser checks its own entry, live and
   in "Check this hand". The server never deals sooner than 2.5 seconds after
   showing a hand's commitment, and browsers send their seed the moment they
-  see it (one seed per commitment, shared by all of a browser's tabs). If a
+  see it (normally one per commitment: a browser's other tabs, or the page
+  after a reload, send the same one again). If a
   seated player's browser is connected but its seed hasn't arrived yet (a slow
   or stalled connection), the server waits for it, up to 10 seconds after the
   commitment appeared; so a player whose page stops sending seeds can slow

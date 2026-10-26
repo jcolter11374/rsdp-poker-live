@@ -7,7 +7,15 @@ const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } 
 const store = new Map<string, string>();
 beforeEach(() => {
   store.clear();
-  vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+    key: (i: number) => [...store.keys()][i] ?? null,
+    get length() {
+      return store.size;
+    },
+  });
 });
 
 const C = 'commit';
@@ -418,5 +426,29 @@ describe('sending my seed', () => {
     store.set('rsdp.fairSent', JSON.stringify({ T6: JSON.stringify({ seed: 'cc', at: 0, table: 't1', player: 'me' }) }));
     expect(seedProblem('T6', [{ playerId: 'me', seed: mine }], 'me', true, 10_000)).toBeNull();
     expect(seedProblem('T6', [{ playerId: 'me', seed: 'dd' }], 'me', true, 10_000)).toMatch(/didn't send/);
+  });
+
+  it("a seed refused in one tab but accepted from another is fine, and a repeat keeps the first send's time", () => {
+    // Tab 2 repeated X and got in; tab 1's own copy arrived after the deal and was refused.
+    store.set('rsdp.fairSent', JSON.stringify({ T7: JSON.stringify({ seed: 'aa', at: 0, table: 't1', player: 'me', rejected: { after: 3000 } }) }));
+    store.set('rsdp.fairSeeds', JSON.stringify({ T7: 'aa' }));
+    expect(seedProblem('T7', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toBeNull();
+    // Refused everywhere and used anyway is still caught.
+    store.delete('rsdp.fairSeeds');
+    expect(seedProblem('T7', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toMatch(/but used it/);
+    // A repeat seen late (the server picks when a second tab sees the commitment) can't make an early seed look late.
+    store.set('rsdp.fairSent', JSON.stringify({ T8: JSON.stringify({ seed: 'bb', at: 1, table: 't1', player: 'me' }) }));
+    contributeSeed(seated('T8'));
+    expect(JSON.parse(JSON.parse(store.get('rsdp.fairSent')!).T8).at).toBe(1);
+    expect(seedProblem('T8', [], 'me', true, 10_000)).toMatch(/in good time/);
+  });
+
+  it('takes a record from before players were noted as mine', () => {
+    store.set('rsdp.fairSent', JSON.stringify({ T9: JSON.stringify({ seed: 'aa', at: 0, table: 't1' }) }));
+    contributeSeed(seated('T9'));
+    expect(emitted).toEqual([{ commit: 'T9', seed: 'aa' }]);
+    store.set('rsdp.fairSent', JSON.stringify({ T10: JSON.stringify({ seed: 'aa', at: 0, rejected: { after: 5 } }) }));
+    contributeSeed(seated('T10'));
+    expect(emitted).toHaveLength(1);
   });
 });

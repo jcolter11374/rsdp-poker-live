@@ -8,8 +8,35 @@ import { socket } from './socket';
 
 const SEEDS = 'rsdp.fairSeeds';
 const SENT = 'rsdp.fairSent';
-/** Every seed this browser made for a commitment, space-separated: two tabs can each make one at the same moment. */
-const SENT_ALL = 'rsdp.fairSentAll';
+/**
+ * Every seed this browser made, one storage key each (`<prefix><commit>:<seed>`): two tabs can each make one for the
+ * same commitment at the same moment, and separate keys can't overwrite each other the way one shared map could.
+ */
+const MADE = 'rsdp.fairMade:';
+
+function noteMade(commit: string, seed: string) {
+  try {
+    localStorage.setItem(`${MADE}${commit}:${seed}`, String(Date.now()));
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(MADE)) keys.push(k);
+    }
+    if (keys.length <= KEEP) return;
+    keys.sort((a, b) => Number(localStorage.getItem(a)) - Number(localStorage.getItem(b)));
+    for (const k of keys.slice(0, keys.length - KEEP)) localStorage.removeItem(k);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+function madeHere(commit: string, seed: string): boolean {
+  try {
+    return localStorage.getItem(`${MADE}${commit}:${seed}`) !== null;
+  } catch {
+    return false;
+  }
+}
 const LIVE = 'rsdp.fairLive';
 const NEXT = 'rsdp.fairNextSeen';
 const SWAPPED = 'rsdp.fairSwapped';
@@ -155,16 +182,18 @@ export function contributeSeed(view: TableView) {
   // same one again (harmless if it got there) rather than a second one the server would keep instead. A refused seed
   // stays refused: a fresh one after a refusal would let a server pick and choose.
   const before = sentFor(commit);
-  if (before?.rejected && before.player === view.me.playerId) {
+  // Records from before players were noted are taken as mine: a second seed would give the server two to choose from.
+  const again = before && (before.player ?? view.me.playerId) === view.me.playerId ? before : null;
+  if (again?.rejected) {
     sent = commit;
     return;
   }
-  const again = before && before.player === view.me.playerId ? before : null;
   sending = commit;
   const seed = again?.seed ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-  if (!again) save(SENT_ALL, commit, [load(SENT_ALL)[commit], seed].filter(Boolean).join(' '));
-  // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.
-  const at = Date.now();
+  if (!again) noteMade(commit, seed);
+  // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught. A repeat
+  // keeps the first send's time: the server can choose when a second tab sees the commitment.
+  const at = Math.min(again?.at ?? Infinity, Date.now());
   const record: Sent = { seed, at, table: view.id, player: view.me.playerId };
   save(SENT, commit, JSON.stringify(record));
   socket.emit('fair:seed', { commit, seed }, (res) => {
@@ -295,11 +324,11 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   const sentSeed = sentFor(commit);
   const under = listed.find((c) => c.playerId === myId)?.seed;
   const rejected = sentSeed?.rejected;
-  const madeHere = (load(SENT_ALL)[commit] ?? '').split(' ');
-  if (under && under !== accepted && under !== sentSeed?.seed && !madeHere.includes(under)) {
+  if (under && under !== accepted && under !== sentSeed?.seed && !madeHere(commit, under)) {
     return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
   }
-  if (rejected && under === sentSeed!.seed) return `the server turned down your browser's seed (${under}) but used it anyway`;
+  // Another tab's copy of the same seed may have got in first and been accepted.
+  if (rejected && under === sentSeed!.seed && under !== accepted) return `the server turned down your browser's seed (${under}) but used it anyway`;
   // Whatever the server answered, it saw the seed: an honest server only refuses one that arrived after the deal, and
   // then this browser sees the hand at about the time it sent it. Seen much later means the seed was there in time.
   const inTime = !!sentSeed && dealtAt !== null && dealtAt - sentSeed.at > IN_TIME_MS;
