@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
-import { contributeSeed, liveSeedProblem } from './fair';
+import { contributeSeed, liveSeedProblem, watchCommitments } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -136,9 +136,11 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
     let first = true;
+    const watch = watchCommitments();
     const onState = (v: TableView) => {
       if (v.id !== tableId) return;
       setView(v);
+      watch(v);
       contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.

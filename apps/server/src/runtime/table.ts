@@ -699,16 +699,22 @@ export class TableRuntime {
 
   /**
    * The hand's fairness record: the committed server seed plus the client
-   * seeds of the players dealt in. Then a new server seed is committed for the
-   * hand after, so players have this whole hand to send theirs.
+   * seeds of the players dealt in. The commitment stays the next one until the
+   * hand has really started (fairDealt), so a deal that fails never spends one:
+   * browsers warn about a commitment replaced without a hand dealt from it.
    */
   private fairDeal(dealtIn: PlayerId[]): HandFairness {
     const f = this.fairState();
     const { serverSeed, commit } = f.next;
     const clientSeeds = dealtIn.filter((p) => f.clientSeeds[p]).map((playerId) => ({ playerId, seed: f.clientSeeds[playerId] }));
+    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds.map((c) => c.seed)) };
+  }
+
+  /** The hand is dealt: commit a new server seed for the hand after, so players have this whole hand to send theirs. */
+  private fairDealt() {
+    const f = this.fairState();
     f.next = this.newServerSeed();
     f.clientSeeds = {};
-    return { version: FAIR_VERSION, commit, serverSeed, clientSeeds, handSeed: handSeedOf(serverSeed, clientSeeds.map((c) => c.seed)) };
   }
 
   /** The host stopped the game: every hand so far may be checked. */
@@ -1985,6 +1991,7 @@ export class TableRuntime {
     }
     s.handNumber = input.handNumber;
     s.hand = hand;
+    this.fairDealt();
     s.handNames ??= {};
     for (const x of hand.seats) {
       const seat = s.seats[x.seat];
