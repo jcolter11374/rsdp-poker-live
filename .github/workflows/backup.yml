@@ -31,6 +31,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      # Before anything is downloaded: without a key there would be nothing safe to keep.
+      - name: The backup key is there
+        run: grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt || { echo "::error::No backup key yet: scripts/backup/recipient.txt has no public key."; exit 1; }
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -44,7 +47,7 @@ jobs:
           cd "$RUNNER_TEMP/backup"
           # What the restore should give back, read just before the copy.
           "$GITHUB_WORKSPACE/scripts/backup/expect.sh" "$SITE" > before.json
-          curl -sf --retry 3 --retry-delay 30 --retry-all-errors -H "X-Admin-Key: $ADMIN_KEY" "$SITE/api/admin/backup" -o backup.jsonl.gz
+          curl -sf --max-time 600 --retry 3 --retry-delay 30 --retry-all-errors -H "X-Admin-Key: $ADMIN_KEY" "$SITE/api/admin/backup" -o backup.jsonl.gz
           gzip -t backup.jsonl.gz
           echo "Downloaded $(du -h backup.jsonl.gz | cut -f1)"
           # The leaderboard is worked out at most once a minute: if it is the same a minute after
@@ -61,8 +64,7 @@ jobs:
         run: scripts/backup/drill.sh "$RUNNER_TEMP/backup/backup.jsonl.gz" "$RUNNER_TEMP/backup/expected.json"
       - name: Lock it with the backup key
         run: |
-          grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt || { echo "::error::No backup key yet: scripts/backup/recipient.txt has no public key."; exit 1; }
-          sudo apt-get install -y -qq age > /dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq age > /dev/null
           cd "$RUNNER_TEMP/backup"
           name="rsdp-backup-$(date -u +%Y-%m-%dT%H%MZ)"
           echo "NAME=$name" >> "$GITHUB_ENV"
@@ -80,7 +82,8 @@ jobs:
           compression-level: 0
           if-no-files-found: error
       - name: Open an issue if the backup failed
-        if: failure()
+        # Cancelled too: a run that hangs until its time limit is a failure.
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

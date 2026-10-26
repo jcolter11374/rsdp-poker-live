@@ -25,7 +25,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Restoring into a fresh database"
-(cd "$root" && npx tsx apps/server/src/restore.ts "$backup" "$work/pglite") > "$work/summary.json"
+# Errors stay out of the output too: a database error can quote a value from the backup.
+(cd "$root" && npx tsx apps/server/src/restore.ts "$backup" "$work/pglite") > "$work/summary.json" 2> "$work/restore.log" || { echo "The restore failed"; exit 1; }
 jq -r '"Restored \([.rows[]] | add) rows in \(.rows | length) tables, from a backup taken \(.at)"' "$work/summary.json"
 
 echo "Starting a server on the restored data"

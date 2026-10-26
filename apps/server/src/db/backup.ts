@@ -52,6 +52,14 @@ async function tableNames(db: Db): Promise<string[]> {
   return rows.map((r) => r.name);
 }
 
+/** Counter columns (bigserial and identity), with the sequence behind each. */
+async function counters(db: Db) {
+  return queryRows<{ t: string; c: string; seq: string }>(
+    db,
+    sql`select table_name as t, column_name as c, pg_get_serial_sequence(quote_ident(table_name), column_name) as seq from information_schema.columns where table_schema = 'public' and (column_default like 'nextval(%' or is_identity = 'YES') order by 1, 2`,
+  );
+}
+
 async function migrationCount(db: Db): Promise<number> {
   const [row] = await queryRows<{ n: string | number }>(db, sql`select count(*) as n from drizzle.__drizzle_migrations`);
   return Number(row?.n ?? 0);
@@ -82,7 +90,13 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
         }
         await tx.execute(sql.raw('close backup_rows'));
       }
-      await write(JSON.stringify({ end: true, rows }) + '\n');
+      // Where each counter had got to: ids of rows deleted before the backup must not be handed out again.
+      const sequences: Record<string, number> = {};
+      for (const { t, c, seq } of await counters(tx)) {
+        const [row] = await queryRows<{ n: string | number | null }>(tx, sql.raw(`select case when is_called then last_value end as n from ${seq}`));
+        if (row?.n != null) sequences[`${t}.${c}`] = Number(row.n);
+      }
+      await write(JSON.stringify({ end: true, rows, sequences }) + '\n');
       return { at: header.at, migrations: header.migrations, rows };
     },
     // Postgres: one consistent moment, and nothing written by mistake. PGlite has one connection, so it is anyway.
@@ -108,16 +122,20 @@ const ROW_LINE = /^\{"t":"([a-z_][a-z0-9_]*)","r":/;
  * Loads a backup into an empty database (createDb has applied the current
  * migrations). All in one transaction: a backup that is cut short or doesn't
  * fit restores nothing. Columns the backup doesn't have keep their defaults,
- * so an older backup restores into a newer schema.
+ * so an older backup restores into a newer schema. Rows go straight into the
+ * newest tables: a future migration that rewrites data (not just adds columns)
+ * would need its own step here for older backups.
  */
 export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promise<BackupSummary> {
   return db.transaction(async (tx) => {
     // Rows go in table by table, but players and accounts point at each other, so check
     // foreign keys and run triggers (the append-only guards only refuse edits) as a replica does.
-    await tx.execute(sql.raw('set local session_replication_role = replica'));
+    await tx.execute(sql.raw('set local session_replication_role = replica')).catch((e: Error) => {
+      throw new BackupError(`Restoring needs a database role that may skip foreign key checks (a superuser, as on PGlite or your own Postgres): ${e.message}`);
+    });
     const tables = new Set(await tableNames(tx));
     let header: BackupHeader | null = null;
-    let end: { rows: Record<string, number> } | null = null;
+    let end: { rows: Record<string, number>; sequences?: Record<string, number> } | null = null;
     const counts: Record<string, number> = {};
     // Rows stay as the backup's own text: parsing them in JavaScript would round bigints past 2^53.
     let batch: { table: string; rows: string[] } | null = null;
@@ -170,13 +188,10 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
     for (const [t, n] of Object.entries(end.rows)) {
       if (counts[t] !== n) throw new BackupError(`The backup was cut short: ${t} should have ${n} rows, found ${counts[t] ?? 0}.`);
     }
-    // Counters (bigserial and identity columns) carry on after the highest restored id.
-    const serials = await queryRows<{ t: string; c: string }>(
-      tx,
-      sql`select table_name as t, column_name as c from information_schema.columns where table_schema = 'public' and (column_default like 'nextval(%' or is_identity = 'YES')`,
-    );
-    for (const { t, c } of serials) {
-      await tx.execute(sql.raw(`select setval(pg_get_serial_sequence('${ident(t)}', '${c.replace(/'/g, "''")}'), coalesce(max(${ident(c)}), 0) + 1, false) from ${ident(t)}`));
+    // Counters (bigserial and identity columns) carry on after the highest id ever handed out.
+    for (const { t, c, seq } of await counters(tx)) {
+      const used = Number(end.sequences?.[`${t}.${c}`] ?? 0);
+      await tx.execute(sql.raw(`select setval('${seq.replace(/'/g, "''")}', greatest(coalesce(max(${ident(c)}), 0), ${used}) + 1, false) from ${ident(t)}`));
     }
     return { at: header.at, migrations: header.migrations, rows: counts };
   });

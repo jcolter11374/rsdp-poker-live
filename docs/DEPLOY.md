@@ -39,7 +39,7 @@ A deploy restarts the process:
 
 The live site is backed up every night, off Fly, by GitHub Actions (`.github/workflows/backup.yml`, about 09:41 UTC):
 
-1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action, because a copy holds any hand being played at that moment.
+1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header; one at a time, and a server shutting down stops it first). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action the moment it starts (so one stopped part-way shows too), because a copy holds any hand being played at that moment.
 2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
 3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next night's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
 4. A failure opens the issue "Nightly backup failed", mentioning John; the next good run closes it.
@@ -60,9 +60,17 @@ npx tsx apps/server/src/restore.ts backup.jsonl.gz --check
 npx tsx apps/server/src/restore.ts backup.jsonl.gz /data/pglite-restored
 ```
 
-On Fly: copy the file up (`fly ssh sftp shell`, `put backup.jsonl.gz /data/backup.jsonl.gz`), then in `fly ssh console` run step 3 from `/app/apps/server` (`node --import tsx src/restore.ts /data/backup.jsonl.gz /data/pglite-restored`), swap the folders (`mv /data/pglite /data/pglite-old && mv /data/pglite-restored /data/pglite`) and restart the machine (`fly machine restart`). The server opens the restored data on start; delete `/data/pglite-old` once all is well. If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the night of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended).
+On Fly, the server does the swap itself when it starts, because swapping folders under a running server corrupts both:
 
-- **Managed Postgres:** use the provider's backups or point-in-time restore as well.
+1. Check there is room: `fly ssh console -C "df -h /data"`. The old data stays until you delete it, so you need about twice the database's size free.
+2. Copy the unlocked backup up beside the data folder, then rename it into place (so a half-copied file is never picked up):
+   `fly ssh sftp shell`, then `put backup.jsonl.gz /data/restore.jsonl.gz.part`, then `fly ssh console -C "mv /data/restore.jsonl.gz.part /data/restore.jsonl.gz"`.
+3. Restart: `fly machine restart`. Before it opens the database, the server restores the file into a new folder (`apps/server/src/db/restoreOnStart.ts`) and swaps it in. It keeps the old data as `/data/pglite-before-restore-<time>` and renames the file to `restore.jsonl.gz.done-<time>`. If the backup doesn't restore, nothing changes, the file becomes `restore.jsonl.gz.failed-<time>`, and the log says why (`fly logs`).
+4. Once all is well, delete the old folder and the file to free the space.
+
+If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the night of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended). Unlocking needs `age` on your computer (`brew install age` on a Mac, `winget install FiloSottile.age` on Windows).
+
+- **Postgres:** `restore.ts` restores into an empty Postgres database too, with a role that may skip foreign key checks while loading (a superuser). With managed Postgres, also use the provider's own backups.
 
 ## Site-down alert
 

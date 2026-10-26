@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,7 @@ import { AuditLog, dbAuditStore } from '../src/audit';
 import { closeDb, createDb, queryRows, type Db } from '../src/db';
 import { BackupError, backupLines, restoreBackup } from '../src/db/backup';
 import { createTestDb, resetTestDb } from '../src/db/testing';
+import { RESTORE_FILE, restoreIfWaiting } from '../src/db/restoreOnStart';
 import { backupOf, BIG, everything, fill, linesOf } from './backup-fixture';
 
 const KEY = 'test-admin-key-0123456789';
@@ -23,7 +25,7 @@ afterAll(async () => {
   await closeDb(db);
 });
 
-describe('backups', () => {
+describe('backups', { timeout: 30_000 }, () => {
   it('restore gives back every row of every table, exactly', async () => {
     await resetTestDb(db);
     await fill(db);
@@ -61,6 +63,21 @@ describe('backups', () => {
       await expect(restoreBackup(copy, linesOf([...lines.slice(0, 3), lines.at(-1)].join('\n')))).rejects.toThrow(/cut short/);
       expect(await queryRows(copy, sql`select * from players`)).toHaveLength(0);
       await expect(restoreBackup(copy, linesOf('{"hello":1}\n'))).rejects.toThrow(BackupError);
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it('never hands out an id again that was used before the backup', async () => {
+    await resetTestDb(db);
+    await fill(db);
+    await db.execute(sql`delete from suggestions where id = 2`);
+    const { text } = await backupOf(db);
+    const copy = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(text));
+      await copy.execute(sql`insert into suggestions (name, title) values ('Al', 'Badugi')`);
+      expect((await queryRows<{ id: number }>(copy, sql`select max(id)::int as id from suggestions`))[0].id).toBe(3);
     } finally {
       await closeDb(copy);
     }
@@ -141,9 +158,60 @@ describe('backups', () => {
       await audit.flush();
       const entries = await queryRows<{ data: { action: string; target: string } }>(db, sql`select data from audit_log where kind = 'admin'`);
       expect(entries.map((e) => e.data.action)).toEqual(['backup']);
-      expect(entries[0].data.target).toMatch(/^\d+ rows$/);
     } finally {
       await server.close();
+    }
+  });
+});
+
+// Each opens several PGlite databases on disk, which takes seconds on a busy machine.
+describe('restoring the live site on start', { timeout: 30_000 }, () => {
+  it('swaps a waiting backup in before the database opens, keeping the old data', async () => {
+    await resetTestDb(db);
+    await fill(db);
+    const { text } = await backupOf(db);
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      const live = path.join(dir, 'pglite');
+      const old = await createDb({ ignoreEnv: true, pgliteDir: live });
+      await old.execute(sql`insert into players (id) values ('only-in-old')`);
+      await closeDb(old);
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync(text));
+      await restoreIfWaiting(live, () => {});
+      const names = readdirSync(dir).sort();
+      expect(names.some((n) => n.startsWith('pglite-before-restore-'))).toBe(true);
+      expect(names.some((n) => n.startsWith(`${RESTORE_FILE}.done-`))).toBe(true);
+      expect(names).not.toContain(RESTORE_FILE);
+      const reopened = await createDb({ ignoreEnv: true, pgliteDir: live });
+      try {
+        expect(await everything(reopened)).toEqual(await everything(db));
+      } finally {
+        await closeDb(reopened);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the data alone when the backup is bad', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      const live = path.join(dir, 'pglite');
+      const old = await createDb({ ignoreEnv: true, pgliteDir: live });
+      await old.execute(sql`insert into players (id) values ('keep-me')`);
+      await closeDb(old);
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync('{"backup":"rsdp","version":1,"at":"x","migrations":0,"tables":[]}\n'));
+      await restoreIfWaiting(live, () => {});
+      const names = readdirSync(dir).sort();
+      expect(names).toEqual(['pglite', expect.stringMatching(new RegExp(`^${RESTORE_FILE}\\.failed-`))]);
+      const reopened = await createDb({ ignoreEnv: true, pgliteDir: live });
+      try {
+        expect(await queryRows(reopened, sql`select id from players`)).toEqual([{ id: 'keep-me' }]);
+      } finally {
+        await closeDb(reopened);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
