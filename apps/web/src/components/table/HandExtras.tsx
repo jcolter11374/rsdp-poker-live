@@ -1,30 +1,71 @@
 import { useState } from 'react';
-import type { TableView } from '@rsdp/engine/wire';
+import { createPortal } from 'react-dom';
+import type { HandRecordView, TableView } from '@rsdp/engine/wire';
 import { nitSchema } from '@rsdp/engine/modifiers';
 import { chipFormat } from '../../format';
 import { nitStatus } from '../../nit';
+import { usePrefs } from '../../prefs';
 import { call } from '../../socket';
 import { PlayingCard } from '../PlayingCard';
+import { Replayer } from '../Replayer';
 import { Modal } from '../SeatDialog';
 import './extras.css';
 
 /**
  * Hand aids under the action bar: rabbit hunting after a hand that ended
- * before all the cards were out, the Nit game opt-in and round, and the
- * house fee total. (The time bank button is on the action bar.)
+ * before all the cards were out, the Nit game opt-in and round, the house
+ * fee total, and after a hand against bots only, why the bots played as
+ * they did. (The time bank button is on the action bar.)
  */
 export function HandExtras({ view }: { view: TableView }) {
   const [error, setError] = useState('');
   const run = (p: Promise<unknown>) => p.then(() => setError('')).catch((e: Error) => setError(e.message));
+  const prefs = usePrefs();
+  // The hand whose reasons are open in the replayer. It stays open when the next hand is dealt.
+  const [whyHand, setWhyHand] = useState<HandRecordView | null>(null);
+  const [whyBusy, setWhyBusy] = useState(false);
+  // A hand the server has no reasons for.
+  const [noWhy, setNoWhy] = useState<number | null>(null);
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
   const rabbit = view.rabbit ?? { available: false, cards: null };
   const nitOn = view.mode === 'cash' && !!me && nitSchema.get(view.settings).enabled;
   const showRake = view.rakeTotal !== null && view.rakeTotal !== undefined;
-  if (!rabbit.available && !nitOn && !view.nit && !showRake) return null;
   const fmt = chipFormat(view.settings.stakes.centsMode);
+  const askWhy = view.hand?.phase === 'complete' && view.tips && prefs.botReasons ? view.hand.handNumber : null;
+  const showWhy = (handNumber: number) => {
+    setWhyBusy(true);
+    call<{ hand: HandRecordView }>('table:history', { handNumber })
+      .then(({ hand }) => {
+        setError('');
+        if (hand.botNotes?.length) setWhyHand(hand);
+        else setNoWhy(handNumber);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setWhyBusy(false));
+  };
+  // On the page's body, so it never adds to the area under the table.
+  const replayer =
+    whyHand &&
+    createPortal(
+      <Replayer
+        hands={[whyHand]}
+        start={0}
+        why
+        tableId={view.id}
+        tableName={view.name}
+        seatCount={view.seats.length}
+        myId={view.me.playerId}
+        felt={view.settings.table.felt}
+        fmt={fmt}
+        onClose={() => setWhyHand(null)}
+      />,
+      document.body,
+    );
+  if (!rabbit.available && !nitOn && !view.nit && !showRake && askWhy === null) return replayer || null;
 
   return (
     <div className="hand-extras">
+      {replayer}
       {rabbit.available && !rabbit.cards && (
         <button title="See the cards that would have come. Only you see them." onClick={() => run(call('hand:rabbit'))}>
           🐇 Rabbit hunt
@@ -45,6 +86,14 @@ export function HandExtras({ view }: { view: TableView }) {
       )}
       {(nitOn || view.nit) && <NitRow view={view} me={me} fmt={fmt} canTick={nitOn} onTick={(v) => run(call('seat:prefs', { nitGame: v }))} />}
       {showRake && <span className="muted">House fees: {fmt(view.rakeTotal!)}</span>}
+      {askWhy !== null &&
+        (noWhy === askWhy ? (
+          <span className="muted">No reasons for this hand.</span>
+        ) : (
+          <button disabled={whyBusy} onClick={() => showWhy(askWhy)}>
+            Why did the bots play that way?
+          </button>
+        ))}
       {error && <span className="error">{error}</span>}
     </div>
   );

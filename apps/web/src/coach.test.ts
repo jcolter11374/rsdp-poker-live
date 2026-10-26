@@ -55,6 +55,7 @@ function viewOf(spot: Spot): TableView {
     done: false,
     caption: '',
     upTo: 1,
+    why: [],
   };
   const view = frameView('Practice', 6, record, frame, 'p0');
   view.hand!.potTotal = spot.potTotal ?? 0;
