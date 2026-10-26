@@ -7,10 +7,10 @@
       "items": [
         { "title": "About page", "detail": "A short page for friends who are new here: what the site is, what's free (everything) and where to start. It's linked from the menu at the top, the footer and the home page." },
         { "title": "Practice stays practice", "detail": "Games with a bot, or that nobody else played, now sit in their own folded Practice games list on your profile and never count toward your results." },
-        { "title": "Graphs up front", "detail": "Your profit graph is now at the top of your profile. The Leaderboard draws everyone's running profit over the period, showing the top three until you pick who to compare." },
-        { "title": "A heads-up on unusual games", "detail": "When a host picks an unusual pairing, like No Limit Seven Card Stud, table settings says so and offers a one-tap switch to the usual betting. It never stops you: press Keep it to carry on." },
+        { "title": "Graphs up front", "detail": "Your profit graph is now at the top of your profile. The Leaderboard now has a chart of running profit over the period for up to three people: the top three to start, or tick the ones you want to compare." },
+        { "title": "A heads-up on unusual games", "detail": "When you pick an unusual pairing, like No Limit Seven Card Stud, while starting a table or in table settings, a note says so and offers a one-tap switch to the usual betting. It never stops you: press Keep it to carry on." },
         { "title": "A smaller straddle switch", "detail": "On a computer, Straddle and Wait for the big blind are now small chips under the action bar instead of a whole row of words." },
-        { "title": "Small fixes", "detail": "The extra Play link is gone from the top menu (the logo already takes you home). Your profile shows whether anyone is at each of your tables right now, and quiet tables are put away to keep the server quick, then open again exactly as you left them." }
+        { "title": "Small fixes", "detail": "The extra Play link is gone from the top menu (the logo already takes you home). Your profile's cash games list shows whether anyone is at each table right now, and quiet tables are put away to keep the server quick, then open again exactly as you left them." }
       ]
     },
     {
