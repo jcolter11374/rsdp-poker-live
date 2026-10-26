@@ -2,8 +2,8 @@ name: Nightly backup
 
 # Every night, from outside Fly: downloads a copy of the whole database from the
 # live site, proves it restores (a real server boots on the copy and gives the
-# same leaderboard and public record as the site), locks it with a password and
-# keeps it on GitHub for 90 days. A failure opens an issue. See docs/DEPLOY.md,
+# same leaderboard and public record as the site), locks it with John's backup
+# key and keeps it on GitHub for 90 days. A failure opens an issue. See docs/DEPLOY.md,
 # "Backups". Read-only on the site; costs nothing (public repos run Actions free).
 on:
   schedule:
@@ -59,24 +59,22 @@ jobs:
           fi
       - name: Restore it and start a server on it
         run: scripts/backup/drill.sh "$RUNNER_TEMP/backup/backup.jsonl.gz" "$RUNNER_TEMP/backup/expected.json"
-      - name: Lock it with the password
-        env:
-          # BACKUP_KEY when it is set, otherwise the admin key. Without it the copy can't be opened, so keep it somewhere safe.
-          BACKUP_PASSWORD: ${{ secrets.BACKUP_KEY || secrets.ADMIN_KEY }}
+      - name: Lock it with the backup key
         run: |
+          sudo apt-get install -y -qq age > /dev/null
           cd "$RUNNER_TEMP/backup"
           name="rsdp-backup-$(date -u +%Y-%m-%dT%H%MZ)"
           echo "NAME=$name" >> "$GITHUB_ENV"
-          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:BACKUP_PASSWORD -in backup.jsonl.gz -out "$name.jsonl.gz.enc"
-          # The locked copy opens again to the same bytes.
-          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass env:BACKUP_PASSWORD -in "$name.jsonl.gz.enc" | cmp - backup.jsonl.gz
-          sha256sum "$name.jsonl.gz.enc"
+          # Locked to the public key in the repo: only John's private key opens it, and nothing here can.
+          age -R "$GITHUB_WORKSPACE/scripts/backup/recipient.txt" -o "$name.jsonl.gz.age" backup.jsonl.gz
+          head -c 21 "$name.jsonl.gz.age" | grep -q '^age-encryption.org/v1' || { echo "The locked copy doesn't look like age output"; exit 1; }
+          sha256sum "$name.jsonl.gz.age"
           # Only the locked copy leaves this machine.
           rm backup.jsonl.gz
       - uses: actions/upload-artifact@v6
         with:
           name: ${{ env.NAME }}
-          path: ${{ runner.temp }}/backup/${{ env.NAME }}.jsonl.gz.enc
+          path: ${{ runner.temp }}/backup/${{ env.NAME }}.jsonl.gz.age
           retention-days: 90
           compression-level: 0
           if-no-files-found: error

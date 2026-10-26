@@ -4,7 +4,7 @@
       "id": "2026-10-26-i",
       "date": "2026-10-26",
       "fixes": [
-        "Behind the scenes: the site is now backed up every night to GitHub, locked with a password, and each copy is test-restored before it's kept. A check every few minutes tells John if the site goes down. Each nightly backup shows on /transparency."
+        "Behind the scenes: the site is now backed up every night to GitHub, locked with a key only John holds, and each copy is test-restored before it's kept. A check every few minutes tells John if the site goes down. Each nightly backup shows on /transparency."
       ]
     },
     {

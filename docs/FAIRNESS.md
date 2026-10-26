@@ -126,7 +126,7 @@ when they deal at a home game.
   and on [/transparency](/transparency). Looking is not recorded: the admin
   page can list tables and who is at them without leaving an entry. Every
   night GitHub downloads a backup of the whole database with the admin key,
-  locked with a password John holds. It includes any hand being played at that
+  locked with a key only John holds. It includes any hand being played at that
   moment, cards and all, so John could open it and look; each download goes in
   the public record, so you can see when one was taken. John can also open a shell on the
   server through Fly, the hosting company. That isn't recorded anywhere

@@ -1,0 +1,4 @@
+# The public half of the backup key (age, https://age-encryption.org). Nightly
+# backups are locked to it; only the private half, which John keeps outside
+# GitHub, opens them. Safe to publish: it can lock copies, not open them.
+age1uen4kpg2egwgsl2kagcdafrgj27p9uv7pndkd0y7npm893wsganqtpykdc
