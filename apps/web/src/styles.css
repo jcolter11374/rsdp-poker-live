@@ -86,17 +86,20 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .topbar .stakes { flex: 1; color: var(--muted); }
 .paused { color: var(--accent-2); }
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+/* Below about 1180px wide the side column would squeeze the table, so it moves under it. */
+@media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
 .felt-area { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 /* Desktop: the table fills the window height, so every seat, the board and the
    action bar are on one screen. The side column scrolls on its own. */
-.table-page:not(.portrait) { height: 100dvh; min-height: 600px; }
+.table-page:not(.portrait) { height: 100dvh; min-height: 500px; }
 .table-page:not(.portrait) .layout { grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .table-page:not(.portrait) .felt-area { min-height: 0; }
 .table-page:not(.portrait) .side { min-height: 0; overflow-y: auto; }
-.table-page:not(.portrait) .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 84px 100px 40px; }
+.table-page:not(.portrait) .felt-area > .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 84px 100px 40px; }
+/* Never taller than about 4:3, so a narrow window doesn't stand the table on its end. */
+@media (min-width: 1181px) { .table-page:not(.portrait) .felt-area > .felt { max-height: max(280px, calc((100vw - 376px - 2 * clamp(110px, 9vw, 175px)) * 0.75)); } }
 .table-page:not(.portrait) .felt-area > :not(.felt) { flex-shrink: 0; }
-@media (max-width: 900px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt { aspect-ratio: 16 / 10; flex: none; } }
+@media (max-width: 1180px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt-area > .felt { aspect-ratio: 16 / 10; flex: none; max-height: max(360px, 100dvh - 300px); } }
 .banner { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; text-align: center; }
 
 .felt {
@@ -637,8 +640,9 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .board.multi .playing-card { --cw: 34px; }
 
 /* Desktop seats: wide dark nameplates with the cards tucked in on the left. */
-.table-page:not(.portrait) .felt { margin-left: clamp(110px, 9vw, 175px); margin-right: clamp(110px, 9vw, 175px); }
-.felt:not(.compact) .seat { scale: var(--seat-scale, 1); }
+.table-page:not(.portrait) .felt-area > .felt { margin-left: clamp(110px, 9vw, 175px); margin-right: clamp(110px, 9vw, 175px); }
+/* Scaled inside the transform, so the seat stays centred on its spot. */
+.felt:not(.compact) .seat { transform: translate(-50%, -50%) scale(var(--seat-scale, 1)); }
 .felt:not(.compact) {
   .nameplate { grid-template-columns: minmax(0, 1fr) auto; min-width: 200px; max-width: 290px; min-height: 60px; padding: 9px 12px 9px 16px; border-radius: 12px; background: #23282f; border-color: #343a43; }
   .nameplate > :not(.seat-avatar, .timer, .equity-tag, .note-badge, .seat-mood) { grid-column: 1; }
@@ -679,6 +683,10 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   .seat.long-hand.me .playing-card.small { --cw: 54px; }
   .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -22px; }
   .seat.long-hand.me .nameplate { min-width: 230px; }
+  /* Seat state wins over the plain desktop nameplate. */
+  .seat.acting .nameplate { border-color: #fff; }
+  .seat.winner .nameplate { border-color: var(--good); }
+  .seat.folded .nameplate { background: #1f2329; }
 }
 
 /* Your own face-down stud cards sit a little lower than your up cards, so you can tell them apart. */
@@ -691,7 +699,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .playing-card.rank-10 .rank { letter-spacing: -0.12em !important; font-size: calc(var(--cw) * 0.5) !important; }
 /* The notes button only shows on hover, or when there's a note. */
 .felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0; }
-.felt:not(.compact) .nameplate:hover .note-badge { opacity: 1; }
+.felt:not(.compact) .nameplate:is(:hover, :focus-within) .note-badge { opacity: 1; }
+@media (hover: none) { .felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0.55; } }
 /* Phones on their side: a short table, so smaller cards keep your hand clear of the board. */
 @media (max-height: 500px) {
   .felt.compact .seat.me .playing-card { --cw: 40px; }
