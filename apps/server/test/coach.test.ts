@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FAIR_VERSION, freshDeck, type Card } from '@rsdp/engine';
-import { engine, variants, type BettingKind, type HandState, type PlannedPost } from '@rsdp/engine/core';
+import { engine, variants, type BettingKind, type HandEvent, type HandState, type PlannedPost } from '@rsdp/engine/core';
 import { getVariant, registerAllVariants, VARIANT_LIST, type VariantSpec } from '@rsdp/engine/variants';
 import { BOT_LEVELS, BOT_NOTE_RULES, type BotNote } from '@rsdp/engine/wire';
 import { coachTip } from '../src/bots/coach';
@@ -363,6 +363,13 @@ function permuted(hand: HandState, seat: number, seed: number): HandState {
   // cards, the deck, the muck, the deal and draw events) leaves a hand that looks the same from their seat.
   const out = JSON.parse(JSON.stringify(hand, (_key, value) => (typeof value === 'string' && swap.has(value) ? swap.get(value) : value))) as HandState;
   if (out.input.fair) out.input.fair = { ...out.input.fair, serverSeed: 'f'.repeat(32), handSeed: 'e'.repeat(64) };
+  // Hidden things that aren't cards change too: the reshuffle's seed, where each card sat in the deck, and which cards
+  // the others threw (only how many is theirs to show).
+  out.input.reshuffleSeed = hand.input.reshuffleSeed + 7919;
+  for (const e of out.events as (HandEvent & { pos?: number[]; positions?: number[] })[]) {
+    if (e.pos) e.pos = e.pos.map((x) => x + 1);
+    if (e.t === 'draw' && e.seat !== seat && e.positions) e.positions = e.positions.map((x, i) => (x + i + 1) % 7);
+  }
   return out;
 }
 
@@ -450,6 +457,10 @@ describe('a tip only uses what that seat can see', () => {
         // The swap really did change the cards, and the seeds.
         expect(JSON.stringify(other)).not.toBe(JSON.stringify(hand));
         expect(seenBy(other, seat)).toEqual(seenBy(hand, seat));
+        // Nothing of where cards sat in the deck, nor which cards anyone else threw.
+        const seen = seenBy(hand, seat);
+        expect(JSON.stringify(seen)).not.toMatch(/"pos":/);
+        for (const e of seen.events) if (e.t === 'draw' && e.seat !== seat) expect(e.positions).toBeUndefined();
         expect(tipAt(other, seat)).toEqual(tipAt(hand, seat));
         // And from a bot's seat, the same move for the same reasons: a bot sees no more than a tip does.
         for (const level of BOT_LEVELS) {
