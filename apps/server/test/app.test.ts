@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import type { ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import type { ClientToServer, CoachTip, HandRecordView, ServerToClient } from '@rsdp/engine/wire';
 import { createApp } from '../src/app';
 import { socketClient } from './socket-client';
 
@@ -87,6 +87,36 @@ describe('socket server', () => {
     await ann.call('bot:remove', { playerId });
     await ann.until((x) => !x.seats.some((s) => s?.playerId === playerId && !s.leaving));
   });
+
+  it('answers a coach tip to the one person at a table of bots, and only so many in a row', async () => {
+    const host = client('tip-host-0123456789');
+    const settings = { seating: { requireApproval: false }, timing: { decisionSeconds: 0 } };
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings, practice: { name: 'John', bots: 2 } });
+    await host.call('table:join', { tableId });
+    const v = await host.until((x) => !!x.tips && x.legal !== null);
+    const input = { handNumber: v.hand!.handNumber, at: v.hand!.events.length };
+    const { tip } = await host.call<{ tip: CoachTip }>('hand:tip', input);
+    expect(tip).toMatchObject({ ...input, kind: 'bet' });
+    expect(tip.share).toBeGreaterThan(0);
+    // Nonsense is turned away like a turn that has gone.
+    await expect(host.call('hand:tip', { handNumber: 'x', at: 0 })).rejects.toThrow(/that turn is over/);
+    // The limit is per player, not per tab: a second tab of the same browser shares it.
+    const tab = client('tip-host-0123456789');
+    await tab.call('table:join', { tableId });
+    for (let i = 0; i < 8; i++) await (i % 2 ? tab : host).call('hand:tip', input);
+    await expect(tab.call('hand:tip', input)).rejects.toThrow(/between tips/);
+
+    // Once the hand is over, the hands tab and a download carry why the bots played; the full log doesn't ask for them.
+    await host.call('hand:act', { type: 'fold' });
+    await host.until((x) => x.history.length > 0);
+    const history = await host.call<{ hand: HandRecordView }>('table:history', { handNumber: input.handNumber });
+    expect(history.hand.botNotes!.length).toBeGreaterThan(0);
+    const exported = await host.call<{ hands: HandRecordView[] }>('table:export');
+    expect(exported.hands[0].botNotes!.length).toBeGreaterThan(0);
+    const full = await host.call<{ hands: HandRecordView[] }>('table:fullLog');
+    expect(full.hands[0].botNotes).toBeUndefined();
+    // The bots play on real time here: a hand that runs to showdown takes a few seconds of it.
+  }, 45_000);
 
   it('lists people watching the table by name, but not seated players', async () => {
     const host = client('watch-host-0123456789');
