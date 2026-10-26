@@ -44,8 +44,6 @@
 }
 .site-footer a { color: var(--muted); text-decoration: none; }
 .site-footer a:hover { color: var(--text); text-decoration: underline; }
-.site-footer .muted { margin: 0 0 0 auto; }
-@media (max-width: 760px) { .site-footer .muted { margin-left: 0; flex-basis: 100%; } }
 
 /* ---- the home page */
 .home-page main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
