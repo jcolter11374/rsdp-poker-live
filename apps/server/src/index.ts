@@ -5,6 +5,7 @@ import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from './app';
 import { AuditLog, dbAuditStore } from './audit';
 import { closeDb, createDb } from './db';
+import { restoreIfWaiting } from './db/restoreOnStart';
 import { dbNotes } from './notes';
 import { dbSetups } from './savedSetups';
 import { dbAvatars } from './avatars';
@@ -22,7 +23,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 registerAllVariants(variants);
 
 // Postgres with DATABASE_URL; otherwise an on-disk PGlite under apps/server/.data so local tables survive a restart.
-const db = await createDb({ pgliteDir: process.env.DATABASE_URL ? undefined : (process.env.PGLITE_DIR ?? path.resolve(here, '../.data/pglite')) });
+const pgliteDir = process.env.DATABASE_URL ? undefined : (process.env.PGLITE_DIR ?? path.resolve(here, '../.data/pglite'));
+// A backup left beside the folder (restore.jsonl.gz) is restored before anything opens it.
+if (pgliteDir) await restoreIfWaiting(pgliteDir);
+const db = await createDb({ pgliteDir });
 const webDist = path.resolve(here, '../../web/dist');
 // The public record carries on from its last entry; a server start is its own entry.
 const audit = await AuditLog.open(dbAuditStore(db));
