@@ -111,6 +111,7 @@ export function tableView(
     started: s.started,
     paused: s.paused,
     stopAfterHand: s.stopAfterHand,
+    recordsLocked: rt.recordsLocked(playerId),
     seats,
     hand: hand && !blocked ? handView(rt, hand, viewer, now) : null,
     legal: myTurn && hand!.phase === 'betting' ? engine.legalActions(hand!, mine!.seat) : null,
