@@ -46,6 +46,7 @@ function ReplayerView({
   tableName,
   seatCount,
   myId,
+  tableId,
   felt,
   fmt,
   onClose,
@@ -56,6 +57,8 @@ function ReplayerView({
   tableName: string;
   seatCount: number;
   myId: string | null;
+  /** The table these hands are from, so "Check this hand" can compare each with what this browser saw there. */
+  tableId?: string;
   /** The table's felt, so the replay looks like the table. */
   felt?: TableView['settings']['table']['felt'];
   fmt: Fmt;
@@ -130,7 +133,7 @@ function ReplayerView({
             </button>
           </span>
         </div>
-        {checking && <FairCheck hand={hand} myId={myId} />}
+        {checking && <FairCheck hand={hand} myId={myId} tableId={tableId} />}
         <div className="replayer-table">
           <Table key={hand.handNumber} view={view} skew={0} fmt={fmt} compact={compact} />
         </div>

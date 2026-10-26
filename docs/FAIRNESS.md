@@ -24,8 +24,9 @@ first, details after.
   own (below).
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
-  although it was sent in good time, or a seed your browser never sent is
-  listed under your name, the table shows a warning straight away. Your browser
+  although it was sent in good time, a seed your browser never sent is
+  listed under your name, or the commitment for the next hand was swapped for
+  another without being dealt, the table shows a warning straight away. Your browser
   also writes down what it saw during the hand: the button, who was dealt in,
   the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
@@ -68,11 +69,31 @@ when they deal at a home game.
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
   still pass.
 - **Throw away a deck it doesn't like.** The server knows the deck the moment
-  the last seed is in. Even the published code can't stop a changed server
-  from dropping that commitment, publishing a new one, collecting fresh seeds
-  and trying again. Browsers don't warn about a commitment that was replaced
-  without being dealt. Each try costs at least 2.5 seconds, so the sign is a
-  hand that is slow to be dealt for no reason.
+  the last seed is in. It could drop that commitment, publish a new one,
+  collect fresh seeds and try again. Since 26 October 2026 your browser watches
+  for this while it shows you the table live (seated, or watching with no
+  delay): it remembers each commitment offered for the next hand and checks the
+  hands actually dealt against them. If a commitment is skipped, a hand comes
+  from a commitment never offered or is shown without one, or a hand number
+  reappears with a different commitment while you stay connected, that hand
+  and every later one you see there are marked. Seated players get the warning live; anyone who watched
+  gets it in "Check this hand". "Check this hand", opened from the table's hand
+  list, also checks that the hand's record carries the commitment the hand was
+  shown under at the table, and the first commitment a hand number was shown
+  under is never replaced, so a server can't show you one commitment and
+  record another. What it doesn't cover: a server restart honestly starts a
+  fresh commitment and drops every connection, so the watch starts over
+  whenever your connection drops and comes back. A server that drops the
+  connection on purpose just as a hand is dealt can deal that hand from any
+  deck it likes, without the players' seeds; you'd notice a brief
+  "reconnecting", and "Check this hand" would list no seeds for it. A server
+  could also leave a hand you watched out of the hand list, or file it under
+  another number, so there's nothing to compare. The watch also starts over when you leave or reload the
+  page, or when a view that hid the hands (a delayed spectator, or watching
+  turned off) turns live, so a server could get a retry by showing you that
+  way for a moment. It is blind if nobody at the table is watching, or if
+  browser storage is blocked. It also relies on the browser code being the
+  published code (above).
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
   hand histories live in a database he controls, and he could edit them. A
   hand whose proof you downloaded can't be changed without the proof no longer
@@ -199,6 +220,15 @@ Limits, stated plainly:
   looks (say they left right after the hand, or play with browser storage
   blocked), or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
+- A server could also replace a published commitment without dealing from
+  it, to try another deck. A browser showing the table live marks the hands
+  dealt after that, unless its watch started over in between: after a dropped
+  connection (a restart honestly starts a fresh commitment), a reload, or a
+  moment in a view that hid the hands. "Check this hand" also flags a hand
+  recorded under a different commitment from the one shown at the table; an
+  honest server only does that if it crashed before saving a deal and dealt
+  that hand number again. A connection dropped just as a hand is dealt lets a
+  server deal that hand without the players' seeds; it then lists none.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a
@@ -219,7 +249,7 @@ Limits, stated plainly:
 | All-in equity | Computed in the browser from cards already visible; its seeded sampling only affects the displayed percentages. | OK |
 | `Math.random` | Only in the sound effects. | OK |
 | What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. | OK |
-| After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers; a restart keeps the same commitment. | OK |
+| After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers. A restart throws away the unused next-hand secret and commits to a fresh one, so a deal lost in a crash is never dealt again. | OK |
 | Host setting "Spectators see every hole card" | With no delay, anyone with the table link sees all hole cards live and could relay them. The host is warned and seated players see a banner. | Use it with a spectator delay. |
 | Practice bots | They decide from their own cards and cards dealt face up only (`situation()` in apps/server/src/bots/strategy.ts), never other hole cards or the deck. Their own random choices don't touch the deck. | OK |
 | Separate review of this scheme (a second AI code reviewer we ran ourselves, not an outside auditor) | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. A second review then found that a server could still drop or invent seeds, and that the checker compared the server's revealed record with nothing players saw live: both closed with the browser's own records above. |

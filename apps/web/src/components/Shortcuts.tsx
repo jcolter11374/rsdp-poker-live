@@ -5,6 +5,7 @@ const KEYS: [string, string][] = [
   ['K', 'Check'],
   ['C', 'Call'],
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
+  ['A', 'Call any (before your turn)'],
   ['B', 'Show amounts in chips or big blinds'],
   ['Enter', 'Type in the chat (Esc to leave it)'],
   ['?', 'Show this list'],
@@ -24,6 +25,10 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </dl>
+      <p className="hint">
+        Before your turn, F, K, C and A tick a pre-move instead (Check / Fold, Check, Call, Call any), which plays the moment
+        your turn comes. Press the same key again to untick it.
+      </p>
       <p className="hint">They work whenever you're not typing in a box. In the hand replayer, the arrow keys step and Space plays.</p>
       <div className="row">
         <button className="primary" onClick={onClose}>

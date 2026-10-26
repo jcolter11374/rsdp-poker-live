@@ -453,7 +453,7 @@ function autoAction(legal: LegalActions): Action {
 
 export function timeout(state: HandState, seat: SeatIndex) {
   if (state.phase === 'drawing' && state.toAct === seat) {
-    draw(state, seat, []);
+    draw(state, seat, [], { auto: true });
     return;
   }
   const legal = legalActions(state, seat);
@@ -479,7 +479,7 @@ export function foldOutOfTurn(state: HandState, seat: SeatIndex) {
   if (state.phase === 'drawing' && state.toAct === seat) {
     state.toAct = nextDrawer(state, seat);
     if (state.toAct === null) beginBetting(state, false);
-    else if (seatAt(state, state.toAct)!.away) draw(state, state.toAct, []);
+    else if (seatAt(state, state.toAct)!.away) draw(state, state.toAct, [], { auto: true });
   }
   if (state.phase === 'rit-vote') resolveVotes(state);
 }
@@ -616,7 +616,7 @@ function beginDrawing(state: HandState) {
   for (let guard = 0; guard < 20 && state.phase === 'drawing' && state.toAct !== null; guard++) {
     const s = seatAt(state, state.toAct)!;
     if (!s.away) return;
-    draw(state, s.seat, []);
+    draw(state, s.seat, [], { auto: true });
   }
 }
 
@@ -636,7 +636,7 @@ function lastStreetEventSeq(state: HandState) {
   return -1;
 }
 
-export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
+export function draw(state: HandState, seat: SeatIndex, discard: number[], opts: { auto?: boolean } = {}) {
   if (state.phase !== 'drawing') throw new ActionError('no draw right now');
   if (state.toAct !== seat) throw new ActionError('not your turn to draw');
   const s = seatAt(state, seat)!;
@@ -657,6 +657,7 @@ export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
     positions: unique,
     ...(replaced.pos ? { pos: replaced.pos } : {}),
     ...(replaced.reshuffled ? { reshuffled: true as const } : {}),
+    ...(opts.auto ? { auto: true as const } : {}),
   });
   state.toAct = nextDrawer(state, seat);
   if (state.toAct === null) {
@@ -664,7 +665,7 @@ export function draw(state: HandState, seat: SeatIndex, discard: number[]) {
     return;
   }
   const nextSeat = seatAt(state, state.toAct)!;
-  if (nextSeat.away) draw(state, nextSeat.seat, []);
+  if (nextSeat.away) draw(state, nextSeat.seat, [], { auto: true });
 }
 
 // ---------------------------------------------------------------- finishing

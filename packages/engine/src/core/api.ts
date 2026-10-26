@@ -45,8 +45,8 @@ export interface EngineApi {
   legalActions(state: HandState, seat: SeatIndex): LegalActions | null;
   /** Throws ActionError for anything illegal. `auto` marks actions taken for away or timed-out players. */
   act(state: HandState, seat: SeatIndex, action: Action, opts?: { auto?: boolean }): void;
-  /** Draw games: discard the cards at these indexes and draw replacements. */
-  draw(state: HandState, seat: SeatIndex, discard: number[]): void;
+  /** Draw games: discard the cards at these indexes and draw replacements. `auto` marks a stand-pat made for an away or timed-out player. */
+  draw(state: HandState, seat: SeatIndex, discard: number[], opts?: { auto?: boolean }): void;
   /** Run it twice vote while phase is 'rit-vote'. Any "no" runs it once. */
   voteRunItTwice(state: HandState, seat: SeatIndex, yes: boolean): void;
   /** After the hand (or at showdown with show/muck): reveal some or all hole cards. */
