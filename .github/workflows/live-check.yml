@@ -1,28 +1,30 @@
 name: Live check
 
-# Read-only look at the live site before a release: is anyone playing right now?
-# Never create tables, tournaments or players on the live site.
+# Read-only checks against the live site, run from a side branch after a release.
+# Never create tables, tournaments or players on the live site: the browser smoke
+# test (e2e/smoke.mjs) is for CI and local servers only.
 on:
   push:
-    branches: [claude/project-thread-9a25ti]
+    branches: [claude/project-thread-5fh1pm]
 
 permissions:
   contents: read
 
 jobs:
   check:
-    name: Is anyone playing (read only)
+    name: Live check (read only)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - name: Two snapshots ten minutes apart
+      - name: Pages and API answer
         run: |
           site=https://rsdp-poker-live.fly.dev
-          snap() {
-            health=$(curl -sf "$site/api/health")
-            hands=$(curl -sf "$site/api/leaderboard?period=all" | python3 -c 'import json,sys; print(sum(r.get("hands",0) for r in json.load(sys.stdin)["rows"]))')
-            echo "$(date -u +%H:%M:%S) health=$health leaderboard_hands=$hands"
-          }
-          snap
-          sleep 600
-          snap
+          curl -sf "$site/api/health"; echo
+          for path in / /rules/badugi /tn/new; do
+            curl -sf "$site$path" | grep -q '<div id="root">' || { echo "$path did not serve the app"; exit 1; }
+          done
+          # The new tables answer, and the operator endpoint is closed to the internet.
+          for path in api/avatars/nobody api/shared/nothing api/admin/tournaments; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
+            echo "$path $code"; [ "$code" = 404 ] || exit 1
+          done
