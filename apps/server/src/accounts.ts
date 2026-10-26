@@ -48,6 +48,8 @@ export interface AccountHooks {
   deleted(playerIds: string[]): void;
   /** The account's sign-ins ended (new password): drop these players' connections, except the browser with `keepGuestToken`. */
   signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
+  /** How many people have this table open right now (0 when nobody is at it). */
+  peopleAt?(tableId: string): number;
 }
 
 const HTTP_STATUS: Partial<Record<IdentityError['code'], number>> = {
@@ -315,7 +317,7 @@ export function accountRoutes(
         playerId: who.player.id,
         displayName: who.player.displayName,
         account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length, ...(await signInMethods(db, who.account.id)) },
-        tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
+        tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString(), playingNow: hooks.peopleAt?.(t.tableId) ?? 0 })),
         hiddenTables: hidden.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
         tournaments: tournaments.flatMap((row) => {
           const s = row.state;

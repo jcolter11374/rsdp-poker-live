@@ -28,6 +28,7 @@
 .account-net { grid-area: net; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted); text-align: right; }
 .account-net.up { color: var(--good); }
 .account-net.down { color: var(--bad); }
+.account-live { color: var(--good); font-weight: 600; }
 
 /* Buttons that are links. */
 a.button { display: inline-block; text-decoration: none; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }

@@ -417,6 +417,14 @@ function TableRows(props: { rows: TableRow[]; action: string; title: string; bus
             <span className="muted">
               {shortDate(t.lastPlayedAt)} · {t.hands} {t.hands === 1 ? 'hand' : 'hands'}
               {' · '}
+              {t.playingNow ? (
+                <span className="account-live" title="People are at this table right now">
+                  {t.playingNow === 1 ? '1 person there now' : `${t.playingNow} people there now`}
+                </span>
+              ) : (
+                <span title="Nobody is at this table. Its link opens it again, with everything kept.">closed</span>
+              )}
+              {' · '}
               <button className="link" title={props.title} disabled={props.busy} onClick={() => props.onAction(t.tableId)}>
                 {props.action}
               </button>
