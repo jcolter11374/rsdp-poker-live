@@ -12,6 +12,7 @@
         { "title": "Your profit graph", "detail": "Your profile now draws your results game by game, so you can see how your nights add up." },
         { "title": "Search your hands", "detail": "Find hands you played by your cards (like AA or AKs), who you played with, the game, pot size or how it went, then replay or share them." },
         { "title": "Tidy up your records", "detail": "Hide a cash table from your profile (it stays for everyone else), and hosts can delete a test table nobody really played at." },
+        { "title": "A cleaner front page", "detail": "One menu across the top of every page, two big choices on the home page (start a cash game or host a tournament), tidier tournament lobby and setup screens, and simpler sign-in pages. Your profile now opens with your totals." },
         { "title": "Small fixes", "detail": "Tournament tables no longer show up in your list of cash games." }
       ]
     },
