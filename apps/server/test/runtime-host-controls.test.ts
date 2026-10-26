@@ -337,6 +337,50 @@ describe('spectators', () => {
     expect(faceUp(tableView(rt, 'e', clock.now()))).toBe(true);
   });
 
+  it("can't seat someone who asked before it was on without them agreeing", () => {
+    const { rt } = table((s) => {
+      s.seating.requireApproval = true;
+    });
+    rt.requestSeat('a', { seat: 0, name: 'A', stack: 200 });
+    rt.updateSettings('host', { spectators: { seeAllCards: true } });
+    const id = rt.state.requests[0].id;
+    expect(() => rt.approve('host', id)).toThrow(/ask again/);
+    rt.requestSeat('a', { seat: 0, name: 'A', stack: 200, consent: true });
+    rt.approve('host', rt.state.requests[0].id);
+    expect(rt.seatOf('a')).not.toBeNull();
+  });
+
+  it('announces a change queued in a hand once, however often the host saves', () => {
+    const { rt } = table((s) => {
+      s.spectators.seeAllCards = true;
+      s.spectators.delaySeconds = 300;
+    });
+    fill(rt, 3);
+    rt.start('host');
+    rt.updateSettings('host', { spectators: { delaySeconds: 30 } });
+    const chats = rt.state.chat.length;
+    rt.updateSettings('host', { table: { name: 'Renamed' } });
+    expect(rt.state.chat.length).toBe(chats);
+    expect(rt.state.log.at(-1)!.text).toBe('HOST changed the table settings: table.');
+    // Taking the queued change back is announced too.
+    rt.updateSettings('host', { spectators: { delaySeconds: 300 } });
+    expect(rt.state.log.at(-1)!.text).toMatch(/5 minutes behind the table from the next hand \(it was 30 seconds behind\)/);
+  });
+
+  it('drops a turn-on queued by an older snapshot, and applies a queued turn-off now', () => {
+    const on = table();
+    on.rt.state.pendingSettings = { spectators: { seeAllCards: true }, stakes: { bigBlind: 4 } };
+    const a = new TableRuntime(structuredClone(on.rt.state));
+    expect(a.state.pendingSettings).toEqual({ stakes: { bigBlind: 4 } });
+    const off = table((s) => {
+      s.spectators.seeAllCards = true;
+    });
+    off.rt.state.pendingSettings = { spectators: { seeAllCards: false } };
+    const b = new TableRuntime(structuredClone(off.rt.state));
+    expect(b.state.pendingSettings).toBeNull();
+    expect(b.settings.spectators.seeAllCards).toBe(false);
+  });
+
   it('can be turned off in the middle of a hand, at once', () => {
     const { rt, clock } = table((s) => {
       s.spectators.seeAllCards = true;

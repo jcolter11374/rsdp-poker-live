@@ -134,6 +134,15 @@ export class TableRuntime {
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
+    // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
+    // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.
+    const queued = state.pendingSettings?.spectators;
+    if (queued && 'seeAllCards' in queued) {
+      if (queued.seeAllCards === false) state.settings = { ...state.settings, spectators: { ...state.settings.spectators, seeAllCards: false } };
+      delete queued.seeAllCards;
+      if (!Object.keys(queued).length) delete state.pendingSettings!.spectators;
+      if (!Object.keys(state.pendingSettings!).length) state.pendingSettings = null;
+    }
   }
 
   static create(args: { id?: string; hostId: PlayerId; hostName?: string; settings: TableSettings }, deps: RuntimeDeps = {}) {
@@ -168,7 +177,8 @@ export class TableRuntime {
       log: [],
       history: [],
       realGame: false,
-      seeAll: spectatorsSeeCards(settings) ? { since: 0, at: clock.now() } : null,
+      // On from the start: everyone who sits agrees first, so there's nobody to warn (at 0).
+      seeAll: spectatorsSeeCards(settings) ? { since: 0, at: 0 } : null,
     };
     return new TableRuntime(state, deps);
   }
@@ -292,7 +302,7 @@ export class TableRuntime {
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
     this.leaveQueue(playerId);
-    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
+    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now(), consent: !!input.consent };
     if (!this.settings.seating.requireApproval || this.can(playerId, 'approve')) {
       this.seatPlayer(request);
     } else {
@@ -314,6 +324,10 @@ export class TableRuntime {
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
+      // Asked before spectators could see every card: they haven't agreed to it, so they must ask again.
+      if (spectatorsSeeCards(this.settings) && !r.consent && !this.botInfo(r.playerId)) {
+        throw new ActionError(`${r.name} asked to sit before spectators could see every card; they need to ask again and agree to it`);
+      }
       let target = seat ?? r.seat!;
       if (seat !== undefined) {
         if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -932,7 +946,9 @@ export class TableRuntime {
     if (!spectatorsSeeCards(s.settings) && spectatorsSeeCards(target) && this.handLive()) {
       throw new ActionError('spectators can only be shown every hole card between hands; try again when this hand ends');
     }
-    for (const n of settingsNotices(s.settings, target, this.nameOf(by), this.handLive())) {
+    // Against what was already on its way, so a change queued earlier in the hand isn't announced again.
+    const before = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings : s.settings;
+    for (const n of settingsNotices(before, target, this.nameOf(by), this.handLive())) {
       this.log(n.text);
       if (n.loud) this.dealerSays(n.text);
     }

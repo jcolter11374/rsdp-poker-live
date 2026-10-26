@@ -31,6 +31,14 @@ describe('settingsNotices', () => {
     ]);
   });
 
+  it('says what turning watching off or setting cards while it is off mean', () => {
+    const on = cash((s) => (s.spectators.seeAllCards = true));
+    const off = cash((s) => ((s.spectators.seeAllCards = true), (s.spectators.allowed = false)));
+    expect(settingsNotices(on, off, 'Ann', false)).toEqual([{ text: 'Ann turned watching off, so spectators no longer see hole cards or anything of the hand.', loud: true }]);
+    const closed = cash((s) => (s.spectators.allowed = false));
+    expect(settingsNotices(closed, off, 'Ann', false)).toEqual([{ text: 'Ann set spectators to see every hole card if watching is turned back on.', loud: false }]);
+  });
+
   it('is loud about a shorter delay only while spectators see the cards', () => {
     const seeing = (d: number) => cash((s) => ((s.spectators.seeAllCards = true), (s.spectators.delaySeconds = d)));
     expect(settingsNotices(seeing(120), seeing(0), 'Ann', false)[0].loud).toBe(true);

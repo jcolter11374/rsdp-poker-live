@@ -70,8 +70,22 @@ export function settingsNotices(before: TableSettings, after: TableSettings, who
       loud: true,
     });
   } else if (sawAll && !seesAll) {
-    out.push({ text: `${who} turned off spectators seeing hole cards. Spectators see only what players show.`, loud: true });
-  } else if (changed('spectators.allowed')) {
+    out.push({
+      text: after.spectators.allowed
+        ? `${who} turned off spectators seeing hole cards. Spectators see only what players show.`
+        : `${who} turned watching off, so spectators no longer see hole cards or anything of the hand.`,
+      loud: true,
+    });
+  } else if (changed('spectators.seeAllCards') && !after.spectators.allowed) {
+    // Watching is off, so nobody sees anything yet; say what turning it back on would mean.
+    out.push({
+      text: after.spectators.seeAllCards
+        ? `${who} set spectators to see every hole card if watching is turned back on.`
+        : `${who} set spectators not to see hole cards if watching is turned back on.`,
+      loud: false,
+    });
+  }
+  if (changed('spectators.allowed') && sawAll === seesAll) {
     out.push({
       text: after.spectators.allowed ? `${who} turned watching on: anyone with the link can watch, without hole cards.` : `${who} turned watching off: only seated players see the game.`,
       loud: false,

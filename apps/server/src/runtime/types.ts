@@ -63,6 +63,8 @@ export interface SeatRequest {
   /** Buy-in or rebuy amount. */
   amount: number;
   at: number;
+  /** The player agreed to spectators seeing their cards (seat requests). */
+  consent?: boolean;
 }
 
 /** Someone queued for a seat at a full table. */

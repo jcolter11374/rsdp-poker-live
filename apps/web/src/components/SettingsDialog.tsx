@@ -353,7 +353,13 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             <span className="hint">Off: only seated players and the host can chat.</span>
             {toggle('Hide swear words in chat', draft.chat.profanityFilter, (profanityFilter) => set('chat', { profanityFilter }))}
             <h4>Watching</h4>
-            {toggle('Let people watch', draft.spectators.allowed, (allowed) => set('spectators', { allowed }))}
+            {toggle(
+              'Let people watch',
+              draft.spectators.allowed,
+              (allowed) => set('spectators', { allowed }),
+              // Watching again would show every card of the hand in progress.
+              handLive && !view.settings.spectators.allowed && view.settings.spectators.seeAllCards && !draft.spectators.allowed,
+            )}
             <span className="hint">Off: people who aren't seated see the seats but not the hand.</span>
             {toggle(
               'Spectators see every hole card',
