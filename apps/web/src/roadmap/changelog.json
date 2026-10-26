@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-m",
+      "date": "2026-10-26",
+      "fixes": [
+        "The \"Seconds to act\" box is gone from the home page. New cash tables start with a 30 second turn clock, and the host can change it (or turn it off with 0) in Table settings under Clock."
+      ]
+    },
+    {
       "id": "2026-10-26-k",
       "date": "2026-10-26",
       "fixes": [
