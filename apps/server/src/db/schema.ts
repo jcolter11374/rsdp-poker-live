@@ -424,6 +424,26 @@ export const hiddenTables = pgTable(
   (t) => [primaryKey({ columns: [t.playerId, t.tableId] }), index('hidden_tables_table_idx').on(t.tableId)],
 );
 
+// ---------------------------------------------------------------- saved setups
+
+export const SETUP_KINDS = ['table', 'tournament'] as const;
+export type SetupKind = (typeof SETUP_KINDS)[number];
+
+/** Setups a signed-in player saved under a name: cash table presets and tournament structures. Guests keep theirs in the browser. */
+export const savedSetups = pgTable(
+  'saved_setups',
+  {
+    playerId: text('player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    name: text('name').notNull(),
+    json: text('json').notNull(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.playerId, t.kind, t.name] }), check('saved_setups_kind_check', sql`${t.kind} in (${oneOf(SETUP_KINDS)})`)],
+);
+
 // ---------------------------------------------------------------- roadmap suggestions
 
 export const SUGGESTION_STATUSES = ['new', 'approved', 'planned', 'in_progress', 'shipped', 'declined'] as const;

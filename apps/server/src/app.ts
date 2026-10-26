@@ -14,8 +14,9 @@ import { realGameHand, TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
-import { GESTURES, type GestureKind } from '@rsdp/engine/wire';
+import { GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
+import { cleanKind, cleanSetup, cleanSetupName, freeName, memorySetups, renamed, type SetupStore } from './savedSetups';
 import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
@@ -105,6 +106,8 @@ export interface AppDeps {
   store?: TableStore;
   tournaments?: TournamentStore;
   notes?: NotesStore;
+  /** Setups signed-in players saved (table presets, tournament structures). */
+  setups?: SetupStore;
   avatars?: AvatarStore;
   lobby?: LobbyStore;
   shared?: SharedHandStore;
@@ -169,6 +172,7 @@ export function createApp(deps: AppDeps = {}) {
   const identity = deps.identity ?? memoryIdentity();
   const store = deps.store ?? memoryStore();
   const notes = deps.notes ?? memoryNotes();
+  const setups = deps.setups ?? memorySetups();
   const avatarStore = deps.avatars ?? memoryAvatars();
   const sharedStore = deps.shared ?? memorySharedHands();
   const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
@@ -988,6 +992,112 @@ export function createApp(deps: AppDeps = {}) {
           const all = await notes.list(me);
           for (const s of playerSockets.get(me) ?? []) s.emit('notes', all);
           return { note };
+        },
+        log,
+      ),
+    );
+    // Saved setups live on the account; a guest's stay in their browser, so nothing is kept for a browser that may be thrown away.
+    const signedIn = () => {
+      if (!socket.data.session.account) throw new ActionError('sign in to keep setups on your account');
+    };
+    const pushSetups = async (kind: SetupKind) => {
+      const all = await setups.list(me, kind);
+      for (const s of playerSockets.get(me) ?? []) s.emit('setups', { kind, setups: all });
+    };
+    on('setups:list', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          signedIn();
+          return { setups: await setups.list(me, cleanKind(input?.kind)) };
+        },
+        log,
+      ),
+    );
+    on('setups:save', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          signedIn();
+          const kind = cleanKind(input?.kind);
+          const setup = cleanSetup(kind, input, clock.now());
+          await setups.save(me, kind, setup);
+          await pushSetups(kind);
+          return { name: setup.name };
+        },
+        log,
+      ),
+    );
+    on('setups:rename', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          signedIn();
+          const kind = cleanKind(input?.kind);
+          const from = String(input?.from ?? '');
+          const to = cleanSetupName(input?.to);
+          const setup = (await setups.list(me, kind)).find((x) => x.name === from);
+          if (!setup) throw new ActionError('that setup is gone');
+          if (!(await setups.rename(me, kind, from, renamed(kind, setup, to)))) {
+            const gone = !(await setups.list(me, kind)).some((x) => x.name === from);
+            throw new ActionError(gone ? 'that setup is gone' : `you already have one called “${to}”`);
+          }
+          await pushSetups(kind);
+          return { name: to };
+        },
+        log,
+      ),
+    );
+    on('setups:delete', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          signedIn();
+          const kind = cleanKind(input?.kind);
+          await setups.remove(me, kind, String(input?.name ?? ''));
+          await pushSetups(kind);
+        },
+        log,
+      ),
+    );
+    on('setups:import', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          signedIn();
+          const kind = cleanKind(input?.kind);
+          const list = Array.isArray(input?.setups) ? input.setups.slice(0, SETUPS_PER_KIND) : [];
+          const existing = await setups.list(me, kind);
+          const taken = new Set(existing.map((x) => x.name));
+          let added = 0;
+          // The names (as sent) the account now holds, so the browser forgets only those.
+          const kept: string[] = [];
+          for (const raw of list) {
+            let setup: SavedSetup;
+            try {
+              setup = cleanSetup(kind, raw, clock.now());
+            } catch {
+              continue;
+            }
+            const sent = String((raw as SavedSetup).name);
+            // The same setup saved twice (two tabs bringing it over) is kept once.
+            if (existing.some((x) => x.name === setup.name && x.json === setup.json)) {
+              kept.push(sent);
+              continue;
+            }
+            setup = { ...setup, name: freeName(setup.name, taken) };
+            try {
+              await setups.save(me, kind, setup);
+            } catch {
+              // Full: the rest stay in the browser.
+              break;
+            }
+            taken.add(setup.name);
+            kept.push(sent);
+            added++;
+          }
+          if (added) await pushSetups(kind);
+          return { added, kept };
         },
         log,
       ),

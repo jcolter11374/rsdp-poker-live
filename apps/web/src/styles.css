@@ -823,3 +823,14 @@ dl.shortcuts dd { margin: 0; }
 .betting-nudge p { margin: 0 0 6px; }
 .betting-nudge-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .betting-nudge-actions button { padding: 4px 10px; font-size: 0.85rem; }
+
+/* A saved preset or structure: name, then its buttons */
+.setup-row { align-items: center; gap: 6px; }
+.setup-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-row input { flex: 1; min-width: 0; }
+.setup-row > button { flex: 0 0 auto; }
+/* On a narrow phone the name takes its own line above the buttons. */
+@media (max-width: 420px) {
+  .setup-row { flex-wrap: wrap; }
+  .setup-row .who { flex-basis: 100%; }
+}

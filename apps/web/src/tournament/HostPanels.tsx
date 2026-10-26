@@ -7,6 +7,8 @@ import { HOST_POWER_LABELS, HOST_POWERS, type HostPower } from '@rsdp/engine/rol
 import { tableAddress, type Command, type Entry, type PendingRequest, type TournamentState } from '@rsdp/tournament';
 import { chips } from './format';
 import { navigate } from './hooks';
+import { saveStructure, tournamentStructures } from './structures';
+import { cleanSetupName } from '../savedSetups';
 
 type Send = (c: Command) => Promise<boolean>;
 
@@ -213,14 +215,30 @@ export function CoHostPanel({ state, me, send }: { state: TournamentState; me: s
   );
 }
 
-/** Copy settings for anyone; archive for the host. */
+/** Copy or save the settings for anyone; archive for the host. */
 export function EventPanel({ state, me, send }: { state: TournamentState; me: string; send: Send }) {
   const isHost = me === state.hostId;
   const over = state.status === 'finished' || state.status === 'cancelled';
   const started = state.status === 'running' || state.status === 'paused';
+  const [saved, setSaved] = useState('');
   return (
     <div className="tn-actions">
       <button onClick={() => navigate(`/tn/new?from=${state.id}`)}>Duplicate settings</button>
+      <button
+        title="Keep these settings to load in one tap when you make a tournament"
+        onClick={() => {
+          const name = prompt('Save this structure as', state.settings.name);
+          if (name === null) return;
+          if (!tournamentStructures.ready()) return setSaved('Still loading your saved structures. Try again in a moment.');
+          if (tournamentStructures.list().some((s) => s.name === cleanSetupName(name)) && !confirm(`Replace your saved structure “${cleanSetupName(name)}”?`)) return;
+          saveStructure(name, state.settings).then(
+            (kept) => setSaved(`Saved as “${kept}”. Load it from New tournament.`),
+            (e: Error) => setSaved(e.message),
+          );
+        }}
+      >
+        Save structure
+      </button>
       {isHost && !state.archivedAt && !started && (
         <button
           onClick={() => {
@@ -232,6 +250,7 @@ export function EventPanel({ state, me, send }: { state: TournamentState; me: st
         </button>
       )}
       {state.archivedAt && <span className="muted">Archived</span>}
+      {saved && <span className="muted" role="status">{saved}</span>}
     </div>
   );
 }
