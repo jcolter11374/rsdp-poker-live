@@ -146,6 +146,10 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
   // Co-hosts act on players, not on the host or other co-hosts.
   const onHost = !view.isHost && !isMe && (seat.playerId === view.hostId || view.coHosts.some((c) => c.playerId === seat.playerId));
   const bot = !!seat.bot;
+  // Its owner manages a bot; so does staff, except that only the host manages a bot the host or a co-host added.
+  const myBot = seat.bot?.ownerId === view.me.playerId;
+  const staffBot = !!seat.bot && (seat.bot.ownerId === view.hostId || view.coHosts.some((c) => c.playerId === seat.bot!.ownerId));
+  const manageBot = bot && (myBot || (can('players') && (view.isHost || !staffBot)));
 
   return (
     <Modal title={seat.name} onClose={onClose}>
@@ -154,7 +158,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
           Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
           {seat.bot && ` · ${botOwnerLabel(seat.bot, 'practice bot')}`}
         </p>
-        {bot && !tournament && (can('players') || seat.bot?.ownerId === view.me.playerId) && <BotLevelControl view={view} seat={seat} />}
+        {manageBot && !tournament && <BotLevelControl view={view} seat={seat} />}
         {!tournament && can('chips') && !onHost && (
           <form
             className="row"
@@ -194,7 +198,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
             <button onClick={() => act(call('host:mute', { playerId: seat.playerId, value: !muted }))}>{muted ? 'Unmute chat' : 'Mute chat'}</button>
           )}
           {view.isHost && !isMe && !tournament && !bot && <button onClick={() => act(call('host:transfer', { playerId: seat.playerId }))}>Make host</button>}
-          {bot && (can('players') || seat.bot?.ownerId === view.me.playerId) && (
+          {manageBot && (
             <button className="danger" onClick={() => act(call('bot:remove', { playerId: seat.playerId }))}>
               Remove bot
             </button>

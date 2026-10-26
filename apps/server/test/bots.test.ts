@@ -248,6 +248,12 @@ describe('practice bots', () => {
     expect(rt.state.log.at(-1)?.text).toBe('Ann set Chip to Easy');
     rt.setBotLevel('host', plain, 'hard');
     expect(rt.state.bots![plain].level).toBe('hard');
+    // A co-host with player powers manages players' bots, but not the host's.
+    const hostBot = rt.addBot('host', { ownerName: 'Host' });
+    rt.setCoHost('host', 'b', ['players']);
+    rt.setBotLevel('b', hard, 'normal');
+    expect(rt.state.bots![hard].level).toBe('normal');
+    expect(() => rt.setBotLevel('b', hostBot, 'easy')).toThrow(/only the host/);
     // Bots saved before levels play as Normal.
     delete rt.state.bots![plain].level;
     expect(tableView(rt, 'a', 0).seats.find((s) => s?.playerId === plain)?.bot?.level).toBe('normal');
@@ -395,14 +401,45 @@ describe('bot strategy', () => {
     }
   });
 
+  it('Hard follows how many cards an opponent draws in 2-7 Triple Draw', () => {
+    // I (seat 1) stand pat with a jack-low three times; they stand pat each time, or draw three each time, then bet the end.
+    const toTheEnd = (theirDraw: number[]) => {
+      const hand = dealt('td27', ['Kc', 'Js', 'Qd', '8d', 'Th', '6c', '9s', '4h', 'Kh', '2s']);
+      for (let i = 0; i < 40 && hand.phase !== 'complete'; i++) {
+        const seat = hand.toAct!;
+        if (hand.phase === 'drawing') engine.draw(hand, seat, seat === 0 ? theirDraw : []);
+        else if (seat === 1) break;
+        else if (hand.street === hand.input.game.streets.length - 1) engine.act(hand, 0, { type: 'bet', to: 4 });
+        else engine.act(hand, 0, engine.legalActions(hand, 0)!.canCheck ? { type: 'check' } : { type: 'call' });
+        if (hand.street === hand.input.game.streets.length - 1 && hand.toAct === 1 && hand.currentBet > 0) break;
+        if (hand.toAct === 1 && hand.phase === 'betting') engine.act(hand, 1, { type: 'check' });
+      }
+      expect(hand.toAct).toBe(1);
+      expect(hand.currentBet).toBe(4);
+      return hand;
+    };
+    const tuning = { ...botTuning };
+    Object.assign(botTuning, { thinkMs: 1e9, minSims: 0, maxSims: 300 });
+    try {
+      const calls = (theirDraw: number[], level: 'normal' | 'hard') =>
+        Array.from({ length: 8 }, (_, i) => chooseMove(toTheEnd(theirDraw), 1, seededRand(i), { level })).filter((m) => m.kind === 'act' && m.action.type !== 'fold').length;
+      // Normal can't tell the two apart; Hard calls the drawer down and gives the pat hand credit.
+      expect(calls([], 'normal')).toBe(calls([0, 1, 2], 'normal'));
+      expect(calls([0, 1, 2], 'hard')).toBe(8);
+      expect(calls([], 'hard')).toBe(0);
+    } finally {
+      Object.assign(botTuning, tuning);
+    }
+  });
+
   it('learns how players play from the hands the table keeps', () => {
     const hand = dealt('nlhe', ['7c', 'As', '2d', 'Ah'], 2);
     engine.act(hand, 0, { type: 'call' });
     engine.act(hand, 1, { type: 'raise', to: 8 });
     engine.act(hand, 0, { type: 'fold' });
     expect(readPlayers([hand])).toEqual({
-      // Calling the big blind and folding to the raise were both facing a bet.
-      p0: { acts: 2, aggressive: 0, faced: 2, folds: 1 },
+      // Folding to the raise was facing a bet; calling the big blind alone wasn't.
+      p0: { acts: 2, aggressive: 0, faced: 1, folds: 1 },
       p1: { acts: 1, aggressive: 1, faced: 0, folds: 0 },
     });
   });

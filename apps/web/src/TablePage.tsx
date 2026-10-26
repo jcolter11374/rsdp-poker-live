@@ -291,6 +291,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
   const canAddBot = cash && (view.powers.includes('players') || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
   const addBot = (seat: number) => setDialog({ kind: 'add-bot', seat });
+  // A player's popup follows their seat as it changes (a bot's new level, a move).
+  const playerSeat = dialog?.kind === 'player' ? (view.seats.find((s) => s?.playerId === dialog.seat.playerId) ?? dialog.seat) : null;
   const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt, chatMutes);
   const close = () => setSheet(null);
 
@@ -650,20 +652,20 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
 
       {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'player' &&
+      {playerSeat &&
         (view.powers.length > 0 && cash ? (
-          <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)}>
-            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
+          <PlayerDialog view={view} seat={playerSeat} fmt={fmt} onClose={() => setDialog(null)}>
+            <PlayerExtras view={view} seat={playerSeat} onDone={() => setDialog(null)} />
           </PlayerDialog>
         ) : (
-          <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
-            {dialog.seat.bot && dialog.seat.bot.ownerId !== view.me.playerId && (
+          <Modal title={playerSeat.playerId === view.me.playerId ? 'You' : playerSeat.name} onClose={() => setDialog(null)}>
+            {playerSeat.bot && playerSeat.bot.ownerId !== view.me.playerId && (
               <p className="muted">
-                {botOwnerLabel(dialog.seat.bot, 'practice bot')}. {LEVEL_INFO[dialog.seat.bot.level ?? 'normal'].about}
+                {botOwnerLabel(playerSeat.bot, 'practice bot')}. {LEVEL_INFO[playerSeat.bot.level ?? 'normal'].about}
               </p>
             )}
-            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
-            {dialog.seat.bot?.ownerId === view.me.playerId && <MyBot view={view} seat={dialog.seat} onDone={() => setDialog(null)} />}
+            <PlayerExtras view={view} seat={playerSeat} onDone={() => setDialog(null)} />
+            {playerSeat.bot?.ownerId === view.me.playerId && <MyBot view={view} seat={playerSeat} onDone={() => setDialog(null)} />}
             <div className="row">
               <button onClick={() => setDialog(null)}>Close</button>
             </div>

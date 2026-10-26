@@ -1240,6 +1240,7 @@ export class TableRuntime {
     if (!bot) throw new ActionError('no such bot');
     if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
     if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError("only its owner or the host can change a bot's level");
+    if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
     if ((bot.level ?? 'normal') === level) return;
     bot.level = level;
     const name = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name ?? 'The bot';

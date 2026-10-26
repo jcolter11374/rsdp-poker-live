@@ -62,8 +62,8 @@ export function BotLevelControl({ view, seat }: { view: TableView; seat: SeatVie
   const [error, setError] = useState('');
   // Shown straight away, until the table says so too.
   const [picked, setPicked] = useState<BotLevel | null>(null);
-  // The popup keeps the seat it opened with; the level shown is the live one.
-  const live = view.seats[seat.seat]?.playerId === seat.playerId ? view.seats[seat.seat]! : seat;
+  // The level shown is the live one, wherever the bot sits now.
+  const live = view.seats.find((s) => s?.playerId === seat.playerId) ?? seat;
   const level = picked ?? live.bot?.level ?? 'normal';
   return (
     <div className="bot-level">

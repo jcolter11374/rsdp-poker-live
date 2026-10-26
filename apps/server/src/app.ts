@@ -14,7 +14,7 @@ import { realGameHand, TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
-import { GESTURES, type GestureKind } from '@rsdp/engine/wire';
+import { BOT_LEVELS, GESTURES, type GestureKind } from '@rsdp/engine/wire';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
 import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
@@ -672,10 +672,11 @@ export function createApp(deps: AppDeps = {}) {
     const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown; level?: unknown }) => {
       const name = cleanName(practice.name, NAME_MAX) || socket.data.session.displayName;
       if (!name) throw new ActionError('pick a name');
+      const level = practice.level === undefined || practice.level === null ? undefined : (String(practice.level) as BotLevel);
+      if (level && !BOT_LEVELS.includes(level)) throw new ActionError('no such level');
       if (!socket.data.session.displayName) await rename(name).catch(() => {});
       const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
       rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn() });
-      const level = practice.level === undefined || practice.level === null ? undefined : (String(practice.level) as BotLevel);
       for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name, level });
       // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
       practiceStarts.set(rt.state.id, me);
