@@ -104,10 +104,10 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
               Keep the screen on while I'm seated
             </label>
             <label className="toggle">
-              <input type="checkbox" checked={prefs.tableMotion} onChange={(e) => setPrefs({ tableMotion: e.target.checked })} />
+              <input type="checkbox" checked={prefs.tableMotion} onChange={(e) => setPrefs({ tableMotion: e.target.checked })} aria-describedby="look-motion-hint" />
               Table motion
             </label>
-            <p className="hint">
+            <p className="hint" id="look-motion-hint">
               {deviceStill
                 ? "Your device is set to reduce motion, so the table stays still either way."
                 : 'Thrown cards, counting stacks and sparkles. Turn it off if the table feels slow on your phone.'}

@@ -212,24 +212,31 @@ export function Table({
   // each hand says which run or board it won, so run 2's full house isn't shown as run 1's two pair.
   const results = new Map<number, { amount: number; handName?: string }>();
   if (done) {
-    const runs = hand!.boards.length > 1;
-    const boards = (hand!.boards[0]?.length ?? 0) > 1;
+    const twoRuns = hand!.boards.length > 1;
+    const twoBoards = (hand!.boards[0]?.length ?? 0) > 1;
+    const slots = hand!.boards.length * (hand!.boards[0]?.length ?? 1);
     const names = new Map<number, Map<string, string[]>>();
     for (const a of hand!.awards) {
       const prev = results.get(a.seat);
       results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount });
       if (!a.handName) continue;
-      const where = [runs && `Run ${a.run + 1}`, boards && `Board ${a.board + 1}`].filter(Boolean).join(', ');
+      const where = [twoRuns && `Run ${a.run + 1}`, twoBoards && `Board ${a.board + 1}`].filter(Boolean).join(', ');
       const byName = names.get(a.seat) ?? new Map<string, string[]>();
       names.set(a.seat, byName);
-      const places = byName.get(a.handName) ?? [];
-      if (where && !places.includes(where)) places.push(where);
-      byName.set(a.handName, places);
+      // A hi-lo scoop is named "Flush and 8-6 low": its halves group with high-only or low-only wins elsewhere.
+      for (const name of a.half === 'scoop' ? a.handName.split(' and ') : [a.handName]) {
+        const places = byName.get(name) ?? [];
+        if (where && !places.includes(where)) places.push(where);
+        byName.set(name, places);
+      }
     }
     for (const [seat, byName] of names) {
       const list = [...byName.entries()];
-      results.get(seat)!.handName =
-        list.length === 1 ? list[0][0] : list.map(([name, places]) => (places.length ? `${places.join(' & ')}: ${name}` : name)).join(' · ');
+      // Places are named unless every hand was won everywhere (or there's only one run and board).
+      const everywhere = list.every(([, places]) => places.length === 0 || places.length === slots);
+      results.get(seat)!.handName = everywhere
+        ? list.map(([name]) => name).join(' and ')
+        : list.map(([name, places]) => (places.length ? `${places.join(' & ')}: ${name}` : name)).join(' · ');
     }
   }
 

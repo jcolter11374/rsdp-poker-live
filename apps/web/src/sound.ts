@@ -73,8 +73,12 @@ function audio(): AudioContext | null {
 // Browsers only let a page make sound after a tap or key press, and iOS can
 // suspend audio after an app switch: wake it on every interaction.
 if (typeof window !== 'undefined') {
+  let warmed = false;
   const unlock = () => {
-    if (volume > 0 && audio()) warm(COMMON);
+    if (volume > 0 && audio() && !warmed && getPrefs().tableSounds) {
+      warmed = true;
+      warm(COMMON);
+    }
   };
   window.addEventListener('pointerdown', unlock, { passive: true });
   window.addEventListener('keydown', unlock);
