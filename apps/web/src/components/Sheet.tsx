@@ -3,7 +3,8 @@ import { useEffect, type ReactNode } from 'react';
 /** A panel that slides up from the bottom of a phone screen, over the table. */
 export function Sheet({ title, onClose, children, tall = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; tall?: boolean; className?: string }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // A dialog open over the sheet takes Escape first.
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal-backdrop') && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);

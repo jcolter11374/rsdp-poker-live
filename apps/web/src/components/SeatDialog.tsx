@@ -1,11 +1,25 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from '../socket';
 import { fromInput, toInput, type Fmt } from '../format';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const backdrop = useRef<HTMLDivElement>(null);
+  // Escape closes the topmost dialog only.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const all = document.querySelectorAll('.modal-backdrop');
+      if (all[all.length - 1] !== backdrop.current) return;
+      // Marks the key as used, so a sheet or another dialog underneath stays open.
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" ref={backdrop} onClick={onClose}>
       <div className="card-panel modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {children}
