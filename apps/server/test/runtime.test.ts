@@ -3,7 +3,7 @@ import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { HOST_HANDOFF_MS, RESUME_MIN_MS, TableRuntime } from '../src/runtime/table';
-import { tableView } from '../src/runtime/view';
+import { behind, delayedPart, tableView, type DelayedPart } from '../src/runtime/view';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -213,6 +213,10 @@ describe('clocks', () => {
       expect(turn.deadline! - clock.now()).toBe(20_000);
       expect(turn.deadline! - turn.startedAt).toBe(30_000);
     }
+    // A table saved before the pause time was kept shows the same.
+    delete rt.state.pausedLeft!.at;
+    clock.advance(5_000);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(20_000);
     rt.pause('host', false);
     const turn = tableView(rt, 'a', clock.now()).turn!;
     expect(turn.deadline! - clock.now()).toBe(20_000);
@@ -231,6 +235,7 @@ describe('clocks', () => {
     rt.pause('host', true);
     clock.advance(60_000);
     expect(hand(rt).toAct).toBe(seat);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(RESUME_MIN_MS);
     rt.pause('host', false);
     expect(rt.state.turn!.deadline! - clock.now()).toBe(RESUME_MIN_MS);
     clock.advance(RESUME_MIN_MS - 1);
@@ -271,11 +276,38 @@ describe('clocks', () => {
     rt.pause('host', true);
     clock.advance(120_000);
     expect(toActId(rt)).toBe(id);
+    expect(tableView(rt, 'a', clock.now()).turn!.deadline! - clock.now()).toBe(15_000);
     rt.pause('host', false);
     clock.advance(14_000);
     expect(toActId(rt)).toBe(id);
     clock.advance(1_000);
     expect(rt.state.hand!.seats.find((s) => s.playerId === id)!.folded).toBe(true);
+  });
+
+  it('delayed spectators see the clock stand still through a pause, and pick up after it', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 30;
+      s.timing.timeBankSeconds = 0;
+    });
+    seatPlayers(rt, 3);
+    rt.start('host');
+    const delay = 30_000;
+    const snap = () => ({ at: clock.now(), part: delayedPart(tableView(rt, '', clock.now())) });
+    const shown = (feed: { at: number; part: DelayedPart }, now: number) => {
+      const v = behind(tableView(rt, '', now), feed.part, delay);
+      return v.turn!.deadline! - (v.paused ? v.serverNow : now);
+    };
+    clock.advance(10_000);
+    rt.pause('host', true);
+    const paused = snap();
+    clock.advance(120_000);
+    // The pause snapshot, shown 30 s after it and again much later, still says 20 s.
+    expect(shown(paused, paused.at + delay)).toBe(20_000);
+    expect(shown(paused, clock.now())).toBe(20_000);
+    rt.pause('host', false);
+    const resumed = snap();
+    clock.advance(delay);
+    expect(shown(resumed, clock.now())).toBe(20_000);
   });
 
   it('a run it twice vote waits out a pause with its time left', () => {

@@ -891,8 +891,19 @@ export class TableRuntime {
    * every deadline so the clocks show the time left and stand still.
    */
   pausedFor(now = this.clock.now()): number {
-    const at = this.state.paused ? this.state.pausedLeft?.at : undefined;
-    return at == null ? 0 : Math.max(0, now - at);
+    const s = this.state;
+    const left = s.paused ? s.pausedLeft : null;
+    if (!left) return 0;
+    // Snapshots from before the pause time was kept: the turn clock still tells it.
+    const at = left.at ?? (s.turn?.deadline != null && left.turn !== null ? s.turn.deadline - left.turn : null);
+    return at === null ? 0 : Math.max(0, now - at);
+  }
+
+  /** The run-it-twice vote's deadline as shown: while paused, what resuming now would give. */
+  ritDeadlineShown(now = this.clock.now()): number | null {
+    const s = this.state;
+    if (s.paused && s.pausedLeft?.rit != null) return now + s.pausedLeft.rit;
+    return s.ritDeadline;
   }
 
   /** Host edit: some fields apply now, the rest at the next hand. */
@@ -2195,19 +2206,24 @@ export class TableRuntime {
    * cut short for a player who is offline (a grace period from when they
    * dropped) or sitting out (at once).
    */
-  turnDeadline(): number | null {
+  turnDeadline(now = this.clock.now()): number | null {
     const s = this.state;
     const turn = s.turn;
     if (!turn) return null;
+    // While paused: when it would run out if play resumed now (see setPaused).
+    const shift = this.pausedFor(now);
+    const paused = s.paused && s.pausedLeft;
+    const deadline = paused && paused.turn !== null && turn.deadline !== null ? now + paused.turn : turn.deadline === null ? null : turn.deadline + shift;
+    const startedAt = turn.startedAt + shift;
     const seat = s.seats[turn.seat];
-    if (!seat) return turn.deadline;
-    if (seat.sittingOut) return turn.startedAt;
+    if (!seat) return deadline;
+    if (seat.sittingOut) return startedAt;
     if (!this.isOnline(seat.playerId)) {
-      const since = this.offlineSince.get(seat.playerId) ?? turn.startedAt;
-      const graceEnd = Math.max(since, turn.startedAt) + s.settings.seating.offlineGraceSeconds * 1000;
-      return turn.deadline === null ? graceEnd : Math.min(turn.deadline, graceEnd);
+      const since = paused ? now : (this.offlineSince.get(seat.playerId) ?? turn.startedAt);
+      const graceEnd = Math.max(since, startedAt) + s.settings.seating.offlineGraceSeconds * 1000;
+      return deadline === null ? graceEnd : Math.min(deadline, graceEnd);
     }
-    return turn.deadline;
+    return deadline;
   }
 
   private timeOut(seatNo: number) {
