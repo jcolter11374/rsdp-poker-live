@@ -147,6 +147,12 @@ export function contributeSeed(view: TableView) {
   const commit = view.fair?.nextCommit;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
   if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
+  // Already sent from another tab of this browser, or before a reload: the server keeps the last seed it gets, so a
+  // second, different one would replace the one on record here.
+  if (sentFor(commit)) {
+    sent = commit;
+    return;
+  }
   sending = commit;
   const seed = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   // Noted before the answer: a server that holds back its answer and then drops the seed still gets caught.

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./socket', () => ({ socket: {} }));
+const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
+vi.mock('./socket', () => ({ socket: mockSocket }));
 const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
@@ -362,5 +363,30 @@ describe('when this browser saw the next commitment appear', () => {
   it('no longer notes the commitment just for being seated (the old false alarm)', () => {
     contributeSeed({ id: 't1', fair: { nextCommit: 'C', handCommit: null }, me: { seat: 2, playerId: 'me' }, hand: null } as unknown as V);
     expect(store.get('rsdp.fairNextSeen')).toBeUndefined();
+  });
+});
+
+describe('sending my seed', () => {
+  type V = Parameters<typeof contributeSeed>[0];
+  const seated = (next: string) => ({ id: 't1', fair: { nextCommit: next, handCommit: null }, me: { seat: 2, playerId: 'me' }, hand: null }) as unknown as V;
+  const emitted: { commit: string; seed: string }[] = [];
+  beforeEach(() => {
+    emitted.length = 0;
+    mockSocket.connected = true;
+    mockSocket.emit = (_event: unknown, payload: unknown) => void emitted.push(payload as { commit: string; seed: string });
+  });
+  afterEach(() => {
+    mockSocket.connected = false;
+  });
+
+  it('sends one seed per commitment, and reuses another tab\'s rather than replacing it', () => {
+    contributeSeed(seated('T1'));
+    contributeSeed(seated('T1'));
+    expect(emitted.map((e) => e.commit)).toEqual(['T1']);
+    // Another tab of this browser (same storage) already sent one for T2: this tab sends nothing, so the server keeps it.
+    store.set('rsdp.fairSent', JSON.stringify({ T2: JSON.stringify({ seed: 'aa', at: 0, table: 't1' }) }));
+    contributeSeed(seated('T2'));
+    expect(emitted.map((e) => e.commit)).toEqual(['T1']);
+    expect(seedProblem('T2', [{ playerId: 'me', seed: 'aa' }], 'me', true, 10_000)).toBeNull();
   });
 });
