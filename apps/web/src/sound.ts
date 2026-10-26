@@ -154,8 +154,10 @@ const quietWhenHidden =
 
 export const sounds = {
   deal: quietWhenHidden(() => play('deal')),
-  /** Board cards turning over: one snap per card, timed to the card turning face up on screen (feel.css feel-turn). */
-  /** `count` is the most cards any one board row got; rows that land together turn together (Table.tsx), so they share snaps. */
+  /**
+   * Board cards turning over, timed to the turn on screen (feel.css feel-turn). `count` is the most cards any one
+   * board row got; rows that land together turn together (Table.tsx), so they share snaps.
+   */
   flip: (count: number) =>
     quietWhenHidden(() => {
       // Three or fewer new cards turn one after another; a whole board turns at once, with one snap.

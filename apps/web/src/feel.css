@@ -288,15 +288,15 @@
   .felt.compact .felt-emblem { height: auto; width: 78%; }
 
   /* Numbers that matter in a tall, tight display face. */
-  .nameplate .stack, .pot:not(.total), .bet, .win-float, .board-label, .next-hand {
+  .nameplate .stack, .pot:not(.total, .result), .bet, .win-float, .board-label, .next-hand {
     font-family: 'Barlow Condensed', 'Inter Variable', sans-serif;
     font-weight: 700;
     letter-spacing: 0.01em;
   }
   .felt:not(.compact) .nameplate .stack { font-size: 1.45rem; line-height: 1.05; }
   .felt.compact .nameplate .stack { font-size: 1.02rem; }
-  .pot:not(.total) { font-size: 1.25rem; }
-  .felt.compact .pot { font-size: 1.02rem; }
+  .pot:not(.total, .result) { font-size: 1.25rem; }
+  .felt.compact .pot:not(.total, .result) { font-size: 1.02rem; }
   .bet { font-size: 1.05rem; }
   .felt.compact .bet { font-size: 0.85rem; }
   .pot.result { font-family: 'Barlow Condensed', 'Inter Variable', sans-serif; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
