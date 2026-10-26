@@ -734,6 +734,8 @@ export const coachTuning = {
   draw: { screen: 40, final: 240 },
   /** The same, sizing up the hand for a bet with draws to come. */
   drawBet: { screen: 24, final: 96 },
+  /** The comparison against hands given no credit for their betting only runs when the main one took less than this. */
+  vsRandomUnderMs: 60,
 };
 
 /** Deals for each way to draw (screen), and for the best few (final). */

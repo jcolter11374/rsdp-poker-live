@@ -1,7 +1,7 @@
 import type { BettingKind, HandFairness, HandState, PlayerId, Stakes } from '@rsdp/engine/core';
 import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/settings';
 import type { CoHost } from '@rsdp/engine/roles';
-import type { BotLevel } from '@rsdp/engine/wire';
+import type { BotLevel, BotNote } from '@rsdp/engine/wire';
 
 /** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
 export const RUNTIME_VERSION = 1;
@@ -133,6 +133,8 @@ export interface PastHand {
   /** Missing on hands dealt before provably fair dealing. */
   handId?: string;
   fair?: HandFairness;
+  /** Why each practice bot played as it did, for the one person in the hand (see RuntimeState.coach). Absent on every other hand. */
+  coach?: { person: PlayerId; notes: BotNote[] };
 }
 
 /** The secret behind the next hand's published commitment. Server-only: never put serverSeed in a view. */
@@ -152,6 +154,8 @@ export interface HandRecord {
   startedAt: number;
   endedAt: number;
   hand: HandState;
+  /** Why each practice bot played as it did, for the one person in the hand (see RuntimeState.coach). Absent on every other hand. */
+  coach?: { person: PlayerId; notes: BotNote[] };
 }
 
 export interface TurnClock {
@@ -249,6 +253,14 @@ export interface RuntimeState {
   fair?: FairState;
   /** Practice bots at this table (seated or asking for a seat), by their player id. */
   bots?: Record<PlayerId, BotInfo>;
+  /**
+   * Coach tips and the bots' reasons for the hand being played: set at the deal
+   * when one person was dealt in and everyone else is a practice bot, null
+   * otherwise. It stays until the next deal, so the post-hand "why" button can
+   * show. Missing in older snapshots, and in a snapshot restored mid-hand,
+   * which means no tips for that hand.
+   */
+  coach?: { handNumber: number; person: PlayerId; notes: BotNote[] } | null;
   /**
    * A hand here was dealt to two or more people (not bots), so friends' records
    * depend on the table and the host can't delete it. Missing in older
