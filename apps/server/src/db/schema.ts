@@ -277,7 +277,7 @@ export const hands = pgTable(
 
 // ---------------------------------------------------------------- tournaments
 
-/** Tournament director state, saved after every change; its tables live in `tables` with tournament_id set. */
+/** Tournament director state, saved after every change; its tables live in `tables` with mode 'tournament' (tournament_id is not filled in). */
 export const tournaments = pgTable(
   'tournaments',
   {
@@ -405,6 +405,23 @@ export const sharedHands = pgTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('shared_hands_created_by_idx').on(t.createdBy)],
+);
+
+// ---------------------------------------------------------------- hidden tables
+
+/** Cash tables a player hid from their own profile. The table and its records stay for everyone else. */
+export const hiddenTables = pgTable(
+  'hidden_tables',
+  {
+    playerId: text('player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    tableId: text('table_id')
+      .notNull()
+      .references(() => tables.id, { onDelete: 'cascade' }),
+    hiddenAt: at('hidden_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.playerId, t.tableId] }), index('hidden_tables_table_idx').on(t.tableId)],
 );
 
 // ---------------------------------------------------------------- roadmap suggestions

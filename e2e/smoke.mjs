@@ -198,8 +198,8 @@ try {
       await p.getByRole('button', { name: /^Register/ }).click();
       await p.getByText("You're registered.").waitFor();
     }
-    await host.getByRole('tab', { name: /^Host/ }).click();
-    await host.getByRole('button', { name: 'Start now' }).click();
+    // The host starts from the card by the clock, without opening the Host tab.
+    await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
 
     const table = new RegExp(`/t/${id}-t1$`);
     for (const p of players) await p.waitForURL(table, { waitUntil: 'commit' });

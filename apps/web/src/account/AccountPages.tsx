@@ -3,52 +3,29 @@ import { currentSession, onSession, saveSessionToken, setName } from '../socket'
 import { chipFormat } from '../format';
 import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
-import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile } from './api';
+import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
 import '../components/table/extras.css';
+import { ProfitGraph } from './ProfitGraph';
 import './account.css';
+import { SiteHeader } from '../components/SiteHeader';
 
 /** The session the server sent, or null before it arrives. */
 export function useSession() {
   return useSyncExternalStore(onSession, currentSession);
 }
 
-/** The small "Sign in" or "Mike" link at the top of the home page. */
-export function AccountLink() {
-  const session = useSession();
-  if (!session) return <nav className="account-link" />;
-  return (
-    <nav className="account-link">
-      {session.account ? (
-        <a href="/profile" title="Your profile">
-          <span className="account-dot" aria-hidden /> {session.account.username}
-        </a>
-      ) : (
-        <>
-          <a href="/profile">Your history</a>
-          <a href="/signin" className="account-signin">
-            Sign in
-          </a>
-        </>
-      )}
-    </nav>
-  );
-}
-
-function Shell({ title, children }: { title: string; children: ReactNode }) {
+export function Shell({ title, children, narrow = false }: { title: string; children: ReactNode; /** Sign-in style pages: a short centred column. */ narrow?: boolean }) {
   useEffect(() => {
     document.title = `${title} · RSDP Poker Live!`;
   }, [title]);
   return (
-    <main className="account-page">
-      <header>
-        <a className="logo small" href="/">
-          RSDP Poker <span>Live!</span>
-        </a>
-        <a href="/">Back to the games</a>
-      </header>
-      <h1>{title}</h1>
-      {children}
-    </main>
+    <div className="site-page">
+      <SiteHeader />
+      <main className={`account-page ${narrow ? 'account-narrow' : ''}`}>
+        <h1>{title}</h1>
+        {children}
+      </main>
+    </div>
   );
 }
 
@@ -118,7 +95,7 @@ export function SignUpPage() {
 
   if (session?.account) return <AlreadySignedIn username={session.account.username} />;
   return (
-    <Shell title="Create an account">
+    <Shell title="Create an account" narrow>
       <p className="account-intro">
         Accounts are optional. You can keep playing as a guest. With an account, your name, picture, notes and history come with you to any phone or computer you sign in on.
       </p>
@@ -177,7 +154,7 @@ export function SignInPage() {
 
   if (session?.account) return <AlreadySignedIn username={session.account.username} />;
   return (
-    <Shell title="Sign in">
+    <Shell title="Sign in" narrow>
       <p className="account-intro">Sign in to play as yourself on this device, with your name, picture, notes and history.</p>
       {google && (
         <div className="account-google">
@@ -197,7 +174,8 @@ export function SignInPage() {
         <label className="account-check">
           <input type="checkbox" checked={bringOver} onChange={(e) => setBringOver(e.target.checked)} />
           <span>
-            This is my device: move what I did here as a guest (notes, picture, tables and tournaments) into my account. Untick this on a friend's phone so their stuff stays theirs.
+            Keep what I played here as a guest
+            <span className="hint">Your notes, picture, tables and tournaments on this device move into your account. Untick this on a friend's phone so their things stay theirs.</span>
           </span>
         </label>
         {error && <p className="error">{error}</p>}
@@ -214,7 +192,7 @@ export function SignInPage() {
 
 function AlreadySignedIn({ username }: { username: string }) {
   return (
-    <Shell title="You're signed in">
+    <Shell title="You're signed in" narrow>
       <p className="account-intro">
         You're signed in as <strong>{username}</strong>. <a href="/profile">Go to your profile</a> to sign out first.
       </p>
@@ -238,7 +216,7 @@ export function ResetPage() {
   };
 
   return (
-    <Shell title="Reset your password">
+    <Shell title="Reset your password" narrow>
       {done ? (
         <p className="account-intro">
           Done. Your new password works now, and every device was signed out. <a href="/signin">Sign in</a>.
@@ -282,11 +260,13 @@ export function ProfilePage() {
   const [loadError, setLoadError] = useState('');
   const params = new URLSearchParams(location.search);
 
+  const load = () =>
+    fetchProfile()
+      .then((p) => (setProfile(p), setLoadError('')))
+      .catch((e: Error) => setLoadError(e.message));
   useEffect(() => {
     if (!session) return;
-    fetchProfile()
-      .then(setProfile)
-      .catch((e: Error) => setLoadError(e.message));
+    void load();
     // Load again when the server's idea of me changes (a rename, a sign-in elsewhere).
   }, [session?.playerId, session?.account?.username]);
 
@@ -329,9 +309,17 @@ export function ProfilePage() {
       </section>
 
       <section className="account-section">
+        <h2>Profit graph</h2>
+        {session && <ProfitGraph refreshKey={profile} />}
+        <p className="hint">
+          See how everyone's doing on the <a href="/leaderboard">leaderboard</a>, or <a href="/hands">search your hands</a>.
+        </p>
+      </section>
+
+      <section className="account-section">
         <h2>Cash games</h2>
         {loadError && <p className="error">{loadError}</p>}
-        {!profile ? !loadError && <p className="muted">Loading…</p> : <TablesList profile={profile} />}
+        {!profile ? !loadError && <p className="muted">Loading…</p> : <TablesList profile={profile} onChanged={load} />}
       </section>
 
       <section className="account-section">
@@ -385,18 +373,42 @@ function NameForm({ current }: { current: string }) {
   );
 }
 
-function TablesList({ profile }: { profile: Profile }) {
-  if (profile.tables.length === 0) return <p className="muted">No hands played yet.</p>;
+function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () => Promise<unknown> }) {
+  const { busy, error, run } = useAction();
+  const toggle = (tableId: string, hidden: boolean) => run(() => hideTable(tableId, hidden).then(onChanged));
+  const hidden = profile.hiddenTables ?? [];
+  return (
+    <>
+      {profile.tables.length === 0 ? (
+        <p className="muted">{hidden.length ? 'No other cash games.' : 'No hands played yet.'}</p>
+      ) : (
+        <TableRows rows={profile.tables} action="Hide" title="Hide this table from your profile. It stays for everyone else." busy={busy} onAction={(id) => toggle(id, true)} />
+      )}
+      {error && <p className="error">{error}</p>}
+      {hidden.length > 0 && (
+        <details className="account-hidden">
+          <summary>Hidden tables ({hidden.length})</summary>
+          <TableRows rows={hidden} action="Show again" title="Put this table back on your profile" busy={busy} onAction={(id) => toggle(id, false)} />
+        </details>
+      )}
+    </>
+  );
+}
+
+function TableRows(props: { rows: TableRow[]; action: string; title: string; busy: boolean; onAction: (tableId: string) => void }) {
   return (
     <ul className="account-list">
-      {profile.tables.map((t) => {
+      {props.rows.map((t) => {
         const fmt = chipFormat(t.centsMode);
         return (
           <li key={t.tableId}>
             <a href={`/t/${t.tableId}`}>{t.name || 'Table'}</a>
             <span className="muted">
               {shortDate(t.lastPlayedAt)} · {t.hands} {t.hands === 1 ? 'hand' : 'hands'}
-              {t.practice && ' · practice'}
+              {t.practice && ' · practice'} ·{' '}
+              <button className="link" title={props.title} disabled={props.busy} onClick={() => props.onAction(t.tableId)}>
+                {props.action}
+              </button>
             </span>
             {t.net !== null && <span className={`account-net ${t.net > 0 ? 'up' : t.net < 0 ? 'down' : ''}`}>{t.net > 0 ? `+${fmt(t.net)}` : t.net < 0 ? `−${fmt(-t.net)}` : 'even'}</span>}
           </li>

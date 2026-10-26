@@ -3,7 +3,7 @@ import type { Action } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import './action-bar.css';
-import { fromInput, toInput, type Fmt } from '../format';
+import { bbExactFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
@@ -17,7 +17,8 @@ const SEND_TIMEOUT_MS = 8_000;
 
 export function ActionBar({
   view,
-  fmt,
+  fmt: chipFmt,
+  bigBlind = null,
   skew,
   discard,
   clearDiscard,
@@ -25,6 +26,8 @@ export function ActionBar({
 }: {
   view: TableView;
   fmt: Fmt;
+  /** Set when the player has chosen to see amounts in big blinds: the buttons and the bet box then work in BB. */
+  bigBlind?: number | null;
   skew: number;
   discard: number[];
   clearDiscard: () => void;
@@ -33,8 +36,18 @@ export function ActionBar({
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
+  const unit: BetUnit = bigBlind ? { bb: bigBlind } : { centsMode };
+  const fmt = bigBlind ? bbExactFormat(bigBlind) : chipFmt;
   const me = view.me.seat !== null ? view.seats[view.me.seat] : null;
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmountRaw] = useState(0);
+  // What's typed in the bet box, kept as text while typing so "2." or "0.5" isn't rewritten mid-word.
+  const [typed, setTyped] = useState<string | null>(null);
+  const setAmount = (chips: number) => {
+    setTyped(null);
+    setAmountRaw(chips);
+  };
+  // Switching units (here or in another tab) redraws the box in the new unit.
+  useEffect(() => setTyped(null), [bigBlind]);
   const [error, setError] = useState('');
   const [queued, setQueued] = useState<{ key: string; action: PreAction } | null>(null);
   // Queued moves are for one betting round only.
@@ -145,6 +158,18 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
+  // On your turn (betting or drawing) the time bank sits on the bar's top line, so the bar is no taller for it.
+  const canBank = !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
+  const head = canBank ? (
+    <div className="bar-head">
+      {hint}
+      <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
+        Time bank +{me.timeBank}s
+      </button>
+    </div>
+  ) : (
+    hint
+  );
   const errorLine = slow ? (
     <div className="muted sending-note">Sending… your connection seems slow.</div>
   ) : (
@@ -192,7 +217,7 @@ export function ActionBar({
     const n = discard.length;
     return (
       <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
-        {hint}
+        {head}
         {errorLine}
         <div className="prompt">
           {hand.streetName}: click the cards you want to throw away{view.canDraw.max < myCards.length ? ` (up to ${view.canDraw.max})` : ''}.
@@ -266,7 +291,7 @@ export function ActionBar({
 
   return (
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`}>
-      {hint}
+      {head}
       {errorLine}
       {sized && (
         <div className="sizing">
@@ -287,12 +312,19 @@ export function ActionBar({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && legal.canRaise) send({ type: raiseType, to: clamp(amount) });
               }}
-              min={toInput(centsMode, legal.minTo)}
-              max={toInput(centsMode, legal.maxTo)}
-              step={centsMode ? 0.01 : 1}
-              value={toInput(centsMode, amount)}
-              onChange={(e) => setAmount(fromInput(centsMode, +e.target.value))}
+              min={betToInput(unit, legal.minTo)}
+              max={betToInput(unit, legal.maxTo)}
+              step={bigBlind ? 'any' : centsMode ? 0.01 : 1}
+              value={typed ?? betToInput(unit, amount)}
+              onChange={(e) => {
+                setTyped(e.target.value);
+                // Text the browser can't read as a number leaves the amount as it was.
+                if (!e.target.validity.badInput) setAmountRaw(betFromInput(unit, e.target.value === '' ? NaN : +e.target.value));
+              }}
+              onBlur={() => setTyped(null)}
+              aria-label={bigBlind ? 'Amount in big blinds' : 'Amount'}
             />
+            {bigBlind && <span className="unit">BB</span>}
           </div>
         </div>
       )}

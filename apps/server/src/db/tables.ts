@@ -7,7 +7,7 @@ import { and, desc, eq, lt, ne, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { clampLimit, StorageError } from './errors';
 import { newId, newTableId } from './ids';
-import { settingsChanges, tables, tableSnapshots, type TableMode, type TableStatus } from './schema';
+import { chipMovements, hands, hiddenTables, seatSessions, settingsChanges, sharedHands, tables, tableSnapshots, type TableMode, type TableStatus } from './schema';
 
 type TableRow = typeof tables.$inferSelect;
 
@@ -207,6 +207,29 @@ export async function archiveTable(db: Db, tableId: string, now: Date = new Date
     .returning();
   if (!row) throw new StorageError('not-found', 'no such table');
   return row;
+}
+
+/**
+ * Deletes a cash table for good: its hands, share links, snapshot, settings
+ * log and every player's "hidden" mark. Returns false when there was no such
+ * table. Tournament tables go with their tournament and are refused, and so
+ * is a table with rows in the append-only chip ledger.
+ */
+export async function deleteTableForGood(db: Db, tableId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ tournamentId: tables.tournamentId, mode: tables.mode }).from(tables).where(eq(tables.id, tableId));
+    if (!row) return false;
+    if (row.tournamentId || row.mode === 'tournament') throw new StorageError('conflict', 'tournament tables are kept with their tournament');
+    const [moved] = await tx.select({ n: sql<number>`count(*)::int` }).from(chipMovements).where(eq(chipMovements.tableId, tableId));
+    if (Number(moved?.n ?? 0) > 0) throw new StorageError('conflict', 'the table has chip ledger entries, which are never deleted');
+    await tx.delete(sharedHands).where(eq(sharedHands.tableId, tableId));
+    await tx.delete(hiddenTables).where(eq(hiddenTables.tableId, tableId));
+    await tx.delete(hands).where(eq(hands.tableId, tableId));
+    await tx.delete(seatSessions).where(eq(seatSessions.tableId, tableId));
+    // The snapshot and the settings log go with the table (on delete cascade).
+    await tx.delete(tables).where(eq(tables.id, tableId));
+    return true;
+  });
 }
 
 /**

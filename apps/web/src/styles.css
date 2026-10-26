@@ -612,7 +612,9 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.my-turn { box-shadow: inset 0 0 0 3px var(--felt-edge), inset 0 0 60px rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.55), 0 22px 48px rgba(0, 0, 0, 0.45); }
 .felt.compact { border-width: 11px; }
 .board { gap: 10px; }
-.board .pots, .board .next-hand { order: -1; }
+/* The pot sits above the board. Between hands the countdown goes under the result, clear of the chips sliding to the winner. */
+.board .pots { order: -1; }
+.board .next-hand { order: 1; }
 .next-hand { font-weight: 600; letter-spacing: 0.02em; }
 .board .pots { flex-direction: column; align-items: center; gap: 2px; }
 .pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
@@ -747,11 +749,70 @@ kbd {
 .units-toggle span { padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
 .units-toggle span.on { background: var(--accent-2); color: #1b1606; font-weight: 700; }
 .portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
-.banner.tip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 0.9rem; }
-.banner.tip > span { flex: 1 1 auto; }
-.banner.tip button { padding: 4px 10px; font-size: 0.85rem; }
+/* The one-time keyboard tip: a small note over the felt's bottom corner rather than in the page, so it covers
+   no buttons (action bar, chat, host requests) and sits below any dialog. */
+.tip-anchor { position: relative; height: 0; margin-top: -10px; }
+.tip-toast {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  z-index: 9;
+  max-width: min(340px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 8px 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: tip-in 0.3s ease-out;
+}
+.tip-toast > span { flex: 1 1 100%; line-height: 1.5; }
+.tip-toast button { padding: 4px 10px; font-size: 0.82rem; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .tip-toast { animation: none; } }
 dl.shortcuts { display: grid; gap: 8px; margin: 4px 0 12px; }
 dl.shortcuts > div { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px; }
 dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
+.sizing .slider .unit { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+/* The area under the table holds its height through a hand (see Dock). On phones the spare room sits above the action bar. */
+.dock, .dock-inner { display: flex; flex-direction: column; gap: inherit; }
+.portrait .dock { justify-content: flex-end; }
+/* Hand extras and seat options share one row, so the area under the table stays short. */
+.dock-row { display: flex; gap: 10px 20px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.dock-row:empty { display: none; }
+.dock-row .hand-extras { margin-top: 0; }
+.bar-head { position: relative; min-height: 26px; display: flex; align-items: center; justify-content: center; }
+.bar-head .time-bank { position: absolute; right: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; }
+/* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
+.dock { flex-shrink: 0; min-height: var(--held, 0px); }
+.dock.seated { min-height: max(190px, var(--held, 0px)); }
+.portrait .dock.seated { min-height: max(205px, var(--held, 0px)); }
+/* Your own seat draws over empty-seat markers next to it. */
+.seat.me { z-index: 3; }
+/* Shorter windows: a tighter action bar and felt margins give the table the room. */
+@media (max-height: 820px) {
+  .table-page:not(.portrait) .action-bar { padding: 8px 12px; gap: 6px; }
+  .table-page:not(.portrait) .action-bar .buttons button { padding: 10px 12px; }
+  .table-page:not(.portrait) .felt-area > .felt { margin-top: 72px; margin-bottom: 30px; }
+  .dock.seated { min-height: max(166px, var(--held, 0px)); }
+}
+@media (max-height: 760px) {
+  .portrait .action-bar { padding-top: 8px; gap: 6px; }
+  .portrait .action-bar .buttons button { padding: 11px 6px; }
+  .portrait .sizing .presets button { padding: 6px 4px; }
+  .portrait .dock.seated { min-height: max(189px, var(--held, 0px)); }
+}
+/* Fixed-limit games (no bet slider) have a shorter bar. */
+.dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
+.portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
+/* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
+@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit { min-height: var(--held, 0px); } }
+/* On phones the time bank sits beside the hand line instead of over it. */
+.portrait .bar-head { gap: 8px; flex-wrap: wrap; }
+.portrait .bar-head .time-bank { position: static; translate: none; }

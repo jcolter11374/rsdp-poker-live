@@ -323,6 +323,7 @@ export function frameView(
     mode: 'cash',
     tournamentId: null,
     isHost: false,
+    realGame: true,
     powers: [],
     coHosts: [],
     settings,

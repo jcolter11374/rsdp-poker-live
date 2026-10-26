@@ -10,7 +10,7 @@ import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, Settings
 import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
-import { TableRuntime } from './runtime/table';
+import { realGameHand, TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
@@ -26,8 +26,10 @@ import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './sug
 import { newId } from './db/ids';
 import { adminGate } from './admin';
 import { accountRoutes, type AccountHooks } from './accounts';
+import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
+import { StorageError } from './db/errors';
 
 export interface Session {
   playerId: PlayerId;
@@ -53,6 +55,8 @@ export interface TableStore {
   saveHand(tableId: string, record: HandRecord): Promise<void>;
   /** Every finished hand saved for a table, oldest first. */
   loadHands(tableId: string): Promise<PastHand[]>;
+  /** Deletes a cash table and its hands for good; false when there was no such table. */
+  deleteTable(tableId: string): Promise<boolean>;
 }
 
 export function memoryIdentity(): IdentityService {
@@ -87,6 +91,10 @@ export function memoryStore(): TableStore {
     },
     async loadHands(tableId) {
       return [...(hands.get(tableId) ?? [])].sort((a, b) => a.handNumber - b.handNumber);
+    },
+    async deleteTable(tableId) {
+      hands.delete(tableId);
+      return tables.delete(tableId);
     },
   };
 }
@@ -225,6 +233,7 @@ export function createApp(deps: AppDeps = {}) {
   };
   const confirmations = googleConfirmations(() => clock.now());
   accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks });
+  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
@@ -266,6 +275,58 @@ export function createApp(deps: AppDeps = {}) {
     tournaments.adminArchive(String(req.params.id)).then(
       (r) => res.json(r),
       (e) => res.status(e instanceof ActionError ? 400 : 500).json({ error: e instanceof Error ? e.message : String(e) }),
+    );
+  });
+  // The admin page looks a cash table up by its id, then may delete it for good (tests and mistakes).
+  const adminTableId = (req: express.Request) => {
+    const id = String(req.params.id);
+    return /^[\w-]{4,40}$/.test(id) ? id : null;
+  };
+  app.get('/api/admin/tables/:id', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isAdmin(req, res)) return;
+    const id = adminTableId(req);
+    if (!id) return void res.status(404).json({ error: 'No table has that id.' });
+    (tables.get(id) ? Promise.resolve(tables.get(id)!.state) : store.loadTable(id))
+      .then(async (state) => {
+        if (!state) return void res.status(404).json({ error: 'No table has that id.' });
+        const live = tables.get(id);
+        const realGame =
+          (state.realGame ?? ((await store.loadHands(id)).some((h) => realGameHand(h.seats)) || state.history.some((h) => realGameHand(h.hand.seats)))) ||
+          (!!state.hand && state.hand.phase !== 'complete' && realGameHand(state.hand.seats));
+        const people = Object.entries(state.handNames ?? {}).filter(([pid]) => !pid.startsWith('bot-'));
+        res.json({
+          id,
+          name: state.settings.table.name,
+          mode: state.settings.table.mode,
+          createdAt: new Date(state.createdAt).toISOString(),
+          hands: state.handNumber,
+          players: people.map(([, name]) => name || 'Guest'),
+          realGame,
+          live: !!live,
+        });
+      })
+      .catch((e) => {
+        log('admin table lookup failed', e);
+        res.status(500).json({ error: 'Something went wrong. Try again.' });
+      });
+  });
+  app.post('/api/admin/tables/:id/delete', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isAdmin(req, res)) return;
+    const id = adminTableId(req);
+    if (!id) return void res.status(404).json({ error: 'No table has that id.' });
+    removeTable(id).then(
+      (found) => {
+        if (!found) return void res.status(404).json({ error: 'No table has that id.' });
+        log(`table ${id} deleted by the admin`);
+        res.json({ ok: true });
+      },
+      (e) => {
+        if (e instanceof StorageError && e.code === 'conflict') return void res.status(409).json({ error: e.message });
+        log('admin table delete failed', e);
+        res.status(500).json({ error: 'Something went wrong. Try again.' });
+      },
     );
   });
   if (deps.webDist && existsSync(deps.webDist)) {
@@ -354,6 +415,18 @@ export function createApp(deps: AppDeps = {}) {
     return [...seen].map(([playerId, name]) => ({ playerId, name }));
   }
 
+  /** Saves still running for each table, so deleting it can wait for them. */
+  const inFlight = new Map<string, Set<Promise<unknown>>>();
+  function track(id: string, p: Promise<unknown>) {
+    const set = inFlight.get(id) ?? new Set();
+    inFlight.set(id, set);
+    set.add(p);
+    void p.finally(() => {
+      set.delete(p);
+      if (set.size === 0 && inFlight.get(id) === set) inFlight.delete(id);
+    });
+  }
+
   function scheduleSave(rt: TableRuntime) {
     const id = rt.state.id;
     if (saveTimers.has(id)) return;
@@ -361,7 +434,7 @@ export function createApp(deps: AppDeps = {}) {
       id,
       setTimeout(() => {
         saveTimers.delete(id);
-        (created.get(id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch((e) => log(`saving table ${id} failed`, e));
+        track(id, (created.get(id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch((e) => log(`saving table ${id} failed`, e)));
       }, SAVE_DEBOUNCE_MS),
     );
   }
@@ -378,8 +451,51 @@ export function createApp(deps: AppDeps = {}) {
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
+      track(id, handSaves);
     };
     return rt;
+  }
+
+  /** Cash tables deleted since the server started, so a join racing the delete can't load one back. */
+  const deleted = new Set<string>();
+
+  /**
+   * Deletes a cash table for good: everyone with it open is told and let go,
+   * the runtime stops, and its saved state and hands are removed.
+   */
+  async function removeTable(id: string): Promise<boolean> {
+    const rt = tables.get(id);
+    // Refused before anything stops: tournament tables go with their tournament.
+    if (rt ? rt.isTournament : (await store.loadTable(id))?.settings.table.mode === 'tournament') {
+      throw new StorageError('conflict', 'tournament tables are kept with their tournament');
+    }
+    deleted.add(id);
+    if (rt) {
+      rt.onChange = () => {};
+      rt.onHandFinished = () => {};
+      rt.dispose();
+      tables.delete(id);
+      feeds.delete(id);
+      practiceStarts.delete(id);
+      clearTimeout(saveTimers.get(id));
+      saveTimers.delete(id);
+      for (const s of watchers.get(id) ?? []) {
+        s.data.tableId = undefined;
+        s.emit('table:deleted', { id });
+      }
+      watchers.delete(id);
+    }
+    await (created.get(id) ?? Promise.resolve()).catch(() => {});
+    // A hand or table save already under way would race the delete.
+    await Promise.allSettled([...(inFlight.get(id) ?? [])]);
+    created.delete(id);
+    try {
+      return (await store.deleteTable(id)) || !!rt;
+    } catch (e) {
+      // Nothing was deleted, so the table can be opened again (from its last save).
+      deleted.delete(id);
+      throw e;
+    }
   }
 
   /** Practice tables waiting for their creator to arrive before the first deal: table id → creator. */
@@ -452,11 +568,18 @@ export function createApp(deps: AppDeps = {}) {
   async function getTable(id: string): Promise<TableRuntime | null> {
     const live = tables.get(id);
     if (live) return live;
+    if (deleted.has(id)) return null;
     // Tournament tables come back with their tournament, which gives them their clock and seats.
     if (await tournaments.loadTableOwner(id)) return tables.get(id) ?? null;
     const saved = await store.loadTable(id);
     if (!saved || saved.settings.table.mode === 'tournament') return null;
-    // Another join may have loaded it while we waited.
+    // Tables saved before the runtime kept count: look through their hands once.
+    if (saved.realGame === undefined) {
+      const past = await store.loadHands(id);
+      saved.realGame = past.some((h) => realGameHand(h.seats)) || saved.history.some((h) => realGameHand(h.hand.seats));
+    }
+    // Another join may have loaded it (or it was deleted) while we waited.
+    if (deleted.has(id)) return null;
     if (tables.has(id)) return tables.get(id)!;
     const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs }));
     rt.resume();
@@ -825,6 +948,18 @@ export function createApp(deps: AppDeps = {}) {
     on('host:reject', ({ requestId }) => guarded(undefined, () => current().reject(me, String(requestId)), log));
     on('host:start', (ack) => guarded(ack, () => current().start(me), log));
     on('host:stop', (ack) => guarded(ack, () => current().stop(me), log));
+    on('host:deleteTable', (ack) =>
+      guarded(
+        ack,
+        async () => {
+          const rt = current();
+          rt.checkDeletable(me);
+          log(`table ${rt.state.id} deleted by its host`);
+          await removeTable(rt.state.id);
+        },
+        log,
+      ),
+    );
     on('host:deal', (ack) => guarded(ack, () => current().dealNext(me), log));
     on('host:pause', ({ value }, ack) => guarded(ack, () => current().pause(me, !!value), log));
     on('host:bombPot', ({ value }, ack) => guarded(ack, () => current().requestBombPot(me, !!value), log));

@@ -24,6 +24,7 @@ describe('createDb', () => {
       'accounts',
       'chip_movements',
       'hands',
+      'hidden_tables',
       'jobs',
       'player_avatars',
       'player_notes',

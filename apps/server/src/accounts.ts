@@ -1,11 +1,12 @@
 // Optional accounts: sign up, sign in on other devices, sign out, change or
-// reset a password, delete the account, and the profile page's history.
+// reset a password, delete the account, and the profile page's history
+// (with tables hidden from it).
 // Guests never need any of this. A browser proves who it is with its guest
 // secret (X-Guest-Token) and, once signed in, its session token (X-Session-Token).
 
 import express from 'express';
 import { standings, type TournamentState } from '@rsdp/tournament';
-import { tableHistory, tournamentRows, type Db } from './db';
+import { leaderboard, profitSessions, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
 import {
   adoptGuest,
   checkPassword,
@@ -37,6 +38,8 @@ const SIGN_UPS_PER_HOUR = 5;
 const RESET_TRIES = 10;
 /** Profile loads one address may make per minute (each one reads hand history). */
 const PROFILE_PER_MINUTE = 30;
+/** How long a worked-out leaderboard is served before it is worked out again. */
+const LEADERBOARD_CACHE_MS = 60_000;
 
 export interface AccountHooks {
   /** A browser now plays as `playerId` (its picture may have come over from the guest). */
@@ -97,6 +100,13 @@ export function accountRoutes(
     };
 
   const identify = (req: express.Request, db: Db): Promise<Identity> => whoIs(db, req.get('x-guest-token') ?? '', req.get('x-session-token'), { now: new Date(now()) });
+
+  /** Every player id that is me: the account's devices when signed in, else this browser's guest. */
+  async function myPlayerIds(who: Identity, db: Db) {
+    const ids = who.account ? (await playersForAccount(db, who.account.id)).map((p) => p.id) : [who.player.id];
+    if (!ids.includes(who.player.id)) ids.push(who.player.id);
+    return ids;
+  }
 
   /** The signed-in account, or a 401 response. */
   async function signedIn(req: express.Request, res: express.Response, db: Db) {
@@ -247,21 +257,66 @@ export function accountRoutes(
     }),
   );
 
+  // My result at each real cash game, for the profit graph on my profile.
+  app.get(
+    '/api/account/graph',
+    route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
+      const who = await identify(req, db);
+      const sessions = await profitSessions(db, await myPlayerIds(who, db));
+      res.json({ sessions: sessions.map((x) => ({ ...x, at: x.at.toISOString() })) });
+    }),
+  );
+
+  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period.
+  const boards = new Map<string, { at: number; rows: Promise<LeaderRow[]> }>();
+  app.get(
+    '/api/leaderboard',
+    route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
+      const period = ['month', 'year', 'all'].includes(String(req.query.period)) ? String(req.query.period) : 'month';
+      const t = now();
+      const d = new Date(t);
+      const since = period === 'month' ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) : period === 'year' ? new Date(Date.UTC(d.getUTCFullYear(), 0, 1)) : undefined;
+      let cached = boards.get(period);
+      if (!cached || t - cached.at >= LEADERBOARD_CACHE_MS) {
+        cached = { at: t, rows: leaderboard(db, since) };
+        boards.set(period, cached);
+        cached.rows.catch(() => boards.get(period) === cached && boards.delete(period));
+      }
+      res.json({ period, since: since?.toISOString() ?? null, rows: await cached.rows });
+    }),
+  );
+
+  // Hide a cash table from my profile, or show it again. Only my own list changes; the table stays for everyone else.
+  app.post(
+    '/api/account/tables/hide',
+    json,
+    route(async (req, res, db) => {
+      const who = await identify(req, db);
+      const tableId = str(req.body?.tableId);
+      if (!/^[\w-]{4,40}$/.test(tableId)) return void res.status(400).json({ error: 'No such table.' });
+      const found = await setTableHidden(db, who.player.id, await myPlayerIds(who, db), tableId, req.body?.hidden !== false);
+      if (!found) return void res.status(404).json({ error: 'No such table.' });
+      res.json({ ok: true });
+    }),
+  );
+
   // The profile: who you are and what you've played, on every device you've signed in on. Guests see this device's.
   app.get(
     '/api/account/me',
     route(async (req, res, db) => {
       if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const who = await identify(req, db);
-      const ids = who.account ? (await playersForAccount(db, who.account.id)).map((p) => p.id) : [who.player.id];
-      if (!ids.includes(who.player.id)) ids.push(who.player.id);
-      const [tables, tournaments] = await Promise.all([tableHistory(db, ids), tournamentRows<TournamentState>(db, ids)]);
+      const ids = await myPlayerIds(who, db);
+      const [tables, hidden, tournaments] = await Promise.all([tableHistory(db, ids), tableHistory(db, ids, 25, { hidden: true }), tournamentRows<TournamentState>(db, ids)]);
       const mine = new Set(ids);
       res.json({
         playerId: who.player.id,
         displayName: who.player.displayName,
         account: who.account && { username: who.account.username, createdAt: who.account.createdAt.toISOString(), devices: ids.length, ...(await signInMethods(db, who.account.id)) },
         tables: tables.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
+        hiddenTables: hidden.map((t) => ({ ...t, lastPlayedAt: t.lastPlayedAt.toISOString() })),
         tournaments: tournaments.flatMap((row) => {
           const s = row.state;
           if (!s?.settings || !Array.isArray(s.entries)) return [];

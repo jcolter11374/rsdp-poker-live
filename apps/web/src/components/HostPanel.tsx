@@ -118,6 +118,18 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
         </button>
       )}
       {can('settings') && <button onClick={onSettings}>Table settings</button>}
+      {!tournament && view.isHost && !view.realGame && (
+        <button
+          className="danger"
+          title="For a test table or one made by mistake. Once two people have played a hand here, the table stays."
+          onClick={() =>
+            confirm('Delete this table for good? Nobody has played a real game here yet (only you, or bots), so no one loses any records.') &&
+            run(call('host:deleteTable').then(() => location.assign('/')))
+          }
+        >
+          Delete table
+        </button>
+      )}
       {view.pendingSettings && <p className="muted">Some setting changes take effect when this hand ends.</p>}
       {msg && <p className="muted">{msg}</p>}
     </div>

@@ -17,6 +17,9 @@ import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
+import { ChatBox, newChat, unreadChat } from './components/table/Chat';
+import { TableMenu } from './components/table/TableMenu';
+import { useChatMutes } from './chatMutes';
 import { Sheet } from './components/Sheet';
 import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -24,6 +27,7 @@ import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
+import { Dock } from './components/table/Dock';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -34,7 +38,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     const before = prev.current;
     prev.current = view;
     if (!view || !before) return;
-    if (view.chat.length > before.chat.length && view.chat.at(-1)?.playerId && view.chat.at(-1)?.playerId !== view.me.playerId) sounds.chat();
+    if (newChat(before.chat, view.chat).some((m) => m.playerId && m.playerId !== view.me.playerId)) sounds.chat();
     if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     const hand = view.hand;
     if (!hand) return;
@@ -104,19 +108,24 @@ const HURRY_MS = 5000;
 
 type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
 
+/** How long the keyboard tip stays up if nobody presses Got it. */
+const KEYS_TIP_MS = 20_000;
+
 export function TablePage({ tableId }: { tableId: string }) {
   const [view, setView] = useState<TableView | null>(null);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [sheet, setSheet] = useState<'menu' | Tab | null>(null);
+  const [sheet, setSheet] = useState<'menu' | 'chat' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
   const volume = useVolume();
   const [discard, setDiscard] = useState<number[]>([]);
-  const [chatSeen, setChatSeen] = useState(0);
+  /** When the newest chat line you have seen was sent, for the unread badge on phones. */
+  const [chatSeenAt, setChatSeenAt] = useState(0);
   const preQueued = useRef(false);
   const portrait = usePortrait();
+  const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null);
 
@@ -129,7 +138,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
-      if (first) setChatSeen(v.chat.length);
+      if (first) setChatSeenAt(v.chat.at(-1)?.at ?? 0);
       first = false;
     };
     const onConnect = () => {
@@ -137,7 +146,9 @@ export function TablePage({ tableId }: { tableId: string }) {
       join();
     };
     const onDisconnect = () => setConnected(false);
+    const onDeleted = ({ id }: { id: string }) => id === tableId && setError('deleted');
     socket.on('table:state', onState);
+    socket.on('table:deleted', onDeleted);
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     // The socket may have connected after the first render but before this ran, so its connect event is gone.
@@ -145,6 +156,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     if (socket.connected) join();
     return () => {
       socket.off('table:state', onState);
+      socket.off('table:deleted', onDeleted);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.emit('table:leave');
@@ -156,7 +168,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => setDiscard([]), [drawKey]);
 
   const fmt = useMemo(() => chipFormat(!!view?.settings.stakes.centsMode), [view?.settings.stakes.centsMode]);
-  // The felt can show amounts in big blinds; buy-ins, the ledger and the bet box stay in chips.
+  // The felt and the bet box can show amounts in big blinds; buy-ins and the ledger stay in chips.
   const prefs = usePrefs();
   const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
   const bigBlind = studNow ? 0 : (view?.hand?.stakes.bigBlind ?? view?.upcoming?.stakes.bigBlind ?? view?.settings.stakes.bigBlind ?? 0);
@@ -169,6 +181,16 @@ export function TablePage({ tableId }: { tableId: string }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, [contenteditable]')) return;
+      if (e.key === 'Enter') {
+        // Enter on a button presses it; anywhere else it starts a chat message.
+        if (e.defaultPrevented || (e.target instanceof HTMLElement && e.target.closest('button, a, summary, [role=button]'))) return;
+        const box = document.querySelector<HTMLInputElement>('.side .chat-form input');
+        if (box && !document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) {
+          e.preventDefault();
+          box.focus();
+        }
+        return;
+      }
       if (e.key === '?') {
         if (!document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) setDialog({ kind: 'keys' });
         return;
@@ -187,15 +209,22 @@ export function TablePage({ tableId }: { tableId: string }) {
       return true;
     }
   });
-  const dismissKeysTip = () => {
+  /** Gone for good after "Got it" or opening the shortcuts; a timeout only hides it until the next visit. */
+  const dismissKeysTip = (forGood = true) => {
     setKeysTipSeen(true);
     try {
-      localStorage.setItem('rsdp.tip.keys', '1');
+      if (forGood) localStorage.setItem('rsdp.tip.keys', '1');
     } catch {
       /* ignore */
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
+  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  useEffect(() => {
+    if (!keysTip) return;
+    const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
+    return () => clearTimeout(t);
+  }, [keysTip]);
   const now = useNow(!!view?.level?.endsAt, 1000) + skew;
   // Losing your seat without pressing Leave (the host removed you, or an offline seat was released) gets a word of explanation.
   const wasSeated = useRef(false);
@@ -211,6 +240,13 @@ export function TablePage({ tableId }: { tableId: string }) {
     wasSeated.current = seated;
   }, [view?.me.seat]);
 
+  // At a desk the chat is always on screen; on a phone it's read when its sheet is open.
+  const chatOpen = !portrait || sheet === 'chat';
+  const lastChatAt = view?.chat.at(-1)?.at ?? 0;
+  useEffect(() => {
+    if (chatOpen && lastChatAt > chatSeenAt) setChatSeenAt(lastChatAt);
+  }, [chatOpen, lastChatAt]);
+
   if (error) {
     // A tournament table closes when it breaks; the lobby knows the new seat.
     const tournament = error === 'table not found' ? tournamentOfTable(tableId) : null;
@@ -219,7 +255,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         <h1 className="logo">
           RSDP Poker <span>Live!</span>
         </h1>
-        <p className="error">{error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
+        <p className="error">{error === 'deleted' ? 'This table was deleted.' : error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
         {tournament && (
           <p>
             <a href={`/tn/${tournament}`}>Back to the tournament lobby</a>
@@ -259,7 +295,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
       })
       .catch((e: Error) => alert(e.message));
-  const unread = sheet === 'chat' ? 0 : Math.max(0, view.chat.length - chatSeen);
+  const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt, chatMutes);
   const close = () => setSheet(null);
 
   const game = view.hand
@@ -334,7 +370,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       }}
     />
   );
-  const sidePanel = (tab: Tab) => <SidePanel view={view} fmt={fmt} initialTab={tab} chatSeen={chatSeen} onChatSeen={setChatSeen} />;
+
 
   return (
     <div className={`table-page ${portrait ? 'portrait' : ''}`}>
@@ -351,7 +387,8 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </a>
         <span className="stakes">
-          <b>{view.name}</b>
+          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
+          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
           {game && (
             <>
               {portrait ? <br /> : ' · '}
@@ -376,29 +413,38 @@ export function TablePage({ tableId }: { tableId: string }) {
         )}
         {portrait ? (
           <>
-            <button onClick={() => setSheet('log')}>
-              Log
-              {unread > 0 && <span className="badge">{unread}</span>}
+            <button className="chat-button" onClick={() => setSheet('chat')} aria-label={unread ? `Chat, ${unread} new` : 'Chat'}>
+              💬{unread > 0 && <span className="badge">{unread}</span>}
             </button>
+            <button onClick={() => setSheet('log')}>Log</button>
             <button aria-label="Menu" onClick={() => setSheet('menu')}>
               ☰{pending > 0 && <span className="badge">{pending}</span>}
             </button>
           </>
         ) : (
           <>
-            <button onClick={() => setDialog({ kind: 'people' })} title="Players and spectators">
-              👁 {view.watchers.length}
+            <button className="invite-button" onClick={copyLink}>
+              {copied ? 'Link copied' : 'Invite'}
             </button>
-            <button onClick={() => setDialog({ kind: 'rules' })}>Rules</button>
-            <button onClick={() => setDialog({ kind: 'keys' })} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
-              ⌨
-            </button>
-            <button onClick={() => setDialog({ kind: 'look' })} title="Felt, deck and card backs" aria-label="Table look">
-              🎨
-            </button>
-            <button onClick={copyLink}>{copied ? 'Copied!' : 'Invite'}</button>
-            {volumeButton}
             {seatButtons}
+            <TableMenu
+              items={[
+                { label: 'People', hint: `${view.watchers.length} watching`, onClick: () => setDialog({ kind: 'people' }) },
+                { label: 'How to play', onClick: () => setDialog({ kind: 'rules' }) },
+                { label: 'Keyboard shortcuts', hint: <kbd>?</kbd>, onClick: () => setDialog({ kind: 'keys' }) },
+                { label: 'Look, sound and me', onClick: () => setDialog({ kind: 'look' }) },
+                {
+                  label: `Sound: ${VOLUME_NAME[volume].replace(/^Sound /, '')}`,
+                  hint: volume === 0 ? '🔇' : volume < 0.5 ? '🔈' : volume < 1 ? '🔉' : '🔊',
+                  keepOpen: true,
+                  onClick: () => {
+                    const v = nextVolume(volume);
+                    setVolume(v);
+                    if (v > 0) sounds.chips();
+                  },
+                },
+              ]}
+            />
           </>
         )}
       </header>
@@ -408,15 +454,6 @@ export function TablePage({ tableId }: { tableId: string }) {
       <div className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
-          {keysTip && (
-            <div className="banner tip">
-              <span>
-                Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
-              </span>
-              <button onClick={() => setDialog({ kind: 'keys' })}>All shortcuts</button>
-              <button onClick={dismissKeysTip}>Got it</button>
-            </div>
-          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -504,23 +541,48 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
-          <ActionBar
-            view={view}
-            fmt={fmt}
-            skew={skew}
-            discard={discard}
-            clearDiscard={() => setDiscard([])}
-            onPreAction={(q) => {
-              preQueued.current = q;
-            }}
-          />
-          <HandExtras view={view} />
-          {!portrait && seatOptions}
+          {keysTip && !dialog && (
+            // A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner.
+            <div className="tip-anchor">
+              <div className="tip-toast" role="status">
+                <span>
+                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}.
+                </span>
+                <button
+                  onClick={() => {
+                    dismissKeysTip();
+                    setDialog({ kind: 'keys' });
+                  }}
+                >
+                  All shortcuts
+                </button>
+                <button onClick={() => dismissKeysTip()}>Got it</button>
+              </div>
+            </div>
+          )}
+          <Dock reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`} seated={view.me.seat !== null} limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}>
+            <ActionBar
+              view={view}
+              fmt={fmt}
+              bigBlind={prefs.units === 'bb' && bigBlind > 0 ? bigBlind : null}
+              skew={skew}
+              discard={discard}
+              clearDiscard={() => setDiscard([])}
+              onPreAction={(q) => {
+                preQueued.current = q;
+              }}
+            />
+            <div className="dock-row">
+              <HandExtras view={view} />
+              {!portrait && seatOptions}
+            </div>
+          </Dock>
         </section>
         {!portrait && (
           <aside className="side">
             {hostPanel}
-            {sidePanel('log')}
+            <SidePanel view={view} fmt={fmt} />
+            <ChatBox view={view} />
           </aside>
         )}
       </div>
@@ -560,9 +622,14 @@ export function TablePage({ tableId }: { tableId: string }) {
           {seatOptions}
         </Sheet>
       )}
-      {portrait && sheet && sheet !== 'menu' && (
+      {portrait && sheet === 'chat' && (
+        <Sheet title="Chat" onClose={close} className="chat-sheet">
+          <ChatBox view={view} autoFocus />
+        </Sheet>
+      )}
+      {portrait && sheet && sheet !== 'menu' && sheet !== 'chat' && (
         <Sheet title="Table" onClose={close} tall>
-          {sidePanel(sheet)}
+          <SidePanel view={view} fmt={fmt} initialTab={sheet} />
         </Sheet>
       )}
 

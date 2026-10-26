@@ -54,6 +54,7 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
       const box = seatEl.getBoundingClientRect();
       const cx = box.left + box.width / 2;
       const cy = box.top + box.height / 2;
+      const pod = box.width / 2;
       let { left, right, top, bottom } = box;
       const hole = seatEl.querySelector<HTMLElement>('.hole:not(.mucked)');
       if (hole && hole.childElementCount) {
@@ -63,9 +64,9 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
         top = Math.min(top, r.top);
         bottom = Math.max(bottom, r.bottom);
       }
-      const now = { l: cx - left, r: right - cx, u: cy - top, d: bottom - cy };
+      const now = { l: cx - left, r: right - cx, u: cy - top, d: bottom - cy, pod };
       const was = reach[seat];
-      if (!was || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
+      if (!was || Math.abs(was.pod! - pod) > 4 || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
       next[seat] = now;
     });
     if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
@@ -143,12 +144,15 @@ export function Table({
   const w = size.w || (compact ? 320 : 800);
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
-  // Empty seats keep half a nameplate plus half a seat button clear of players, and some room between each other.
+  // Empty seats keep half the widest nameplate (as measured, without cards, so nothing moves on the deal) plus half an empty seat clear of
+  // players, and some room between each other, so they never land on someone's nameplate.
   const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
+  const podHalf = Math.max(compact ? 60 : 120, ...view.seats.map((s, seat) => (s && reach[seat]?.pod ? reach[seat].pod! : 0)));
+  const emptyHalf = compact ? 34 : 58;
   const spread = seatFractions(
     view.seats.map((s) => !!s),
     offset,
-    { clear: (compact ? 80 : 165) / perimeter, minGap: (compact ? 44 : 80) / perimeter },
+    { clear: (podHalf + emptyHalf + 6) / perimeter, minGap: (compact ? 72 : 120) / perimeter },
   );
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
@@ -284,14 +288,22 @@ export function Table({
         {live && (
           <div className="pots">
             <div className="pot-row">
-              {(hand!.pots.length ? hand!.pots : [{ amount: 0 }]).map((p, i) => (
-                <div className="pot" key={i}>
-                  <ChipStacks amount={p.amount} base={chipBase} />
-                  {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
+              {hand!.pots.length > 1 ? (
+                hand!.pots.map((p, i) => (
+                  <div className="pot" key={i}>
+                    <ChipStacks amount={p.amount} base={chipBase} />
+                    {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
+                  </div>
+                ))
+              ) : (
+                // One pot: show everything in play, bets in front of the seats included, so it never reads "Pot 0" with chips out.
+                <div className="pot">
+                  <ChipStacks amount={hand!.pots[0]?.amount ?? 0} base={chipBase} />
+                  Pot {fmt(Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0))}
                 </div>
-              ))}
+              )}
             </div>
-            {bets > 0 && hand!.potTotal > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
+            {hand!.pots.length > 1 && bets > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
           </div>
         )}
         {done &&

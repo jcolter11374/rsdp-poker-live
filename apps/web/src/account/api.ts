@@ -30,6 +30,8 @@ export interface Profile {
   displayName: string;
   account: { username: string; createdAt: string; devices: number; hasPassword: boolean; google: boolean } | null;
   tables: TableRow[];
+  /** Tables I hid from my profile. */
+  hiddenTables: TableRow[];
   tournaments: TournamentRow[];
 }
 
@@ -62,6 +64,84 @@ export function reloadTo(to: string) {
 }
 
 export const fetchProfile = () => request<Profile>('GET', '/api/account/me');
+
+/** My result at one real cash game, in cents (a chip counts as 100). */
+export interface ProfitSession {
+  tableId: string;
+  name: string;
+  at: string;
+  hands: number;
+  net: number;
+}
+
+export const fetchGraph = () => request<{ sessions: ProfitSession[] }>('GET', '/api/account/graph');
+
+/** One person on the leaderboard; amounts in cents (a chip counts as 100). */
+export interface LeaderRow {
+  key: string;
+  name: string;
+  profit: number;
+  sessions: number;
+  hands: number;
+  biggestPot: number;
+}
+
+export type LeaderPeriod = 'month' | 'year' | 'all';
+
+export const fetchLeaderboard = (period: LeaderPeriod) => request<{ period: LeaderPeriod; since: string | null; rows: LeaderRow[] }>('GET', `/api/leaderboard?period=${period}`);
+
+/** One hand found by search, as I saw it. */
+export interface FoundHand {
+  handId: string;
+  tableId: string;
+  tableName: string;
+  centsMode: boolean;
+  seatCount: number;
+  felt: string | null;
+  myId: string;
+  /** Chips in the pot (all pots together). */
+  pot: number;
+  hand: import('@rsdp/engine/wire').HandRecordView;
+}
+
+export interface HandQuery {
+  player?: string;
+  game?: string;
+  cards?: string;
+  minPot?: string;
+  result?: '' | 'won' | 'lost';
+}
+
+export function searchHands(q: HandQuery, before?: string | null) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v) params.set(k, String(v));
+  if (before) params.set('before', before);
+  return request<{ hands: FoundHand[]; next: string | null }>('GET', `/api/hands/search?${params}`);
+}
+
+export const fetchHandGames = () => request<{ games: { id: string; name: string; hands: number }[] }>('GET', '/api/hands/games');
+
+/** A link anyone can open to watch one of my hands; `hideMine` keeps my cards face down unless shown. */
+export const shareFoundHand = (handId: string, hideMine: boolean) => request<{ id: string }>('POST', '/api/hands/share', { handId, hideMine });
+
+/** Hides a cash table from my profile (or shows it again). Nobody else's records change. */
+export const hideTable = (tableId: string, hidden: boolean) => request('POST', '/api/account/tables/hide', { tableId, hidden });
+
+/** What the admin sees about a table before deleting it. */
+export interface AdminTable {
+  id: string;
+  name: string;
+  mode: 'cash' | 'tournament';
+  createdAt: string;
+  hands: number;
+  players: string[];
+  realGame: boolean;
+  live: boolean;
+}
+
+export const adminLookUpTable = (adminKey: string, id: string) => request<AdminTable>('GET', `/api/admin/tables/${encodeURIComponent(id)}`, undefined, { 'x-admin-key': adminKey });
+
+export const adminDeleteTable = (adminKey: string, id: string) => request('POST', `/api/admin/tables/${encodeURIComponent(id)}/delete`, undefined, { 'x-admin-key': adminKey });
 
 export async function signUp(username: string, password: string) {
   const res = await request<{ session: string; username: string }>('POST', '/api/account/signup', { username, password });

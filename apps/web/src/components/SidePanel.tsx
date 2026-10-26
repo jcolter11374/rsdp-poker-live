@@ -6,33 +6,15 @@ import { LogText } from './PlayingCard';
 import { download, fileStem, handHistoryText, ledgerCsv, settleUp } from '../records';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
-import { setChatMuted, useChatMutes } from '../chatMutes';
+import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, ShareHandDialog } from './table/Records';
 
-export type Tab = 'log' | 'chat' | 'ledger' | 'hands' | 'stats';
-const TAB_NAMES: Record<Tab, string> = { log: 'Log', chat: 'Chat', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
+export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
+const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
 
-export function SidePanel({
-  view,
-  fmt,
-  initialTab = 'log',
-  chatSeen,
-  onChatSeen,
-}: {
-  view: TableView;
-  fmt: Fmt;
-  initialTab?: Tab;
-  /** Chat messages already read, when the page keeps count (the phone sheet comes and goes). */
-  chatSeen?: number;
-  onChatSeen?: (count: number) => void;
-}) {
+/** The table's records: the log, ledger, hands and stats. Chat has its own box (table/Chat.tsx). */
+export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; fmt: Fmt; initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [text, setText] = useState('');
-  const [chatError, setChatError] = useState('');
-  const mutes = useChatMutes();
-  const [ownSeen, setOwnSeen] = useState(view.chat.length);
-  const seenChat = chatSeen ?? ownSeen;
-  const setSeenChat = onChatSeen ?? setOwnSeen;
   const scroller = useRef<HTMLDivElement>(null);
 
   const names = useMemo(() => {
@@ -43,13 +25,8 @@ export function SidePanel({
   const handLines = view.hand ? eventLines(view.hand.events, (seat) => view.hand?.names?.[seat] ?? names.get(seat) ?? `Seat ${seat + 1}`, fmt, view.me.seat) : [];
 
   useEffect(() => {
-    if (tab === 'chat') setSeenChat(view.chat.length);
-  }, [tab, view.chat.length]);
-  useEffect(() => {
     scroller.current?.scrollTo(0, scroller.current.scrollHeight);
-  }, [tab, view.log.length, view.chat.length, handLines.length]);
-
-  const unread = tab === 'chat' ? 0 : Math.max(0, view.chat.length - seenChat);
+  }, [tab, view.log.length, handLines.length]);
 
   return (
     <div className="panel side-panel">
@@ -57,7 +34,6 @@ export function SidePanel({
         {(Object.keys(TAB_NAMES) as Tab[]).map((t) => (
           <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
             {TAB_NAMES[t]}
-            {t === 'chat' && unread > 0 && <span className="badge">{unread}</span>}
           </button>
         ))}
       </div>
@@ -65,8 +41,8 @@ export function SidePanel({
         {tab === 'log' && (
           <>
             <FullLogDownload view={view} fmt={fmt} />
-            {view.log.map((l, i) => (
-              <div key={`t${i}`} className="log-table">
+            {groupLog(view.log).map((l, i) => (
+              <div key={`t${i}`} className="log-table" title={l.full}>
                 {l.text}
               </div>
             ))}
@@ -77,72 +53,10 @@ export function SidePanel({
             ))}
           </>
         )}
-        {tab === 'chat' &&
-          (view.chat.length ? (
-            view.chat
-              .filter((m) => !m.playerId || !mutes.includes(m.playerId))
-              .map((m, i) => (
-                <div key={i} className={m.playerId ? '' : 'log-table'}>
-                  {m.playerId ? (
-                    m.playerId === view.me.playerId ? (
-                      <b>{m.name}: </b>
-                    ) : (
-                      <b className="chat-name" title={`Click to mute ${m.name} for you`} onClick={() => confirm(`Mute ${m.name}? Only you stop seeing their messages.`) && setChatMuted(m.playerId!, true)}>
-                        {m.name}:{' '}
-                      </b>
-                    )
-                  ) : null}
-                  {m.text}
-                </div>
-              ))
-          ) : (
-            <p className="muted">No messages yet.</p>
-          ))}
         {tab === 'ledger' && <Ledger view={view} fmt={fmt} />}
         {tab === 'hands' && <Hands view={view} fmt={fmt} />}
         {tab === 'stats' && <Stats view={view} fmt={fmt} />}
       </div>
-      {tab === 'chat' && <ChatNotes view={view} mutes={mutes} error={chatError} />}
-      {tab === 'chat' && (
-        <form
-          className="row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!text.trim()) return;
-            call('chat:send', { text })
-              .then(() => setChatError(''))
-              .catch((err: Error) => setChatError(err.message));
-            setText('');
-          }}
-        >
-          <input value={text} maxLength={300} placeholder="Say something" onChange={(e) => setText(e.target.value)} />
-          <button>Send</button>
-        </form>
-      )}
-    </div>
-  );
-}
-
-/** Under the chat: whom you muted, and why you can't talk if you can't. */
-function ChatNotes({ view, mutes, error }: { view: TableView; mutes: string[]; error: string }) {
-  const name = (id: string) => [...view.chat].reverse().find((m) => m.playerId === id)?.name ?? view.seats.find((s) => s?.playerId === id)?.name ?? view.watchers.find((w) => w.playerId === id)?.name ?? 'Guest';
-  const shown = mutes.filter((id) => view.chat.some((m) => m.playerId === id) || view.seats.some((s) => s?.playerId === id) || view.watchers.some((w) => w.playerId === id));
-  const mutedByHost = view.muted.includes(view.me.playerId);
-  const quiet = !view.settings.chat.guestChat && view.me.seat === null && !view.isHost && !view.coHosts.some((c) => c.playerId === view.me.playerId);
-  if (!shown.length && !mutedByHost && !quiet && !error) return null;
-  return (
-    <div className="chat-notes muted">
-      {mutedByHost ? <div>The host has muted you.</div> : quiet ? <div>Only players at the table can chat here.</div> : error && <div className="error">{error}</div>}
-      {shown.length > 0 && (
-        <div>
-          Muted for you:{' '}
-          {shown.map((id) => (
-            <button key={id} className="link" title="Unmute" onClick={() => setChatMuted(id, false)}>
-              {name(id)} ✕
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

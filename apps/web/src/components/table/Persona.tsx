@@ -4,6 +4,7 @@ import { call, currentSession, onSession, socket } from '../../socket';
 import { setPrefs, usePrefs } from '../../prefs';
 import { sounds } from '../../sound';
 import { fromVars, px, type Point } from '../geometry';
+import { NoteButton } from './Notes';
 
 /*
  * Who a player is at the table, beyond their name: a picture (from the
@@ -110,7 +111,7 @@ export function BotAvatar({ look, title, size = 36 }: { look: number; title: str
 const INITIALS_COLORS = ['#e5574b', '#3b82f6', '#e39a1c', '#14a06f', '#8b5cf6', '#e0558f', '#0f9fae', '#6b7a8f'];
 
 /** A steady colour per player for the initials shown when there's no picture. */
-function initialsColor(playerId: string) {
+export function initialsColor(playerId: string) {
   let h = 0;
   for (const ch of playerId) h = (h * 31 + ch.charCodeAt(0)) | 0;
   return INITIALS_COLORS[Math.abs(h) % INITIALS_COLORS.length];
@@ -300,6 +301,7 @@ export function PlayerExtras({ view, seat: tapped, onDone }: { view: TableView; 
           Hide {seat.name}'s picture (only for me)
         </label>
       )}
+      <NoteButton seat={seat} />
       {error && <p className="error">{error}</p>}
     </div>
   );

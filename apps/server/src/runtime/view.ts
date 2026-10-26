@@ -2,7 +2,7 @@ import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type View
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { FAIR_REVEAL_AFTER_MS, fillStakes, rabbitCards, type TableRuntime } from './table';
-import type { HandRecord, PastHand } from './types';
+import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
 
 const CHAT_SHOWN = 100;
@@ -100,6 +100,7 @@ export function tableView(
     tournamentId,
     hostId: s.hostId,
     isHost,
+    realGame: !!s.realGame,
     powers: rt.powersOf(playerId),
     coHosts: (s.coHosts ?? []).map((c) => ({ ...c, powers: [...c.powers] })),
     me: { playerId, seat: mySeat?.seat ?? null },
@@ -330,22 +331,62 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
-    fair: opts.hideMine ? null : fairRecordView(rt, past),
+    fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealed(past.handNumber, past.endedAt), (id) => rt.nameOf(id)),
   };
 }
 
-function fairRecordView(rt: TableRuntime, past: PastHand): FairRecordView | null {
+function fairRecordView(past: PastHand, revealed: boolean, nameOf: (id: PlayerId) => string): FairRecordView | null {
   const { fair, handId } = past;
   if (!fair || !handId) return null;
-  const revealed = rt.fairRevealed(past.handNumber, past.endedAt);
   return {
     version: fair.version,
     handId,
     commit: fair.commit,
-    clientSeeds: fair.clientSeeds.map((c) => ({ ...c, name: rt.nameOf(c.playerId) })),
+    clientSeeds: fair.clientSeeds.map((c) => ({ ...c, name: nameOf(c.playerId) })),
     serverSeed: revealed ? fair.serverSeed : null,
     handSeed: revealed ? fair.handSeed : null,
     revealsAt: revealed ? null : past.endedAt + FAIR_REVEAL_AFTER_MS,
     events: revealed ? past.events : null,
+  };
+}
+
+/**
+ * A saved hand as one player may see it, from the table's saved state rather
+ * than a running table (hand search reads many tables). Names and bots come
+ * from the snapshot. With `now`, the fairness record comes too (revealed as
+ * the table would reveal it); a share link never carries it.
+ */
+export function savedHandView(
+  state: Partial<Pick<RuntimeState, 'seats' | 'ledger' | 'handNames' | 'bots' | 'fair'>> | undefined,
+  past: PastHand,
+  playerId: PlayerId,
+  opts: { hideMine?: boolean; now?: number } = {},
+): HandRecordView {
+  const nameOf = (id: PlayerId) => state?.seats?.find((x) => x?.playerId === id)?.name ?? state?.ledger?.[id]?.name ?? state?.handNames?.[id] ?? 'Guest';
+  const botOf = (id: PlayerId) => {
+    const bot = state?.bots?.[id];
+    if (bot) return { ownerName: bot.ownerName, look: bot.look ?? 0 };
+    const row = state?.ledger?.[id];
+    if (row?.bot) return { ownerName: row.owner ?? '', look: row.look ?? 0 };
+    return id.startsWith('bot-') ? { ownerName: '', look: 0 } : null;
+  };
+  const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
+  return {
+    handNumber: past.handNumber,
+    startedAt: past.startedAt,
+    endedAt: past.endedAt,
+    gameName: past.gameName,
+    betting: past.betting,
+    stakes: past.stakes,
+    button: past.button,
+    seats: past.seats.map((x) => {
+      const bot = botOf(x.playerId);
+      return { seat: x.seat, playerId: x.playerId, name: nameOf(x.playerId), stack: x.startStack, ...(bot ? { bot } : {}) };
+    }),
+    events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
+    fair:
+      opts.now === undefined || opts.hideMine
+        ? null
+        : fairRecordView(past, past.handNumber <= (state?.fair?.revealedThrough ?? 0) || opts.now - past.endedAt >= FAIR_REVEAL_AFTER_MS, nameOf),
   };
 }
