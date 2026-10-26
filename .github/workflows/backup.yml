@@ -64,7 +64,10 @@ jobs:
           cd "$RUNNER_TEMP/backup"
           # What the restore should give back, read just before the copy.
           "$GITHUB_WORKSPACE/scripts/backup/expect.sh" "$SITE" > before.json
-          curl -sf --max-time 600 --retry 3 --retry-delay 30 --retry-all-errors -H "X-Admin-Key: $ADMIN_KEY" "$SITE/api/admin/backup" -o backup.jsonl.gz
+          # A refusal (a wrong key, say) isn't retried: wrong keys count towards the site's lockout.
+          code=$(curl -s --max-time 600 --retry 3 --retry-delay 30 --retry-all-errors -H "X-Admin-Key: $ADMIN_KEY" "$SITE/api/admin/backup" -o backup.jsonl.gz -w '%{http_code}') || { echo "::error::The download broke off"; exit 1; }
+          # A refusal is a short message, never data.
+          [ "$code" = 200 ] || { echo "::error::The site answered $code: $(head -c 200 backup.jsonl.gz)"; exit 1; }
           gzip -t backup.jsonl.gz
           echo "Downloaded $(du -h backup.jsonl.gz | cut -f1)"
           # The leaderboard is worked out at most once a minute: if it is the same a minute after
