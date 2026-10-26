@@ -138,8 +138,10 @@ export function Table({
   const hand = view.hand;
   const done = hand?.phase === 'complete';
   const live = !!hand && !done;
-  const ticking = !!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline;
-  const now = useNow(ticking) + skew;
+  const ticking = !view.paused && (!!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline);
+  // While paused the server sends each clock as the time left at the view's own moment, so it stands still.
+  const clientNow = useNow(ticking) + skew;
+  const now = view.paused ? view.serverNow : clientNow;
   const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
 
   // Geometry. Before the first measure, assume a typical box so nothing jumps far.

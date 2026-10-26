@@ -61,6 +61,8 @@ export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
 const RIT_VOTE_SECONDS = 12;
+/** A clock paused with less than this left gets this much on resume, so nobody times out the moment play goes on. */
+export const RESUME_MIN_MS = 5_000;
 const NAME_MAX = 20;
 /** How long a cash table waits for an offline host before handing the table to a seated player. */
 export const HOST_HANDOFF_MS = 3 * 60_000;
@@ -851,9 +853,10 @@ export class TableRuntime {
     const now = this.clock.now();
     if (value) {
       s.pausedLeft = {
-        turn: s.turn?.deadline != null ? Math.max(0, s.turn.deadline - now) : null,
+        at: now,
+        turn: s.turn?.deadline != null ? Math.max(RESUME_MIN_MS, s.turn.deadline - now) : null,
         nextHand: s.nextHandAt != null ? Math.max(0, s.nextHandAt - now) : null,
-        rit: s.ritDeadline != null ? Math.max(0, s.ritDeadline - now) : null,
+        rit: s.ritDeadline != null ? Math.max(RESUME_MIN_MS, s.ritDeadline - now) : null,
       };
       if (s.level.runningSince !== null) {
         s.level.elapsedMs += now - s.level.runningSince;
@@ -864,6 +867,8 @@ export class TableRuntime {
     } else {
       const left = s.pausedLeft;
       if (left && s.turn && left.turn !== null) {
+        // The turn started that much later too, so the clock's bar picks up where it stopped.
+        if (s.turn.deadline !== null) s.turn.startedAt += now + left.turn - s.turn.deadline;
         s.turn.deadline = now + left.turn;
         // The bank starts where the extended deadline less the whole bank falls (it may still be ahead).
         const banked = s.seats[s.turn.seat];
@@ -879,6 +884,15 @@ export class TableRuntime {
       this.log('Game resumed');
     }
     this.sync();
+  }
+
+  /**
+   * While paused: how far the clocks would move on if play resumed now. Views add it to
+   * every deadline so the clocks show the time left and stand still.
+   */
+  pausedFor(now = this.clock.now()): number {
+    const at = this.state.paused ? this.state.pausedLeft?.at : undefined;
+    return at == null ? 0 : Math.max(0, now - at);
   }
 
   /** Host edit: some fields apply now, the rest at the next hand. */
