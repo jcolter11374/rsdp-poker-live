@@ -18,7 +18,9 @@ import { FakeClock, seeded } from './fake-clock';
  *
  *   BOT_MOVES_UPDATE=1 npx vitest run test/bot-golden.test.ts
  *
- * Each line is `<hand or seed>.<street>:<seat>:<move>:<random numbers drawn>`.
+ * Each line is `<hand or seed>.<street>:<seat>:<move>:<random numbers drawn>`
+ * (Hard's runs against players who fold a lot start with f or r, and its
+ * stud starts against a crowd with c).
  */
 const GOLDEN = path.resolve(__dirname, '__snapshots__/bot-moves.json');
 const UPDATE = !!process.env.BOT_MOVES_UPDATE;
@@ -26,6 +28,16 @@ const UPDATE = !!process.env.BOT_MOVES_UPDATE;
 /** Hands each table plays, and hands dealt from a seeded deck, for each game, betting and level. */
 const TABLE_HANDS = 6;
 const SEEDS = 6;
+/**
+ * Hard only: hands dealt from a seeded deck against players who fold to most
+ * bets in every game, and stud starts with a crowd. Then many more, in one
+ * flop game and the stud games only (Hard's rules are the same in every game,
+ * and these are quick), so a small change to how often it bluffs, semi-bluffs
+ * or steals shows.
+ */
+const FOLD_SEEDS = 8;
+const CROWD_SEEDS = 3;
+const ROLL_SEEDS = 120;
 
 /**
  * The table's own bots, recorded as they move: whichever of the strategy's
@@ -48,7 +60,7 @@ vi.mock('../src/bots/strategy', async (importOriginal) => {
   return out;
 });
 
-type Golden = Record<string, { table: string[]; spots: string[] }>;
+type Golden = Record<string, { table: string[]; spots: string[]; folds?: string[] }>;
 const golden: Golden = existsSync(GOLDEN) ? JSON.parse(readFileSync(GOLDEN, 'utf8')) : {};
 const made: Golden = {};
 
@@ -122,6 +134,15 @@ const READS: Record<string, PlayerRead> = {
   p2: { acts: 25, aggressive: 4, faced: 12, folds: 1 },
 };
 
+/**
+ * Players who fold to nearly every bet and rarely bet themselves, for Hard:
+ * its steals, semi-bluffs and bluffs all grow with how often its opponents
+ * fold, so only against them do those coin flips come up with real chances.
+ */
+const FOLDERS: Record<string, PlayerRead> = Object.fromEntries(
+  Array.from({ length: 8 }, (_, i) => [`p${i}`, { acts: 30 + i, aggressive: 2, faced: 30, folds: 26 + (i % 3) }]),
+);
+
 const studStakes = { smallBlind: 0, bigBlind: 2, ante: 1, anteType: 'per-player' as const, bringIn: 1, smallBet: 2, bigBet: 4 };
 const blindStakes = { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none' as const, bringIn: 1, smallBet: 2, bigBet: 4 };
 
@@ -131,8 +152,15 @@ const blindStakes = { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none' as c
  * own until the street ends. Between them, the seeds cover two to four players,
  * every street, a short stack and two boards.
  */
-function spotRun(spec: VariantSpec, betting: BettingKind, level: BotLevel, seed: number): string[] {
-  const players = 2 + ((seed - 1) % 3);
+function spotRun(
+  spec: VariantSpec,
+  betting: BettingKind,
+  level: BotLevel,
+  seed: number,
+  opts: { reads?: Record<string, PlayerRead>; players?: number; target?: number } = {},
+): string[] {
+  const players = opts.players ?? 2 + ((seed - 1) % 3);
+  const reads = opts.reads ?? READS;
   const r = seededRand(seed * 7919);
   const deck = 'AKQJT98765432'.split('').flatMap((x) => 'cdhs'.split('').map((s) => x + s));
   for (let i = deck.length - 1; i > 0; i--) {
@@ -165,7 +193,7 @@ function spotRun(spec: VariantSpec, betting: BettingKind, level: BotLevel, seed:
     options: { boards: spec.family === 'flop' && seed % 5 === 0 ? 2 : 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
     modifiers: [],
   });
-  const target = seed % spec.streets.length;
+  const target = opts.target ?? seed % spec.streets.length;
   const out: string[] = [];
   for (let step = 0; step < 200 && hand.phase !== 'complete' && hand.toAct !== null; step++) {
     const seat = hand.toAct;
@@ -173,7 +201,7 @@ function spotRun(spec: VariantSpec, betting: BettingKind, level: BotLevel, seed:
     if (hand.street === target) {
       let n = 0;
       const rand = seededRand(seed * 1000 + step);
-      const move = chooseMove(hand, seat, () => (n++, rand()), { level, players: READS });
+      const move = chooseMove(hand, seat, () => (n++, rand()), { level, players: reads });
       out.push(line(String(seed), hand, seat, move, n));
       if (move.kind === 'draw') engine.draw(hand, seat, move.discard);
       else engine.act(hand, seat, move.action);
@@ -193,6 +221,23 @@ function spotRun(spec: VariantSpec, betting: BettingKind, level: BotLevel, seed:
   return out;
 }
 
+/**
+ * Hard against players who fold a lot: heads-up and three-handed on every
+ * street (bluffs, semi-bluffs, steals), and in stud a crowd of four or five
+ * at the bring-in, where it must not steal.
+ */
+function foldRuns(spec: VariantSpec, betting: BettingKind): string[] {
+  const out = Array.from({ length: FOLD_SEEDS }, (_, i) => spotRun(spec, betting, 'hard', 100 + i, { reads: FOLDERS, players: 2 + (i % 2) }).map((x) => `f${x}`)).flat();
+  if (spec.family === 'stud')
+    for (let i = 0; i < CROWD_SEEDS; i++) out.push(...spotRun(spec, betting, 'hard', 200 + i, { reads: FOLDERS, players: 4 + (i % 2), target: 0 }).map((x) => `c${x}`));
+  // Heads-up on the flop and turn, where it bluffs and semi-bluffs, and stud starts of two or three, where it steals.
+  if (spec.id === 'nlhe' && betting === 'no-limit')
+    for (let i = 0; i < ROLL_SEEDS; i++) out.push(...spotRun(spec, betting, 'hard', 300 + i, { reads: FOLDERS, players: 2, target: 1 + (i % 2) }).map((x) => `r${x}`));
+  if (spec.family === 'stud' && betting === spec.defaultBetting)
+    for (let i = 0; i < ROLL_SEEDS / 4; i++) out.push(...spotRun(spec, betting, 'hard', 300 + i, { reads: FOLDERS, players: 2 + (i % 2), target: 0 }).map((x) => `r${x}`));
+  return out;
+}
+
 describe('bot moves stay the same', () => {
   for (const spec of VARIANT_LIST) {
     for (const betting of ['no-limit', 'pot-limit', 'fixed-limit'] as BettingKind[]) {
@@ -201,10 +246,12 @@ describe('bot moves stay the same', () => {
         for (const level of BOT_LEVELS) {
           const key = `${spec.id}/${betting}/${level}`;
           made[key] = { table: tableRun(spec, betting, level), spots: Array.from({ length: SEEDS }, (_, i) => spotRun(spec, betting, level, i + 1)).flat() };
+          if (level === 'hard') made[key].folds = foldRuns(spec, betting);
           if (UPDATE) continue;
           expect(golden[key], `${key} is missing from ${GOLDEN}: run with BOT_MOVES_UPDATE=1 to make it`).toBeDefined();
           expect(made[key].table, `${key} table`).toEqual(golden[key].table);
           expect(made[key].spots, `${key} spots`).toEqual(golden[key].spots);
+          expect(made[key].folds, `${key} against players who fold`).toEqual(golden[key].folds);
         }
       });
     }
