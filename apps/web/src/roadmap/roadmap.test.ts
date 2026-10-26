@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import roadmap from './roadmap.json';
 import { formatDay, type Roadmap } from './RoadmapPage';
 import { logOrder, type Suggestion } from './suggestions';
-import { releases } from './whatsNew';
+import { changelog, releases } from './whatsNew';
 
 describe('roadmap.json', () => {
   const data = roadmap as Roadmap;
@@ -50,5 +50,22 @@ describe('whatsnew.json', () => {
     }
     const dates = releases.map((r) => r.date);
     expect([...dates].sort().reverse()).toEqual(dates);
+  });
+});
+
+describe('changelog.json', () => {
+  it('lists every release on What\'s new, newest first, with real dates', () => {
+    const ids = changelog.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const r of releases) expect(ids).toContain(r.id);
+    for (const r of changelog) {
+      expect(formatDay(r.date)).not.toContain('Invalid');
+      for (const fix of r.fixes) expect(fix).toBeTruthy();
+    }
+    expect([...ids].sort().reverse()).toEqual(ids);
+  });
+
+  it('keeps small fixes off What\'s new', () => {
+    for (const r of releases) for (const it of r.items) expect(it.title).not.toMatch(/fixes/i);
   });
 });

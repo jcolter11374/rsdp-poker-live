@@ -30,6 +30,9 @@ export function WhatsNewPage({ list = releases }: { list?: Release[] }) {
             </ul>
           </section>
         ))}
+        <p className="roadmap-intro changelog-link">
+          Looking for the small fixes? They're in the <a href="/changelog">changelog</a>.
+        </p>
       </main>
       <SiteFooter />
     </div>
