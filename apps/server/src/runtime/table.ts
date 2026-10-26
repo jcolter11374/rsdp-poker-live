@@ -78,6 +78,13 @@ export const SEAT_OFFER_MS = 60_000;
 /** A practice bot takes this long, plus up to BOT_THINK_SPREAD_MS, to act. */
 export const BOT_THINK_MS = 700;
 const BOT_THINK_SPREAD_MS = 1100;
+
+/** A whole number from a turn key, the same on every server: how long a bot thinks, and the deals behind a coach tip. */
+export function hashKey(key: string): number {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
 /** Bots a player who is not the host may have at one table. */
 export const BOTS_PER_PLAYER = 3;
 
@@ -1427,9 +1434,7 @@ export class TableRuntime {
     if (s.paused || !hand || hand.phase === 'complete' || hand.phase === 'rit-vote' || hand.toAct === null || !s.turn) return null;
     const seat = s.seats[hand.toAct];
     if (!seat || !this.isBot(seat.playerId) || s.turn.seat !== hand.toAct) return null;
-    let h = 0;
-    for (const ch of s.turn.key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return s.turn.startedAt + BOT_THINK_MS + (h % BOT_THINK_SPREAD_MS);
+    return s.turn.startedAt + BOT_THINK_MS + (hashKey(s.turn.key) % BOT_THINK_SPREAD_MS);
   }
 
   private botMove(seatNo: number) {

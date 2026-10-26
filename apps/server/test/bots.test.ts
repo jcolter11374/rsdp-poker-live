@@ -1,11 +1,25 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { engine, variants, type BettingKind } from '@rsdp/engine/core';
+import { engine, variants, type BettingKind, type Card, type HandState } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
-import { BOT_THINK_MS, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
+import { BOT_THINK_MS, hashKey, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
 import { handRecordView, tableView } from '../src/runtime/view';
 import { BOT_LEVELS, BOT_LOOKS } from '@rsdp/engine/wire';
-import { botTuning, chooseMove, readPlayers, seededRand } from '../src/bots/strategy';
+import {
+  botTuning,
+  chooseMove,
+  explainMove,
+  handReads,
+  normalDecide,
+  opponentDraws,
+  readPlayers,
+  seededRand,
+  seenBy,
+  situation,
+  tipDice,
+  type Dice,
+  type MoveWhy,
+} from '../src/bots/strategy';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -331,32 +345,32 @@ describe('practice bots', () => {
   }
 });
 
-describe('bot strategy', () => {
-  /** Deals one hand with a stacked deck and returns it, with seat 0 to act. */
-  function dealt(gameId: string, cards: string[], players = 2) {
-    const spec = getVariant(gameId);
-    const rest = 'AKQJT98765432'.split('').flatMap((r) => 'cdhs'.split('').map((s) => r + s)).filter((c) => !cards.includes(c));
-    return engine.startHand({
-      handId: 'h',
-      handNumber: 1,
-      game: spec,
-      betting: spec.defaultBetting,
-      stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 1, smallBet: 2, bigBet: 4 },
-      maxSeats: players,
-      seats: Array.from({ length: players }, (_, i) => ({ seat: i, playerId: `p${i}`, stack: 200, away: false })),
-      button: 1,
-      buttonDead: false,
-      posts: [
-        { seat: 0, kind: 'small-blind', amount: 1, live: true },
-        { seat: 1, kind: 'big-blind', amount: 2, live: true },
-      ],
-      deck: [...cards, ...rest],
-      reshuffleSeed: 1,
-      options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
-      modifiers: [],
-    });
-  }
+/** Deals one hand with a stacked deck and returns it, with seat 0 to act. */
+function dealt(gameId: string, cards: string[], players = 2) {
+  const spec = getVariant(gameId);
+  const rest = 'AKQJT98765432'.split('').flatMap((r) => 'cdhs'.split('').map((s) => r + s)).filter((c) => !cards.includes(c));
+  return engine.startHand({
+    handId: 'h',
+    handNumber: 1,
+    game: spec,
+    betting: spec.defaultBetting,
+    stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 1, smallBet: 2, bigBet: 4 },
+    maxSeats: players,
+    seats: Array.from({ length: players }, (_, i) => ({ seat: i, playerId: `p${i}`, stack: 200, away: false })),
+    button: 1,
+    buttonDead: false,
+    posts: [
+      { seat: 0, kind: 'small-blind', amount: 1, live: true },
+      { seat: 1, kind: 'big-blind', amount: 2, live: true },
+    ],
+    deck: [...cards, ...rest],
+    reshuffleSeed: 1,
+    options: { boards: 1, bombPot: false, runItTwice: 'off', fixedLimitCap: 4, uncappedHeadsUp: false },
+    modifiers: [],
+  });
+}
 
+describe('bot strategy', () => {
   it('raises aces and folds the worst hand to a raise', () => {
     // Seat 0 posts the small blind and acts first.
     const aces = dealt('nlhe', ['As', '2c', 'Ah', '7d']);
@@ -663,4 +677,151 @@ describe('bots keep playing', () => {
     expect(raises).toBeLessThanOrEqual(28);
     expect(hand.seats.every((x) => !x.allIn)).toBe(true);
   });
+});
+
+describe('bots explain their moves', () => {
+  it('give the move chooseMove makes, with the numbers behind it', () => {
+    const aces = dealt('nlhe', ['As', '2c', 'Ah', '7d']);
+    const { move, why } = explainMove(aces, 0, seededRand(1));
+    expect(move).toEqual(chooseMove(aces, 0, seededRand(1)));
+    expect(why).toMatchObject({ rule: 'raise', opponents: 1, drawsLeft: 0, split: false, big: false, capped: false });
+    expect(why.equity).toBeGreaterThan(0.8);
+    // Facing a raise to 40 with seven-deuce: the call costs 38 of the 80 the pot would hold.
+    const junk = dealt('nlhe', ['7c', 'As', '2d', 'Ah']);
+    engine.act(junk, 0, { type: 'call' });
+    engine.act(junk, 1, { type: 'raise', to: 40 });
+    const fold = explainMove(junk, 0, seededRand(1)).why;
+    expect(fold).toMatchObject({ rule: 'fold', cost: 38 / 80, big: false });
+    expect(fold.need).toBeCloseTo(38 / 80 + 0.03);
+    expect(fold.equity).toBeLessThan(fold.need!);
+    // Omaha 8 or better splits the pot.
+    expect(explainMove(dealt('plo8', ['As', 'Kc', '2h', 'Kd', '3c', 'Qs', '4d', 'Qh']), 0, seededRand(1)).why.split).toBe(true);
+  });
+
+  it('say how many cards they threw, and what the next best draw came to', () => {
+    const td = dealt('td27', ['2c', 'Ah', '3d', 'Ad', '7s', 'As', 'Kc', 'Qh', 'Kd', 'Qd']);
+    engine.act(td, 0, { type: 'call' });
+    engine.act(td, 1, { type: 'check' });
+    const { move, why } = explainMove(td, 0, seededRand(3));
+    expect(move).toEqual(chooseMove(td, 0, seededRand(3)));
+    expect(why).toMatchObject({ rule: 'draw', thrown: 2, drawsLeft: 3 });
+    expect(why.alt!.equity).toBeLessThanOrEqual(why.equity!);
+    expect(why.alt!.thrown).not.toBe(2);
+  });
+
+  it('Hard says how it sat and whose folds it counted on', () => {
+    const hand = dealt('nlhe', ['Kc', 'Qs', '9d', 'Jh']);
+    engine.act(hand, 0, { type: 'call' });
+    engine.act(hand, 1, { type: 'raise', to: 20 });
+    const players = { p1: { acts: 30, aggressive: 3, faced: 14, folds: 10 } };
+    const { why } = explainMove(hand, 0, seededRand(1), { level: 'hard', players });
+    expect(why).toMatchObject({ foldFrom: 'p1', foldRate: (10 + 2.1) / (14 + 6), lastRound: false });
+    expect(typeof why.inPosition).toBe('boolean');
+  });
+
+  it("tip dice never bluff, steal or semi-bluff; they take the raise band and the smallest size", () => {
+    for (const label of ['bluff', 'steal', 'semi-bluff'] as const) expect(tipDice.roll(label, 1)).toBe(false);
+    expect(tipDice.roll('raise-band', 0)).toBe(true);
+    expect(tipDice.between('size', 0.5, 0.25)).toBe(0.5);
+    // Dice that hit every time make Normal bluff on the turn heads-up; tip dice check the same hand.
+    const turn = dealt('nlhe', ['7c', 'As', '2d', 'Ah', 'Kd', 'Qs', '9h', '4h', '3s', '8c']);
+    while (turn.street < 2) engine.act(turn, turn.toAct!, engine.legalActions(turn, turn.toAct!)!.canCheck ? { type: 'check' } : { type: 'call' });
+    const legal = engine.legalActions(turn, turn.toAct!)!;
+    const always: Dice = { roll: () => true, between: (_label, base, span) => base + span };
+    const bot: MoveWhy = { rule: 'check' };
+    expect(normalDecide(turn, turn.toAct!, legal, 0.05, 1, always, bot).type).toBe('bet');
+    expect(bot.rule).toBe('bluff');
+    const tip: MoveWhy = { rule: 'check' };
+    expect(normalDecide(turn, turn.toAct!, legal, 0.05, 1, tipDice, tip)).toEqual({ type: 'check' });
+    expect(tip.rule).toBe('check');
+    // Whatever its chances, a tip bets or raises only for value: a half-pot bet, or three quarters of the pot as a raise.
+    const facing = dealt('nlhe', ['7c', 'As', '2d', 'Ah']);
+    engine.act(facing, 0, { type: 'raise', to: 8 });
+    for (const [hand, seat] of [[turn, turn.toAct!], [facing, 1]] as [HandState, number][]) {
+      for (let equity = 0; equity <= 1; equity += 0.05) {
+        const why: MoveWhy = { rule: 'check' };
+        const action = normalDecide(hand, seat, engine.legalActions(hand, seat)!, equity, 1, tipDice, why);
+        expect(['bluff', 'steal', 'semi-bluff']).not.toContain(why.rule);
+        if (action.type === 'bet' || action.type === 'raise') expect(['value', 'raise']).toContain(why.rule);
+      }
+    }
+  });
+
+  it('keep the turn-key hash the bots have always used', () => {
+    const old = (key: string) => {
+      let h = 0;
+      for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return h;
+    };
+    for (const key of ['t1-1:0', 'abc-123:45', 'x'.repeat(200), '']) expect(hashKey(key)).toBe(old(key));
+    expect(hashKey('t1-1:0')).toBe(old('t1-1:0'));
+  });
+});
+
+describe('what a seat sees (seenBy)', () => {
+  const tuning = { ...botTuning };
+  beforeAll(() => Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 2, drawFinalSims: 3, drawBetSims: 2, drawBetFinalSims: 2 }));
+  afterAll(() => Object.assign(botTuning, tuning));
+
+  /** Every card the player in `seat` has been shown: their own (thrown ones too), up cards, boards and cards shown. */
+  function visibleTo(hand: HandState, seat: number): Set<Card> {
+    const out = new Set<Card>();
+    for (const e of hand.events) {
+      if (e.t === 'deal') for (const c of e.cards) if (c.up || e.seat === seat) out.add(c.card);
+      if (e.t === 'draw' && e.seat === seat) for (const c of e.cards) out.add(c);
+      if (e.t === 'board' || e.t === 'show') for (const c of e.cards) out.add(c);
+    }
+    return out;
+  }
+
+  function check(hand: HandState, seat: number) {
+    const seen = seenBy(hand, seat);
+    const json = JSON.stringify(seen);
+    const visible = visibleTo(hand, seat);
+    const cards = [...json.matchAll(/"([2-9TJQKA][cdhs])"/g)].map((m) => m[1]);
+    expect(cards.filter((c) => !visible.has(c))).toEqual([]);
+    for (const x of hand.seats) if (x.seat !== seat) for (const c of x.cards) if (!c.up) expect(json).not.toContain(`"${c.card}"`);
+    for (const c of hand.input.deck.slice(hand.deckPos)) if (!visible.has(c)) expect(json).not.toContain(`"${c}"`);
+    expect(hand.input.fair).toBeDefined();
+    for (const secret of [hand.input.fair!.serverSeed, hand.input.fair!.handSeed]) expect(json).not.toContain(secret);
+    expect(seen.input).not.toHaveProperty('fair');
+    expect([seen.input.deck, seen.muck, seen.deckPos]).toEqual([[], [], 0]);
+    expect(json).not.toContain('"pos"');
+    // Others' draws keep how many they threw, never which ones.
+    for (const e of seen.events) if (e.t === 'draw' && e.seat !== seat) expect(e).not.toHaveProperty('positions');
+    // It plays the same: what the bot sees, how opponents have bet, and how many cards they drew.
+    expect(situation(seen, seat)).toEqual(situation(hand, seat));
+    expect(handReads(seen, seat, {})).toEqual(handReads(hand, seat, {}));
+    expect(opponentDraws(seen, seat, 3)).toEqual(opponentDraws(hand, seat, 3));
+  }
+
+  for (const spec of VARIANT_LIST) {
+    it(`holds only what that seat can see in ${spec.name}`, () => {
+      const stud = spec.family === 'stud';
+      const { rt, clock } = table((s) => {
+        s.game.gameId = spec.id;
+        s.table.maxSeats = 4;
+        if (stud) Object.assign(s.stakes, { smallBlind: 0, bigBlind: 2, ante: 1, anteType: 'per-player', bringIn: 0 });
+        s.timing.decisionSeconds = 0;
+      });
+      rt.requestSeat('host', { seat: 0, name: 'Host', stack: 300 });
+      for (const level of BOT_LEVELS) rt.addBot('host', { ownerName: 'Host', level });
+      rt.start('host');
+      let checked = 0;
+      for (let i = 0; i < 20_000 && rt.state.handNumber <= 3; i++) {
+        const h = rt.state.hand;
+        if (h && (h.phase === 'betting' || h.phase === 'drawing') && h.toAct !== null) {
+          for (const x of h.seats) check(h, x.seat);
+          checked++;
+          if (rt.state.seats[h.toAct]?.playerId === 'host') {
+            if (h.phase === 'drawing') rt.draw('host', [0]);
+            else rt.act('host', engine.legalActions(h, h.toAct)!.canCheck ? { type: 'check' } : { type: 'call' });
+            continue;
+          }
+        }
+        clock.advance(500);
+      }
+      expect(checked).toBeGreaterThan(5);
+    });
+  }
 });
