@@ -159,7 +159,7 @@ export function ActionBar({
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
   // On your turn (betting or drawing) the time bank sits on the bar's top line, so the bar is no taller for it.
-  const canBank = !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
+  const canBank = !view.paused && !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
   const head = canBank ? (
     <div className="bar-head">
       {hint}
@@ -238,7 +238,9 @@ export function ActionBar({
     );
   }
 
-  if (!me || !me.inHand || me.folded || me.allIn || hand.phase !== 'betting') {
+  // Once the board is being run out (everyone all in) there is nothing left to bet.
+  const runningOut = hand.events.some((e) => e.t === 'run-it');
+  if (!me || !me.inHand || me.folded || me.allIn || hand.phase !== 'betting' || runningOut) {
     const waiting = hand.phase === 'drawing' && me?.inHand && !me.folded ? <div className="muted">Waiting for the draw…</div> : null;
     return (
       <div className="action-bar idle">

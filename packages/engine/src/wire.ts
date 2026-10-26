@@ -213,6 +213,12 @@ export interface TableView {
    */
   spectator: { delaySeconds: number; seeAll: boolean; blocked: boolean } | null;
   /**
+   * Set for everyone while spectators can see every hole card: how far behind
+   * they watch, when it was turned on (0 if from the start or not known),
+   * and how many people who aren't players or staff are watching now.
+   */
+  cardsWatched: { delaySeconds: number; at: number; watchers: number } | null;
+  /**
    * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
    * next hand's server seed (seated browsers answer with fair:seed), and the
    * one the hand in progress was dealt from.
@@ -289,7 +295,8 @@ export interface ClientToServer {
   'hand:share': (input: { handNumber: number; hideMine?: boolean }, ack: Ack<{ id: string }>) => void;
   /** Stop a link I made from working. */
   'hand:unshare': (input: { id: string }, ack: Ack) => void;
-  'seat:request': (input: { seat: number; name: string; stack: number }, ack: Ack) => void;
+  /** `consent`: the player agreed to spectators seeing their cards (required while they do). */
+  'seat:request': (input: { seat: number; name: string; stack: number; consent?: boolean }, ack: Ack) => void;
   'seat:cancel': () => void;
   'seat:stand': (input: { afterHand?: boolean }) => void;
   'seat:sitOut': (input: { value: boolean }, ack: Ack) => void;
@@ -318,6 +325,17 @@ export interface ClientToServer {
   'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
   /** Saves (or, with no text and no colour, deletes) my note on a player. */
   'notes:set': (input: PlayerNote, ack: Ack<{ note: PlayerNote | null }>) => void;
+  /** My saved setups of one kind (signed in only; guests keep theirs in the browser). */
+  'setups:list': (input: { kind: SetupKind }, ack: Ack<{ setups: SavedSetup[] }>) => void;
+  /** Saves a setup under its name, replacing one of the same name. Answers with the name as kept. */
+  'setups:save': (input: { kind: SetupKind; name: string; json: string }, ack: Ack<{ name: string }>) => void;
+  'setups:rename': (input: { kind: SetupKind; from: string; to: string }, ack: Ack<{ name: string }>) => void;
+  'setups:delete': (input: { kind: SetupKind; name: string }, ack: Ack) => void;
+  /**
+   * Brings setups saved in this browser onto the account; a name already taken there gets a number. Bad ones,
+   * and any past the limit, are left out. `kept` names (as sent) the ones the account now holds.
+   */
+  'setups:import': (input: { kind: SetupKind; setups: SavedSetup[] }, ack: Ack<{ added: number; kept: string[] }>) => void;
   /** Approve a request; `seat` puts a seat request's player in another open seat. */
   'host:approve': (input: { requestId: string; seat?: number }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;
@@ -363,6 +381,21 @@ export interface ServerToClient {
   'table:gesture': (input: { from: PlayerId; to: PlayerId; kind: GestureKind; at: number }) => void;
   /** All my notes again, after one changed in any of my tabs. */
   notes: (notes: PlayerNote[]) => void;
+  /** All my saved setups of one kind again, after one changed in any of my tabs. */
+  setups: (input: { kind: SetupKind; setups: SavedSetup[] }) => void;
+}
+
+/** What a saved setup is for: a cash table preset or a tournament structure. */
+export const SETUP_KINDS = ['table', 'tournament'] as const;
+export type SetupKind = (typeof SETUP_KINDS)[number];
+/** Most setups of one kind an account keeps. */
+export const SETUPS_PER_KIND = 100;
+export const SETUP_NAME_MAX = 60;
+
+/** A setup saved under a name: for a table, a preset file; for a tournament, its settings as JSON. */
+export interface SavedSetup {
+  name: string;
+  json: string;
 }
 
 /** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */

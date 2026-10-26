@@ -149,7 +149,7 @@ describe('immediate fields', () => {
     expect(isImmediateField('seating.requireApproval')).toBe(true);
     expect(isImmediateField('chatter')).toBe(false);
     expect(isImmediateField('table.maxSeats')).toBe(false);
-    expect(isImmediateField('spectators.seeAllCards')).toBe(false);
+    expect(isImmediateField('spectators.seeAllCards')).toBe(true);
     expect(isImmediateField('spectators.delaySeconds')).toBe(false);
     expect(isImmediateField('stakes.bigBlind')).toBe(false);
     expect(isImmediateField('timing.decisionSeconds')).toBe(false);
@@ -171,14 +171,14 @@ describe('applyImmediate', () => {
     const now = applyImmediate(current, edit);
     expect(now.settings.table).toEqual({ name: 'Late game', maxSeats: 10, mode: 'cash', felt: 'green' });
     expect(now.settings.chat.guestChat).toBe(false);
-    expect(now.settings.spectators).toEqual({ allowed: false, seeAllCards: false, delaySeconds: 0 });
+    expect(now.settings.spectators).toEqual({ allowed: false, seeAllCards: true, delaySeconds: 0 });
     expect(now.settings.stakes.bigBlind).toBe(2);
-    expect(now.diff.map((c) => c.path)).toEqual(['table.name', 'chat.guestChat', 'spectators.allowed']);
-    expect(now.deferred).toEqual({ table: { maxSeats: 6 }, spectators: { seeAllCards: true }, stakes: { bigBlind: 4 } });
+    expect(now.diff.map((c) => c.path)).toEqual(['table.name', 'chat.guestChat', 'spectators.allowed', 'spectators.seeAllCards']);
+    expect(now.deferred).toEqual({ table: { maxSeats: 6 }, stakes: { bigBlind: 4 } });
 
     const next = applyAtNextHand(now.settings, now.deferred);
     expect(next.settings).toEqual(applyAtNextHand(current, edit).settings);
-    expect(next.diff.map((c) => c.path)).toEqual(['table.maxSeats', 'stakes.bigBlind', 'spectators.seeAllCards']);
+    expect(next.diff.map((c) => c.path)).toEqual(['table.maxSeats', 'stakes.bigBlind']);
   });
 
   it('changes the felt at once and rejects unknown felts', () => {

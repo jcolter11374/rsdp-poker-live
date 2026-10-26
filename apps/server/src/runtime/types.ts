@@ -64,6 +64,8 @@ export interface SeatRequest {
   /** Buy-in or rebuy amount. */
   amount: number;
   at: number;
+  /** The player agreed to spectators seeing their cards (seat requests). */
+  consent?: boolean;
 }
 
 /** Someone queued for a seat at a full table. */
@@ -207,8 +209,8 @@ export interface RuntimeState {
   /** Stop after the current hand. */
   stopAfterHand: boolean;
   paused: boolean;
-  /** While paused: how long was left on each clock. */
-  pausedLeft: { turn: number | null; nextHand: number | null; rit: number | null } | null;
+  /** While paused: how long was left on each clock, and when the pause began (missing in older snapshots). */
+  pausedLeft: { at?: number; turn: number | null; nextHand: number | null; rit: number | null } | null;
   handNumber: number;
   hand: HandState | null;
   handStartedAt: number | null;
@@ -226,6 +228,13 @@ export interface RuntimeState {
   history: HandRecord[];
   /** Added after version 1 snapshots; absent means fresh counters. */
   sideGames?: SideGameState;
+  /**
+   * While spectators see every hole card: the first hand they see that way (a
+   * hand dealt before it was turned on stays hidden, mucked cards included)
+   * and when it was turned on, so players can be warned. Missing in older
+   * snapshots, which means from the first hand.
+   */
+  seeAll?: { since: number; at: number } | null;
   /** Who rabbit hunted the last hand (they alone see its undealt cards). */
   rabbit?: { handNumber: number; playerIds: PlayerId[] };
   /** Players queued for a seat, first come first served. Absent in older snapshots. */

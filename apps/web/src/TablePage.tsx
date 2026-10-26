@@ -29,6 +29,7 @@ import { PeopleDialog } from './components/PeopleDialog';
 import { LookDialog } from './components/LookDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
+import { useRunoutReveal } from './runout';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -71,7 +72,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
   const myTurn = !!view?.legal || !!view?.canDraw || !!view?.canVoteRunItTwice;
 
   // A warning beep a few seconds before your clock runs out.
-  const deadline = myTurn && view?.turn?.seat === view?.me.seat ? (view?.turn?.deadline ?? null) : null;
+  const deadline = myTurn && !view?.paused && view?.turn?.seat === view?.me.seat ? (view?.turn?.deadline ?? null) : null;
   useEffect(() => {
     if (deadline === null) return;
     const ms = deadline - skew - HURRY_MS - Date.now();
@@ -113,7 +114,9 @@ type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'play
 const KEYS_TIP_MS = 20_000;
 
 export function TablePage({ tableId }: { tableId: string }) {
-  const [view, setView] = useState<TableView | null>(null);
+  const [live, setView] = useState<TableView | null>(null);
+  // An all-in runout is dealt a street at a time; everything below sees the table as it is shown.
+  const view = useRunoutReveal(live);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -128,7 +131,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
-  const readyTable = useFollowSeat(tableId, view?.me.seat != null);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
@@ -471,7 +474,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} />}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -523,7 +526,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
             </div>
           ))}
-          <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} />
+          <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
           {liveSeedProblem(view) && <div className="banner warn">⚠ Fair dealing: {liveSeedProblem(view)}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (

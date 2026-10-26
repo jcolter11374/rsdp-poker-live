@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from '../socket';
 import { fromInput, toInput, type Fmt } from '../format';
+import { delayText } from '@rsdp/engine/settings';
 import { BotLevelControl, botOwnerLabel, lastBotLevel, LevelPicker, rememberBotLevel } from './table/BotLevels';
+import { markCardsWatchedSeen } from './table/Seating';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const backdrop = useRef<HTMLDivElement>(null);
@@ -55,13 +57,18 @@ export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { vie
   const hint = buyInHint(view, fmt);
   const approval = view.settings.seating.requireApproval && !view.powers.includes('approve');
   const random = !!view.settings.seating.randomSeats && !view.powers.includes('players') && !view.offers.some((o) => o.playerId === view.me.playerId);
+  const watched = view.cardsWatched;
+  const [consent, setConsent] = useState(false);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     saveName(name);
     const amount = fromInput(cents, stack);
-    (waitlist ? call('waitlist:join', { name, stack: amount }) : call('seat:request', { seat, name, stack: amount }))
-      .then(onClose)
+    (waitlist ? call('waitlist:join', { name, stack: amount }) : call('seat:request', { seat, name, stack: amount, consent }))
+      .then(() => {
+        if (watched && consent) markCardsWatchedSeen(view.id, watched.at);
+        onClose();
+      })
       .catch((err: Error) => setError(err.message));
   };
 
@@ -80,6 +87,17 @@ export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { vie
         {waitlist && <p className="muted">When a seat comes free it is held for you for a minute. You'll see a Take it button.</p>}
         {random && !waitlist && <p className="muted">This table seats new players at random.</p>}
         {approval && <p className="muted">The host approves new players.</p>}
+        {watched && (
+          <div className="watched-consent">
+            <p>
+              <strong>👁 Spectators at this table see every player's hole cards</strong>, {watched.delaySeconds > 0 ? `${delayText(watched.delaySeconds)} behind the table` : 'live, with no delay'}.
+              Someone watching could pass your cards on to another player.
+            </p>
+            <label className="check">
+              <input type="checkbox" checked={consent} required onChange={(e) => setConsent(e.target.checked)} /> I understand and agree to spectators seeing my cards
+            </label>
+          </div>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="row">
           <button type="button" onClick={onClose}>

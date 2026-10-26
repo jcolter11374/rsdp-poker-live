@@ -6,6 +6,7 @@ import {
   engine,
   modifierRegistry,
   planForcedBets,
+  runoutMs,
   variants,
   type Action,
   type BettingKind,
@@ -25,6 +26,8 @@ import {
   mergePatches,
   parseSettings,
   SettingsError,
+  settingsNotices,
+  spectatorsSeeCards,
   type SettingsPatch,
   type TableSettings,
 } from '@rsdp/engine/settings';
@@ -60,6 +63,8 @@ export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
 const RIT_VOTE_SECONDS = 12;
+/** A clock paused with less than this left gets this much on resume, so nobody times out the moment play goes on. */
+export const RESUME_MIN_MS = 5_000;
 const NAME_MAX = 20;
 /** How long a cash table waits for an offline host before handing the table to a seated player. */
 export const HOST_HANDOFF_MS = 3 * 60_000;
@@ -129,6 +134,15 @@ export class TableRuntime {
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
+    // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
+    // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.
+    const queued = state.pendingSettings?.spectators;
+    if (queued && 'seeAllCards' in queued) {
+      if (queued.seeAllCards === false) state.settings = { ...state.settings, spectators: { ...state.settings.spectators, seeAllCards: false } };
+      delete queued.seeAllCards;
+      if (!Object.keys(queued).length) delete state.pendingSettings!.spectators;
+      if (!Object.keys(state.pendingSettings!).length) state.pendingSettings = null;
+    }
   }
 
   static create(args: { id?: string; hostId: PlayerId; hostName?: string; settings: TableSettings }, deps: RuntimeDeps = {}) {
@@ -163,6 +177,8 @@ export class TableRuntime {
       log: [],
       history: [],
       realGame: false,
+      // On from the start: everyone who sits agrees first, so there's nobody to warn (at 0).
+      seeAll: spectatorsSeeCards(settings) ? { since: 0, at: 0 } : null,
     };
     return new TableRuntime(state, deps);
   }
@@ -262,8 +278,10 @@ export class TableRuntime {
 
   // ---------------------------------------------------------------- seating
 
-  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number }) {
+  requestSeat(playerId: PlayerId, input: { seat: number; name: string; stack: number; consent?: boolean }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
+    // Nobody sits at a table where spectators see their cards without being told and agreeing.
+    if (spectatorsSeeCards(this.settings) && !input.consent) throw new ActionError('spectators at this table see every hole card: agree to that to sit down');
     const name = cleanName(input.name);
     let { seat } = input;
     const { stack } = input;
@@ -284,7 +302,7 @@ export class TableRuntime {
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
     this.leaveQueue(playerId);
-    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now() };
+    const request: SeatRequest = { id: randomUUID().slice(0, 8), kind: 'seat', playerId, name, seat, amount: stack, at: this.clock.now(), consent: !!input.consent };
     if (!this.settings.seating.requireApproval || this.can(playerId, 'approve')) {
       this.seatPlayer(request);
     } else {
@@ -306,6 +324,10 @@ export class TableRuntime {
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
+      // Asked before spectators could see every card: they haven't agreed to it, so they must ask again.
+      if (spectatorsSeeCards(this.settings) && !r.consent && !this.botInfo(r.playerId)) {
+        throw new ActionError(`${r.name} asked to sit before spectators could see every card; they need to ask again and agree to it`);
+      }
       let target = seat ?? r.seat!;
       if (seat !== undefined) {
         if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -850,9 +872,10 @@ export class TableRuntime {
     const now = this.clock.now();
     if (value) {
       s.pausedLeft = {
-        turn: s.turn?.deadline != null ? Math.max(0, s.turn.deadline - now) : null,
+        at: now,
+        turn: s.turn?.deadline != null ? Math.max(RESUME_MIN_MS, s.turn.deadline - now) : null,
         nextHand: s.nextHandAt != null ? Math.max(0, s.nextHandAt - now) : null,
-        rit: s.ritDeadline != null ? Math.max(0, s.ritDeadline - now) : null,
+        rit: s.ritDeadline != null ? Math.max(RESUME_MIN_MS, s.ritDeadline - now) : null,
       };
       if (s.level.runningSince !== null) {
         s.level.elapsedMs += now - s.level.runningSince;
@@ -863,6 +886,8 @@ export class TableRuntime {
     } else {
       const left = s.pausedLeft;
       if (left && s.turn && left.turn !== null) {
+        // The turn started that much later too, so the clock's bar picks up where it stopped.
+        if (s.turn.deadline !== null) s.turn.startedAt += now + left.turn - s.turn.deadline;
         s.turn.deadline = now + left.turn;
         // The bank starts where the extended deadline less the whole bank falls (it may still be ahead).
         const banked = s.seats[s.turn.seat];
@@ -880,6 +905,26 @@ export class TableRuntime {
     this.sync();
   }
 
+  /**
+   * While paused: how far the clocks would move on if play resumed now. Views add it to
+   * every deadline so the clocks show the time left and stand still.
+   */
+  pausedFor(now = this.clock.now()): number {
+    const s = this.state;
+    const left = s.paused ? s.pausedLeft : null;
+    if (!left) return 0;
+    // Snapshots from before the pause time was kept: the turn clock still tells it.
+    const at = left.at ?? (s.turn?.deadline != null && left.turn !== null ? s.turn.deadline - left.turn : null);
+    return at === null ? 0 : Math.max(0, now - at);
+  }
+
+  /** The run-it-twice vote's deadline as shown: while paused, what resuming now would give. */
+  ritDeadlineShown(now = this.clock.now()): number | null {
+    const s = this.state;
+    if (s.paused && s.pausedLeft?.rit != null) return now + s.pausedLeft.rit;
+    return s.ritDeadline;
+  }
+
   /** Host edit: some fields apply now, the rest at the next hand. */
   updateSettings(by: PlayerId, patch: SettingsPatch) {
     this.requirePower(by, 'settings');
@@ -887,17 +932,29 @@ export class TableRuntime {
     const s = this.state;
     const merged = s.pendingSettings ? mergePatches(s.pendingSettings, patch) : patch;
     let result;
+    let target: TableSettings;
     try {
       // Validate the end result now so the host sees errors immediately.
-      const target = applyAtNextHand(s.settings, merged).settings;
+      target = applyAtNextHand(s.settings, merged).settings;
       this.checkSettings(target);
       result = applyImmediate(s.settings, merged);
     } catch (e) {
       if (e instanceof SettingsError) throw new ActionError(e.issues.map((i) => `${i.path}: ${i.message}`).join('; '));
       throw e;
     }
+    // A hand is played under the card visibility it was dealt with: nobody can open it up partway through.
+    if (!spectatorsSeeCards(s.settings) && spectatorsSeeCards(target) && this.handLive()) {
+      throw new ActionError('spectators can only be shown every hole card between hands; try again when this hand ends');
+    }
+    // Against what was already on its way, so a change queued earlier in the hand isn't announced again.
+    const before = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings : s.settings;
+    for (const n of settingsNotices(before, target, this.nameOf(by), this.handLive())) {
+      this.log(n.text);
+      if (n.loud) this.dealerSays(n.text);
+    }
     s.settings = result.settings;
     s.pendingSettings = result.deferred;
+    this.trackSeeAll();
     const now = this.clock.now();
     if (result.diff.length) s.settingsLog.push({ at: now, by, when: 'now', changes: result.diff });
     if (result.deferred) {
@@ -946,6 +1003,7 @@ export class TableRuntime {
     const before = s.settings;
     s.settings = applyAtNextHand(s.settings, s.pendingSettings).settings;
     s.pendingSettings = null;
+    this.trackSeeAll();
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
@@ -1732,7 +1790,8 @@ export class TableRuntime {
     }
     const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
     const auto = this.isTournament || s.settings.timing.autoStartNextHand;
-    s.nextHandAt = s.started && auto ? now + delay * 1000 : null;
+    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
+    s.nextHandAt = s.started && auto ? now + delay * 1000 + runoutMs(hand.events) : null;
   }
 
   /** 7-2 bounty with auto-show: turn up a winning 7-2 nobody saw, which pays the bounty before stacks are read. */
@@ -2198,19 +2257,24 @@ export class TableRuntime {
    * cut short for a player who is offline (a grace period from when they
    * dropped) or sitting out (at once).
    */
-  turnDeadline(): number | null {
+  turnDeadline(now = this.clock.now()): number | null {
     const s = this.state;
     const turn = s.turn;
     if (!turn) return null;
+    // While paused: when it would run out if play resumed now (see setPaused).
+    const shift = this.pausedFor(now);
+    const paused = s.paused && s.pausedLeft;
+    const deadline = paused && paused.turn !== null && turn.deadline !== null ? now + paused.turn : turn.deadline === null ? null : turn.deadline + shift;
+    const startedAt = turn.startedAt + shift;
     const seat = s.seats[turn.seat];
-    if (!seat) return turn.deadline;
-    if (seat.sittingOut) return turn.startedAt;
+    if (!seat) return deadline;
+    if (seat.sittingOut) return startedAt;
     if (!this.isOnline(seat.playerId)) {
-      const since = this.offlineSince.get(seat.playerId) ?? turn.startedAt;
-      const graceEnd = Math.max(since, turn.startedAt) + s.settings.seating.offlineGraceSeconds * 1000;
-      return turn.deadline === null ? graceEnd : Math.min(turn.deadline, graceEnd);
+      const since = paused ? now : (this.offlineSince.get(seat.playerId) ?? turn.startedAt);
+      const graceEnd = Math.max(since, startedAt) + s.settings.seating.offlineGraceSeconds * 1000;
+      return deadline === null ? graceEnd : Math.min(deadline, graceEnd);
     }
-    return turn.deadline;
+    return deadline;
   }
 
   private timeOut(seatNo: number) {
@@ -2261,6 +2325,20 @@ export class TableRuntime {
   private clearTimer(key: TimerKey) {
     if (this.timers[key] !== null) this.clock.clearTimeout(this.timers[key]);
     this.timers[key] = null;
+  }
+
+  /** Notes when spectators start or stop seeing every card; only hands dealt from then on are shown to them. */
+  private trackSeeAll() {
+    const s = this.state;
+    const on = spectatorsSeeCards(s.settings);
+    if (on && !s.seeAll) s.seeAll = { since: s.handNumber + 1, at: this.clock.now() };
+    else if (!on && s.seeAll) s.seeAll = null;
+  }
+
+  /** A chat line from the dealer, for things everyone at the table must see. */
+  private dealerSays(text: string) {
+    this.state.chat.push({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+    if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
   }
 
   private log(text: string) {

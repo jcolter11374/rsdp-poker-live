@@ -2,7 +2,14 @@
 .hand-extras { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 6px; }
 .hand-extras .rabbit-cards, .hand-extras .rabbit-cards .cards { display: flex; align-items: center; gap: 4px; }
 .hand-extras .rabbit-cards { gap: 10px; }
-.nit-tag { background: #8a5cf6; }
+.tag.nit-tag { background: #8a5cf6; }
+/* The Nit game: the checkbox, a "?" for the rules and a line on where the round stands. */
+.nit-row { display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; text-align: center; }
+.nit-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; }
+.nit-line .nit-status { margin: 0; }
+.nit-help-button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 20px; flex: none; }
+.nit-help { margin: 0 0 12px; padding-left: 20px; }
+.nit-help li { margin: 6px 0; }
 .nameplate .note-badge { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; min-height: 0; padding: 0; border-radius: 50%; font-size: 11px; line-height: 18px; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.45); color: #fff; opacity: 0.55; }
 .nameplate .note-badge.has-note, .nameplate:hover .note-badge { opacity: 1; }
 .note-colors { display: flex; gap: 8px; margin: 8px 0; }

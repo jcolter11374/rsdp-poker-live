@@ -109,8 +109,10 @@ describe('socket server', () => {
     const settings = { seating: { requireApproval: false }, spectators: { seeAllCards: true, delaySeconds: 2 }, timing: { decisionSeconds: 0 } };
     const { tableId } = await host.call<{ tableId: string }>('table:create', { settings });
     for (const c of [host, guest, fan]) await c.call('table:join', { tableId });
-    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
-    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100 });
+    // Sitting at a table where spectators see every card takes agreeing to it.
+    await expect(host.call('seat:request', { seat: 0, name: 'Host', stack: 100 })).rejects.toThrow(/agree/);
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100, consent: true });
+    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100, consent: true });
     await host.call('host:start');
     const started = Date.now();
     await host.until((x) => !!x.hand);
@@ -129,6 +131,28 @@ describe('socket server', () => {
     // Chat stays live for everyone.
     await guest.call('chat:send', { text: 'gl' });
     await fan.until((x) => x.chat.some((m) => m.text === 'gl'));
+  }, 30_000);
+
+  it('stops showing spectators every card the moment the host turns it off, delay or not', async () => {
+    const host = client('off-host-0123456789');
+    const guest = client('off-guest-0123456789');
+    const fan = client('off-fan-0123456789');
+    const settings = { seating: { requireApproval: false }, spectators: { seeAllCards: true, delaySeconds: 1 }, timing: { decisionSeconds: 0 } };
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings });
+    for (const c of [host, guest, fan]) await c.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100, consent: true });
+    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 100, consent: true });
+    await host.call('host:start');
+    const hidden = (v: ReturnType<typeof fan.view>) => v.seats.every((x) => !x || x.cards.every((c) => c.card === '??'));
+    await fan.until((x) => !!x.hand && !hidden(x));
+    await host.call('host:settings', { patch: { spectators: { seeAllCards: false } } });
+    const off = await fan.until((x) => x.cardsWatched === null);
+    expect(hidden(off)).toBe(true);
+    // The snapshots taken while it was on are never played out after the delay.
+    const views: ReturnType<typeof fan.view>[] = [];
+    fan.socket.on('table:state', (v) => views.push(v));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(views.every(hidden)).toBe(true);
   }, 30_000);
 
   it('acks a chat message the table refuses', async () => {

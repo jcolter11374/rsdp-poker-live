@@ -1,0 +1,77 @@
+{
+  "releases": [
+    {
+      "id": "2026-10-26-e",
+      "date": "2026-10-26",
+      "fixes": [
+        "Turning off spectators seeing every card now works straight away, even in the middle of a hand, and spectators with a delay don't get to watch the rest of that hand face up.",
+        "A hand dealt before spectators could see every card stays hidden from them, mucked cards included."
+      ]
+    },
+    {
+      "id": "2026-10-26-d",
+      "date": "2026-10-26",
+      "fixes": [
+        "When the host pauses during a hand, the turn clock now stands still on every screen. It already did behind the scenes, so nobody was ever folded for it.",
+        "A turn paused with under five seconds left gets five seconds when play resumes."
+      ]
+    },
+    {
+      "id": "2026-10-26-c",
+      "date": "2026-10-26",
+      "fixes": [
+        "The extra Play link is gone from the top menu. The logo already takes you home.",
+        "Your profile's cash games list shows whether anyone is at each table right now.",
+        "Quiet tables are put away after 45 minutes to keep the server quick, and open again exactly as you left them.",
+        "The pressed Straddle chip stays green when you hover over it, and screen readers read the chips properly.",
+        "Each person keeps the same line colour on the leaderboard chart."
+      ]
+    },
+    {
+      "id": "2026-10-26-b",
+      "date": "2026-10-26",
+      "fixes": [
+        "Tournament tables no longer show up in your list of cash games, on your profit graph or on the leaderboard.",
+        "The table keeps one size through a hand instead of shrinking and growing."
+      ]
+    },
+    {
+      "id": "2026-10-26-a",
+      "date": "2026-10-26",
+      "fixes": [
+        "Your mood emoji stays with you when a tournament moves you to a new table.",
+        "A hand shown after it ends now appears in the replayer.",
+        "Bots keep their robot picture in replays, and no two bots share a name.",
+        "Setting a new password signs you out on every other device."
+      ]
+    },
+    {
+      "id": "2026-10-25-c",
+      "date": "2026-10-25",
+      "fixes": [
+        "Fixes for players leaving while all in, tables shrinking and phones dropping out.",
+        "The action bar no longer locks up if the server's answer gets lost.",
+        "Empty seats keep clear of players' nameplates."
+      ]
+    },
+    {
+      "id": "2026-10-25-b",
+      "date": "2026-10-25",
+      "fixes": [
+        "Bounty money is never lost, even when there are side pots.",
+        "If a table delays what spectators see, the hand history is delayed too.",
+        "Moving a player or editing a stack during a tournament no longer risks a crash."
+      ]
+    },
+    {
+      "id": "2026-10-25-a",
+      "date": "2026-10-25",
+      "fixes": [
+        "A tournament ends when one player has every chip.",
+        "Names stay in the hand log after a player leaves their seat.",
+        "The \"Connection lost\" banner no longer sticks on slow phones.",
+        "Add-ons and recurring tournaments carry on after a server restart."
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import { BETTING_NAME, fromInput, toInput } from '../format';
 import { Modal } from './SeatDialog';
+import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
@@ -149,6 +150,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </select>
                   </Field>
                 </div>
+                {!rot.enabled && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={(betting) => set('game', { betting })} />}
                 {numberField('Seats', Math.min(draft.table.maxSeats, seatLimit), (v) => set('table', { maxSeats: v }), Math.max(2, seated), seatLimit, `Up to ${seatLimit} for ${games.length > 1 ? 'these games' : 'this game'}.`)}
                 {toggle('Rotate games (mixed games)', rot.enabled, (enabled) =>
                   set('game', {
@@ -161,33 +163,37 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                       const update = (p: Partial<typeof st>) =>
                         set('game', { rotation: { ...rot, steps: rot.steps.map((x, j) => (j === i ? { ...x, ...p } : x)) } });
                       return (
-                        <div className="row" key={i}>
-                          <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
-                            {VARIANT_LIST.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.name}
-                              </option>
-                            ))}
-                          </select>
-                          <select value={st.betting} onChange={(e) => update({ betting: e.target.value as BettingKind })}>
-                            {BETTINGS.map((b) => (
-                              <option key={b} value={b}>
-                                {BETTING_NAME[b]}
-                              </option>
-                            ))}
-                          </select>
-                          <input type="number" min={1} value={st.length} onChange={(e) => update({ length: Math.max(1, Math.round(+e.target.value)) })} />
-                          <select value={st.unit} onChange={(e) => update({ unit: e.target.value as 'hands' | 'orbits' })}>
-                            <option value="hands">hands</option>
-                            <option value="orbits">orbits</option>
-                          </select>
-                          <button
-                            type="button"
-                            disabled={rot.steps.length <= 1}
-                            onClick={() => set('game', { rotation: { ...rot, steps: rot.steps.filter((_, j) => j !== i) } })}
-                          >
-                            ✕
-                          </button>
+                        <div key={i}>
+                          <div className="row">
+                            <select value={st.gameId} onChange={(e) => update({ gameId: e.target.value, betting: getVariant(e.target.value).defaultBetting })}>
+                              {VARIANT_LIST.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select value={st.betting} onChange={(e) => update({ betting: e.target.value as BettingKind })}>
+                              {BETTINGS.map((b) => (
+                                <option key={b} value={b}>
+                                  {BETTING_NAME[b]}
+                                </option>
+                              ))}
+                            </select>
+                            <input type="number" min={1} value={st.length} onChange={(e) => update({ length: Math.max(1, Math.round(+e.target.value)) })} />
+                            <select value={st.unit} onChange={(e) => update({ unit: e.target.value as 'hands' | 'orbits' })}>
+                              <option value="hands">hands</option>
+                              <option value="orbits">orbits</option>
+                            </select>
+                            <button
+                              type="button"
+                              disabled={rot.steps.length <= 1}
+                              onClick={() => set('game', { rotation: { ...rot, steps: rot.steps.filter((_, j) => j !== i) } })}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {/* Rows are keyed by position, so a removed row would hand its note to the next one: start them afresh. */}
+                          <BettingNudge key={rot.steps.length} gameId={st.gameId} betting={st.betting} onSwitch={(betting) => update({ betting })} />
                         </div>
                       );
                     })}
@@ -347,9 +353,27 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             <span className="hint">Off: only seated players and the host can chat.</span>
             {toggle('Hide swear words in chat', draft.chat.profanityFilter, (profanityFilter) => set('chat', { profanityFilter }))}
             <h4>Watching</h4>
-            {toggle('Let people watch', draft.spectators.allowed, (allowed) => set('spectators', { allowed }))}
+            {toggle(
+              'Let people watch',
+              draft.spectators.allowed,
+              (allowed) => set('spectators', { allowed }),
+              // Watching again would show every card of the hand in progress.
+              handLive && !view.settings.spectators.allowed && view.settings.spectators.seeAllCards && !draft.spectators.allowed,
+            )}
             <span className="hint">Off: people who aren't seated see the seats but not the hand.</span>
-            {toggle('Spectators see every hole card', draft.spectators.seeAllCards, (seeAllCards) => set('spectators', { seeAllCards }), !draft.spectators.allowed)}
+            {toggle(
+              'Spectators see every hole card',
+              draft.spectators.seeAllCards,
+              // Turning it on starts with a two-minute delay, so nobody watching can pass cards on during the hand.
+              (seeAllCards) => set('spectators', seeAllCards && draft.spectators.delaySeconds === 0 ? { seeAllCards, delaySeconds: 120 } : { seeAllCards }),
+              !draft.spectators.allowed || (handLive && !view.settings.spectators.seeAllCards && !draft.spectators.seeAllCards),
+            )}
+            <span className="hint">
+              {handLive && !view.settings.spectators.seeAllCards
+                ? 'You can turn this on between hands. '
+                : ''}
+              Everyone at the table is told when it goes on, sees a red rail and a reminder while it's on, and must agree to it before sitting down.
+            </span>
             {numberField('Spectators run behind by (seconds)', draft.spectators.delaySeconds, (v) => set('spectators', { delaySeconds: v }), 0, 600, 'A delay stops anyone passing on what they see. 0 = live.')}
             {draft.spectators.seeAllCards && draft.spectators.delaySeconds === 0 && <p className="error">With no delay, anyone watching can tell a player what everyone holds.</p>}
           </>

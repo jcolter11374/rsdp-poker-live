@@ -1,6 +1,7 @@
 /** Optional accounts: talks to /api/account with this browser's guest secret and sign-in token. */
 
 import { guestToken, saveSessionToken, sessionToken, startOverAsGuest } from '../socket';
+import { bringSetupsOver } from '../savedSetups';
 
 export interface TableRow {
   tableId: string;
@@ -11,6 +12,8 @@ export interface TableRow {
   net: number | null;
   centsMode: boolean;
   practice: boolean;
+  /** People at the table right now (0 when it's closed; it opens again from its link). */
+  playingNow?: number;
 }
 
 export interface TournamentRow {
@@ -148,6 +151,7 @@ export const adminDeleteTable = (adminKey: string, id: string) => request('POST'
 export async function signUp(username: string, password: string) {
   const res = await request<{ session: string; username: string }>('POST', '/api/account/signup', { username, password });
   saveSessionToken(res.session);
+  bringSetupsOver(true);
   return res;
 }
 
@@ -155,6 +159,7 @@ export async function signUp(username: string, password: string) {
 export async function signIn(username: string, password: string, bringOver: boolean) {
   const res = await request<{ session: string; username: string; broughtOver: boolean }>('POST', '/api/account/signin', { username, password, bringOver });
   saveSessionToken(res.session);
+  bringSetupsOver(bringOver);
   return res;
 }
 
@@ -162,6 +167,7 @@ export async function signOut() {
   // Even when the server can't be reached, this browser forgets the sign-in. Its guest starts over
   // only when that guest belonged to the account; a friend's device keeps its own guest.
   const res = await request<{ forgot: boolean }>('POST', '/api/account/signout').catch(() => ({ forgot: true }));
+  bringSetupsOver(false);
   if (res.forgot) startOverAsGuest();
   else saveSessionToken(null);
 }
@@ -186,6 +192,7 @@ export const fetchAuthConfig = () => request<{ google: boolean }>('GET', '/api/a
 /** Off to Google; it sends the browser back to /auth/done. `link` adds Google to the signed-in account; `confirm` re-checks it's you. */
 export async function startGoogle(mode: 'signin' | 'link' | 'confirm', bringOver = true, password?: string) {
   const { url } = await request<{ url: string }>('POST', '/api/auth/google/begin', { mode, bringOver, password });
+  if (mode === 'signin') bringSetupsOver(bringOver);
   location.assign(url);
 }
 
