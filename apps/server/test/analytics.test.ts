@@ -64,7 +64,7 @@ async function play(name: string, hands: number, centsMode = false) {
 const get = async <T>(path: string, guest = ANN) => (await (await fetch(`${url}${path}`, { headers: { 'x-guest-token': guest } })).json()) as T;
 
 describe('analytics', () => {
-  it('graphs my result at each real game and ranks everyone', { timeout: 30_000 }, async () => {
+  it('graphs my result at each real game and ranks everyone', { timeout: 40_000 }, async () => {
     const first = await play('Monday', 1);
     const second = await play('Tuesday', 2, true);
 
@@ -72,7 +72,11 @@ describe('analytics', () => {
     const ann = client(ANN);
     const { tableId: practice } = await ann.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Practice' } }, practice: { name: 'Ann', bots: 1 } });
     await ann.call('table:join', { tableId: practice });
-    await ann.until((v) => (v.hand?.handNumber ?? 0) >= 1);
+    await ann.until((v) => {
+      if (v.legal && v.hand?.handNumber === 1 && v.hand.phase !== 'complete') void ann.call('hand:act', { type: 'fold' }).catch(() => {});
+      return (v.hand?.handNumber ?? 0) > 1 || (v.hand?.handNumber === 1 && v.hand.phase === 'complete');
+    });
+    await pause(900);
 
     const { sessions } = await get<{ sessions: { tableId: string; name: string; net: number; hands: number }[] }>('/api/account/graph');
     expect(sessions.map((s) => s.name)).toEqual(['Monday', 'Tuesday']);
@@ -87,6 +91,15 @@ describe('analytics', () => {
     expect(byName.Ben.profit).toBe(-byName.Ann.profit);
     expect(board.rows[0].profit).toBeGreaterThanOrEqual(board.rows[1].profit);
     expect(Math.max(byName.Ann.biggestPot, byName.Ben.biggestPot)).toBeGreaterThan(0);
+    // The leaderboard's graph: each game's result, oldest first.
+    expect((byName.Ann as unknown as { games: { net: number }[] }).games.map((g) => g.net)).toEqual([first.stacks.Ann * 100, second.stacks.Ann]);
+
+    // The profile keeps practice apart: bots, or nobody else, is practice.
+    const solo = client(ANN);
+    const { tableId: alone } = await solo.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Alone' } } });
+    expect(alone).toBeTruthy();
+    const me = await get<{ tables: { name: string; practice: boolean }[] }>('/api/account/me');
+    expect(Object.fromEntries(me.tables.map((t) => [t.name, t.practice]))).toEqual({ Monday: false, Tuesday: false, Practice: true });
 
     // Hiding a table takes it off my graph, not off the leaderboard.
     await fetch(`${url}/api/account/tables/hide`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ tableId: first.tableId, hidden: true }) });

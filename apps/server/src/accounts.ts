@@ -309,7 +309,7 @@ export function accountRoutes(
       if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const who = await identify(req, db);
       const ids = await myPlayerIds(who, db);
-      const [tables, hidden, tournaments] = await Promise.all([tableHistory(db, ids), tableHistory(db, ids, 25, { hidden: true }), tournamentRows<TournamentState>(db, ids)]);
+      const [tables, hidden, tournaments] = await Promise.all([tableHistory(db, ids, 50), tableHistory(db, ids, 25, { hidden: true }), tournamentRows<TournamentState>(db, ids)]);
       const mine = new Set(ids);
       res.json({
         playerId: who.player.id,

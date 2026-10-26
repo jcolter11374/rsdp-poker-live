@@ -300,17 +300,8 @@ export function ProfilePage() {
       )}
 
       <section className="account-section">
-        <h2>Name at the table</h2>
-        <NameForm current={session?.displayName ?? ''} />
-      </section>
-
-      <section className="account-section">
-        <MyProfile view={null} />
-      </section>
-
-      <section className="account-section">
         <h2>Profit graph</h2>
-        {session && <ProfitGraph refreshKey={profile} />}
+        {session && <ProfitGraph refreshKey={profile} practiceGames={profile?.tables.filter((t) => t.practice).length ?? 0} />}
         <p className="hint">
           See how everyone's doing on the <a href="/leaderboard">leaderboard</a>, or <a href="/hands">search your hands</a>.
         </p>
@@ -325,6 +316,15 @@ export function ProfilePage() {
       <section className="account-section">
         <h2>Tournaments</h2>
         {profile && <TournamentsList profile={profile} />}
+      </section>
+
+      <section className="account-section">
+        <h2>Name at the table</h2>
+        <NameForm current={session?.displayName ?? ''} />
+      </section>
+
+      <section className="account-section">
+        <MyProfile view={null} />
       </section>
 
       {account && (
@@ -377,14 +377,25 @@ function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () =>
   const { busy, error, run } = useAction();
   const toggle = (tableId: string, hidden: boolean) => run(() => hideTable(tableId, hidden).then(onChanged));
   const hidden = profile.hiddenTables ?? [];
+  // Practice (bots, or on your own) is kept apart so it never mixes with results against real people.
+  const real = profile.tables.filter((t) => !t.practice);
+  const practice = profile.tables.filter((t) => t.practice);
+  const hide = { action: 'Hide', title: 'Hide this table from your profile. It stays for everyone else.', busy, onAction: (id: string) => toggle(id, true) };
   return (
     <>
-      {profile.tables.length === 0 ? (
-        <p className="muted">{hidden.length ? 'No other cash games.' : 'No hands played yet.'}</p>
+      {real.length === 0 ? (
+        <p className="muted">{practice.length || hidden.length ? 'No real games with other people yet.' : 'No hands played yet.'}</p>
       ) : (
-        <TableRows rows={profile.tables} action="Hide" title="Hide this table from your profile. It stays for everyone else." busy={busy} onAction={(id) => toggle(id, true)} />
+        <TableRows rows={real} {...hide} />
       )}
       {error && <p className="error">{error}</p>}
+      {practice.length > 0 && (
+        <details className="account-hidden">
+          <summary>Practice games ({practice.length})</summary>
+          <p className="hint">Games with bots, or where nobody else played. They don't count in your graph or on the leaderboard.</p>
+          <TableRows rows={practice} {...hide} />
+        </details>
+      )}
       {hidden.length > 0 && (
         <details className="account-hidden">
           <summary>Hidden tables ({hidden.length})</summary>
@@ -405,7 +416,7 @@ function TableRows(props: { rows: TableRow[]; action: string; title: string; bus
             <a href={`/t/${t.tableId}`}>{t.name || 'Table'}</a>
             <span className="muted">
               {shortDate(t.lastPlayedAt)} · {t.hands} {t.hands === 1 ? 'hand' : 'hands'}
-              {t.practice && ' · practice'} ·{' '}
+              {' · '}
               <button className="link" title={props.title} disabled={props.busy} onClick={() => props.onAction(t.tableId)}>
                 {props.action}
               </button>

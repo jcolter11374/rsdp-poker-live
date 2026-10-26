@@ -144,6 +144,8 @@ export interface LeaderRow {
   hands: number;
   /** The most cents won in one hand. */
   biggestPot: number;
+  /** Each real game's result in the period, oldest first (the leaderboard's graph). */
+  games: { at: number; net: number }[];
 }
 
 /**
@@ -162,10 +164,10 @@ export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
   const snaps = await snapshots(db, [...new Set([...inPeriod, ...handTables])]);
   const cents = (tableId: string, amount: number) => toCents(amount, !!snaps.get(tableId)?.settings?.stakes?.centsMode);
 
-  const rows = new Map<string, { profit: number; sessions: Set<string>; hands: number; biggestPot: number }>();
+  const rows = new Map<string, { profit: number; sessions: Set<string>; hands: number; biggestPot: number; games: Map<string, { at: number; net: number }> }>();
   const row = (playerId: string) => {
     let r = rows.get(playerId);
-    if (!r) rows.set(playerId, (r = { profit: 0, sessions: new Set(), hands: 0, biggestPot: 0 }));
+    if (!r) rows.set(playerId, (r = { profit: 0, sessions: new Set(), hands: 0, biggestPot: 0, games: new Map() }));
     return r;
   };
   for (const tableId of inPeriod) {
@@ -174,6 +176,7 @@ export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
       const r = row(playerId);
       r.profit += cents(tableId, net);
       r.sessions.add(tableId);
+      r.games.set(tableId, { at: lastHand.get(tableId)!, net: cents(tableId, net) });
     }
   }
   for (const h of all) {
@@ -200,19 +203,26 @@ export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
   const byRecent = [...snaps.keys()].sort((a, b) => (lastHand.get(b) ?? 0) - (lastHand.get(a) ?? 0));
   for (const tableId of byRecent) for (const [id, name] of Object.entries(snaps.get(tableId)?.handNames ?? {})) if (name && !names.has(id)) names.set(id, name);
 
-  const merged = new Map<string, LeaderRow & { sessionIds: Set<string> }>();
+  const merged = new Map<string, Omit<LeaderRow, 'games'> & { sessionIds: Set<string>; byTable: Map<string, { at: number; net: number }> }>();
   for (const [playerId, r] of rows) {
     const p = owner.get(playerId);
     const key = p?.accountId ?? playerId;
-    const m = merged.get(key) ?? { key, name: '', profit: 0, sessions: 0, hands: 0, biggestPot: 0, sessionIds: new Set<string>() };
+    const m = merged.get(key) ?? { key, name: '', profit: 0, sessions: 0, hands: 0, biggestPot: 0, sessionIds: new Set<string>(), byTable: new Map() };
     m.name ||= p?.displayName || names.get(playerId) || '';
     m.profit += r.profit;
     m.hands += r.hands;
     m.biggestPot = Math.max(m.biggestPot, r.biggestPot);
     for (const id of r.sessions) m.sessionIds.add(id);
+    // Two of one account's devices at one table are one game.
+    for (const [id, g] of r.games) m.byTable.set(id, { at: g.at, net: (m.byTable.get(id)?.net ?? 0) + g.net });
     merged.set(key, m);
   }
   return [...merged.values()]
-    .map(({ sessionIds, ...m }) => ({ ...m, name: m.name || 'Guest', sessions: sessionIds.size }))
+    .map(({ sessionIds, byTable, ...m }) => ({
+      ...m,
+      name: m.name || 'Guest',
+      sessions: sessionIds.size,
+      games: [...byTable.values()].sort((a, b) => a.at - b.at),
+    }))
     .sort((a, b) => b.profit - a.profit || b.hands - a.hands);
 }
