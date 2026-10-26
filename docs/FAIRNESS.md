@@ -14,7 +14,7 @@ first, details after.
 - **The deck is locked before the deal.** Before a hand is dealt, the table
   publishes a *commitment*: a SHA-256 fingerprint of that hand's secret. Once
   published, the secret can't be swapped without the fingerprint changing.
-- **Whoever runs the server can't pick the cards without getting caught.**
+- **Whoever runs the server can't simply pick the cards.**
   While the previous hand is being played, every seated player's browser
   quietly sends its own random seed for the next hand. The deck depends on the
   server's secret *and* every player's seed. The server committed first, so it
@@ -44,6 +44,44 @@ first, details after.
 - **Your cards stay private during play.** The server sends each person only
   what they may see. Undealt cards, other players' hole cards and the secrets
   never leave the server during a hand.
+- **This doesn't make the developer impossible to cheat.** The next section
+  lists, plainly, what John could still do as the person who runs the site.
+
+## How the developer could cheat you
+
+John built this site and runs the server. Nothing above stops everything he
+could do, so here is the whole list, plainly. He doesn't do any of it, but
+you are taking his word for that, the same as trusting a friend not to peek
+when they deal at a home game.
+
+- **See every card during a hand.** The deck of the hand being played, with
+  everyone's hole cards and the cards still to come, is in the server's
+  memory and database. Anyone who controls the server can read it, and no
+  check on this page would show it. This is the biggest one, and every online
+  poker site has it.
+- **Run code that isn't the code on GitHub.** The code is public, but you can't
+  confirm the live site runs exactly that code: John can put any version
+  live. A changed server could send cards to him or a friend, or let a
+  practice bot see them. Your browser's seed check is also code the site sends
+  you, so a changed site could switch it off or quietly send a seed the server
+  chose; then the server could pick the deck, and "Check this hand", or even
+  the proof file run through your own copy of `scripts/verify-hand.mjs`, would
+  still pass.
+- **Throw away a deck it doesn't like.** The server knows the deck the moment
+  the last seed is in. Even the published code can't stop a changed server
+  from dropping that commitment, publishing a new one, collecting fresh seeds
+  and trying again. Browsers don't warn about a commitment that was replaced
+  without being dealt. Each try costs at least 2.5 seconds, so the sign is a
+  hand that is slow to be dealt for no reason.
+- **Change the records.** Chip counts, the cash ledger, the leaderboard and
+  hand histories live in a database he controls, and he could edit them. A
+  hand whose proof you downloaded can't be changed without the proof no longer
+  matching, but nothing else is protected. If amounts matter, keep your own
+  tally too.
+- **Nobody independent has checked this.** The code was written with an AI
+  assistant (Claude), and the reviews mentioned below were also done by AI
+  reviewers we ran ourselves. No outside auditor or security firm has looked
+  at it.
 
 ## How a hand is dealt (rsdp-fair-v1)
 
