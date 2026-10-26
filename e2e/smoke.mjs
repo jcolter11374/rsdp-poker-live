@@ -120,13 +120,9 @@ try {
     await viewer.waitForSelector('.replayer .felt');
     await viewer.screenshot({ path: path.join(OUT, 'shared-hand.png') });
     await viewer.close();
-    const ohh = host.waitForEvent('download');
-    await host.click('button:has-text("Tracker (OHH)")');
-    if (!(await ohh).suggestedFilename().endsWith('.ohh')) throw new Error('no OHH file');
-    await host.click('.side-panel .tabs button:has-text("Log")');
-    const log = host.waitForEvent('download');
-    await host.click('button:has-text("Download full log")');
-    if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
+    // No hand downloads while seated in a running game (no live HUDs): a note says when they open.
+    await host.waitForSelector('.side-panel .records-locked');
+    if (await host.locator('button:has-text("Tracker (OHH)")').count()) throw new Error('tracker download offered mid-game');
 
     // Fair dealing: the hand is sealed while the game runs, and checks out once the host stops it.
     await guest.click('.side-panel .tabs button:has-text("Hands")');
@@ -142,6 +138,16 @@ try {
     await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
     await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
     await guest.click('.replayer button[aria-label="Close"]');
+
+    // With the game stopped, the tracker file and the full log download.
+    await host.click('.side-panel .tabs button:has-text("Hands")');
+    const ohh = host.waitForEvent('download');
+    await host.click('button:has-text("Tracker (OHH)")');
+    if (!(await ohh).suggestedFilename().endsWith('.ohh')) throw new Error('no OHH file');
+    await host.click('.side-panel .tabs button:has-text("Log")');
+    const log = host.waitForEvent('download');
+    await host.click('button:has-text("Download full log")');
+    if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
   });
 
   await step('rules guides: open a game from its link and switch games', async () => {
