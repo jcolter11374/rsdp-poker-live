@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-26-f",
+      "date": "2026-10-26",
+      "fixes": [
+        "Turning on reduce motion on your device, or turning off Table motion, now also stops the table's older movement (cards flying in, chip sweeps, the pulsing turn glow)."
+      ]
+    },
+    {
       "id": "2026-10-26-e",
       "date": "2026-10-26",
       "fixes": [
