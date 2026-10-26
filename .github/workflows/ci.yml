@@ -61,12 +61,19 @@ jobs:
       - run: docker build -t rsdp-poker .
       - name: Start the server
         run: |
-          docker run -d --name rsdp -p 3001:8080 -v rsdp-data:/data rsdp-poker
+          docker run -d --name rsdp -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY=ci-admin-key-0123456789 rsdp-poker
           for i in $(seq 1 60); do curl -sf localhost:3001/api/health && exit 0; sleep 1; done
           docker logs rsdp; exit 1
       - run: node e2e/smoke.mjs
         env:
           BASE_URL: http://localhost:3001
+      # The nightly backup's own steps (backup.yml), against what the smoke test just played.
+      - name: A backup restores, and a server on it gives the same answers
+        run: |
+          scripts/backup/expect.sh http://localhost:3001 > expected.json
+          curl -sf -H 'X-Admin-Key: ci-admin-key-0123456789' localhost:3001/api/admin/backup -o backup.jsonl.gz
+          scripts/backup/drill.sh backup.jsonl.gz expected.json
+          test "$(jq '.leaderboard | length' expected.json)" -gt 0
       - name: Restart keeps data and shuts down cleanly
         run: |
           docker stop rsdp
