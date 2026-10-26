@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { closeDb, createDb, MIGRATIONS_DIR, queryRows, type Db } from '../src/db/client';
 import { createTestDb } from '../src/db/testing';
+import { createTable, loadSnapshot, saveSnapshot } from '../src/db/tables';
 
 let db: Db | undefined;
 afterEach(async () => {
@@ -86,5 +87,59 @@ describe('createDb', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  describe('vacuuming PGlite', () => {
+    // A table's snapshot, rewritten on every change; random text so compression can't hide its size.
+    const snapshot = (n: number) => ({ version: n, state: { n, log: Array.from({ length: 300 }, () => Math.random().toString(36).repeat(3)) } });
+    const snapshotBytes = async (d: Db) =>
+      Number((await queryRows<{ size: string }>(d, sql`select pg_total_relation_size('table_snapshots') as size`))[0].size);
+    const saveOften = async (d: Db, times: number, pause = 0) => {
+      await d.execute(sql`insert into players (id) values ('host') on conflict do nothing`);
+      const table = await createTable(d, { id: 'vacuum-t', ownerPlayerId: 'host', settings: {} });
+      for (let n = 1; n <= times; n++) {
+        await saveSnapshot(d, table.id, snapshot(n));
+        if (pause) await new Promise((r) => setTimeout(r, pause));
+      }
+      return table.id;
+    };
+    const checkpointAt = async (d: Db) =>
+      (await queryRows<{ redo: string }>(d, sql`select redo_lsn::text as redo from pg_control_checkpoint()`))[0].redo;
+    const HOUR = 3_600_000;
+
+    it('gives back the space old snapshots took when it opens', async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-pglite-'));
+      try {
+        const first = await createDb({ pgliteDir: dir, ignoreEnv: true, vacuumEveryMs: HOUR });
+        const id = await saveOften(first, 150);
+        const bloated = await snapshotBytes(first);
+        await closeDb(first);
+
+        db = await createDb({ pgliteDir: dir, ignoreEnv: true, vacuumEveryMs: HOUR });
+        expect(await snapshotBytes(db)).toBeLessThan(bloated / 10);
+        expect((await loadSnapshot<{ n: number }>(db, id))?.state.n).toBe(150);
+        await closeDb(db);
+        db = undefined;
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }, 30_000);
+
+    it('vacuums as it goes, so saving a snapshot over and over does not keep growing the database', async () => {
+      const never = await createDb({ ignoreEnv: true, vacuumEveryMs: HOUR });
+      try {
+        const neverFrom = await checkpointAt(never);
+        await saveOften(never, 120, 5);
+        db = await createDb({ ignoreEnv: true, vacuumEveryMs: 20 });
+        const from = await checkpointAt(db);
+        await saveOften(db, 120, 5);
+        expect(await snapshotBytes(db)).toBeLessThan((await snapshotBytes(never)) / 3);
+        // PGlite only checkpoints when told to, and until it does the write-ahead log keeps every save.
+        expect(await checkpointAt(never)).toBe(neverFrom);
+        expect(await checkpointAt(db)).not.toBe(from);
+      } finally {
+        await closeDb(never);
+      }
+    }, 30_000);
   });
 });

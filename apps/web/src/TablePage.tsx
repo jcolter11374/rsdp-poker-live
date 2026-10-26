@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, socket } from './socket';
-import { contributeSeed, liveSeedProblem } from './fair';
+import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -21,7 +21,8 @@ import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
 import { Sheet } from './components/Sheet';
-import { Modal, PlayerDialog, RebuyDialog, RemoveBot, SeatDialog } from './components/SeatDialog';
+import { AddBotDialog, Modal, MyBot, PlayerDialog, RebuyDialog, SeatDialog } from './components/SeatDialog';
+import { botOwnerLabel, LEVEL_INFO } from './components/table/BotLevels';
 import { SettingsDialog } from './components/SettingsDialog';
 import { RulesDialog } from './components/RulesDialog';
 import { PeopleDialog } from './components/PeopleDialog';
@@ -46,7 +47,9 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     const fresh = hand.handNumber !== before.hand?.handNumber;
     const seen = fresh ? -1 : (before.hand?.events.at(-1)?.seq ?? -1);
     const events = hand.events.filter((e) => e.seq > seen);
-    if (events.some((e) => e.t === 'deal' || e.t === 'board')) sounds.deal();
+    if (events.some((e) => e.t === 'deal')) sounds.deal();
+    const turned = events.reduce((n, e) => Math.max(n, e.t === 'board' ? e.cards.length : 0), 0);
+    if (turned) sounds.flip(turned);
     for (const e of events) {
       if (e.t !== 'action') continue;
       if (e.allIn) sounds.allIn();
@@ -107,7 +110,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | null;
 
 /** How long the keyboard tip stays up if nobody presses Got it. */
 const KEYS_TIP_MS = 20_000;
@@ -135,9 +138,13 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
     let first = true;
+    const watch = watchCommitments();
+    const nextSeen = watchNextSeen();
     const onState = (v: TableView) => {
       if (v.id !== tableId) return;
       setView(v);
+      watch(v);
+      nextSeen(v);
       contributeSeed(v);
       setSkew(v.serverNow - Date.now());
       // Chat from before you arrived is not news.
@@ -163,6 +170,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.emit('table:leave');
+      nextSeen.stop();
     };
   }, [tableId]);
 
@@ -292,12 +300,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   const myBotRequests = view.powers.includes('approve') ? [] : view.requests.filter((r) => r.bot);
   const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
   const canAddBot = cash && (view.powers.includes('players') || (!!mySeat && view.settings.seating.allowPlayerBots !== false && myBots < 3));
-  const addBot = (seat: number) =>
-    call('bot:add', { seat })
-      .then(() => {
-        if (view.settings.seating.requireApproval && !view.powers.includes('approve')) alert('Your bot is waiting for the host to approve it.');
-      })
-      .catch((e: Error) => alert(e.message));
+  const addBot = (seat: number) => setDialog({ kind: 'add-bot', seat });
+  // A player's popup follows their seat as it changes (a bot's new level, a move).
+  const playerSeat = dialog?.kind === 'player' ? (view.seats.find((s) => s?.playerId === dialog.seat.playerId) ?? dialog.seat) : null;
   const unread = chatOpen ? 0 : unreadChat(view, chatSeenAt, chatMutes);
   const close = () => setSheet(null);
 
@@ -657,21 +662,26 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
 
       {dialog?.kind === 'seat' && <SeatDialog view={view} seat={dialog.seat} waitlist={dialog.waitlist} fmt={fmt} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'player' &&
+      {playerSeat &&
         (view.powers.length > 0 && cash ? (
-          <PlayerDialog view={view} seat={dialog.seat} fmt={fmt} onClose={() => setDialog(null)}>
-            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
+          <PlayerDialog view={view} seat={playerSeat} fmt={fmt} onClose={() => setDialog(null)}>
+            <PlayerExtras view={view} seat={playerSeat} onDone={() => setDialog(null)} />
           </PlayerDialog>
         ) : (
-          <Modal title={dialog.seat.playerId === view.me.playerId ? 'You' : dialog.seat.name} onClose={() => setDialog(null)}>
-            {dialog.seat.bot && dialog.seat.bot.ownerId !== view.me.playerId && <p className="muted">{dialog.seat.bot.ownerName}&rsquo;s practice bot.</p>}
-            <PlayerExtras view={view} seat={dialog.seat} onDone={() => setDialog(null)} />
-            {dialog.seat.bot?.ownerId === view.me.playerId && <RemoveBot seat={dialog.seat} onDone={() => setDialog(null)} />}
+          <Modal title={playerSeat.playerId === view.me.playerId ? 'You' : playerSeat.name} onClose={() => setDialog(null)}>
+            {playerSeat.bot && playerSeat.bot.ownerId !== view.me.playerId && (
+              <p className="muted">
+                {botOwnerLabel(playerSeat.bot, 'practice bot')}. {LEVEL_INFO[playerSeat.bot.level ?? 'normal'].about}
+              </p>
+            )}
+            <PlayerExtras view={view} seat={playerSeat} onDone={() => setDialog(null)} />
+            {playerSeat.bot?.ownerId === view.me.playerId && <MyBot view={view} seat={playerSeat} onDone={() => setDialog(null)} />}
             <div className="row">
               <button onClick={() => setDialog(null)}>Close</button>
             </div>
           </Modal>
         ))}
+      {dialog?.kind === 'add-bot' && <AddBotDialog view={view} seat={dialog.seat} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}

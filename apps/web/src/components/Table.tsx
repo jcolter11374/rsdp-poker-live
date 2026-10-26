@@ -7,6 +7,8 @@ import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, 
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { baseChip, ChipStacks } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
+import { CountUp, FeltEmblem } from './table/Feel';
+import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -206,13 +208,37 @@ export function Table({
     }
   const highlight = (card: string, set: Set<string> | undefined) => (!set || set.size === 0 || card === '??' ? '' : set.has(card) ? 'win' : 'dim');
 
-  // One line per winner: total won and the best hand they won with.
+  // One line per winner: total won and each different hand they won with. With two runs or two boards,
+  // each hand says which run or board it won, so run 2's full house isn't shown as run 1's two pair.
   const results = new Map<number, { amount: number; handName?: string }>();
-  if (done)
+  if (done) {
+    const twoRuns = hand!.boards.length > 1;
+    const twoBoards = (hand!.boards[0]?.length ?? 0) > 1;
+    const slots = hand!.boards.length * (hand!.boards[0]?.length ?? 1);
+    const names = new Map<number, Map<string, string[]>>();
     for (const a of hand!.awards) {
       const prev = results.get(a.seat);
-      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount, handName: prev?.handName ?? a.handName });
+      results.set(a.seat, { amount: (prev?.amount ?? 0) + a.amount });
+      if (!a.handName) continue;
+      const where = [twoRuns && `Run ${a.run + 1}`, twoBoards && `Board ${a.board + 1}`].filter(Boolean).join(', ');
+      const byName = names.get(a.seat) ?? new Map<string, string[]>();
+      names.set(a.seat, byName);
+      // A hi-lo scoop is named "Flush and 8-6 low": its halves group with high-only or low-only wins elsewhere.
+      for (const name of a.half === 'scoop' ? a.handName.split(' and ') : [a.handName]) {
+        const places = byName.get(name) ?? [];
+        if (where && !places.includes(where)) places.push(where);
+        byName.set(name, places);
+      }
     }
+    for (const [seat, byName] of names) {
+      const list = [...byName.entries()];
+      // Places are named unless every hand was won everywhere (or there's only one run and board).
+      const everywhere = list.every(([, places]) => places.length === 0 || places.length === slots);
+      results.get(seat)!.handName = everywhere
+        ? list.map(([name]) => name).join(' and ')
+        : list.map(([name, places]) => (places.length ? `${places.join(' & ')}: ${name}` : name)).join(' · ');
+    }
+  }
 
   // Chip flights: bets swept in when a betting round ends, the pot pushed to the winners.
   const [flights, setFlights] = useState<Flight[]>([]);
@@ -277,12 +303,10 @@ export function Table({
   return (
     <div
       ref={felt}
-      className={['felt', compact && 'compact', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
+      className={['felt', compact && 'compact', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}) } as CSSProperties}
     >
-      <div className="felt-brand">
-        RSDP Poker <span>Live!</span>
-      </div>
+      <FeltEmblem />
       <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
         {runs.map((run, r) =>
           run.map(
@@ -295,7 +319,7 @@ export function Table({
                       key={`${hand!.handNumber}-${r}-${b}-${c}`}
                       card={c}
                       className={`deal-board ${highlight(c, boardWinners.get(`${r}-${b}`))}`}
-                      style={{ animationDelay: `${cards.length <= 3 ? i * 110 : 0}ms` }}
+                      style={{ animationDelay: `${cards.length <= 3 ? i * 160 : 0}ms` }}
                     />
                   ))}
                 </div>
@@ -316,7 +340,7 @@ export function Table({
                 // One pot: show everything in play, bets in front of the seats included, so it never reads "Pot 0" with chips out.
                 <div className="pot">
                   <ChipStacks amount={hand!.pots[0]?.amount ?? 0} base={chipBase} />
-                  Pot {fmt(Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0))}
+                  Pot <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} />
                 </div>
               )}
             </div>
@@ -369,6 +393,7 @@ export function Table({
           pos.x < w * 0.18 ? 'edge-left' : pos.x > w * 0.82 ? 'edge-right' : '',
           acting && 'acting',
           s.folded && 'folded',
+          s.allIn && live && 'all-in',
           (s.sittingOut || !s.online) && 'away',
           won && 'winner',
           isMe && 'me',
@@ -381,7 +406,8 @@ export function Table({
           .join(' ');
         const pickable = isMe && !!discard;
         const shown = done && !won && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null;
-        const toMiddle = fromVars(center, pos);
+        // Cards come off the dealer button (stud has none, so the middle of the table).
+        const toMiddle = fromVars(hand && !stud ? buttonPoint(hand.button) : center, pos);
         const muck = fromVars(lerp(pos, center, 0.5), pos);
         return (
           <div key={seat}>
@@ -411,15 +437,19 @@ export function Table({
                   );
                 })}
               </div>
-              <div className="nameplate" onClick={onSeatClick ? () => onSeatClick(s) : undefined}>
+              <div
+                className={`nameplate${timeFraction !== null ? ' timed' : ''}`}
+                onClick={onSeatClick ? () => onSeatClick(s) : undefined}
+                style={timeFraction !== null ? ({ '--t': timeFraction } as CSSProperties) : undefined}
+              >
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
-                <div className="name" title={s.bot ? (s.bot.ownerName ? `${s.name}, ${s.bot.ownerName}'s practice bot` : `${s.name}, a practice bot`) : undefined}>
+                <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
                   {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
-                  {s.bot && <span className="bot-owner">· {s.bot.ownerName ? <>{s.bot.ownerName}&rsquo;s bot</> : 'bot'}</span>}
+                  {s.bot && <span className="bot-owner">· {botPlateLabel(s.bot)}</span>}
                 </div>
-                <div className="stack">{s.allIn ? 'ALL IN' : fmt(s.stack)}</div>
+                <div className="stack">{s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
                 {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
                 {shown && <div className="status">{shown}</div>}

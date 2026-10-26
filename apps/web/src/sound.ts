@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { GestureKind } from '@rsdp/engine/wire';
-import { getPrefs } from './prefs';
+import { getPrefs, tableMotion } from './prefs';
 import { renderSound, type SoundName } from './soundbank';
 
 const VOLUME_KEY = 'rsdp.volume';
@@ -73,8 +73,12 @@ function audio(): AudioContext | null {
 // Browsers only let a page make sound after a tap or key press, and iOS can
 // suspend audio after an app switch: wake it on every interaction.
 if (typeof window !== 'undefined') {
+  let warmed = false;
   const unlock = () => {
-    if (volume > 0) audio();
+    if (volume > 0 && audio() && !warmed && getPrefs().tableSounds) {
+      warmed = true;
+      warm(COMMON);
+    }
   };
   window.addEventListener('pointerdown', unlock, { passive: true });
   window.addEventListener('keydown', unlock);
@@ -121,19 +125,46 @@ const rendered = new Map<SoundName, AudioBuffer[]>();
 /** How loud each sound plays against the others (the master volume sits on top). */
 const LEVEL: Partial<Record<SoundName, number>> = { turn: 0.55, turnBell: 0.55, hurry: 0.5, request: 0.5, chat: 0.6 };
 
+function render(a: AudioContext, name: SoundName): AudioBuffer {
+  const data = renderSound(name, a.sampleRate);
+  const buf = a.createBuffer(1, data.length, a.sampleRate);
+  buf.getChannelData(0).set(data);
+  return buf;
+}
+
+const idle = (fn: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 2000 }) : setTimeout(fn, 50));
+const warming = new Set<SoundName>();
+
+/** Renders the variants of these sounds one at a time while the page is idle, so a deal or a flop never waits on one. */
+function warm(names: SoundName[]) {
+  const a = ctx;
+  if (!a) return;
+  for (const name of names) {
+    if (warming.has(name)) continue;
+    warming.add(name);
+    const next = () => {
+      const bufs = rendered.get(name) ?? [];
+      rendered.set(name, bufs);
+      if (bufs.length >= VARIANTS) return void warming.delete(name);
+      bufs.push(render(a, name));
+      idle(next);
+    };
+    idle(next);
+  }
+}
+
+/** The sounds a hand makes most, readied as soon as sound can play. */
+const COMMON: SoundName[] = ['deal', 'flip', 'chips', 'check', 'fold', 'raise'];
+
 function play(name: SoundName) {
   const a = audio();
   if (!a || !master) return;
   const bufs = rendered.get(name) ?? [];
   rendered.set(name, bufs);
-  let buf: AudioBuffer;
-  if (bufs.length < VARIANTS) {
-    // Rendered on first use, one variant per play, so no single play waits for all of them.
-    const data = renderSound(name, a.sampleRate);
-    buf = a.createBuffer(1, data.length, a.sampleRate);
-    buf.getChannelData(0).set(data);
-    bufs.push(buf);
-  } else buf = bufs[Math.floor(Math.random() * bufs.length)];
+  // Only a sound never heard before renders on the spot; more variants follow when the page is idle.
+  if (!bufs.length) bufs.push(render(a, name));
+  if (bufs.length < VARIANTS) warm([name]);
+  const buf = bufs[Math.floor(Math.random() * bufs.length)];
   const src = a.createBufferSource();
   src.buffer = buf;
   const g = a.createGain();
@@ -154,6 +185,17 @@ const quietWhenHidden =
 
 export const sounds = {
   deal: quietWhenHidden(() => play('deal')),
+  /**
+   * Board cards turning over, timed to the turn on screen (feel.css feel-turn). `count` is the most cards any one
+   * board row got; rows that land together turn together (Table.tsx), so they share snaps.
+   */
+  flip: (count: number) =>
+    quietWhenHidden(() => {
+      // Three or fewer new cards turn one after another; a whole board turns at once, with one snap.
+      const snaps = count <= 3 ? count : 1;
+      const moving = tableMotion();
+      for (let i = 0; i < snaps; i++) setTimeout(() => play('flip'), moving ? 360 + i * 160 : i * 90);
+    })(),
   chips: quietWhenHidden(() => play('chips')),
   raise: quietWhenHidden(() => play('raise')),
   allIn: quietWhenHidden(() => play('allIn')),

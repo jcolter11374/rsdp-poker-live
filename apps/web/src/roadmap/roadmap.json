@@ -8,19 +8,20 @@
       "blurb": "Ready to play today.",
       "items": [
         { "title": "Every game", "detail": "Hold'em, Omaha and Omaha Hi-Lo (4, 5 or 6 cards), Seven Card Stud, Stud Hi-Lo, Razz, 2-7 Triple Draw and Badugi, with a How to play guide for each one." },
-        { "title": "Game extras, all free", "detail": "Run it twice, straddles, bomb pots, the 7-2 bounty, double board, game rotation, rabbit hunting, the time bank and the Nit game." },
+        { "title": "Game extras, all free", "detail": "Run it twice, straddles, bomb pots, the 7-2 bounty, double board, game rotation, rabbit hunting, the time bank and the Nit game, each with its own How to play guide." },
         { "title": "Tournaments that start on their own", "detail": "Schedule one and it starts at the set time, no host click needed. Sit & Gos, recurring events, late registration, rebuys, add-ons, hand-for-hand and custom payouts." },
         { "title": "Tournament formats", "detail": "Bounty and progressive knockout events, invite codes, check-in, and season leaderboards that add up points across nights." },
         { "title": "Finding games", "detail": "The home page lists upcoming and running tournaments. Optional browser alerts, lobby chat, and links that show a nice preview when pasted in WhatsApp." },
         { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, spectators with a delay, chat settings and saved table presets." },
         { "title": "Records", "detail": "Ledger with settle-up, hand replayer, your stats, player notes, hand highlights, shareable hand links and full log downloads." },
         { "title": "Table extras", "detail": "Avatars, emotes, show stacks in big blinds, all-in odds, sounds, keep-screen-awake, and install it on your phone like an app." },
-        { "title": "Practice bots", "detail": "Add a bot to an empty cash seat to practice any game risk-free. Each bot gets its own name and robot, like \"Ace · John's bot\". A player's bot needs the host's OK, and bots never play in tournaments." },
-        { "title": "Clean felt look", "detail": "A cleaner, flatter table with crisp cards and seats with pictures. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
+        { "title": "Practice bots", "detail": "Add a bot to an empty cash seat to practice any game risk-free, at Easy, Normal or Hard. Each bot gets its own name and robot, like \"Ace · John's bot\". A player's bot needs the host's OK, and bots never play in tournaments." },
+        { "title": "A clear table layout", "detail": "Crisp cards and seats with pictures. On phones the seats spread out evenly and run-it-twice boards stay clear of them." },
         { "title": "Clearer game names", "detail": "Tables name the game without the betting clutter, and high-low games are labelled 8 or better." },
         { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, tables shrinking, phones dropping out and double taps." },
         { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a seed from each player's browser. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
         { "title": "A slicker table", "detail": "Bigger cards in each nameplate, a clean middle, fuller sounds, casino chip colours, keyboard shortcuts and a switch to show everything in big blinds." },
+        { "title": "A table with some spark", "detail": "A lit felt, cards and chips that move, big moments at showdown and all in, and our own crest and card back. Turn off Table motion to keep it still." },
         { "title": "Co-hosts for cash tables", "detail": "Let a friend approve seats and run the game while you play." },
         { "title": "Optional accounts", "detail": "Sign in with a username and password, or with Google, so your name, picture, notes and history follow you to every device. Guests can still play without one." },
         { "title": "Chat, leaderboards and stats", "detail": "An always-on chat box, a group leaderboard with a running profit chart, your profit graph and a hand search. Practice games never count." },
@@ -34,6 +35,7 @@
       "title": "Coming in the next release",
       "blurb": "What we're working on next.",
       "items": [
+        { "title": "Coach tips for practice", "detail": "At a practice table, tap for a tip on your turn: your chance of winning, what the call costs and what to do. Bots explain their moves after each hand." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the moments that matter, like the final table." }
       ]
     },

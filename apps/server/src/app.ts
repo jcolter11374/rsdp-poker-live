@@ -7,14 +7,14 @@ import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
-import type { Ack, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import type { Ack, BotLevel, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
 import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
-import { GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
+import { BOT_LEVELS, GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
 import { cleanKind, cleanSetup, cleanSetupName, freeName, memorySetups, renamed, type SetupStore } from './savedSetups';
 import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
@@ -773,13 +773,15 @@ export function createApp(deps: AppDeps = {}) {
       }
     };
     /** A practice table: sits me in the first seat, adds the bots and deals. */
-    const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown }) => {
+    const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown; level?: unknown }) => {
       const name = cleanName(practice.name, NAME_MAX) || socket.data.session.displayName;
       if (!name) throw new ActionError('pick a name');
+      const level = practice.level === undefined || practice.level === null ? undefined : (String(practice.level) as BotLevel);
+      if (level && !BOT_LEVELS.includes(level)) throw new ActionError('no such level');
       if (!socket.data.session.displayName) await rename(name).catch(() => {});
       const bots = Math.max(1, Math.min(Math.floor(Number(practice.bots)) || 1, rt.state.seats.length - 1));
       rt.requestSeat(me, { seat: 0, name, stack: rt.defaultBuyIn(), consent: true });
-      for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name });
+      for (let i = 0; i < bots; i++) rt.addBot(me, { ownerName: name, level });
       // The cards come out once the creator is at the table, not before (their clock would run while the page loads).
       practiceStarts.set(rt.state.id, me);
     };
@@ -1188,12 +1190,14 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         () => {
           const seat = input?.seat === undefined || input?.seat === null ? undefined : Number(input.seat);
-          return { playerId: current().addBot(me, { ownerName: socket.data.session.displayName, seat }) };
+          const level = input?.level === undefined || input?.level === null ? undefined : (String(input.level) as BotLevel);
+          return { playerId: current().addBot(me, { ownerName: socket.data.session.displayName, seat, level }) };
         },
         log,
       ),
     );
     on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
+    on('bot:level', (input, ack) => guarded(ack, () => current().setBotLevel(me, String(input?.playerId ?? ''), String(input?.level ?? '') as BotLevel), log));
 
     on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
     on('tournament:subscribe', (input, ack) =>

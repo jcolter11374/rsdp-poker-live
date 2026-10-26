@@ -179,6 +179,7 @@ function bell(m: Mix, at: number, freq: number, gain: number) {
 
 export type SoundName =
   | 'deal'
+  | 'flip'
   | 'chips'
   | 'raise'
   | 'allIn'
@@ -202,6 +203,15 @@ export function renderSound(name: SoundName, sr: number, rand: Rand = Math.rando
       card(m, 0.1, 0.9, rand);
       m.room(0.08);
       return m.done(soft ? 0.32 : 0.42);
+    }
+    case 'flip': {
+      // A board card snapped face up on the cloth: a short bright flick and a soft slap.
+      const m = new Mix(sr, 0.22);
+      card(m, 0, 0.8, rand, 0.04);
+      m.noise(0.035, 0.012, 0.6, 5200, 2600, 0.8, rand, 0.0004);
+      m.thump(0.04, 210, 0.03, 0.35);
+      m.room(0.06);
+      return m.done(soft ? 0.3 : 0.4);
     }
     case 'chips': {
       const m = new Mix(sr, 0.35);

@@ -8,8 +8,9 @@
 .nit-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; }
 .nit-line .nit-status { margin: 0; }
 .nit-help-button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 20px; flex: none; }
-.nit-help { margin: 0 0 12px; padding-left: 20px; }
+.nit-help { margin: 0 0 8px; padding-left: 20px; }
 .nit-help li { margin: 6px 0; }
+.nit-help-more { display: inline-block; margin: 0 0 12px; }
 .nameplate .note-badge { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; min-height: 0; padding: 0; border-radius: 50%; font-size: 11px; line-height: 18px; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.45); color: #fff; opacity: 0.55; }
 .nameplate .note-badge.has-note, .nameplate:hover .note-badge { opacity: 1; }
 .note-colors { display: flex; gap: 8px; margin: 8px 0; }

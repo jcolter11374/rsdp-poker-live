@@ -4,6 +4,7 @@ import { call, currentSession, onSession, socket } from '../../socket';
 import { setPrefs, usePrefs } from '../../prefs';
 import { sounds } from '../../sound';
 import { fromVars, px, type Point } from '../geometry';
+import { botOwnerLabel } from './BotLevels';
 import { NoteButton } from './Notes';
 
 /*
@@ -128,8 +129,9 @@ export function SeatPersona({ seat }: { seat: SeatView }) {
         {seat.bot ? (
           // Practice bots always show their robot, so nobody mistakes one for a person or for another bot.
           <>
-            <BotAvatar look={seat.bot.look} title={seat.bot.ownerName ? `${seat.name}, ${seat.bot.ownerName}'s practice bot` : `${seat.name}, a practice bot`} />
-            <span className="bot-badge">bot</span>
+            <BotAvatar look={seat.bot.look} title={`${seat.name}, ${botOwnerLabel(seat.bot, 'practice bot')}`} />
+            {/* Phones show its level here (the nameplate has no room for the owner line). */}
+            <span className="bot-badge">{seat.bot.level && seat.bot.level !== 'normal' ? seat.bot.level : 'bot'}</span>
           </>
         ) : showAvatar ? (
           <Avatar playerId={seat.playerId} avatar={seat.avatar} name={seat.name} />
