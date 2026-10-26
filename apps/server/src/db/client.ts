@@ -29,7 +29,16 @@ export interface CreateDbOptions {
   pgliteDir?: string;
   /** Skip DATABASE_URL and PGLITE_DIR, so tests never touch a real database. */
   ignoreEnv?: boolean;
+  /** PGlite only: how often to vacuum. Tests shorten it. */
+  vacuumEveryMs?: number;
 }
+
+/**
+ * PGlite runs no autovacuum, and a table's snapshot is rewritten on every
+ * change, so each save would leave its old copy on disk for good (about
+ * 1.5 MB a hand). Vacuuming this often lets new saves reuse that space.
+ */
+const VACUUM_EVERY_MS = 5 * 60_000;
 
 const closers = new WeakMap<object, () => Promise<void>>();
 
@@ -42,7 +51,7 @@ export async function createDb(opts: CreateDbOptions = {}): Promise<Db> {
   const url = opts.url || (opts.ignoreEnv ? undefined : process.env.DATABASE_URL) || undefined;
   if (url) return openPostgres(url);
   const dataDir = opts.pgliteDir || (opts.ignoreEnv ? undefined : process.env.PGLITE_DIR) || undefined;
-  return openPglite(dataDir);
+  return openPglite(dataDir, opts.vacuumEveryMs ?? VACUUM_EVERY_MS);
 }
 
 /**
@@ -88,17 +97,27 @@ async function openPostgres(url: string): Promise<Db> {
   return db;
 }
 
-async function openPglite(dataDir: string | undefined): Promise<Db> {
+async function openPglite(dataDir: string | undefined, vacuumEveryMs: number): Promise<Db> {
   // PGlite creates only the last folder of the path.
   if (dataDir) mkdirSync(path.dirname(path.resolve(dataDir)), { recursive: true });
   const client = new PGlite(dataDir);
   const db = drizzlePglite(client, { schema });
   try {
     await migratePglite(db, { migrationsFolder: MIGRATIONS_DIR });
+    // Give back what runs without vacuuming left behind. Only the latest snapshot of each table is live, so this is quick.
+    await client.exec('VACUUM FULL table_snapshots');
   } catch (err) {
     await client.close();
     throw err;
   }
-  closers.set(db, () => client.close());
+  // PGlite runs one statement at a time, so a vacuum never lands inside someone's transaction.
+  const vacuum = setInterval(() => {
+    client.exec('VACUUM').catch((err: Error) => console.error('vacuum failed', err.message));
+  }, vacuumEveryMs);
+  vacuum.unref();
+  closers.set(db, async () => {
+    clearInterval(vacuum);
+    await client.close();
+  });
   return db;
 }
