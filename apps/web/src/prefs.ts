@@ -30,6 +30,8 @@ export interface Prefs {
   hiddenAvatars: string[];
   /** Keep the screen on while seated at a table. */
   wakeLock: boolean;
+  /** Table motion: thrown cards, counting stacks, sparkles. Off keeps the look and drops the movement. */
+  tableMotion: boolean;
 }
 
 export const FELT_COLORS: Record<Felt, { name: string; light: string; felt: string; edge: string }> = {
@@ -56,6 +58,7 @@ const DEFAULTS: Prefs = {
   moods: true,
   hiddenAvatars: [],
   wakeLock: true,
+  tableMotion: true,
 };
 const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
@@ -74,6 +77,7 @@ function load(): Prefs {
       moods: flag(raw.moods, DEFAULTS.moods),
       hiddenAvatars: Array.isArray(raw.hiddenAvatars) ? raw.hiddenAvatars.filter((x: unknown) => typeof x === 'string').slice(0, 500) : [],
       wakeLock: flag(raw.wakeLock, DEFAULTS.wakeLock),
+      tableMotion: flag(raw.tableMotion, DEFAULTS.tableMotion),
     };
   } catch {
     return DEFAULTS;
@@ -83,11 +87,17 @@ function load(): Prefs {
 let current = load();
 const listeners = new Set<() => void>();
 
-/** The deck and card back are page-wide, so they go on the root element for the CSS. */
+/** The deck, card back and table motion are page-wide, so they go on the root element for the CSS (feel.css). */
 function apply(p: Prefs) {
   document.documentElement.dataset.deck = p.deck;
   document.documentElement.dataset.back = p.back;
+  document.documentElement.dataset.feel = p.tableMotion ? 'depth motion moments identity' : 'depth moments identity';
+  document.documentElement.dataset.motion = p.tableMotion ? 'on' : 'off';
 }
+
+/** Whether the table moves: the player's own switch, and their device's reduce-motion setting. */
+export const tableMotion = () =>
+  current.tableMotion && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 apply(current);
 
 export function setPrefs(patch: Partial<Prefs>) {

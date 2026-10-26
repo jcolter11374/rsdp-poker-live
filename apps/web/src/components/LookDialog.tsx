@@ -101,6 +101,10 @@ export function LookDialog({ view, onClose, initialTab = 'table' }: { view: Tabl
               <input type="checkbox" checked={prefs.wakeLock} onChange={(e) => setPrefs({ wakeLock: e.target.checked })} />
               Keep the screen on while I'm seated
             </label>
+            <label className="toggle">
+              <input type="checkbox" checked={prefs.tableMotion} onChange={(e) => setPrefs({ tableMotion: e.target.checked })} />
+              Table motion (thrown cards, counting stacks, sparkles)
+            </label>
           </>
         )}
         {tab === 'table' && view.powers.includes('settings') && view.mode !== 'tournament' && (
