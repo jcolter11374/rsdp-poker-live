@@ -23,17 +23,34 @@ env:
   SITE: https://rsdp-poker-live.fly.dev
 
 jobs:
+  key:
+    name: Is there a backup key yet?
+    # Only main's own scripts may hold the admin key.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.key.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v6
+      # Before anything is downloaded: without a key there would be nothing safe to keep. Until John
+      # has made his, nightly runs stop here quietly instead of failing every night.
+      - id: key
+        run: |
+          if grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No backup key yet (scripts/backup/recipient.txt has no public key), so no backup was taken."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
   backup:
     name: Back up, test the restore, keep the copy
-    # Only main's own scripts may hold the key.
-    if: github.ref == 'refs/heads/main'
+    needs: key
+    if: needs.key.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      # Before anything is downloaded: without a key there would be nothing safe to keep.
-      - name: The backup key is there
-        run: grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt || { echo "::error::No backup key yet: scripts/backup/recipient.txt has no public key."; exit 1; }
       - uses: actions/setup-node@v6
         with:
           node-version: 22
