@@ -148,6 +148,8 @@ export interface TableView {
   hostId: PlayerId;
   /** I am the host (co-hosts are not). */
   isHost: boolean;
+  /** Two or more people (not bots) have played a hand here, so the table can't be deleted by its host. */
+  realGame: boolean;
   /** The host powers I hold: all of them for the host, the ones given for a co-host, none otherwise. */
   powers: HostPower[];
   /** Cash tables: the host's co-hosts and their powers. */
@@ -321,6 +323,8 @@ export interface ClientToServer {
   'host:reject': (input: { requestId: string }) => void;
   'host:start': (ack: Ack) => void;
   'host:stop': (ack: Ack) => void;
+  /** Host only: delete a cash table nobody has played a real game at, for good (a test or a mistake). */
+  'host:deleteTable': (ack: Ack) => void;
   'host:deal': (ack: Ack) => void;
   'host:pause': (input: { value: boolean }, ack: Ack) => void;
   /** Make the next hand a bomb pot (value false takes it back). */
@@ -351,6 +355,8 @@ export interface ServerToClient {
   'table:state': (view: TableView) => void;
   /** A tournament moved you to another table (balancing or a broken table). */
   'table:moved': (input: { from: string; to: string }) => void;
+  /** The table I had open was deleted for good. */
+  'table:deleted': (input: { id: string }) => void;
   /** Someone at the table threw a gesture. */
   'table:gesture': (input: { from: PlayerId; to: PlayerId; kind: GestureKind; at: number }) => void;
   /** All my notes again, after one changed in any of my tabs. */

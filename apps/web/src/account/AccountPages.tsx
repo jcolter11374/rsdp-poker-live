@@ -3,7 +3,7 @@ import { currentSession, onSession, saveSessionToken, setName } from '../socket'
 import { chipFormat } from '../format';
 import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
-import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile } from './api';
+import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
 import '../components/table/extras.css';
 import './account.css';
 
@@ -282,11 +282,13 @@ export function ProfilePage() {
   const [loadError, setLoadError] = useState('');
   const params = new URLSearchParams(location.search);
 
+  const load = () =>
+    fetchProfile()
+      .then((p) => (setProfile(p), setLoadError('')))
+      .catch((e: Error) => setLoadError(e.message));
   useEffect(() => {
     if (!session) return;
-    fetchProfile()
-      .then(setProfile)
-      .catch((e: Error) => setLoadError(e.message));
+    void load();
     // Load again when the server's idea of me changes (a rename, a sign-in elsewhere).
   }, [session?.playerId, session?.account?.username]);
 
@@ -331,7 +333,7 @@ export function ProfilePage() {
       <section className="account-section">
         <h2>Cash games</h2>
         {loadError && <p className="error">{loadError}</p>}
-        {!profile ? !loadError && <p className="muted">Loading…</p> : <TablesList profile={profile} />}
+        {!profile ? !loadError && <p className="muted">Loading…</p> : <TablesList profile={profile} onChanged={load} />}
       </section>
 
       <section className="account-section">
@@ -385,18 +387,42 @@ function NameForm({ current }: { current: string }) {
   );
 }
 
-function TablesList({ profile }: { profile: Profile }) {
-  if (profile.tables.length === 0) return <p className="muted">No hands played yet.</p>;
+function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () => Promise<unknown> }) {
+  const { busy, error, run } = useAction();
+  const toggle = (tableId: string, hidden: boolean) => run(() => hideTable(tableId, hidden).then(onChanged));
+  const hidden = profile.hiddenTables ?? [];
+  return (
+    <>
+      {profile.tables.length === 0 ? (
+        <p className="muted">{hidden.length ? 'No other cash games.' : 'No hands played yet.'}</p>
+      ) : (
+        <TableRows rows={profile.tables} action="Hide" title="Hide this table from your profile. It stays for everyone else." busy={busy} onAction={(id) => toggle(id, true)} />
+      )}
+      {error && <p className="error">{error}</p>}
+      {hidden.length > 0 && (
+        <details className="account-hidden">
+          <summary>Hidden tables ({hidden.length})</summary>
+          <TableRows rows={hidden} action="Show again" title="Put this table back on your profile" busy={busy} onAction={(id) => toggle(id, false)} />
+        </details>
+      )}
+    </>
+  );
+}
+
+function TableRows(props: { rows: TableRow[]; action: string; title: string; busy: boolean; onAction: (tableId: string) => void }) {
   return (
     <ul className="account-list">
-      {profile.tables.map((t) => {
+      {props.rows.map((t) => {
         const fmt = chipFormat(t.centsMode);
         return (
           <li key={t.tableId}>
             <a href={`/t/${t.tableId}`}>{t.name || 'Table'}</a>
             <span className="muted">
               {shortDate(t.lastPlayedAt)} · {t.hands} {t.hands === 1 ? 'hand' : 'hands'}
-              {t.practice && ' · practice'}
+              {t.practice && ' · practice'} ·{' '}
+              <button className="link" title={props.title} disabled={props.busy} onClick={() => props.onAction(t.tableId)}>
+                {props.action}
+              </button>
             </span>
             {t.net !== null && <span className={`account-net ${t.net > 0 ? 'up' : t.net < 0 ? 'down' : ''}`}>{t.net > 0 ? `+${fmt(t.net)}` : t.net < 0 ? `−${fmt(-t.net)}` : 'even'}</span>}
           </li>

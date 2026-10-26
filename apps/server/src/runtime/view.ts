@@ -100,6 +100,7 @@ export function tableView(
     tournamentId,
     hostId: s.hostId,
     isHost,
+    realGame: !!s.realGame,
     powers: rt.powersOf(playerId),
     coHosts: (s.coHosts ?? []).map((c) => ({ ...c, powers: [...c.powers] })),
     me: { playerId, seat: mySeat?.seat ?? null },

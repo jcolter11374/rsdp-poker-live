@@ -52,6 +52,9 @@ import { chooseMove, seededRand } from '../bots/strategy';
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
+
+/** True when two or more people (not practice bots) were dealt in. */
+export const realGameHand = (seats: readonly { playerId: PlayerId }[]) => seats.filter((x) => !x.playerId.startsWith('bot-')).length >= 2;
 /** Hands become checkable this long after they end, if the host hasn't stopped the game sooner (docs/FAIRNESS.md). */
 export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
@@ -159,6 +162,7 @@ export class TableRuntime {
       chat: [],
       log: [],
       history: [],
+      realGame: false,
     };
     return new TableRuntime(state, deps);
   }
@@ -613,6 +617,18 @@ export class TableRuntime {
     if (!this.state.hand || this.state.hand.phase === 'complete') this.state.nextHandAt = this.clock.now();
     this.log('The host started the game');
     this.sync();
+  }
+
+  /**
+   * Throws unless `by` may delete this table for good: only the host of a cash
+   * table nobody has played a real game at (see RuntimeState.realGame).
+   */
+  checkDeletable(by: PlayerId) {
+    if (this.isTournament) throw new ActionError('tournament tables are kept with their tournament');
+    if (!this.isHost(by)) throw new ActionError('only the host can delete the table');
+    if (this.state.realGame || (this.handLive() && realGameHand(this.state.hand!.seats))) {
+      throw new ActionError("people have played real hands here, so the table stays: everyone's records and the ledger depend on it. You can hide it from your profile instead.");
+    }
   }
 
   /** Cash tables: no new hands after the current one. */
@@ -1642,6 +1658,7 @@ export class TableRuntime {
     const record = { handNumber: s.handNumber, startedAt: s.handStartedAt!, endedAt: now, hand };
     s.history.push(record);
     if (s.history.length > HISTORY_LIMIT) s.history.splice(0, s.history.length - HISTORY_LIMIT);
+    if (realGameHand(hand.seats)) s.realGame = true;
     s.handStartedAt = null;
     s.turn = null;
     s.ritDeadline = null;

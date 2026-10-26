@@ -239,6 +239,12 @@ export interface RuntimeState {
   fair?: FairState;
   /** Practice bots at this table (seated or asking for a seat), by their player id. */
   bots?: Record<PlayerId, BotInfo>;
+  /**
+   * A hand here was dealt to two or more people (not bots), so friends' records
+   * depend on the table and the host can't delete it. Missing in older
+   * snapshots; the server works it out from saved hands when it loads one.
+   */
+  realGame?: boolean;
 }
 
 /** A practice bot: who added it, what it buys in (and rebuys) for, and how it looks. */
