@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { TableSettings } from '@rsdp/engine/settings';
-import { addPresetFile, deletePreset, presetSettings, savePreset, usePresets, type SavedPreset } from '../../presets';
+import { addPresetFile, presetSettings, savePreset, tablePresets, usePresets, type SavedPreset } from '../../presets';
 import { download } from '../../records';
+import { SavedSetupRow } from '../SavedSetupRow';
 
 /** Puts a preset's setup on a table, keeping the table's own name and mode. */
 export function withPreset(table: TableSettings, preset: TableSettings): TableSettings {
@@ -13,21 +14,18 @@ const fileName = (name: string) => `${name.replace(/[^\w-]+/g, '-').replace(/^-+
 /** Saved table setups: save the settings being edited, load one into them, and share them as files. */
 export function PresetsTab({ draft, onApply, tournament }: { draft: TableSettings; onApply: (next: TableSettings) => void; tournament: boolean }) {
   const presets = usePresets();
+  const onAccount = tablePresets.useOnAccount();
   const [name, setName] = useState('');
   const [msg, setMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   if (tournament) return <p className="muted">Presets are for cash tables. Tournaments copy their setup from the lobby.</p>;
 
   const fail = (e: unknown) => setMsg({ text: e instanceof Error ? e.message : String(e), error: true });
-  const save = () => {
-    try {
-      const saved = savePreset(name, draft);
+  const save = () =>
+    savePreset(name, draft).then((saved) => {
       setName('');
       setMsg({ text: `Saved “${saved}”.` });
-    } catch (e) {
-      fail(e);
-    }
-  };
+    }, fail);
   const apply = (p: SavedPreset) => {
     try {
       onApply(withPreset(draft, presetSettings(p)));
@@ -39,7 +37,7 @@ export function PresetsTab({ draft, onApply, tournament }: { draft: TableSetting
   const importFile = async (f: File | undefined) => {
     if (!f) return;
     try {
-      const saved = addPresetFile(await f.text());
+      const saved = await addPresetFile(await f.text());
       setMsg({ text: `Added “${saved}”.` });
     } catch (e) {
       fail(e);
@@ -51,8 +49,9 @@ export function PresetsTab({ draft, onApply, tournament }: { draft: TableSetting
   return (
     <>
       <p className="hint">
-        A preset is a whole table setup: game, stakes, clock, seats, rules, side games, chat and watching. Presets live in this browser; export one to keep it
-        or send it to a friend.
+        A preset is a whole table setup: game, stakes, clock, seats, rules, side games, chat and watching.{' '}
+        {onAccount ? 'Presets are kept on your account, so they follow you to any device.' : 'Presets live in this browser; sign in to keep them on every device.'} Export one to
+        send it to a friend.
       </p>
       <div className="row">
         <input value={name} maxLength={60} placeholder="Name, e.g. Friday PLO" onChange={(e) => setName(e.target.value)} />
@@ -62,18 +61,14 @@ export function PresetsTab({ draft, onApply, tournament }: { draft: TableSetting
       </div>
       {presets.length === 0 && <p className="muted">No presets yet.</p>}
       {presets.map((p) => (
-        <div className="row preset" key={p.name}>
-          <span className="who">{p.name}</span>
+        <SavedSetupRow key={p.name} setup={p} list={tablePresets} what="preset" onMessage={(text, error) => setMsg({ text, error })}>
           <button type="button" onClick={() => apply(p)}>
             Load
           </button>
           <button type="button" title="Download as a file" onClick={() => download(fileName(p.name), p.json, 'application/json')}>
             Export
           </button>
-          <button type="button" className="danger" title="Delete" onClick={() => confirm(`Delete the preset “${p.name}”?`) && deletePreset(p.name)}>
-            ✕
-          </button>
-        </div>
+        </SavedSetupRow>
       ))}
       <div className="row">
         <button type="button" onClick={() => file.current?.click()}>

@@ -318,6 +318,14 @@ export interface ClientToServer {
   'notes:list': (ack: Ack<{ notes: PlayerNote[] }>) => void;
   /** Saves (or, with no text and no colour, deletes) my note on a player. */
   'notes:set': (input: PlayerNote, ack: Ack<{ note: PlayerNote | null }>) => void;
+  /** My saved setups of one kind (signed in only; guests keep theirs in the browser). */
+  'setups:list': (input: { kind: SetupKind }, ack: Ack<{ setups: SavedSetup[] }>) => void;
+  /** Saves a setup under its name, replacing one of the same name. Answers with the name as kept. */
+  'setups:save': (input: { kind: SetupKind; name: string; json: string }, ack: Ack<{ name: string }>) => void;
+  'setups:rename': (input: { kind: SetupKind; from: string; to: string }, ack: Ack<{ name: string }>) => void;
+  'setups:delete': (input: { kind: SetupKind; name: string }, ack: Ack) => void;
+  /** Brings setups saved in this browser onto the account; a name already taken there gets a number. Bad ones are skipped. */
+  'setups:import': (input: { kind: SetupKind; setups: SavedSetup[] }, ack: Ack<{ added: number }>) => void;
   /** Approve a request; `seat` puts a seat request's player in another open seat. */
   'host:approve': (input: { requestId: string; seat?: number }, ack: Ack) => void;
   'host:reject': (input: { requestId: string }) => void;
@@ -361,6 +369,21 @@ export interface ServerToClient {
   'table:gesture': (input: { from: PlayerId; to: PlayerId; kind: GestureKind; at: number }) => void;
   /** All my notes again, after one changed in any of my tabs. */
   notes: (notes: PlayerNote[]) => void;
+  /** All my saved setups of one kind again, after one changed in any of my tabs. */
+  setups: (input: { kind: SetupKind; setups: SavedSetup[] }) => void;
+}
+
+/** What a saved setup is for: a cash table preset or a tournament structure. */
+export const SETUP_KINDS = ['table', 'tournament'] as const;
+export type SetupKind = (typeof SETUP_KINDS)[number];
+/** Most setups of one kind an account keeps. */
+export const SETUPS_PER_KIND = 100;
+export const SETUP_NAME_MAX = 60;
+
+/** A setup saved under a name: for a table, a preset file; for a tournament, its settings as JSON. */
+export interface SavedSetup {
+  name: string;
+  json: string;
 }
 
 /** Gestures a player can throw at another. The pictures and sounds are drawn by the web client. */
