@@ -10,6 +10,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { handDigest, playerRef, tableRef } from '@rsdp/engine';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore, memoryAuditStore } from '../src/audit';
 import { closeDb, type Db } from '../src/db';
@@ -66,6 +67,22 @@ describe('the hourly copy and the standalone checker', () => {
     expect(verified.code).toBe(1);
     expect(verified.out).toMatch(/entries GitHub copied are different or missing on the site now, the first being entry 1/);
     await b.server.close();
+  });
+});
+
+describe('the standalone rules', () => {
+  it('agree with the app on every hash', async () => {
+    const chain = (await import(path.join(root, 'scripts/transparency/chain.mjs'))) as Record<string, (...a: unknown[]) => unknown>;
+    const audit = AuditLog.after(memoryAuditStore(), null, { log: () => {} });
+    audit.admin('ünïcode "quoted" \\ action', 'x');
+    audit.record('chips', { table: tableRef('t-1'), player: playerRef('t-1', 'p'), buyIn: 1_000_000, cashOut: 0 });
+    const entries = await audit.after(0, 10);
+    expect(chain.chainProblem(entries)).toBeNull();
+    for (const e of entries) expect(chain.entryHash(e)).toBe(e.hash);
+    expect(chain.tableRef('t-1')).toBe(tableRef('t-1'));
+    expect(chain.playerRef('t-1', 'p')).toBe(playerRef('t-1', 'p'));
+    const hand = { handId: 'h', commit: 'c', button: 2, seats: [{ seat: 3, playerId: 'b', stack: 5 }, { seat: 1, playerId: 'a', stack: 7 }], events: [{ t: 'deal', seat: 1, cards: [{ card: 'As', pos: 0 }], extra: undefined }] };
+    expect(chain.handDigest(hand)).toBe(handDigest(hand));
   });
 });
 

@@ -24,8 +24,9 @@ first, details after.
   own (below).
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
-  although it was sent in good time, or a seed your browser never sent is
-  listed under your name, the table shows a warning straight away. Your browser
+  although it was sent in good time, a seed your browser never sent is
+  listed under your name, or the commitment for the next hand was swapped for
+  another without being dealt, the table shows a warning straight away. Your browser
   also writes down what it saw during the hand: the button, who was dealt in,
   the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
@@ -44,6 +45,11 @@ first, details after.
 - **Your cards stay private during play.** The server sends each person only
   what they may see. Undealt cards, other players' hole cards and the secrets
   never leave the server during a hand.
+- **Some of what John could do now leaves public traces.** Since 27 October
+  2026, GitHub builds and signs every release, checks every hour which build
+  the live site runs, and keeps a copy of a tamper-evident record of every
+  hand, chip total and admin action. See [Checking John](#checking-john) and
+  the [/transparency](/transparency) page.
 - **This doesn't make the developer impossible to cheat.** The next section
   lists, plainly, what John could still do as the person who runs the site.
 
@@ -66,18 +72,56 @@ when they deal at a home game.
   you, so a changed site could switch it off or quietly send a seed the server
   chose; then the server could pick the deck, and "Check this hand", or even
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
-  still pass.
+  still pass. Since 26 October 2026 a normal release can be checked: GitHub
+  builds it from the public code and signs a record of which commit it came
+  from, and GitHub's hourly watcher checks that the live machine runs exactly
+  that image (see [Checking John](#checking-john)). That catches a quiet
+  redeploy. It doesn't catch changes made from a shell on the running server,
+  which John can open: he could change the code there, or read its memory,
+  without a new deploy, and nothing records that.
 - **Throw away a deck it doesn't like.** The server knows the deck the moment
-  the last seed is in. Even the published code can't stop a changed server
-  from dropping that commitment, publishing a new one, collecting fresh seeds
-  and trying again. Browsers don't warn about a commitment that was replaced
-  without being dealt. Each try costs at least 2.5 seconds, so the sign is a
-  hand that is slow to be dealt for no reason.
+  the last seed is in. It could drop that commitment, publish a new one,
+  collect fresh seeds and try again. Since 26 October 2026 your browser watches
+  for this while it shows you the table live (seated, or watching with no
+  delay): it remembers each commitment offered for the next hand and checks the
+  hands actually dealt against them. If a commitment is skipped, a hand comes
+  from a commitment never offered or is shown without one, or a hand number
+  reappears with a different commitment while you stay connected, that hand
+  and every later one you see there are marked. Seated players get the warning live; anyone who watched
+  gets it in "Check this hand". "Check this hand", opened from the table's hand
+  list, also checks that the hand's record carries the commitment the hand was
+  shown under at the table, and the first commitment a hand number was shown
+  under is never replaced, so a server can't show you one commitment and
+  record another. What it doesn't cover: a server restart honestly starts a
+  fresh commitment and drops every connection, so the watch starts over
+  whenever your connection drops and comes back. A server that drops the
+  connection on purpose just as a hand is dealt can deal that hand from any
+  deck it likes, without the players' seeds; you'd notice a brief
+  "reconnecting", and "Check this hand" would list no seeds for it. A server
+  could also leave a hand you watched out of the hand list, or file it under
+  another number, so there's nothing to compare. The watch also starts over when you leave or reload the
+  page, or when a view that hid the hands (a delayed spectator, or watching
+  turned off) turns live, so a server could get a retry by showing you that
+  way for a moment. It is blind if nobody at the table is watching, or if
+  browser storage is blocked. It also relies on the browser code being the
+  published code (above).
 - **Change the records.** Chip counts, the cash ledger, the leaderboard and
-  hand histories live in a database he controls, and he could edit them. A
-  hand whose proof you downloaded can't be changed without the proof no longer
-  matching, but nothing else is protected. If amounts matter, keep your own
-  tally too.
+  hand histories live in a database he controls, and he could edit them.
+  Since 26 October 2026 every hand, every change to a player's buy-ins and
+  cash-outs, and every admin action also goes into a public, hash-chained
+  record, and GitHub copies it every hour. Editing something already in the
+  record now shows: in "Check this hand", in the ledger's check against the
+  record, in a warning from any browser that saw the record before, and in
+  the GitHub copy. What it doesn't stop: a false entry written at the time
+  (say, a changed server recording a wrong hand as it happens; you'd see the
+  hand play out differently), an edit in the hour before GitHub copies it
+  that no browser saw, and the leaderboard, which is worked out from hands
+  and isn't checked separately. If amounts matter, keep your own tally too.
+- **Use admin powers, or a shell on the server.** The admin page can remove
+  test tables and answer suggestions; each use now goes in the public record
+  and on [/transparency](/transparency). John can also open a shell on the
+  server through Fly, the hosting company. That isn't recorded anywhere
+  players can see, and from there everything in this list is possible.
 - **Show your cards to a spectator without the warnings.** A host can let
   spectators see every hole card, and the site makes sure everyone is told
   (see the next section). Those warnings are code too: a changed server could
@@ -86,6 +130,69 @@ when they deal at a home game.
   assistant (Claude), and the reviews mentioned below were also done by AI
   reviewers we ran ourselves. No outside auditor or security firm has looked
   at it.
+
+## Checking John
+
+These checks run outside John's server, mostly on GitHub, so a changed server
+can't also change what they found. John owns the GitHub repository and the
+Fly account, so he could switch them off, but not quietly: the code and its
+history are public, and a check that stops running stops updating its public
+log.
+
+- **Signed builds.** Every release is built by GitHub Actions from the public
+  code on `main` (`.github/workflows/deploy.yml`). GitHub signs a record of the
+  image and the commit it came from (build provenance), and Fly runs that
+  exact image. The site's footer shows the commit the server says it runs.
+- **The deploy watcher.** Every hour GitHub asks Fly which image the live
+  machine runs and when it last started, checks GitHub's signed record of
+  that image, and writes the result to the
+  [`transparency` branch](https://github.com/jcolter11374/rsdp-poker-live/tree/transparency/deploys)
+  (`.github/workflows/transparency.yml`). An image GitHub didn't build from
+  `main`, a second machine, or a server that names a different commit opens
+  an issue on GitHub, which notifies everyone watching the repository.
+  Restarts are logged too; one after each release is normal.
+- **The public record.** Every hand, every change to a player's buy-ins and
+  cash-outs, every table deleted, every admin action and every server start is
+  an entry in an append-only chain (`packages/engine/src/audit.ts`). Each entry
+  includes a fingerprint (SHA-256) of the one before, so changing or removing
+  an old entry changes every fingerprint after it. Entries hold no names and
+  no table links: a table or player appears only as a fingerprint that
+  someone at that table can work out. A hand's entry is the fingerprint of the
+  whole hand as "Check this hand" sees it once revealed. Anyone can read the
+  record at `/api/audit/entries`.
+- **GitHub's copy of the record.** The watcher copies new entries every hour
+  to the `transparency` branch, after checking that they follow on from the
+  last ones it copied. If an entry it already copied is changed or gone, it
+  opens an issue.
+- **Your browser's checks.** Your browser remembers the latest entry it saw
+  and checks, on each visit, that the record still holds it unchanged and
+  that everything since follows on; it does the same against GitHub's copy.
+  If not, every page shows a warning. "Check this hand" checks a revealed hand
+  against its entry, and the ledger checks every buy-in and cash-out against
+  the record. These checks are code the site sends you, so they are only as
+  honest as that code; GitHub's copy is the one that doesn't depend on it.
+
+To check it all yourself, with Node 20 or later:
+
+```sh
+git clone https://github.com/jcolter11374/rsdp-poker-live && cd rsdp-poker-live
+git clone -b transparency https://github.com/jcolter11374/rsdp-poker-live copy
+node scripts/verify-audit.mjs --copy copy --proof hand-12-proof.json
+```
+
+It uses Node's own SHA-256 and nothing from the app. To be told when a check
+fails, press **Watch** on the repository's GitHub page (custom: Issues).
+
+What these checks can't do:
+
+- They can't show what happens inside the running server: a shell on it,
+  reading the live deck from memory, or code changed in place.
+- A wrong entry written at the time looks like any other entry. The record
+  shows later edits, not lies told on the spot.
+- An edit made before GitHub's next copy, that no browser saw, isn't caught.
+- If the database were lost, the record would start again from entry 1, and
+  the watcher would report it as a problem. That is the right call; John would
+  owe everyone an explanation.
 
 ## What a table's host can do
 
@@ -199,6 +306,15 @@ Limits, stated plainly:
   looks (say they left right after the hand, or play with browser storage
   blocked), or sat down in the last moment before a deal.
   "Check this hand" also lists who sent no seed.
+- A server could also replace a published commitment without dealing from
+  it, to try another deck. A browser showing the table live marks the hands
+  dealt after that, unless its watch started over in between: after a dropped
+  connection (a restart honestly starts a fresh commitment), a reload, or a
+  moment in a view that hid the hands. "Check this hand" also flags a hand
+  recorded under a different commitment from the one shown at the table; an
+  honest server only does that if it crashed before saving a deal and dealt
+  that hand number again. A connection dropped just as a hand is dealt lets a
+  server deal that hand without the players' seeds; it then lists none.
 - The checker trusts the server's account of the betting. It doesn't
   re-evaluate who won each pot; everyone sees that live.
 - Nothing can stop someone who runs the server from *reading* the deck of a
@@ -219,7 +335,7 @@ Limits, stated plainly:
 | All-in equity | Computed in the browser from cards already visible; its seeded sampling only affects the displayed percentages. | OK |
 | `Math.random` | Only in the sound effects. | OK |
 | What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. | OK |
-| After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers; a restart keeps the same commitment. | OK |
+| After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers. A restart throws away the unused next-hand secret and commits to a fresh one, so a deal lost in a crash is never dealt again. | OK |
 | Host setting "Spectators see every hole card" | With no delay, anyone with the table link sees all hole cards live and could relay them. The host is warned and seated players see a banner. | Use it with a spectator delay. |
 | Practice bots | They decide from their own cards and cards dealt face up only (`situation()` in apps/server/src/bots/strategy.ts), never other hole cards or the deck. Their own random choices don't touch the deck. | OK |
 | Separate review of this scheme (a second AI code reviewer we ran ourselves, not an outside auditor) | Found that the first checker only verified that each card's recorded place was used once, so a server could have handed places to the wrong players; that the list of seeds and the hand id were not bound to anything; that shown cards and draw-game reshuffles were not checked; that a "hide my cards" share link would carry the seeds; and that a crash could re-deal a deck. | **All fixed** as described above, each with a test. A second review then found that a server could still drop or invent seeds, and that the checker compared the server's revealed record with nothing players saw live: both closed with the browser's own records above. |
