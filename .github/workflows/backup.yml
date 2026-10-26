@@ -61,7 +61,7 @@ jobs:
         run: scripts/backup/drill.sh "$RUNNER_TEMP/backup/backup.jsonl.gz" "$RUNNER_TEMP/backup/expected.json"
       - name: Lock it with the backup key
         run: |
-          grep -q '^age1' scripts/backup/recipient.txt || { echo "::error::No backup key yet: scripts/backup/recipient.txt has no public key."; exit 1; }
+          grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt || { echo "::error::No backup key yet: scripts/backup/recipient.txt has no public key."; exit 1; }
           sudo apt-get install -y -qq age > /dev/null
           cd "$RUNNER_TEMP/backup"
           name="rsdp-backup-$(date -u +%Y-%m-%dT%H%MZ)"

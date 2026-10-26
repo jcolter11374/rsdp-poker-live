@@ -41,7 +41,7 @@ The live site is backed up every night, off Fly, by GitHub Actions (`.github/wor
 
 1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action, because a copy holds any hand being played at that moment.
 2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
-3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key (`AGE-SECRET-KEY-1…`) opens it. John keeps that key outside GitHub, in his password manager; it is in no secret, file or server, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair (`age-keygen`), put the new public key in `recipient.txt`, and the next night's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
+3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next night's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
 4. A failure opens the issue "Nightly backup failed", mentioning John; the next good run closes it.
 
 Fly's own daily volume snapshots carry on as a second copy (same company, same region).
@@ -52,8 +52,8 @@ Fly's own daily volume snapshots carry on as a second copy (same company, same r
 
 ```bash
 # 1. Download the artifact (Actions → Nightly backup → a run → Artifacts), unzip it, and unlock it with the private key
-#    (save the AGE-SECRET-KEY-1… line in a file first, and delete that file afterwards):
-age -d -i backup-key.txt -o backup.jsonl.gz rsdp-backup-….jsonl.gz.age
+#    (the private key file, rsdp-backup-key; delete any copy you made for this afterwards):
+age -d -i rsdp-backup-key -o backup.jsonl.gz rsdp-backup-….jsonl.gz.age
 # 2. Test it on your own machine: restores into memory and prints the rows per table.
 npx tsx apps/server/src/restore.ts backup.jsonl.gz --check
 # 3. Into a new PGlite folder (or a postgres:// URL of an empty database). Nothing is written unless all of it restores.
