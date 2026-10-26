@@ -1,6 +1,6 @@
 /** A player's own record across tables and tournaments, for the profile page. */
 
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { hands, hiddenTables, tables, tableSnapshots, tournaments } from './schema';
 
@@ -54,7 +54,7 @@ export async function tableHistory(db: Db, playerIds: string[], limit = 25, opts
     })
     .from(hands)
     .innerJoin(tables, sql`${tables.id} = ${hands.tableId}`)
-    .where(and(isNull(tables.tournamentId), dealt, opts.hidden ? hiddenByMe : sql`not ${hiddenByMe}`))
+    .where(and(isNull(tables.tournamentId), ne(tables.mode, 'tournament'), dealt, opts.hidden ? hiddenByMe : sql`not ${hiddenByMe}`))
     .groupBy(hands.tableId, tables.settings)
     .orderBy(desc(sql`max(${hands.startedAt})`))
     .limit(limit);

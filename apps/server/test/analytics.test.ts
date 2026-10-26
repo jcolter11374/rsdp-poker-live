@@ -6,7 +6,9 @@ import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from '../src/app';
 import { closeDb, type Db } from '../src/db';
+import { queryRows } from '../src/db/client';
 import { createTestDb } from '../src/db/testing';
+import { sql } from 'drizzle-orm';
 import { dbIdentity, dbStore } from '../src/storage';
 import { socketClient, type Client } from './socket-client';
 
@@ -89,6 +91,23 @@ describe('analytics', () => {
     // Hiding a table takes it off my graph, not off the leaderboard.
     await fetch(`${url}/api/account/tables/hide`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ tableId: first.tableId, hidden: true }) });
     expect((await get<{ sessions: { name: string }[] }>('/api/account/graph')).sessions.map((s) => s.name)).toEqual(['Tuesday']);
+  });
+
+  it('leaves tournament tables out of the graph, the leaderboard and the profile', { timeout: 30_000 }, async () => {
+    const before = {
+      graph: await get<{ sessions: unknown[] }>('/api/account/graph'),
+      board: await get<{ rows: unknown[] }>('/api/leaderboard?period=all'),
+      me: await get<{ tables: unknown[] }>('/api/account/me'),
+    };
+    // A copy of a real game saved the way tournament tables are: mode 'tournament', no tournament_id.
+    const { tableId } = await play('Wednesday', 1);
+    await queryRows(db, sql`update tables set mode = 'tournament' where id = ${tableId}`);
+    expect((await get<{ sessions: unknown[] }>('/api/account/graph')).sessions).toEqual(before.graph.sessions);
+    expect((await get<{ tables: unknown[] }>('/api/account/me')).tables).toEqual(before.me.tables);
+    // The board caches for a minute; a fresh period is worked out now.
+    const board = await get<{ rows: { name: string; hands: number }[] }>('/api/leaderboard?period=year');
+    expect(board.rows.every((r) => r.hands === 3)).toBe(true);
+    expect(before.board.rows.length).toBeGreaterThan(0);
   });
 
   it('answers an empty board for a period with no games', async () => {
