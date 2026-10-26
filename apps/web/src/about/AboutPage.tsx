@@ -32,9 +32,9 @@ export function AboutPage() {
               <span className="about-icon" aria-hidden>
                 {f.icon}
               </span>
-              <strong>{f.title}</strong>
+              <h3>{f.title}</h3>
               <span>{f.detail}</span>
-              {f.link && <a href={f.link.href}>{f.link.label} →</a>}
+              {f.link && <a href={f.link.href}>{f.link.label} <span aria-hidden>→</span></a>}
             </li>
           ))}
         </ul>

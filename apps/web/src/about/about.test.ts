@@ -17,10 +17,14 @@ describe('about page', () => {
 
   it('links only to pages that exist', () => {
     const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-    for (const f of FEATURES) {
-      if (!f.link) continue;
-      const route = f.link.href.replace(/^\//, '').replace(/\//g, '\\/');
-      expect(app, f.link.href).toMatch(new RegExp(route));
+    const page = readFileSync(new URL('./AboutPage.tsx', import.meta.url), 'utf8');
+    const hrefs = [...FEATURES.flatMap((f) => (f.link ? [f.link.href] : [])), ...[...page.matchAll(/href="([^"]+)"/g)].map((m) => m[1])];
+    for (const href of hrefs) {
+      const path = href.split('#')[0];
+      if (path === '/') continue;
+      // A route test in App.tsx looks like /^\/rules or path === '/tn/new'.
+      const escaped = path.replace(/\//g, '\\/');
+      expect(app.includes(`/^${escaped}`) || app.includes(`'${path}'`), href).toBe(true);
     }
   });
 });

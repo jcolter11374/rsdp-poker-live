@@ -27,7 +27,7 @@ export const FEATURES: Feature[] = [
   {
     icon: '🤖',
     title: 'Practice bots',
-    detail: 'Trying a new game? Play it against bots with play chips first, and take your time with nobody waiting on you.',
+    detail: 'Trying a new game? Add bots to the empty seats of a cash table and play with play chips, taking your time with nobody waiting on you. Bots never play in tournaments.',
   },
   {
     icon: '📈',
@@ -38,7 +38,7 @@ export const FEATURES: Feature[] = [
   {
     icon: '🔒',
     title: 'Fair dealing you can check',
-    detail: "Every deck is locked in before the deal, and every player's browser helps shuffle it. Afterwards, anyone can check that a hand was dealt fairly.",
+    detail: "Every deck is locked in before the deal, and every seated player's browser adds to the shuffle. Afterwards, anyone can check that a hand was dealt fairly.",
     link: { href: '/fairness', label: 'How fair dealing works' },
   },
   {
