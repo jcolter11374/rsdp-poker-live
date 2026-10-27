@@ -46,6 +46,13 @@ export function AboutPage() {
             <a href="/roadmap#suggest">suggest an idea</a>.
           </p>
         </section>
+
+        <section className="about-more">
+          <h2>Your data</h2>
+          <p>
+            Nothing is sold or shared, and there are no ads or trackers. The <a href="/privacy">privacy page</a> says exactly what the site keeps about you, who can see it and how to delete it.
+          </p>
+        </section>
       </main>
       <SiteFooter />
     </div>
