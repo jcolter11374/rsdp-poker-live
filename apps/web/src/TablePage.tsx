@@ -179,6 +179,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   useEffect(() => setDiscard([]), [drawKey]);
 
   const fmt = useMemo(() => chipFormat(!!view?.settings.stakes.centsMode), [view?.settings.stakes.centsMode]);
+  const dollars = !!view?.settings.stakes.centsMode;
   // The felt and the bet box can show amounts in big blinds; buy-ins and the ledger stay in chips.
   const prefs = usePrefs();
   const studNow = (view?.hand?.family ?? (view?.upcoming ? gameFamily(view.upcoming.gameId) : 'flop')) === 'stud';
@@ -433,9 +434,9 @@ export function TablePage({ tableId }: { tableId: string }) {
             aria-pressed={prefs.units === 'bb'}
             aria-label="Amounts in big blinds"
             onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
-            title={`Show amounts in ${prefs.units === 'bb' ? 'chips' : 'big blinds'} (B)`}
+            title={`Show amounts in ${prefs.units === 'bb' ? (dollars ? 'dollars' : 'chips') : 'big blinds'} (B)`}
           >
-            <span className={prefs.units === 'bb' ? '' : 'on'}>Chips</span>
+            <span className={prefs.units === 'bb' ? '' : 'on'}>{dollars ? '$' : 'Chips'}</span>
             <span className={prefs.units === 'bb' ? 'on' : ''}>BB</span>
           </button>
         )}

@@ -4,7 +4,7 @@ import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_LEVELS, type BotLevel } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from './socket';
-import { BETTING_NAME } from './format';
+import { BETTING_NAME, fromInput } from './format';
 import { BettingNudge } from './components/BettingNudge';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
@@ -17,9 +17,10 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
   const [name, setName] = useState(savedName);
   const [gameId, setGameId] = useState('nlhe');
   const [betting, setBetting] = useState<BettingKind>('no-limit');
-  const [smallBlind, setSmallBlind] = useState(1);
-  const [bigBlind, setBigBlind] = useState(2);
-  const [ante, setAnte] = useState(1);
+  // Cash games are played for dollars and cents, typed as dollars.
+  const [smallBlind, setSmallBlind] = useState('0.25');
+  const [bigBlind, setBigBlind] = useState('0.50');
+  const [ante, setAnte] = useState('0.10');
   const [error, setError] = useState('');
   // Which card the error belongs to, so it shows next to the button that was pressed.
   const [errorFor, setErrorFor] = useState<'cash' | 'practice'>('cash');
@@ -51,15 +52,23 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       setBusy(false);
       return setError((err as Error).message);
     }
+    const [sb, bb, an] = [smallBlind, bigBlind, ante].map((v) => fromInput(true, +v || 0));
+    if (!preset && bb < 1) {
+      setBusy(false);
+      return setError(`The ${stud ? 'small bet' : 'big blind'} must be at least 0.01`);
+    }
     const tableName = practice ? `${name.trim() || 'My'}'s practice table` : `${name.trim() || 'Friends'}'s table`;
     const quick: SettingsPatch = {
       table: { name: tableName, maxSeats: Math.min(9, spec.maxPlayers) },
       game: { gameId, betting },
       // Stud has no blinds: the ante and bring-in start the pot. Limit bets are the big blind and twice it.
       stakes: {
-        ...(stud ? { smallBlind: 0, bigBlind, ante, anteType: ante > 0 ? 'per-player' : 'none', bringIn: 0 } : { smallBlind, bigBlind }),
-        ...(betting === 'fixed-limit' ? { smallBet: bigBlind, bigBet: bigBlind * 2 } : {}),
+        ...(stud ? { smallBlind: 0, bigBlind: bb, ante: an, anteType: an > 0 ? 'per-player' : 'none', bringIn: 0 } : { smallBlind: sb, bigBlind: bb }),
+        ...(betting === 'fixed-limit' ? { smallBet: bb, bigBet: bb * 2 } : {}),
+        centsMode: true,
       },
+      // A 7-2 bounty, if the host turns it on, starts at 5 big blinds (2.50 at .25/.50).
+      modifiers: { 'bounty-72': { amount: bb * 5 } },
       // The turn clock starts at 30 seconds; hosts change it in Table settings > Clock.
       timing: { decisionSeconds: 30 },
     };
@@ -147,18 +156,18 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
                 <div className="row">
                   {stud ? (
                     <label>
-                      Ante
-                      <input type="number" min={0} value={ante} onChange={(e) => setAnte(+e.target.value)} />
+                      Ante ($)
+                      <input type="number" min={0} step={0.01} inputMode="decimal" value={ante} onChange={(e) => setAnte(e.target.value)} />
                     </label>
                   ) : (
                     <label>
-                      Small blind
-                      <input type="number" min={0} value={smallBlind} onChange={(e) => setSmallBlind(+e.target.value)} />
+                      Small blind ($)
+                      <input type="number" min={0} step={0.01} inputMode="decimal" value={smallBlind} onChange={(e) => setSmallBlind(e.target.value)} />
                     </label>
                   )}
                   <label>
-                    {stud ? 'Small bet' : 'Big blind'}
-                    <input type="number" min={1} value={bigBlind} onChange={(e) => setBigBlind(+e.target.value)} />
+                    {stud ? 'Small bet ($)' : 'Big blind ($)'}
+                    <input type="number" min={0.01} step={0.01} inputMode="decimal" value={bigBlind} onChange={(e) => setBigBlind(e.target.value)} />
                   </label>
                 </div>
                 <p className="muted">{spec.rules}</p>
@@ -174,7 +183,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
             <TournamentList />
             <section className="card-panel home-practice" aria-label="Practice">
               <h2>Practice first</h2>
-              <p className="muted">New to a game? Play the game picked under Start a cash game against practice bots, with play chips. The cards are dealt straight away. Tap Tip on your turn for a hint.</p>
+              <p className="muted">New to a game? Play the game picked under Start a cash game against practice bots, for play money. The cards are dealt straight away. Tap Tip on your turn for a hint.</p>
               {error && errorFor === 'practice' && <p className="error">{error}</p>}
               <div className="row">
                 <label>

@@ -80,8 +80,8 @@ export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { vie
           <input value={name} maxLength={20} required autoFocus onChange={(e) => setName(e.target.value)} />
         </label>
         <label>
-          Chips
-          <input type="number" min={0} step={cents ? 0.01 : 1} value={stack} onChange={(e) => setStack(+e.target.value)} />
+          {cents ? 'Buy-in ($)' : 'Chips'}
+          <input type="number" min={0} step={cents ? 0.01 : 1} inputMode={cents ? 'decimal' : 'numeric'} value={stack} onChange={(e) => setStack(+e.target.value)} />
         </label>
         {hint && <p className="muted">{hint}</p>}
         {waitlist && <p className="muted">When a seat comes free it is held for you for a minute. You'll see a Take it button.</p>}
@@ -128,8 +128,8 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
     <Modal title="Add chips" onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <label>
-          Chips to add
-          <input type="number" min={0} step={cents ? 0.01 : 1} value={amount} autoFocus onChange={(e) => setAmount(+e.target.value)} />
+          {cents ? 'Amount to add ($)' : 'Chips to add'}
+          <input type="number" min={0} step={cents ? 0.01 : 1} inputMode={cents ? 'decimal' : 'numeric'} value={amount} autoFocus onChange={(e) => setAmount(+e.target.value)} />
         </label>
         {maxBuyIn > 0 && <p className="muted">You can have up to {fmt(maxBuyIn)} in front of you.</p>}
         <p className="muted">
@@ -173,7 +173,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
     <Modal title={seat.name} onClose={onClose}>
       <div className="form">
         <p className="muted">
-          Seat {seat.seat + 1} · {fmt(seat.stack)} chips{seat.online ? '' : ' · offline'}
+          Seat {seat.seat + 1} · {cents ? `$${fmt(seat.stack)}` : `${fmt(seat.stack)} chips`}{seat.online ? '' : ' · offline'}
           {seat.bot && ` · ${botOwnerLabel(seat.bot, 'practice bot')}`}
         </p>
         {manageBot && !tournament && <BotLevelControl view={view} seat={seat} />}

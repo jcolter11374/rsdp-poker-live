@@ -57,6 +57,8 @@ async function play(name: string, hands: number, centsMode = false) {
   }
   const view = ann.view();
   await pause(900);
+  // Cash tables are made in dollars and cents now; one from before then, played in chips, is saved like this.
+  if (!centsMode) await queryRows(db, sql`update table_snapshots set state = jsonb_set(state, '{settings,stakes,centsMode}', 'false') where table_id = ${tableId}`);
   const stacks = Object.fromEntries(view.seats.filter(Boolean).map((s) => [s!.name, s!.stack - 100]));
   return { tableId, stacks };
 }

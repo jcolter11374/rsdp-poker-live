@@ -233,7 +233,6 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               {chipsField('Limit small bet', draft.stakes.smallBet, (v) => set('stakes', { smallBet: v }), '0 = the big blind')}
               {chipsField('Limit big bet', draft.stakes.bigBet, (v) => set('stakes', { bigBet: v }), '0 = twice the small bet')}
             </div>
-            {toggle('Show chips as dollars and cents', cents, (centsMode) => set('stakes', { centsMode }))}
             {toggle('Raise the blinds on a schedule', sched.enabled, (enabled) =>
               set('blindSchedule', {
                 enabled,
