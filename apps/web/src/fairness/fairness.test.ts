@@ -36,3 +36,20 @@ describe('/fairness', () => {
     expect(sourceLink('#scheme')).toBe('#scheme');
   });
 });
+
+describe('/privacy', () => {
+  const privacy = readFileSync(new URL('../../../../docs/PRIVACY.md', import.meta.url), 'utf8');
+  const blocks = parseBlocks(privacy);
+
+  it('renders docs/PRIVACY.md with every table row the width of its header', () => {
+    expect(blocks[0]).toMatchObject({ t: 'h', level: 1 });
+    const tables = blocks.filter((b) => b.t === 'table');
+    expect(tables.length).toBeGreaterThan(0);
+    for (const t of tables) for (const r of t.rows) expect(r.length, r.join(' | ')).toBe(t.head.length);
+  });
+
+  it('has the sections people come for', () => {
+    const heads = blocks.filter((b) => b.t === 'h').map((b) => b.text.toLowerCase()).join('\n');
+    for (const want of ['what the site keeps', 'backups', 'how long', 'deleting']) expect(heads).toContain(want);
+  });
+});
