@@ -4,7 +4,7 @@ import type { SettingsPatch } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_LEVELS, type BotLevel } from '@rsdp/engine/wire';
 import { call, saveName, savedName } from './socket';
-import { BETTING_NAME, fromInput } from './format';
+import { BETTING_NAME, fromInput, studBringIn } from './format';
 import { BettingNudge } from './components/BettingNudge';
 import { InstallApp } from './pwa';
 import { presetSettings, usePresets } from './presets';
@@ -63,7 +63,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       game: { gameId, betting },
       // Stud has no blinds: the ante and bring-in start the pot. Limit bets are the big blind and twice it.
       stakes: {
-        ...(stud ? { smallBlind: 0, bigBlind: bb, ante: an, anteType: an > 0 ? 'per-player' : 'none', bringIn: 0 } : { smallBlind: sb, bigBlind: bb }),
+        ...(stud ? { smallBlind: 0, bigBlind: bb, ante: an, anteType: an > 0 ? 'per-player' : 'none', bringIn: studBringIn(bb, true) } : { smallBlind: sb, bigBlind: bb }),
         ...(betting === 'fixed-limit' ? { smallBet: bb, bigBet: bb * 2 } : {}),
         centsMode: true,
       },

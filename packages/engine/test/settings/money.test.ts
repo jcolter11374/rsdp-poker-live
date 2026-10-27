@@ -25,7 +25,9 @@ describe('cash games in dollars and cents', () => {
 
   it('makes a new cash table in cents from the start form, filling the rest to match', () => {
     const s = newCashSettings({ stakes: { smallBlind: 25, bigBlind: 50, centsMode: true } });
-    expect(s.stakes).toMatchObject({ smallBlind: 25, bigBlind: 50, smallBet: 0, bigBet: 0, centsMode: true });
+    expect(s.stakes).toMatchObject({ smallBlind: 25, bigBlind: 50, smallBet: 50, bigBet: 100, centsMode: true });
+    // Switching to a limit game later plays .50/1, not 2/4 cents.
+    expect(() => parseSettings({ ...s, game: { ...s.game, betting: 'fixed-limit' } })).not.toThrow();
     expect(s.modifiers['bounty-72']).toMatchObject({ enabled: false, amount: 250 });
     const own = newCashSettings({ stakes: { smallBlind: 25, bigBlind: 50, centsMode: true }, modifiers: { 'bounty-72': { amount: 100 } } });
     expect(own.modifiers['bounty-72']).toMatchObject({ amount: 100 });

@@ -48,8 +48,8 @@ export function scaleChipAmounts<T extends SettingsPatch | TableSettings>(settin
  * chips (with stakes, but not in cents) is filled from the chip defaults and
  * then counted a dollar a chip, so everything it left out matches what it
  * set. A patch in cents is filled from defaults that follow its blinds: limit
- * bets of 0 mean the big blind and twice it, and a 7-2 bounty starts at 5 big
- * blinds (2.50 at .25/.50, the same as 10 chips at 1/2).
+ * bets of the big blind and twice it (as the chip defaults are at 1/2), and a
+ * 7-2 bounty of 5 big blinds (2.50 at .25/.50, the same as 10 chips at 1/2).
  */
 export function newCashSettings(patch: SettingsPatch): TableSettings {
   if (patch.stakes && patch.stakes.centsMode !== true) {
@@ -58,7 +58,9 @@ export function newCashSettings(patch: SettingsPatch): TableSettings {
     return parseSettings({ ...scaled, stakes: { ...scaled.stakes, centsMode: true } });
   }
   const base = defaultSettings('cash');
-  base.stakes = { ...base.stakes, smallBet: 0, bigBet: 0, centsMode: true };
+  const bigBlind = patch.stakes?.bigBlind ?? base.stakes.bigBlind;
+  const smallBet = patch.stakes?.smallBet ?? Math.max(1, bigBlind);
+  base.stakes = { ...base.stakes, smallBet, bigBet: smallBet * 2, centsMode: true };
   const settings = applyAtNextHand(base, patch).settings;
   const bounty = settings.modifiers['bounty-72'];
   const bountySet = (patch.modifiers?.['bounty-72'] as { amount?: number } | undefined)?.amount !== undefined;

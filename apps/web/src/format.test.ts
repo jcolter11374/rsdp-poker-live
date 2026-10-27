@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bbExactFormat, bbFormat, betFromInput, betToInput } from './format';
+import { bbExactFormat, bbFormat, betFromInput, betToInput, studBringIn } from './format';
 
 describe('bbFormat', () => {
   it('shows amounts in big blinds, to one decimal when it is not whole', () => {
@@ -50,5 +50,15 @@ describe('bet box units', () => {
     expect(betFromInput({ centsMode: false }, 40)).toBe(40);
     expect(betFromInput({ centsMode: true }, 1.25)).toBe(125);
     expect(betToInput({ centsMode: true }, 125)).toBe(1.25);
+  });
+});
+
+describe('stud bring-in', () => {
+  it('is a third of the small bet, to the nickel in dollars', () => {
+    expect(studBringIn(50, true)).toBe(15);
+    expect(studBringIn(100, true)).toBe(35);
+    expect(studBringIn(10, true)).toBe(3);
+    expect(studBringIn(2, false)).toBe(1);
+    expect(studBringIn(10, false)).toBe(3);
   });
 });

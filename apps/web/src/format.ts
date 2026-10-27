@@ -19,6 +19,12 @@ export function bbFormat(bigBlind: number): Fmt {
   };
 }
 
+/** A stud bring-in of about a third of the small bet; in dollars, to the nearest nickel (0.15 at .50/1) rather than 0.16. */
+export function studBringIn(smallBet: number, centsMode: boolean): number {
+  const third = smallBet / 3;
+  return centsMode && third >= 5 ? Math.round(third / 5) * 5 : Math.max(1, Math.floor(third));
+}
+
 /** Chips to the number typed in an input, and back (cents mode types dollars). */
 export const toInput = (centsMode: boolean, chips: number) => (centsMode ? chips / 100 : chips);
 export const fromInput = (centsMode: boolean, value: number) => Math.round(centsMode ? value * 100 : value);
