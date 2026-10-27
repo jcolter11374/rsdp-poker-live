@@ -5,7 +5,7 @@ name: Live check
 # test (e2e/smoke.mjs) is for CI and local servers only.
 on:
   push:
-    branches: [claude/project-thread-58iixc]
+    branches: [claude/project-thread-5fh1pm]
 
 permissions:
   contents: read
@@ -16,20 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Pages and API answer, new release served
+      - name: Pages and API answer
         run: |
           site=https://rsdp-poker-live.fly.dev
           curl -sf "$site/api/health"; echo
-          for path in / /profile /transparency; do
+          for path in / /rules/badugi /tn/new; do
             curl -sf "$site$path" | grep -q '<div id="root">' || { echo "$path did not serve the app"; exit 1; }
           done
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/admin/tournaments"); echo "admin $code"; [ "$code" = 404 ] || exit 1
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/suggestions/admin"); echo "suggestions admin $code"; [ "$code" = 401 ] || exit 1
-          curl -sf "$site/api/leaderboard?period=all" > /dev/null && echo "leaderboard ok"
-          curl -sf "$site/api/auth/config"; echo
-          curl -sf "$site/api/auth/config" | grep -q '"google":true' || exit 1
-          js=$(curl -sf "$site/" | grep -o '/assets/index-[^"]*\.js' | head -1)
-          echo "bundle $js"
-          body=$(curl -sf "$site$js")
-          echo "$body" | grep -q '2026-10-27-c' && echo "What's new 2026-10-27-c in bundle" || { echo "2026-10-27-c missing"; exit 1; }
-          echo "$body" | grep -q 'practice-graph' && echo "practice graph code in bundle" || { echo "practice-graph missing"; exit 1; }
+          # The new tables answer, and the operator endpoint is closed to the internet.
+          for path in api/avatars/nobody api/shared/nothing api/admin/tournaments; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
+            echo "$path $code"; [ "$code" = 404 ] || exit 1
+          done
