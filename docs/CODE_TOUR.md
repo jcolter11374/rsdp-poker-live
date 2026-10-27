@@ -57,7 +57,7 @@ apps/web             The website: lobby, table, tournament pages, replayer.
 e2e/                 A browser "smoke test" that plays real hands through the UI.
 scripts/             Stand-alone checkers (hands, the public record), backups, deploy helpers.
 .github/workflows/   Automated jobs on GitHub: tests, deploys, backups, watchers.
-docs/                This page, ARCHITECTURE.md, FAIRNESS.md, DEPLOY.md.
+docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, DEPLOY.md.
 ```
 
 It is one npm "workspace": a single `npm install` at the top sets up all four
@@ -132,8 +132,9 @@ opens the connection and keeps your browser's secret.
   and creation pages; [`src/rules/`](../apps/web/src/rules) the How to play
   guides; [`src/account/`](../apps/web/src/account) sign-in, profile,
   leaderboard and hand search.
-- The `/fairness` page is [docs/FAIRNESS.md](FAIRNESS.md) itself, so the site
-  and the repository can't say different things.
+- The `/fairness` page is [docs/FAIRNESS.md](FAIRNESS.md) itself, and
+  `/privacy` is [docs/PRIVACY.md](PRIVACY.md), so the site and the repository
+  can't say different things.
 
 ## Follow one bet from click to screen
 

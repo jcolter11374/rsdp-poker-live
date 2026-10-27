@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { closeDb, queryRows, type Db } from '../src/db/client';
-import { accounts, playerTokens, sessions } from '../src/db/schema';
+import { accounts, playerTokens, sessions, sharedHands } from '../src/db/schema';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import {
   createAccount,
+  deleteAccount,
   findAccountByUsername,
   getPlayer,
   hashPassword,
@@ -129,6 +130,18 @@ describe('passwords', () => {
 });
 
 describe('accounts', () => {
+  it('deletes the shared hand links its players made, so none outlive the account', async () => {
+    const guest = await resolveToken(db, SECRET_A);
+    const other = await resolveToken(db, SECRET_B);
+    const account = await createAccount(db, 'Ada_L', 'hunter2hunter2', guest.id);
+    await db.insert(sharedHands).values([
+      { id: 'mine', tableId: 't', handNumber: 1, createdBy: guest.id, snapshot: {} },
+      { id: 'theirs', tableId: 't', handNumber: 1, createdBy: other.id, snapshot: {} },
+    ]);
+    await deleteAccount(db, account.id);
+    expect((await db.select({ id: sharedHands.id }).from(sharedHands)).map((r) => r.id)).toEqual(['theirs']);
+  });
+
   it('creates an account that owns the guest player and stores no plaintext password', async () => {
     const guest = await resolveToken(db, SECRET_A);
     const account = await createAccount(db, 'Ada_L', 'hunter2hunter2', guest.id);

@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-27-d",
+      "date": "2026-10-27",
+      "fixes": [
+        "New Privacy page (link at the bottom of every page): what the site keeps about you, who can see it, how long it stays and how to delete it.",
+        "Deleting your account now also removes any hand links you shared. Before, they kept working and you could no longer remove them."
+      ]
+    },
+    {
       "id": "2026-10-27-c",
       "date": "2026-10-27",
       "fixes": []
