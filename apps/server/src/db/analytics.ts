@@ -131,6 +131,96 @@ export async function profitSessions(db: Db, playerIds: string[]): Promise<Profi
   return out.sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
+// ---------------------------------------------------------------- the practice graph
+
+interface PracticeHandRow {
+  table_id: string;
+  started_at: Date | string;
+  seats: { seat: number; playerId: string; startStack: number }[];
+  /** Every seat's stack at the end of the hand, and any chips moved after it (a late show claiming a 7-2 bounty). */
+  end: Record<string, number> | null;
+  after: { from: number | 'house'; to: number | 'house'; amount: number }[] | null;
+}
+
+/** What one seat's stack did over a hand: like the replayer's handNet (apps/web/src/replay.ts). */
+function seatNet(row: PracticeHandRow, seat: { seat: number; startStack: number }): number {
+  if (!row.end || row.end[seat.seat] === undefined) return 0;
+  let stack = Number(row.end[seat.seat]);
+  for (const t of row.after ?? []) {
+    if (t.from === seat.seat) stack -= t.amount;
+    if (t.to === seat.seat) stack += t.amount;
+  }
+  return stack - seat.startStack;
+}
+
+/**
+ * My results at practice tables (bots, or on my own), oldest first, for the
+ * practice graph. It adds up each hand I was dealt since `since` (a reset),
+ * so a table played across a reset only counts its later hands. Tables I hid
+ * are left out, and so is every real game.
+ */
+export async function practiceSessions(db: Db, playerIds: string[], since: Date | null = null): Promise<ProfitSession[]> {
+  if (playerIds.length === 0) return [];
+  const mine = new Set(playerIds);
+  const ids = sql.join(playerIds.map((id) => sql`${id}`), sql`, `);
+  const dealt = sql.join(
+    playerIds.map((id) => sql`h.header -> 'seats' @> ${JSON.stringify([{ playerId: id }])}::jsonb`),
+    sql` or `,
+  );
+  const myTables = await queryRows<{ table_id: string }>(
+    db,
+    sql`select distinct h.table_id from hands h join tables t on t.id = h.table_id
+        where t.tournament_id is null and t.mode <> 'tournament' and (${dealt})
+          ${since ? sql`and h.started_at > ${since}` : sql``}
+          and not exists (select 1 from hidden_tables x where x.table_id = h.table_id and x.player_id in (${ids}))`,
+  );
+  if (myTables.length === 0) return [];
+  const real = await realGameTablesOf(db, myTables.map((r) => r.table_id));
+  const practice = myTables.map((r) => r.table_id).filter((id) => !real.has(id));
+  if (practice.length === 0) return [];
+  const rows = await queryRows<PracticeHandRow & Record<string, unknown>>(
+    db,
+    sql`select h.table_id, h.started_at,
+          (select coalesce(jsonb_agg(jsonb_build_object('seat', s -> 'seat', 'playerId', s -> 'playerId', 'startStack', s -> 'startStack')), '[]'::jsonb)
+             from jsonb_array_elements(h.header -> 'seats') s) as seats,
+          (select e -> 'stacks' from jsonb_array_elements(h.events) with ordinality as x(e, n) where e ->> 't' = 'hand-end' order by n desc limit 1) as end,
+          (select jsonb_agg(jsonb_build_object('from', e -> 'from', 'to', e -> 'to', 'amount', e -> 'amount') order by n)
+             from jsonb_array_elements(h.events) with ordinality as x(e, n)
+             where e ->> 't' = 'transfer' and n > (select max(m) from jsonb_array_elements(h.events) with ordinality as y(f, m) where f ->> 't' = 'hand-end')) as after
+        from hands h
+        where h.table_id in (${sql.join(practice.map((id) => sql`${id}`), sql`, `)}) and (${dealt})
+          ${since ? sql`and h.started_at > ${since}` : sql``}`,
+  );
+  const byTable = new Map<string, { at: number; hands: number; net: number }>();
+  for (const r of rows) {
+    const cur = byTable.get(r.table_id) ?? { at: 0, hands: 0, net: 0 };
+    cur.at = Math.max(cur.at, new Date(r.started_at).getTime());
+    cur.hands++;
+    for (const seat of r.seats) if (mine.has(seat.playerId)) cur.net += seatNet(r, seat);
+    byTable.set(r.table_id, cur);
+  }
+  const snaps = await snapshots(db, [...byTable.keys()]);
+  const out: ProfitSession[] = [];
+  for (const [tableId, { at, hands, net }] of byTable) {
+    const state = snaps.get(tableId);
+    out.push({ tableId, name: state?.settings?.table?.name ?? '', at: new Date(at), hands, net: toCents(net, !!state?.settings?.stakes?.centsMode) });
+  }
+  return out.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/** realTables over every hand of these tables, so hands from before a reset still decide whether a table was a real game. */
+async function realGameTablesOf(db: Db, tableIds: string[]): Promise<Set<string>> {
+  const rows = await queryRows<HandRow & Record<string, unknown>>(
+    db,
+    sql`select h.table_id, h.started_at,
+          (select coalesce(jsonb_agg(jsonb_build_object('seat', s -> 'seat', 'playerId', s -> 'playerId')), '[]'::jsonb)
+             from jsonb_array_elements(h.header -> 'seats') s) as seats,
+          null as awards
+        from hands h where h.table_id in (${sql.join(tableIds.map((id) => sql`${id}`), sql`, `)})`,
+  );
+  return realTables(rows);
+}
+
 // ---------------------------------------------------------------- leaderboards
 
 export interface LeaderRow {

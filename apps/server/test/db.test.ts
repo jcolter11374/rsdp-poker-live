@@ -32,6 +32,7 @@ describe('createDb', () => {
       'player_notes',
       'player_tokens',
       'players',
+      'practice_resets',
       'saved_setups',
       'seat_sessions',
       'sessions',

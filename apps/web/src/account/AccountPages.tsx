@@ -3,9 +3,9 @@ import { currentSession, onSession, saveSessionToken, setName } from '../socket'
 import { chipFormat } from '../format';
 import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
-import { changePassword, deleteAccount, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
+import { changePassword, deleteAccount, deletePractice, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
 import '../components/table/extras.css';
-import { ProfitGraph } from './ProfitGraph';
+import { PracticeGraph, ProfitGraph } from './ProfitGraph';
 import './account.css';
 import { SiteHeader } from '../components/SiteHeader';
 
@@ -307,6 +307,13 @@ export function ProfilePage() {
         </p>
       </section>
 
+      {session && profile && profile.tables.some((t) => t.practice) && (
+        <section className="account-section">
+          <h2>Practice vs bots</h2>
+          <PracticeGraph refreshKey={profile} />
+        </section>
+      )}
+
       <section className="account-section">
         <h2>Cash games</h2>
         {loadError && <p className="error">{loadError}</p>}
@@ -381,6 +388,20 @@ function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () =>
   const real = profile.tables.filter((t) => !t.practice);
   const practice = profile.tables.filter((t) => t.practice);
   const hide = { action: 'Hide', title: 'Hide this table from your profile. It stays for everyone else.', busy, onAction: (id: string) => toggle(id, true) };
+  const [note, setNote] = useState('');
+  const remove = (target: { tableId: string } | { all: true }) => {
+    const ask = 'all' in target
+      ? `Delete all ${practice.length} practice games from your profile? Tables you made that only you and your bots played at are erased for good.`
+      : 'Delete this practice game from your profile? If you made it and only you and your bots played there, it is erased for good.';
+    if (!confirm(ask)) return;
+    setNote('');
+    run(async () => {
+      const r = await deletePractice(target);
+      if (r.hidden > 0) setNote(`${r.hidden === 1 ? 'One game' : `${r.hidden} games`} had another person too, so ${r.hidden === 1 ? 'it was' : 'they were'} only removed from your profile.`);
+      if (r.busy > 0) setNote((n) => `${n} ${r.busy === 1 ? 'One table is' : `${r.busy} tables are`} open right now, so ${r.busy === 1 ? 'it was' : 'they were'} left alone.`.trim());
+      await onChanged();
+    });
+  };
   return (
     <>
       {real.length === 0 ? (
@@ -392,8 +413,14 @@ function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () =>
       {practice.length > 0 && (
         <details className="account-hidden">
           <summary>Practice games ({practice.length})</summary>
-          <p className="hint">Games with bots, or where nobody else played. They don't count in your graph or on the leaderboard.</p>
-          <TableRows rows={practice} {...hide} />
+          <p className="hint">
+            Games with bots, or where nobody else played. They don't count in your real graph or on the leaderboard.{' '}
+            <button className="link" disabled={busy} onClick={() => remove({ all: true })}>
+              Delete all
+            </button>
+          </p>
+          {note && <p className="hint">{note}</p>}
+          <TableRows rows={practice} action="Delete" title="Delete this practice game from your profile" busy={busy} onAction={(tableId) => remove({ tableId })} />
         </details>
       )}
       {hidden.length > 0 && (
