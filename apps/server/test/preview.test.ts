@@ -6,7 +6,8 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createTournament, defaultSettings } from '@rsdp/tournament';
-import { createApp } from '../src/app';
+import { io as connect } from 'socket.io-client';
+import { createApp, webBuild } from '../src/app';
 import { tournamentPreview, withPreview } from '../src/preview';
 
 beforeAll(() => registerAllVariants(variants));
@@ -60,5 +61,22 @@ describe('link previews', () => {
       expect(await (await fetch(`${base}/`)).text()).toContain('og:description');
       expect(await (await fetch(`${base}/t/nope`)).text()).toContain('<title>RSDP Poker Live!</title>');
     });
+    it('tells each tab that connects which build of the app it serves', async () => {
+      dir = await mkdtemp(path.join(tmpdir(), 'rsdp-web-'));
+      await writeFile(path.join(dir, 'index.html'), INDEX.replace('</head>', '<script type="module" crossorigin src="/assets/index-AbC123.js"></script></head>'));
+      server = createApp({ webDist: dir, log: () => {} });
+      await new Promise<void>((resolve) => server!.http.listen(0, resolve));
+      const c = connect(`http://localhost:${(server.http.address() as AddressInfo).port}`, { auth: { token: 'f'.repeat(32) }, transports: ['websocket'], forceNew: true });
+      try {
+        expect(await new Promise((resolve) => c.on('build', resolve))).toBe('/assets/index-AbC123.js');
+      } finally {
+        c.close();
+      }
+    });
+  });
+
+  it('reads the build from the entry script, and finds none in a page without one', () => {
+    expect(webBuild('<script type="module" crossorigin src="/assets/index-DoztcAGG.js"></script>')).toBe('/assets/index-DoztcAGG.js');
+    expect(webBuild(INDEX)).toBeNull();
   });
 });

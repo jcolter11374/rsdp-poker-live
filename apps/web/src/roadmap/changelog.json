@@ -1,9 +1,16 @@
 {
   "releases": [
     {
-      "id": "2026-10-27-b",
+      "id": "2026-10-27-c",
       "date": "2026-10-27",
       "fixes": []
+    },
+    {
+      "id": "2026-10-27-b",
+      "date": "2026-10-27",
+      "fixes": [
+        "A page left open when a new version goes live now reloads itself into it: at a table once your hand (and any all-in runout) is over, anywhere else when you switch away or move to another page. Before, an old tab kept running the old version, so fixes like the street-at-a-time runout didn't reach it."
+      ]
     },
     {
       "id": "2026-10-27-a",
