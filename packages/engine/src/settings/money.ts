@@ -1,5 +1,6 @@
-import { isPlainObject, type JsonObject } from './json';
-import type { SettingsPatch } from './changes';
+import { isPlainObject } from './json';
+import { applyAtNextHand, type SettingsPatch } from './changes';
+import { defaultSettings, parseSettings } from './parse';
 import type { TableSettings } from './schema';
 
 /**
@@ -43,15 +44,26 @@ export function scaleChipAmounts<T extends SettingsPatch | TableSettings>(settin
 }
 
 /**
- * A new cash table's settings in dollars and cents. Settings already in cents
- * pass through; older ones (a preset or saved setup from before every cash
- * game was in dollars, or an old page) count each chip as a dollar, so 1/2
- * stays 1/2.
+ * The settings a new cash table starts with, in dollars and cents. A patch in
+ * chips (with stakes, but not in cents) is filled from the chip defaults and
+ * then counted a dollar a chip, so everything it left out matches what it
+ * set. A patch in cents is filled from defaults that follow its blinds: limit
+ * bets of 0 mean the big blind and twice it, and a 7-2 bounty starts at 5 big
+ * blinds (2.50 at .25/.50, the same as 10 chips at 1/2).
  */
-export function cashInDollars(patch: SettingsPatch): SettingsPatch {
-  if (patch.stakes?.centsMode === true) return patch;
-  const scaled = scaleChipAmounts(patch, 100) as JsonObject & SettingsPatch;
-  return { ...scaled, stakes: { ...scaled.stakes, centsMode: true } };
+export function newCashSettings(patch: SettingsPatch): TableSettings {
+  if (patch.stakes && patch.stakes.centsMode !== true) {
+    const chips = applyAtNextHand(defaultSettings('cash'), patch).settings;
+    const scaled = scaleChipAmounts(chips, 100);
+    return parseSettings({ ...scaled, stakes: { ...scaled.stakes, centsMode: true } });
+  }
+  const base = defaultSettings('cash');
+  base.stakes = { ...base.stakes, smallBet: 0, bigBet: 0, centsMode: true };
+  const settings = applyAtNextHand(base, patch).settings;
+  const bounty = settings.modifiers['bounty-72'];
+  const bountySet = (patch.modifiers?.['bounty-72'] as { amount?: number } | undefined)?.amount !== undefined;
+  if (bounty && !bountySet) return parseSettings({ ...settings, modifiers: { ...settings.modifiers, 'bounty-72': { ...bounty, amount: Math.max(1, settings.stakes.bigBlind * 5) } } });
+  return settings;
 }
 
 /** An amount for log lines: "1,500" in chips, "0.25" or "12" in dollars (the server's text, so not locale dependent). */

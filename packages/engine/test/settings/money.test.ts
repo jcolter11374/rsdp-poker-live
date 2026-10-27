@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amountText, cashInDollars, defaultSettings, parseSettings, scaleChipAmounts, type SettingsPatch } from '../../src/settings';
+import { amountText, defaultSettings, newCashSettings, parseSettings, scaleChipAmounts, type SettingsPatch } from '../../src/settings';
 import '../../src/modifiers';
 
 describe('cash games in dollars and cents', () => {
@@ -23,12 +23,25 @@ describe('cash games in dollars and cents', () => {
     expect(scaleChipAmounts({ stakes: { bigBlind: 2 }, table: { name: 'x' } } as SettingsPatch, 100)).toEqual({ stakes: { bigBlind: 200 }, table: { name: 'x' } });
   });
 
-  it('counts each chip of an older setup as a dollar, and passes cents through', () => {
-    expect(cashInDollars({ stakes: { smallBlind: 1, bigBlind: 2 } })).toEqual({ stakes: { smallBlind: 100, bigBlind: 200, centsMode: true } });
-    expect(cashInDollars({ stakes: { smallBlind: 1, bigBlind: 2, centsMode: false } }).stakes).toMatchObject({ smallBlind: 100, centsMode: true });
-    const cents: SettingsPatch = { stakes: { smallBlind: 25, bigBlind: 50, centsMode: true } };
-    expect(cashInDollars(cents)).toBe(cents);
-    expect(cashInDollars({}).stakes).toEqual({ centsMode: true });
+  it('makes a new cash table in cents from the start form, filling the rest to match', () => {
+    const s = newCashSettings({ stakes: { smallBlind: 25, bigBlind: 50, centsMode: true } });
+    expect(s.stakes).toMatchObject({ smallBlind: 25, bigBlind: 50, smallBet: 0, bigBet: 0, centsMode: true });
+    expect(s.modifiers['bounty-72']).toMatchObject({ enabled: false, amount: 250 });
+    const own = newCashSettings({ stakes: { smallBlind: 25, bigBlind: 50, centsMode: true }, modifiers: { 'bounty-72': { amount: 100 } } });
+    expect(own.modifiers['bounty-72']).toMatchObject({ amount: 100 });
+  });
+
+  it('counts each chip of an older setup as a dollar, defaults included', () => {
+    for (const stakes of [{ smallBlind: 1, bigBlind: 2 }, { smallBlind: 1, bigBlind: 2, centsMode: false }]) {
+      const s = newCashSettings({ stakes, seating: { minBuyIn: 40 } });
+      expect(s.stakes).toMatchObject({ smallBlind: 100, bigBlind: 200, smallBet: 200, bigBet: 400, centsMode: true });
+      expect(s.seating.minBuyIn).toBe(4000);
+      expect(s.modifiers['bounty-72']).toMatchObject({ amount: 1000 });
+    }
+  });
+
+  it('gives a patch without stakes the defaults as cents', () => {
+    expect(newCashSettings({ table: { name: 'x' } }).stakes).toMatchObject({ smallBlind: 1, bigBlind: 2, centsMode: true });
   });
 
   it('writes amounts for the log', () => {

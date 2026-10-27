@@ -41,7 +41,7 @@ async function play(name: string, hands: number, centsMode = false) {
   const ann = client(ANN);
   const ben = client(BEN);
   const { tableId } = await ann.call<{ tableId: string }>('table:create', {
-    settings: { table: { name }, stakes: { centsMode }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } },
+    settings: { table: { name }, ...(centsMode ? { stakes: { centsMode } } : {}), seating: { requireApproval: false }, timing: { autoStartNextHand: false } },
   });
   await ann.call('table:join', { tableId });
   await ben.call('table:join', { tableId });

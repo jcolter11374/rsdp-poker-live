@@ -67,8 +67,6 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
         ...(betting === 'fixed-limit' ? { smallBet: bb, bigBet: bb * 2 } : {}),
         centsMode: true,
       },
-      // A 7-2 bounty, if the host turns it on, starts at 5 big blinds (2.50 at .25/.50).
-      modifiers: { 'bounty-72': { amount: bb * 5 } },
       // The turn clock starts at 30 seconds; hosts change it in Table settings > Clock.
       timing: { decisionSeconds: 30 },
     };

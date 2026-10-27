@@ -7,7 +7,7 @@ import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
-import { amountText, applyAtNextHand, cashInDollars, defaultSettings, mergePatches, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
+import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
@@ -899,10 +899,7 @@ export function createApp(deps: AppDeps = {}) {
         async () => {
           const patch = input?.settings ?? {};
           // Tables made here are cash tables, played for dollars and cents; tournaments make their own.
-          // A patch without stakes (only scripts and tests send one) gets the defaults as cents.
-          const base = defaultSettings('cash');
-          base.stakes.centsMode = true;
-          const settings = parseSettings(applyAtNextHand(base, mergePatches(cashInDollars(patch), { table: { mode: 'cash' } })).settings);
+          const settings = newCashSettings(mergePatches(patch, { table: { mode: 'cash' } }));
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {

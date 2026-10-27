@@ -22,4 +22,11 @@ describe('loading a preset', () => {
     preset.stakes = { ...preset.stakes, smallBlind: 10, bigBlind: 25 };
     expect(withPreset(table, preset).stakes).toMatchObject({ smallBlind: 10, bigBlind: 25, centsMode: true });
   });
+
+  it("won't put a preset in dollars on an older table in chips", () => {
+    const table = defaultSettings('cash');
+    const preset = structuredClone(table);
+    preset.stakes = { ...preset.stakes, smallBlind: 25, bigBlind: 50, centsMode: true };
+    expect(() => withPreset(table, preset)).toThrow(/plays in chips/);
+  });
 });
