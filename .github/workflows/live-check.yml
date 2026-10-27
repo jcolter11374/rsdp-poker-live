@@ -5,7 +5,7 @@ name: Live check
 # test (e2e/smoke.mjs) is for CI and local servers only.
 on:
   push:
-    branches: [claude/project-thread-5fh1pm]
+    branches: [claude/project-thread-r2cr7z]
 
 permissions:
   contents: read
@@ -28,3 +28,13 @@ jobs:
             code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
             echo "$path $code"; [ "$code" = 404 ] || exit 1
           done
+      - name: This release is the one serving
+        run: |
+          site=https://rsdp-poker-live.fly.dev
+          js=$(curl -sf "$site/" | grep -o '/assets/index-[^"]*\.js' | head -1)
+          echo "bundle $js"
+          curl -sf "$site$js" > bundle.js
+          for s in '2026-10-27-f' 'Buy-in ($)' 'Small blind ($)'; do
+            grep -qF "$s" bundle.js && echo "found: $s" || { echo "missing: $s"; exit 1; }
+          done
+          curl -sf "$site/api/health"; echo
