@@ -5,7 +5,7 @@ import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { besideBet, clearSideBands, fromVars, inFront, lerp, px, seatFractions, stadiumPoint, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
-import { baseChip, ChipStacks } from './table/Chips';
+import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
 import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
@@ -296,9 +296,11 @@ export function Table({
   const multiRun = runs.length > 1;
   const multiBoard = (runs[0]?.length ?? 0) > 1;
   const stud = hand?.family === 'stud';
-  // Chip colours follow the table's stakes: the smallest forced bet sets the white chip.
+  // Cash games use casino chips, a cent upwards. In chips, colours follow the stakes: the smallest forced bet sets the white chip.
   const stakes = hand?.stakes ?? view.settings.stakes;
-  const chipBase = baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stud ? stakes.bringIn : 0].filter((x): x is number => !!x && x > 0), Infinity));
+  const dollars = view.settings.stakes.centsMode;
+  const chipSet = dollars ? DOLLAR_CHIPS : CHIP_SET;
+  const chipBase = dollars ? 1 : baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stud ? stakes.bringIn : 0].filter((x): x is number => !!x && x > 0), Infinity));
   // Order of seats from the button, so the deal goes round the table.
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
@@ -334,14 +336,14 @@ export function Table({
               {hand!.pots.length > 1 ? (
                 hand!.pots.map((p, i) => (
                   <div className="pot" key={i}>
-                    <ChipStacks amount={p.amount} base={chipBase} />
+                    <ChipStacks amount={p.amount} base={chipBase} set={chipSet} />
                     {i === 0 ? 'Pot' : `Side pot ${i}`} {fmt(p.amount)}
                   </div>
                 ))
               ) : (
                 // One pot: show everything in play, bets in front of the seats included, so it never reads "Pot 0" with chips out.
                 <div className="pot">
-                  <ChipStacks amount={potPile} base={chipBase} />
+                  <ChipStacks amount={potPile} base={chipBase} set={chipSet} />
                   {/* The pot counts as fast as a bet is tossed, so it reads right when the chips land. */}
                   Pot <CountUp value={Math.max(hand!.potTotal, hand!.pots[0]?.amount ?? 0)} fmt={fmt} upMs={380} />
                 </div>
@@ -473,7 +475,7 @@ export function Table({
             </div>
             {s.bet > 0 && (
               <div className="bet" style={{ ...px(betPoint(seat)), ...fromVars(pos, betPoint(seat)) }}>
-                <ChipStacks amount={s.bet} base={chipBase} max={2} />
+                <ChipStacks amount={s.bet} base={chipBase} set={chipSet} max={2} />
                 {fmt(s.bet)}
               </div>
             )}

@@ -5,7 +5,7 @@ import { getModifierSchema, type SettingsPatch, type TableSettings } from '@rsdp
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
-import { BETTING_NAME, fromInput, toInput } from '../format';
+import { BETTING_NAME, fromInput, studBringIn, toInput } from '../format';
 import { Modal } from './SeatDialog';
 import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
@@ -42,8 +42,11 @@ function diff(prev: unknown, next: unknown): unknown {
 
 const maxSeatsFor = (gameIds: string[]) => Math.min(...gameIds.map((id) => getVariant(id).maxPlayers));
 
-/** A stud ante of about a quarter of the small bet (1 at 1/2 limit, the same as a new table), never below one chip. */
-export const defaultStudAnte = (stakes: TableSettings['stakes']) => Math.max(1, Math.round((stakes.smallBet || stakes.bigBlind) / 4));
+/** A stud ante of about a quarter of the small bet (1 at 1/2 limit, the same as a new table), never below one chip; in nickels in dollars (0.10 at .50/1). */
+export const defaultStudAnte = (stakes: TableSettings['stakes']) => {
+  const quarter = (stakes.smallBet || stakes.bigBlind) / 4;
+  return stakes.centsMode && quarter >= 5 ? Math.floor(quarter / 5) * 5 : Math.max(1, Math.round(quarter));
+};
 
 export function SettingsDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
   const [draft, setDraft] = useState<TableSettings>(() => structuredClone(view.settings));
@@ -77,7 +80,11 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
         ...d,
         game: { ...d.game, gameId, betting: spec.defaultBetting },
         table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
-        stakes: needsAnte ? { ...d.stakes, ante: defaultStudAnte(d.stakes), anteType: 'per-player' } : d.stakes,
+        stakes: {
+          ...d.stakes,
+          ...(needsAnte ? { ante: defaultStudAnte(d.stakes), anteType: 'per-player' as const } : {}),
+          ...(spec.forcedBets === 'ante-bring-in' && d.stakes.bringIn === 0 ? { bringIn: studBringIn(d.stakes.smallBet || d.stakes.bigBlind, d.stakes.centsMode) } : {}),
+        },
       };
     });
   };
@@ -233,7 +240,6 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               {chipsField('Limit small bet', draft.stakes.smallBet, (v) => set('stakes', { smallBet: v }), '0 = the big blind')}
               {chipsField('Limit big bet', draft.stakes.bigBet, (v) => set('stakes', { bigBet: v }), '0 = twice the small bet')}
             </div>
-            {toggle('Show chips as dollars and cents', cents, (centsMode) => set('stakes', { centsMode }))}
             {toggle('Raise the blinds on a schedule', sched.enabled, (enabled) =>
               set('blindSchedule', {
                 enabled,

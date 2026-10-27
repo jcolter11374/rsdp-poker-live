@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "id": "2026-10-27-f",
+      "date": "2026-10-27",
+      "title": "Cash games in dollars and cents",
+      "items": [
+        { "title": "Play .25/.50, or any stakes you like", "detail": "Every cash game is now played for dollars and cents. Type the blinds as money on the home page (it starts at 0.25/0.50), and stacks, bets, the pot, buy-ins, the ledger and the log all show dollars. Tournaments still use chips.", "suggestedBy": "John" },
+        { "title": "Casino chips", "detail": "The chips on the felt are a casino's: pennies, nickels and quarters, then white $1, red $5, green $25, black $100 and up." },
+        { "title": "Your presets come along", "detail": "A preset or saved setup from before counts each old chip as a dollar, so a 1/2 game is still 1/2. Tables and records from before stay exactly as they were." }
+      ]
+    },
+    {
       "id": "2026-10-27-c",
       "date": "2026-10-27",
       "title": "Tidy up your practice games",

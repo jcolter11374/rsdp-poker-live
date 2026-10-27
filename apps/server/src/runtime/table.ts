@@ -19,6 +19,7 @@ import {
   type Stakes,
 } from '@rsdp/engine/core';
 import {
+  amountText,
   applyAtNextHand,
   applyImmediate,
   enabledModifiers,
@@ -347,7 +348,7 @@ export class TableRuntime {
       this.seatPlayer(request);
     } else {
       this.state.requests.push(request);
-      this.log(`${name} asked for seat ${seat + 1} with ${stack}`);
+      this.log(`${name} asked for seat ${seat + 1} with ${this.money(stack)}`);
     }
     this.sync();
   }
@@ -406,11 +407,11 @@ export class TableRuntime {
   private checkBuyIn(playerId: PlayerId, stack: number) {
     if (!Number.isInteger(stack) || stack <= 0 || stack > MAX_CHIPS) throw new ActionError('the stack must be a positive whole number');
     const { minBuyIn, maxBuyIn, ratholeMinutes } = this.settings.seating;
-    if (minBuyIn > 0 && stack < minBuyIn) throw new ActionError(`the minimum buy-in is ${minBuyIn}`);
-    if (maxBuyIn > 0 && stack > maxBuyIn) throw new ActionError(`the maximum buy-in is ${maxBuyIn}`);
+    if (minBuyIn > 0 && stack < minBuyIn) throw new ActionError(`the minimum buy-in is ${this.money(minBuyIn)}`);
+    if (maxBuyIn > 0 && stack > maxBuyIn) throw new ActionError(`the maximum buy-in is ${this.money(maxBuyIn)}`);
     const left = this.state.departures[playerId];
     if (ratholeMinutes > 0 && left && this.clock.now() - left.at < ratholeMinutes * 60_000 && stack < left.stack) {
-      throw new ActionError(`you left with ${left.stack} less than ${ratholeMinutes} minutes ago; come back with at least that`);
+      throw new ActionError(`you left with ${this.money(left.stack)} less than ${ratholeMinutes} minutes ago; come back with at least that`);
     }
   }
 
@@ -524,7 +525,7 @@ export class TableRuntime {
     }
     delete this.state.departures[r.playerId];
     const bot = this.botInfo(r.playerId);
-    this.log(`${bot ? `${bot.ownerName}'s practice bot ` : ''}${r.name} sat down in seat ${r.seat! + 1} with ${r.amount}`);
+    this.log(`${bot ? `${bot.ownerName}'s practice bot ` : ''}${r.name} sat down in seat ${r.seat! + 1} with ${this.money(r.amount)}`);
     if (!bot) this.giveWayTo(r.name);
   }
 
@@ -565,7 +566,7 @@ export class TableRuntime {
     this.state.seats[seat.seat] = null;
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
-    this.log(`${seat.name} left the table with ${stack}`);
+    this.log(`${seat.name} left the table with ${this.money(stack)}`);
     this.forgetBot(seat.playerId);
   }
 
@@ -596,11 +597,11 @@ export class TableRuntime {
     if (!this.settings.seating.allowRebuys) throw new ActionError('rebuys are off at this table');
     if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_CHIPS) throw new ActionError('the amount must be a positive whole number');
     const { maxBuyIn } = this.settings.seating;
-    if (maxBuyIn > 0 && seat.stack + seat.pendingChips + amount > maxBuyIn) throw new ActionError(`you can have at most ${maxBuyIn} in front of you`);
+    if (maxBuyIn > 0 && seat.stack + seat.pendingChips + amount > maxBuyIn) throw new ActionError(`you can have at most ${this.money(maxBuyIn)} in front of you`);
     if (this.settings.seating.rebuyRequiresApproval && !this.can(playerId, 'approve')) {
       this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'rebuy'));
       this.state.requests.push({ id: randomUUID().slice(0, 8), kind: 'rebuy', playerId, name: seat.name, seat: seat.seat, amount, at: this.clock.now() });
-      this.log(`${seat.name} asked to add ${amount}`);
+      this.log(`${seat.name} asked to add ${this.money(amount)}`);
     } else {
       this.addChips(playerId, amount, 'rebuy');
     }
@@ -621,7 +622,7 @@ export class TableRuntime {
         seat.sitOutReason = null;
       }
     }
-    this.log(`${seat.name} ${why === 'rebuy' ? 'added' : 'was given'} ${amount}`);
+    this.log(`${seat.name} ${why === 'rebuy' ? 'added' : 'was given'} ${this.money(amount)}`);
   }
 
   // ---------------------------------------------------------------- host controls
@@ -835,7 +836,7 @@ export class TableRuntime {
     }
     for (const [seatNo, amount] of collected) {
       const playerId = hand.seats.find((x) => x.seat === seatNo)?.playerId;
-      if (playerId && amount > 0) this.log(`${this.nameOf(playerId)} wins with 7-2 and collects ${amount} in bounties`);
+      if (playerId && amount > 0) this.log(`${this.nameOf(playerId)} wins with 7-2 and collects ${this.money(amount)} in bounties`);
     }
   }
 
@@ -853,7 +854,7 @@ export class TableRuntime {
     if (players.length < cfg.minPlayers) return;
     const prize = cfg.prizeBigBlinds * bigBlind;
     sg.nit = { participants: players, holders: [...players], prize };
-    this.log(`Nit game: ${players.length} players are in. The last one to win a pot pays ${prize} to each of the others.`);
+    this.log(`Nit game: ${players.length} players are in. The last one to win a pot pays ${this.money(prize)} to each of the others.`);
   }
 
   /** A participant leaves: a holder forfeits (pays everyone); anyone else just drops out. */
@@ -915,8 +916,8 @@ export class TableRuntime {
       loser.sittingOut = true;
       loser.sitOutReason = 'busted';
     }
-    const extra = shortfall > 0 ? ` (${shortfall} of it added to their buy-in)` : '';
-    this.log(`${this.nameOf(loserId)} ${why} and pays ${owed} in all${extra} (Nit game)`);
+    const extra = shortfall > 0 ? ` (${this.money(shortfall)} of it added to their buy-in)` : '';
+    this.log(`${this.nameOf(loserId)} ${why} and pays ${this.money(owed)} in all${extra} (Nit game)`);
   }
 
   pause(by: PlayerId, value: boolean) {
@@ -1034,6 +1035,8 @@ export class TableRuntime {
   private checkSettings(next: TableSettings) {
     const cur = this.state.settings;
     if (next.table.mode !== cur.table.mode) throw new ActionError('a table cannot switch between cash and tournament');
+    // Every amount here, the ledger and everyone's records are in the table's unit, so it stays the one the table was made with.
+    if (next.stakes.centsMode !== cur.stakes.centsMode) throw new ActionError(cur.stakes.centsMode ? 'cash games are played in dollars and cents' : 'this table plays in chips; start a new table to play in dollars and cents');
     const games = next.game.rotation.enabled ? next.game.rotation.steps.map((st) => st.gameId) : [next.game.gameId];
     for (const id of games) {
       let spec: GameSpec;
@@ -1093,7 +1096,7 @@ export class TableRuntime {
       this.ledgerEdit(playerId, stack - seat.stack);
       seat.stack = stack;
     }
-    this.log(`The host set ${seat.name}'s stack to ${stack}${this.inHand(playerId) ? ' after this hand' : ''}`);
+    this.log(`The host set ${seat.name}'s stack to ${this.money(stack)}${this.inHand(playerId) ? ' after this hand' : ''}`);
     this.sync();
   }
 
@@ -1264,6 +1267,11 @@ export class TableRuntime {
     this.state.chat.push({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
     if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
     this.onChange();
+  }
+
+  /** An amount as players see it at this table: dollars and cents at a cash table, chips in a tournament. */
+  money(chips: number) {
+    return amountText(chips, this.state.settings.stakes.centsMode);
   }
 
   nameOf(playerId: PlayerId) {
@@ -1450,7 +1458,7 @@ export class TableRuntime {
     // However it lost its last chips (a hand, a late 7-2 claim, the Nit game), it plays on.
     seat.sittingOut = false;
     seat.sitOutReason = null;
-    this.log(`${seat.name} bought back in for ${bot.buyIn}`);
+    this.log(`${seat.name} bought back in for ${this.money(bot.buyIn)}`);
   }
 
   /** When the bot whose turn it is acts: a moment after its turn starts, so people can follow the play. */
@@ -1557,7 +1565,7 @@ export class TableRuntime {
     if (!seat) return;
     if (this.inHand(playerId)) seat.pendingStack = stack;
     else seat.stack = stack;
-    this.log(`${seat.name}'s stack was set to ${stack}`);
+    this.log(`${seat.name}'s stack was set to ${this.money(stack)}`);
     this.sync();
   }
 
@@ -2202,7 +2210,7 @@ export class TableRuntime {
       const done = sched.countdown === 'hands' ? s.level.hands >= level.hands : elapsed >= level.minutes * 60_000;
       if (!done) break;
       s.level = { index: s.level.index + 1, elapsedMs: sched.countdown === 'hands' ? 0 : elapsed - level.minutes * 60_000, runningSince: s.level.runningSince !== null ? now : null, hands: 0 };
-      this.log(`Blinds are now ${sched.levels[s.level.index].smallBlind}/${sched.levels[s.level.index].bigBlind}`);
+      this.log(`Blinds are now ${this.money(sched.levels[s.level.index].smallBlind)}/${this.money(sched.levels[s.level.index].bigBlind)}`);
     }
     return Math.min(s.level.index, sched.levels.length - 1);
   }

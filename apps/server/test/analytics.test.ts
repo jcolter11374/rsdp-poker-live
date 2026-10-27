@@ -41,7 +41,7 @@ async function play(name: string, hands: number, centsMode = false) {
   const ann = client(ANN);
   const ben = client(BEN);
   const { tableId } = await ann.call<{ tableId: string }>('table:create', {
-    settings: { table: { name }, stakes: { centsMode }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } },
+    settings: { table: { name }, ...(centsMode ? { stakes: { centsMode } } : {}), seating: { requireApproval: false }, timing: { autoStartNextHand: false } },
   });
   await ann.call('table:join', { tableId });
   await ben.call('table:join', { tableId });
@@ -57,6 +57,8 @@ async function play(name: string, hands: number, centsMode = false) {
   }
   const view = ann.view();
   await pause(900);
+  // Cash tables are made in dollars and cents now; one from before then, played in chips, is saved like this.
+  if (!centsMode) await queryRows(db, sql`update table_snapshots set state = jsonb_set(state, '{settings,stakes,centsMode}', 'false') where table_id = ${tableId}`);
   const stacks = Object.fromEntries(view.seats.filter(Boolean).map((s) => [s!.name, s!.stack - 100]));
   return { tableId, stacks };
 }

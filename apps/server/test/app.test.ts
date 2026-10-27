@@ -40,6 +40,27 @@ describe('socket server', () => {
     expect((await c.until((v) => !!v.seats[0])).seats[0]?.name).toBe('Still here');
   });
 
+  it('makes every cash table in dollars and cents, and keeps it that way', async () => {
+    const host = client('cents-host-0123456789');
+    // From the start form: .25/.50, sent as cents.
+    const { tableId } = await host.call<{ tableId: string }>('table:create', {
+      settings: { stakes: { smallBlind: 25, bigBlind: 50, centsMode: true }, seating: { requireApproval: false, maxBuyIn: 10_000 } },
+    });
+    await host.call('table:join', { tableId });
+    const v = await host.until((x) => x.id === tableId);
+    expect(v.settings.stakes).toMatchObject({ smallBlind: 25, bigBlind: 50, centsMode: true });
+    await expect(host.call('host:settings', { patch: { stakes: { centsMode: false } } })).rejects.toThrow(/dollars and cents/);
+    await expect(host.call('seat:request', { seat: 0, name: 'Host', stack: 20_000 })).rejects.toThrow(/maximum buy-in is 100$/);
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 5_025 });
+    expect((await host.until((x) => !!x.seats[0])).log.at(-1)?.text).toMatch(/with 50\.25$/);
+    // An older page or preset in chips counts a chip as a dollar.
+    const old = await host.call<{ tableId: string }>('table:create', { settings: { stakes: { smallBlind: 1, bigBlind: 2 }, seating: { minBuyIn: 40 } } });
+    await host.call('table:join', { tableId: old.tableId });
+    const ov = await host.until((x) => x.id === old.tableId);
+    expect(ov.settings.stakes).toMatchObject({ smallBlind: 100, bigBlind: 200, centsMode: true });
+    expect(ov.settings.seating.minBuyIn).toBe(4_000);
+  });
+
   it('exports every finished hand, hiding cards the viewer never saw', async () => {
     const host = client('export-host-0123456789');
     const guest = client('export-guest-0123456789');
