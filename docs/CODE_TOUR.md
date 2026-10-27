@@ -71,11 +71,11 @@ This is the heart of the game, and the part worth reading most carefully.
 | Where | What it does |
 | --- | --- |
 | [`src/cards.ts`](../packages/engine/src/cards.ts) | Cards are two-letter strings (`As` = ace of spades, `Td` = ten of diamonds). |
-| [`src/fairness.ts`](../packages/engine/src/fairness.ts) | The shuffle. Turns the server's secret plus the players' seeds into a deck (`deckFromSeed`), and `verifyHand`, which re-deals a finished hand to check it. Explained in [FAIRNESS.md](FAIRNESS.md). |
+| [`src/fairness.ts`](../packages/engine/src/fairness.ts) | The shuffle. Combines the server's secret with the players' seeds (`handSeedOf`), turns that into a deck (`deckFromSeed`), and has `verifyHand`, which re-deals a finished hand to check it. Explained in [FAIRNESS.md](FAIRNESS.md). |
 | [`src/core/types.ts`](../packages/engine/src/core/types.ts), [`api.ts`](../packages/engine/src/core/api.ts) | The shapes everything else agrees on: a hand's input, its state, its events, the legal actions. Start here. |
 | [`src/core/hand.ts`](../packages/engine/src/core/hand.ts) | The hand itself: `startHand`, `act`, `draw`, `voteRunItTwice`, `show`, `timeout`. Every step adds events (`state.events`) that describe what happened. |
 | [`src/core/betting.ts`](../packages/engine/src/core/betting.ts), [`pots.ts`](../packages/engine/src/core/pots.ts), [`settle.ts`](../packages/engine/src/core/settle.ts), [`forced.ts`](../packages/engine/src/core/forced.ts) | Legal bets and raises for no limit, pot limit and fixed limit; side pots; who wins what; blinds, antes, straddles. |
-| [`src/core/visibility.ts`](../packages/engine/src/core/visibility.ts) | `visibleEvents`: the filter that removes anything a given viewer may not see. Every event sent to a browser goes through it. |
+| [`src/core/visibility.ts`](../packages/engine/src/core/visibility.ts) | `visibleEvents`: the filter that removes anything a given viewer may not see. Every hand event sent to a browser during play goes through it. Only once a hand is revealed (see FAIRNESS.md) is its full record sent unfiltered, so it can be checked. |
 | [`src/variants/`](../packages/engine/src/variants) | Each game (Hold'em, Omaha, Stud, Razz, Stud Hi-Lo, 2-7 Triple Draw, Badugi…) as a spec, plus hand evaluators for high, low and Badugi hands. |
 | [`src/modifiers/`](../packages/engine/src/modifiers) | Optional extras that plug into a hand without changing the core: bomb pots, double board, the 7-2 bounty, the Nit game, rake. |
 | [`src/settings/`](../packages/engine/src/settings) | The table settings schema, shared by the server (which enforces it) and the settings dialog (which edits it). |
@@ -122,12 +122,12 @@ opens the connection and keeps your browser's secret.
 - [`src/TablePage.tsx`](../apps/web/src/TablePage.tsx) listens for
   `table:state` and draws the table with the components in
   [`src/components/`](../apps/web/src/components): `Table.tsx` (the felt and
-  seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, chat),
+  seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, hands, stats), `table/Chat.tsx`,
   `Replayer.tsx` and `FairCheck.tsx`.
 - [`src/fair.ts`](../apps/web/src/fair.ts) is your browser's half of fair
   dealing: it sends your seed for the next hand and watches that it was used.
-  [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record on
-  each visit.
+  [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
+  you visit (at most every 10 minutes).
 - [`src/tournament/`](../apps/web/src/tournament) holds the tournament lobby
   and creation pages; [`src/rules/`](../apps/web/src/rules) the How to play
   guides; [`src/account/`](../apps/web/src/account) sign-in, profile,
@@ -149,9 +149,12 @@ Reading this path once is the fastest way to see how the parts fit.
 3. [`TableRuntime.act`](../apps/server/src/runtime/table.ts) finds your seat
    and calls the engine's `act` in
    [`core/hand.ts`](../packages/engine/src/core/hand.ts), which checks the
-   raise against the legal actions and records events.
-4. The runtime then does whatever is now due (deal the next street, end the
-   hand, start a timer) and calls `onChange`.
+   raise against the legal actions and records events. If the betting round
+   is over, the engine also deals the next street (or the showdown) right
+   there.
+4. Back in the runtime, it closes the hand if it is over (`finishHand`), then
+   does whatever else is now due (a bot's move, the next deal), arms the
+   timers, and calls `onChange`.
 5. `onChange` in `app.ts` updates the public record, schedules a save of the
    table, and calls `broadcast`. For **each** person watching, `tableView`
    builds their own view, with `visibleEvents` filtering out cards they may
@@ -214,11 +217,16 @@ npm test             # every unit test in all four parts
 npm run typecheck    # TypeScript checks without building
 npm run build        # build the website for production
 npm start            # serve the built website and the game server together on :3001
-npm run smoke        # browser test against a running server (BASE_URL=http://localhost:3001)
+npm run smoke        # browser test; see below
 ```
 
-To run one test file, go into its package and name it, for example
-`cd packages/engine && npx vitest run test/core` or
+The smoke test drives a real browser, so install one first with
+`npx playwright install chromium`. It needs the built website served by the
+game server: run `npm run build && npm start` in one terminal, then
+`BASE_URL=http://localhost:3001 npm run smoke` in another.
+
+To run some of the tests, go into a package and name a file or folder, for
+example `cd packages/engine && npx vitest run test/core` or
 `cd apps/server && npx vitest run test/runtime.test.ts`. The Postgres tests
 are skipped unless `TEST_DATABASE_URL` points at a throwaway database.
 
@@ -229,8 +237,8 @@ The same production image the live site runs can be built with Docker; see
 
 | Step | Where |
 | --- | --- |
-| Work happens on branches and is merged into `develop`. Releases are merged from `develop` into `main`. | |
-| Every push and pull request runs the checks: typecheck, all tests (including fuzz tests that play 3,000 random hands through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, and a backup restore drill. | [`ci.yml`](../.github/workflows/ci.yml) |
+| Most work happens on branches that are merged into `develop`; releases then go from `develop` to `main`. Some small, finished changes are merged straight into `main`. | |
+| Every pull request, and every push to `main` or `develop`, runs the checks: typecheck, all tests (including fuzz tests that deal up to 3,000 random hands across every game through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, and a backup restore drill. | [`ci.yml`](../.github/workflows/ci.yml) |
 | When those pass on `main`, GitHub builds the image, signs a record of which commit it came from, and tells Fly.io to run exactly that image. | [`deploy.yml`](../.github/workflows/deploy.yml) |
 | Every hour, a GitHub job checks which image the live site really runs, and copies the public record to the `transparency` branch. Anything wrong opens a public issue. | [`transparency.yml`](../.github/workflows/transparency.yml), [`scripts/transparency/`](../scripts/transparency) |
 | Every night, a GitHub job takes an encrypted backup and test-restores it. | [`backup.yml`](../.github/workflows/backup.yml), [DEPLOY.md](DEPLOY.md#backups) |

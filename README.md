@@ -22,7 +22,7 @@ npm install
 npm run dev        # game server on :3001, website on http://localhost:5173
 npm test           # unit tests for the engine, tournament director, server and website
 npm run typecheck
-npm run smoke      # browser smoke test (needs a running server; see e2e/smoke.mjs)
+npm run smoke      # browser smoke test (needs a browser and a running server; see docs/CODE_TOUR.md)
 ```
 
 Production: `npm run build && npm start` serves the built website and the game server together on `PORT` (default 3001). Data goes to Postgres when `DATABASE_URL` is set, otherwise to an embedded PGlite database in `apps/server/.data/` (or `PGLITE_DIR`).
@@ -46,7 +46,7 @@ The server is authoritative: browsers send intents (`hand:act`, `seat:request`, 
 
 ## Tests and CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (including the hand fuzzers and the Postgres storage tests against a Postgres service), a production build, the browser smoke test against the Docker image, and a backup restore drill on every push and pull request. Merges to `main` deploy a GitHub-built, signed image to Fly.io; hourly and nightly jobs watch the live site and back it up (see [docs/CODE_TOUR.md](docs/CODE_TOUR.md#from-a-commit-to-the-live-site)).
+GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (including the hand fuzzers and the Postgres storage tests against a Postgres service), a production build, the browser smoke test against the Docker image, and a backup restore drill on every pull request and every push to `main` or `develop`. Merges to `main` deploy a GitHub-built, signed image to Fly.io; hourly and nightly jobs watch the live site and back it up (see [docs/CODE_TOUR.md](docs/CODE_TOUR.md#from-a-commit-to-the-live-site)).
 
 ## Who made it
 
