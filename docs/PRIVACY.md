@@ -10,6 +10,15 @@ lawyer.
 Last updated: 27 October 2026. Every change to this page is in its
 [history on GitHub](https://github.com/jcolter11374/rsdp-poker-live/commits/main/docs/PRIVACY.md).
 
+## Who is responsible
+
+John (jcolter11374 on GitHub) runs the site on his own, as a hobby for his poker group, and
+decides what it keeps. In privacy-law terms he is the "controller". There is
+no company behind it. To reach him, message him directly or in the group chat.
+If you don't have his details, open an issue on
+[GitHub](https://github.com/jcolter11374/rsdp-poker-live/issues) (issues are
+public, so don't put anything private in one, just ask him to get in touch).
+
 ## The short version
 
 - **Nothing is sold, rented or shared for marketing.** There are no ads, no
@@ -47,6 +56,27 @@ Last updated: 27 October 2026. Every change to this page is in its
 | Shared hand links | You, when you press Share on a hand | Anyone with the link, until you delete it or your account |
 | Roadmap suggestions | You, with the name you type | Everyone, on the [roadmap](/roadmap) |
 
+## Why the site keeps it
+
+Under European privacy law (the GDPR) every use of personal data needs a
+reason. These are ours:
+
+- **To run the games you ask for.** Seating you, dealing, chat, ledgers,
+  your account and sign-in only work if the site keeps them. (The GDPR calls
+  this "performance of a contract", even for a free site.)
+- **Legitimate interests**, where we weigh your privacy against the reason:
+  keeping hand history, records and the leaderboard the group plays for;
+  the public record and backups, so cheating can be spotted and the site
+  survives a disaster; and rate limits, to keep the site safe. You can object
+  to any of these (see *Your rights*).
+- Nothing is done on the basis of consent, so there is nothing to withdraw,
+  except that signing in with Google is your choice and you can unlink it from
+  your profile.
+
+You don't have to give the site anything beyond a name to sit at a table. The
+site makes no automatic decisions about you beyond the game itself, and does
+no profiling. No money changes hands through the site.
+
 ## The public record
 
 To make cheating by John easy to spot, the site keeps a public, append-only
@@ -81,7 +111,22 @@ for how it works.
 - **GitHub** holds the code, the hourly copy of the public record and the
   nightly backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy
-  policy covers what Google does.
+  policy covers what Google does. The site asks Google only for the basic
+  sign-in scopes (`openid` and `profile`), uses what it gets only to sign you
+  in and set your starting name, and never shares it, sells it, uses it for
+  ads or uses it to train AI. Its use of information received from Google
+  APIs follows the
+  [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+  including the Limited Use requirements.
+
+Fly.io and GitHub act as service providers ("processors"): they store and
+serve the data for the site and don't use it for their own purposes. Nobody
+else receives it, unless the law forces John to hand something over.
+
+**Data leaves Europe.** If you play from the EU or UK, your data goes to the
+USA, where Fly.io and GitHub keep it. Both companies publish data protection
+terms for that (based on the EU's standard contractual clauses). The USA's
+privacy laws are weaker than Europe's.
 
 ## Backups
 
@@ -100,6 +145,20 @@ backup also shows up on [Checking John](/transparency).
   The Google sign-in cookie: 10 minutes.
 - Backups: 90 days each.
 
+## Your rights
+
+Wherever you live, you can ask John to:
+
+- **show you** what the site holds about you and give you a copy (your
+  profile, hand search and hand downloads already show most of it);
+- **correct** something wrong;
+- **delete** it (below, with what can't be deleted and why);
+- **stop or limit** a use you object to, or **move** your data elsewhere.
+
+He'll answer within a month and won't charge. If you're in the EU or UK and
+unhappy with the answer, you can complain to your country's data protection
+authority (in the UK, the ICO).
+
 ## Deleting your data
 
 - **With an account:** open [your profile](/profile) and use **Delete account**.
@@ -107,15 +166,29 @@ backup also shows up on [Checking John](/transparency).
   secrets, name, picture, notes, saved setups, hidden tables, practice graph
   reset and shared hand links straight away. Hands you already
   played stay in other players' history and ledgers under the name you used
-  at the time, because they are part of their games too. Copies in backups
+  at the time, because they are part of their games too. If you want your
+  name taken out of those as well, ask John: names aren't part of the
+  public record's fingerprints, so he can replace yours with "Deleted
+  player" without breaking it. Copies in backups
   disappear as the backups expire, within 90 days.
 - **As a guest:** clear the site's data in your browser to start fresh. To
   have anything removed from the server, ask John.
 - **Anything else** (a chat message, a name in an old hand or tournament, a suggestion): ask
-  John. He'll tell you honestly what can be removed and what can't, for
-  example the public record, which is built so that nothing in it can be
-  changed.
+  John. He'll tell you honestly what can be removed and what can't.
+- **What can't be deleted:** the public record. It is built so that nothing
+  in it can be changed or removed, which is the point of it. It holds no
+  names, cards or table links: your entries there are fingerprints and
+  buy-in and cash-out amounts that can be tied to you only by someone who
+  already has the table's link and knows who sat where.
 
-## Questions
+## Children
 
-Ask John directly, or in the group chat.
+The site is meant for adults in our group. It isn't aimed at children and
+doesn't knowingly keep anything about anyone under 16. If you think it does,
+tell John and he'll delete it.
+
+## Changes and questions
+
+When this page changes, the "Last updated" date above changes too, and every
+change is in its history on GitHub. Questions: ask John (see *Who is
+responsible*).
