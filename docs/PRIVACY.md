@@ -65,13 +65,18 @@ reason. These are ours:
   your account and sign-in only work if the site keeps them. (The GDPR calls
   this "performance of a contract", even for a free site.)
 - **Legitimate interests**, where we weigh your privacy against the reason:
-  keeping hand history, records and the leaderboard the group plays for;
+  keeping hand history, chat, records and the leaderboard the group plays for
+  (they are what the group comes back to, and hold nothing beyond the games
+  you played);
   the public record and backups, so cheating can be spotted and the site
-  survives a disaster; and rate limits, to keep the site safe. You can object
+  survives a disaster (the record holds no names, and backups are locked);
+  and rate limits, to keep the site safe. You can object
   to any of these (see *Your rights*).
 - Nothing is done on the basis of consent, so there is nothing to withdraw,
-  except that signing in with Google is your choice and you can unlink it from
-  your profile.
+  except that signing in with Google is your choice. You can stop using it
+  from your profile (set a password first if Google is your only way in), and
+  remove the site's access on Google's side at
+  [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 You don't have to give the site anything beyond a name to sit at a table. The
 site makes no automatic decisions about you beyond the game itself, and does
@@ -107,7 +112,7 @@ for how it works.
   sees your IP address when you connect. The site uses IP addresses only in
   memory, for a few minutes, to slow down people guessing passwords or
   flooding the site with requests, and doesn't save them. The server's own logs record errors, not
-  visitors, and Fly keeps them only for a short time.
+  visitors, and they stay in Fly's log service, not in the site's database.
 - **GitHub** holds the code, the hourly copy of the public record and the
   nightly backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy
@@ -125,7 +130,8 @@ else receives it, unless the law forces John to hand something over.
 
 **Data leaves Europe.** If you play from the EU or UK, your data goes to the
 USA, where Fly.io and GitHub keep it. Both companies publish data protection
-terms for that (based on the EU's standard contractual clauses). The USA's
+terms that cover this (such as the EU's standard contractual clauses or the
+EU-US Data Privacy Framework); you can read them on their websites. The USA's
 privacy laws are weaker than Europe's.
 
 ## Backups
@@ -137,8 +143,11 @@ backup also shows up on [Checking John](/transparency).
 
 ## How long things are kept
 
-- Hands, ledgers, chat and table results: for as long as the site runs, so the
+- Hands, ledgers and table results: for as long as the site runs, so the
   history, leaderboard and hand search keep working.
+- Table chat: the last 200 messages of each table, for as long as the site
+  runs (older ones drop off). Tournament lobby chat: for as long as the site
+  runs.
 - Practice tables you made and only you and bots played at: until you delete
   them from your profile.
 - Signed-in sessions: 30 days. Password reset codes: until used or expired.
@@ -150,7 +159,9 @@ backup also shows up on [Checking John](/transparency).
 Wherever you live, you can ask John to:
 
 - **show you** what the site holds about you and give you a copy (your
-  profile, hand search and hand downloads already show most of it);
+  profile and hand search already show most of it, and each table's side
+  panel lets you download its hands; for anything else, John can put
+  together a copy by hand);
 - **correct** something wrong;
 - **delete** it (below, with what can't be deleted and why);
 - **stop or limit** a use you object to, or **move** your data elsewhere.
