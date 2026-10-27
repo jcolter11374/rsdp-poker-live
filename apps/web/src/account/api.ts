@@ -79,6 +79,15 @@ export interface ProfitSession {
 
 export const fetchGraph = () => request<{ sessions: ProfitSession[] }>('GET', '/api/account/graph');
 
+/** My practice results since `since` (when I last reset the practice graph; null if never). */
+export interface PracticeGraphData {
+  since: string | null;
+  sessions: ProfitSession[];
+}
+
+export const fetchPracticeGraph = () => request<PracticeGraphData>('GET', '/api/account/practice-graph');
+export const resetPracticeGraph = () => request('POST', '/api/account/practice-graph/reset', {});
+
 /** One person on the leaderboard; amounts in cents (a chip counts as 100). */
 export interface LeaderRow {
   key: string;
@@ -131,6 +140,10 @@ export const shareFoundHand = (handId: string, hideMine: boolean) => request<{ i
 
 /** Hides a cash table from my profile (or shows it again). Nobody else's records change. */
 export const hideTable = (tableId: string, hidden: boolean) => request('POST', '/api/account/tables/hide', { tableId, hidden });
+
+/** Deletes practice games from my profile: for good when only I (and bots) played there, else hidden just for me. */
+export const deletePractice = (target: { tableId: string } | { all: true }) =>
+  request<{ deleted: number; hidden: number; busy: number }>('POST', '/api/account/tables/delete-practice', target);
 
 /** What the admin sees about a table before deleting it. */
 export interface AdminTable {

@@ -290,7 +290,7 @@ export class AuditLog {
     this.chips.delete(tableId);
   }
 
-  deleted(tableId: string, by: 'host' | 'admin') {
+  deleted(tableId: string, by: 'host' | 'admin' | 'player') {
     this.forgetTable(tableId);
     this.record('deleted', { table: tableRef(tableId), by });
   }

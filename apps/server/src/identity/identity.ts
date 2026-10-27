@@ -9,7 +9,7 @@ import { and, eq, inArray, isNull, lte, ne, or, sql, TransactionRollbackError } 
 import { z } from 'zod';
 import type { Db } from '../db/client';
 import { newId } from '../db/ids';
-import { accounts, hiddenTables, playerAvatars, playerNotes, players, playerTokens, savedSetups, sessions } from '../db/schema';
+import { accounts, hiddenTables, playerAvatars, playerNotes, players, playerTokens, practiceResets, savedSetups, sessions } from '../db/schema';
 import { dummyPasswordHash, hashPassword, verifyPassword } from './password';
 import { hashSecret, isWellFormedSecret, newSecret } from './secrets';
 
@@ -434,6 +434,7 @@ export async function deleteAccount(db: Db, accountId: string): Promise<string[]
       await tx.delete(playerNotes).where(inArray(playerNotes.ownerPlayerId, ids));
       await tx.delete(playerAvatars).where(inArray(playerAvatars.playerId, ids));
       await tx.delete(hiddenTables).where(inArray(hiddenTables.playerId, ids));
+      await tx.delete(practiceResets).where(inArray(practiceResets.playerId, ids));
       await tx.delete(savedSetups).where(inArray(savedSetups.playerId, ids));
     }
     return ids;
