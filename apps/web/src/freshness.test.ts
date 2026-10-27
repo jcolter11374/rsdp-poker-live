@@ -11,13 +11,15 @@ describe('reloading into a new build', () => {
     expect(isStale(null, '/assets/index-b.js')).toBe(false);
   });
 
-  it('never mid-hand, at a table between hands unless typing, elsewhere once hidden', () => {
+  it('never mid-hand or with something being filled in; a table between hands, elsewhere once hidden', () => {
     expect(quietNow('busy-table', false, false)).toBe(false);
     expect(quietNow('busy-table', false, true)).toBe(false);
     expect(quietNow('table', false, false)).toBe(true);
     expect(quietNow('table', true, false)).toBe(false);
-    expect(quietNow('table', true, true)).toBe(true);
+    // Switching away from a half-filled form doesn't lose it.
+    expect(quietNow('table', true, true)).toBe(false);
+    expect(quietNow('page', true, true)).toBe(false);
     expect(quietNow('page', false, false)).toBe(false);
-    expect(quietNow('page', true, true)).toBe(true);
+    expect(quietNow('page', false, true)).toBe(true);
   });
 });

@@ -5,8 +5,8 @@ import { socket } from './socket';
  * reloaded, so it misses every fix since. The server says which build it hands
  * out each time the socket connects (a release restarts it, so every tab
  * reconnects), and a tab on an older one reloads itself at the first quiet
- * moment: while it is hidden, on moving to another page, or at a table between
- * hands, never mid-hand or mid-runout.
+ * moment: at a table between hands, elsewhere while hidden or on moving to
+ * another page; never mid-hand, mid-runout or with something being filled in.
  */
 
 /** The entry script this page loaded, as index.html names it. Null in development, where it isn't hashed. */
@@ -21,29 +21,31 @@ export function isStale(mine: string | null, served: string): boolean {
 }
 
 /**
- * Whether a reload would cost nothing. A table mid-hand always waits. Otherwise a
- * hidden tab goes, and so does a table between hands unless something is being
- * typed; any other page waits until it is hidden or left.
+ * Whether a reload would cost nothing. A table mid-hand, or anything being
+ * filled in, always waits. Otherwise a table between hands goes, and any other
+ * page once it is hidden (or left).
  */
-export function quietNow(at: 'busy-table' | 'table' | 'page', typing: boolean, hidden: boolean): boolean {
-  if (at === 'busy-table') return false;
-  if (hidden) return true;
-  return at === 'table' && !typing;
+export function quietNow(at: 'busy-table' | 'table' | 'page', editing: boolean, hidden: boolean): boolean {
+  if (at === 'busy-table' || editing) return false;
+  return at === 'table' || hidden;
 }
 
 let stale = false;
 let tableBusy: (() => boolean) | null = null;
 
-function typing() {
+/** A dialog is open (its changes may be unsaved), a field has focus, or a text box holds something. */
+function editing() {
+  if (document.querySelector('[role="dialog"], .modal-backdrop')) return true;
   const el = document.activeElement;
-  return (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.value !== '';
+  if (el instanceof HTMLElement && (el.isContentEditable || el.closest('form, select, textarea, input'))) return true;
+  return [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('textarea, input[type="text"], input:not([type])')].some((x) => x.value !== '');
 }
 
 /** Reloads now if a newer build is out and this is a quiet moment. */
 export function reloadIfStale() {
   if (!stale) return;
   const at = !tableBusy ? 'page' : tableBusy() ? 'busy-table' : 'table';
-  if (!quietNow(at, typing(), document.hidden)) return;
+  if (!quietNow(at, editing(), document.hidden)) return;
   stale = false;
   location.reload();
 }
