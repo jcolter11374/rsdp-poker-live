@@ -318,8 +318,8 @@ The code: [`packages/engine/src/fairness.ts`](../packages/engine/src/fairness.ts
 [`apps/server/src/runtime/table.ts`](../apps/server/src/runtime/table.ts), and
 [`scripts/verify-hand.mjs`](../scripts/verify-hand.mjs). The tests check our
 SHA-256 against OpenSSL on every input length from 0 to 300 bytes, pin the
-deck for a known seed (so old hands stay checkable), and deal 3,000 random
-hands in every game, reshuffles included, then check each one with both
+deck for a known seed (so old hands stay checkable), and deal up to 3,000
+random hands spread across every game, reshuffles included, then check each one with both
 checkers. They also check that a swapped card, cards handed out of turn and a
 shown card nobody was dealt are all caught.
 
