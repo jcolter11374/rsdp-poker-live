@@ -50,6 +50,6 @@ describe('/privacy', () => {
 
   it('has the sections people come for', () => {
     const heads = blocks.filter((b) => b.t === 'h').map((b) => b.text.toLowerCase()).join('\n');
-    for (const want of ['what the site keeps', 'backups', 'how long', 'deleting']) expect(heads).toContain(want);
+    for (const want of ['who is responsible', 'what the site keeps', 'why the site keeps', 'backups', 'how long', 'your rights', 'deleting']) expect(heads).toContain(want);
   });
 });
