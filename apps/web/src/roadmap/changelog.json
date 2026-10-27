@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-27-e",
+      "date": "2026-10-27",
+      "fixes": [
+        "The Privacy page now also says who is responsible for your data, why each thing is kept, that data is stored in the USA, your rights (see, correct, delete, object, complain), what can't be deleted and why, and how Google sign-in data is used."
+      ]
+    },
+    {
       "id": "2026-10-27-d",
       "date": "2026-10-27",
       "fixes": [
