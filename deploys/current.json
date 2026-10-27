@@ -1,34 +1,34 @@
 {
-  "checked": "2026-10-26T23:54:45.422Z",
+  "checked": "2026-10-27T05:07:40.586Z",
   "machines": [
     {
       "id": "8e3145c7e00e38",
       "state": "started",
-      "image": "registry.fly.io/rsdp-poker-live@sha256:8c55f8f878a0c3d1beacfe9560a001ac46a1afa502f34e73c2ba4be267854f53",
-      "digest": "sha256:8c55f8f878a0c3d1beacfe9560a001ac46a1afa502f34e73c2ba4be267854f53",
-      "lastStart": "2026-10-26T23:51:54.764Z",
+      "image": "registry.fly.io/rsdp-poker-live@sha256:6f88d4f0ad617398a8d120d9c7c29cd2084a89392af5d73bcfce4df9a40e0145",
+      "digest": "sha256:6f88d4f0ad617398a8d120d9c7c29cd2084a89392af5d73bcfce4df9a40e0145",
+      "lastStart": "2026-10-27T05:01:55.207Z",
       "starts": [
         {
           "type": "launch",
           "status": "pending",
-          "at": "2026-10-26T23:51:44.966Z"
+          "at": "2026-10-27T05:01:43.906Z"
         },
         {
           "type": "launch",
           "status": "created",
-          "at": "2026-10-26T23:51:45.088Z"
+          "at": "2026-10-27T05:01:44.030Z"
         },
         {
           "type": "start",
           "status": "started",
-          "at": "2026-10-26T23:51:54.764Z"
+          "at": "2026-10-27T05:01:55.207Z"
         }
       ],
       "settings": "318a0bfd9683f028",
       "signed": {
-        "commit": "8a59b992eaaeaee93f008f751020e1908f155cd2",
+        "commit": "6edeadcf24ea04b32a32a62a0f2e8732f6e5bd0b",
         "ref": "refs/heads/main",
-        "run": "https://github.com/jcolter11374/rsdp-poker-live/actions/runs/40422518513/attempts/1"
+        "run": "https://github.com/jcolter11374/rsdp-poker-live/actions/runs/40452850372/attempts/1"
       }
     }
   ],
@@ -47,13 +47,10 @@
     }
   ],
   "site": {
-    "commit": "8a59b992eaaeaee93f008f751020e1908f155cd2",
-    "image": "registry.fly.io/rsdp-poker-live@sha256:8c55f8f878a0c3d1beacfe9560a001ac46a1afa502f34e73c2ba4be267854f53",
+    "commit": "6edeadcf24ea04b32a32a62a0f2e8732f6e5bd0b",
+    "image": "registry.fly.io/rsdp-poker-live@sha256:6f88d4f0ad617398a8d120d9c7c29cd2084a89392af5d73bcfce4df9a40e0145",
     "machine": "8e3145c7e00e38",
-    "startedAt": "2026-10-26T23:52:01.121Z"
+    "startedAt": "2026-10-27T05:02:01.516Z"
   },
-  "problems": [],
-  "notes": [
-    "The app's secrets changed."
-  ]
+  "problems": []
 }
