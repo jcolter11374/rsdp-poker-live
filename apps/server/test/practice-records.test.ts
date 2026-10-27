@@ -151,6 +151,34 @@ describe('deleting practice games', () => {
   });
 });
 
+describe("someone else's practice table", () => {
+  it('is only hidden for me, even when its host never played', { timeout: 20_000 }, async () => {
+    const hostToken = 'pr-own-host-secret-0123456789';
+    const meToken = 'pr-own-me-secret-0123456789';
+    const host = client(hostToken);
+    const p = client(meToken);
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Theirs' }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } } });
+    await host.call('table:join', { tableId });
+    await p.call('table:join', { tableId });
+    await host.call('bot:add', { seat: 1 });
+    await p.call('seat:request', { seat: 0, name: 'Me', stack: 100 });
+    await host.until((v) => v.seats.filter(Boolean).length === 2);
+    await host.call('host:start');
+    await p.until((v) => {
+      if (v.legal && v.hand?.phase !== 'complete') void p.call('hand:act', { type: 'fold' }).catch(() => {});
+      return v.hand?.phase === 'complete';
+    });
+    host.socket.close();
+    p.socket.close();
+    await pause(900);
+
+    const res = await post('/api/account/tables/delete-practice', { tableId }, meToken);
+    expect(await res.json()).toMatchObject({ deleted: 0, hidden: 1 });
+    expect(await getTable(db, tableId)).not.toBeNull();
+    expect((await me(meToken)).tables.map((t) => t.tableId)).not.toContain(tableId);
+  });
+});
+
 describe('the practice graph', () => {
   it('adds up practice hands, stays out of the real graph, and starts again from a reset', { timeout: 30_000 }, async () => {
     const token = 'pr-graph-secret-0123456789';

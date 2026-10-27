@@ -391,8 +391,8 @@ function TablesList({ profile, onChanged }: { profile: Profile; onChanged: () =>
   const [note, setNote] = useState('');
   const remove = (target: { tableId: string } | { all: true }) => {
     const ask = 'all' in target
-      ? `Delete all ${practice.length} practice games from your profile? Ones only you and your bots played are erased for good.`
-      : 'Delete this practice game from your profile? If only you and your bots played there, it is erased for good.';
+      ? `Delete all ${practice.length} practice games from your profile? Tables you made that only you and your bots played at are erased for good.`
+      : 'Delete this practice game from your profile? If you made it and only you and your bots played there, it is erased for good.';
     if (!confirm(ask)) return;
     setNote('');
     run(async () => {

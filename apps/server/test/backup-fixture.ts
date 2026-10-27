@@ -22,6 +22,7 @@ export async function fill(target: Db) {
   await q(`insert into chip_movements (id, table_id, seat_session_id, player_id, kind, amount, stack_before, stack_after) values ('m1', 't1', 'ss1', 'p2', 'buy-in', 200, 0, 200)`);
   await q(`insert into hands (id, table_id, number, game_id, started_at, header, events) values ('h1', 't1', 1, 'nlh', now(), '{"seats":[]}', '[{"type":"deal"}]')`);
   await q(`insert into hidden_tables (player_id, table_id) values ('p2', 't1')`);
+  await q(`insert into practice_resets (player_id, reset_at) values ('p1', '2026-10-27T00:00:00.654321Z')`);
   await q(`insert into jobs (id, kind, run_at, payload) values ('j1', 'start', now(), '{"x":1}')`);
   await q(`insert into player_avatars (player_id, kind, value) values ('p1', 'upload', 'data:image/png;base64,iVBORw0KGgo=')`);
   await q(`insert into player_notes (owner_player_id, target_player_id, text, color) values ('p1', 'p2', 'bluffs\nthe river', 'red')`);

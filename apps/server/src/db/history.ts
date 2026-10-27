@@ -124,11 +124,19 @@ export async function setTableHidden(db: Db, playerId: string, playerIds: string
 /**
  * Who played at a cash table, for deleting a practice game from a profile:
  * whether it was practice (see realGameTables), whether any of `playerIds` was
- * dealt in there, and whether any other person (not a bot) ever was. Null when
- * there is no such cash table.
+ * dealt in there, whether any other person (not a bot) ever was, and whether
+ * the table is theirs (they made it, outside any club). Null when there is no
+ * such cash table.
  */
-export async function practiceTableUse(db: Db, tableId: string, playerIds: string[]): Promise<{ practice: boolean; mine: boolean; others: boolean } | null> {
-  const [table] = await db.select({ tournamentId: tables.tournamentId, mode: tables.mode }).from(tables).where(eq(tables.id, tableId));
+export async function practiceTableUse(
+  db: Db,
+  tableId: string,
+  playerIds: string[],
+): Promise<{ practice: boolean; mine: boolean; others: boolean; owner: boolean } | null> {
+  const [table] = await db
+    .select({ tournamentId: tables.tournamentId, mode: tables.mode, ownerPlayerId: tables.ownerPlayerId, clubId: tables.clubId })
+    .from(tables)
+    .where(eq(tables.id, tableId));
   if (!table || table.tournamentId || table.mode === 'tournament') return null;
   const dealt = await queryRows<{ player_id: string }>(
     db,
@@ -137,7 +145,12 @@ export async function practiceTableUse(db: Db, tableId: string, playerIds: strin
   const mine = new Set(playerIds);
   const people = dealt.map((r) => r.player_id).filter((id) => !id.startsWith('bot-'));
   const real = await realGameTables(db, [tableId]);
-  return { practice: !real.has(tableId), mine: people.some((id) => mine.has(id)), others: people.some((id) => !mine.has(id)) };
+  return {
+    practice: !real.has(tableId),
+    mine: people.some((id) => mine.has(id)),
+    others: people.some((id) => !mine.has(id)),
+    owner: !table.clubId && mine.has(table.ownerPlayerId),
+  };
 }
 
 /** When the practice graph was last reset on any of `playerIds` (an account's devices), or null if never. */

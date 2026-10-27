@@ -290,15 +290,33 @@ export function createApp(deps: AppDeps = {}) {
       for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
-    deletePracticeTable: async (tableId, playerIds) => {
+    deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {
       const mine = new Set(playerIds);
-      const rt = tables.get(tableId);
-      if ([...(watchers.get(tableId) ?? [])].length > 0) throw new StorageError('conflict', 'Someone has that table open. Leave it first, then delete it.');
-      if (rt?.state.realGame) throw new StorageError('conflict', "That was a real game, so it can't be deleted. You can hide it from your profile instead.");
-      if (rt?.state.seats.some((x) => x && !mine.has(x.playerId) && !rt.state.bots?.[x.playerId])) {
-        throw new StorageError('conflict', 'Someone else is sitting at that table, so it stays for now.');
+      const someoneElse = (rt: TableRuntime | undefined) =>
+        !!rt &&
+        [...rt.state.seats, ...rt.state.history.flatMap((h) => h.hand.seats)].some((x) => x && !mine.has(x.playerId) && !rt.state.bots?.[x.playerId]);
+      const refuse = (rt: TableRuntime | undefined) => {
+        if ([...(watchers.get(tableId) ?? [])].length > 0) return 'Someone has that table open. Leave it first, then delete it.';
+        if (rt?.state.realGame) return "That was a real game, so it can't be deleted. You can hide it from your profile instead.";
+        if (someoneElse(rt)) return 'Someone else played at that table, so it stays. It has been left on your profile.';
+        return null;
+      };
+      const first = refuse(tables.get(tableId));
+      if (first) throw new StorageError('conflict', first);
+      if (deleted.has(tableId)) return;
+      // Nobody can open the table from here on, so nobody sits down while the last checks run.
+      deleted.add(tableId);
+      try {
+        // A hand still being saved could have had someone else in it: look again once it's written.
+        await Promise.allSettled([...(inFlight.get(tableId) ?? [])]);
+        const again = refuse(tables.get(tableId));
+        if (again) throw new StorageError('conflict', again);
+        if (!(await stillOnlyMine())) throw new StorageError('conflict', 'Someone else played at that table, so it stays. It has been left on your profile.');
+        if (!(await removeTable(tableId))) return;
+      } catch (e) {
+        deleted.delete(tableId);
+        throw e;
       }
-      if (!(await removeTable(tableId))) return;
       log(`practice table ${tableId} deleted by the only person who played at it`);
       audit.deleted(tableId, 'player');
     },

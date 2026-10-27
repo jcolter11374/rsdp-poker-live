@@ -52,10 +52,11 @@ export interface AccountHooks {
   /** How many people have this table open right now (0 when nobody is at it). */
   peopleAt?(tableId: string): number;
   /**
-   * Deletes a practice table that only `playerIds` (one person's devices) and bots played at, for good. Throws a
-   * StorageError 'conflict' when it can't go now (someone is at it). Without it, practice games are hidden instead.
+   * Deletes a practice table that only `playerIds` (one person's devices) and bots played at, for good. Once nobody
+   * can open the table any more and its last saves are written, `stillOnlyMine` is asked again. Throws a StorageError
+   * 'conflict' when it can't go now (someone is at it). Without this hook, practice games are hidden instead.
    */
-  deletePracticeTable?(tableId: string, playerIds: string[]): Promise<void>;
+  deletePracticeTable?(tableId: string, playerIds: string[], stillOnlyMine: () => Promise<boolean>): Promise<void>;
 }
 
 const HTTP_STATUS: Partial<Record<IdentityError['code'], number>> = {
@@ -344,9 +345,8 @@ export function accountRoutes(
     }),
   );
 
-  // Delete practice games from my profile: one ({ tableId }) or all of them ({ all: true }). A table only I and bots
-  // played at is deleted for good; one someone else also played at is only hidden from my profile, so their record
-  // stays. Real games are never deleted here (hide them instead). The public record keeps the hands' fingerprints
+  // Delete practice games from my profile: one ({ tableId }) or all of them ({ all: true }). A table I made that only I
+  // and bots played at is deleted for good; any other is only hidden from my profile, so other people's records stay. Real games are never deleted here (hide them instead). The public record keeps the hands' fingerprints
   // and notes the deletion, as when a host deletes a table.
   app.post(
     '/api/account/tables/delete-practice',
@@ -369,13 +369,17 @@ export function accountRoutes(
           if (!all) return void res.status(409).json({ error: "That was a real game, so it can't be deleted. You can hide it from your profile instead." });
           continue;
         }
-        if (use.others || !hooks.deletePracticeTable) {
+        // Only a table I made goes for good: one someone else made (and maybe only watched) stays theirs.
+        if (use.others || !use.owner || !hooks.deletePracticeTable) {
           await setTableHidden(db, who.player.id, ids, id, true);
           done.hidden++;
           continue;
         }
         try {
-          await hooks.deletePracticeTable(id, ids);
+          await hooks.deletePracticeTable(id, ids, async () => {
+            const again = await practiceTableUse(db, id, ids);
+            return !!again && again.practice && again.owner && !again.others;
+          });
           done.deleted++;
         } catch (e) {
           if (!(e instanceof StorageError && e.code === 'conflict')) throw e;
