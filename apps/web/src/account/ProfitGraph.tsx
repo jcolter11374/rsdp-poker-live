@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchGraph, type ProfitSession } from './api';
+import { fetchGraph, fetchPracticeGraph, resetPracticeGraph, type PracticeGraphData, type ProfitSession } from './api';
 import { signed, ticks, useWidth } from './chart';
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -11,9 +11,6 @@ const PAD = { top: 12, right: 12, bottom: 22, left: 52 };
 export function ProfitGraph({ refreshKey, practiceGames }: { refreshKey: unknown; practiceGames: number }) {
   const [sessions, setSessions] = useState<ProfitSession[] | null>(null);
   const [error, setError] = useState('');
-  const [hover, setHover] = useState<number | null>(null);
-  const [listView, setListView] = useState(false);
-  const [width, box] = useWidth();
 
   useEffect(() => {
     fetchGraph()
@@ -40,6 +37,75 @@ export function ProfitGraph({ refreshKey, practiceGames }: { refreshKey: unknown
       </div>
     );
   }
+  return (
+    <ProfitChart
+      sessions={sessions}
+      totalLabel="All time"
+      hint="Real games with friends only: practice games (with bots, or on your own) and tables you hid are left out. Chips count as whole units, so chip and cents tables add up."
+    />
+  );
+}
+
+/**
+ * My running total at practice games (bots, or on my own) since I last reset
+ * it. Kept apart from the real graph, and never on the leaderboard.
+ */
+export function PracticeGraph({ refreshKey }: { refreshKey: unknown }) {
+  const [graph, setGraph] = useState<PracticeGraphData | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reloads, setReloads] = useState(0);
+
+  useEffect(() => {
+    fetchPracticeGraph()
+      .then((g) => (setGraph(g), setError('')))
+      .catch((e: Error) => setError(e.message));
+  }, [refreshKey, reloads]);
+
+  const reset = async () => {
+    if (!confirm('Start your practice graph again from zero? Your practice games stay in your list; only this graph forgets them.')) return;
+    setBusy(true);
+    try {
+      await resetPracticeGraph();
+      setReloads((n) => n + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (error) return <p className="error">{error}</p>;
+  if (!graph) return <p className="muted">Loading…</p>;
+  const since = graph.since ? `Since you reset it on ${day(graph.since)}.` : 'Since your first practice game.';
+  const resetButton = (
+    <button className="link" disabled={busy} onClick={reset} title="Start the practice graph again from zero">
+      Reset
+    </button>
+  );
+  if (graph.sessions.length === 0) {
+    return (
+      <p className="muted">
+        {graph.since
+          ? `Nothing yet since you reset it on ${day(graph.since)}. Play a practice game and it starts here.`
+          : 'No practice games yet. Try "Practice with bots" on the home page and your results show up here.'}
+      </p>
+    );
+  }
+  return (
+    <ProfitChart
+      sessions={graph.sessions}
+      totalLabel={graph.since ? 'Since reset' : 'All practice'}
+      hint={`Practice games only (with bots, or on your own), counted hand by hand. ${since} Never on the leaderboard.`}
+      extra={resetButton}
+    />
+  );
+}
+
+function ProfitChart({ sessions, totalLabel, hint, extra }: { sessions: ProfitSession[]; totalLabel: string; hint: string; extra?: React.ReactNode }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const [listView, setListView] = useState(false);
+  const [width, box] = useWidth();
 
   let run = 0;
   const points = sessions.map((s) => ({ ...s, total: (run += s.net) }));
@@ -72,7 +138,7 @@ export function ProfitGraph({ refreshKey, practiceGames }: { refreshKey: unknown
     <div className="profit">
       <div className="profit-tiles">
         <div>
-          <span className="muted">All time</span>
+          <span className="muted">{totalLabel}</span>
           <strong className={total > 0 ? 'up' : total < 0 ? 'down' : ''}>{signed(total)}</strong>
         </div>
         <div>
@@ -163,10 +229,11 @@ export function ProfitGraph({ refreshKey, practiceGames }: { refreshKey: unknown
         </div>
       )}
       <p className="hint">
-        Real games with friends only: practice games (with bots, or on your own) and tables you hid are left out. Chips count as whole units, so chip and cents tables add up.{' '}
+        {hint}{' '}
         <button className="link" onClick={() => setListView((v) => !v)}>
           {listView ? 'Show the graph' : 'Show as a list'}
         </button>
+        {extra && <> · {extra}</>}
       </p>
     </div>
   );

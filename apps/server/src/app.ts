@@ -173,6 +173,15 @@ const AVATAR_BURST = 4;
 const AVATAR_WINDOW_MS = 30_000;
 const NAME_MAX = 20;
 
+/**
+ * Which build of the web app a page is: the entry script it loads, whose name
+ * Vite hashes from the code. A new release (a restart, so every tab
+ * reconnects) changes it.
+ */
+export function webBuild(indexHtml: string): string | null {
+  return /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]+)"/.exec(indexHtml)?.[1] ?? null;
+}
+
 /** Runs a handler and acks the result; expected failures become an error ack, not a crash. */
 async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | void | Promise<T | void>, log: AppDeps['log']) {
   try {
@@ -290,6 +299,36 @@ export function createApp(deps: AppDeps = {}) {
       for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
+    deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {
+      const mine = new Set(playerIds);
+      const someoneElse = (rt: TableRuntime | undefined) =>
+        !!rt &&
+        [...rt.state.seats, ...rt.state.history.flatMap((h) => h.hand.seats)].some((x) => x && !mine.has(x.playerId) && !rt.state.bots?.[x.playerId]);
+      const refuse = (rt: TableRuntime | undefined) => {
+        if ([...(watchers.get(tableId) ?? [])].length > 0) return 'Someone has that table open. Leave it first, then delete it.';
+        if (rt?.state.realGame) return "That was a real game, so it can't be deleted. You can hide it from your profile instead.";
+        if (someoneElse(rt)) return 'Someone else played at that table, so it stays. It has been left on your profile.';
+        return null;
+      };
+      const first = refuse(tables.get(tableId));
+      if (first) throw new StorageError('conflict', first);
+      if (deleted.has(tableId)) return;
+      // Nobody can open the table from here on, so nobody sits down while the last checks run.
+      deleted.add(tableId);
+      try {
+        // A hand still being saved could have had someone else in it: look again once it's written.
+        await Promise.allSettled([...(inFlight.get(tableId) ?? [])]);
+        const again = refuse(tables.get(tableId));
+        if (again) throw new StorageError('conflict', again);
+        if (!(await stillOnlyMine())) throw new StorageError('conflict', 'Someone else played at that table, so it stays. It has been left on your profile.');
+        if (!(await removeTable(tableId))) return;
+      } catch (e) {
+        deleted.delete(tableId);
+        throw e;
+      }
+      log(`practice table ${tableId} deleted by the only person who played at it`);
+      audit.deleted(tableId, 'player');
+    },
   };
   const confirmations = googleConfirmations(() => clock.now());
   accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
@@ -427,11 +466,14 @@ export function createApp(deps: AppDeps = {}) {
         stopBackup = () => {};
       });
   });
+  /** The web app served here, told to every tab that connects; null without a built app (development). */
+  let webApp: string | null = null;
   if (deps.webDist && existsSync(deps.webDist)) {
     const dist = deps.webDist;
     // index: false, so "/" also goes through the preview below.
     app.use(express.static(dist, { index: false }));
     const indexHtml = readFileSync(path.join(dist, 'index.html'), 'utf8');
+    webApp = webBuild(indexHtml);
     // Client-side routes (/t/:id, /tn/:id, ...) all load the app, with a link preview for chat apps.
     app.get('*', async (req, res, next) => {
       // A missing file (an old asset) is a 404, not the app.
@@ -807,6 +849,7 @@ export function createApp(deps: AppDeps = {}) {
     if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Poker Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
     if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
     if (/^\/transparency\/?$/.test(pathname)) return { title: 'Checking John · RSDP Poker Live!', description: 'What the site runs, the public record of every hand and admin action, and how to check them from outside the server.' };
+    if (/^\/privacy\/?$/.test(pathname)) return { title: 'Privacy · RSDP Poker Live!', description: 'What the site keeps about you, who can see it, how long it stays and how to delete it.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
@@ -835,6 +878,7 @@ export function createApp(deps: AppDeps = {}) {
     const socket = raw as Sock;
     const me = socket.data.playerId;
     socket.emit('session', socket.data.session);
+    if (webApp) socket.emit('build', webApp);
     if (!playerSockets.has(me)) playerSockets.set(me, new Set());
     playerSockets.get(me)!.add(socket);
 

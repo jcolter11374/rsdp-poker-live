@@ -30,6 +30,7 @@ import { LookDialog } from './components/LookDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
 import { useRunoutReveal } from './runout';
+import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
@@ -134,6 +135,15 @@ export function TablePage({ tableId }: { tableId: string }) {
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
+  // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
+  const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
+  const busy = view !== live || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
+  const busyNow = useRef(busy);
+  busyNow.current = busy;
+  useEffect(() => holdReloadWhile(() => busyNow.current), []);
+  useEffect(() => {
+    if (!busy) reloadIfStale();
+  }, [busy]);
 
   useEffect(() => {
     const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));

@@ -1,13 +1,22 @@
 {
   "releases": [
     {
-      "id": "2026-10-27-b",
+      "id": "2026-10-27-f",
       "date": "2026-10-27",
       "title": "Cash games in dollars and cents",
       "items": [
         { "title": "Play .25/.50, or any stakes you like", "detail": "Every cash game is now played for dollars and cents. Type the blinds as money on the home page (it starts at 0.25/0.50), and stacks, bets, the pot, buy-ins, the ledger and the log all show dollars. Tournaments still use chips.", "suggestedBy": "John" },
         { "title": "Casino chips", "detail": "The chips on the felt are a casino's: pennies, nickels and quarters, then white $1, red $5, green $25, black $100 and up." },
         { "title": "Your presets come along", "detail": "A preset or saved setup from before counts each old chip as a dollar, so a 1/2 game is still 1/2. Tables and records from before stay exactly as they were." }
+      ]
+    },
+    {
+      "id": "2026-10-27-c",
+      "date": "2026-10-27",
+      "title": "Tidy up your practice games",
+      "items": [
+        { "title": "Delete practice games", "detail": "Practice games on your profile now have a Delete button, and there's Delete all. A table you made that only you and your bots played at is erased for good. Any other practice table only leaves your profile, so their record stays. Real games can still only be hidden. The public record keeps each hand's fingerprint (no cards, no names) and notes that a practice table was deleted.", "suggestedBy": "John" },
+        { "title": "A practice graph you can reset", "detail": "Your profile has a second graph, Practice vs bots, showing how you're doing against the bots. Tap Reset to start it again from zero, say when you move up a bot level. Your games stay in your list. Practice still never counts on your real graph or the leaderboard.", "suggestedBy": "John" }
       ]
     },
     {

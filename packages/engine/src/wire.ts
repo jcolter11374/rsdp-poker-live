@@ -387,6 +387,8 @@ export interface ClientToServer {
 
 export interface ServerToClient {
   session: (session: { playerId: string; displayName: string; account: { username: string } | null; avatar?: string | null }) => void;
+  /** The web app this server hands out (its entry script), sent on connecting, so a tab still running an older one can reload. */
+  build: (id: string) => void;
   'table:state': (view: TableView) => void;
   /** A tournament moved you to another table (balancing or a broken table). */
   'table:moved': (input: { from: string; to: string }) => void;
