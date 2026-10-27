@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-27-a",
+      "date": "2026-10-27",
+      "fixes": [
+        "Tournament setup now lowers seats per table as soon as you pick a game that can't deal to that many (8 for stud games, 6 for Triple Draw and Badugi) and says why, instead of refusing when you press Create."
+      ]
+    },
+    {
       "id": "2026-10-26-m",
       "date": "2026-10-26",
       "fixes": [
