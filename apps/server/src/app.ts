@@ -7,7 +7,7 @@ import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
-import { applyAtNextHand, defaultSettings, mergePatches, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
+import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
@@ -840,7 +840,8 @@ export function createApp(deps: AppDeps = {}) {
       const state = tables.get(t[1])?.state ?? (await store.loadTable(t[1]));
       if (!state) return null;
       const { settings } = state;
-      return tablePreview(settings.table.name, [settings.game.gameId], `${settings.stakes.smallBlind}/${settings.stakes.bigBlind}`, settings.game.betting, spectatorsSeeCards(settings));
+      const { smallBlind, bigBlind, centsMode } = settings.stakes;
+      return tablePreview(settings.table.name, [settings.game.gameId], `${amountText(smallBlind, centsMode)}/${amountText(bigBlind, centsMode)}`, settings.game.betting, spectatorsSeeCards(settings));
     }
     if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/changelog\/?$/.test(pathname)) return { title: 'Changelog · RSDP Poker Live!', description: 'Every release of RSDP Poker Live! and the small fixes in it.' };
@@ -941,9 +942,8 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const patch = input?.settings ?? {};
-          // Tables made here are cash tables; tournaments make their own.
-          const base = defaultSettings('cash');
-          const settings = parseSettings(applyAtNextHand(base, mergePatches(patch, { table: { mode: 'cash' } })).settings);
+          // Tables made here are cash tables, played for dollars and cents; tournaments make their own.
+          const settings = newCashSettings(mergePatches(patch, { table: { mode: 'cash' } }));
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {

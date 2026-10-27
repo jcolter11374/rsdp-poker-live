@@ -3,11 +3,7 @@ import type { TableSettings } from '@rsdp/engine/settings';
 import { addPresetFile, presetSettings, savePreset, tablePresets, usePresets, type SavedPreset } from '../../presets';
 import { download } from '../../records';
 import { SavedSetupRow } from '../SavedSetupRow';
-
-/** Puts a preset's setup on a table, keeping the table's own name and mode. */
-export function withPreset(table: TableSettings, preset: TableSettings): TableSettings {
-  return { ...structuredClone(preset), table: { ...preset.table, name: table.table.name, mode: table.table.mode } };
-}
+import { withPreset } from './withPreset';
 
 const fileName = (name: string) => `${name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'table'}.rsdp-preset.json`;
 
