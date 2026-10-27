@@ -424,6 +424,14 @@ export const hiddenTables = pgTable(
   (t) => [primaryKey({ columns: [t.playerId, t.tableId] }), index('hidden_tables_table_idx').on(t.tableId)],
 );
 
+/** When a player last reset their practice graph: only practice hands dealt after it count there. */
+export const practiceResets = pgTable('practice_resets', {
+  playerId: text('player_id')
+    .primaryKey()
+    .references(() => players.id, { onDelete: 'cascade' }),
+  resetAt: at('reset_at').notNull().defaultNow(),
+});
+
 // ---------------------------------------------------------------- saved setups
 
 export const SETUP_KINDS = ['table', 'tournament'] as const;

@@ -2,7 +2,8 @@
 
 import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { hands, hiddenTables, tables, tableSnapshots, tournaments } from './schema';
+import { queryRows } from './client';
+import { hands, hiddenTables, practiceResets, tables, tableSnapshots, tournaments } from './schema';
 
 export interface TableHistoryRow {
   tableId: string;
@@ -118,6 +119,37 @@ export async function setTableHidden(db: Db, playerId: string, playerIds: string
   if (hidden) await db.insert(hiddenTables).values({ playerId, tableId }).onConflictDoNothing();
   else await db.delete(hiddenTables).where(and(eq(hiddenTables.tableId, tableId), inArray(hiddenTables.playerId, [...new Set([playerId, ...playerIds])])));
   return true;
+}
+
+/**
+ * Who played at a cash table, for deleting a practice game from a profile:
+ * whether it was practice (see realGameTables), whether any of `playerIds` was
+ * dealt in there, and whether any other person (not a bot) ever was. Null when
+ * there is no such cash table.
+ */
+export async function practiceTableUse(db: Db, tableId: string, playerIds: string[]): Promise<{ practice: boolean; mine: boolean; others: boolean } | null> {
+  const [table] = await db.select({ tournamentId: tables.tournamentId, mode: tables.mode }).from(tables).where(eq(tables.id, tableId));
+  if (!table || table.tournamentId || table.mode === 'tournament') return null;
+  const dealt = await queryRows<{ player_id: string }>(
+    db,
+    sql`select distinct s ->> 'playerId' as player_id from ${hands} h, jsonb_array_elements(h.header -> 'seats') s where h.table_id = ${tableId}`,
+  );
+  const mine = new Set(playerIds);
+  const people = dealt.map((r) => r.player_id).filter((id) => !id.startsWith('bot-'));
+  const real = await realGameTables(db, [tableId]);
+  return { practice: !real.has(tableId), mine: people.some((id) => mine.has(id)), others: people.some((id) => !mine.has(id)) };
+}
+
+/** When the practice graph was last reset on any of `playerIds` (an account's devices), or null if never. */
+export async function practiceResetAt(db: Db, playerIds: string[]): Promise<Date | null> {
+  if (playerIds.length === 0) return null;
+  const rows = await db.select({ at: practiceResets.resetAt }).from(practiceResets).where(inArray(practiceResets.playerId, playerIds));
+  return rows.reduce<Date | null>((a, r) => (!a || r.at > a ? r.at : a), null);
+}
+
+/** Starts the practice graph again from `now`. */
+export async function resetPracticeGraph(db: Db, playerId: string, now: Date = new Date()): Promise<void> {
+  await db.insert(practiceResets).values({ playerId, resetAt: now }).onConflictDoUpdate({ target: practiceResets.playerId, set: { resetAt: now } });
 }
 
 /** Rows of `tournaments` that any of `playerIds` hosted or entered, newest first. */

@@ -6,7 +6,8 @@
 
 import express from 'express';
 import { standings, type TournamentState } from '@rsdp/tournament';
-import { leaderboard, profitSessions, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
+import { leaderboard, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
+import { StorageError } from './db/errors';
 import {
   adoptGuest,
   checkPassword,
@@ -50,6 +51,11 @@ export interface AccountHooks {
   signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
   /** How many people have this table open right now (0 when nobody is at it). */
   peopleAt?(tableId: string): number;
+  /**
+   * Deletes a practice table that only `playerIds` (one person's devices) and bots played at, for good. Throws a
+   * StorageError 'conflict' when it can't go now (someone is at it). Without it, practice games are hidden instead.
+   */
+  deletePracticeTable?(tableId: string, playerIds: string[]): Promise<void>;
 }
 
 const HTTP_STATUS: Partial<Record<IdentityError['code'], number>> = {
@@ -311,6 +317,73 @@ export function accountRoutes(
       const found = await setTableHidden(db, who.player.id, await myPlayerIds(who, db), tableId, req.body?.hidden !== false);
       if (!found) return void res.status(404).json({ error: 'No such table.' });
       res.json({ ok: true });
+    }),
+  );
+
+  // My practice results (bots, or on my own) since I last reset the practice graph. Never mixed into the real graph.
+  app.get(
+    '/api/account/practice-graph',
+    route(async (req, res, db) => {
+      if (!profileLoads(clientAddress(req))) return void tooMany(res);
+      const who = await identify(req, db);
+      const ids = await myPlayerIds(who, db);
+      const since = await practiceResetAt(db, ids);
+      const sessions = await practiceSessions(db, ids, since);
+      res.json({ since: since?.toISOString() ?? null, sessions: sessions.map((x) => ({ ...x, at: x.at.toISOString() })) });
+    }),
+  );
+
+  // Start the practice graph again from now. The games stay in my list; only the graph forgets them.
+  app.post(
+    '/api/account/practice-graph/reset',
+    json,
+    route(async (req, res, db) => {
+      const who = await identify(req, db);
+      await resetPracticeGraph(db, who.player.id, new Date(now()));
+      res.json({ ok: true });
+    }),
+  );
+
+  // Delete practice games from my profile: one ({ tableId }) or all of them ({ all: true }). A table only I and bots
+  // played at is deleted for good; one someone else also played at is only hidden from my profile, so their record
+  // stays. Real games are never deleted here (hide them instead). The public record keeps the hands' fingerprints
+  // and notes the deletion, as when a host deletes a table.
+  app.post(
+    '/api/account/tables/delete-practice',
+    json,
+    route(async (req, res, db) => {
+      const who = await identify(req, db);
+      const ids = await myPlayerIds(who, db);
+      const all = req.body?.all === true;
+      const tableId = str(req.body?.tableId);
+      if (!all && !/^[\w-]{4,40}$/.test(tableId)) return void res.status(400).json({ error: 'No such table.' });
+      const targets = all ? (await tableHistory(db, ids, 500)).filter((t) => t.practice).map((t) => t.tableId) : [tableId];
+      const done = { deleted: 0, hidden: 0, busy: 0 };
+      for (const id of targets) {
+        const use = await practiceTableUse(db, id, ids);
+        if (!use || !use.mine) {
+          if (!all) return void res.status(404).json({ error: 'No such table.' });
+          continue;
+        }
+        if (!use.practice) {
+          if (!all) return void res.status(409).json({ error: "That was a real game, so it can't be deleted. You can hide it from your profile instead." });
+          continue;
+        }
+        if (use.others || !hooks.deletePracticeTable) {
+          await setTableHidden(db, who.player.id, ids, id, true);
+          done.hidden++;
+          continue;
+        }
+        try {
+          await hooks.deletePracticeTable(id, ids);
+          done.deleted++;
+        } catch (e) {
+          if (!(e instanceof StorageError && e.code === 'conflict')) throw e;
+          if (!all) return void res.status(409).json({ error: e.message });
+          done.busy++;
+        }
+      }
+      res.json({ ok: true, ...done });
     }),
   );
 

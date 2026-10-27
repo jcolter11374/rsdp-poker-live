@@ -290,6 +290,18 @@ export function createApp(deps: AppDeps = {}) {
       for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
+    deletePracticeTable: async (tableId, playerIds) => {
+      const mine = new Set(playerIds);
+      const rt = tables.get(tableId);
+      if ([...(watchers.get(tableId) ?? [])].length > 0) throw new StorageError('conflict', 'Someone has that table open. Leave it first, then delete it.');
+      if (rt?.state.realGame) throw new StorageError('conflict', "That was a real game, so it can't be deleted. You can hide it from your profile instead.");
+      if (rt?.state.seats.some((x) => x && !mine.has(x.playerId) && !rt.state.bots?.[x.playerId])) {
+        throw new StorageError('conflict', 'Someone else is sitting at that table, so it stays for now.');
+      }
+      if (!(await removeTable(tableId))) return;
+      log(`practice table ${tableId} deleted by the only person who played at it`);
+      audit.deleted(tableId, 'player');
+    },
   };
   const confirmations = googleConfirmations(() => clock.now());
   accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
