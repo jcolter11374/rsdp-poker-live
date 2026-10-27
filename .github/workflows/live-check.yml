@@ -5,7 +5,7 @@ name: Live check
 # test (e2e/smoke.mjs) is for CI and local servers only.
 on:
   push:
-    branches: [claude/project-thread-5fh1pm]
+    branches: [claude/project-thread-tfvep7]
 
 permissions:
   contents: read
@@ -28,3 +28,11 @@ jobs:
             code=$(curl -s -o /dev/null -w '%{http_code}' "$site/$path")
             echo "$path $code"; [ "$code" = 404 ] || exit 1
           done
+          # This release's changelog entry and seat cap note are in the served bundle.
+          js=$(curl -sf "$site/" | grep -o '/assets/[^"]*\.js' | head -1)
+          echo "bundle $js"
+          bundle=$(curl -sf "$site$js")
+          for needle in 2026-10-27-a "Seats per table lowered to"; do
+            echo "$bundle" | grep -q "$needle" || { echo "missing $needle"; exit 1; }
+          done
+          echo ok
