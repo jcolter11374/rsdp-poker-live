@@ -33,33 +33,36 @@ Last updated: 27 October 2026. Every change to this page is in its
 | --- | --- | --- |
 | A random player id for your browser, and a secret that proves it's you | Made the first time you open the site | Only the site. The secret is stored only as a fingerprint (a SHA-256 hash). |
 | The name you use at tables, when you were first and last seen | You type the name | Everyone at your tables, and on the leaderboard |
-| Your picture | You pick one from the library or upload a small image | Everyone at your tables |
+| Your picture | You pick one from the library or upload a small image | Everyone at your tables. The picture's address isn't secret, and browsers may keep a copy for a while. |
 | Username and scrambled password | You, when you make an account | Only the site. The password is scrambled with scrypt and can't be read back. |
 | Google's id for you (a long number) | Google, if you sign in with Google | Only the site. Google also shares your name, used once to make your starting username and table name. No email, no contacts, nothing else. |
 | Signed-in sessions (30 days) and one-time password reset codes | Made when you sign in or John gives you a code | Only the site, stored as fingerprints |
 | Hands: who was dealt in, the cards, every action, the board, who won | The game | Players at that table see what poker rules allow them to see. Shown and mucked cards follow the table's settings. |
 | Table chat (the last 200 messages of each table) and the table log | You and the game | Everyone at that table, and spectators if the host allows them |
+| Tournament lobby chat and log | You and the tournament | Everyone who opens that tournament |
 | Each table's ledger: buy-ins, rebuys, cash-outs | The game | Everyone at that table. Totals from real games also feed the public leaderboard and your profit graph. |
 | Private notes and colour tags you keep on other players | You | Only you (and John, who can read the database) |
 | Saved table presets and tournament structures | You, when signed in. Guests keep theirs in their own browser. | Only you |
 | Tables you hid, practice games you deleted, when you reset your practice graph | You | Only you |
-| Shared hand links | You, when you press Share on a hand | Anyone with the link, until you delete it |
+| Shared hand links | You, when you press Share on a hand | Anyone with the link, until you delete it or your account |
 | Roadmap suggestions | You, with the name you type | Everyone, on the [roadmap](/roadmap) |
 
 ## The public record
 
 To make cheating by John easy to spot, the site keeps a public, append-only
-record of fingerprints of every hand and ledger, admin actions and server
-starts, and copies it to GitHub every hour. It holds **no names, no cards and
-no table links**: a table appears only as a fingerprint that someone who
-already has the table's link can match up. See [Checking John](/transparency)
+record of fingerprints of every hand, admin actions and server starts, and
+copies it to GitHub every hour. It also lists each player's buy-ins and
+cash-outs at each table, as amounts. It holds **no names, no cards and no
+table links**: a table and each player at it appear only as fingerprints that
+someone who already has the table's link can match up. See [Checking John](/transparency)
 for how it works.
 
 ## Your browser
 
 - The site keeps a few things in your browser's local storage: your guest id
-  and secret, your signed-in session, your table name, sound and volume,
-  players you muted, tips you've dismissed, guest presets, and what your
+  and secret, your signed-in session, your table name, settings such as
+  sound, volume and alerts, players you muted, tips you've dismissed, guest
+  presets, tournaments you made, and what your
   browser saw during hands (so it can check the dealing later). Clearing the
   site's data in your browser removes them, and makes you a new guest.
 - The only cookie is a short one (10 minutes) set while you sign in with
@@ -72,8 +75,8 @@ for how it works.
 
 - **Fly.io** hosts the site and its database in the USA (Virginia). Like any web host it
   sees your IP address when you connect. The site uses IP addresses only in
-  memory, for a few minutes, to slow down people guessing passwords or the
-  admin key, and doesn't save them. The server's own logs record errors, not
+  memory, for a few minutes, to slow down people guessing passwords or
+  flooding the site with requests, and doesn't save them. The server's own logs record errors, not
   visitors, and Fly keeps them only for a short time.
 - **GitHub** holds the code, the hourly copy of the public record and the
   nightly backups (below).
@@ -100,14 +103,15 @@ backup also shows up on [Checking John](/transparency).
 ## Deleting your data
 
 - **With an account:** open [your profile](/profile) and use **Delete account**.
-  That removes your username, password, Google link, sessions, name, picture,
-  notes, saved setups and hidden tables straight away. Hands you already
+  That removes your username, password, Google link, sessions, browser
+  secrets, name, picture, notes, saved setups, hidden tables, practice graph
+  reset and shared hand links straight away. Hands you already
   played stay in other players' history and ledgers under the name you used
   at the time, because they are part of their games too. Copies in backups
   disappear as the backups expire, within 90 days.
 - **As a guest:** clear the site's data in your browser to start fresh. To
   have anything removed from the server, ask John.
-- **Anything else** (a chat message, a name in an old hand, a suggestion): ask
+- **Anything else** (a chat message, a name in an old hand or tournament, a suggestion): ask
   John. He'll tell you honestly what can be removed and what can't, for
   example the public record, which is built so that nothing in it can be
   changed.
