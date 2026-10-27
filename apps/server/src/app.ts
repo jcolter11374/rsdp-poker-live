@@ -173,6 +173,15 @@ const AVATAR_BURST = 4;
 const AVATAR_WINDOW_MS = 30_000;
 const NAME_MAX = 20;
 
+/**
+ * Which build of the web app a page is: the entry script it loads, whose name
+ * Vite hashes from the code. A new release (a restart, so every tab
+ * reconnects) changes it.
+ */
+export function webBuild(indexHtml: string): string | null {
+  return /<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]+)"/.exec(indexHtml)?.[1] ?? null;
+}
+
 /** Runs a handler and acks the result; expected failures become an error ack, not a crash. */
 async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | void | Promise<T | void>, log: AppDeps['log']) {
   try {
@@ -427,11 +436,14 @@ export function createApp(deps: AppDeps = {}) {
         stopBackup = () => {};
       });
   });
+  /** The web app served here, told to every tab that connects; null without a built app (development). */
+  let webApp: string | null = null;
   if (deps.webDist && existsSync(deps.webDist)) {
     const dist = deps.webDist;
     // index: false, so "/" also goes through the preview below.
     app.use(express.static(dist, { index: false }));
     const indexHtml = readFileSync(path.join(dist, 'index.html'), 'utf8');
+    webApp = webBuild(indexHtml);
     // Client-side routes (/t/:id, /tn/:id, ...) all load the app, with a link preview for chat apps.
     app.get('*', async (req, res, next) => {
       // A missing file (an old asset) is a 404, not the app.
@@ -834,6 +846,7 @@ export function createApp(deps: AppDeps = {}) {
     const socket = raw as Sock;
     const me = socket.data.playerId;
     socket.emit('session', socket.data.session);
+    if (webApp) socket.emit('build', webApp);
     if (!playerSockets.has(me)) playerSockets.set(me, new Set());
     playerSockets.get(me)!.add(socket);
 
