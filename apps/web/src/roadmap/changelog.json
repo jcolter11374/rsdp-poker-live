@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-g",
+      "date": "2026-10-29",
+      "fixes": [
+        "Seats no longer shift round the table when your turn comes or a new hand starts, mostly noticeable on phones.",
+        "A cleaner felt: no printed betting line, a simpler crest, and empty seats without dashed outlines.",
+        "Chips sound like clay chips: short dry clacks that settle, instead of little rings."
+      ]
+    },
+    {
       "id": "2026-10-29-e",
       "date": "2026-10-29",
       "fixes": [

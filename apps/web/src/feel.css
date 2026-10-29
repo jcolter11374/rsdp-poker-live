@@ -37,18 +37,6 @@
       0 0 40px color-mix(in srgb, var(--go) 35%, transparent),
       0 30px 60px rgba(0, 0, 0, 0.6);
   }
-  /* The betting line, printed on the cloth. */
-  .felt::before {
-    content: '';
-    position: absolute;
-    inset: 13% 9%;
-    border-radius: 999px;
-    border: 1.5px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
-    pointer-events: none;
-  }
-  .felt.compact::before { inset: 9% 12%; }
-
   /* Nameplates: a soft top light, a bevel, a shadow on the cloth. */
   .nameplate {
     background: linear-gradient(180deg, #343a43 0%, #262b32 55%, #1f2329 100%) !important;
@@ -99,7 +87,7 @@
     box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 0 0 1.5px rgba(0, 0, 0, 0.35), 0 3px 6px rgba(0, 0, 0, 0.55);
   }
   /* Empty seats read as places on the cloth, not boxes. */
-  .seat.empty button, .seat.empty span { background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35); }
+  .seat.empty button, .seat.empty span { background: rgba(0, 0, 0, 0.16); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); }
   /* The action bar sits on the same lit surface. */
   .action-bar:not(.idle) { background: linear-gradient(180deg, #23282e, #1b1f24); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35); }
   .action-bar .buttons button { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 0 rgba(0, 0, 0, 0.35); }
