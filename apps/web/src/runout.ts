@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RUNOUT_SETTLE_MS, RUNOUT_STEP_MS, runoutSteps } from '@rsdp/engine/core';
+import { RUNOUT_SETTLE_MS, runoutStepMs, runoutSteps } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 
 interface Reveal {
   handNumber: number;
   steps: number;
+  /** The pause before each street (run it twice is slower). */
+  stepMs: number;
   /** The table just before the runout (Frozen) comes from it. */
   before: Frozen;
 }
@@ -50,6 +52,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
       setReveal({
         handNumber: hand.handNumber,
         steps,
+        stepMs: runoutStepMs(hand.events),
         before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit },
       });
       setShown(0);
@@ -59,7 +62,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
   useEffect(() => {
     if (!reveal) return;
     if (shown > reveal.steps) return setReveal(null);
-    const wait = shown === reveal.steps ? RUNOUT_SETTLE_MS : RUNOUT_STEP_MS;
+    const wait = shown === reveal.steps ? RUNOUT_SETTLE_MS : reveal.stepMs;
     const t = setTimeout(() => setShown((n) => n + 1), wait);
     return () => clearTimeout(t);
   }, [reveal, shown]);
