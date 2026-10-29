@@ -27,6 +27,22 @@ export function useNow(active: boolean, ms = 200) {
   return now;
 }
 
+/**
+ * The acting seat's clock: a line that drains to empty at the deadline. Keyed on the turn, so where it
+ * starts and how long it runs are fixed when it appears; changing them on every tick would make it jump.
+ */
+function TurnLine({ fraction, msLeft, paused, bank, low }: { fraction: number; msLeft: number; paused: boolean; bank: boolean; low: boolean }) {
+  const [start] = useState(() => ({ fraction, ms: Math.max(0, msLeft) }));
+  return (
+    <div className={`timer ${bank ? 'bank' : ''}`}>
+      <div
+        className={`timer-fill ${low ? 'low' : ''}`}
+        style={{ '--from': start.fraction, animationDuration: `${start.ms}ms`, animationPlayState: paused ? 'paused' : 'running' } as CSSProperties}
+      />
+    </div>
+  );
+}
+
 /** The element's size, kept up to date as it changes. */
 function useSize(ref: RefObject<HTMLElement>) {
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -463,9 +479,14 @@ export function Table({
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
                 {shown && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
-                  <div className={`timer ${view.turn?.usingBank ? 'bank' : ''}`}>
-                    <div className={`timer-fill ${secondsLeft! <= 5 ? 'low' : ''}`} style={{ width: `${timeFraction * 100}%` }} />
-                  </div>
+                  <TurnLine
+                    key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}`}
+                    fraction={timeFraction}
+                    msLeft={view.turn!.deadline! - now}
+                    paused={view.paused}
+                    bank={!!view.turn?.usingBank}
+                    low={secondsLeft! <= 5}
+                  />
                 )}
                 {timeFraction !== null && (secondsLeft! <= 10 || view.turn?.usingBank) && (
                   <div className={`status ${view.turn?.usingBank ? 'bank-text' : 'low-text'}`}>

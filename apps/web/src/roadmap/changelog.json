@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-f",
+      "date": "2026-10-29",
+      "fixes": [
+        "The turn clock is a calm line along the bottom of the acting player's name that glides down, instead of a ring round it that moved in little jumps."
+      ]
+    },
+    {
       "id": "2026-10-29-e",
       "date": "2026-10-29",
       "fixes": [
