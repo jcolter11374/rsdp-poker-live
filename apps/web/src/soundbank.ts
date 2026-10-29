@@ -150,7 +150,7 @@ function chip(m: Mix, at: number, gain: number, rand: Rand, tone = 1) {
 function chips(m: Mix, at: number, count: number, spread: number, gain: number, rand: Rand, tone = 1) {
   m.thump(at, 120 * tone, 0.03, gain * 0.35);
   m.noise(at, 0.02, gain * 0.25, 1400, 700, 0.7, rand, 0.001);
-  // Gaps shrink by a fixed ratio; the first gap is set so the whole run fills `spread`.
+  // Gaps shrink by a fixed ratio; the first gap is set so the whole run fills about `spread`.
   const ratio = 0.72;
   let gap = (spread * (1 - ratio)) / (1 - Math.pow(ratio, Math.max(1, count - 1)));
   let t = at;

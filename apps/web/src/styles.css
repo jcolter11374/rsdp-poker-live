@@ -802,7 +802,7 @@ dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
 .sizing .slider .unit { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
-/* The area under the table holds its height through a hand (see Dock). On phones the spare room sits above the action bar. */
+/* The area under the table holds its height for the session (see Dock). On phones the spare room sits above the action bar. */
 .dock, .dock-inner { display: flex; flex-direction: column; gap: inherit; }
 .portrait .dock { justify-content: flex-end; }
 /* Hand extras and seat options share one row, so the area under the table stays short. */
@@ -837,7 +837,7 @@ dl.shortcuts dd { margin: 0; }
 .bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
-.dock.seated { min-height: max(190px, var(--held, 0px)); }
+.dock.seated { min-height: max(218px, var(--held, 0px)); }
 .portrait .dock.seated { min-height: max(244px, var(--held, 0px)); }
 /* Your own seat draws over empty-seat markers next to it. */
 .seat.me { z-index: 3; }
@@ -846,7 +846,7 @@ dl.shortcuts dd { margin: 0; }
   .table-page:not(.portrait) .action-bar { padding: 8px 12px; gap: 6px; }
   .table-page:not(.portrait) .action-bar .buttons button { padding: 10px 12px; }
   .table-page:not(.portrait) .felt-area > .felt { margin: 72px clamp(110px, 9vw, 175px) 30px; }
-  .dock.seated { min-height: max(166px, var(--held, 0px)); }
+  .dock.seated { min-height: max(186px, var(--held, 0px)); }
 }
 @media (max-height: 760px) {
   .portrait .action-bar { padding-top: 8px; gap: 6px; }
