@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { engine, RUNOUT_SETTLE_MS, RUNOUT_STEP_MS, runoutMs, runoutSteps } from '../../src/core';
+import { engine, RUN_TWICE_STEP_MS, RUNOUT_SETTLE_MS, RUNOUT_STEP_MS, runoutMs, runoutSteps } from '../../src/core';
 import { start } from './harness';
 
 const { act } = engine;
@@ -19,6 +19,8 @@ describe('runout steps', () => {
     act(s, 0, { type: 'raise', to: 100 });
     act(s, 1, { type: 'call' });
     expect(shape(s)).toEqual([['0.0:3'], ['0.0:1'], ['0.0:1'], ['1.0:3'], ['1.0:1'], ['1.0:1']]);
+    // Run it twice is dealt slower.
+    expect(runoutMs(s.events)).toBe(6 * RUN_TWICE_STEP_MS + RUNOUT_SETTLE_MS);
   });
 
   it('deals every board of a double board together, street by street', () => {
