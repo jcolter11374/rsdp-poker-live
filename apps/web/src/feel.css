@@ -145,8 +145,9 @@
       inset: -4px;
       border-radius: 15px;
       padding: 4px;
-      /* Starts at 3 o'clock, clear of the cards tucked into the left of the plate; the time used is dark, so what's left stands out. */
-      background: conic-gradient(from 90deg, var(--feel-ring, #5ad08a) calc(var(--t, 1) * 360deg), rgba(0, 0, 0, 0.55) 0);
+      /* Starts at 3 o'clock, clear of the cards tucked into the left of the plate; the time used is dark, so what's left stands out.
+         The dark part grows from the start, so the edge sweeps clockwise like a clock hand. */
+      background: conic-gradient(from 90deg, rgba(0, 0, 0, 0.55) calc((1 - var(--t, 1)) * 360deg), var(--feel-ring, #5ad08a) 0);
       -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite: xor;
       mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
