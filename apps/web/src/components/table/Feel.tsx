@@ -66,9 +66,6 @@ export function FeltEmblem() {
         <path id="emblem-top" d="M 30 100 A 70 70 0 0 1 170 100" />
         <path id="emblem-bottom" d="M 22 100 A 78 78 0 0 0 178 100" />
       </defs>
-      <circle cx="100" cy="100" r="92" fill="none" stroke="currentColor" strokeWidth="2.5" />
-      <circle cx="100" cy="100" r="84" fill="none" stroke="currentColor" strokeWidth="1" />
-      <circle cx="100" cy="100" r="52" fill="none" stroke="currentColor" strokeWidth="1" />
       <text className="emblem-ring" fontSize="15" letterSpacing="5">
         <textPath href="#emblem-top" startOffset="50%" textAnchor="middle">
           RSDP POKER
@@ -79,11 +76,6 @@ export function FeltEmblem() {
           LIVE
         </textPath>
       </text>
-      {/* Suit pips at the four quarters of the ring. */}
-      <g fill="currentColor">
-        <path transform="translate(8 92) scale(0.66)" d="M12 2C9.2 5.6 4 8.8 4 13.2 4 15.9 6.1 18 8.7 18c1.3 0 2.5-.5 3.1-1.4-.2 2-1 3.6-2.6 4.6h5.6c-1.6-1-2.4-2.6-2.6-4.6.6.9 1.8 1.4 3.1 1.4 2.6 0 4.7-2.1 4.7-4.8C20 8.8 14.8 5.6 12 2z" />
-        <path transform="translate(176 92) scale(0.66)" d="M12 21.2S3 15.4 3 9.3A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 9 2.7c0 6.1-9 11.9-9 11.9z" />
-      </g>
       <text x="100" y="117" textAnchor="middle" className="emblem-mark" fontSize="50">
         R!
       </text>

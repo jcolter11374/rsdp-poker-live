@@ -601,7 +601,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           )}
           <Dock
-            reset={`${portrait}:${view.me.seat}:${view.hand?.handNumber}`}
+            reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
