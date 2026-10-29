@@ -214,3 +214,55 @@ export function clock(ms: number): string {
   const s = total % 60;
   return `${h > 0 ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(s).padStart(2, '0')}`;
 }
+
+/**
+ * The smallest bet step at this table: the small blind (half the big blind, or half the small bet, where there is no
+ * small blind). Bets made with the slider and the pot buttons are multiples of it, so a .25/.50 game bets in quarters,
+ * never 18.61.
+ */
+export function betUnit(stakes: Pick<Stakes, 'smallBlind' | 'bigBlind' | 'smallBet'>): number {
+  const base = stakes.smallBlind || Math.floor(stakes.bigBlind / 2) || Math.floor(stakes.smallBet / 2);
+  return Math.max(1, base);
+}
+
+/** Round step sizes: 1, 2, 2.5, 5 and 10 times the powers of ten (a quarter, a dollar, $5 ... in cents). */
+function roundSteps(upTo: number): number[] {
+  const out: number[] = [];
+  for (let p = 1; p <= upTo * 10; p *= 10) for (const m of [1, 2, 2.5, 5]) if (Number.isInteger(p * m)) out.push(p * m);
+  return out;
+}
+
+/** About this many stops at most, so a finger or mouse moving a few pixels doesn't jump the amount. */
+export const SLIDER_STOPS = 60;
+
+/**
+ * Where the bet slider can stop, from the least you may bet to the most: the minimum, then round amounts a whole
+ * number of steps apart, then the maximum. The step is the table's bet unit, or a round multiple of it once the
+ * range is wide (a $50 stack at .25/.50 moves a dollar at a time), so there are never more than about SLIDER_STOPS.
+ */
+export function betStops(minTo: number, maxTo: number, unit: number): number[] {
+  if (maxTo <= minTo) return [minTo];
+  const range = maxTo - minTo;
+  // A round amount that is a whole number of units if there is one (a quarter, a dollar), else a round number of units.
+  const fits = (s: number) => s >= unit && range / s <= SLIDER_STOPS;
+  const step =
+    roundSteps(range).find((s) => s % unit === 0 && fits(s)) ??
+    roundSteps(range / unit)
+      .map((k) => k * unit)
+      .find((s) => Number.isInteger(s) && fits(s)) ??
+    unit;
+  const stops = [minTo];
+  for (let x = (Math.floor(minTo / step) + 1) * step; x < maxTo; x += step) stops.push(x);
+  stops.push(maxTo);
+  return stops;
+}
+
+/** The stop nearest an amount (an amount typed in the box may sit between two). */
+export function nearestStop(stops: number[], amount: number): number {
+  let best = 0;
+  for (let i = 1; i < stops.length; i++) if (Math.abs(stops[i] - amount) < Math.abs(stops[best] - amount)) best = i;
+  return best;
+}
+
+/** An amount rounded to the nearest whole bet unit (for the pot buttons). */
+export const roundToUnit = (amount: number, unit: number) => Math.round(amount / unit) * unit;

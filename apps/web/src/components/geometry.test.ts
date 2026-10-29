@@ -42,10 +42,32 @@ describe('seatFractions', () => {
     expect(sparse[1]).toBe(0.25);
     const gaps = [4, 5, 6, 7, 8, 9, 10].map((s, i, a) => (i === 0 ? sparse[4] - 0.75 : s === 10 ? 1 - sparse[9] : sparse[s] - sparse[a[i - 1]]));
     expect(Math.min(...gaps)).toBeGreaterThanOrEqual(0.03 - 1e-9);
-    // Eight players and two empty seats side by side: too tight, so seats go back to even spacing.
-    expect(seatFractions(seats(10, [0, 1, 2, 3, 4, 5, 8, 9]), 0, { clear: 0.04, minGap: 0.045 })).toEqual(
-      Array.from({ length: 10 }, (_, s) => s / 10),
-    );
+    // Eight players and two empty seats side by side: too tight to space the players evenly, so that stretch grows just
+    // enough and the rest share what is left, everything still apart and in order.
+    const tight = seatFractions(seats(10, [0, 1, 2, 3, 4, 5, 8, 9]), 0, { clear: 0.04, minGap: 0.045 });
+    expect(tight[0]).toBe(0);
+    expect(tight).toEqual([...tight].sort((a, b) => a - b));
+    expect(tight[7] - tight[6]).toBeGreaterThanOrEqual(0.045 - 1e-9);
+    expect(tight[6] - tight[5]).toBeGreaterThanOrEqual(0.04 - 1e-9);
+  });
+
+  it('keeps two players at neighbouring seats far apart when the empty seats can only fit on one side', () => {
+    const f = seatFractions(seats(10, [0, 1]), 0, { clear: 0.12, minGap: 0.07 });
+    // The eight empty seats need 0.73 of the way round, so the other player gets the rest, not a tenth.
+    expect(f[1]).toBeCloseTo(0.27);
+    const order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((s) => f[s]);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(1 - f[9]).toBeGreaterThanOrEqual(0.12 - 1e-9);
+  });
+
+  it('spreads players as evenly as it can when one stretch of empty seats needs more room (a phone, five empty in a row)', () => {
+    const f = seatFractions(seats(9, [0, 1, 2, 3]), 0, { clear: 0.06, minGap: 0.035 });
+    const gaps = [1, 2, 3].map((s) => f[s] - f[s - 1]);
+    expect(Math.min(...gaps)).toBeGreaterThan(0.06 * 1.5);
+    // Not bunched at even ninths, as they would be with even spacing.
+    expect(f[3]).toBeGreaterThan(3 / 9 + 0.05);
+    const order = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((s) => f[s]);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it('falls back to even spacing when nobody is seated', () => {

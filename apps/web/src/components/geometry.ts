@@ -60,8 +60,10 @@ export function stadiumPoint(t: number, w: number, h: number): Point {
  *
  * `clear` is how far an empty seat must stay from a player's nameplate and
  * `minGap` how far empty seats stay from each other, both as fractions of
- * the way round. When some gap is too small for its empty seats (a nearly
- * full table), every seat goes back to even spacing.
+ * the way round. When some gap is too small for its empty seats (five empty
+ * seats in a row on a phone), that gap grows just enough and the others share
+ * what is left equally, so players stay as evenly spread as they can. When
+ * nothing fits (a nearly full table), every seat goes back to even spacing.
  */
 export function seatFractions(taken: readonly boolean[], anchor: number, { clear = 0, minGap = 0 } = {}): number[] {
   const n = taken.length;
@@ -73,22 +75,34 @@ export function seatFractions(taken: readonly boolean[], anchor: number, { clear
   if (players.length === 0) return even;
   if (players[0] !== 0) players.unshift(0);
   const m = players.length;
-  const span = 1 / m;
+  const emptiesAfter = players.map((from, i) => (i + 1 < m ? players[i + 1] : n) - from - 1);
+  // The least room each player's stretch (the player and the empty seats after it) needs.
+  const least = emptiesAfter.map((e) => (e === 0 ? Math.max(2 * clear - minGap, minGap) : Math.max(2 * clear + (e - 1) * minGap, (e + 1) * minGap)));
+  if (least.reduce((a, b) => a + b, 0) > 1 + 1e-9) return even;
+  // Every stretch gets the same share, or the least it needs if that's more: the share is found by halving.
+  let lo = least.every((b) => b <= 1 / m) ? 1 / m : 0;
+  let hi = lo || 1;
+  for (let k = 0; lo < hi && k < 50; k++) {
+    const mid = (lo + hi) / 2;
+    if (least.reduce((a, b) => a + Math.max(b, mid), 0) > 1) hi = mid;
+    else lo = mid;
+  }
+  const spans = least.map((b) => Math.max(b, lo));
   const out = new Array<number>(n).fill(0);
+  let at = 0;
   for (let i = 0; i < m; i++) {
     const from = players[i];
-    const empties = (i + 1 < m ? players[i + 1] : n) - from - 1;
-    out[(anchor + from) % n] = i * span;
-    if (empties === 0) continue;
-    if (span < 2 * clear + (empties - 1) * minGap || span < (empties + 1) * minGap) return even;
-    if (empties === 1) {
-      out[(anchor + from + 1) % n] = i * span + span / 2;
-      continue;
+    const empties = emptiesAfter[i];
+    const span = spans[i];
+    out[(anchor + from) % n] = at;
+    if (empties === 1) out[(anchor + from + 1) % n] = at + span / 2;
+    else if (empties > 1) {
+      // Evenly split, unless that would put the end ones too close to the players.
+      const edge = Math.max(span / (empties + 1), clear);
+      const room = span - 2 * edge;
+      for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = at + edge + (room * (j - 1)) / (empties - 1);
     }
-    // Evenly split, unless that would put the end ones too close to the players.
-    const edge = Math.max(span / (empties + 1), clear);
-    const room = span - 2 * edge;
-    for (let j = 1; j <= empties; j++) out[(anchor + from + j) % n] = i * span + edge + (room * (j - 1)) / (empties - 1);
+    at += span;
   }
   return out;
 }

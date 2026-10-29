@@ -3,7 +3,7 @@ import type { Action } from '@rsdp/engine/core';
 import type { CoachTip, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import './action-bar.css';
-import { bbExactFormat, betFromInput, betToInput, type BetUnit, type Fmt } from '../format';
+import { bbExactFormat, betFromInput, betStops, betToInput, betUnit, nearestStop, roundToUnit, type BetUnit, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { tipText } from '../coach';
 import { usePrefs } from '../prefs';
@@ -445,8 +445,15 @@ export function ActionBar({
   const toCall = hand.currentBet - me.bet;
   const allInTo = me.stack + me.bet;
   const clamp = (x: number) => Math.max(legal.minTo, Math.min(legal.maxTo, Math.floor(x)));
-  // A pot-sized raise: call first, then raise by the size of the pot after the call.
-  const potRaise = (fraction: number) => clamp(hand.currentBet + (hand.potTotal + toCall) * fraction);
+  // The slider stops on round amounts (quarters at .25/.50, whole dollars once the stack is deep), never 18.61.
+  const step = betUnit(hand.stakes);
+  const stops = sized ? betStops(legal.minTo, legal.maxTo, step) : [legal.minTo];
+  // A pot-sized raise: call first, then raise by the size of the pot after the call, to the nearest small blind.
+  // (A pot that is the most you may bet, as in pot limit, stays exact.)
+  const potRaise = (fraction: number) => {
+    const exact = hand.currentBet + (hand.potTotal + toCall) * fraction;
+    return exact >= legal.maxTo ? legal.maxTo : clamp(roundToUnit(exact, step));
+  };
   const raiseType = legal.raiseKind;
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
@@ -467,7 +474,15 @@ export function ActionBar({
             </div>
           )}
           <div className="slider">
-            <input type="range" min={legal.minTo} max={legal.maxTo} value={amount} onChange={(e) => setAmount(+e.target.value)} />
+            <input
+              type="range"
+              min={0}
+              max={stops.length - 1}
+              value={nearestStop(stops, amount)}
+              onChange={(e) => setAmount(stops[+e.target.value] ?? legal.minTo)}
+              aria-label="Bet size"
+              aria-valuetext={fmt(clamp(amount))}
+            />
             <input
               ref={amountBox}
               type="number"
