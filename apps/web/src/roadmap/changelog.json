@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-b",
+      "date": "2026-10-29",
+      "fixes": [
+        "The turn clock round the acting player's name now runs down clockwise, like a clock hand."
+      ]
+    },
+    {
       "id": "2026-10-29-a",
       "date": "2026-10-29",
       "fixes": [
