@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-a",
+      "date": "2026-10-29",
+      "fixes": [
+        "The Fair dealing page now opens with a plain box on what you're trusting John with, what other players can and can't do, and what the public record shows.",
+        "New Terms of use page (link at the bottom of every page): the site is free and comes as it is, with no warranty, and John isn't liable for outages, lost records, bugs or break-ins."
+      ]
+    },
+    {
       "id": "2026-10-27-f",
       "date": "2026-10-27",
       "fixes": [
