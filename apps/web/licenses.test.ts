@@ -19,8 +19,9 @@ describe('the /credits package list', () => {
     expect(list.some((p) => p.name.startsWith('@rsdp/'))).toBe(false);
   });
 
-  it('leaves out tools only used to build and test', () => {
-    for (const name of ['vite', 'vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
+  it('leaves out tools only used to build and test, but credits the one that adds code to the bundle', () => {
+    expect(named('vite')?.parts).toEqual(['browser']);
+    for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
   });
 
   it('only ships permissive licenses', () => {

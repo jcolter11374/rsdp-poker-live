@@ -12,16 +12,20 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 /** Where each part of the site starts its dependency tree. */
 export const PARTS = { browser: 'apps/web', server: 'apps/server' };
 
+/** Build tools that put a little of their own code into what browsers download (Vite's preload helper). */
+export const BUNDLED_TOOLS = { browser: ['vite'] };
+
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
 /** The installed copy of `name` that `fromDir` would load, as Node finds it. */
-function resolvePackage(name, fromDir) {
+function resolvePackage(name, fromDir, root) {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', name);
     if (existsSync(path.join(candidate, 'package.json'))) return realpathSync(candidate);
-    if (dir === path.dirname(dir)) return null;
+    // Never past the repository: a stray node_modules higher up isn't ours.
+    if (dir === root || dir === path.dirname(dir)) return null;
   }
 }
 
@@ -63,7 +67,7 @@ function noticeFiles(dir) {
  * Every third-party package each part depends on at run time, sorted by name.
  * `parts` maps a label to a workspace folder; a package used by both is listed once with both labels.
  */
-export function collectLicenses(root = ROOT, parts = PARTS) {
+export function collectLicenses(root = ROOT, parts = PARTS, tools = BUNDLED_TOOLS) {
   const found = new Map();
   for (const [part, start] of Object.entries(parts)) {
     const seen = new Set();
@@ -87,15 +91,25 @@ export function collectLicenses(root = ROOT, parts = PARTS) {
       }
       const deps = { ...pkg.dependencies, ...pkg.optionalDependencies };
       for (const name of Object.keys(deps)) {
-        const child = resolvePackage(name, dir);
+        const child = resolvePackage(name, dir, root);
         // A missing optional dependency (another platform's binary, say) isn't installed, so it isn't shipped.
         if (child) visit(child);
         else if (!pkg.optionalDependencies?.[name]) throw new Error(`${pkg.name} needs ${name}, which isn't installed`);
       }
     };
     visit(path.join(root, start));
+    for (const name of tools[part] ?? []) {
+      const dir = resolvePackage(name, path.join(root, start), root);
+      if (!dir) throw new Error(`${name} isn't installed`);
+      // Only the tool itself: its own dependencies stay on the build machine.
+      const pkg = readJson(path.join(dir, 'package.json'));
+      const key = `${pkg.name}@${pkg.version}`;
+      const entry = found.get(key) ?? { name: pkg.name, version: pkg.version, license: licenseOf(pkg), homepage: homepageOf(pkg), parts: [], notices: noticeFiles(dir) };
+      if (!entry.parts.includes(part)) entry.parts.push(part);
+      found.set(key, entry);
+    }
   }
-  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version, 'en', { numeric: true }));
 }
 
 /** The short list the /credits page shows: no license texts, which are in the text file. */
