@@ -96,6 +96,8 @@ describe('bet slider stops', () => {
   it('an odd small blind still gets a step that is a whole number of blinds', () => {
     const stops = betStops(30, 10000, 15);
     expect(stops.slice(1, -1).every((s) => s % 15 === 0)).toBe(true);
+    // A round number of them (20 blinds at a time here), not a doubling like 240.
+    expect(stops[2] - stops[1]).toBe(300);
     expect(stops.length).toBeLessThanOrEqual(SLIDER_STOPS + 2);
   });
 

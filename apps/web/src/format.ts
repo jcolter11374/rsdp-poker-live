@@ -243,9 +243,14 @@ export const SLIDER_STOPS = 60;
 export function betStops(minTo: number, maxTo: number, unit: number): number[] {
   if (maxTo <= minTo) return [minTo];
   const range = maxTo - minTo;
+  // A round amount that is a whole number of units if there is one (a quarter, a dollar), else a round number of units.
+  const fits = (s: number) => s >= unit && range / s <= SLIDER_STOPS;
   const step =
-    roundSteps(range).find((s) => s >= unit && s % unit === 0 && range / s <= SLIDER_STOPS) ??
-    unit * 2 ** Math.max(0, Math.ceil(Math.log2(range / unit / SLIDER_STOPS)));
+    roundSteps(range).find((s) => s % unit === 0 && fits(s)) ??
+    roundSteps(range / unit)
+      .map((k) => k * unit)
+      .find((s) => Number.isInteger(s) && fits(s)) ??
+    unit;
   const stops = [minTo];
   for (let x = (Math.floor(minTo / step) + 1) * step; x < maxTo; x += step) stops.push(x);
   stops.push(maxTo);

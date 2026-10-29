@@ -449,7 +449,11 @@ export function ActionBar({
   const step = betUnit(hand.stakes);
   const stops = sized ? betStops(legal.minTo, legal.maxTo, step) : [legal.minTo];
   // A pot-sized raise: call first, then raise by the size of the pot after the call, to the nearest small blind.
-  const potRaise = (fraction: number) => clamp(roundToUnit(hand.currentBet + (hand.potTotal + toCall) * fraction, step));
+  // (A pot that is the most you may bet, as in pot limit, stays exact.)
+  const potRaise = (fraction: number) => {
+    const exact = hand.currentBet + (hand.potTotal + toCall) * fraction;
+    return exact >= legal.maxTo ? legal.maxTo : clamp(roundToUnit(exact, step));
+  };
   const raiseType = legal.raiseKind;
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
@@ -488,7 +492,7 @@ export function ActionBar({
               }}
               min={betToInput(unit, legal.minTo)}
               max={betToInput(unit, legal.maxTo)}
-              step={betToInput(unit, step)}
+              step={bigBlind ? 'any' : centsMode ? 0.01 : 1}
               value={typed ?? betToInput(unit, amount)}
               onChange={(e) => {
                 setTyped(e.target.value);
