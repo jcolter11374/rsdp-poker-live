@@ -53,6 +53,13 @@ export function AboutPage() {
             Nothing is sold or shared, and there are no ads or trackers. The <a href="/privacy">privacy page</a> says exactly what the site keeps about you, who can see it and how to delete it.
           </p>
         </section>
+
+        <section className="about-more">
+          <h2>How it's made</h2>
+          <p>
+            The poker is our own, written for this site from scratch, mostly with an AI coding assistant (Claude) with John steering. Underneath it are free, open-source building blocks such as React, Node.js and Socket.IO. The <a href="/credits">credits page</a> names them all, with their licenses.
+          </p>
+        </section>
       </main>
       <SiteFooter />
     </div>

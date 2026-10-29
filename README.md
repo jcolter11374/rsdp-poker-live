@@ -52,4 +52,4 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (
 
 John runs the project and makes the product decisions. Most of the code was written with an AI coding assistant (Claude, through Claude Code). Changes are checked by the tests above and by a separate review pass we run ourselves with another AI session; that is not an independent audit, and no outside auditor has reviewed the code. [docs/FAIRNESS.md](docs/FAIRNESS.md) explains what you can check for yourself without trusting us.
 
-This is an original app; it doesn't use any other site's branding, assets or code.
+This is an original app; it doesn't use any other site's branding, assets or code. It is built on open-source software, credited with licenses in [docs/CREDITS.md](docs/CREDITS.md) and on the site's `/credits` page.
