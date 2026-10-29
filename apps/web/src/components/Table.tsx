@@ -31,8 +31,12 @@ export function useNow(active: boolean, ms = 200) {
  * The acting seat's clock: a line that drains to empty at the deadline. Keyed on the turn, so where it
  * starts and how long it runs are fixed when it appears; changing them on every tick would make it jump.
  */
-function TurnLine({ fraction, msLeft, paused, bank, low }: { fraction: number; msLeft: number; paused: boolean; bank: boolean; low: boolean }) {
-  const [start] = useState(() => ({ fraction, ms: Math.max(0, msLeft) }));
+function TurnLine({ turn, paused, serverNow, skew, bank, low }: { turn: { startedAt: number; deadline: number }; paused: boolean; serverNow: number; skew: number; bank: boolean; low: boolean }) {
+  // Read the clock here rather than taking the table's \`now\`, which stands still while nothing ticks (a pause, a fresh turn).
+  const [start] = useState(() => {
+    const ms = Math.max(0, turn.deadline - (paused ? serverNow : Date.now() + skew));
+    return { fraction: Math.min(1, ms / (turn.deadline - turn.startedAt)), ms };
+  });
   return (
     <div className={`timer ${bank ? 'bank' : ''}`}>
       <div
@@ -463,9 +467,8 @@ export function Table({
                 })}
               </div>
               <div
-                className={`nameplate${timeFraction !== null ? ' timed' : ''}`}
+                className="nameplate"
                 onClick={onSeatClick ? () => onSeatClick(s) : undefined}
-                style={timeFraction !== null ? ({ '--t': timeFraction } as CSSProperties) : undefined}
               >
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
@@ -480,10 +483,11 @@ export function Table({
                 {shown && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
                   <TurnLine
-                    key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}`}
-                    fraction={timeFraction}
-                    msLeft={view.turn!.deadline! - now}
+                    key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}:${skew}`}
+                    turn={view.turn as { startedAt: number; deadline: number }}
                     paused={view.paused}
+                    serverNow={view.serverNow}
+                    skew={skew}
                     bank={!!view.turn?.usingBank}
                     low={secondsLeft! <= 5}
                   />
