@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseBlocks } from './markdown';
+import { parseBlocks, type Block } from './markdown';
 import { sourceLink } from './FairnessPage';
 
+const flat = (bs: Block[]): Block[] => bs.flatMap((b) => (b.t === 'box' ? flat(b.blocks) : [b]));
 const doc = readFileSync(new URL('../../../../docs/FAIRNESS.md', import.meta.url), 'utf8');
 
 describe('/fairness', () => {
-  const blocks = parseBlocks(doc);
+  const top = parseBlocks(doc);
+  const blocks = flat(top);
+
+  it('opens with the trust box, right under the title', () => {
+    expect(top[1]).toMatchObject({ t: 'box' });
+    const box = top[1].t === 'box' ? top[1].blocks : [];
+    expect(box[0]).toMatchObject({ t: 'h', text: "The short version: you're trusting John" });
+    expect(box.filter((b) => b.t === 'p').length).toBe(4);
+  });
 
   it('renders docs/FAIRNESS.md without leftover Markdown', () => {
     expect(blocks[0]).toMatchObject({ t: 'h', level: 1 });
@@ -51,5 +60,17 @@ describe('/privacy', () => {
   it('has the sections people come for', () => {
     const heads = blocks.filter((b) => b.t === 'h').map((b) => b.text.toLowerCase()).join('\n');
     for (const want of ['who is responsible', 'what the site keeps', 'why the site keeps', 'backups', 'how long', 'your rights', 'deleting']) expect(heads).toContain(want);
+  });
+});
+
+describe('/terms', () => {
+  const terms = readFileSync(new URL('../../../../docs/TERMS.md', import.meta.url), 'utf8');
+  const blocks = parseBlocks(terms);
+
+  it('has the disclaimer people need to see', () => {
+    expect(blocks[0]).toMatchObject({ t: 'h', level: 1 });
+    const heads = blocks.filter((b) => b.t === 'h').map((b) => b.text.toLowerCase()).join('\n');
+    for (const want of ['no warranty', 'limitation of liability']) expect(heads).toContain(want);
+    expect(terms).toMatch(/MERCHANTABILITY,\s+FITNESS FOR A PARTICULAR PURPOSE/);
   });
 });

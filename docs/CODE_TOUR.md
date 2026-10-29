@@ -57,7 +57,7 @@ apps/web             The website: lobby, table, tournament pages, replayer.
 e2e/                 A browser "smoke test" that plays real hands through the UI.
 scripts/             Stand-alone checkers (hands, the public record), backups, deploy helpers.
 .github/workflows/   Automated jobs on GitHub: tests, deploys, backups, watchers.
-docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, DEPLOY.md.
+docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, DEPLOY.md.
 ```
 
 It is one npm "workspace": a single `npm install` at the top sets up all four
@@ -133,7 +133,8 @@ opens the connection and keeps your browser's secret.
   guides; [`src/account/`](../apps/web/src/account) sign-in, profile,
   leaderboard and hand search.
 - The `/fairness` page is [docs/FAIRNESS.md](FAIRNESS.md) itself, and
-  `/privacy` is [docs/PRIVACY.md](PRIVACY.md), so the site and the repository
+  `/privacy` is [docs/PRIVACY.md](PRIVACY.md) and `/terms` is
+  [docs/TERMS.md](TERMS.md), so the site and the repository
   can't say different things.
 
 ## Follow one bet from click to screen
@@ -171,7 +172,7 @@ it happens in that order.
 
 ## Where to start reading
 
-- **"Is the shuffle fair?"** Read the short version at the top of
+- **"Is the shuffle fair?"** Read "The shuffle, in short" near the top of
   [FAIRNESS.md](FAIRNESS.md), then
   [`packages/engine/src/fairness.ts`](../packages/engine/src/fairness.ts)
   (under 300 lines), then

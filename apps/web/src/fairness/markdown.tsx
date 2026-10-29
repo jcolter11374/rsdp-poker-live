@@ -1,15 +1,16 @@
 import { Fragment, type ReactNode } from 'react';
 
 // Just enough Markdown for docs/FAIRNESS.md, turned into React elements (never
-// raw HTML): headings, paragraphs, lists, tables, code blocks, and inline
-// code, bold, italics and links.
+// raw HTML): headings, paragraphs, lists, tables, code blocks, quotes (shown as
+// a box), and inline code, bold, italics and links.
 
 export type Block =
   | { t: 'h'; level: number; text: string }
   | { t: 'p'; text: string }
   | { t: 'ul' | 'ol'; items: string[] }
   | { t: 'code'; text: string }
-  | { t: 'table'; head: string[]; rows: string[][] };
+  | { t: 'table'; head: string[]; rows: string[][] }
+  | { t: 'box'; blocks: Block[] };
 
 const cells = (line: string) =>
   line
@@ -30,6 +31,10 @@ export function parseBlocks(md: string): Block[] {
       for (i++; i < lines.length && !lines[i].startsWith('```'); i++) body.push(lines[i]);
       out.push({ t: 'code', text: body.join('\n') });
       i++;
+    } else if (line.startsWith('>')) {
+      const body: string[] = [];
+      for (; i < lines.length && lines[i].startsWith('>'); i++) body.push(lines[i].replace(/^> ?/, ''));
+      out.push({ t: 'box', blocks: parseBlocks(body.join('\n')) });
     } else if (/^#{1,6} /.test(line)) {
       const m = /^(#+) (.*)$/.exec(line)!;
       out.push({ t: 'h', level: m[1].length, text: m[2] });
@@ -50,7 +55,7 @@ export function parseBlocks(md: string): Block[] {
       out.push({ t, items });
     } else {
       const para: string[] = [];
-      for (; i < lines.length && lines[i].trim() && !/^(#|- |\d+\. |\||```)/.test(lines[i]); i++) para.push(lines[i].trim());
+      for (; i < lines.length && lines[i].trim() && !/^(#|- |\d+\. |\||```|>)/.test(lines[i]); i++) para.push(lines[i].trim());
       out.push({ t: 'p', text: para.join(' ') });
     }
   }
@@ -83,10 +88,14 @@ export function inline(text: string, link: (href: string) => string): ReactNode[
 }
 
 export function Markdown({ source, link }: { source: string; link: (href: string) => string }) {
+  return <Blocks blocks={parseBlocks(source)} link={link} />;
+}
+
+function Blocks({ blocks, link }: { blocks: Block[]; link: (href: string) => string }) {
   const md = (s: string) => inline(s, link);
   return (
     <>
-      {parseBlocks(source).map((b, i) => {
+      {blocks.map((b, i) => {
         switch (b.t) {
           case 'h': {
             const H = `h${Math.min(b.level, 4)}` as 'h1';
@@ -139,6 +148,12 @@ export function Markdown({ source, link }: { source: string; link: (href: string
                   </tbody>
                 </table>
               </div>
+            );
+          case 'box':
+            return (
+              <aside key={i} className="md-box">
+                <Blocks blocks={b.blocks} link={link} />
+              </aside>
             );
           default:
             return <Fragment key={i} />;
