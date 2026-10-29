@@ -13,6 +13,8 @@
 .fairness-page table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 .fairness-page th, .fairness-page td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 .fairness-page th { background: var(--panel); }
+.fairness-page .md-box { margin: 12px 0 20px; padding: 4px 16px; border: 2px solid var(--line); border-radius: 10px; background: var(--panel); }
+.fairness-page .md-box h3 { margin-top: 12px; font-size: 1.15rem; }
 .fairness-page > .muted { margin-top: 32px; font-size: 0.9rem; }
 
 /* ---- the public record (audit.ts): a rewritten record, on every page */

@@ -10,6 +10,7 @@ import { ChangelogPage } from './roadmap/ChangelogPage';
 import { FairnessPage } from './fairness/FairnessPage';
 import { TransparencyPage } from './fairness/TransparencyPage';
 import { PrivacyPage } from './fairness/PrivacyPage';
+import { TermsPage } from './fairness/TermsPage';
 import { RecordAlert } from './fairness/RecordAlert';
 import { AboutPage } from './about/AboutPage';
 import { RulesPage } from './rules/RulesPage';
@@ -54,6 +55,7 @@ function Page() {
   if (/^\/fairness\/?$/.test(path)) return <FairnessPage />;
   if (/^\/transparency\/?$/.test(path)) return <TransparencyPage />;
   if (/^\/privacy\/?$/.test(path)) return <PrivacyPage />;
+  if (/^\/terms\/?$/.test(path)) return <TermsPage />;
   if (/^\/about\/?$/.test(path)) return <AboutPage />;
   if (/^\/signin\/?$/.test(path)) return <SignInPage />;
   if (/^\/signup\/?$/.test(path)) return <SignUpPage />;
