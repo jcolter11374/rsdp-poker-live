@@ -8,6 +8,8 @@
   --muted: #9aa4af;
   --accent: #ef5a4c;
   --accent-2: #f2b84b;
+  /* The time bank: blue, so it reads apart from the gold and green clock and the red last seconds. */
+  --bank: #6aa8ff;
   --go: #2fa866;
   --go-hover: #36bb73;
   --call: #3a4a5c;
@@ -307,7 +309,7 @@ input[type='radio'] { width: auto; }
 .pot.result { background: rgba(0, 0, 0, 0.5); color: var(--good); }
 .next-hand { font-size: 0.85rem; color: rgba(255, 255, 255, 0.75); }
 .seat .status { font-size: 0.7rem; color: var(--muted); }
-.seat .status.bank-text { color: var(--accent-2); }
+.seat .status.bank-text { color: var(--bank); }
 .seat.host-click .nameplate { cursor: pointer; }
 .last-action {
   font-size: 0.7rem;
@@ -332,7 +334,7 @@ input[type='radio'] { width: auto; }
 }
 @keyframes timer-drain { from { transform: scaleX(var(--from, 1)); } to { transform: scaleX(0); } }
 .timer-fill.low { background: var(--bad); }
-.timer.bank .timer-fill { background: var(--accent-2); }
+.timer.bank .timer-fill { background: var(--bank); }
 .dealer.dead { opacity: 0.4; }
 .win-float {
   position: absolute;
