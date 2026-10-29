@@ -4,9 +4,9 @@
 >
 > John built and runs this site. Like every online poker site, the server sees everyone's cards, and whoever runs it could cheat if they really wanted to: peek at hands, or change the code. Nothing here can make that impossible.
 >
-> **Other players** shouldn't be able to see your cards or rig the deck through the site. The server only sends you your own cards, unless a table's host lets spectators see every card, which you're told about and have to agree to before you sit down. Every player's browser helps shuffle. That's how it's designed, but it's a hobby project built with AI help, not professionally audited, and it could have bugs or be hacked in ways we don't know about. Players could also cheat outside the site, by sharing cards in a group chat or getting help from software, just like on any poker site.
+> **Other players** shouldn't be able to see your cards or rig the deck through the site. The server only sends you your own cards, unless a table's host lets spectators see every card, which everyone at the table is told about and new players have to agree to before they sit down. Every player's browser helps shuffle. That's how it's designed, but it's a hobby project built with AI help, not professionally audited, and it could have bugs or be hacked in ways we don't know about. Players could also cheat outside the site, by sharing cards in a group chat or getting help from software, just like on any poker site.
 >
-> **What we've done** is make cheating hard to hide. The shuffle, every hand, every buy-in and every new version of the site are recorded publicly where John can't quietly edit them, so a careful person could spot tracks. But if you don't trust John, no page can fix that, and you shouldn't play.
+> **What we've done** is make cheating hard to hide. The shuffle, every hand, every buy-in and every new version of the site are recorded publicly, where it's hard for John to quietly edit them, so a careful person could spot tracks. But if you don't trust John, no page can fix that, and you shouldn't play.
 >
 > If you do trust him, that's all you need to know. The rest of this page is the detail, for anyone curious.
 
