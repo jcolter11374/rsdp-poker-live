@@ -27,6 +27,26 @@ export function useNow(active: boolean, ms = 200) {
   return now;
 }
 
+/**
+ * The acting seat's clock: a line that drains to empty at the deadline. Keyed on the turn, so where it
+ * starts and how long it runs are fixed when it appears; changing them on every tick would make it jump.
+ */
+function TurnLine({ turn, paused, serverNow, skew, bank, low }: { turn: { startedAt: number; deadline: number }; paused: boolean; serverNow: number; skew: number; bank: boolean; low: boolean }) {
+  // Read the clock here rather than taking the table's \`now\`, which stands still while nothing ticks (a pause, a fresh turn).
+  const [start] = useState(() => {
+    const ms = Math.max(0, turn.deadline - (paused ? serverNow : Date.now() + skew));
+    return { fraction: Math.min(1, ms / (turn.deadline - turn.startedAt)), ms };
+  });
+  return (
+    <div className={`timer ${bank ? 'bank' : ''}`}>
+      <div
+        className={`timer-fill ${low ? 'low' : ''}`}
+        style={{ '--from': start.fraction, animationDuration: `${start.ms}ms`, animationPlayState: paused ? 'paused' : 'running' } as CSSProperties}
+      />
+    </div>
+  );
+}
+
 /** The element's size, kept up to date as it changes. */
 function useSize(ref: RefObject<HTMLElement>) {
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -447,9 +467,8 @@ export function Table({
                 })}
               </div>
               <div
-                className={`nameplate${timeFraction !== null ? ' timed' : ''}`}
+                className="nameplate"
                 onClick={onSeatClick ? () => onSeatClick(s) : undefined}
-                style={timeFraction !== null ? ({ '--t': timeFraction } as CSSProperties) : undefined}
               >
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
@@ -463,9 +482,15 @@ export function Table({
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
                 {shown && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
-                  <div className={`timer ${view.turn?.usingBank ? 'bank' : ''}`}>
-                    <div className={`timer-fill ${secondsLeft! <= 5 ? 'low' : ''}`} style={{ width: `${timeFraction * 100}%` }} />
-                  </div>
+                  <TurnLine
+                    key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}:${skew}`}
+                    turn={view.turn as { startedAt: number; deadline: number }}
+                    paused={view.paused}
+                    serverNow={view.serverNow}
+                    skew={skew}
+                    bank={!!view.turn?.usingBank}
+                    low={secondsLeft! <= 5}
+                  />
                 )}
                 {timeFraction !== null && (secondsLeft! <= 10 || view.turn?.usingBank) && (
                   <div className={`status ${view.turn?.usingBank ? 'bank-text' : 'low-text'}`}>

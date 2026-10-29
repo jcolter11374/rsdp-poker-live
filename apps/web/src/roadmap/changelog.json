@@ -1,10 +1,11 @@
 {
   "releases": [
     {
-      "id": "2026-10-29-g",
+      "id": "2026-10-29-f",
       "date": "2026-10-29",
       "fixes": [
         "Seats no longer shift round the table when your turn comes or a new hand starts, mostly noticeable on phones.",
+        "The turn clock is a calm line along the bottom of the acting player's name that glides down, instead of a ring round it that moved in little jumps.",
         "A cleaner felt: no printed betting line, a simpler crest, and empty seats without dashed outlines.",
         "Chips sound like clay chips: short dry clacks that settle, instead of little rings."
       ]
