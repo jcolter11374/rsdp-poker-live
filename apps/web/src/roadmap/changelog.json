@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-d",
+      "date": "2026-10-29",
+      "fixes": [
+        "New Credits page (link at the bottom of every page and on About): the free, open-source software the site is built on, what each piece does, and every package with its license. The license texts in full are at /third-party-licenses.txt."
+      ]
+    },
+    {
       "id": "2026-10-29-c",
       "date": "2026-10-29",
       "fixes": [

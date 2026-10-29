@@ -851,6 +851,7 @@ export function createApp(deps: AppDeps = {}) {
     if (/^\/transparency\/?$/.test(pathname)) return { title: 'Checking John · RSDP Poker Live!', description: 'What the site runs, the public record of every hand and admin action, and how to check them from outside the server.' };
     if (/^\/privacy\/?$/.test(pathname)) return { title: 'Privacy · RSDP Poker Live!', description: 'What the site keeps about you, who can see it, how long it stays and how to delete it.' };
     if (/^\/terms\/?$/.test(pathname)) return { title: 'Terms of use · RSDP Poker Live!', description: 'The site is free and comes as it is, with no warranty: the terms for using it.' };
+    if (/^\/credits\/?$/.test(pathname)) return { title: 'Credits · RSDP Poker Live!', description: 'The free, open-source software RSDP Poker Live! is built on, and its licenses.' };
     return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
