@@ -5,7 +5,13 @@ import type { HandEvent } from './types';
  * show it a street at a time (the turn, a pause, the river; the first run
  * before the second). The server holds the next hand for as long as that takes.
  */
-export const RUNOUT_STEP_MS = 1300;
+export const RUNOUT_STEP_MS = 2000;
+/**
+ * Run it twice deals slower, about as PokerNow does (some 4 s a street), so
+ * each card of both runs has its moment: a turn all-in is otherwise two
+ * quick rivers.
+ */
+export const RUN_TWICE_STEP_MS = 3500;
 /** A beat after the last card before the result shows. */
 export const RUNOUT_SETTLE_MS = 700;
 
@@ -37,8 +43,13 @@ export function runoutSteps(events: readonly HandEvent[]): BoardEvent[][] {
   return steps;
 }
 
+/** The pause before each street of this hand's runout is shown. */
+export function runoutStepMs(events: readonly HandEvent[]): number {
+  return events.some((e) => e.t === 'run-it' && e.times === 2) ? RUN_TWICE_STEP_MS : RUNOUT_STEP_MS;
+}
+
 /** How long a table takes to show this hand's runout, or 0 with none. */
 export function runoutMs(events: readonly HandEvent[]): number {
   const n = runoutSteps(events).length;
-  return n ? n * RUNOUT_STEP_MS + RUNOUT_SETTLE_MS : 0;
+  return n ? n * runoutStepMs(events) + RUNOUT_SETTLE_MS : 0;
 }

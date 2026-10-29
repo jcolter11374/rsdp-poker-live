@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-c",
+      "date": "2026-10-29",
+      "fixes": [
+        "All-in runouts take their time: when you run it twice each card comes about 3.5 seconds apart (as on PokerNow), and a normal all-in runout 2 seconds apart. Before it was 1.3 seconds, so a turn all-in run twice showed both rivers almost at once."
+      ]
+    },
+    {
       "id": "2026-10-29-b",
       "date": "2026-10-29",
       "fixes": [
