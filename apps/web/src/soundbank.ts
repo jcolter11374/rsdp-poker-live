@@ -125,22 +125,40 @@ class Mix {
   }
 }
 
-/** One clay chip knocking another: a sharp click and a short, dense ring. */
+/**
+ * One clay chip knocking another. Real clay chips barely ring: what you hear is a
+ * hard, dry click, most of it between about 2 and 8 kHz and over in a few
+ * milliseconds, from a cluster of heavily damped modes that never settle on a
+ * pitch. So: a very short broadband tick, then a handful of high modes placed
+ * at random (no two knocks sound alike) that die within about 3 ms, and a
+ * touch of low "tock" for the weight of the clay.
+ */
 function chip(m: Mix, at: number, gain: number, rand: Rand, tone = 1) {
-  const j = () => 0.94 + rand() * 0.12;
-  m.noise(at, 0.004, gain * 0.9, 6000, 4000, 0.7, rand, 0.0002);
-  m.modes(at, [
-    [1180 * tone * j(), 0.006, gain * 0.35],
-    [2350 * tone * j(), 0.011, gain * 0.5],
-    [3480 * tone * j(), 0.008, gain * 0.38],
-    [5050 * tone * j(), 0.006, gain * 0.25],
-    [7100 * tone * j(), 0.004, gain * 0.14],
-  ]);
+  const r = (lo: number, hi: number) => lo + rand() * (hi - lo);
+  m.noise(at, 0.0025, gain, 7000 * tone, 3500 * tone, 0.45, rand, 0.0001);
+  const modes: [number, number, number][] = [];
+  for (let i = 0; i < 6; i++) modes.push([r(2400, 8500) * tone, r(0.0012, 0.0032), gain * r(0.12, 0.3)]);
+  modes.push([r(1100, 1500) * tone, 0.0035, gain * 0.16]);
+  m.modes(at, modes, 0.0001);
 }
 
-/** Several chips in quick succession, each a little softer. */
+/**
+ * A short stack set down: the bottom chip lands on the felt (a soft thump) and
+ * the ones above it clack and settle, the knocks coming faster and quieter like
+ * a bounce dying out, all within about a tenth of a second.
+ */
 function chips(m: Mix, at: number, count: number, spread: number, gain: number, rand: Rand, tone = 1) {
-  for (let i = 0; i < count; i++) chip(m, at + (i * spread) / Math.max(1, count - 1) + rand() * 0.008, gain * (1 - (i / count) * 0.45), rand, tone);
+  m.thump(at, 120 * tone, 0.03, gain * 0.35);
+  m.noise(at, 0.02, gain * 0.25, 1400, 700, 0.7, rand, 0.001);
+  // Gaps shrink by a fixed ratio; the first gap is set so the whole run fills about `spread`.
+  const ratio = 0.72;
+  let gap = (spread * (1 - ratio)) / (1 - Math.pow(ratio, Math.max(1, count - 1)));
+  let t = at;
+  for (let i = 0; i < count; i++) {
+    chip(m, t, gain * Math.pow(0.82, i) * (0.85 + rand() * 0.3), rand, tone);
+    t += gap * (0.8 + rand() * 0.4);
+    gap *= ratio;
+  }
 }
 
 /** A card sliding across felt and settling. */
@@ -214,21 +232,23 @@ export function renderSound(name: SoundName, sr: number, rand: Rand = Math.rando
       return m.done(soft ? 0.3 : 0.4);
     }
     case 'chips': {
-      const m = new Mix(sr, 0.35);
-      chips(m, 0, 3, 0.11, 1, rand, tone);
+      const m = new Mix(sr, 0.3);
+      chips(m, 0, 4, 0.07, 1, rand, tone);
       m.room(0.1);
       return m.done(soft ? 0.38 : 0.5);
     }
     case 'raise': {
+      // Two stacks pushed out, one just after the other.
       const m = new Mix(sr, 0.45);
-      chips(m, 0, 5, 0.2, 1, rand, tone);
+      chips(m, 0, 5, 0.08, 1, rand, tone);
+      chips(m, 0.13, 4, 0.07, 0.85, rand, tone);
       m.room(0.1);
       return m.done(soft ? 0.42 : 0.55);
     }
     case 'allIn': {
       const m = new Mix(sr, 0.8);
       m.noise(0, 0.45, 0.25, 2200, 1200, 0.6, rand, 0.05);
-      chips(m, 0.02, 14, 0.42, 1, rand, tone);
+      for (let i = 0; i < 4; i++) chips(m, 0.02 + i * 0.1 + rand() * 0.02, 5, 0.07, 1 - i * 0.1, rand, tone);
       m.thump(0.45, 90, 0.12, 0.7);
       m.room(0.14);
       return m.done(soft ? 0.5 : 0.62);

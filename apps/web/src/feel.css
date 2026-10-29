@@ -37,18 +37,6 @@
       0 0 40px color-mix(in srgb, var(--go) 35%, transparent),
       0 30px 60px rgba(0, 0, 0, 0.6);
   }
-  /* The betting line, printed on the cloth. */
-  .felt::before {
-    content: '';
-    position: absolute;
-    inset: 13% 9%;
-    border-radius: 999px;
-    border: 1.5px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
-    pointer-events: none;
-  }
-  .felt.compact::before { inset: 9% 12%; }
-
   /* Nameplates: a soft top light, a bevel, a shadow on the cloth. */
   .nameplate {
     background: linear-gradient(180deg, #343a43 0%, #262b32 55%, #1f2329 100%) !important;
@@ -99,7 +87,7 @@
     box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 0 0 1.5px rgba(0, 0, 0, 0.35), 0 3px 6px rgba(0, 0, 0, 0.55);
   }
   /* Empty seats read as places on the cloth, not boxes. */
-  .seat.empty button, .seat.empty span { background: rgba(0, 0, 0, 0.22); box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35); }
+  .seat.empty button, .seat.empty span { background: rgba(0, 0, 0, 0.16); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); }
   /* The action bar sits on the same lit surface. */
   .action-bar:not(.idle) { background: linear-gradient(180deg, #23282e, #1b1f24); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35); }
   .action-bar .buttons button { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 0 rgba(0, 0, 0, 0.35); }
@@ -108,8 +96,7 @@
 
 /* ======================================================================
    2. MOTION: a living table. Cards come off the button in an arc, the board
-   turns over card by card, chips are tossed, stacks count, the clock runs
-   round the nameplate.
+   turns over card by card, chips are tossed, stacks count.
    ====================================================================== */
 @media (prefers-reduced-motion: no-preference) {
   :root[data-feel~='motion'] {
@@ -137,28 +124,8 @@
     /* Stacks and the pot count. */
     .count-up { color: var(--good); }
     .pot .count-up { color: #fff; }
-    /* The clock runs round the acting seat's nameplate instead of a bar under it. */
+    /* The clock is the line along the bottom of the plate, so the plate itself holds still. */
     .seat.acting .nameplate { animation: none; }
-    .seat.acting .nameplate.timed::after {
-      content: '';
-      position: absolute;
-      inset: -4px;
-      border-radius: 15px;
-      padding: 4px;
-      /* Starts at 3 o'clock, clear of the cards tucked into the left of the plate; the time used is dark, so what's left stands out.
-         The dark part grows from the start, so the edge sweeps clockwise like a clock hand. */
-      background: conic-gradient(from 90deg, rgba(0, 0, 0, 0.55) calc((1 - var(--t, 1)) * 360deg), var(--feel-ring, #5ad08a) 0);
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-      pointer-events: none;
-    }
-    .felt.compact .seat.acting .nameplate::after { border-radius: 12px; }
-    /* The ring is the highlight, so the plate's own border steps back. */
-    .seat.acting .nameplate.timed { border-color: transparent !important; }
-    .seat.acting .nameplate:has(.timer-fill.low) { --feel-ring: var(--bad); }
-    .seat.acting .nameplate:has(.timer.bank) { --feel-ring: var(--accent-2); }
-    .seat.acting .nameplate .timer { opacity: 0; }
     /* The board settles in from the middle rather than popping. */
     .pot { transition: transform 0.2s; }
   }

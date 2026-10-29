@@ -8,6 +8,8 @@
   --muted: #9aa4af;
   --accent: #ef5a4c;
   --accent-2: #f2b84b;
+  /* The time bank: blue, so it reads apart from the gold and green clock and the red last seconds. */
+  --bank: #6aa8ff;
   --go: #2fa866;
   --go-hover: #36bb73;
   --call: #3a4a5c;
@@ -139,14 +141,15 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 }
 .seat.empty button, .seat.empty span {
   background: rgba(0, 0, 0, 0.12);
-  border: 1.5px dashed rgba(255, 255, 255, 0.32);
+  /* No outline: an empty seat is a quiet spot on the cloth, not another line on it. */
+  border: 1.5px solid transparent;
   border-radius: 999px;
   padding: 8px 16px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.55);
 }
-.seat.empty button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.6); }
+.seat.empty button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); }
 .seat .hole { display: flex; gap: 2px; height: 48px; z-index: 1; position: absolute; bottom: calc(100% - 4px); left: 50%; translate: -50% 0; }
 /* Seats at the far left and right keep their cards over the felt instead of off the edge. */
 .seat.edge-left .hole { left: 0; translate: none; }
@@ -306,7 +309,7 @@ input[type='radio'] { width: auto; }
 .pot.result { background: rgba(0, 0, 0, 0.5); color: var(--good); }
 .next-hand { font-size: 0.85rem; color: rgba(255, 255, 255, 0.75); }
 .seat .status { font-size: 0.7rem; color: var(--muted); }
-.seat .status.bank-text { color: var(--accent-2); }
+.seat .status.bank-text { color: var(--bank); }
 .seat.host-click .nameplate { cursor: pointer; }
 .last-action {
   font-size: 0.7rem;
@@ -317,11 +320,21 @@ input[type='radio'] { width: auto; }
 }
 .last-action.a-fold { color: var(--muted); }
 .last-action.a-raise, .last-action.a-bet, .last-action.a-all { color: var(--accent-2); }
-.nameplate .timer { position: absolute; left: 10px; right: 10px; bottom: 4px; height: 3px; margin: 0; }
-.timer { height: 3px; background: rgba(255, 255, 255, 0.14); border-radius: 2px; margin-top: 3px; overflow: hidden; }
-.timer-fill { height: 100%; background: #5ad08a; transition: width 0.2s linear; }
+.nameplate .timer { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 4px; margin: 0; }
+.timer { height: 4px; background: rgba(255, 255, 255, 0.14); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+/* The browser runs the drain from where the clock stood to empty, so it glides instead of stepping with each re-render. */
+.timer-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #5ad08a;
+  transform-origin: left;
+  transform: scaleX(var(--from, 1));
+  animation: timer-drain linear forwards;
+  transition: background-color 0.4s;
+}
+@keyframes timer-drain { from { transform: scaleX(var(--from, 1)); } to { transform: scaleX(0); } }
 .timer-fill.low { background: var(--bad); }
-.timer.bank .timer-fill { background: var(--accent-2); }
+.timer.bank .timer-fill { background: var(--bank); }
 .dealer.dead { opacity: 0.4; }
 .win-float {
   position: absolute;
@@ -498,7 +511,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .nameplate .status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .name { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
 .felt.compact .nameplate .stack { font-size: 0.85rem; }
-.felt.compact .nameplate .timer { left: 6px; right: 6px; bottom: 2px; }
+.felt.compact .nameplate .timer { left: 6px; right: 6px; bottom: 2px; height: 3px; }
 .felt.compact .seat .status, .felt.compact .last-action { font-size: 0.6rem; }
 .felt.compact .seat .hole { height: 34px; bottom: calc(100% - 3px); }
 .felt.compact .playing-card.small { --cw: 24px; }
@@ -637,7 +650,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .board .playing-card { --cw: var(--board-cw, 62px); }
 .board .cards { gap: 6px; }
 .board.multi .playing-card { --cw: calc(var(--board-cw, 62px) * 0.8); }
-.seat.empty button, .seat.empty span { border-radius: 12px; min-width: 110px; padding: 12px 18px; background: rgba(0, 0, 0, 0.18); border-color: rgba(255, 255, 255, 0.22); }
+.seat.empty button, .seat.empty span { border-radius: 12px; min-width: 110px; padding: 12px 18px; background: rgba(0, 0, 0, 0.18); }
 .felt.compact .seat.empty button, .felt.compact .seat.empty span { min-width: 64px; padding: 6px 10px; }
 
 /* Cards: a jumbo index (big rank, suit under it) that reads at a glance. */
@@ -791,7 +804,7 @@ dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
 .sizing .slider .unit { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
-/* The area under the table holds its height through a hand (see Dock). On phones the spare room sits above the action bar. */
+/* The area under the table holds its height for the session (see Dock). On phones the spare room sits above the action bar. */
 .dock, .dock-inner { display: flex; flex-direction: column; gap: inherit; }
 .portrait .dock { justify-content: flex-end; }
 /* Hand extras and seat options share one row, so the area under the table stays short. */
@@ -826,8 +839,8 @@ dl.shortcuts dd { margin: 0; }
 .bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
-.dock.seated { min-height: max(190px, var(--held, 0px)); }
-.portrait .dock.seated { min-height: max(205px, var(--held, 0px)); }
+.dock.seated { min-height: max(218px, var(--held, 0px)); }
+.portrait .dock.seated { min-height: max(244px, var(--held, 0px)); }
 /* Your own seat draws over empty-seat markers next to it. */
 .seat.me { z-index: 3; }
 /* Shorter windows: a tighter action bar and felt margins give the table (and a full table's seats) the room. */
@@ -835,13 +848,13 @@ dl.shortcuts dd { margin: 0; }
   .table-page:not(.portrait) .action-bar { padding: 8px 12px; gap: 6px; }
   .table-page:not(.portrait) .action-bar .buttons button { padding: 10px 12px; }
   .table-page:not(.portrait) .felt-area > .felt { margin: 72px clamp(110px, 9vw, 175px) 30px; }
-  .dock.seated { min-height: max(166px, var(--held, 0px)); }
+  .dock.seated { min-height: max(186px, var(--held, 0px)); }
 }
 @media (max-height: 760px) {
   .portrait .action-bar { padding-top: 8px; gap: 6px; }
   .portrait .action-bar .buttons button { padding: 11px 6px; }
   .portrait .sizing .presets button { padding: 6px 4px; }
-  .portrait .dock.seated { min-height: max(189px, var(--held, 0px)); }
+  .portrait .dock.seated { min-height: max(230px, var(--held, 0px)); }
 }
 /* Fixed-limit games (no bet slider) have a shorter bar. */
 .dock.seated.limit { min-height: max(113px, var(--held, 0px)); }

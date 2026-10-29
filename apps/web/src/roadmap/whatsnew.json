@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-f",
+      "date": "2026-10-29",
+      "title": "A calmer, cleaner table",
+      "items": [
+        { "title": "Seats stay put", "detail": "Players no longer shift round the table when your turn comes or a new hand starts. It was most noticeable on phones.", "suggestedBy": "Alon" },
+        { "title": "Fewer lines on the felt", "detail": "No printed betting line, a simpler crest in the middle, and empty seats without dashed outlines.", "suggestedBy": "Alon" },
+        { "title": "Chips that sound like chips", "detail": "Bets, raises and pots now make the short, dry clack of clay chips settling, instead of little rings.", "suggestedBy": "Alon" },
+        { "title": "A smoother turn clock", "detail": "The clock is a thin line along the bottom of the acting player's name that glides down, red for the last few seconds." }
+      ]
+    },
+    {
       "id": "2026-10-27-f",
       "date": "2026-10-27",
       "title": "Cash games in dollars and cents",
