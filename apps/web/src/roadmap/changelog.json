@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-29-e",
+      "date": "2026-10-29",
+      "fixes": [
+        "The bet slider is calmer: it stops on round amounts (quarters on small bets at .25/.50, whole dollars once the stack is deep, never 18.61) instead of moving a cent at a time, and the pot buttons round to the small blind. You can still type any amount in the box.",
+        "Roomier table: on computers the felt is a little smaller with bigger seats and cards round it, and a bit more space round the action bar. On phones your own cards are a little bigger and players at a part-empty table spread round it instead of bunching on one side."
+      ]
+    },
+    {
       "id": "2026-10-29-d",
       "date": "2026-10-29",
       "fixes": [

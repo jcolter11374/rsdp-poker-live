@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bbExactFormat, bbFormat, betFromInput, betToInput, studBringIn } from './format';
+import { bbExactFormat, bbFormat, betFromInput, betStops, betToInput, betUnit, nearestStop, roundToUnit, SLIDER_STOPS, studBringIn } from './format';
 
 describe('bbFormat', () => {
   it('shows amounts in big blinds, to one decimal when it is not whole', () => {
@@ -60,5 +60,49 @@ describe('stud bring-in', () => {
     expect(studBringIn(10, true)).toBe(3);
     expect(studBringIn(2, false)).toBe(1);
     expect(studBringIn(10, false)).toBe(3);
+  });
+});
+
+describe('bet slider stops', () => {
+  it('bets in small blinds: quarters at .25/.50, the big blind when there is no small blind', () => {
+    expect(betUnit({ smallBlind: 25, bigBlind: 50, smallBet: 50 })).toBe(25);
+    expect(betUnit({ smallBlind: 0, bigBlind: 50, smallBet: 50 })).toBe(25);
+    expect(betUnit({ smallBlind: 0, bigBlind: 0, smallBet: 0 })).toBe(1);
+  });
+
+  it('a short range moves one small blind at a time, ending on the exact all in', () => {
+    const stops = betStops(100, 1037, 25);
+    expect(stops[0]).toBe(100);
+    expect(stops[1]).toBe(125);
+    expect(stops.at(-1)).toBe(1037);
+    expect(stops.at(-2)).toBe(1025);
+    expect(stops.length).toBeLessThanOrEqual(SLIDER_STOPS + 2);
+  });
+
+  it('a deep stack moves in round amounts, never odd cents', () => {
+    // $50 at .25/.50: whole dollars.
+    const stops = betStops(100, 5000, 25);
+    expect(stops.slice(0, 4)).toEqual([100, 200, 300, 400]);
+    expect(stops.every((s) => s % 100 === 0)).toBe(true);
+    // An odd minimum raise still starts the slider, then it joins the round amounts.
+    expect(betStops(137, 5000, 25).slice(0, 3)).toEqual([137, 200, 300]);
+    // $200 at 1/2: $5 at a time.
+    expect(betStops(400, 20000, 100)[1]).toBe(500);
+    expect(betStops(400, 20000, 100).length).toBeLessThanOrEqual(SLIDER_STOPS + 2);
+    // Tournament chips at 10/20 with 1,500: 50 at a time.
+    expect(betStops(40, 1500, 10).slice(0, 3)).toEqual([40, 50, 100]);
+  });
+
+  it('an odd small blind still gets a step that is a whole number of blinds', () => {
+    const stops = betStops(30, 10000, 15);
+    expect(stops.slice(1, -1).every((s) => s % 15 === 0)).toBe(true);
+    expect(stops.length).toBeLessThanOrEqual(SLIDER_STOPS + 2);
+  });
+
+  it('finds the stop nearest an amount, and rounds pot sizes to the unit', () => {
+    const stops = betStops(100, 5000, 25);
+    expect(stops[nearestStop(stops, 1861)]).toBe(1900);
+    expect(roundToUnit(187, 25)).toBe(175);
+    expect(roundToUnit(188, 25)).toBe(200);
   });
 });
