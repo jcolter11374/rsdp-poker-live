@@ -88,16 +88,16 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
 /* Below about 1180px wide the side column would squeeze the table, so it moves under it. */
 @media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
-.felt-area { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.felt-area { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 /* Desktop: the table fills the window height, so every seat, the board and the
    action bar are on one screen. The side column scrolls on its own. */
 .table-page:not(.portrait) { height: 100dvh; min-height: 500px; }
 .table-page:not(.portrait) .layout { grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .table-page:not(.portrait) .felt-area { min-height: 0; }
 .table-page:not(.portrait) .side { min-height: 0; overflow-y: auto; }
-.table-page:not(.portrait) .felt-area > .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 84px 100px 40px; }
+.table-page:not(.portrait) .felt-area > .felt { flex: 1 1 auto; aspect-ratio: auto; min-height: 280px; margin: 88px 100px 48px; }
 /* Never taller than about 4:3, so a narrow window doesn't stand the table on its end. */
-@media (min-width: 1181px) { .table-page:not(.portrait) .felt-area > .felt { max-height: max(280px, calc((100vw - 376px - 2 * clamp(110px, 9vw, 175px)) * 0.75)); } }
+@media (min-width: 1181px) { .table-page:not(.portrait) .felt-area > .felt { max-height: max(280px, calc((100vw - 376px - 2 * clamp(140px, 12vw, 240px)) * 0.72)); } }
 .table-page:not(.portrait) .felt-area > :not(.felt) { flex-shrink: 0; }
 @media (max-width: 1180px) { .table-page:not(.portrait) { height: auto; } .table-page:not(.portrait) .felt-area > .felt { aspect-ratio: 16 / 10; flex: none; max-height: max(360px, 100dvh - 300px); } }
 .banner { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; text-align: center; }
@@ -254,7 +254,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 :root[data-deck='four'] .playing-card.suit-d, :root[data-deck='four'] .log-card.suit-d { color: #1d64d8; }
 :root[data-deck='four'] .playing-card.suit-c, :root[data-deck='four'] .log-card.suit-c { color: #17853a; }
 
-.action-bar { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 64px; }
+.action-bar { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 64px; }
 .action-bar.idle { background: transparent; border-color: transparent; }
 .action-bar .buttons { display: flex; gap: 10px; }
 .action-bar .buttons button { flex: 1; padding: 14px 12px; font-size: 1.05rem; font-weight: 700; border-radius: 12px; }
@@ -263,7 +263,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .action-bar .call:hover:not(:disabled) { background: #46586c; border-color: #46586c; }
 .sizing .presets button { border-radius: 999px; padding: 5px 12px; font-size: 0.85rem; }
 .sizing input[type='range'] { accent-color: var(--go); }
-.sizing { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sizing { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; }
 .sizing .presets, .sizing .slider { display: flex; gap: 6px; align-items: center; }
 .sizing .slider { flex: 1; min-width: 220px; }
 .sizing input[type='range'] { flex: 1; min-width: 0; }
@@ -487,7 +487,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   flex: 1;
   min-height: 0;
   aspect-ratio: auto;
-  margin: 62px 50px 26px;
+  margin: 66px 50px 32px;
   border-width: 10px;
 }
 .felt.compact .seat, .felt.compact .nameplate { min-width: 0; }
@@ -526,7 +526,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .portrait .action-bar.idle { background: var(--panel); }
 .portrait .action-bar .buttons button { padding: 14px 6px; font-size: 1rem; }
 .portrait .action-bar.pre .buttons button { padding: 10px 4px; font-size: 0.85rem; }
-.portrait .sizing { gap: 4px; }
+.portrait .sizing { gap: 8px; }
 .portrait .sizing { flex-direction: column; align-items: stretch; }
 .portrait .sizing .presets button { flex: 1; padding: 8px 4px; font-size: 0.85rem; }
 .portrait .sizing .slider { min-width: 0; }
@@ -650,7 +650,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .seat .hole { height: 42px; }
 .felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -10px; }
 .felt.compact .seat .hole:is(.n5, .n6, .n7) .playing-card + .playing-card { margin-left: -13px; }
-.felt.compact .seat.me .playing-card { --cw: 56px; }
+.felt.compact .seat.me .playing-card { --cw: 60px; }
 .felt.compact .seat.me .hole .playing-card + .playing-card { margin-left: -10px; }
 .felt.compact .seat.me .hole.n4 .playing-card + .playing-card { margin-left: -24px; }
 .felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 38px; }
@@ -660,7 +660,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .board.multi .playing-card { --cw: 34px; }
 
 /* Desktop seats: wide dark nameplates with the cards tucked in on the left. */
-.table-page:not(.portrait) .felt-area > .felt { margin-left: clamp(110px, 9vw, 175px); margin-right: clamp(110px, 9vw, 175px); }
+/* A little narrower than the column, so the seats round it have room to breathe. */
+.table-page:not(.portrait) .felt-area > .felt { margin-left: clamp(140px, 12vw, 240px); margin-right: clamp(140px, 12vw, 240px); }
 /* Scaled inside the transform, so the seat stays centred on its spot. */
 .felt:not(.compact) .seat { transform: translate(-50%, -50%) scale(var(--seat-scale, 1)); }
 .felt:not(.compact) {
@@ -673,8 +674,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   .seat.me .nameplate { background: #2a3038; }
   /* Hold'em and Omaha: cards tucked into the left of the nameplate, fanned a little. */
   .seat.has-cards:not(.long-hand) {
-    --cw: 54px;
-    --tuck: 112px;
+    --cw: 60px;
+    --tuck: 122px;
     .nameplate { padding-left: var(--tuck); min-width: calc(var(--tuck) + 150px); }
     .hole { left: 10px; right: auto; translate: none; bottom: 8px; height: auto; z-index: 3; }
     .playing-card.small { --cw: inherit; }
@@ -684,23 +685,23 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
     .hole .playing-card + .playing-card { margin-left: -14px; }
     .hole.n2 .playing-card:first-child { rotate: -4deg; }
     .hole.n2 .playing-card + .playing-card { rotate: 4deg; }
-    .hole.n3 { --cw: 50px; }
+    .hole.n3 { --cw: 55px; }
     .hole.n3 .playing-card + .playing-card { margin-left: -22px; }
-    .hole.n4 { --cw: 48px; }
+    .hole.n4 { --cw: 52px; }
     .hole.n4 .playing-card + .playing-card { margin-left: -20px; }
     .hole:is(.n3, .n4) .playing-card:not(:last-child) .pip { display: none; }
   }
-  .seat.has-cards:not(.long-hand):has(.hole.n3) { --tuck: 136px; }
-  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 158px; }
-  .seat.me.has-cards:not(.long-hand) { --cw: 62px; --tuck: 128px; }
-  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 172px; }
-  .seat.me.has-cards:not(.long-hand) .hole.n4 { --cw: 54px; }
+  .seat.has-cards:not(.long-hand):has(.hole.n3) { --tuck: 146px; }
+  .seat.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 168px; }
+  .seat.me.has-cards:not(.long-hand) { --cw: 70px; --tuck: 140px; }
+  .seat.me.has-cards:not(.long-hand):has(.hole.n4) { --tuck: 184px; }
+  .seat.me.has-cards:not(.long-hand) .hole.n4 { --cw: 58px; }
   .seat.me.has-cards:not(.long-hand) .hole.n4 .playing-card + .playing-card { margin-left: -22px; }
   /* Stud and draw: a row of cards over the nameplate. */
   .seat.long-hand .hole { height: auto; bottom: calc(100% - 6px); }
-  .seat.long-hand .playing-card.small { --cw: 44px; }
+  .seat.long-hand .playing-card.small { --cw: 48px; }
   .seat.long-hand .hole .playing-card + .playing-card { margin-left: -17px; }
-  .seat.long-hand.me .playing-card.small { --cw: 54px; }
+  .seat.long-hand.me .playing-card.small { --cw: 60px; }
   .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -22px; }
   .seat.long-hand.me .nameplate { min-width: 230px; }
   /* Seat state wins over the plain desktop nameplate. */
@@ -829,11 +830,11 @@ dl.shortcuts dd { margin: 0; }
 .portrait .dock.seated { min-height: max(205px, var(--held, 0px)); }
 /* Your own seat draws over empty-seat markers next to it. */
 .seat.me { z-index: 3; }
-/* Shorter windows: a tighter action bar and felt margins give the table the room. */
+/* Shorter windows: a tighter action bar and felt margins give the table (and a full table's seats) the room. */
 @media (max-height: 820px) {
   .table-page:not(.portrait) .action-bar { padding: 8px 12px; gap: 6px; }
   .table-page:not(.portrait) .action-bar .buttons button { padding: 10px 12px; }
-  .table-page:not(.portrait) .felt-area > .felt { margin-top: 72px; margin-bottom: 30px; }
+  .table-page:not(.portrait) .felt-area > .felt { margin: 72px clamp(110px, 9vw, 175px) 30px; }
   .dock.seated { min-height: max(166px, var(--held, 0px)); }
 }
 @media (max-height: 760px) {

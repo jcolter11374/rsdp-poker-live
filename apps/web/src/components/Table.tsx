@@ -166,10 +166,14 @@ export function Table({
   const band = 30 + (boardRows > 1 ? boardRows * 52 : boardRows * 68) + 30 + 100;
   const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - n * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
-  // Desktop seats shrink a little when a full table on a small window leaves them less room than a nameplate.
-  const seatScale = compact ? 1 : Math.round(Math.max(0.72, Math.min(1.06, perimeter / n / 300)) * 100) / 100;
+  // Desktop seats shrink a little when the players and empty seats round the table leave them less room than a
+  // nameplate (about 290px a player and 130px an empty seat at full size), and grow a little on a big window. A short
+  // felt keeps them smaller too, so seats at the top and bottom leave the board (two boards, the result) room between them.
+  const players = view.seats.filter(Boolean).length;
+  const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + (n - players) * 130));
+  const seatScale = compact ? 1 : Math.round(Math.max(0.72, roomy) * 100) / 100;
   // Board cards grow with the felt, so a big window doesn't leave a small board in a sea of green.
-  const boardCard = compact ? null : Math.round(Math.max(56, Math.min(80, w * 0.055, h * 0.15)));
+  const boardCard = compact ? null : Math.round(Math.max(60, Math.min(88, w * 0.062, h * 0.17)));
   // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
   const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
   // The board sits midway between the seats above it and below it (your own cards are bigger),
