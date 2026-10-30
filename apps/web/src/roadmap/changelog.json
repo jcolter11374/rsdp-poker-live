@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-30-b",
+      "date": "2026-10-30",
+      "fixes": [
+        "Tournament payouts default to the group's own RSDP payout table (rounded to $5) instead of a generic curve."
+      ]
+    },
+    {
       "id": "2026-10-30-a",
       "date": "2026-10-30",
       "fixes": [
