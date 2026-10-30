@@ -156,7 +156,7 @@ export function TournamentCreate({
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
   const [payoutsOn, setPayoutsOn] = useState(!!initial?.payouts);
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
-  const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('standard', 600));
+  const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('rsdp', 600));
   const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
   // '' = not part of a season, 'new' = start one, otherwise an existing season's id.
   // A "new season" choice carried over from a starter or saved structure comes back as one.
