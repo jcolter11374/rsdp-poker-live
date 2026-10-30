@@ -14,7 +14,12 @@ export interface PayoutRange {
 export interface PayoutStructure {
   name: string;
   ranges: PayoutRange[];
+  /** Round each place below 1st to the nearest multiple of this (cents), leftover to 1st. */
+  roundTo?: number;
 }
+
+/** Largest rounding step a structure may ask for: $1,000. */
+export const MAX_ROUND_TO = 100_000;
 
 /** Optional display-only money values. All amounts in the smallest unit. */
 export interface PrizeMoney {
@@ -71,6 +76,8 @@ export function validatePayoutStructure(s: PayoutStructure, maxEntries: number):
     if (sum !== 10000) errors.push(`${label}: percents add up to ${sum / 100}, not 100`);
   }
   if (expectedMin - 1 < maxEntries) errors.push(`Ranges stop at ${expectedMin - 1} entries; they must reach ${maxEntries}`);
+  if (s.roundTo !== undefined && !(Number.isInteger(s.roundTo) && s.roundTo >= 1 && s.roundTo <= MAX_ROUND_TO))
+    errors.push('Prize rounding must be a whole amount from 1 cent to $1,000');
   return errors;
 }
 
@@ -80,14 +87,23 @@ export function rangeFor(s: PayoutStructure, entries: number): PayoutRange | nul
 
 /**
  * Prize for each place (index 0 = 1st). Each place is rounded down and the
- * remainder goes to 1st.
+ * remainder goes to 1st. With `roundTo`, places below 1st are rounded to the
+ * nearest step instead, unless that would leave a place with nothing or pay
+ * a place more than the one above it.
  */
 export function placePrizes(pool: number, s: PayoutStructure, entries: number): number[] {
   const range = rangeFor(s, entries);
   if (!range || pool <= 0) return [];
-  const prizes = range.percents.map((p) => Math.floor((pool * cents(p)) / 10000));
-  prizes[0] += pool - prizes.reduce((a, b) => a + b, 0);
-  return prizes;
+  const toFirst = (prizes: number[]) => {
+    prizes[0] += pool - prizes.reduce((a, b) => a + b, 0);
+    return prizes;
+  };
+  const step = s.roundTo ?? 0;
+  if (step > 0 && range.percents.length > 1) {
+    const rounded = toFirst(range.percents.map((p, i) => (i === 0 ? 0 : Math.round((pool * cents(p)) / 10000 / step) * step)));
+    if (rounded.every((x, i) => x > 0 && (i === 0 || x <= rounded[i - 1]))) return rounded;
+  }
+  return toFirst(range.percents.map((p) => Math.floor((pool * cents(p)) / 10000)));
 }
 
 /**
@@ -131,7 +147,46 @@ function fromPaidCounts(name: string, maxEntries: number, paidFor: (entries: num
   return { name, ranges };
 }
 
-export type PayoutPresetName = 'winner-take-all' | 'top-two' | 'top-three' | 'standard' | 'flat';
+export type PayoutPresetName = 'rsdp' | 'winner-take-all' | 'top-two' | 'top-three' | 'standard' | 'flat';
+
+/**
+ * The group's own payout table (the Payouts tab of the RSDP results sheet):
+ * dollars per place for 2 to 50 players at a $20 buy-in. Winner takes all up
+ * to 5 players; one more place is paid every 5 players after that.
+ */
+export const RSDP_PAYOUTS_20: Record<number, number[]> = {
+  2: [40], 3: [60], 4: [80], 5: [100],
+  6: [85, 35], 7: [95, 45], 8: [105, 55], 9: [115, 65], 10: [125, 75],
+  11: [125, 75, 20], 12: [130, 80, 30], 13: [135, 85, 40], 14: [140, 90, 50], 15: [145, 95, 60],
+  16: [145, 95, 60, 20], 17: [150, 95, 65, 30], 18: [155, 100, 70, 35], 19: [165, 100, 70, 45], 20: [170, 105, 75, 50],
+  21: [170, 105, 75, 50, 20], 22: [175, 105, 80, 50, 30], 23: [180, 110, 80, 55, 35], 24: [185, 115, 80, 60, 40], 25: [195, 115, 85, 60, 45],
+  26: [195, 115, 85, 60, 45, 20], 27: [200, 120, 85, 60, 45, 30], 28: [205, 125, 85, 60, 50, 35], 29: [210, 130, 85, 65, 50, 40], 30: [220, 135, 85, 65, 55, 40],
+  31: [220, 135, 85, 65, 55, 40, 20], 32: [225, 135, 85, 65, 55, 45, 30], 33: [230, 140, 90, 65, 55, 45, 35], 34: [235, 145, 90, 65, 55, 50, 40], 35: [240, 150, 90, 70, 60, 50, 40],
+  36: [240, 150, 90, 70, 60, 50, 40, 20], 37: [250, 155, 90, 70, 60, 50, 40, 25], 38: [255, 155, 95, 70, 60, 50, 45, 30], 39: [265, 155, 95, 70, 65, 55, 45, 30], 40: [270, 160, 95, 75, 65, 55, 45, 35],
+  41: [270, 160, 95, 75, 65, 55, 45, 35, 20], 42: [275, 160, 95, 75, 65, 60, 45, 40, 25], 43: [280, 160, 95, 75, 70, 60, 50, 40, 30], 44: [285, 165, 95, 80, 70, 60, 50, 40, 35], 45: [290, 175, 95, 80, 70, 65, 50, 40, 35],
+  46: [290, 175, 95, 80, 70, 65, 50, 40, 35, 20], 47: [295, 180, 95, 80, 75, 65, 50, 40, 35, 25], 48: [295, 185, 95, 85, 75, 65, 55, 45, 35, 25], 49: [300, 190, 100, 85, 75, 65, 55, 45, 35, 30], 50: [305, 195, 100, 90, 80, 65, 55, 45, 35, 30],
+};
+
+/**
+ * The RSDP table as percents (two decimals, adding up to 100), rounded to
+ * $5 so a $20 buy-in pays exactly the sheet's amounts. Above 50 entries the
+ * 50-player split carries on.
+ */
+function rsdpPreset(maxEntries: number): PayoutStructure {
+  const ranges: PayoutRange[] = [];
+  const top = Math.max(...Object.keys(RSDP_PAYOUTS_20).map(Number));
+  for (let n = 2; n <= Math.min(maxEntries, top); n++) {
+    const amounts = RSDP_PAYOUTS_20[n];
+    const c = amounts.map((a) => Math.round((a * 10000) / (n * 20)));
+    c[0] += 10000 - c.reduce((a, b) => a + b, 0);
+    const percents = c.map((x) => x / 100);
+    const last = ranges[ranges.length - 1];
+    if (last && last.percents.join() === percents.join()) last.maxEntries = n;
+    else ranges.push({ minEntries: n, maxEntries: n, percents });
+  }
+  ranges[ranges.length - 1].maxEntries = Math.max(ranges[ranges.length - 1].maxEntries, maxEntries);
+  return { name: 'rsdp', ranges, roundTo: 500 };
+}
 
 /** Standard paid places: 1 up to 4 entries, 2 up to 7, 3 up to 10, then about 15% of the field. */
 function standardPaid(n: number): number {
@@ -143,6 +198,8 @@ function standardPaid(n: number): number {
 
 export function payoutPreset(name: PayoutPresetName, maxEntries = 600): PayoutStructure {
   switch (name) {
+    case 'rsdp':
+      return rsdpPreset(maxEntries);
     case 'winner-take-all':
       return { name, ranges: [{ minEntries: 2, maxEntries, percents: [100] }] };
     case 'top-two':
