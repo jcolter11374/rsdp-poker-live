@@ -2270,6 +2270,8 @@ export class TableRuntime {
     if (s.ritDeadline !== null && hand?.phase !== 'rit-vote') s.ritDeadline = null;
     if (hand && hand.phase !== 'complete') {
       if (hand.phase === 'rit-vote') {
+        // Nobody is to act during the vote. The last actor's turn clock would run out mid-vote and fire forever.
+        s.turn = null;
         // Bots always say yes to running it twice.
         const botVoter = hand.seats.find((x) => !x.folded && x.ritVote === null && this.isBot(x.playerId));
         if (botVoter) {
@@ -2291,7 +2293,10 @@ export class TableRuntime {
       }
       s.ritDeadline = null;
       const toAct = hand.toAct;
-      if (toAct === null) return false;
+      if (toAct === null) {
+        s.turn = null;
+        return false;
+      }
       const key = `${hand.input.handId}:${hand.events.length}`;
       if (!s.turn || s.turn.key !== key) s.turn = this.newTurn(key, toAct);
       const due = this.botDue();

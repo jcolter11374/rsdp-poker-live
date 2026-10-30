@@ -333,6 +333,22 @@ describe('clocks', () => {
     expect(hand(rt).runs).toHaveLength(2);
   });
 
+  it('a run it twice vote called late on the clock does not spin the timers', () => {
+    const { rt, clock } = table((s) => (s.play.runItTwice = 'ask'));
+    seatPlayers(rt, 2);
+    rt.start('host');
+    rt.act(toActId(rt), { type: 'raise', to: 200 });
+    // The caller's clock runs out a few seconds into the vote.
+    clock.advance((rt.settings.timing.decisionSeconds - 3) * 1000);
+    rt.act(toActId(rt), { type: 'call' });
+    expect(hand(rt).phase).toBe('rit-vote');
+    expect(rt.state.turn).toBeNull();
+    clock.advance(5_000);
+    expect(hand(rt).phase).toBe('rit-vote');
+    clock.advance(10_000);
+    expect(hand(rt).phase).toBe('complete');
+  });
+
   it('run it twice: missing votes count as no when time runs out', () => {
     const { rt, clock } = table((s) => (s.play.runItTwice = 'ask'));
     seatPlayers(rt, 2);
