@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-30-c",
+      "date": "2026-10-30",
+      "fixes": [
+        "New tournaments show a prize pool and payouts by default ($20 buy-in, our payout table), so every tournament's buy-ins and prizes are kept with its results. Untick it for a freeroll."
+      ]
+    },
+    {
       "id": "2026-10-30-b",
       "date": "2026-10-30",
       "fixes": [
