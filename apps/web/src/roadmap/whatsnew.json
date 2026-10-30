@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-30-b",
+      "date": "2026-10-30",
+      "title": "Our own tournament payouts",
+      "items": [
+        { "title": "Prizes split the RSDP way", "detail": "When you show a prize pool, a new tournament now starts with the group's own payout table from our results sheet: winner takes all up to 5 players, then one more place paid for every 5 more players, in $5 steps. At a $20 buy-in it pays exactly what the sheet does (6 players: $85 / $35, 8 players: $105 / $55). The other presets are still in the list.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026-10-29-f",
       "date": "2026-10-29",
       "title": "A calmer, cleaner table",

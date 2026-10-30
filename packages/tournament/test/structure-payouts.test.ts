@@ -11,6 +11,7 @@ import {
   presetStructure,
   prizePool,
   prizesForPlaces,
+  RSDP_PAYOUTS_20,
   validatePayoutStructure,
   validateStructure,
   type LevelRow,
@@ -101,7 +102,7 @@ describe('structures', () => {
 
 describe('payouts', () => {
   it('presets are valid up to 600 entries', () => {
-    for (const name of ['winner-take-all', 'top-two', 'top-three', 'standard', 'flat'] as const) {
+    for (const name of ['rsdp', 'winner-take-all', 'top-two', 'top-three', 'standard', 'flat'] as const) {
       expect(validatePayoutStructure(payoutPreset(name), 600)).toEqual([]);
     }
   });
@@ -110,6 +111,27 @@ describe('payouts', () => {
     const s = payoutPreset('standard');
     const paid = (n: number) => placePrizes(10_000, s, n).length;
     expect([paid(4), paid(7), paid(10), paid(20), paid(100), paid(600)]).toEqual([1, 2, 3, 4, 15, 90]);
+  });
+
+  it('rsdp pays exactly the sheet amounts at a $20 buy-in', () => {
+    for (const max of [2, 5, 9, 50, 600]) {
+      const s = payoutPreset('rsdp', max);
+      expect(validatePayoutStructure(s, max)).toEqual([]);
+      for (let n = 2; n <= Math.min(max, 50); n++) expect(placePrizes(n * 2000, s, n)).toEqual(RSDP_PAYOUTS_20[n].map((d) => d * 100));
+    }
+    // Above 50 the 50-player split carries on, still in $5 steps.
+    const big = placePrizes(80 * 2000, payoutPreset('rsdp', 600), 80);
+    expect(big).toHaveLength(10);
+    expect(big.reduce((a, b) => a + b, 0)).toBe(160_000);
+    expect(big.slice(1).every((x) => x % 500 === 0)).toBe(true);
+  });
+
+  it('rounds to the step only when every place still pays and the order holds', () => {
+    const s = { name: 'x', roundTo: 500, ranges: [{ minEntries: 2, maxEntries: 10, percents: [70, 30] }] };
+    expect(placePrizes(6200, s, 6)).toEqual([4200, 2000]);
+    // $1.86 for 2nd would round to nothing, so the plain split is used.
+    expect(placePrizes(620, s, 6)).toEqual([434, 186]);
+    expect(validatePayoutStructure({ ...s, roundTo: 0 }, 10)).toEqual(['Prize rounding must be a whole amount from 1 cent to $1,000']);
   });
 
   it('two-place curve is about 65/35', () => {

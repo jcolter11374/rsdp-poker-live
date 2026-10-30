@@ -3,6 +3,7 @@ import { payoutPreset, placePrizes, validatePayoutStructure, type PayoutPresetNa
 import { money, ordinal } from './format';
 
 const PRESETS: Record<PayoutPresetName, string> = {
+  rsdp: 'RSDP (our payout table)',
   standard: 'Standard (about 15% paid)',
   flat: 'Flat (about 20% paid)',
   'top-three': 'Top 3',
@@ -93,6 +94,7 @@ export function PayoutEditor({ value, onChange, maxEntrants, pool }: { value: Pa
           + Add range
         </button>
       </details>
+      {value.roundTo ? <p className="muted">Prizes below 1st are rounded to the nearest {money(value.roundTo)}; anything left over goes to 1st.</p> : null}
       {errors.map((e) => (
         <p className="error" key={e}>
           {e}
