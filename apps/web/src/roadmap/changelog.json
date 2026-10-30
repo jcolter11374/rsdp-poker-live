@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026-10-30-a",
+      "date": "2026-10-30",
+      "fixes": [
+        "No more lag during a run it twice vote: if the all-in was called with under 12 seconds left on the clock, the server got stuck re-sending the table until the vote ended, which could freeze the table (and slow others) for a few seconds."
+      ]
+    },
+    {
       "id": "2026-10-29-f",
       "date": "2026-10-29",
       "fixes": [
