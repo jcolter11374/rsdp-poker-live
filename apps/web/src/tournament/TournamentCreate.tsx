@@ -154,7 +154,7 @@ export function TournamentCreate({
   const [reEntry, setReEntry] = useState(base.reEntry);
   const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
-  const [payoutsOn, setPayoutsOn] = useState(!!initial?.payouts);
+  const [payoutsOn, setPayoutsOn] = useState(initial ? !!initial.payouts : true);
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('rsdp', 600));
   const [formats, setFormats] = useState<Formats>(() => ({ bounty: initial?.bounty ?? null, invites: initial?.invites ?? null, checkIn: initial?.checkIn ?? null }));
