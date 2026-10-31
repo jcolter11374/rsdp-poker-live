@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   copySettings,
   defaultSettings,
@@ -147,6 +147,8 @@ export function TournamentCreate({
   const [nth, setNth] = useState<1 | 2 | 3 | 4 | -1>(first.nth);
   const [sng, setSng] = useState(initial?.start.kind === 'sng' ? { playersNeeded: initial.start.playersNeeded, startDelaySeconds: initial.start.startDelaySeconds, autoSpawn: initial.start.autoSpawn } : { playersNeeded: 9, startDelaySeconds: 30, autoSpawn: true });
   const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? structuredClone(RSDP_DEFAULTS.structure));
+  /** The break ticking Add-ons put in, so unticking it takes that break out again. */
+  const addOnBreak = useRef<StructureRow | null>(null);
   // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
   const base = useMemo(() => {
     if (!initial) return RSDP_DEFAULTS;
@@ -524,9 +526,16 @@ export function TournamentCreate({
                       if (first >= 0) setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
                       else {
                         const at = Math.max(1, Math.min(4, structure.length - 1));
-                        setStructure([...structure.slice(0, at), { kind: 'break', minutes: 5, addOn: true }, ...structure.slice(at)]);
+                        const added: StructureRow = { kind: 'break', minutes: 5, addOn: true };
+                        addOnBreak.current = added;
+                        setStructure([...structure.slice(0, at), added, ...structure.slice(at)]);
                       }
+                    } else if (!e.target.checked && addOnBreak.current && structure.includes(addOnBreak.current)) {
+                      // Unticked again: the break it added goes too, unless the host has changed it since.
+                      const added = addOnBreak.current;
+                      setStructure(structure.filter((r) => r !== added));
                     }
+                    if (!e.target.checked) addOnBreak.current = null;
                   }} />
                 Add-ons (on breaks marked Add-ons)
               </label>
