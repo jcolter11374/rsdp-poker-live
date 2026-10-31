@@ -66,7 +66,14 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
               Start game
             </button>
           ) : (
-            <button onClick={() => run(call('host:stop'), handLive ? 'The game stops after this hand.' : '')} disabled={view.stopAfterHand}>
+            <button
+              title="Ends the game: every hand so far, folded cards included, can then be checked. Use Pause for a break."
+              onClick={() =>
+                confirm('Stop the game? Once it stops, everyone can check every hand so far, folded and mucked cards included. For a break, use Pause instead.') &&
+                run(call('host:stop'), handLive ? 'The game stops after this hand.' : '')
+              }
+              disabled={view.stopAfterHand}
+            >
               {view.stopAfterHand ? 'Stopping after this hand' : 'Stop game'}
             </button>
           )}
