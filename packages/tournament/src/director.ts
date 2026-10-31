@@ -327,9 +327,23 @@ export function reEntryOpen(s: TournamentState): boolean {
   return s.settings.reEntry.enabled && started(s) && withinLevel(s, s.settings.reEntry.throughLevel);
 }
 
+/** Places paid: re-entries count toward them, but only one entry per player can finish, so never more than that. */
 export function paidPlaces(s: TournamentState): number {
   if (!s.settings.payouts) return 0;
-  return rangeFor(s.settings.payouts.structure, s.entries.length)?.percents.length ?? 0;
+  return Math.min(rangeFor(s.settings.payouts.structure, s.entries.length)?.percents.length ?? 0, rankedEntries(s).length);
+}
+
+/**
+ * The prize for each finishing place, 1st first. Re-entries count towards the places paid, but only one entry per
+ * player can finish: prizes for places nobody can reach go to 1st, like any other remainder, so the prizes still add
+ * up to the pool.
+ */
+export function finishPrizes(s: TournamentState): number[] {
+  if (!s.settings.payouts) return [];
+  const prizes = placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length);
+  const reachable = rankedEntries(s).length;
+  if (prizes.length > reachable && reachable > 0) prizes[0] += prizes.splice(reachable).reduce((a, b) => a + b, 0);
+  return prizes;
 }
 
 export function currentPrizePool(s: TournamentState): number {
@@ -362,12 +376,7 @@ function places(s: TournamentState): Map<EntryId, number> {
 
 export function standings(s: TournamentState): Standing[] {
   const placeOf = places(s);
-  const prizes = s.settings.payouts ? placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length) : [];
-  // Re-entries count towards the places paid, but only one entry per player can finish: prizes for places nobody can
-  // reach go to 1st, like any other remainder, so the prizes still add up to the pool.
-  const reachable = rankedEntries(s).length;
-  if (prizes.length > reachable && reachable > 0) prizes[0] += prizes.splice(reachable).reduce((a, b) => a + b, 0);
-  const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
+  const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), finishPrizes(s));
   // Rebuys, add-ons, bounties and knockouts follow the player through re-entries.
   const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
   return s.entries

@@ -4,6 +4,7 @@ import {
   chipChop,
   createTournament,
   defaultSettings,
+  finishPrizes,
   paidPlaces,
   rangeFor,
   standings,
@@ -270,8 +271,9 @@ describe('payouts with re-entries', () => {
       e.run({ type: 'reEnter', playerId: who });
     }
     expect(e.get().entries).toHaveLength(16);
-    // RSDP pays 4 places at 16 entries, but only three people are playing.
-    expect(paidPlaces(e.get())).toBe(4);
+    // RSDP pays 4 places at 16 entries, but only three people are playing: the lobby's list and count say 3.
+    expect(paidPlaces(e.get())).toBe(3);
+    expect(finishPrizes(e.get())).toEqual([16500, 9500, 6000]);
     e.set(bustHand(e.get(), 'p0', ['p2']));
     e.set(bustHand(e.get(), 'p0', ['p1']));
     e.set(tick(e.get(), T0 + 6 * 3600_000).state);
