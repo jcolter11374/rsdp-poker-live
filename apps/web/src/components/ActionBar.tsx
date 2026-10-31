@@ -170,14 +170,18 @@ export function ActionBar({
     inFlight.current = false;
     setSending(false);
   };
-  const run = (p: () => Promise<unknown>) => {
+  /** What the last tap sent: showing cards one at a time is a run of taps, not a double tap. */
+  const lastKind = useRef('');
+  const run = (p: () => Promise<unknown>, kind = 'move') => {
     // The next turn's view arrives before the answer to this move, and frees the buttons: a tap within half a second
     // of a move is still the second half of a double tap, not a move on the next street.
-    if (inFlight.current || Date.now() - lastSent.current < DOUBLE_TAP_MS) return;
+    if (inFlight.current) return;
+    if (Date.now() - lastSent.current < DOUBLE_TAP_MS && !(kind === 'show' && lastKind.current === 'show')) return;
     setTipAt(null);
     setWhyAt(null);
     inFlight.current = true;
     lastSent.current = Date.now();
+    lastKind.current = kind;
     setSending(true);
     // An answer lost to a dropped connection never comes: give the buttons back rather than lock them for good.
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -186,7 +190,11 @@ export function ActionBar({
     });
     Promise.race([p(), noAnswer])
       .then(() => setError(''))
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => {
+        // Refused: nothing moved on, so a tap straight after is a fresh try, not a double tap.
+        lastSent.current = 0;
+        setError(e.message);
+      })
       .finally(() => {
         clearTimeout(timer);
         release();
@@ -358,10 +366,10 @@ export function ActionBar({
         {hint}
         {errorLine}
         <div className="buttons small">
-          <button onClick={() => run(() => call('hand:show', { cards: view.canShow }))}>Show cards</button>
+          <button onClick={() => run(() => call('hand:show', { cards: view.canShow }), 'show')}>Show cards</button>
           {view.canShow.length > 1 &&
             view.canShow.map((i) => (
-              <button key={i} onClick={() => run(() => call('hand:show', { cards: [i] }))}>
+              <button key={i} onClick={() => run(() => call('hand:show', { cards: [i] }), 'show')}>
                 Show {cardName(myCards[i])}
               </button>
             ))}
