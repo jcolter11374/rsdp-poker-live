@@ -1,6 +1,6 @@
 import type { Award, HandEvent } from '@rsdp/engine/core';
 import { getVariant } from '@rsdp/engine/variants';
-import type { BotNote, HandRecordView, HandView, SeatView, TableView, WireCard } from '@rsdp/engine/wire';
+import type { BotNote, HandRecordView, HandView, SeatView, SharedHandView, TableView, WireCard } from '@rsdp/engine/wire';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { eventLines, type Fmt } from './format';
 
@@ -50,6 +50,16 @@ function clone(f: Frame): Frame {
   const seats = new Map<number, ReplaySeat>();
   for (const [k, s] of f.seats) seats.set(k, { ...s, cards: s.cards.map((c) => ({ ...c })) });
   return { ...f, seats, boards: f.boards.map((run) => run.map((b) => [...b])), awards: [...f.awards] };
+}
+
+/**
+ * Who a shared hand link plays back as: the sharer, when they kept their own
+ * cards in it, so those show face up from their chair. Otherwise nobody, and
+ * only shown cards are face up.
+ */
+export function sharedHandViewer(shared: Pick<SharedHandView, 'hand' | 'sharerSeat'>): string | null {
+  if (shared.sharerSeat === undefined) return null;
+  return shared.hand.seats.find((s) => s.seat === shared.sharerSeat)?.playerId ?? null;
 }
 
 /**

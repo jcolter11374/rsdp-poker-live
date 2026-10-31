@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { engine, type HandState } from '@rsdp/engine/core';
-import type { BotNote, HandRecordView } from '@rsdp/engine/wire';
+import type { BotNote, HandRecordView, SharedHandView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { finalStacks, isReplayable, playerStats, replayFrames } from './replay';
+import { finalStacks, frameView, isReplayable, playerStats, replayFrames, sharedHandViewer } from './replay';
 
 const fmt = (n: number) => String(n);
 /** A finished engine hand as one viewer gets it from the server. */
@@ -160,5 +160,38 @@ describe('isReplayable', () => {
     expect(isReplayable(h, fmt)).toBe(true);
     expect(h.botNotes).toBeUndefined();
     expect(replayFrames(h, 'p0', fmt).every((f) => f.why.length === 0)).toBe(true);
+  });
+});
+
+describe('shared hand links', () => {
+  /** A link to `s`, frozen as the server freezes it: as seat 0 saw it, or as an outsider when seat 0 hid their cards. */
+  const link = (s: HandState, hideMine: boolean): SharedHandView => ({
+    id: 'link-0123456789',
+    tableName: 'Share night',
+    centsMode: false,
+    seatCount: 2,
+    felt: null,
+    sharedBy: 'p0',
+    createdAt: 0,
+    ...(hideMine ? {} : { sharerSeat: 0 }),
+    hand: record(s, hideMine ? null : 0),
+  });
+  /** Seat 0's cards at the end of the replay, as the shared page draws them. */
+  const onScreen = (shared: SharedHandView) => {
+    const viewer = sharedHandViewer(shared);
+    const frames = replayFrames(shared.hand, viewer, fmt);
+    return frameView(shared.tableName, shared.seatCount, shared.hand, frames.at(-1)!, viewer).seats[0]!.cards.map((c) => c.card);
+  };
+
+  it('shows the sharer’s cards with Show my cards, even when nobody turned them over', () => {
+    // Heads up, seat 0 on the button raises with aces and seat 1 folds: no showdown.
+    const s = start({ stacks: [100, 100], button: 0, top: ['Kh', 'As', 'Ks', 'Ad'] });
+    engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.minTo });
+    engine.act(s, s.toAct!, { type: 'fold' });
+    expect(s.phase).toBe('complete');
+    expect(onScreen(link(s, false))).toEqual(['As', 'Ad']);
+    expect(replayFrames(link(s, false).hand, sharedHandViewer(link(s, false)), fmt).some((f) => f.caption.startsWith('You are dealt'))).toBe(true);
+    // A link made with the cards hidden still shows them face down.
+    expect(onScreen(link(s, true))).toEqual(['??', '??']);
   });
 });

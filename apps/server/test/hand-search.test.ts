@@ -110,10 +110,16 @@ describe('hand search', () => {
     // Sharing: my own hand makes a link anyone can open; someone else's hand looks missing.
     const share = await fetch(`${url}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ handId: first.handId, hideMine: true }) });
     const { id } = (await share.json()) as { id: string };
-    const link = (await (await fetch(`${url}/api/shared/${id}`)).json()) as { tableName: string; hand: Found['hand'] };
+    const link = (await (await fetch(`${url}/api/shared/${id}`)).json()) as { tableName: string; sharerSeat?: number; hand: Found['hand'] };
     expect(link.tableName).toBe('With Cal');
-    // Hidden: my cards are face down too.
+    // Hidden: my cards are face down too, and the link doesn't say which seat was mine.
     for (const e of link.hand.events.filter((x) => x.t === 'deal')) for (const c of e.cards ?? []) expect(c.card).toBe('??');
+    expect(link.sharerSeat).toBeUndefined();
+    // Shown: my cards are face up, and the link names my seat so the replay shows them.
+    const shown = await fetch(`${url}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ handId: first.handId }) });
+    const shownLink = (await (await fetch(`${url}/api/shared/${((await shown.json()) as { id: string }).id}`)).json()) as { sharerSeat?: number; hand: Found['hand'] };
+    expect(shownLink.sharerSeat).toBe(mySeat);
+    for (const c of shownLink.hand.events.find((x) => x.t === 'deal' && x.seat === mySeat)!.cards!) expect(c.card).not.toBe('??');
     const bensHands = (await search('', BEN)).hands.filter((h) => h.tableName === 'Ben and Cal');
     const theirs = await fetch(`${url}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': ANN }, body: JSON.stringify({ handId: bensHands[0].handId }) });
     expect(theirs.status).toBe(404);

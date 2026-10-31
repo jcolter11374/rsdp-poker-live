@@ -7,6 +7,7 @@ import { findHighlights, HIGHLIGHT_ICON } from '../../highlights';
 import { ohhFile } from '../../ohh';
 import { Modal } from '../SeatDialog';
 import { Replayer } from '../Replayer';
+import { sharedHandViewer } from '../../replay';
 
 /*
  * Records beyond the hand list: share a hand as a link, the table's
@@ -208,7 +209,7 @@ export function SharedHandPage({ id }: { id: string }) {
         start={0}
         tableName={data.tableName}
         seatCount={Math.max(data.seatCount, ...data.hand.seats.map((s) => s.seat + 1))}
-        myId={null}
+        myId={sharedHandViewer(data)}
         felt={(data.felt ?? undefined) as TableView['settings']['table']['felt']}
         fmt={fmt}
         onClose={() => (location.href = '/')}

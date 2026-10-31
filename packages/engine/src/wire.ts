@@ -282,6 +282,8 @@ export interface SharedHandView {
   seatCount: number;
   felt: string | null;
   sharedBy: string;
+  /** The sharer's seat, only when they kept their own cards in the link, so the replay shows those cards from their chair. */
+  sharerSeat?: number;
   createdAt: number;
   hand: HandRecordView;
 }

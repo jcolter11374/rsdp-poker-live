@@ -1076,6 +1076,8 @@ export function createApp(deps: AppDeps = {}) {
           const id = newId();
           // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
           const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
+          // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
+          const sharerSeat = input?.hideMine ? undefined : hand.seats.find((s) => s.playerId === me)?.seat;
           await sharedStore.create({
             id,
             tableId: rt.state.id,
@@ -1088,6 +1090,7 @@ export function createApp(deps: AppDeps = {}) {
               seatCount: rt.state.seats.length,
               felt: rt.state.settings.table.felt ?? null,
               sharedBy: socket.data.session.displayName || rt.nameOf(me),
+              ...(sharerSeat !== undefined ? { sharerSeat } : {}),
               createdAt: now,
               hand,
             },

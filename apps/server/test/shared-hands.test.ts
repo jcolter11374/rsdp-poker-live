@@ -61,10 +61,14 @@ describe('shared hands and the full log', () => {
         .find((d) => d.seat === 1)!
         .cards.every((c) => c.card === '??'),
     ).toBe(true);
+    // The link says whose cards those are, so the replay can show them face up from the sharer's chair.
+    expect(shared.sharerSeat).toBe(0);
 
     const hidden = await host.call<{ id: string }>('hand:share', { handNumber, hideMine: true });
     const hiddenHand = (await (await fetch(`${url}/api/shared/${hidden.id}`)).json()) as SharedHandView;
     expect(deals(hiddenHand.hand).every((d) => d.cards.every((c) => c.card === '??'))).toBe(true);
+    // With my cards hidden, the link doesn't say which seat was mine either.
+    expect(hiddenHand.sharerSeat).toBeUndefined();
 
     await expect(guest.call('hand:unshare', { id })).rejects.toThrow(/not one of yours/);
     await host.call('hand:unshare', { id });
