@@ -207,4 +207,19 @@ describe('shared hand links', () => {
     // Still seen from the sharer's chair.
     expect(shown.me).toEqual({ playerId: '', seat: 0 });
   });
+
+  it('shows the sharer’s cards in a link made before links said whose they were', () => {
+    // Links are kept: one made with Show my cards back then holds the cards but no seat.
+    const { sharerSeat, ...old } = link(aces(), false);
+    expect(sharerSeat).toBe(0);
+    expect(replay(old).cards).toEqual(['As', 'Ad']);
+    expect(replay(old).captions.some((c) => c.includes('p0 is dealt [As] [Ad]'))).toBe(true);
+    // Cards turned over at a showdown are no clue: in a link with the sharer's cards hidden, nobody's are face up from the deal.
+    const s = start({ stacks: [100, 100] });
+    passive(s);
+    const hidden = link(s, true);
+    expect(hidden.hand.events.some((e) => e.t === 'deal' && e.cards.some((c) => c.card !== '??'))).toBe(true);
+    expect(sharedHandViewer(hidden).sharerSeat).toBeNull();
+    expect(replay(link(aces(), true)).cards).toEqual(['??', '??']);
+  });
 });

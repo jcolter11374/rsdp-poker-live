@@ -59,7 +59,19 @@ function clone(f: Frame): Frame {
  * seen from the sharer's chair; otherwise only shown cards are face up.
  */
 export function sharedHandViewer(shared: Pick<SharedHandView, 'hand' | 'sharerSeat'>): { myId: null; sharerSeat: number | null } {
-  return { myId: null, sharerSeat: shared.sharerSeat ?? null };
+  return { myId: null, sharerSeat: shared.sharerSeat ?? sharerSeatFromCards(shared.hand) };
+}
+
+/**
+ * The sharer's seat in a link made before links said which it was. A link
+ * holds no hidden card but the sharer's own and ones that were shown, so a
+ * known card nobody showed is the sharer's. Null when there is none (they hid
+ * their cards, or showed every one).
+ */
+function sharerSeatFromCards(hand: HandRecordView): number | null {
+  const shown = new Set(hand.events.flatMap((e) => (e.t === 'show' ? e.cards.map((c) => `${e.seat} ${c}`) : [])));
+  const deal = hand.events.find((e) => e.t === 'deal' && e.cards.some((c) => !c.up && c.card !== '??' && !shown.has(`${e.seat} ${c.card}`)));
+  return deal?.t === 'deal' ? deal.seat : null;
 }
 
 /**
