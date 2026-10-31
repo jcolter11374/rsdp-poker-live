@@ -361,6 +361,7 @@ export interface Standing {
   /** Finishing place; null while still playing. Tied players share a place. */
   place: number | null;
   stack: number;
+  /** Rebuys and add-ons over all of this player's entries. */
   rebuys: number;
   addOns: number;
   /** Display-only prize for a finished place (0 when out of the money or no payouts set). */

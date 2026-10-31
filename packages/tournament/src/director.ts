@@ -368,7 +368,7 @@ export function standings(s: TournamentState): Standing[] {
   const reachable = rankedEntries(s).length;
   if (prizes.length > reachable && reachable > 0) prizes[0] += prizes.splice(reachable).reduce((a, b) => a + b, 0);
   const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
-  // Bounties and knockouts follow the player through re-entries.
+  // Rebuys, add-ons, bounties and knockouts follow the player through re-entries.
   const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
   return s.entries
     .filter((e) => !e.supersededBy)
@@ -379,8 +379,8 @@ export function standings(s: TournamentState): Standing[] {
       entryNo: e.entryNo,
       place: placeOf.get(e.id) ?? null,
       stack: isAlive(e) ? e.stack : 0,
-      rebuys: e.rebuys,
-      addOns: e.addOns,
+      rebuys: ofPlayer(e.playerId, (x) => x.rebuys),
+      addOns: ofPlayer(e.playerId, (x) => x.addOns),
       prize: prizeOf[e.id] ?? 0,
       eliminatedBy: e.bust?.by ?? [],
       bounties: ofPlayer(e.playerId, (x) => x.bountiesWon ?? 0),
