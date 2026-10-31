@@ -6,7 +6,7 @@
 
 import express from 'express';
 import { fromLocal, isValidTimeZone, standings, toLocal, type TournamentState } from '@rsdp/tournament';
-import { leaderboard, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
+import { leaderboard, leaderData, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderData, type LeaderRow } from './db';
 import { StorageError } from './db/errors';
 import {
   adoptGuest,
@@ -287,8 +287,9 @@ export function accountRoutes(
     }),
   );
 
-  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period start.
-  const boards = new Map<string, { at: number; rows: Promise<LeaderRow[]> }>();
+  // The group's leaderboards: this month, this year or all time. The hands are read at most once a minute for all of
+  // them, from every time zone, and each board is worked out once from that read.
+  let read: { at: number; data: Promise<LeaderData>; boards: Map<string, Promise<LeaderRow[]>> } | null = null;
   app.get(
     '/api/leaderboard',
     route(async (req, res, db) => {
@@ -300,17 +301,21 @@ export function accountRoutes(
       const t = now();
       const here = toLocal(t, tz);
       const since = period === 'all' ? undefined : new Date(fromLocal({ year: here.year, month: period === 'month' ? here.month : 1, day: 1, hour: 0, minute: 0 }, tz));
+      if (!read || t - read.at >= LEADERBOARD_CACHE_MS) {
+        const fresh = { at: t, data: leaderData(db), boards: new Map<string, Promise<LeaderRow[]>>() };
+        read = fresh;
+        fresh.data.catch(() => read === fresh && (read = null));
+      }
+      const { data, boards } = read;
       // Time zones whose period starts at the same moment share one answer.
       const key = `${period} ${since?.getTime() ?? ''}`;
-      let cached = boards.get(key);
-      if (!cached || t - cached.at >= LEADERBOARD_CACHE_MS) {
-        // Old answers (last month's, other time zones') go once they are out of date.
-        for (const [k, b] of boards) if (t - b.at >= LEADERBOARD_CACHE_MS) boards.delete(k);
-        cached = { at: t, rows: leaderboard(db, since) };
-        boards.set(key, cached);
-        cached.rows.catch(() => boards.get(key) === cached && boards.delete(key));
+      let rows = boards.get(key);
+      if (!rows) {
+        const made = data.then((d) => leaderboard(db, d, since));
+        boards.set(key, (rows = made));
+        made.catch(() => boards.get(key) === made && boards.delete(key));
       }
-      res.json({ period, since: since?.toISOString() ?? null, rows: await cached.rows });
+      res.json({ period, since: since?.toISOString() ?? null, rows: await rows });
     }),
   );
 

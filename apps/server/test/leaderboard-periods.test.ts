@@ -2,6 +2,8 @@
 // time zone), not at UTC midnight, so the last evening of a month still counts in that month.
 
 import type { AddressInfo } from 'node:net';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
@@ -92,5 +94,34 @@ describe('leaderboard periods', () => {
     expect((await board('period=month')).since).toBe('2026-11-01T00:00:00.000Z');
     expect((await board('period=month&tz=Mars%2FOlympus')).since).toBe('2026-11-01T00:00:00.000Z');
     expect((await board(`period=month&tz=${'A'.repeat(500)}`)).since).toBe('2026-11-01T00:00:00.000Z');
+  });
+
+  it('reads the hands at most once a minute, however many time zones ask', async () => {
+    // Counts every query that reads the hands, the one that grows with the group's history.
+    const execute = db.execute.bind(db);
+    const dialect = new PgDialect();
+    let reads = 0;
+    db.execute = ((query: SQL) => {
+      if (/\bfrom hands\b/.test(dialect.sqlToQuery(query).sql)) reads++;
+      return execute(query);
+    }) as typeof db.execute;
+    try {
+      // 9:30am in New York on 1 November, half an hour after the last board above.
+      clock.t = Date.parse('2026-11-01T14:30:00Z');
+      const zones = ['UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/Paris', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland'];
+      const boards = new Map<string, Awaited<ReturnType<typeof board>>>();
+      for (const period of ['month', 'year']) for (const tz of zones) boards.set(`${period} ${tz}`, await board(`period=${period}&tz=${encodeURIComponent(tz)}`));
+      await board('period=all');
+      expect(reads).toBe(1);
+      // Still each zone's own answer: November began after Halloween night in New York, before its last hand in UTC.
+      expect(boards.get('month America/New_York')).toEqual({ since: '2026-11-01T04:00:00.000Z', profit: 0, games: 0 });
+      expect(boards.get('month UTC')).toEqual({ since: '2026-11-01T00:00:00.000Z', profit: 1000, games: 1 });
+      // A minute on, the hands are read again.
+      clock.t += 60_000;
+      await board('period=month&tz=UTC');
+      expect(reads).toBe(2);
+    } finally {
+      db.execute = execute;
+    }
   });
 });
