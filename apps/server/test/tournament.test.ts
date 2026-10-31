@@ -225,4 +225,30 @@ describe('tournaments on the server', () => {
     expect(rt.state.seats.find((x) => x?.playerId === offered.playerId)?.stack).toBe(100);
     expect(rt.state.hand && rt.state.hand.phase !== 'complete').toBe(true);
   }, 30_000);
+
+  it('with re-entry open to the end, the last player left wins a minute after the last bust with nobody doing anything', async () => {
+    const env = setup();
+    const id = await env.manager.create(
+      'host',
+      defaultSettings({
+        name: 'Re-entry',
+        startingStack: 100,
+        seatsPerTable: 6,
+        lateRegistration: { enabled: false, throughLevel: null },
+        reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+      }),
+    );
+    for (const p of players(2)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    playUntil(env, () => state().entries.filter((e) => e.status === 'seated').length === 1);
+    // The busted player has a minute to re-enter; then the server's own wake-up ends the event.
+    const lastOut = Math.max(...state().eliminations.map((g) => g.at));
+    env.clock.advance(lastOut + MIN - 1 - env.clock.now());
+    expect(state().status).toBe('running');
+    env.clock.advance(1);
+    expect(state().status).toBe('finished');
+    expect(standings(state()).map((s) => s.place)).toEqual([1, 2]);
+    expect(env.errors).toEqual([]);
+  }, 30_000);
 });

@@ -327,6 +327,8 @@ describe('busts, rebuys and re-entry', () => {
     sim.hand(t, 'p0', ['p2']);
     // p2 could still re-enter, so p0 waits until re-entry closes after level 2.
     expect(sim.state.status).toBe('running');
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
     sim.at(T0 + 20 * MIN);
     expect(sim.state.status).toBe('finished');
     const st = standings(sim.state);
@@ -334,6 +336,51 @@ describe('busts, rebuys and re-entry', () => {
       ['p0', 1, 1],
       ['p2', 1, 2],
       ['p1', 2, 3],
+    ]);
+  });
+
+  it('with re-entry open to the end, the last player left wins a minute after the last bust if nobody re-enters', () => {
+    // What the create form sends when the host ticks "Re-entry after busting" and leaves both boxes empty.
+    const sim = new Sim({ reEntry: { enabled: true, throughLevel: null, max: null, approval: false } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1', 'p2']);
+    // The busted players have a minute to come back; the server is woken when it runs out.
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + MIN);
+    sim.at(T0 + MIN - 1000);
+    expect(sim.state.status).toBe('running');
+    sim.at(T0 + MIN);
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.place])).toEqual([
+      ['p0', 1],
+      ['p1', 2],
+      ['p2', 2],
+    ]);
+  });
+
+  it('with re-entry open to the end, a re-entry waiting for the host holds the last player left past that minute', () => {
+    const sim = new Sim({ reEntry: { enabled: true, throughLevel: null, max: null, approval: true } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1']);
+    sim.now += 30_000;
+    sim.do({ type: 'reEnter', playerId: 'p1' });
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
+    sim.do({ type: 'approve', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.entry('p1')).toMatchObject({ entryNo: 2, status: 'seated' });
+    // Busted again, p1 asks again, and the host says no two minutes later: the minute is up, so p0 wins.
+    sim.hand(t, 'p0', ['p1']);
+    sim.do({ type: 'reEnter', playerId: 'p1' });
+    sim.now += 2 * MIN;
+    sim.do({ type: 'reject', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.entryNo, s.place])).toEqual([
+      ['p0', 1, 1],
+      ['p1', 2, 2],
     ]);
   });
 

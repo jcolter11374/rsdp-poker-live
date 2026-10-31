@@ -327,6 +327,22 @@ export function reEntryOpen(s: TournamentState): boolean {
   return s.settings.reEntry.enabled && started(s) && withinLevel(s, s.settings.reEntry.throughLevel);
 }
 
+/** With re-entry open to the end, how long the last player left waits after the latest player went out. */
+const RE_ENTRY_WAIT_MS = 60_000;
+
+/**
+ * Until when a lone survivor waits for a busted player to re-enter, or null when nobody can. With a closing level it
+ * waits until re-entry closes (Infinity: the clock ends the wait). Open to the end, it waits RE_ENTRY_WAIT_MS after the
+ * latest player went out, and for as long as a re-entry waits for the host, so an event nobody comes back to still ends.
+ */
+function reEntryWaitEnds(s: TournamentState): number | null {
+  const { throughLevel, max } = s.settings.reEntry;
+  const canReEnter = s.entries.some((e) => e.status === 'busted' && !e.supersededBy && (max === null || e.entryNo - 1 < max));
+  if (!reEntryOpen(s) || !canReEnter) return null;
+  if (throughLevel !== null || s.requests.some((r) => r.kind === 're-entry')) return Infinity;
+  return Math.max(...s.eliminations.map((g) => g.at)) + RE_ENTRY_WAIT_MS;
+}
+
 /** Places paid: re-entries count toward them, but only one entry per player can finish, so never more than that. */
 export function paidPlaces(s: TournamentState): number {
   if (!s.settings.payouts) return 0;
@@ -457,6 +473,9 @@ export function nextWakeAt(s: TournamentState): number | null {
   }
   if (started(s)) {
     for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined && !rebuyAsked(s, e)) times.push(e.rebuyOfferExpiresAt);
+    // The last player left wins once nobody has re-entered in time.
+    const reEntryWait = aliveEntries(s).length === 1 ? reEntryWaitEnds(s) : null;
+    if (reEntryWait !== null && Number.isFinite(reEntryWait)) times.push(reEntryWait);
     if (s.status === 'running' && s.clock.runningSince !== null) {
       const rows = s.settings.structure;
       const lastLevel = rows.map((r) => r.kind).lastIndexOf('level');
@@ -832,12 +851,11 @@ function checkFinish(c: Ctx) {
   if (!started(s)) return;
   const alive = aliveEntries(s);
   if (alive.length > 1 || alive.some((e) => e.status === 'rebuy-offer')) return;
-  // A lone survivor waits while a busted player can still re-enter. Once someone has won every chip
-  // in play, open late registration no longer holds it, unless a registration is waiting for the
-  // host; before anyone has busted (the others quit or were removed) it waits for late entries.
-  const { max } = s.settings.reEntry;
-  const canReEnter = s.entries.some((e) => e.status === 'busted' && !e.supersededBy && (max === null || e.entryNo - 1 < max));
-  if (alive.length === 1 && reEntryOpen(s) && canReEnter) return;
+  // A lone survivor waits while a busted player can still re-enter (see reEntryWaitEnds). Once someone
+  // has won every chip in play, open late registration no longer holds it, unless a registration is
+  // waiting for the host; before anyone has busted (the others quit or were removed) it waits for late entries.
+  const waitEnds = reEntryWaitEnds(s);
+  if (alive.length === 1 && waitEnds !== null && c.now < waitEnds) return;
   const someoneBusted = s.entries.some((e) => e.status === 'busted');
   const registrationWaiting = s.requests.some((r) => r.kind === 'register');
   if (alive.length === 1 && registrationOpen(s) && (!someoneBusted || registrationWaiting)) return;
