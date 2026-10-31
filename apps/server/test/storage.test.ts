@@ -6,7 +6,7 @@ import { createApp } from '../src/app';
 import { closeDb, listHandsByTable, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { dbIdentity, dbStore, withoutLoneSurrogates } from '../src/storage';
-import { dbTournamentStore } from '../src/tournament/store';
+import { dbTournamentStore, memoryTournamentStore } from '../src/tournament/store';
 import { createTournament, defaultSettings as tournamentDefaults } from '@rsdp/tournament';
 import { socketClient, type Client } from './socket-client';
 
@@ -128,6 +128,23 @@ describe('database storage', () => {
     // Later saves still replace it.
     await store.save({ ...state, status: 'cancelled' }, null);
     expect((await store.load(state.id))!.state.status).toBe('cancelled');
+  });
+
+  it('marks events the server opened before `spawnedFrom` was saved, from the link the event before them saved', async () => {
+    const host = await dbIdentity(db).resolve('db-tn-spawned-host-0123456789');
+    for (const [prefix, store] of [['d', dbTournamentStore(db)], ['m', memoryTournamentStore()]] as const) {
+      const made = (n: number, name: string) => createTournament({ id: `${prefix}00000000000000${n}`, hostId: host.playerId, settings: tournamentDefaults({ name }), now: Date.now(), seed: 1 });
+      const [first, second, third, own] = [made(1, 'Turbo 1'), made(2, 'Turbo 2'), made(3, 'Turbo 3'), made(4, 'Sunday main')];
+      for (const s of [first, second, third, own]) await store.create(s);
+      // Saved as before the field existed: the first, now finished, links to the second (which the server opened), and that to the third.
+      await store.save({ ...first, status: 'finished' }, second.id);
+      await store.save(second, third.id);
+      const live = new Map((await store.listLive()).map((r) => [r.state.id, r.state]));
+      expect([first, second, third, own].map((s) => live.has(s.id))).toEqual([false, true, true, true]);
+      expect(live.get(second.id)!.spawnedFrom).toBe(first.id);
+      expect(live.get(third.id)!.spawnedFrom).toBe(second.id);
+      expect(live.get(own.id)!.spawnedFrom).toBeUndefined();
+    }
   });
 
   it('keeps seasons: a host starts one and adds events, nobody else can, and anyone can read the board', async () => {
