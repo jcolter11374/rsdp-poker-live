@@ -3,7 +3,7 @@
 
 import { copySettings } from './copy';
 import { defaultSettings, validateSettings } from './director';
-import { presetStructure, rsdpStructure, RSDP_STACK, type PresetName, type StructureRow } from './structure';
+import { presetStructure, rsdpStructure, RSDP_STACK, RSDP_TABLE_RULES, type PresetName, type StructureRow } from './structure';
 import type { TournamentSettings } from './types';
 
 /** Longest saved structure, as JSON. Real ones are a few kilobytes. */
@@ -47,7 +47,7 @@ export function readSavedStructure(json: string, now: number): TournamentSetting
 export type StarterId = 'rsdp' | 'turbo' | 'standard' | 'deep';
 
 export const STARTERS: { id: StarterId; name: string; blurb: string }[] = [
-  { id: 'rsdp', name: 'RSDP', blurb: '63,000 chips, 28 levels of 8 minutes, no antes, late registration through level 5' },
+  { id: 'rsdp', name: 'RSDP', blurb: '63,000 chips, 28 levels of 8 minutes, no antes, late registration through level 5, 10-second clock' },
   { id: 'turbo', name: 'Turbo', blurb: '10,000 chips (50 big blinds), 8-minute levels' },
   { id: 'standard', name: 'Standard', blurb: '10,000 chips (100 big blinds), 15-minute levels' },
   { id: 'deep', name: 'Deep stack', blurb: '20,000 chips (200 big blinds), 20-minute levels' },
@@ -62,7 +62,7 @@ const STARTER_SPECS: Record<StarterId, { preset: PresetName | 'rsdp'; stack: num
 
 /**
  * Puts a starter's stack, blind levels and late registration on `current`,
- * keeping everything else (name, games, start, prizes). Rebuys and add-ons
+ * and for RSDP its table rules, keeping everything else (name, games, start, prizes). Rebuys and add-ons
  * that are on stay on, on the first four levels and the first break.
  */
 export function applyStarter(current: TournamentSettings, id: StarterId): TournamentSettings {
@@ -87,5 +87,6 @@ export function applyStarter(current: TournamentSettings, id: StarterId): Tourna
     lateRegistration: { enabled: true, throughLevel: spec.lateThrough },
     rebuy: { ...current.rebuy, chips: spec.stack },
     addOn: { ...current.addOn, chips: spec.stack },
+    ...(id === 'rsdp' ? { tableRules: { ...RSDP_TABLE_RULES } } : {}),
   };
 }

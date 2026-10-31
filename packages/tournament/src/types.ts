@@ -63,6 +63,19 @@ export interface TournamentSettings {
   checkIn?: CheckInSettings;
   /** Counts toward a season leaderboard. An empty id starts a new season named after this event's id. */
   season?: { id: string; name: string };
+  /** Clock, time bank and rabbit hunting at this event's tables (straddles are always off in tournaments); absent = the site's table defaults. */
+  tableRules?: TableRules;
+}
+
+export interface TableRules {
+  /** Seconds per decision: 0 for no clock, otherwise 5-600. */
+  decisionSeconds: number;
+  /** Time bank each player can draw on, 0-300 seconds. */
+  timeBankSeconds: number;
+  /** Hands between time bank refills, 0-200 (0 = never refills). */
+  timeBankRefillHands: number;
+  /** Players may see the cards that would have come after a hand ends early. */
+  rabbitHunt: boolean;
 }
 
 export interface BountySettings {
