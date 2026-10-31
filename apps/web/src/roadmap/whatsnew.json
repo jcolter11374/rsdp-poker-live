@@ -5,7 +5,7 @@
       "date": "2026-10-31",
       "title": "Review your hands, but no HUDs at the table",
       "items": [
-        { "title": "Hand downloads wait until you're done", "detail": "While the game is running and you're in a seat, the hand downloads are switched off, so nobody can run a HUD while playing. That covers the PokerTracker/Holdem Manager file, the text and JSON files and the full log. They come back as soon as you leave your seat or the host stops the game. Replays, the Hands tab, the Stats tab and the ledger CSV work the whole time. The Fairness page explains what this can and can't stop.", "suggestedBy": "John" }
+        { "title": "Hand downloads wait until you're done", "detail": "While the game is running and you're in a seat, the hand downloads are switched off, so nobody can run a HUD while playing. That covers the PokerTracker/Holdem Manager file, the text and JSON files and the full log. They come back as soon as you leave your seat or the host stops the game. Replays, the Hands tab, the Stats tab and the ledger CSV work the whole time, and practice tables against bots aren't affected. The Fairness page explains what this can and can't stop.", "suggestedBy": "John" }
       ]
     },
     {
