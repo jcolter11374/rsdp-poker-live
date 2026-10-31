@@ -10,10 +10,9 @@ import { usePrefs } from '../prefs';
 import { LogText, suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
 import { CoachWhy } from './CoachWhy';
+import { preMoveAction, type PreAction } from '../premoves';
 
 const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}` : '');
-
-type PreAction = { kind: 'checkFold' } | { kind: 'check' } | { kind: 'fold' } | { kind: 'call'; amount: number } | { kind: 'callAny' };
 
 /** How long a move waits for the server before the buttons come back. */
 const SEND_TIMEOUT_MS = 8_000;
@@ -261,16 +260,9 @@ export function ActionBar({
   useEffect(() => {
     if (!legal || !pre) return;
     setPre(null);
-    let move: Action | null = null;
-    if (pre.kind === 'checkFold') move = legal.canCheck ? { type: 'check' } : { type: 'fold' };
-    else if (pre.kind === 'fold') move = { type: 'fold' };
-    else if (pre.kind === 'check' && legal.canCheck) move = { type: 'check' };
-    // Owing the stud bring-in, staying in means bringing it in.
-    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' };
-    else if (pre.kind === 'call' && legal.canCheck) move = { type: 'check' };
-    else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
-    // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can
-    // decide again; say so now, before the page decides whether to call you with the turn sound.
+    const move = preMoveAction(pre, legal);
+    // A pre-move that no longer applies is dropped so you can decide again; say so now, before the
+    // page decides whether to call you with the turn sound.
     if (move) send(move);
     else onPreAction?.(false);
   }, [legal]);
