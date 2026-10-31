@@ -437,10 +437,11 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
           }
         }
       } else {
-        // Incomplete all-in raise: players who already acted may only call or fold.
+        // Incomplete all-in raise: players who already acted may only call or fold, unless the short
+        // all-ins since they acted add up to a full raise (TDA). Their bet is what they matched then.
         for (const o of state.seats) {
           if (o !== s) {
-            if (o.hasActed) o.canRaise = false;
+            if (o.hasActed || !o.canRaise) o.canRaise = classifyRaise({ ...ctx, currentBet: o.bet }, to).full;
             o.hasActed = false;
           }
         }

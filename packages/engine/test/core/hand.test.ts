@@ -91,6 +91,33 @@ describe("hold'em: raising rules", () => {
     expect(legalActions(s, 3)).toMatchObject({ canRaise: false, callAmount: 4 });
   });
 
+  it('short all-ins that add up to a full raise reopen the betting for a player who already acted', () => {
+    // Blinds 1/2. Seat 3 opens to 10 (a raise of 8); seats 0 and 1 go all in for 15 and 20, each 5 more: short.
+    const s = start({ stacks: [15, 20, 500, 500], button: 0 });
+    act(s, 3, { type: 'raise', to: 10 });
+    act(s, 0, { type: 'raise', to: 15 });
+    act(s, 1, { type: 'raise', to: 20 });
+    act(s, 2, { type: 'call' });
+    // Seat 3 faces 10 more than it put in, at least the last full raise of 8.
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 10, canRaise: true, minTo: 28 });
+  });
+
+  it('in fixed limit, short all-ins that add up to half a bet reopen it', () => {
+    const s = start({ stacks: [500, 500, 500, 24, 28], button: 0, stakes: { smallBlind: 5, bigBlind: 10, smallBet: 10, bigBet: 20 } });
+    s.input.betting = 'fixed-limit';
+    for (const seat of [3, 4, 0, 1]) act(s, seat, { type: 'call' });
+    act(s, 2, { type: 'check' });
+    // Flop: seat 1 bets 10, seat 3 is all in for 14 and seat 4 for 18, each less than half a bet more.
+    act(s, 1, { type: 'bet', to: 10 });
+    act(s, 2, { type: 'call' });
+    act(s, 3, { type: 'raise', to: 14 });
+    expect(legalActions(s, 4)).toMatchObject({ canRaise: true, maxTo: 18 });
+    act(s, 4, { type: 'raise', to: 18 });
+    act(s, 0, { type: 'call' });
+    // Seats 1 and 2 face 8 more, at least half a bet, so they may raise again.
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 8, canRaise: true, minTo: 28 });
+  });
+
   it('a big blind all in for less still makes others call the full blind', () => {
     const s = start({ stacks: [100, 100, 1] });
     expect(eventsOf(s, 'post').find((e) => e.seat === 2)).toMatchObject({ amount: 1, allIn: true });
