@@ -439,6 +439,24 @@ describe('fixed limit: no cap heads-up', () => {
     expect(legalActions(s, 2)).toMatchObject({ callAmount: 4, canRaise: false });
   });
 
+  it('a cap the blinds and straddles reach on their own, four-handed, stays on when an early leaver and a fold leave two', () => {
+    // Cap 2: the big blind is the bet and seat 3's straddle the raise, so nobody may raise before the flop.
+    const s = start({
+      stacks: [500, 500, 500, 500],
+      button: 0,
+      betting: 'fixed-limit',
+      stakes: { smallBlind: 1, bigBlind: 2, smallBet: 2, bigBet: 4 },
+      options: { uncappedHeadsUp: true, fixedLimitCap: 2 },
+      straddles: 'utg',
+      straddlers: [3],
+    });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 4, canRaise: false });
+    // The small blind leaves before anyone acts, then the button folds: the big blind and the straddler are left.
+    engine.foldOutOfTurn(s, 1);
+    act(s, 0, { type: 'fold' });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 2, canRaise: false });
+  });
+
   it('heads-up before the cap is reached, the raising goes on past it', () => {
     const s = threeOnTheFlop();
     act(s, 1, { type: 'bet', to: 2 });

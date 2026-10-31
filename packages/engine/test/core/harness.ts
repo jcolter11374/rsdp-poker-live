@@ -8,6 +8,8 @@ export const STAKES: Stakes = { smallBlind: 1, bigBlind: 2, ante: 0, anteType: '
 
 export interface Setup {
   game?: string;
+  /** Betting structure from the start of the hand; the game's own when left out. */
+  betting?: HandInput['betting'];
   /** Stack per seat; seats are 0..n-1 unless `seatNumbers` says otherwise. */
   stacks: number[];
   seatNumbers?: number[];
@@ -62,7 +64,7 @@ export function start(setup: Setup): HandState {
     handId: 'h1',
     handNumber: 1,
     game: spec,
-    betting: spec.defaultBetting,
+    betting: setup.betting ?? spec.defaultBetting,
     stakes,
     maxSeats,
     seats: planner.map((p) => ({ seat: p.seat, playerId: p.playerId, stack: p.stack, away: !!setup.away?.includes(p.seat) })),

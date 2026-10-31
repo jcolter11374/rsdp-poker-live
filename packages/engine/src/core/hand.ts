@@ -274,6 +274,8 @@ function beginBetting(state: HandState, firstRound: boolean) {
   } else {
     state.toAct = nextToAct(state, state.input.button, false);
   }
+  // Blinds and straddles can reach a fixed-limit cap before anyone acts, with every player dealt in still in.
+  if (firstRound) noteCap(state);
   settleAutomatic(state);
 }
 
