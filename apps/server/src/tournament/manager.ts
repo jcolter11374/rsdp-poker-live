@@ -244,6 +244,13 @@ export class TournamentManager {
     return !!s && isLive(s) && !isArchived(s);
   }
 
+  /** How many open events (as in isOpen) this player hosts. Every open event is in memory, after a restart too. */
+  openHostedBy(playerId: PlayerId): number {
+    let n = 0;
+    for (const { state: s } of this.live.values()) if (s.hostId === playerId && isLive(s) && !isArchived(s)) n++;
+    return n;
+  }
+
   /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
   async peek(id: string): Promise<TournamentState | null> {
     return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;

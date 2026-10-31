@@ -250,28 +250,40 @@ function perPlayerAndAddress(burst: number, windowMs: number, now: () => number)
 
 /**
  * Makes something only while the player, and the address, each have fewer than
- * `max` of the ones they made still open: null when either has `max`. One being
- * made holds its place, so a burst can't slip past while the first are saved.
+ * `max` open: null when either has `max`. One being made holds its place, so a
+ * burst can't slip past while the first are saved.
+ *
+ * The player's count is what they host now (`hosted`), worked out from what the
+ * server has loaded, so it still holds after a restart. The address's is only
+ * the ones made from it since this server started: no address is saved with
+ * anything, so after a restart it starts again from zero.
  */
-function openPerPlayerAndAddress(max: number, isOpen: (id: string) => boolean) {
+function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => number, isOpen: (id: string) => boolean) {
+  const making = new Map<PlayerId, number>();
   const made = new Map<string, { ids: string[]; making: number }>();
-  const count = (key: string) => {
-    const m = made.get(key) ?? { ids: [], making: 0 };
+  const fromAddress = (address: string) => {
+    const m = made.get(address) ?? { ids: [], making: 0 };
     m.ids = m.ids.filter(isOpen);
-    made.set(key, m);
+    made.set(address, m);
     return m;
   };
   return async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<string | null> => {
-    const counts = [count(`player ${playerId}`), count(`address ${address}`)];
-    if (counts.some((m) => m.ids.length + m.making >= max)) return null;
-    for (const m of counts) m.making++;
+    const theirs = making.get(playerId) ?? 0;
+    const here = fromAddress(address);
+    if (hosted(playerId) + theirs >= max || here.ids.length + here.making >= max) return null;
+    making.set(playerId, theirs + 1);
+    here.making++;
     try {
       const id = await make();
-      for (const m of counts) m.ids.push(id);
+      here.ids.push(id);
       return id;
     } finally {
-      for (const m of counts) m.making--;
-      // Players and addresses with nothing open are swept now and then.
+      // (A new one is hosted a moment before it stops counting as being made; nothing else runs in between.)
+      const left = making.get(playerId)! - 1;
+      if (left) making.set(playerId, left);
+      else making.delete(playerId);
+      here.making--;
+      // Addresses with nothing open are swept now and then.
       if (made.size > 5_000) for (const [k, m] of made) if (!m.making && !m.ids.some(isOpen)) made.delete(k);
     }
   };
@@ -327,7 +339,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatarChanges = new Map<PlayerId, number[]>();
   const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
   const tournamentCreates = perPlayerAndAddress(TOURNAMENTS_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
-  const openTournaments = openPerPlayerAndAddress(OPEN_TOURNAMENTS, (id) => tournaments.isOpen(id));
+  const openTournaments = openPerPlayerAndAddress(OPEN_TOURNAMENTS, (playerId) => tournaments.openHostedBy(playerId), (id) => tournaments.isOpen(id));
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
     const missing = rt.state.seats.filter((x) => x && !avatars.has(x.playerId)).map((x) => x!.playerId);

@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings } from '@rsdp/tournament';
-import { createApp } from '../src/app';
+import { createApp, memoryStore } from '../src/app';
+import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
 
@@ -92,5 +93,45 @@ describe('limits on making tables and tournaments', () => {
     await host.call('tournament:command', { id: mine[0].id, command: { type: 'archive' } });
     await host.call('tournament:create', { settings });
     expect(await listed()).toHaveLength(20);
+  });
+
+  it('still counts a player’s open tournaments after the server restarts', async () => {
+    const settings = { ...defaultSettings(), name: 'Deploy day' };
+    const tables = memoryStore();
+    const saved = memoryTournamentStore();
+    const at = new FakeClock();
+    const boot = async () => {
+      const app = createApp({ clock: at, store: tables, tournaments: saved, log: () => {} });
+      await new Promise<void>((resolve) => app.http.listen(0, resolve));
+      await app.resume();
+      const there = `http://localhost:${(app.http.address() as AddressInfo).port}`;
+      return { app, client: (token: string, address: string) => socketClient(there, token, clients, { 'fly-client-ip': address }) };
+    };
+    const token = 'open-cap-restart-host-0123456789';
+    const before = await boot();
+    const host = before.client(token, '192.0.2.50');
+    expect((await settled(Array.from({ length: 10 }, () => host.call('tournament:create', { settings })))).filter((r) => r === 'ok')).toHaveLength(10);
+    at.advance(10 * MINUTE);
+    await expect(host.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
+    host.socket.close();
+    await before.app.close();
+
+    // An update restarts the server; the ten events come back, and still count.
+    const after = await boot();
+    try {
+      const again = after.client(token, '192.0.2.51');
+      await expect(again.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
+      const visitor = after.client('open-cap-restart-visitor-0123456789', '192.0.2.52');
+      const listed = async () => (await visitor.call<{ tournaments: { name: string }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Deploy day');
+      expect(await listed()).toHaveLength(10);
+      // Archiving one still makes room for one more.
+      const mine = (await again.call<{ tournaments: { id: string; name: string; me: { hosting: boolean } }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Deploy day' && t.me.hosting);
+      await again.call('tournament:command', { id: mine[0].id, command: { type: 'archive' } });
+      await again.call('tournament:create', { settings });
+      await expect(again.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
+      expect(await listed()).toHaveLength(10);
+    } finally {
+      await after.app.close();
+    }
   });
 });
