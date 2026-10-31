@@ -889,6 +889,8 @@ export function createApp(deps: AppDeps = {}) {
       if (!rt) throw new ActionError('join a table first');
       return rt;
     };
+    /** Counts this tab's joins and leaves, so a join that finishes after a later one (or a leave) does nothing. */
+    let joins = 0;
     const leave = () => {
       const id = socket.data.tableId;
       if (!id) return;
@@ -968,8 +970,12 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         async () => {
+          const seq = ++joins;
           const rt = await getTable(String(tableId));
           if (!rt) throw new ActionError('table not found');
+          // A table read from the database takes a moment: the tab may have closed, left, or asked for another table
+          // meanwhile. Joining now would leave the player counted at a table they have gone from.
+          if (socket.disconnected || seq !== joins) return;
           if (socket.data.tableId !== rt.state.id) {
             leave();
             socket.data.tableId = rt.state.id;
@@ -992,7 +998,10 @@ export function createApp(deps: AppDeps = {}) {
         log,
       ),
     );
-    on('table:leave', () => leave());
+    on('table:leave', () => {
+      joins++;
+      leave();
+    });
     on('table:history', ({ handNumber }, ack) =>
       guarded(
         ack,
@@ -1367,6 +1376,8 @@ export function createApp(deps: AppDeps = {}) {
         async () => {
           const id = String(input?.id ?? '');
           if (!(await tournaments.get(id))) throw new ActionError('tournament not found');
+          // Closed while the tournament loaded: nothing to send it to.
+          if (socket.disconnected) return;
           if (!tournamentWatchers.has(id)) tournamentWatchers.set(id, new Set());
           tournamentWatchers.get(id)!.add(socket);
           socket.data.tournaments.add(id);
