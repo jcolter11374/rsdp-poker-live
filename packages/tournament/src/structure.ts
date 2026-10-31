@@ -313,6 +313,8 @@ const RSDP_BLINDS: [sb: number, bb: number][] = [
 ];
 export const RSDP_STACK = 63_000;
 export const RSDP_LEVEL_MINUTES = 8;
+/** The RSDP table rules: 10-second decisions, a 20-second time bank refilled every 30 hands, no straddles, no rabbit hunting. */
+export const RSDP_TABLE_RULES = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, straddle: false, rabbitHunt: false } as const;
 
 /** The RSDP blind levels. Levels up to `rebuyThroughLevel` allow rebuys. */
 export function rsdpStructure(opts: Pick<BuildOptions, 'rebuyThroughLevel'> = {}): StructureRow[] {

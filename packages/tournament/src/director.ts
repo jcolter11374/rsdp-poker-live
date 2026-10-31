@@ -53,6 +53,7 @@ import {
   type SeatInfo,
   type Standing,
   type TableId,
+  type TableRules,
   type TableState,
   type TournamentSettings,
   type TournamentState,
@@ -126,6 +127,7 @@ const SETTINGS_KEYS: Record<keyof TournamentSettings, true> = {
   invites: true,
   checkIn: true,
   season: true,
+  tableRules: true,
 };
 
 /** Only the known settings, with the free text cleaned (names are cut by whole characters). */
@@ -194,6 +196,13 @@ export function validateSettings(s: TournamentSettings): string[] {
     if (![m.buyIn, m.rebuy ?? 0, m.addOn ?? 0, m.added ?? 0].every((n) => isWhole(n, 0, Number.MAX_SAFE_INTEGER)))
       errors.push('Prize money must be whole amounts of 0 or more');
     if (m.feePercent !== undefined && !(typeof m.feePercent === 'number' && m.feePercent >= 0 && m.feePercent <= 100)) errors.push('The fee must be 0-100%');
+  }
+  if (s.tableRules !== undefined) {
+    const t: Partial<TableRules> = isObject(s.tableRules) ? s.tableRules : {};
+    if (!(t.decisionSeconds === 0 || isWhole(t.decisionSeconds, 5, 600))) errors.push('Decision clock must be 0 (no clock) or 5-600 seconds');
+    if (!isWhole(t.timeBankSeconds, 0, 300)) errors.push('Time bank must be 0-300 seconds');
+    if (!isWhole(t.timeBankRefillHands, 0, 200)) errors.push('Time bank refill must be 0-200 hands');
+    if (typeof t.straddle !== 'boolean' || typeof t.rabbitHunt !== 'boolean') errors.push('On/off settings must be true or false');
   }
   errors.push(...validateFormats(s));
   // The structure checks its own rows.
@@ -1103,7 +1112,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         const changes = cleanSettings(cmd.settings);
         const next = { ...s.settings, ...structuredClone(changes) };
         const locked: (keyof TournamentSettings)[] = s.tables.length
-          ? ['start', 'games', 'stopRotationAtLevel', 'startingStack', 'seatsPerTable', 'structure', 'season']
+          ? ['start', 'games', 'stopRotationAtLevel', 'startingStack', 'seatsPerTable', 'structure', 'season', 'tableRules']
           : ['structure', 'season'];
         for (const k of locked) {
           if (k in changes && JSON.stringify(next[k]) !== JSON.stringify(s.settings[k]))

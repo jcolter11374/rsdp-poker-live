@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-31-b",
+      "date": "2026-10-31",
+      "title": "Tournament table rules",
+      "items": [
+        { "title": "Our clock, no straddles", "detail": "A tournament now has its own table rules: the decision clock, the time bank and how often it refills, and whether straddles and rabbit hunting are allowed. New tournaments start the RSDP way: 10 seconds to act, a 20-second time bank that refills every 30 hands, no straddles and no rabbit hunting. Change them under At the tables when you make one.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026-10-31",
       "date": "2026-10-31",
       "title": "Our own tournament structure",
