@@ -389,6 +389,8 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
 
   switch (action.type) {
     case 'fold':
+      // The stud bring-in is forced: the low card brings it in (or completes) before it may fold.
+      if (!legal.canFold) throw new ActionError('bring in or complete');
       s.folded = true;
       s.lastAction = 'Fold';
       muckHand(state, s);
@@ -487,6 +489,15 @@ export function foldOutOfTurn(state: HandState, seat: SeatIndex) {
   const s = seatAt(state, seat);
   if (!s || s.folded || state.phase === 'complete') return;
   if (state.toAct === seat && state.phase === 'betting') {
+    if (legalActions(state, seat)!.canBringIn) {
+      // The low card in stud must bring in even when leaving: it is posted for them, then the hand
+      // folds out of turn, so the next seat faces the bring-in rather than owing it. A bring-in that
+      // puts them all in keeps them in the hand, like any player who leaves all in.
+      applyAction(state, s, { type: 'bring-in' }, true);
+      if (!s.allIn) foldOutOfTurn(state, seat);
+      settleAutomatic(state);
+      return;
+    }
     act(state, seat, { type: 'fold' }, { auto: true });
     return;
   }

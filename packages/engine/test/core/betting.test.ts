@@ -65,10 +65,12 @@ describe('computeLegal basics', () => {
     expect(l.callAmount).toBe(30);
   });
 
-  it('always allows folding, even when checking is free', () => {
+  it('allows folding, even when checking is free', () => {
     expect(computeLegal(ctx()).canFold).toBe(true);
     expect(computeLegal(preflop()).canFold).toBe(true);
-    expect(computeLegal(stud()).canFold).toBe(true);
+    // Except the forced stud bring-in, until it is in.
+    expect(computeLegal(stud()).canFold).toBe(false);
+    expect(computeLegal(stud({ bet: 1, currentBet: 4 })).canFold).toBe(true);
   });
 
   it('says bet when nobody has bet and raise otherwise', () => {
@@ -294,9 +296,9 @@ describe('fixed-limit', () => {
 });
 
 describe('stud bring-in', () => {
-  it('lets the bring-in seat bring in or complete, but not check', () => {
+  it('lets the bring-in seat bring in or complete, but not check or fold', () => {
     const l = computeLegal(stud());
-    expect(l).toMatchObject({ canBringIn: true, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', canFold: true });
+    expect(l).toMatchObject({ canBringIn: true, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', canFold: false });
     expect(range(l)).toEqual([4, 4]);
   });
 
@@ -494,7 +496,7 @@ describe('invariants', () => {
       const where = JSON.stringify(c);
 
       for (const v of [l.callAmount, l.minTo, l.maxTo]) expect(Number.isInteger(v), where).toBe(true);
-      expect(l.canFold, where).toBe(true);
+      expect(l.canFold, where).toBe(!l.canBringIn);
       expect(l.callAmount, where).toBe(Math.min(toCall, c.stack));
       if (!l.canBringIn) expect(l.canCheck, where).toBe(toCall === 0);
       if (!c.seatCanRaise) expect(l.canRaise, where).toBe(false);

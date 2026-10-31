@@ -66,7 +66,7 @@ export function potLimitMax(currentBet: Chips, potTotal: Chips, toCall: Chips): 
 /**
  * Legal actions for the seat described by `ctx`. minTo and maxTo are 0 when
  * canRaise is false. The stud bring-in seat (bringIn set, nothing bet yet)
- * cannot check: it brings in or completes.
+ * cannot check or fold: the bring-in is forced, so it brings in or completes.
  */
 export function computeLegal(ctx: BettingContext): LegalActions {
   const toCall = Math.max(0, ctx.currentBet - ctx.bet);
@@ -81,7 +81,7 @@ export function computeLegal(ctx: BettingContext): LegalActions {
   const nothingToComplete = canBringIn && ctx.bringIn!.amount >= ctx.bringIn!.completeTo;
   const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !nothingToComplete;
   return {
-    canFold: true,
+    canFold: !canBringIn,
     canCheck: toCall === 0 && !canBringIn,
     callAmount: Math.min(toCall, ctx.stack),
     canRaise,

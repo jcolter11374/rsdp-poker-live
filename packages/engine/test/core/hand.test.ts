@@ -415,11 +415,43 @@ describe('the stud bring-in', () => {
     expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, callAmount: 1 });
   });
 
-  it('passes to the next seat if the low card folds, which cannot "call" nothing either', () => {
+  it('is forced: the low card may not fold instead of bringing it in', () => {
     const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
-    act(s, 0, { type: 'fold' });
-    expect(() => act(s, 1, { type: 'call' })).toThrow(ActionError);
-    expect(eventsOf(s, 'action').some((e) => e.action === 'call' && e.amount === 0)).toBe(false);
+    expect(legalActions(s, 0)).toMatchObject({ canBringIn: true, canFold: false });
+    expect(() => act(s, 0, { type: 'fold' })).toThrow(ActionError);
+    expect(s.seats.find((x) => x.seat === 0)!.folded).toBe(false);
+    act(s, 0, { type: 'bring-in' });
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'call' });
+    // Once the bring-in is in, the low card may fold to a completion like anyone else.
+    expect(legalActions(s, 0)).toMatchObject({ canFold: true, callAmount: 1 });
+  });
+
+  it('a low card who leaves on their turn has the bring-in posted, then folds, so the next seat faces it', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
+    engine.foldOutOfTurn(s, 0);
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount, e.auto])).toEqual([
+      [0, 'bring-in', 1, true],
+      [0, 'fold', 0, true],
+    ]);
+    expect(s.toAct).toBe(1);
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, canCheck: false, callAmount: 1 });
+  });
+
+  it('a leaving low card whose bring-in puts them all in stays in the hand', () => {
+    const s = start({ game: 'stud', stacks: [2, 100, 100], stakes: STUD, top: deal });
+    engine.foldOutOfTurn(s, 0);
+    expect(s.seats.find((x) => x.seat === 0)).toMatchObject({ allIn: true, folded: false, bet: 1 });
+    expect(s.toAct).toBe(1);
+  });
+
+  it('after a leaving low card brings in, an away player next acts at once', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal, away: [1] });
+    engine.foldOutOfTurn(s, 0);
+    // Seat 1 is away and folds to the bring-in, so seat 2 wins the antes and the bring-in.
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'fold', auto: true });
+    expect(s.phase).toBe('complete');
+    expect(stacks(s)).toEqual({ 0: 98, 1: 99, 2: 103 });
   });
 });
 
