@@ -50,6 +50,7 @@ function ReplayerView({
   tableName,
   seatCount,
   myId,
+  sharerSeat = null,
   tableId,
   felt,
   fmt,
@@ -62,6 +63,8 @@ function ReplayerView({
   tableName: string;
   seatCount: number;
   myId: string | null;
+  /** A shared link's sharer, when they kept their cards in it: those are face up from the deal, from their chair, though the viewer is someone else. */
+  sharerSeat?: number | null;
   /** The table these hands are from, so "Check this hand" can compare each with what this browser saw there. */
   tableId?: string;
   /** The table's felt, so the replay looks like the table. */
@@ -73,13 +76,13 @@ function ReplayerView({
 }) {
   const compact = usePortrait();
   const [index, setIndex] = useState(start);
-  const [step, setStep] = useState(() => (why && hands[start] ? Math.max(0, replayFrames(hands[start], myId, fmt).findIndex((f) => f.why.length > 0)) : 0));
+  const [step, setStep] = useState(() => (why && hands[start] ? Math.max(0, replayFrames(hands[start], myId, fmt, sharerSeat).findIndex((f) => f.why.length > 0)) : 0));
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [checking, setChecking] = useState(false);
   const [showWhy, setShowWhy] = useState(why);
   const hand = hands[index];
-  const frames = useMemo(() => (hand ? replayFrames(hand, myId, fmt) : []), [hand, myId, fmt]);
+  const frames = useMemo(() => (hand ? replayFrames(hand, myId, fmt, sharerSeat) : []), [hand, myId, fmt, sharerSeat]);
   const last = frames.length - 1;
   const reasons = usePrefs().botReasons && !!hand?.botNotes?.length;
   const whyNow = reasons && showWhy;
@@ -127,7 +130,7 @@ function ReplayerView({
 
   if (!hand || !frames.length) return null;
   const frame = frames[Math.min(step, last)];
-  const view = frameView(tableName, seatCount, hand, frame, myId, felt);
+  const view = frameView(tableName, seatCount, hand, frame, myId, felt, sharerSeat);
   const family = view.hand!.family;
   const net = myId ? handNet(hand, myId) : null;
   const mySeat = hand.seats.find((s) => s.playerId === myId)?.seat ?? null;

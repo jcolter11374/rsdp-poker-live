@@ -7,6 +7,7 @@ import { findHighlights, HIGHLIGHT_ICON } from '../../highlights';
 import { ohhFile } from '../../ohh';
 import { Modal } from '../SeatDialog';
 import { Replayer } from '../Replayer';
+import { sharedHandViewer } from '../../replay';
 
 /*
  * Records beyond the hand list: share a hand as a link, the table's
@@ -120,10 +121,25 @@ export function Highlights({
   );
 }
 
+/** Why the download buttons are missing: no HUDs while you play, review afterwards. */
+export function RecordsLockedNote() {
+  return (
+    <span className="muted records-locked" title="So nobody can run a HUD (PokerTracker, Holdem Manager and the like) while playing">
+      Downloads open once you leave your seat or the game stops. Replays are here any time.
+    </span>
+  );
+}
+
 /** Every line the table has logged (joins, host actions, chat, every hand), as text or CSV. */
 export function FullLogDownload({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  if (view.recordsLocked)
+    return (
+      <div className="row wrap ledger-actions">
+        <RecordsLockedNote />
+      </div>
+    );
   const get = async (kind: 'txt' | 'csv') => {
     setBusy(true);
     try {
@@ -193,7 +209,7 @@ export function SharedHandPage({ id }: { id: string }) {
         start={0}
         tableName={data.tableName}
         seatCount={Math.max(data.seatCount, ...data.hand.seats.map((s) => s.seat + 1))}
-        myId={null}
+        {...sharedHandViewer(data)}
         felt={(data.felt ?? undefined) as TableView['settings']['table']['felt']}
         fmt={fmt}
         onClose={() => (location.href = '/')}

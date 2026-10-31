@@ -238,21 +238,71 @@ export interface LeaderRow {
   games: { at: number; net: number }[];
 }
 
+/** What the leaderboards need from a real game's snapshot. */
+interface LeaderTable {
+  /** Each player's chips won (above 0) or lost there. */
+  nets: Map<string, number>;
+  centsMode: boolean;
+  /** The name each player used there. */
+  names: Record<string, string>;
+}
+
+/**
+ * What the leaderboards are worked out from: every real game's hands, read
+ * once, and the games and accounts the boards have needed so far, each read once.
+ */
+export interface LeaderData {
+  /** Only real games' hands: practice and bot tables never count, so they aren't kept. */
+  hands: HandRow[];
+  real: Set<string>;
+  /** When each real game's last hand started. */
+  lastHand: Map<string, number>;
+  /** By table; null when the table has no snapshot. */
+  tables: Map<string, LeaderTable | null>;
+  /** By player; null when there is no such player. */
+  owners: Map<string, { accountId: string | null; displayName: string } | null>;
+}
+
+/**
+ * Reads every cash hand, the read that grows with the group's history. Every
+ * period, from any time zone, can then be worked out from this one read
+ * (leaderboard), which reads the rest as it needs it.
+ */
+export async function leaderData(db: Db): Promise<LeaderData> {
+  const all = await cashHands(db);
+  // Whether a table is real depends on all its hands, not only the period's.
+  const real = realTables(all);
+  const hands = all.filter((r) => real.has(r.table_id));
+  const lastHand = new Map<string, number>();
+  for (const r of hands) if (real.has(r.table_id)) lastHand.set(r.table_id, Math.max(lastHand.get(r.table_id) ?? 0, new Date(r.started_at).getTime()));
+  return { hands, real, lastHand, tables: new Map(), owners: new Map() };
+}
+
 /**
  * Everyone's results at real cash games since `since` (all time without it).
- * A table's result counts in the period its last hand was played in.
+ * A table's result counts in the period its last hand was played in. The
+ * hands come from `data`; games and accounts no earlier board needed are read
+ * now, and kept in `data` for the next board.
  */
-export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
-  // Whether a table is real depends on all its hands, not only the period's.
-  const all = await cashHands(db);
-  const real = realTables(all);
+export async function leaderboard(db: Db, data: LeaderData, since?: Date): Promise<LeaderRow[]> {
+  const { hands: all, real, lastHand } = data;
   const from = since?.getTime() ?? -Infinity;
-  const lastHand = new Map<string, number>();
-  for (const r of all) if (real.has(r.table_id)) lastHand.set(r.table_id, Math.max(lastHand.get(r.table_id) ?? 0, new Date(r.started_at).getTime()));
   const inPeriod = [...lastHand].filter(([, at]) => at >= from).map(([id]) => id);
   const handTables = new Set(all.filter((r) => real.has(r.table_id) && new Date(r.started_at).getTime() >= from).map((r) => r.table_id));
-  const snaps = await snapshots(db, [...new Set([...inPeriod, ...handTables])]);
-  const cents = (tableId: string, amount: number) => toCents(amount, !!snaps.get(tableId)?.settings?.stakes?.centsMode);
+  const periodTables = [...new Set([...inPeriod, ...handTables])];
+  const unread = periodTables.filter((id) => !data.tables.has(id));
+  const read = await snapshots(db, unread);
+  // Only what the boards use is kept, not the whole snapshot.
+  for (const id of unread) {
+    const state = read.get(id);
+    data.tables.set(id, state ? { nets: tableNets(state), centsMode: !!state.settings?.stakes?.centsMode, names: { ...state.handNames } } : null);
+  }
+  const snaps = new Map<string, LeaderTable>();
+  for (const id of periodTables) {
+    const t = data.tables.get(id);
+    if (t) snaps.set(id, t);
+  }
+  const cents = (tableId: string, amount: number) => toCents(amount, !!snaps.get(tableId)?.centsMode);
 
   const rows = new Map<string, { profit: number; sessions: Set<string>; hands: number; biggestPot: number; games: Map<string, { at: number; net: number }> }>();
   const row = (playerId: string) => {
@@ -261,7 +311,7 @@ export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
     return r;
   };
   for (const tableId of inPeriod) {
-    for (const [playerId, net] of tableNets(snaps.get(tableId))) {
+    for (const [playerId, net] of snaps.get(tableId)?.nets ?? []) {
       if (isBot(playerId)) continue;
       const r = row(playerId);
       r.profit += cents(tableId, net);
@@ -282,20 +332,24 @@ export async function leaderboard(db: Db, since?: Date): Promise<LeaderRow[]> {
   }
   if (rows.size === 0) return [];
 
-  // One row per account: a friend's phone and laptop are one person.
-  const owners = await db
-    .select({ id: players.id, accountId: players.accountId, displayName: players.displayName })
-    .from(players)
-    .where(inArray(players.id, [...rows.keys()]));
-  const owner = new Map(owners.map((p) => [p.id, p]));
+  const unknown = [...rows.keys()].filter((id) => !data.owners.has(id));
+  if (unknown.length) {
+    const found = await db
+      .select({ id: players.id, accountId: players.accountId, displayName: players.displayName })
+      .from(players)
+      .where(inArray(players.id, unknown));
+    for (const id of unknown) data.owners.set(id, null);
+    for (const p of found) data.owners.set(p.id, p);
+  }
   // The name each player last used at a table, newest table first.
   const names = new Map<string, string>();
   const byRecent = [...snaps.keys()].sort((a, b) => (lastHand.get(b) ?? 0) - (lastHand.get(a) ?? 0));
-  for (const tableId of byRecent) for (const [id, name] of Object.entries(snaps.get(tableId)?.handNames ?? {})) if (name && !names.has(id)) names.set(id, name);
+  for (const tableId of byRecent) for (const [id, name] of Object.entries(snaps.get(tableId)?.names ?? {})) if (name && !names.has(id)) names.set(id, name);
 
+  // One row per account: a friend's phone and laptop are one person.
   const merged = new Map<string, Omit<LeaderRow, 'games'> & { sessionIds: Set<string>; byTable: Map<string, { at: number; net: number }> }>();
   for (const [playerId, r] of rows) {
-    const p = owner.get(playerId);
+    const p = data.owners.get(playerId);
     const key = p?.accountId ?? playerId;
     const m = merged.get(key) ?? { key, name: '', profit: 0, sessions: 0, hands: 0, biggestPot: 0, sessionIds: new Set<string>(), byTable: new Map() };
     m.name ||= p?.displayName || names.get(playerId) || '';

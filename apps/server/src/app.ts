@@ -26,7 +26,7 @@ import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby'
 import { memorySharedHands, type SharedHandStore } from './shared';
 import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
-import { adminGate } from './admin';
+import { adminGate, limiter } from './admin';
 import { accountRoutes, type AccountHooks } from './accounts';
 import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
@@ -174,6 +174,20 @@ const SHARE_WINDOW_MS = 60_000;
 /** Picture changes one player may make per window. */
 const AVATAR_BURST = 4;
 const AVATAR_WINDOW_MS = 30_000;
+/**
+ * Cash tables, and tournaments, one player or one address may make per
+ * window. Far more than any host needs, but a script can't fill the server's
+ * memory with tables or bury the home page under events that never start.
+ */
+const TABLES_PER_WINDOW = 20;
+const TOURNAMENTS_PER_WINDOW = 10;
+const CREATE_WINDOW_MS = 10 * 60_000;
+/**
+ * Tournaments one player, or one address, may have open at once (not over or
+ * archived). The limit above only slows down a script that waits it out; this
+ * keeps what one of them can put on everyone's home page small.
+ */
+const OPEN_TOURNAMENTS = 10;
 const NAME_MAX = 20;
 
 /**
@@ -222,6 +236,74 @@ export function tipLimits(now: () => number) {
   };
 }
 
+/** A limit kept per player and per address: true, and counted against both (unless `count` is false), when both have room for one more. */
+function perPlayerAndAddress(burst: number, windowMs: number, now: () => number) {
+  const byPlayer = limiter(burst, windowMs, now);
+  const byAddress = limiter(burst, windowMs, now);
+  return (playerId: PlayerId, address: string, count = true) => {
+    if (!byPlayer(playerId, false) || !byAddress(address, false)) return false;
+    if (count) {
+      byPlayer(playerId);
+      byAddress(address);
+    }
+    return true;
+  };
+}
+
+/**
+ * Makes something only while the player, and the address, each have fewer than
+ * `max` open: when either has `max`, says which (the player first). One being
+ * made holds its place, so a burst can't slip past while the first are saved.
+ *
+ * The player's count is what they host now and made themselves (`hosted`; not
+ * the next of a series or Sit & Go, which the server opens), worked out from
+ * what the server has loaded, so it still holds after a restart. The address's
+ * is only the ones made from it since this server started: no address is saved
+ * with anything, so after a restart it starts again from zero. An address is
+ * kept (in memory only) just while something made from it is open or being
+ * made; `sweep` forgets the rest, and runs every few minutes.
+ */
+function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => number, isOpen: (id: string) => boolean) {
+  const making = new Map<PlayerId, number>();
+  const made = new Map<string, { ids: string[]; making: number }>();
+  /** Forgets addresses with nothing open and nothing being made. */
+  const sweep = () => {
+    for (const [address, m] of made) {
+      m.ids = m.ids.filter(isOpen);
+      if (!m.ids.length && !m.making) made.delete(address);
+    }
+  };
+  const open = async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<{ id: string } | { full: 'player' | 'address' }> => {
+    const theirs = making.get(playerId) ?? 0;
+    if (hosted(playerId) + theirs >= max) return { full: 'player' };
+    const here = made.get(address) ?? { ids: [], making: 0 };
+    here.ids = here.ids.filter(isOpen);
+    if (here.ids.length + here.making >= max) return { full: 'address' };
+    made.set(address, here);
+    making.set(playerId, theirs + 1);
+    here.making++;
+    try {
+      const id = await make();
+      here.ids.push(id);
+      return { id };
+    } finally {
+      // (A new one is hosted a moment before it stops counting as being made; nothing else runs in between.)
+      const left = making.get(playerId)! - 1;
+      if (left) making.set(playerId, left);
+      else making.delete(playerId);
+      here.making--;
+      if (!here.ids.length && !here.making) made.delete(address);
+    }
+  };
+  return Object.assign(open, { sweep, addresses: () => made.size });
+}
+
+/** A browser's address; Fly puts the real one in a header, as for HTTP requests (clientAddress). */
+function socketAddress(socket: Sock): string {
+  const fly = socket.handshake.headers['fly-client-ip'];
+  return typeof fly === 'string' ? fly : socket.handshake.address;
+}
+
 export function createApp(deps: AppDeps = {}) {
   const clock = deps.clock ?? systemClock;
   const identity = deps.identity ?? memoryIdentity();
@@ -264,6 +346,9 @@ export function createApp(deps: AppDeps = {}) {
   const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
+  const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
+  const tournamentCreates = perPlayerAndAddress(TOURNAMENTS_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
+  const openTournaments = openPerPlayerAndAddress(OPEN_TOURNAMENTS, (playerId) => tournaments.openHostedBy(playerId), (id) => tournaments.isOpen(id));
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
     const missing = rt.state.seats.filter((x) => x && !avatars.has(x.playerId)).map((x) => x!.playerId);
@@ -335,7 +420,15 @@ export function createApp(deps: AppDeps = {}) {
     },
   };
   const confirmations = googleConfirmations(() => clock.now());
-  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
+  accountRoutes(app, deps.accounts ?? null, {
+    isAdmin,
+    confirmations,
+    now: () => clock.now(),
+    setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
+    log,
+    hooks: accountHooks,
+    onAdmin: (action) => audit.admin(action),
+  });
   handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
@@ -687,6 +780,7 @@ export function createApp(deps: AppDeps = {}) {
     } catch (e) {
       log('putting idle tables away failed', e);
     }
+    openTournaments.sweep();
   }, Math.min(IDLE_SWEEP_MS, Math.max(1_000, (deps.idleUnloadMs ?? IDLE_UNLOAD_MS) / 3)));
   sweep?.unref();
 
@@ -952,6 +1046,7 @@ export function createApp(deps: AppDeps = {}) {
           const patch = input?.settings ?? {};
           // Tables made here are cash tables, played for dollars and cents; tournaments make their own.
           const settings = newCashSettings(mergePatches(patch, { table: { mode: 'cash' } }));
+          if (!tableCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tables; try again in a few minutes');
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
@@ -1027,6 +1122,8 @@ export function createApp(deps: AppDeps = {}) {
           const rt = current();
           const cutoff = spectatorCutoff(rt, socket);
           // Each download reads every hand of the table, so one per socket every few seconds.
+          // It also feeds the Hands and Stats tabs, so it stays open while seated (see recordsLocked):
+          // only finished hands, as this person saw them, never sooner than the table showed them.
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           socket.data.lastExport = now;
@@ -1041,6 +1138,7 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const rt = current();
+          if (rt.recordsLocked(me)) throw new ActionError('downloads open once you leave your seat or the game stops');
           const now = clock.now();
           if (now - (socket.data.lastFullLog ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           const cutoff = spectatorCutoff(rt, socket);
@@ -1073,6 +1171,8 @@ export function createApp(deps: AppDeps = {}) {
           const id = newId();
           // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
           const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
+          // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
+          const sharerSeat = input?.hideMine ? undefined : hand.seats.find((s) => s.playerId === me)?.seat;
           await sharedStore.create({
             id,
             tableId: rt.state.id,
@@ -1085,6 +1185,7 @@ export function createApp(deps: AppDeps = {}) {
               seatCount: rt.state.seats.length,
               felt: rt.state.settings.table.felt ?? null,
               sharedBy: socket.data.session.displayName || rt.nameOf(me),
+              ...(sharerSeat !== undefined ? { sharerSeat } : {}),
               createdAt: now,
               hand,
             },
@@ -1386,7 +1487,28 @@ export function createApp(deps: AppDeps = {}) {
     on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
     on('bot:level', (input, ack) => guarded(ack, () => current().setBotLevel(me, String(input?.playerId ?? ''), String(input?.level ?? '') as BotLevel), log));
 
-    on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
+    on('tournament:create', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const address = socketAddress(socket);
+          const tooMany = () => new ActionError('that is a lot of new tournaments; try again in a few minutes');
+          // Asked first without counting, so someone past both limits hears about this one. It's counted only once
+          // the open limit lets it through, so being told to archive one costs nothing; one that fails after that
+          // (a season that isn't there) still counts, so a script can't look up seasons for free.
+          if (!tournamentCreates(me, address, false)) throw tooMany();
+          const made = await openTournaments(me, address, async () => {
+            if (!tournamentCreates(me, address)) throw tooMany();
+            return tournaments.create(me, input?.settings);
+          });
+          if ('id' in made) return made;
+          if (made.full === 'player') throw new ActionError('that is a lot of open tournaments; archive one you made, or wait for one to finish');
+          // Only their address is full (a club's or an office's Wi-Fi, say): they may have made none to archive.
+          throw new ActionError('too many tournaments are open from your network right now; try again once one finishes');
+        },
+        log,
+      ),
+    );
     on('tournament:subscribe', (input, ack) =>
       guarded(
         ack,
@@ -1482,6 +1604,11 @@ export function createApp(deps: AppDeps = {}) {
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: () => tournaments.resumeAll(),
+    /** How many addresses the open-tournament limit remembers now (each has something open); the server sweeps every few minutes. */
+    openTournamentAddresses: () => {
+      openTournaments.sweep();
+      return openTournaments.addresses();
+    },
     async close() {
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.

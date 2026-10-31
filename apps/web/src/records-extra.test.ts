@@ -71,6 +71,30 @@ describe('open hand history', () => {
     expect(ohh.pots[0].player_wins[0]).toMatchObject({ player_id: 1, win_amount: 200 });
   });
 
+  it('labels the blinds and a big blind ante the way trackers expect', () => {
+    const posts = (s: HandState) => {
+      const { ohh } = JSON.parse(ohhFile([record(s, 0)], { tableName: 'T', centsMode: false, seatCount: 9, myId: 'p0' }).text.trim()) as {
+        ohh: { rounds: { actions: { action: string; player_id: number }[] }[] };
+      };
+      return ohh.rounds[0].actions.filter((a) => a.action.startsWith('Post')).map((a) => [a.player_id, a.action]);
+    };
+    // Three-handed, button on seat 0: seat 1 posts the small blind and seat 2 the big blind.
+    const plain = start({ stacks: [100, 100, 100], button: 0 });
+    while (plain.phase !== 'complete') engine.act(plain, plain.toAct!, { type: 'fold' });
+    expect(posts(plain)).toEqual([
+      [2, 'Post SB'],
+      [3, 'Post BB'],
+    ]);
+    // A big blind ante is dead money, but it is still an ante, not a dead blind.
+    const bba = start({ stacks: [100, 100, 100], button: 0, stakes: { ante: 2, anteType: 'big-blind' } });
+    while (bba.phase !== 'complete') engine.act(bba, bba.toAct!, { type: 'fold' });
+    expect(posts(bba)).toEqual([
+      [2, 'Post SB'],
+      [3, 'Post BB'],
+      [3, 'Post Ante'],
+    ]);
+  });
+
   it('leaves out games trackers can’t read', () => {
     const s = start({ game: 'stud', stacks: [100, 100] });
     expect(ohhFile([record(s, 0)], { tableName: 'T', centsMode: false, seatCount: 8, myId: 'p0' }).count).toBe(0);

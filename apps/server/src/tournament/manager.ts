@@ -8,6 +8,7 @@ import {
   codeFromWords,
   createTournament,
   isStaffCommand,
+  isTournamentStaff,
   lastActivityAt,
   mayCommand,
   DirectorError,
@@ -35,6 +36,7 @@ import {
   type TournamentSettings,
   type TournamentState,
   type TournamentView,
+  aliveEntries,
 } from '@rsdp/tournament';
 import { cleanName as cleanDisplayName } from '../names';
 import { handReport, TableRuntime } from '../runtime/table';
@@ -235,6 +237,22 @@ export class TournamentManager {
     const saved = await this.deps.store.load(id);
     if (!saved) return null;
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
+  }
+
+  /** Still to come or under way, and not archived (every such event is in memory). */
+  isOpen(id: string): boolean {
+    const s = this.live.get(id)?.state;
+    return !!s && isLive(s) && !isArchived(s);
+  }
+
+  /**
+   * How many open events (as in isOpen) this player hosts that they made: the next of a series or Sit & Go,
+   * which the server opens for them, doesn't count. Every open event is in memory, after a restart too.
+   */
+  openHostedBy(playerId: PlayerId): number {
+    let n = 0;
+    for (const { state: s } of this.live.values()) if (s.hostId === playerId && !s.spawnedFrom && isLive(s) && !isArchived(s)) n++;
+    return n;
   }
 
   /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
@@ -581,6 +599,9 @@ export class TournamentManager {
     };
     return {
       busy: () => live.applying,
+      over: () => live.state.status === 'finished' || live.state.status === 'cancelled',
+      stillPlaying: (playerId) => aliveEntries(live.state).some((e) => e.playerId === playerId),
+      isStaff: (playerId) => isTournamentStaff(live.state, playerId),
       // Tables hold while the director's events are still reaching them, so nobody is dealt in at a seat they are leaving.
       gate: (now) => (this.closed || live.applying || live.deferred.length ? 'hold' : tableGate(live.state, tableId, now)),
       level: () => {
@@ -855,7 +876,7 @@ export class TournamentManager {
   private async openNext(live: Live, settings: TournamentSettings) {
     checkGames(settings);
     const id = nextTournamentId(live.state.id);
-    const state = this.newState(id, live.state.hostId, settings);
+    const state = { ...this.newState(id, live.state.hostId, settings), spawnedFrom: live.state.id };
     // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
     if (await this.deps.store.create(state)) await this.adopt(state, null);
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);

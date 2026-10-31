@@ -25,9 +25,9 @@ const preflop = (over: Partial<BettingContext> = {}) =>
 const limit = (unit: number, over: Partial<BettingContext> = {}) =>
   ctx({ betting: 'fixed-limit', fixed: { unit, cap: 4, uncapped: false }, ...over });
 
-/** Fixed-limit stud third street: 8 antes of 1, bring-in 1, complete to the small bet 4. */
+/** Fixed-limit stud third street: 8 antes of 1, bring-in 1, complete to the small bet 4. The seat is the low card. */
 const stud = (over: Partial<BettingContext> = {}) =>
-  limit(4, { bigBlind: 4, potTotal: 8, bringIn: { amount: 1, completeTo: 4 }, ...over });
+  limit(4, { bigBlind: 4, potTotal: 8, bringIn: { amount: 1, completeTo: 4, forced: true }, ...over });
 
 const range = (l: ReturnType<typeof computeLegal>) => [l.minTo, l.maxTo];
 
@@ -65,10 +65,12 @@ describe('computeLegal basics', () => {
     expect(l.callAmount).toBe(30);
   });
 
-  it('always allows folding, even when checking is free', () => {
+  it('allows folding, even when checking is free', () => {
     expect(computeLegal(ctx()).canFold).toBe(true);
     expect(computeLegal(preflop()).canFold).toBe(true);
-    expect(computeLegal(stud()).canFold).toBe(true);
+    // Except the forced stud bring-in, until it is in.
+    expect(computeLegal(stud()).canFold).toBe(false);
+    expect(computeLegal(stud({ bet: 1, currentBet: 4 })).canFold).toBe(true);
   });
 
   it('says bet when nobody has bet and raise otherwise', () => {
@@ -294,9 +296,15 @@ describe('fixed-limit', () => {
 });
 
 describe('stud bring-in', () => {
-  it('lets the bring-in seat bring in or complete, but not check', () => {
+  it('lets the bring-in seat bring in or complete, but not check or fold', () => {
     const l = computeLegal(stud());
-    expect(l).toMatchObject({ canBringIn: true, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', canFold: true });
+    expect(l).toMatchObject({ canBringIn: true, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', canFold: false });
+    expect(range(l)).toEqual([4, 4]);
+  });
+
+  it('the seat that opens because the low card is all in from the ante may also fold', () => {
+    const l = computeLegal(stud({ bringIn: { amount: 1, completeTo: 4 } }));
+    expect(l).toMatchObject({ canBringIn: true, canCheck: false, canFold: true, canRaise: true });
     expect(range(l)).toEqual([4, 4]);
   });
 
@@ -353,6 +361,18 @@ describe('stud bring-in', () => {
     expect(range(l)).toEqual([8, 8]);
     expect(computeLegal(stud({ currentBet: 12, raisesThisRound: 3 })).canRaise).toBe(true);
     expect(computeLegal(stud({ currentBet: 16, raisesThisRound: 4 })).canRaise).toBe(false);
+  });
+
+  it('a bring-in as big as the completion leaves nothing to complete', () => {
+    // Fixed limit: the low card just brings in.
+    expect(computeLegal(stud({ bringIn: { amount: 4, completeTo: 4 } }))).toMatchObject({ canBringIn: true, canRaise: false, minTo: 0, maxTo: 0 });
+    // No-limit and pot-limit: it may still open for more, but never for less than the forced bring-in.
+    const nl = computeLegal(stud({ betting: 'no-limit', bringIn: { amount: 5, completeTo: 2 } }));
+    expect(nl).toMatchObject({ canBringIn: true, canRaise: true, raiseKind: 'bet' });
+    expect(range(nl)).toEqual([6, 100]);
+    expect(range(computeLegal(stud({ betting: 'pot-limit', bringIn: { amount: 4, completeTo: 4 } })))).toEqual([5, 8]);
+    // The bet over the bring-in stays legal when the pot is smaller.
+    expect(range(computeLegal(stud({ betting: 'pot-limit', potTotal: 2, bringIn: { amount: 4, completeTo: 4 } })))).toEqual([5, 5]);
   });
 
   it('respects seatCanRaise facing the bring-in', () => {
@@ -467,7 +487,7 @@ describe('invariants', () => {
     const kinds = ['no-limit', 'pot-limit', 'fixed-limit'] as const;
     for (let i = 0; i < 5000; i++) {
       const currentBet = r() < 0.3 ? 0 : int(1, 200);
-      const bringIn = r() < 0.2 ? (() => { const amount = int(1, 5); return { amount, completeTo: amount + int(1, 10) }; })() : undefined;
+      const bringIn = r() < 0.2 ? (() => { const amount = int(1, 5); return { amount, completeTo: amount + int(1, 10), forced: r() < 0.8 }; })() : undefined;
       const c: BettingContext = {
         betting: kinds[int(0, 2)],
         stack: int(0, 300),
@@ -488,7 +508,7 @@ describe('invariants', () => {
       const where = JSON.stringify(c);
 
       for (const v of [l.callAmount, l.minTo, l.maxTo]) expect(Number.isInteger(v), where).toBe(true);
-      expect(l.canFold, where).toBe(true);
+      expect(l.canFold, where).toBe(!(l.canBringIn && c.bringIn!.forced));
       expect(l.callAmount, where).toBe(Math.min(toCall, c.stack));
       if (!l.canBringIn) expect(l.canCheck, where).toBe(toCall === 0);
       if (!c.seatCanRaise) expect(l.canRaise, where).toBe(false);

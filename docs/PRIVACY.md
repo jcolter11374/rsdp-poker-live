@@ -7,7 +7,7 @@ it. It is written from what the code actually does, and the code is public on
 GitHub, so anyone can check it. It is not legal advice, and nobody here is a
 lawyer.
 
-Last updated: 27 October 2026. Every change to this page is in its
+Last updated: 31 October 2026. Every change to this page is in its
 [history on GitHub](https://github.com/jcolter11374/rsdp-poker-live/commits/main/docs/PRIVACY.md).
 
 ## Who is responsible
@@ -105,13 +105,20 @@ for how it works.
 - Your browser fetches a small public file from GitHub
   (raw.githubusercontent.com) to compare the public record with GitHub's copy.
   GitHub sees that request, as it would for any page.
+- When you open the leaderboard, your browser sends its time zone (such as
+  America/New_York), so "This month" and "This year" start at your midnight.
+  The site uses it only for that answer and doesn't save it.
 
 ## Other services involved
 
 - **Fly.io** hosts the site and its database in the USA (Virginia). Like any web host it
-  sees your IP address when you connect. The site uses IP addresses only in
-  memory, for a few minutes, to slow down people guessing passwords or
-  flooding the site with requests, and doesn't save them. The server's own logs record errors, not
+  sees your IP address when you connect. The site keeps IP addresses only in
+  memory and never saves them. It uses them for a few minutes to slow down
+  people guessing passwords or flooding the site with requests. If you make a
+  tournament, the address you made it from is also remembered while that
+  tournament is open, so one address can't fill the home page with events; it
+  is forgotten within a few minutes of the tournament ending, and whenever the
+  server restarts. The server's own logs record errors, not
   visitors, and they stay in Fly's log service, not in the site's database.
 - **GitHub** holds the code, the hourly copy of the public record and the
   nightly backups (below).

@@ -1,4 +1,4 @@
-import type { HandEvent } from '@rsdp/engine/core';
+import type { HandEvent, PostKind } from '@rsdp/engine/core';
 import type { HandRecordView } from '@rsdp/engine/wire';
 
 /*
@@ -23,7 +23,16 @@ const GAME_TYPE: Record<string, string> = {
   'plo6-8': 'OmahaHiLo',
 };
 const BET_TYPE = { 'no-limit': 'NL', 'pot-limit': 'PL', 'fixed-limit': 'FL' } as const;
-const POST_ACTION: Record<string, string> = { sb: 'Post SB', bb: 'Post BB', ante: 'Post Ante', straddle: 'Straddle' };
+// By the engine's post kind. A big blind ante is dead money but still an ante; other dead money is "Post Dead".
+const POST_ACTION: Partial<Record<PostKind, string>> = {
+  'small-blind': 'Post SB',
+  'big-blind': 'Post BB',
+  ante: 'Post Ante',
+  'big-blind-ante': 'Post Ante',
+  straddle: 'Straddle',
+  'dead-small-blind': 'Post Dead',
+  'missed-big-blind': 'Post Extra Blind',
+};
 
 export interface OhhOptions {
   tableName: string;
@@ -59,7 +68,7 @@ export function toOhh(h: HandRecordView, opts: OhhOptions): object | null {
       case 'post':
         act({
           player_id: pid(e.seat),
-          action: e.kind === 'ante' || !e.live ? (e.kind === 'ante' ? 'Post Ante' : 'Post Dead') : (POST_ACTION[e.kind] ?? 'Post Extra Blind'),
+          action: POST_ACTION[e.kind] ?? (e.live ? 'Post Extra Blind' : 'Post Dead'),
           amount: amt(e.amount),
           is_allin: e.allIn,
         });

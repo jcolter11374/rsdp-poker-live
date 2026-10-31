@@ -144,7 +144,7 @@ function play(seed: number): HandState {
       const to = r.next() < 0.3 ? legal.maxTo : legal.minTo + r.int(legal.maxTo - legal.minTo + 1);
       engine.act(state, seat, { type: legal.raiseKind, to });
     } else if (roll < 0.85 && !legal.canBringIn) engine.act(state, seat, legal.canCheck ? { type: 'check' } : { type: 'call' });
-    else engine.act(state, seat, legal.canCheck ? { type: 'check' } : { type: 'fold' });
+    else engine.act(state, seat, legal.canCheck ? { type: 'check' } : legal.canFold ? { type: 'fold' } : { type: 'bring-in' });
 
     // Mid-hand: chips are only moved, never made.
     const inPlay = state.seats.reduce((a, s) => a + s.stack + s.total, 0);

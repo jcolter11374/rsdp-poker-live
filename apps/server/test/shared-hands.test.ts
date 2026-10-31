@@ -61,10 +61,15 @@ describe('shared hands and the full log', () => {
         .find((d) => d.seat === 1)!
         .cards.every((c) => c.card === '??'),
     ).toBe(true);
+    // The link says whose cards those are, so the replay can show them face up from the sharer's chair.
+    expect(shared.sharerSeat).toBe(0);
 
     const hidden = await host.call<{ id: string }>('hand:share', { handNumber, hideMine: true });
     const hiddenHand = (await (await fetch(`${url}/api/shared/${hidden.id}`)).json()) as SharedHandView;
     expect(deals(hiddenHand.hand).every((d) => d.cards.every((c) => c.card === '??'))).toBe(true);
+    // With my cards hidden, the link carries no sharerSeat either: there are no cards of mine for the replay to show.
+    // It still names me as the sharer, so this isn't anonymous.
+    expect(hiddenHand.sharerSeat).toBeUndefined();
 
     await expect(guest.call('hand:unshare', { id })).rejects.toThrow(/not one of yours/);
     await host.call('hand:unshare', { id });
@@ -72,6 +77,11 @@ describe('shared hands and the full log', () => {
     expect((await fetch(`${url}/api/shared/nope`)).status).toBe(404);
     await expect(host.call('hand:share', { handNumber: 999 })).rejects.toThrow(/no longer available/);
 
+    // No full log while seated in a running game (no live HUDs); stopping the game opens it.
+    expect(host.view().recordsLocked).toBe(true);
+    await expect(host.call('table:fullLog')).rejects.toThrow(/leave your seat or the game stops/);
+    await host.call('host:stop');
+    await host.until((x) => !x.started && !x.recordsLocked);
     const full = await host.call<{ log: { text: string }[]; chat: unknown[]; hands: unknown[] }>('table:fullLog');
     expect(full.log.some((l) => /started the game/.test(l.text))).toBe(true);
     expect(full.hands).toHaveLength(1);
