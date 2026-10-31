@@ -5,7 +5,7 @@ import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from '../src/app';
 import { closeDb, listHandsByTable, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
-import { dbIdentity, dbStore } from '../src/storage';
+import { dbIdentity, dbStore, withoutLoneSurrogates } from '../src/storage';
 import { dbTournamentStore } from '../src/tournament/store';
 import { createTournament, defaultSettings as tournamentDefaults } from '@rsdp/tournament';
 import { socketClient, type Client } from './socket-client';
@@ -70,6 +70,19 @@ describe('database storage', () => {
     expect(back.view().name).toBe('Saved night');
     expect(back.view().seats[1]?.name).toBe('Guest');
     expect(back.view().history.map((h) => h.handNumber)).toEqual([1]);
+  });
+
+  it('saves a table even if half an emoji got into its state, without it', async () => {
+    const host = client('db-surrogate-secret-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Odd chat' } } });
+    await host.call('table:join', { tableId });
+    const store = dbStore(db);
+    const state = structuredClone((await store.loadTable(tableId))!);
+    state.chat.push({ at: 1, playerId: null, name: 'Dealer \ud83d', text: 'fine 🃏 \udc00 then' });
+    await store.saveTable(state);
+    const back = (await store.loadTable(tableId))!;
+    expect(back.chat.at(-1)).toMatchObject({ name: 'Dealer ', text: 'fine 🃏  then' });
+    expect(withoutLoneSurrogates(back)).toBe(back);
   });
 
   it('saves tournaments, seats their tables in the database and finds them again after a restart', async () => {

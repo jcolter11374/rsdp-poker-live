@@ -17,6 +17,8 @@ type PreAction = { kind: 'checkFold' } | { kind: 'check' } | { kind: 'fold' } | 
 
 /** How long a move waits for the server before the buttons come back. */
 const SEND_TIMEOUT_MS = 8_000;
+/** Two taps closer than this are one double tap: the second is ignored, not sent as a move on the next turn. */
+const DOUBLE_TAP_MS = 500;
 
 export function ActionBar({
   view,
@@ -169,7 +171,9 @@ export function ActionBar({
     setSending(false);
   };
   const run = (p: () => Promise<unknown>) => {
-    if (inFlight.current) return;
+    // The next turn's view arrives before the answer to this move, and frees the buttons: a tap within half a second
+    // of a move is still the second half of a double tap, not a move on the next street.
+    if (inFlight.current || Date.now() - lastSent.current < DOUBLE_TAP_MS) return;
     setTipAt(null);
     setWhyAt(null);
     inFlight.current = true;
@@ -192,7 +196,7 @@ export function ActionBar({
   useEffect(release, [legal, hand?.handNumber]);
   const send = (action: Action) => run(() => call('hand:act', action));
   /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
-  const settled = () => !inFlight.current && Date.now() - lastSent.current > 500;
+  const settled = () => !inFlight.current && Date.now() - lastSent.current > DOUBLE_TAP_MS;
 
   useEffect(() => {
     if (legal) setAmount(legal.minTo);
@@ -200,9 +204,14 @@ export function ActionBar({
     setConfirmFold(false);
   }, [legal?.minTo, hand?.handNumber, hand?.street]);
 
-  // Folding when you could check for free asks once more.
+  // Folding when you could check for free asks once more, and the answer can't be the second half of a double tap.
+  const foldAskedAt = useRef(0);
   const fold = () => {
-    if (legal?.canCheck && !confirmFold) return setConfirmFold(true);
+    if (legal?.canCheck && !confirmFold) {
+      foldAskedAt.current = Date.now();
+      return setConfirmFold(true);
+    }
+    if (legal?.canCheck && Date.now() - foldAskedAt.current < DOUBLE_TAP_MS) return;
     setConfirmFold(false);
     send({ type: 'fold' });
   };
@@ -256,7 +265,8 @@ export function ActionBar({
     if (pre.kind === 'checkFold') move = legal.canCheck ? { type: 'check' } : { type: 'fold' };
     else if (pre.kind === 'fold') move = { type: 'fold' };
     else if (pre.kind === 'check' && legal.canCheck) move = { type: 'check' };
-    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : { type: 'call' };
+    // Owing the stud bring-in, staying in means bringing it in.
+    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' };
     else if (pre.kind === 'call' && legal.canCheck) move = { type: 'check' };
     else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
     // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can

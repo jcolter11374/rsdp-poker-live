@@ -3,7 +3,8 @@ import type { HandRecordView, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
 import { eventLines, type Fmt } from '../format';
 import { LogText } from './PlayingCard';
-import { download, fileStem, handHistoryText, handsJson, ledgerCsv, settleUp } from '../records';
+import { rakeSchema } from '@rsdp/engine/modifiers';
+import { download, fileStem, handHistoryText, handsJson, ledgerCsv, offAfterFees, settleUp } from '../records';
 import { linesWithWhy, NOTES_FOOTNOTE } from '../coach';
 import { usePrefs } from '../prefs';
 import { ledgerMismatches, tableChips, changedWhileClosed } from '../audit';
@@ -102,6 +103,10 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   );
   const signed = (n: number) => (n > 0 ? `+${fmt(n)}` : fmt(n));
   const { transfers, off, bots } = settleUp(view.ledger);
+  const feeOn = view.rakeTotal !== null || rakeSchema.get(view.settings).enabled;
+  const wrong = offAfterFees(off, view.rakeTotal, feeOn);
+  // What the house fee took (chips that went to nobody), when it explains some of the gap.
+  const fees = feeOn && off < 0 && wrong !== off ? (view.rakeTotal ?? null) : undefined;
   const summary = [
     `${view.name}: settle up`,
     ...transfers.map((t) => `${t.from} pays ${t.to} ${fmt(t.amount)}`),
@@ -127,7 +132,13 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
               </div>
             ))
           )}
-          {off !== 0 && <p className="error">The books are off by {signed(off)}; check the buy-ins.</p>}
+          {wrong !== 0 && <p className="error">The books are off by {signed(wrong)}; check the buy-ins.</p>}
+          {fees !== undefined && (
+            <p className="hint">
+              The house fee took {fees === null ? 'some chips' : fmt(fees)} off the table and pays them to nobody, so the payments come to that much less than
+              the losses.
+            </p>
+          )}
           {bots !== 0 && (
             <p className="hint">
               Practice bots {bots > 0 ? 'won' : 'lost'} {fmt(Math.abs(bots))} here. Bots play for nothing, so those chips aren't paid to or from anyone.

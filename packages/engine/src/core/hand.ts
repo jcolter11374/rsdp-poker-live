@@ -336,6 +336,8 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
         ? {
             unit: st.betSize === 'big' ? input.stakes.bigBet : input.stakes.smallBet,
             cap: input.options.fixedLimitCap,
+            // Before the flop (or the first draw) the big blind is the round's bet and each straddle a raise.
+            forced: state.street === 0 ? (input.posts.some((p) => p.kind === 'big-blind') ? 1 : 0) + input.posts.filter((p) => p.kind === 'straddle').length : 0,
             uncapped: input.options.uncappedHeadsUp && live(state).length === 2,
           }
         : undefined,
@@ -385,6 +387,8 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
       break;
     case 'call':
       if (legal.canCheck) throw new ActionError('nothing to call');
+      // The stud bring-in is owed and nothing is bet yet: a "call" of nothing would skip it.
+      if (legal.canBringIn) throw new ActionError('bring in or complete');
       commit(state, s, legal.callAmount);
       s.lastAction = s.allIn ? 'All in' : 'Call';
       kind = 'call';
@@ -425,7 +429,8 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
           }
         }
       }
-      state.raisesThisRound++;
+      // An all-in short of a full raise is not a raise, so it does not count toward a fixed-limit cap either.
+      if (full) state.raisesThisRound++;
       state.currentBet = to;
       kind = completing ? 'complete' : legal.raiseKind;
       s.lastAction = s.allIn ? 'All in' : kind === 'bet' ? 'Bet' : kind === 'complete' ? 'Complete' : 'Raise';

@@ -70,7 +70,7 @@ export function playUntil(env: ReturnType<typeof setup>, done: () => boolean, op
       const big = legal.callAmount * 4 > seat.stack + seat.bet;
       if (legal.canRaise && r < shove) action = { type: legal.raiseKind, to: legal.maxTo };
       else if (!legal.canCheck && (r < shove + 13 || (big && r < 70))) action = { type: 'fold' };
-      else action = legal.canCheck ? { type: 'check' } : { type: 'call' };
+      else action = legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' };
       rt.act(seat.playerId, action);
       acted = true;
     }

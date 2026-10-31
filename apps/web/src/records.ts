@@ -73,6 +73,17 @@ export function settleUp(rows: { playerId: string; name: string; net: number; bo
 }
 
 /**
+ * What the books are off by once the house fee is allowed for. The fee takes chips off the table and pays them to
+ * nobody, so at a table that takes one the nets add up to minus the fees taken, and that is not a mistake in the
+ * buy-ins. `fees` is the total taken, or null for a viewer the host doesn't show it to: then a shortfall at a table
+ * with the fee on is put down to the fee.
+ */
+export function offAfterFees(off: number, fees: number | null, feeOn: boolean): number {
+  if (fees !== null) return off + fees;
+  return feeOn && off < 0 ? 0 : off;
+}
+
+/**
  * The hands file (the Hands tab's JSON download), which the replayer opens
  * again. The bots' reasons stay out: they were for the one person in each
  * hand, and a file gets passed around.

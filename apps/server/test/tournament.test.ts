@@ -93,6 +93,29 @@ describe('tournaments on the server', () => {
     expect(env.tables.get(m.to)!.seatOf(m.playerId)?.mood).toBe('🔥');
   }, 60_000);
 
+  it('keeps what is left of a player\'s time bank when they are moved to another table', async () => {
+    const env = setup();
+    const settings: TournamentSettings = defaultSettings({
+      name: 'Banks',
+      start: { kind: 'scheduled', startAt: env.clock.now() + 2 * MIN },
+      startingStack: 1000,
+      seatsPerTable: 6,
+      lateRegistration: { enabled: false, throughLevel: null },
+      tableRules: { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false },
+    });
+    const id = await env.manager.create('host', settings);
+    for (const p of players(14)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    env.clock.advance(2 * MIN + 1000);
+    // Everyone has used 13 s of their 20 s bank.
+    for (const rt of env.tables.values()) for (const seat of rt.state.seats) if (seat) seat.timeBank = 7;
+    const moved = () => env.moves.find((m) => m.from !== '');
+    playUntil(env, () => !!moved());
+    const m = moved()!;
+    const seat = env.tables.get(m.to)!.seatOf(m.playerId)!;
+    expect(seat.timeBank).toBeLessThanOrEqual(7);
+    expect(seat.handsSinceRefill).toBeGreaterThan(0);
+  }, 60_000);
+
   it('plays a mixed-game tournament (Hold\'em, Omaha, Stud, Triple Draw, Badugi) to the end', async () => {
     const env = setup();
     const games = ['nlhe', 'plo4', 'stud', 'td27', 'badugi'];

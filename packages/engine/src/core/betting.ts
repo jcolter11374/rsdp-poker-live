@@ -14,6 +14,8 @@ export interface FixedLimitRound {
   unit: Chips;
   /** Most bets plus raises this round, e.g. 4. */
   cap: number;
+  /** Forced bets that count toward the cap: the big blind (and any straddles) in the first round. */
+  forced?: number;
   /** Heads-up with the cap lifted. */
   uncapped: boolean;
 }
@@ -126,7 +128,7 @@ function ceiling(ctx: BettingContext, fullTo: Chips, toCall: Chips): Chips {
 function capReached(ctx: BettingContext): boolean {
   if (ctx.betting !== 'fixed-limit') return false;
   const f = fixedRound(ctx);
-  return !f.uncapped && ctx.raisesThisRound >= f.cap;
+  return !f.uncapped && ctx.raisesThisRound + (f.forced ?? 0) >= f.cap;
 }
 
 function fixedRound(ctx: BettingContext): FixedLimitRound {

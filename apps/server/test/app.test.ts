@@ -215,6 +215,17 @@ describe('socket server', () => {
     await expect(fan.call('chat:send', { text: 'hi' })).rejects.toThrow(/only players/);
   });
 
+  it('slows down a burst of chat from one player, so it cannot wipe the table chat', async () => {
+    const host = client('chat-burst-host-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', {});
+    await host.call('table:join', { tableId });
+    for (let i = 0; i < 8; i++) await host.call('chat:send', { text: `line ${i}` });
+    await expect(host.call('chat:send', { text: 'one too many' })).rejects.toThrow(/slow down/);
+    const chat = server.tables.get(tableId)!.state.chat.map((m) => m.text);
+    expect(chat.filter((t) => t.startsWith('line '))).toHaveLength(8);
+    expect(chat).not.toContain('one too many');
+  });
+
   it('rejects connections without a browser secret', async () => {
     const c: Client = connect(url, { auth: {}, transports: ['websocket'], forceNew: true });
     clients.push(c);

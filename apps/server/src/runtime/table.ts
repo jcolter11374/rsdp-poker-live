@@ -213,9 +213,24 @@ export class TableRuntime {
       this.state.fair.next = this.newServerSeed();
       this.state.fair.clientSeeds = {};
     }
+    this.restartClocks();
     this.giveBotsLooks();
     this.watchHost();
     this.sync();
+  }
+
+  /**
+   * Nobody could act while the server was down (a deploy or a crash), and the clocks saved with the table kept
+   * running in the meantime: the player to act gets a fresh decision clock, and an open run-it-twice vote a fresh
+   * vote clock, instead of being timed out the moment the table comes back. A paused game keeps its time left.
+   * resume() does this; a tournament also does it as each table is loaded, since its catch-up runs before resume().
+   */
+  restartClocks() {
+    const s = this.state;
+    const hand = s.hand;
+    if (s.paused || !hand || hand.phase === 'complete') return;
+    if (s.turn) s.turn = this.newTurn(s.turn.key, s.turn.seat);
+    if (hand.phase === 'rit-vote' && s.ritDeadline !== null) s.ritDeadline = this.clock.now() + RIT_VOTE_SECONDS * 1000;
   }
 
   dispose() {
@@ -1073,7 +1088,10 @@ export class TableRuntime {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
-      s.positions = null;
+      // The blinds move on from where they were, as after any hand; they start afresh only if one of them sat in a
+      // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
+      const p = s.positions;
+      if (p && [p.button, p.smallBlind, p.bigBlind].some((x) => x !== null && x >= seats)) s.positions = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
@@ -1257,7 +1275,12 @@ export class TableRuntime {
   }
 
   chat(playerId: PlayerId | null, text: string) {
-    let clean = text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
+    // No lone UTF-16 surrogates (Postgres refuses them, and the table could no longer be saved), and cut by whole
+    // characters so a long line never splits an emoji into one.
+    let clean = Array.from(String(text).replace(/\p{Cs}/gu, '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim())
+      .slice(0, 300)
+      .join('')
+      .trim();
     if (!clean) return;
     if (playerId) {
       if (this.state.muted?.includes(playerId)) throw new ActionError('the host has muted you');
@@ -1512,7 +1535,7 @@ export class TableRuntime {
   // ---------------------------------------------------------------- tournament seating
 
   /** Tournament: put a player in a seat with a stack (start, late registration, moves). */
-  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number; mood?: string | null }) {
+  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number; mood?: string | null; timeBank?: { seconds: number; handsSinceRefill: number } }) {
     if (this.state.seats[input.seat]) throw new Error(`seat ${input.seat} is taken`);
     this.state.seats[input.seat] = {
       seat: input.seat,
@@ -1527,8 +1550,9 @@ export class TableRuntime {
       waitForBigBlind: false,
       straddle: false,
       timeouts: 0,
-      timeBank: this.settings.timing.timeBankSeconds,
-      handsSinceRefill: 0,
+      // A player moved from another table of the tournament keeps what is left of their time bank.
+      timeBank: Math.min(input.timeBank?.seconds ?? Infinity, this.settings.timing.timeBankSeconds),
+      handsSinceRefill: input.timeBank?.handsSinceRefill ?? 0,
       leaveAfterHand: false,
       pendingChips: 0,
       pendingStack: null,
@@ -1739,8 +1763,9 @@ export class TableRuntime {
   }
 
   /**
-   * A cash player leaving (or removed) mid-hand folds, unless they are all in:
-   * their chips are already in the pot and have no more decisions to make, so
+   * A cash player leaving (or removed) mid-hand folds, unless they are all in
+   * or the betting is over (the run-it-twice vote): their chips are already in
+   * the pot and they have no more decisions to make, so
    * the hand plays out for them and they go when it ends (a run-it-twice vote
    * counts as once).
    */
@@ -1748,7 +1773,8 @@ export class TableRuntime {
     const seat = this.seatOf(playerId);
     const hand = this.state.hand;
     const hs = seat && hand ? hand.seats.find((x) => x.seat === seat.seat) : undefined;
-    if (!hand || !hs || !hs.allIn || hs.folded) return this.foldIfLive(playerId);
+    // Someone who called an all-in with chips behind has nothing left to decide during the vote either.
+    if (!hand || !hs || hs.folded || !(hs.allIn || hand.phase === 'rit-vote')) return this.foldIfLive(playerId);
     if (hand.phase === 'rit-vote' && hs.ritVote === null) {
       engine.voteRunItTwice(hand, hs.seat, false);
       this.afterEngine(false);

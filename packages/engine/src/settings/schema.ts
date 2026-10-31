@@ -68,7 +68,9 @@ const label = (range: { min: number; max: number }) =>
     .trim()
     .min(range.min, 'must not be blank')
     .max(range.max, `must be at most ${range.max} characters`)
-    .refine((s) => !CONTROL_CHARS.test(s), 'must not contain control characters');
+    .refine((s) => !CONTROL_CHARS.test(s), 'must not contain control characters')
+    // A lone UTF-16 surrogate (half an emoji) can't be stored: the table could no longer be saved.
+    .refine((s) => !/\p{Cs}/u.test(s), 'must not contain half of an emoji');
 
 /** Variant id from the variants registry; the server checks that it exists. */
 const gameId = z

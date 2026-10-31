@@ -152,6 +152,9 @@ const SAVE_DEBOUNCE_MS = 500;
 const IDLE_UNLOAD_MS = 45 * 60_000;
 /** How often the server looks for tables to put away. */
 const IDLE_SWEEP_MS = 5 * 60_000;
+/** Table chat lines one player may send per window (across all their tabs): a burst could wipe the table's chat. */
+const CHAT_BURST = 8;
+const CHAT_WINDOW_MS = 10_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
@@ -257,6 +260,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
+  const chatTimes = new Map<PlayerId, number[]>();
   const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
@@ -889,6 +893,8 @@ export function createApp(deps: AppDeps = {}) {
       if (!rt) throw new ActionError('join a table first');
       return rt;
     };
+    /** Counts this tab's joins and leaves, so a join that finishes after a later one (or a leave) does nothing. */
+    let joins = 0;
     const leave = () => {
       const id = socket.data.tableId;
       if (!id) return;
@@ -968,8 +974,12 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         async () => {
+          const seq = ++joins;
           const rt = await getTable(String(tableId));
           if (!rt) throw new ActionError('table not found');
+          // A table read from the database takes a moment: the tab may have closed, left, or asked for another table
+          // meanwhile. Joining now would leave the player counted at a table they have gone from.
+          if (socket.disconnected || seq !== joins) return;
           if (socket.data.tableId !== rt.state.id) {
             leave();
             socket.data.tableId = rt.state.id;
@@ -992,7 +1002,10 @@ export function createApp(deps: AppDeps = {}) {
         log,
       ),
     );
-    on('table:leave', () => leave());
+    on('table:leave', () => {
+      joins++;
+      leave();
+    });
     on('table:history', ({ handNumber }, ack) =>
       guarded(
         ack,
@@ -1267,7 +1280,20 @@ export function createApp(deps: AppDeps = {}) {
         log,
       ),
     );
-    on('chat:send', (input, ack) => guarded(ack, () => current().chat(me, String(input?.text ?? '')), log));
+    on('chat:send', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const rt = current();
+          const now = clock.now();
+          const recent = (chatTimes.get(me) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
+          if (recent.length >= CHAT_BURST) throw new ActionError('slow down a little');
+          rt.chat(me, String(input?.text ?? ''));
+          chatTimes.set(me, [...recent, now]);
+        },
+        log,
+      ),
+    );
     on('table:gesture', (input, ack) =>
       guarded(
         ack,
@@ -1367,6 +1393,8 @@ export function createApp(deps: AppDeps = {}) {
         async () => {
           const id = String(input?.id ?? '');
           if (!(await tournaments.get(id))) throw new ActionError('tournament not found');
+          // Closed while the tournament loaded: nothing to send it to.
+          if (socket.disconnected) return;
           if (!tournamentWatchers.has(id)) tournamentWatchers.set(id, new Set());
           tournamentWatchers.get(id)!.add(socket);
           socket.data.tournaments.add(id);
@@ -1435,6 +1463,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
+        chatTimes.delete(me);
         tips.forget(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
