@@ -497,6 +497,38 @@ describe('busts, rebuys and re-entry', () => {
     expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
   });
 
+  it('re-entry through the last level, which never ends, is open to the end: the last player left wins a minute after the last bust', () => {
+    const sim = new Sim({ structure: levels.slice(0, 2), reEntry: { enabled: true, throughLevel: 2, max: null, approval: false } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.at(T0 + 15 * MIN);
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 16 * MIN);
+    sim.at(T0 + 16 * MIN);
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.place])).toEqual([
+      ['p0', 1],
+      ['p1', 2],
+    ]);
+  });
+
+  it('re-entry through a level past the end of the structure is open to the end too, until levels are added that reach it', () => {
+    const sim = new Sim({ structure: levels.slice(0, 2), reEntry: { enabled: true, throughLevel: 3, max: null, approval: false } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(nextWakeAt(sim.state)).toBe(T0 + MIN);
+    // With a third level and a fourth after it, re-entry closes when level 3 ends, so p0 waits for that instead.
+    sim.do({ type: 'editStructure', by: 'host', structure: [...levels.slice(0, 2), levels[3], levels[4]] });
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
+    sim.at(T0 + 30 * MIN);
+    expect(sim.of('reEntryClosed')).toHaveLength(1);
+    expect(sim.state.status).toBe('finished');
+  });
+
   it('late registration is open until it closes', () => {
     const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 1 } });
     sim.register(3);
