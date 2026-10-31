@@ -629,3 +629,48 @@ describe('late shows', () => {
     expect(rt.state.history.at(-1)!.hand.seats.find((x) => x.playerId === folder)!.shown?.length).toBe(2);
   });
 });
+
+describe('hole cards after the hand', () => {
+  /** Hole cards dealt to `seat` as `viewer` receives them in the hand still on the table. */
+  const dealtTo = (rt: TableRuntime, viewer: string, seat: number) =>
+    tableView(rt, viewer, 0)
+      .hand!.events.flatMap((e) => (e.t === 'deal' && e.seat === seat ? e.cards.map((c) => c.card) : []));
+  const foldAround = (rt: TableRuntime) => {
+    for (let i = 0; i < 20 && hand(rt).phase !== 'complete'; i++) rt.act(toActId(rt), { type: 'fold' });
+  };
+
+  it('a seat shuffle does not show anyone the folded cards of whoever had their new seat', () => {
+    const { rt } = table((s) => (s.timing.autoStartNextHand = false));
+    seatPlayers(rt, 4, 1000);
+    rt.start('host');
+    const h = hand(rt);
+    foldAround(rt);
+    const dealt = new Map(h.seats.map((x) => [x.playerId, x.cards.map((c) => c.card)]));
+    rt.shuffleSeats('host');
+    let moved = 0;
+    for (const seat of rt.state.seats) {
+      if (!seat) continue;
+      const before = h.seats.find((x) => x.seat === seat.seat)!;
+      if (before.playerId === seat.playerId) continue;
+      moved++;
+      expect(dealtTo(rt, seat.playerId, seat.seat)).not.toContain(dealt.get(before.playerId)![0]);
+      // Their own cards still show, from the seat they played the hand in.
+      const mine = h.seats.find((x) => x.playerId === seat.playerId)!;
+      expect(dealtTo(rt, seat.playerId, mine.seat)).toEqual(dealt.get(seat.playerId));
+    }
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('someone who sits down where a folder just left does not see the folded cards', () => {
+    const { rt } = table((s) => (s.timing.autoStartNextHand = false));
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    foldAround(rt);
+    const folded = hand(rt).seats.find((x) => x.folded && x.playerId !== 'host')!;
+    rt.stand(folded.playerId);
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    rt.requestSeat('d', { seat: folded.seat, name: 'D', stack: 1000 });
+    expect(rt.seatOf('d')?.seat).toBe(folded.seat);
+    expect(dealtTo(rt, 'd', folded.seat).every((c) => c === '??' || !folded.cards.some((x) => x.card === c))).toBe(true);
+  });
+});
