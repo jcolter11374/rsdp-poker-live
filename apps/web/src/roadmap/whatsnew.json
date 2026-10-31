@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-10-31",
+      "date": "2026-10-31",
+      "title": "Our own tournament structure",
+      "items": [
+        { "title": "Blinds the RSDP way", "detail": "A new tournament now starts on the group's own structure from PokerNow: 63,000 chips, 28 levels of 8 minutes from 100/200 up to 60,000/120,000, no antes and no breaks, with late registration through level 5. It's also the RSDP button under Start from, next to Turbo, Standard and Deep stack.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026-10-30-b",
       "date": "2026-10-30",
       "title": "Our own tournament payouts",

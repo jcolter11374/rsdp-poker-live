@@ -3,7 +3,7 @@
 
 import { copySettings } from './copy';
 import { defaultSettings, validateSettings } from './director';
-import { presetStructure, type PresetName, type StructureRow } from './structure';
+import { presetStructure, rsdpStructure, RSDP_STACK, type PresetName, type StructureRow } from './structure';
 import type { TournamentSettings } from './types';
 
 /** Longest saved structure, as JSON. Real ones are a few kilobytes. */
@@ -44,15 +44,17 @@ export function readSavedStructure(json: string, now: number): TournamentSetting
   return copySettings(settings, now);
 }
 
-export type StarterId = 'turbo' | 'standard' | 'deep';
+export type StarterId = 'rsdp' | 'turbo' | 'standard' | 'deep';
 
 export const STARTERS: { id: StarterId; name: string; blurb: string }[] = [
+  { id: 'rsdp', name: 'RSDP', blurb: '63,000 chips, 28 levels of 8 minutes, no antes, late registration through level 5' },
   { id: 'turbo', name: 'Turbo', blurb: '10,000 chips (50 big blinds), 8-minute levels' },
   { id: 'standard', name: 'Standard', blurb: '10,000 chips (100 big blinds), 15-minute levels' },
   { id: 'deep', name: 'Deep stack', blurb: '20,000 chips (200 big blinds), 20-minute levels' },
 ];
 
-const STARTER_SPECS: Record<StarterId, { preset: PresetName; stack: number; lateThrough: number }> = {
+const STARTER_SPECS: Record<StarterId, { preset: PresetName | 'rsdp'; stack: number; lateThrough: number }> = {
+  rsdp: { preset: 'rsdp', stack: RSDP_STACK, lateThrough: 5 },
   turbo: { preset: 'turbo', stack: 10_000, lateThrough: 4 },
   standard: { preset: 'regular', stack: 10_000, lateThrough: 4 },
   deep: { preset: 'deep', stack: 20_000, lateThrough: 6 },
@@ -66,13 +68,17 @@ const STARTER_SPECS: Record<StarterId, { preset: PresetName; stack: number; late
 export function applyStarter(current: TournamentSettings, id: StarterId): TournamentSettings {
   const spec = STARTER_SPECS[id];
   const expectedEntrants = current.start.kind === 'sng' ? current.start.playersNeeded : Math.min(current.maxEntrants, 30);
-  let structure: StructureRow[] = presetStructure(spec.preset, {
-    startingStack: spec.stack,
-    expectedEntrants,
-    ...(current.rebuy.max > 0 ? { rebuyThroughLevel: 4 } : {}),
-    ...(current.addOn.max > 0 ? { addOnAtFirstBreak: true } : {}),
-  });
-  // A short field can end before the first break; an add-on needs one, so add one after level 4.
+  const rebuys = current.rebuy.max > 0 ? { rebuyThroughLevel: 4 } : {};
+  let structure: StructureRow[] =
+    spec.preset === 'rsdp'
+      ? rsdpStructure(rebuys)
+      : presetStructure(spec.preset, {
+          startingStack: spec.stack,
+          expectedEntrants,
+          ...rebuys,
+          ...(current.addOn.max > 0 ? { addOnAtFirstBreak: true } : {}),
+        });
+  // A short field, or RSDP's levels, can have no break; an add-on needs one, so add one after level 4.
   if (current.addOn.max > 0 && !structure.some((r) => r.kind === 'break')) structure = [...structure.slice(0, 4), { kind: 'break', minutes: 5, addOn: true }, ...structure.slice(4)];
   return {
     ...structuredClone(current),

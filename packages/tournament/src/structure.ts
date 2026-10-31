@@ -301,6 +301,33 @@ export function presetStructure(name: PresetName, opts: BuildOptions): Structure
 }
 
 /**
+ * The RSDP group's own tournament blinds, from the structure they play on
+ * PokerNow: 28 levels of 8 minutes, no antes and no breaks. The last level
+ * runs until the end. Starts at 63,000 chips (RSDP_STACK).
+ */
+const RSDP_BLINDS: [sb: number, bb: number][] = [
+  [100, 200], [200, 300], [200, 400], [300, 500], [300, 600], [400, 800], [500, 1000],
+  [600, 1200], [800, 1600], [1000, 2000], [1200, 2400], [1500, 3000], [2000, 4000], [2500, 5000],
+  [3000, 6000], [4000, 8000], [5000, 10000], [6000, 12000], [8000, 16000], [10000, 20000], [12000, 24000],
+  [15000, 30000], [20000, 40000], [25000, 50000], [30000, 60000], [40000, 80000], [50000, 100000], [60000, 120000],
+];
+export const RSDP_STACK = 63_000;
+export const RSDP_LEVEL_MINUTES = 8;
+
+/** The RSDP blind levels. Levels up to `rebuyThroughLevel` allow rebuys. */
+export function rsdpStructure(opts: Pick<BuildOptions, 'rebuyThroughLevel'> = {}): StructureRow[] {
+  return RSDP_BLINDS.map(([sb, bb], i) => ({
+    kind: 'level',
+    sb,
+    bb,
+    ante: 0,
+    anteType: 'none',
+    minutes: RSDP_LEVEL_MINUTES,
+    ...(opts.rebuyThroughLevel && i < opts.rebuyThroughLevel ? { rebuy: true } : {}),
+  }));
+}
+
+/**
  * Generates a structure aimed at finishing in about `targetMinutes` (TRN-15
  * improvement). It uses the regular ladder and stretches or shrinks level
  * length so the last generated level starts near the target time. Breaks of

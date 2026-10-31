@@ -3,8 +3,8 @@ import {
   copySettings,
   defaultSettings,
   nextOccurrence,
+  applyStarter,
   payoutPreset,
-  presetStructure,
   upcomingOccurrences,
   validateSchedule,
   validateSettings,
@@ -25,6 +25,9 @@ import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
 import { SavedStructures } from './SavedStructures';
 import { SiteHeader } from '../components/SiteHeader';
+
+/** A new tournament starts on the group's own RSDP structure. */
+const RSDP_DEFAULTS = applyStarter(defaultSettings(), 'rsdp');
 
 type StartKind = 'scheduled' | 'sng' | 'manual';
 type Repeat = 'none' | 'daily' | 'weekly' | 'monthly-day' | 'monthly-nth';
@@ -129,7 +132,7 @@ export function TournamentCreate({
   const first = useMemo(() => startFields(initial), [initial]);
   const [name, setName] = useState(initial?.name ?? 'Friday Night Tournament');
   const [games, setGames] = useState<string[]>(initial?.games ?? ['nlhe']);
-  const [startingStack, setStartingStack] = useState(initial?.startingStack ?? 10_000);
+  const [startingStack, setStartingStack] = useState(initial?.startingStack ?? RSDP_DEFAULTS.startingStack);
   const [seatsPerTable, setSeats] = useState(initial?.seatsPerTable ?? 9);
   const [maxEntrants, setMaxEntrants] = useState(initial?.maxEntrants ?? 100);
   const [startKind, setStartKind] = useState<StartKind>(initial?.start.kind ?? 'scheduled');
@@ -140,10 +143,10 @@ export function TournamentCreate({
   const [weekdays, setWeekdays] = useState<Weekday[]>(first.weekdays);
   const [nth, setNth] = useState<1 | 2 | 3 | 4 | -1>(first.nth);
   const [sng, setSng] = useState(initial?.start.kind === 'sng' ? { playersNeeded: initial.start.playersNeeded, startDelaySeconds: initial.start.startDelaySeconds, autoSpawn: initial.start.autoSpawn } : { playersNeeded: 9, startDelaySeconds: 30, autoSpawn: true });
-  const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? presetStructure('regular', { startingStack: 10_000, expectedEntrants: 20 }));
+  const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? structuredClone(RSDP_DEFAULTS.structure));
   // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
   const base = useMemo(() => {
-    if (!initial) return defaultSettings({ startingStack: 10_000 });
+    if (!initial) return RSDP_DEFAULTS;
     // Formats, payouts and the season come back from their own inputs, so one switched off is left out.
     const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, season: _s, ...rest } = initial;
     return rest;
@@ -489,10 +492,15 @@ export function TournamentCreate({
               <label className="tn-check">
                 <input type="checkbox" checked={addOn.max > 0} onChange={(e) => {
                     setAddOn({ ...addOn, max: e.target.checked ? 1 : 0, chips: addOn.chips || startingStack });
-                    // Add-ons need a break that offers them: default to the first break.
+                    // Add-ons need a break that offers them: default to the first break, or add one after level 4 (RSDP has none).
                     const first = structure.findIndex((r) => r.kind === 'break');
-                    if (e.target.checked && first >= 0 && !structure.some((r) => r.kind === 'break' && r.addOn))
-                      setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                    if (e.target.checked && !structure.some((r) => r.kind === 'break' && r.addOn)) {
+                      if (first >= 0) setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                      else {
+                        const at = Math.max(1, Math.min(4, structure.length - 1));
+                        setStructure([...structure.slice(0, at), { kind: 'break', minutes: 5, addOn: true }, ...structure.slice(at)]);
+                      }
+                    }
                   }} />
                 Add-ons (on breaks marked Add-ons)
               </label>
