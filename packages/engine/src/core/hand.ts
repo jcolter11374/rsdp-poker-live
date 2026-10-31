@@ -332,6 +332,13 @@ function forcedBets(state: HandState): number {
   return blinds + (fullBringIn ? 1 : 0);
 }
 
+/** Fixed limit: a cap reached with three or more players in stays on even if folds then leave two. */
+function noteCap(state: HandState) {
+  const { betting, options } = state.input;
+  if (betting !== 'fixed-limit' || live(state).length < 3) return;
+  if (state.raisesThisRound + forcedBets(state) >= options.fixedLimitCap) state.cappedMultiway = true;
+}
+
 function bettingContext(state: HandState, s: HandSeat): BettingContext {
   const { input } = state;
   const st = input.game.streets[state.street];
@@ -352,7 +359,7 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
             unit: st.betSize === 'big' ? input.stakes.bigBet : input.stakes.smallBet,
             cap: input.options.fixedLimitCap,
             forced: forcedBets(state),
-            uncapped: input.options.uncappedHeadsUp && live(state).length === 2,
+            uncapped: input.options.uncappedHeadsUp && live(state).length === 2 && !state.cappedMultiway,
           }
         : undefined,
     bringIn: bringInContext(state),
@@ -460,6 +467,7 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
   }
   s.hasActed = true;
   emit(state, { t: 'action', seat: s.seat, action: kind, amount: s.bet - before, to: s.bet, allIn: s.allIn, auto });
+  noteCap(state);
 
   if (live(state).length === 1) {
     finish(state);
@@ -546,6 +554,7 @@ function endRound(state: HandState) {
   }
   state.currentBet = 0;
   state.raisesThisRound = 0;
+  delete state.cappedMultiway;
   state.lastFullRaise = state.input.stakes.bigBlind;
   state.toAct = null;
 

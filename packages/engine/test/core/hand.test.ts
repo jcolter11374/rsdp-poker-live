@@ -401,6 +401,55 @@ describe('fixed-limit cap counts the bets that are really made', () => {
   });
 });
 
+describe('fixed limit: no cap heads-up', () => {
+  /** Limit hold'em 2/4 with a cap of 4: three players limp, and the flop is seat 1's to bet. */
+  function threeOnTheFlop() {
+    const s = start({ stacks: [500, 500, 500], button: 0, stakes: { smallBet: 2, bigBet: 4 }, options: { uncappedHeadsUp: true } });
+    s.input.betting = 'fixed-limit';
+    act(s, 0, { type: 'call' });
+    act(s, 1, { type: 'call' });
+    act(s, 2, { type: 'check' });
+    return s;
+  }
+
+  it('a round capped three-handed stays capped when a fold leaves two, and the next round is uncapped', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'raise', to: 6 });
+    act(s, 1, { type: 'raise', to: 8 });
+    act(s, 2, { type: 'fold' });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 2, canRaise: false });
+    act(s, 0, { type: 'call' });
+    // Turn, heads-up from the start: no cap.
+    act(s, 1, { type: 'bet', to: 4 });
+    act(s, 0, { type: 'raise', to: 8 });
+    act(s, 1, { type: 'raise', to: 12 });
+    act(s, 0, { type: 'raise', to: 16 });
+    expect(legalActions(s, 1)).toMatchObject({ canRaise: true, minTo: 20 });
+  });
+
+  it('also when the third player leaves out of turn', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'raise', to: 6 });
+    act(s, 1, { type: 'raise', to: 8 });
+    engine.foldOutOfTurn(s, 0);
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 4, canRaise: false });
+  });
+
+  it('heads-up before the cap is reached, the raising goes on past it', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'fold' });
+    act(s, 1, { type: 'raise', to: 6 });
+    act(s, 2, { type: 'raise', to: 8 });
+    expect(legalActions(s, 1)).toMatchObject({ canRaise: true, minTo: 10 });
+  });
+});
+
 describe('the stud bring-in', () => {
   const STUD = { ante: 1, anteType: 'per-player' as const, bringIn: 1, smallBet: 2, bigBet: 4 };
   // Seat 0 shows the 2c and owes the bring-in.
