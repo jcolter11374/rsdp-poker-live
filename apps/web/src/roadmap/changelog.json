@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "id": "2026-10-31-d",
+      "date": "2026-10-31",
+      "fixes": [
+        "Stud: the low card must bring in and can no longer fold instead. If they leave the table on that turn, the bring-in is posted for them and the next player faces it.",
+        "Stud: a bring-in as big as the small bet (as in a 1/2 game) now counts as the opening bet, so third street can be raised. Before, the Raise button only offered to match it.",
+        "No-limit and pot-limit: short all-ins that together make a full raise now let players who already acted raise again, as the usual tournament rules say.",
+        "Limit: a betting round capped with three or more players stays capped when a fold leaves two.",
+        "Tournaments: with re-entry open to the end, the last player left no longer waits forever. The event ends a minute after the last bust unless someone re-enters (or asks the host to).",
+        "Tournaments: levels or a break added while the last level was running over now play in order, instead of being skipped.",
+        "Tournaments: a bounty won by a player who had asked to leave during that hand is now paid to them instead of vanishing.",
+        "Shared hand links made with Show my cards now show the sharer's cards, older links included.",
+        "The tracker download (OHH) labels small and big blinds properly again, so PokerTracker and Holdem Manager read the blinds right.",
+        "The leaderboard's This month and This year start at midnight where you are, not at midnight in London, so a late game on the last night of the month counts in that month.",
+        "To keep spam out, one player or address can make up to 20 tables and 10 tournaments every 10 minutes, and keep up to 10 tournaments open at once.",
+        "The Fairness page has a new section on HUDs and tracking software: what the site does about them, and what it can't stop."
+      ]
+    },
+    {
       "id": "2026-10-31-c",
       "date": "2026-10-31",
       "fixes": [

@@ -102,7 +102,9 @@ export interface LeaderRow {
 
 export type LeaderPeriod = 'month' | 'year' | 'all';
 
-export const fetchLeaderboard = (period: LeaderPeriod) => request<{ period: LeaderPeriod; since: string | null; rows: LeaderRow[] }>('GET', `/api/leaderboard?period=${period}`);
+/** With this browser's time zone, so "This month" and "This year" start at midnight here rather than in UTC. */
+export const fetchLeaderboard = (period: LeaderPeriod) =>
+  request<{ period: LeaderPeriod; since: string | null; rows: LeaderRow[] }>('GET', `/api/leaderboard?period=${period}&tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`);
 
 /** One hand found by search, as I saw it. */
 export interface FoundHand {

@@ -165,6 +165,52 @@ describe('bounties', () => {
     expect(standings(sim.state).reduce((a, s) => a + s.bounties, 0)).toBe(4000);
   });
 
+  it('a player the host removes during a hand still collects the bounty of anyone they bust in it', () => {
+    const sim = new Sim({ bounty: { amount: 500, progressivePercent: 0 } });
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    const hand = sim.state.tables[0].lastHandNumber + 1;
+    sim.do({ type: 'handStarted', tableId: t, handNumber: hand });
+    // p0 is already all in when the host removes them; they win and bust p1.
+    sim.do({ type: 'remove', by: 'host', playerId: 'p0' });
+    sim.do({
+      type: 'handResult',
+      result: {
+        tableId: t,
+        handNumber: hand,
+        startStacks: { p0: 1000, p1: 1000, p2: 1000, p3: 1000 },
+        endStacks: { p0: 2000, p1: 0, p2: 1000, p3: 1000 },
+        knockedOutBy: { p1: ['p0'] },
+      },
+    });
+    expect(sim.entry('p0').status).toBe('removed');
+    expect(sim.of('bountyWon')).toEqual([{ type: 'bountyWon', entryId: sim.entry('p0').id, playerId: 'p0', fromEntryId: sim.entry('p1').id, fromPlayerId: 'p1', cash: 500, headAdded: 0 }]);
+    const st = standings(sim.state);
+    // p1's bounty and their own.
+    expect(st.find((s) => s.playerId === 'p0')).toMatchObject({ bounties: 1000, knockouts: 1 });
+    expect(st.reduce((a, s) => a + s.bounties + s.bounty, 0)).toBe(2000);
+  });
+
+  it('progressive knockout: a player who quits during a hand keeps both halves of a bounty they win in it', () => {
+    const sim = new Sim({ bounty: { amount: 1000, progressivePercent: 50 }, allowQuit: true });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    const hand = sim.state.tables[0].lastHandNumber + 1;
+    sim.do({ type: 'handStarted', tableId: t, handNumber: hand });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({
+      type: 'handResult',
+      result: { tableId: t, handNumber: hand, startStacks: { p0: 1000, p1: 1000, p2: 1000 }, endStacks: { p0: 2000, p1: 0, p2: 1000 }, knockedOutBy: { p1: ['p0'] } },
+    });
+    // Half of p1's head as cash, and the half added to p0's own head goes with p0 as they leave.
+    expect(sim.of('bountyWon')).toMatchObject([{ playerId: 'p0', fromPlayerId: 'p1', cash: 500, headAdded: 500 }]);
+    expect(sim.entry('p0')).toMatchObject({ status: 'quit', bounty: 0, bountiesWon: 2000, knockouts: 1 });
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).reduce((a, s) => a + s.bounties + s.bounty, 0)).toBe(3000);
+  });
+
   it('bounties won before a re-entry stay with the player', () => {
     const sim = new Sim({ bounty: { amount: 1000, progressivePercent: 0 }, reEntry: { enabled: true, throughLevel: null, max: null, approval: false } });
     sim.register(3);

@@ -319,6 +319,8 @@ export interface HandState {
   lastFullRaise: Chips;
   /** Bets and raises made this round (fixed-limit cap). */
   raisesThisRound: number;
+  /** Fixed limit: the cap was reached this round with three or more players in, so it stays on if folds leave two. */
+  cappedMultiway?: boolean;
   /** Set once every live player is all in, or one player remains with chips. */
   runout: boolean;
   /** True when live hands were compared at showdown. */

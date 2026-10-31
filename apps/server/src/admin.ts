@@ -4,21 +4,52 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type express from 'express';
 
+type Counts = { hits: Map<string, number[]>; windowMs: number; now: () => number };
+/** Every limiter made, held weakly so one that is no longer used (a server closed in tests) can go. */
+const everyLimiter = new Set<WeakRef<Counts>>();
+
+/** Forgets keys with no hits left in their window: e.g. an address that hasn't tried anything for a while. */
+function forgetOld({ hits, windowMs, now }: Counts) {
+  const t = now();
+  for (const [k, v] of hits) if (v.every((x) => x <= t - windowMs)) hits.delete(k);
+}
+
+/**
+ * Forgets old keys in every limiter. The server runs this every few minutes, so an address
+ * (the keys are mostly addresses) stays in memory only for its limit's window, at most an hour.
+ */
+export function sweepLimiters() {
+  for (const ref of everyLimiter) {
+    const counts = ref.deref();
+    if (counts) forgetOld(counts);
+    else everyLimiter.delete(ref);
+  }
+}
+
 /** Sliding-window counter: true (and counted) when `key` has room for one more. */
 export function limiter(burst: number, windowMs: number, now: () => number) {
-  const hits = new Map<string, number[]>();
+  const counts: Counts = { hits: new Map(), windowMs, now };
+  everyLimiter.add(new WeakRef(counts));
   return (key: string, count = true) => {
+    const { hits } = counts;
     const t = now();
     const recent = (hits.get(key) ?? []).filter((x) => x > t - windowMs);
     if (recent.length >= burst) return hits.set(key, recent), false;
     if (count) recent.push(t);
     if (recent.length) hits.set(key, recent);
     else hits.delete(key);
-    // Old keys are swept now and then.
-    if (hits.size > 5_000) for (const [k, v] of hits) if (v.every((x) => x <= t - windowMs)) hits.delete(k);
+    // Lots of keys: sweep now rather than wait for sweepLimiters.
+    if (hits.size > 5_000) forgetOld(counts);
     return true;
   };
 }
+
+/** How many limiters remember `key` now (for tests). */
+export const limiterKeys = (key: string) => {
+  let n = 0;
+  for (const ref of everyLimiter) if (ref.deref()?.hits.has(key)) n++;
+  return n;
+};
 
 /** The caller's address; Fly puts the real one in a header. */
 export const clientAddress = (req: express.Request) => req.get('fly-client-ip') ?? req.socket.remoteAddress ?? '';

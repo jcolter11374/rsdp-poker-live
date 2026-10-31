@@ -1,10 +1,20 @@
 import { STATE_VERSION, type TournamentState } from '@rsdp/tournament';
-import { insertTournament, listHostSeasons, listLiveTournaments, listPlayerTournaments, listSeasonTournaments, loadTournament, saveTournament, type Db } from '../db';
+import { insertTournament, listHostSeasons, listLiveTournaments, listPlayerTournaments, listSeasonTournaments, loadTournament, previousTournaments, saveTournament, type Db } from '../db';
 import type { TournamentStore } from './manager';
 
 const LIVE = new Set(['registering', 'seating', 'running', 'paused']);
 /** Most of a player's own tournaments the home page shows. */
 const PLAYER_LIST_MAX = 50;
+
+type Saved = { state: TournamentState; nextId: string | null };
+
+/**
+ * Events saved before `spawnedFrom` was kept get it from the link the event before them saved (`nextId`), so the
+ * ones the server opened don't count against their host's open events (see openHostedBy).
+ */
+function withSpawnedFrom(saved: Saved[], previous: Map<string, string>): Saved[] {
+  return saved.map((r) => (r.state.spawnedFrom || !previous.has(r.state.id) ? r : { ...r, state: { ...r.state, spawnedFrom: previous.get(r.state.id)! } }));
+}
 
 export function memoryTournamentStore(): TournamentStore {
   const rows = new Map<string, string>();
@@ -24,7 +34,9 @@ export function memoryTournamentStore(): TournamentStore {
       return json ? read(json) : null;
     },
     async listLive() {
-      return [...rows.values()].map(read).filter((r) => LIVE.has(r.state.status));
+      const all = [...rows.values()].map(read);
+      const previous = new Map(all.filter((r) => r.nextId).map((r) => [r.nextId!, r.state.id]));
+      return withSpawnedFrom(all.filter((r) => LIVE.has(r.state.status)), previous);
     },
     async listForPlayer(playerId, since) {
       return [...rows.values()]
@@ -66,7 +78,9 @@ export function dbTournamentStore(db: Db): TournamentStore {
       return usable(r) ? r : null;
     },
     async listLive() {
-      return (await listLiveTournaments<TournamentState>(db)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
+      const live = (await listLiveTournaments<TournamentState>(db)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
+      const previous = await previousTournaments(db, live.filter((r) => !r.state.spawnedFrom).map((r) => r.state.id));
+      return withSpawnedFrom(live, previous);
     },
     async listForPlayer(playerId, since) {
       return (await listPlayerTournaments<TournamentState>(db, playerId, new Date(since), PLAYER_LIST_MAX)).map((row) => ({ state: row.state, nextId: row.nextId })).filter(usable);
