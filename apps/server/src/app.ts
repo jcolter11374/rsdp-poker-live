@@ -255,10 +255,11 @@ function perPlayerAndAddress(burst: number, windowMs: number, now: () => number)
  * `max` open: when either has `max`, says which (the player first). One being
  * made holds its place, so a burst can't slip past while the first are saved.
  *
- * The player's count is what they host now (`hosted`), worked out from what the
- * server has loaded, so it still holds after a restart. The address's is only
- * the ones made from it since this server started: no address is saved with
- * anything, so after a restart it starts again from zero.
+ * The player's count is what they host now and made themselves (`hosted`; not
+ * the next of a series or Sit & Go, which the server opens), worked out from
+ * what the server has loaded, so it still holds after a restart. The address's
+ * is only the ones made from it since this server started: no address is saved
+ * with anything, so after a restart it starts again from zero.
  */
 function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => number, isOpen: (id: string) => boolean) {
   const making = new Map<PlayerId, number>();

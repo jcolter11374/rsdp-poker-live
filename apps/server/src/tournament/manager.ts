@@ -244,10 +244,13 @@ export class TournamentManager {
     return !!s && isLive(s) && !isArchived(s);
   }
 
-  /** How many open events (as in isOpen) this player hosts. Every open event is in memory, after a restart too. */
+  /**
+   * How many open events (as in isOpen) this player hosts that they made: the next of a series or Sit & Go,
+   * which the server opens for them, doesn't count. Every open event is in memory, after a restart too.
+   */
   openHostedBy(playerId: PlayerId): number {
     let n = 0;
-    for (const { state: s } of this.live.values()) if (s.hostId === playerId && isLive(s) && !isArchived(s)) n++;
+    for (const { state: s } of this.live.values()) if (s.hostId === playerId && !s.spawnedFrom && isLive(s) && !isArchived(s)) n++;
     return n;
   }
 
@@ -871,7 +874,7 @@ export class TournamentManager {
   private async openNext(live: Live, settings: TournamentSettings) {
     checkGames(settings);
     const id = nextTournamentId(live.state.id);
-    const state = this.newState(id, live.state.hostId, settings);
+    const state = { ...this.newState(id, live.state.hostId, settings), spawnedFrom: live.state.id };
     // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
     if (await this.deps.store.create(state)) await this.adopt(state, null);
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);

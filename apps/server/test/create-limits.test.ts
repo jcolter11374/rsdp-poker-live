@@ -19,6 +19,14 @@ const clients: Client[] = [];
 /** A browser at an address, as Fly's proxy tells the server. */
 const client = (token: string, address: string) => socketClient(url, token, clients, { 'fly-client-ip': address });
 const settled = async (calls: Promise<unknown>[]) => (await Promise.allSettled(calls)).map((r) => (r.status === 'fulfilled' ? 'ok' : (r.reason as Error).message));
+/** A server of its own on these stores, as after a restart, with browsers that connect to it. */
+async function boot(at: FakeClock, tables: ReturnType<typeof memoryStore>, saved: ReturnType<typeof memoryTournamentStore>) {
+  const app = createApp({ clock: at, store: tables, tournaments: saved, log: () => {} });
+  await new Promise<void>((resolve) => app.http.listen(0, resolve));
+  await app.resume();
+  const there = `http://localhost:${(app.http.address() as AddressInfo).port}`;
+  return { app, client: (token: string, address: string) => socketClient(there, token, clients, { 'fly-client-ip': address }) };
+}
 
 beforeAll(async () => {
   registerAllVariants(variants);
@@ -136,15 +144,8 @@ describe('limits on making tables and tournaments', () => {
     const tables = memoryStore();
     const saved = memoryTournamentStore();
     const at = new FakeClock();
-    const boot = async () => {
-      const app = createApp({ clock: at, store: tables, tournaments: saved, log: () => {} });
-      await new Promise<void>((resolve) => app.http.listen(0, resolve));
-      await app.resume();
-      const there = `http://localhost:${(app.http.address() as AddressInfo).port}`;
-      return { app, client: (token: string, address: string) => socketClient(there, token, clients, { 'fly-client-ip': address }) };
-    };
     const token = 'open-cap-restart-host-0123456789';
-    const before = await boot();
+    const before = await boot(at, tables, saved);
     const host = before.client(token, '192.0.2.50');
     expect((await settled(Array.from({ length: 10 }, () => host.call('tournament:create', { settings })))).filter((r) => r === 'ok')).toHaveLength(10);
     at.advance(10 * MINUTE);
@@ -153,7 +154,7 @@ describe('limits on making tables and tournaments', () => {
     await before.app.close();
 
     // An update restarts the server; the ten events come back, and still count.
-    const after = await boot();
+    const after = await boot(at, tables, saved);
     try {
       const again = after.client(token, '192.0.2.51');
       await expect(again.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
@@ -166,6 +167,44 @@ describe('limits on making tables and tournaments', () => {
       await again.call('tournament:create', { settings });
       await expect(again.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
       expect(await listed()).toHaveLength(10);
+    } finally {
+      await after.app.close();
+    }
+  });
+
+  it('doesn’t count the Sit & Gos the server opens after each one fills against the host’s 10 open', async () => {
+    const tables = memoryStore();
+    const saved = memoryTournamentStore();
+    const at = new FakeClock();
+    const token = 'open-cap-spawn-host-0123456789';
+    const sng = { ...defaultSettings(), name: 'Heads-up turbo', start: { kind: 'sng', playersNeeded: 2, startDelaySeconds: 0, autoSpawn: true } };
+    const before = await boot(at, tables, saved);
+    const host = before.client(token, '192.0.2.60');
+    const hosted = async () => (await host.call<{ tournaments: { id: string; name: string; status: string; me: { hosting: boolean } }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Heads-up turbo' && t.me.hosting);
+    await host.call('tournament:create', { settings: sng });
+    // Players fill it ten times over; each time it fills, the server opens the next one for the same host.
+    for (let i = 0; i < 10; i++) {
+      let waiting: string | undefined;
+      for (let tries = 0; !waiting && tries < 50; tries++) waiting = (await hosted()).find((t) => t.status === 'registering')?.id;
+      for (const seat of [0, 1]) {
+        const player = before.client(`open-cap-spawn-player-${i}-${seat}-0123456789`, '192.0.2.61');
+        await player.call('tournament:command', { id: waiting, command: { type: 'register', displayName: `Player ${i}-${seat}` } });
+      }
+    }
+    for (let tries = 0; (await hosted()).length < 11 && tries < 50; tries++);
+    const open = await hosted();
+    expect(open.filter((t) => t.status === 'registering')).toHaveLength(1);
+    expect(open.filter((t) => t.status !== 'registering')).toHaveLength(10);
+    // They made one, so they have room for more of their own.
+    const plain = { ...defaultSettings(), name: 'Sunday main' };
+    await host.call('tournament:create', { settings: plain });
+    host.socket.close();
+    await before.app.close();
+
+    // After a restart too.
+    const after = await boot(at, tables, saved);
+    try {
+      await after.client(token, '192.0.2.62').call('tournament:create', { settings: plain });
     } finally {
       await after.app.close();
     }
