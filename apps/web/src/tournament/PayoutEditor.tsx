@@ -12,7 +12,10 @@ const PRESETS: Record<PayoutPresetName, string> = {
 };
 
 /** Payout ranges by entry count, with a tester. Percents are typed as "50, 30, 20". */
-export function PayoutEditor({ value, onChange, maxEntrants, pool }: { value: PayoutStructure; onChange: (s: PayoutStructure) => void; maxEntrants: number; pool: number }) {
+export function PayoutEditor({ value: given, onChange, maxEntrants, pool }: { value: PayoutStructure; onChange: (s: PayoutStructure) => void; maxEntrants: number; pool: number }) {
+  // A named preset is built for this event's size when the event is created (TournamentCreate), so it is checked,
+  // tried and edited that way here too: one picked at a smaller max entrants is not out of date.
+  const value = given.name in PRESETS ? payoutPreset(given.name as PayoutPresetName, maxEntrants) : given;
   const [entries, setEntries] = useState(Math.min(maxEntrants, 20));
   const [testPool, setTestPool] = useState(pool || 20_000);
   const errors = validatePayoutStructure(value, maxEntrants);

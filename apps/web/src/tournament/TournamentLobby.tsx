@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { HostPower } from '@rsdp/engine/roles';
 import {
   isTournamentStaff,
+  finishPrizes,
   placePrizes,
   playerOptions,
   standings,
@@ -493,7 +494,8 @@ function Tables({ state }: { state: TournamentState }) {
 function Payouts({ state, now }: { state: TournamentState; now: number }) {
   const sum = summarize(state, now);
   const p = state.settings.payouts!;
-  const prizes = placePrizes(sum.prizePool, p.structure, Math.max(2, state.entries.length));
+  // Before two people have entered, what the smallest field would pay.
+  const prizes = state.entries.length >= 2 ? finishPrizes(state) : placePrizes(sum.prizePool, p.structure, 2);
   return (
     <>
       <p className="muted">

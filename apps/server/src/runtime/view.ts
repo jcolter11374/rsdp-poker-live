@@ -30,7 +30,10 @@ export function tableView(
   const blocked = isSpectator && !s.settings.spectators.allowed;
   // Only hands dealt since it was turned on: the cards of an earlier one, mucked ones included, stay hidden.
   const seeAll = spectatorsSeeCards(s.settings) && (!hand || hand.input.handNumber >= (s.seeAll?.since ?? 0));
-  const viewer: Viewer = { seat: mySeat?.seat ?? null, seeAll: isSpectator && seeAll };
+  // Cards follow the player, not the chair: after a seat shuffle or move, or once someone new sits where a player of
+  // the last hand sat, the hand still on the table shows each person only the cards they were dealt themselves.
+  const myDealtSeat = hand?.seats.find((x) => x.playerId === playerId)?.seat ?? null;
+  const viewer: Viewer = { seat: myDealtSeat, seeAll: isSpectator && seeAll };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
   const won = new Map<number, number>();
   const handNames = new Map<number, string>();

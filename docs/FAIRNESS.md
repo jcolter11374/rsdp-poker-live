@@ -51,7 +51,9 @@ first, details after.
 - **When hands are revealed** (decided 25 October 2026): when the host stops
   the game, or 12 hours after the hand, whichever comes first. The reveal shows
   the whole deck, including folded and mucked hands, so it waits until the
-  game is over. Practice bots explain each move to the one person who played
+  game is over. The Stop button warns the host of this and points to Pause
+  for a break, since a game started again after a stop keeps its earlier
+  hands revealed. Practice bots explain each move to the one person who played
   that hand against only bots, once it is over. The explanations give rough
   numbers, never cards, so a folded bot's cards still wait for the reveal.
 - **Your cards stay private during play.** The server sends each person only

@@ -32,7 +32,7 @@ import {
   usableCode,
   validateFormats,
 } from './formats';
-import { placePrizes, prizePool, prizesForPlaces, validatePayoutStructure, type PrizeMoney } from './payouts';
+import { placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
 import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
 import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type LevelRow } from './structure';
@@ -266,6 +266,8 @@ function latestEntry(s: TournamentState, playerId: PlayerId): Entry | undefined 
 
 /** Entries that count toward max entrants and finishing places (re-entries replace the busted entry). */
 const rankedEntries = (s: TournamentState) => s.entries.filter((e) => !e.supersededBy);
+/** A player who asked to rebuy in time, with approval on: the offer waits for the host's answer. */
+const rebuyAsked = (s: TournamentState, e: Entry) => s.requests.some((r) => r.kind === 'rebuy' && r.entryId === e.id);
 
 function table(s: TournamentState, tableId: TableId): TableState {
   return s.tables.find((t) => t.id === tableId) ?? fail(`Unknown table ${tableId}`);
@@ -325,10 +327,23 @@ export function reEntryOpen(s: TournamentState): boolean {
   return s.settings.reEntry.enabled && started(s) && withinLevel(s, s.settings.reEntry.throughLevel);
 }
 
+/** Places paid: re-entries count toward them, but only one entry per player can finish, so never more than that. */
 export function paidPlaces(s: TournamentState): number {
   if (!s.settings.payouts) return 0;
-  const range = s.settings.payouts.structure.ranges.find((r) => s.entries.length >= r.minEntries && s.entries.length <= r.maxEntries);
-  return range?.percents.length ?? 0;
+  return Math.min(rangeFor(s.settings.payouts.structure, s.entries.length)?.percents.length ?? 0, rankedEntries(s).length);
+}
+
+/**
+ * The prize for each finishing place, 1st first. Re-entries count towards the places paid, but only one entry per
+ * player can finish: prizes for places nobody can reach go to 1st, like any other remainder, so the prizes still add
+ * up to the pool.
+ */
+export function finishPrizes(s: TournamentState): number[] {
+  if (!s.settings.payouts) return [];
+  const prizes = placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length);
+  const reachable = rankedEntries(s).length;
+  if (prizes.length > reachable && reachable > 0) prizes[0] += prizes.splice(reachable).reduce((a, b) => a + b, 0);
+  return prizes;
 }
 
 export function currentPrizePool(s: TournamentState): number {
@@ -361,9 +376,8 @@ function places(s: TournamentState): Map<EntryId, number> {
 
 export function standings(s: TournamentState): Standing[] {
   const placeOf = places(s);
-  const prizes = s.settings.payouts ? placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length) : [];
-  const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
-  // Bounties and knockouts follow the player through re-entries.
+  const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), finishPrizes(s));
+  // Rebuys, add-ons, bounties and knockouts follow the player through re-entries.
   const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
   return s.entries
     .filter((e) => !e.supersededBy)
@@ -374,8 +388,8 @@ export function standings(s: TournamentState): Standing[] {
       entryNo: e.entryNo,
       place: placeOf.get(e.id) ?? null,
       stack: isAlive(e) ? e.stack : 0,
-      rebuys: e.rebuys,
-      addOns: e.addOns,
+      rebuys: ofPlayer(e.playerId, (x) => x.rebuys),
+      addOns: ofPlayer(e.playerId, (x) => x.addOns),
       prize: prizeOf[e.id] ?? 0,
       eliminatedBy: e.bust?.by ?? [],
       bounties: ofPlayer(e.playerId, (x) => x.bountiesWon ?? 0),
@@ -385,6 +399,12 @@ export function standings(s: TournamentState): Standing[] {
     .sort((a, b) => (a.place ?? 0) - (b.place ?? 0) || b.stack - a.stack);
 }
 
+/** Two or more players with chips are seated at the table. */
+const enoughToDeal = (s: TournamentState, t: TableState) => tablePlayers(s, t).filter((e) => e.status === 'seated' && e.stack > 0).length >= 2;
+
+/** The table may still have a hand to play: counting a busted player who may yet rebuy, two or more could play. */
+const mayDeal = (s: TournamentState, t: TableState) => tablePlayers(s, t).filter((e) => (e.status === 'seated' && e.stack > 0) || e.status === 'rebuy-offer').length >= 2;
+
 /** May this table deal its next hand? */
 export function tableGate(s: TournamentState, tableId: TableId, _now: number): Gate {
   if (s.status !== 'running') return 'hold';
@@ -393,7 +413,7 @@ export function tableGate(s: TournamentState, tableId: TableId, _now: number): G
   if (position(s).onBreak) return 'hold';
   const players = tablePlayers(s, t);
   if (players.some((e) => e.status === 'rebuy-offer')) return 'hold';
-  if (players.filter((e) => e.status === 'seated' && e.stack > 0).length < 2) return 'hold';
+  if (!enoughToDeal(s, t)) return 'hold';
   if (s.handForHand.active && t.hfhPlayed >= s.handForHand.round) return 'hold';
   return 'deal';
 }
@@ -436,7 +456,7 @@ export function nextWakeAt(s: TournamentState): number | null {
     if (at !== null) times.push(at);
   }
   if (started(s)) {
-    for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined) times.push(e.rebuyOfferExpiresAt);
+    for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined && !rebuyAsked(s, e)) times.push(e.rebuyOfferExpiresAt);
     if (s.status === 'running' && s.clock.runningSince !== null) {
       const rows = s.settings.structure;
       const lastLevel = rows.map((r) => r.kind).lastIndexOf('level');
@@ -793,12 +813,18 @@ function updateHandForHand(c: Ctx) {
     s.handForHand = { ...s.handForHand, active: false };
     emit(c, { type: 'handForHand', active: false });
   }
+  // A table that was waiting on a rebuy may have nothing left to play now the offer is over.
+  if (s.handForHand.active) advanceHandForHand(s);
 }
 
-/** Advances a hand-for-hand round once every table has played it. */
+/**
+ * Advances a hand-for-hand round once every table has played it. A table that can't deal (one player left at it, as
+ * with an odd number left at two-seat tables) has nothing to play, so it doesn't hold the round up; a table waiting
+ * on a busted player's rebuy still may, so it does.
+ */
 function advanceHandForHand(s: TournamentState) {
   const h = s.handForHand;
-  if (h.active && s.tables.every((t) => !t.inHand && t.hfhPlayed >= h.round)) h.round++;
+  if (h.active && s.tables.every((t) => !t.inHand && (t.hfhPlayed >= h.round || !mayDeal(s, t)))) h.round++;
 }
 
 function checkFinish(c: Ctx) {
@@ -868,7 +894,7 @@ function advanceClock(c: Ctx) {
 }
 
 function expireOffers(c: Ctx) {
-  const expired = c.s.entries.filter((e) => e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt! <= c.now);
+  const expired = c.s.entries.filter((e) => e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt! <= c.now && !rebuyAsked(c.s, e));
   eliminate(c, expired, 'busted');
 }
 

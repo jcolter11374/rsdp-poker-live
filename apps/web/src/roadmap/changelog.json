@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "id": "2026-10-31-c",
+      "date": "2026-10-31",
+      "fixes": [
+        "After a seat shuffle or move between hands, the player now in a seat could see the folded cards of whoever sat there in the hand just played. Everyone now sees only their own cards from that hand.",
+        "When the server restarted mid-hand (an update or a crash), at a cash or tournament table, the player to act was folded straight away when the table came back, and a run it twice vote counted as No. Their clock now starts again in full.",
+        "Removing a player during the run it twice vote no longer folds a hand they had already called.",
+        "Changing the table size no longer moves the button and blinds to a random seat.",
+        "Fixed limit: the big blind now counts as the first bet toward the cap (it allowed one raise too many before the flop and the first draw), and an all-in for less than half a bet no longer uses up the cap.",
+        "Stud: the bring-in can no longer be skipped by calling nothing.",
+        "A double tap on Check or Call no longer also plays your next turn.",
+        "Tournaments: re-entries beyond the event's max players no longer wipe out the payouts, and with lots of re-entries in a small field no prize goes unpaid (the lobby's payouts list now matches).",
+        "Tournaments: a rebuy asked for in time now waits for the host's approval instead of the player being knocked out.",
+        "Tournaments: hand-for-hand no longer freezes at two-seat tables, and a table whose busted player is deciding on a rebuy holds the round like any other.",
+        "Tournaments: a player moved to another table keeps what's left of their time bank.",
+        "Tournament results count a re-entered player's earlier rebuys and add-ons.",
+        "Tournament form: unticking Add-ons removes the break it added, and the payout table no longer shows a false error after changing Max players.",
+        "Half an emoji in table chat (or a table name) could stop the table from being saved. It's now cleaned up.",
+        "In rare timing (a tab closed, or moved on to another table, just as its table was loading), the player was left shown as online there. Fixed.",
+        "Table chat is limited to 8 lines per 10 seconds per player.",
+        "Wrong passwords when unlinking Google are now limited, like sign-in.",
+        "Settle up no longer says the books are off at a table with a house fee; it says what the fee took.",
+        "Stop game now warns that stopping lets everyone check every hand so far, folded cards included, and points to Pause for a break."
+      ]
+    },
+    {
       "id": "2026-10-31-b",
       "date": "2026-10-31",
       "fixes": [

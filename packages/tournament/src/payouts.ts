@@ -81,8 +81,15 @@ export function validatePayoutStructure(s: PayoutStructure, maxEntries: number):
   return errors;
 }
 
+/**
+ * The range that pays out for `entries`. The last range carries on past its end: re-entries can take an event
+ * past the max entrants its payouts were built for, and that must not leave it paying nobody.
+ */
 export function rangeFor(s: PayoutStructure, entries: number): PayoutRange | null {
-  return s.ranges.find((r) => entries >= r.minEntries && entries <= r.maxEntries) ?? null;
+  const found = s.ranges.find((r) => entries >= r.minEntries && entries <= r.maxEntries);
+  if (found) return found;
+  const last = s.ranges[s.ranges.length - 1];
+  return last && entries > last.maxEntries ? last : null;
 }
 
 /**

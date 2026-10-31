@@ -572,3 +572,111 @@ describe('summaries', () => {
     expect(playerOptions(sim.state, 'p1')).toMatchObject({ canRebuy: true, canDeclineRebuy: true, canQuit: false });
   });
 });
+
+describe('rebuys the host approves', () => {
+  it('a rebuy asked for inside the offer window waits for the host, who can approve it after the window', () => {
+    const sim = new Sim({ rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1']);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    sim.now += 5_000;
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    const req = sim.state.requests.find((r) => r.kind === 'rebuy' && r.playerId === 'p1')!;
+    // The offer's own time runs out while the host is busy: nothing to wake up for, and p1 is still waiting.
+    expect(nextWakeAt(sim.state)).not.toBe(sim.entry('p1').rebuyOfferExpiresAt);
+    sim.at(sim.now + 30_000);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    sim.do({ type: 'approve', by: 'host', requestId: req.id });
+    expect(sim.entry('p1')).toMatchObject({ status: 'seated', stack: 1000, rebuys: 1 });
+  });
+
+  it('one the host turns down knocks the player out, and an offer nobody takes up still runs out', () => {
+    const sim = new Sim({ rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 } });
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1', 'p2']);
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    sim.at(sim.now + 16_000);
+    expect(sim.entry('p2').status).toBe('busted');
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    const req = sim.state.requests.find((r) => r.kind === 'rebuy' && r.playerId === 'p1')!;
+    sim.do({ type: 'reject', by: 'host', requestId: req.id });
+    expect(sim.entry('p1').status).toBe('busted');
+  });
+});
+
+describe('hand-for-hand at two-seat tables', () => {
+  it('a table left with one player does not hold up the round, so play goes on', () => {
+    // 5 players at heads-up tables; the standard payouts pay 2 places at 5 entries.
+    const sim = new Sim({ seatsPerTable: 2, payouts: { structure: payoutPreset('standard', 600), money: { buyIn: 100 } } });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(5);
+    sim.do({ type: 'startNow', by: 'host' });
+    const a = sim.state.tables.find((t) => players(t.id).length === 2)!;
+    sim.hand(a.id, players(a.id)[0], [players(a.id)[1]]);
+    const b = sim.state.tables[0];
+    sim.hand(b.id, players(b.id)[0], [players(b.id)[1]]);
+    // The bubble: 3 left, 2 paid, at tables of 2 and 1.
+    expect(sim.state.handForHand.active).toBe(true);
+    expect(sim.state.tables.map((t) => players(t.id).length).sort()).toEqual([1, 2]);
+    const two = sim.state.tables.find((t) => players(t.id).length === 2)!;
+    for (let round = 0; round < 3; round++) {
+      expect(tableGate(sim.state, two.id, sim.now)).toBe('deal');
+      sim.hand(two.id, players(two.id)[0], []);
+    }
+    sim.hand(two.id, players(two.id)[0], [players(two.id)[1]]);
+    expect(sim.state.handForHand.active).toBe(false);
+  });
+
+  it('a table whose busted player is still deciding on a rebuy holds the round up', () => {
+    // 4 players at heads-up tables, 3 paid: hand-for-hand from the start.
+    const sim = new Sim({
+      seatsPerTable: 2,
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 300 },
+      payouts: { structure: { name: 'custom', ranges: [{ minEntries: 2, maxEntries: 3, percents: [70, 30] }, { minEntries: 4, maxEntries: 600, percents: [50, 30, 20] }] }, money: { buyIn: 100 } },
+    });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    expect(sim.state.handForHand.active).toBe(true);
+    const [a, b] = sim.state.tables;
+    const [winner, loser] = players(a.id);
+    sim.hand(a.id, winner, [loser]);
+    expect(sim.entry(loser).status).toBe('rebuy-offer');
+    // Table B plays the round, and the next one (A played its hand of that round already).
+    sim.hand(b.id, players(b.id)[0], []);
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('deal');
+    sim.hand(b.id, players(b.id)[0], []);
+    // Now B waits for A, whose busted player may still rebuy and play this round.
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('hold');
+    // The offer runs out: the player is out (the bubble bursts) and B plays on.
+    sim.at(sim.now + 301_000);
+    expect(sim.entry(loser).status).toBe('busted');
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('deal');
+  });
+
+  it('a busted player who rebuys on the bubble plays the round they are owed', () => {
+    const sim = new Sim({
+      seatsPerTable: 2,
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 300 },
+      payouts: { structure: { name: 'custom', ranges: [{ minEntries: 2, maxEntries: 3, percents: [70, 30] }, { minEntries: 4, maxEntries: 600, percents: [50, 30, 20] }] }, money: { buyIn: 100 } },
+    });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const [a, b] = sim.state.tables;
+    const [winner, loser] = players(a.id);
+    sim.hand(a.id, winner, [loser]);
+    sim.hand(b.id, players(b.id)[0], []);
+    sim.hand(b.id, players(b.id)[0], []);
+    sim.do({ type: 'rebuy', playerId: loser });
+    expect(sim.entry(loser).status).toBe('seated');
+    expect([tableGate(sim.state, a.id, sim.now), tableGate(sim.state, b.id, sim.now)]).toEqual(['deal', 'hold']);
+  });
+});

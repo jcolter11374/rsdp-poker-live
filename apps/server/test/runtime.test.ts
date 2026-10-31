@@ -38,11 +38,8 @@ function checkDown(rt: TableRuntime) {
       continue;
     }
     if (h.toAct === null) break;
-    try {
-      rt.act(toActId(rt), { type: 'check' });
-    } catch {
-      rt.act(toActId(rt), { type: 'call' });
-    }
+    const legal = engine.legalActions(h, h.toAct)!;
+    rt.act(toActId(rt), legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' });
   }
 }
 
@@ -548,7 +545,8 @@ describe('snapshots', () => {
     restored.resume();
     expect(restored.state.hand!.toAct).toBe(rt.state.hand!.toAct);
     const seat = restored.state.hand!.toAct!;
-    clock.advance(25_000);
+    // The clocks run again: the turn starts over after the restart (see 'a restart in the middle of a hand').
+    clock.advance(30_000);
     expect(restored.state.hand!.seats.find((s) => s.seat === seat)!.folded || restored.state.turn?.usingBank).toBeTruthy();
   });
 });
@@ -627,5 +625,178 @@ describe('late shows', () => {
     rt.show(folder, [0, 1]);
     expect(saved).toEqual([{ handNumber: 1, shown: true }]);
     expect(rt.state.history.at(-1)!.hand.seats.find((x) => x.playerId === folder)!.shown?.length).toBe(2);
+  });
+});
+
+describe('hole cards after the hand', () => {
+  /** Hole cards dealt to `seat` as `viewer` receives them in the hand still on the table. */
+  const dealtTo = (rt: TableRuntime, viewer: string, seat: number) =>
+    tableView(rt, viewer, 0)
+      .hand!.events.flatMap((e) => (e.t === 'deal' && e.seat === seat ? e.cards.map((c) => c.card) : []));
+  const foldAround = (rt: TableRuntime) => {
+    for (let i = 0; i < 20 && hand(rt).phase !== 'complete'; i++) rt.act(toActId(rt), { type: 'fold' });
+  };
+
+  it('a seat shuffle does not show anyone the folded cards of whoever had their new seat', () => {
+    const { rt } = table((s) => (s.timing.autoStartNextHand = false));
+    seatPlayers(rt, 4, 1000);
+    rt.start('host');
+    const h = hand(rt);
+    foldAround(rt);
+    const dealt = new Map(h.seats.map((x) => [x.playerId, x.cards.map((c) => c.card)]));
+    rt.shuffleSeats('host');
+    let moved = 0;
+    for (const seat of rt.state.seats) {
+      if (!seat) continue;
+      const before = h.seats.find((x) => x.seat === seat.seat)!;
+      if (before.playerId === seat.playerId) continue;
+      moved++;
+      expect(dealtTo(rt, seat.playerId, seat.seat)).not.toContain(dealt.get(before.playerId)![0]);
+      // Their own cards still show, from the seat they played the hand in.
+      const mine = h.seats.find((x) => x.playerId === seat.playerId)!;
+      expect(dealtTo(rt, seat.playerId, mine.seat)).toEqual(dealt.get(seat.playerId));
+    }
+    expect(moved).toBeGreaterThan(0);
+  });
+
+  it('someone who sits down where a folder just left does not see the folded cards', () => {
+    const { rt } = table((s) => (s.timing.autoStartNextHand = false));
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    foldAround(rt);
+    const folded = hand(rt).seats.find((x) => x.folded && x.playerId !== 'host')!;
+    rt.stand(folded.playerId);
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    rt.requestSeat('d', { seat: folded.seat, name: 'D', stack: 1000 });
+    expect(rt.seatOf('d')?.seat).toBe(folded.seat);
+    expect(dealtTo(rt, 'd', folded.seat).every((c) => c === '??' || !folded.cards.some((x) => x.card === c))).toBe(true);
+  });
+});
+
+describe('a restart in the middle of a hand', () => {
+  /** SIGTERM: the table is saved as it is; the new server loads it `downMs` later and the first browser reconnects. */
+  const restart = (rt: TableRuntime, clock: FakeClock, downMs: number, first: string) => {
+    const saved = JSON.parse(JSON.stringify(rt.state));
+    rt.dispose();
+    clock.advance(downMs);
+    const back = new TableRuntime(saved, { clock, rng: seeded(6) });
+    back.resume();
+    back.connect(first);
+    return back;
+  };
+
+  it('gives the player to act a fresh clock instead of folding them', () => {
+    const { rt, clock } = table((s) => (s.timing.decisionSeconds = 30));
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    rt.act(toActId(rt), { type: 'raise', to: 60 });
+    const thinker = toActId(rt);
+    clock.advance(10_000);
+    const back = restart(rt, clock, 20_000, thinker);
+    const seat = back.seatOf(thinker)!;
+    expect(hand(back).seats.find((x) => x.seat === seat.seat)!.folded).toBe(false);
+    expect(seat.timeouts).toBe(0);
+    expect(back.turnDeadline()).toBe(clock.now() + 30_000);
+    back.act(thinker, { type: 'call' });
+    // Someone who doesn't come back still times out, after the usual grace for a dropped player.
+    const next = toActId(back);
+    clock.advance(back.state.settings.seating.offlineGraceSeconds * 1000 + 1);
+    expect(hand(back).seats.find((x) => x.playerId === next)!.folded).toBe(true);
+  });
+
+  it('keeps a run it twice vote open for the players who had not voted', () => {
+    const { rt, clock } = table((s) => (s.play.runItTwice = 'ask'));
+    seatPlayers(rt, 2, 1000);
+    rt.start('host');
+    const h = hand(rt);
+    while (h.phase === 'betting') {
+      const me = h.seats.find((x) => x.seat === h.toAct)!;
+      rt.act(toActId(rt), h.currentBet > me.bet ? { type: 'call' } : { type: 'raise', to: 1000 });
+    }
+    expect(h.phase).toBe('rit-vote');
+    rt.voteRunItTwice('host', true);
+    const back = restart(rt, clock, 20_000, 'a');
+    expect(hand(back).phase).toBe('rit-vote');
+    back.voteRunItTwice('a', true);
+    expect(hand(back).events.some((e) => e.t === 'run-it' && e.times === 2)).toBe(true);
+  });
+});
+
+describe('removed during a run it twice vote', () => {
+  it('plays out the hand of a player who called an all-in with chips behind', () => {
+    const { rt } = table((s) => {
+      s.play.runItTwice = 'ask';
+      s.seating.requireApproval = false;
+    });
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 1000 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 300 });
+    rt.requestSeat('b', { seat: 2, name: 'Bo', stack: 1000 });
+    rt.start('host');
+    const h = hand(rt);
+    // Ann shoves; Bo, who covers her, calls; the host folds.
+    while (h.phase === 'betting') {
+      const who = toActId(rt);
+      rt.act(who, who === 'a' ? { type: 'raise', to: 300 } : who === 'b' ? { type: 'call' } : { type: 'fold' });
+    }
+    expect(h.phase).toBe('rit-vote');
+    const bo = h.seats.find((x) => x.playerId === 'b')!;
+    expect(bo.allIn).toBe(false);
+    rt.kick('host', 'b');
+    // Bo had nothing left to decide: his called chips stay live, his missing vote counts as no, and he leaves after.
+    expect(bo.folded).toBe(false);
+    expect(h.phase).toBe('complete');
+    expect(h.awards.length).toBeGreaterThan(0);
+    expect(rt.seatOf('b')).toBeNull();
+    expect(rt.state.ledger.b.cashOut).toBe(1000 - 300 + h.awards.filter((x) => x.seat === bo.seat).reduce((n, x) => n + x.amount, 0));
+  });
+});
+
+describe('changing the table size between hands', () => {
+  const firstHandThenResize = (seed: number, from: number, to: number, players: number) => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    Object.assign(settings.seating, { requireApproval: false });
+    settings.table.maxSeats = from;
+    settings.timing.autoStartNextHand = false;
+    const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+    ['host', 'a', 'b', 'c', 'd'].slice(0, players).forEach((id, seat) => {
+      rt.connect(id);
+      rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 1000 });
+    });
+    rt.start('host');
+    for (let i = 0; i < 20 && hand(rt).phase !== 'complete'; i++) rt.act(toActId(rt), { type: 'fold' });
+    const before = rt.state.positions!;
+    rt.updateSettings('host', { table: { maxSeats: to } });
+    rt.dealNext('host');
+    return { before, after: rt.state.positions! };
+  };
+
+  it('a bigger table keeps the blinds moving one seat', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const { before, after } = firstHandThenResize(seed, 6, 9, 4);
+      expect(after.bigBlind, `seed ${seed}`).not.toBe(before.bigBlind);
+      expect(after.smallBlind, `seed ${seed}`).toBe(before.bigBlind);
+    }
+  });
+
+  it('a smaller table starts the blinds afresh only when one of them sat in a dropped seat', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const { before, after } = firstHandThenResize(seed, 9, 6, 5);
+      if (Math.max(before.button, before.smallBlind ?? 0, before.bigBlind ?? 0) < 6) expect(after.smallBlind, `seed ${seed}`).toBe(before.bigBlind);
+      expect(after.bigBlind).toBeLessThan(6);
+    }
+  });
+});
+
+describe('table chat text', () => {
+  it('never keeps half an emoji: lone surrogates go, and a long line is cut by whole characters', () => {
+    const { rt } = table();
+    rt.chat('a', 'hi \ud83d there');
+    expect(rt.state.chat.at(-1)!.text).toBe('hi  there');
+    rt.chat('a', `${'x'.repeat(299)}🃏🃏`);
+    const long = rt.state.chat.at(-1)!.text;
+    expect(Array.from(long)).toHaveLength(300);
+    expect(long.endsWith('🃏')).toBe(true);
+    expect(/\p{Cs}/u.test(long)).toBe(false);
   });
 });

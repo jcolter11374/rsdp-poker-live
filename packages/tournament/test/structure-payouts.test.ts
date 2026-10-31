@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  apply,
   chipChop,
+  createTournament,
+  defaultSettings,
+  finishPrizes,
+  paidPlaces,
+  rangeFor,
+  standings,
+  tick,
+  type Command,
+  type TournamentState,
   clockAt,
   curvePercents,
   generateStructure,
@@ -141,7 +151,9 @@ describe('payouts', () => {
   it('rounds each place down and gives the remainder to 1st', () => {
     const s = { name: 'x', ranges: [{ minEntries: 2, maxEntries: 10, percents: [50, 30, 20] }] };
     expect(placePrizes(1001, s, 9)).toEqual([501, 300, 200]);
-    expect(placePrizes(1001, s, 11)).toEqual([]);
+    // The last range carries on past its end (re-entries can take an event past its max entrants).
+    expect(placePrizes(1001, s, 11)).toEqual([501, 300, 200]);
+    expect(placePrizes(1001, s, 1)).toEqual([]);
   });
 
   it('refuses ranges that are not shaped like ranges instead of throwing', () => {
@@ -196,5 +208,79 @@ describe('payouts', () => {
   it('chip chop gives everyone the lowest prize plus a chip share', () => {
     expect(chipChop([3000, 1000], [700, 300])).toEqual([600, 400]);
     expect(chipChop([1, 1, 2], [500, 300, 200]).reduce((a, b) => a + b, 0)).toBe(1000);
+  });
+});
+
+describe('payouts with re-entries', () => {
+  const T0 = Date.parse('2026-10-31T00:00:00Z');
+  /** One hand at the first table: `winner` takes the stacks of everyone in `bust`. */
+  function bustHand(s: TournamentState, winner: string, bust: string[]): TournamentState {
+    const t = s.tables[0];
+    const seated = t.seats.filter((x): x is string => !!x).map((id) => s.entries.find((e) => e.id === id)!);
+    const start = Object.fromEntries(seated.map((e) => [e.playerId, e.stack]));
+    const end = { ...start };
+    for (const b of bust) {
+      end[winner] += end[b];
+      end[b] = 0;
+    }
+    const handNumber = t.lastHandNumber + 1;
+    s = apply(s, { type: 'handStarted', tableId: t.id, handNumber }, T0).state;
+    const knockedOutBy = Object.fromEntries(bust.map((b) => [b, [winner]]));
+    return apply(s, { type: 'handResult', result: { tableId: t.id, handNumber, startStacks: start, endStacks: end, knockedOutBy } }, T0).state;
+  }
+  const event = (maxEntrants: number, players: number, reEntryMax: number | null) => {
+    const settings = defaultSettings({
+      name: 'Re-entry',
+      maxEntrants,
+      startingStack: 1000,
+      lateRegistration: { enabled: false, throughLevel: null },
+      reEntry: { enabled: true, throughLevel: 1, max: reEntryMax, approval: false },
+      // What the create form sends: the preset trimmed to this event's max entrants.
+      payouts: { structure: payoutPreset('rsdp', maxEntrants), money: { buyIn: 2000 } },
+    });
+    let s = createTournament({ id: 'T', hostId: 'host', settings, now: T0, seed: 1 });
+    const run = (c: Command) => (s = apply(s, c, T0).state);
+    for (let i = 0; i < players; i++) run({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
+    run({ type: 'startNow', by: 'host' });
+    return { get: () => s, set: (next: TournamentState) => (s = next), run };
+  };
+
+  it('the last range carries on when re-entries take an event past its max entrants', () => {
+    expect(rangeFor(payoutPreset('rsdp', 6), 7)).toEqual(rangeFor(payoutPreset('rsdp', 6), 6));
+    expect(rangeFor(payoutPreset('rsdp', 6), 1)).toBeNull();
+    const e = event(6, 6, 1);
+    e.set(bustHand(e.get(), 'p0', ['p1']));
+    e.run({ type: 'reEnter', playerId: 'p1' });
+    expect(e.get().entries).toHaveLength(7);
+    expect(paidPlaces(e.get())).toBe(2);
+    e.set(bustHand(e.get(), 'p0', ['p1', 'p2', 'p3', 'p4', 'p5']));
+    e.set(tick(e.get(), T0 + 6 * 3600_000).state);
+    expect(e.get().status).toBe('finished');
+    const st = standings(e.get());
+    // 1st, and the five who busted together share 2nd's prize.
+    expect(st.find((x) => x.place === 1)!.prize).toBe(7 * 2000 - st.filter((x) => x.place === 2).reduce((a, x) => a + x.prize, 0));
+    expect(st.every((x) => x.prize > 0)).toBe(true);
+    expect(st.reduce((a, x) => a + x.prize, 0)).toBe(7 * 2000);
+  });
+
+  it('prizes for places nobody can finish in go to 1st, so every buy-in is paid out', () => {
+    const e = event(100, 3, null);
+    for (let k = 0; k < 13; k++) {
+      const who = k % 2 ? 'p2' : 'p1';
+      e.set(bustHand(e.get(), 'p0', [who]));
+      e.run({ type: 'reEnter', playerId: who });
+    }
+    expect(e.get().entries).toHaveLength(16);
+    // RSDP pays 4 places at 16 entries, but only three people are playing: the lobby's list and count say 3.
+    expect(paidPlaces(e.get())).toBe(3);
+    expect(finishPrizes(e.get())).toEqual([16500, 9500, 6000]);
+    e.set(bustHand(e.get(), 'p0', ['p2']));
+    e.set(bustHand(e.get(), 'p0', ['p1']));
+    e.set(tick(e.get(), T0 + 6 * 3600_000).state);
+    expect(e.get().status).toBe('finished');
+    const st = standings(e.get());
+    // $145 / $95 / $60 / $20 at 16 entries: 4th's $20 goes to 1st.
+    expect(st.map((x) => [x.playerId, x.place, x.prize])).toEqual([['p0', 1, 16500], ['p1', 2, 9500], ['p2', 3, 6000]]);
+    expect(st.reduce((a, x) => a + x.prize, 0)).toBe(16 * 2000);
   });
 });

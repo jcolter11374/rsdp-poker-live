@@ -71,6 +71,9 @@ const PENDING_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
 const PENDING_MAX = 2_000;
 const BEGINS_PER_WINDOW = 20;
+/** Wrong passwords allowed when unlinking Google, per address and per account, in a window (as signing in allows). */
+const UNLINK_TRIES = 10;
+const UNLINK_WINDOW_MS = 15 * 60_000;
 const COOKIE = 'rsdp_google';
 
 interface Flow {
@@ -156,6 +159,8 @@ export function googleRoutes(
   const pending = new Map<string, Pending>();
   const tickets = new Map<string, Ticket>();
   const begins = limiter(BEGINS_PER_WINDOW, PENDING_MS, now);
+  /** Wrong passwords to unlink Google, by address and by account, as for every other password check. */
+  const unlinkFailures = limiter(UNLINK_TRIES, UNLINK_WINDOW_MS, now);
   const json = express.json({ limit: '1kb' });
   const enabled = !!(config && db);
 
@@ -330,8 +335,13 @@ export function googleRoutes(
     whoIs(db, req.get('x-guest-token') ?? '', req.get('x-session-token'))
       .then(async (who) => {
         if (!who.account) return void res.status(401).json({ error: 'Sign in first.' });
+        const keys = [`address:${clientAddress(req)}`, `account:${who.account.id}`];
+        if (!keys.every((k) => unlinkFailures(k, false))) return void res.status(429).json({ error: 'Too many tries. Wait a few minutes and try again.' });
         const { hasPassword } = await signInMethods(db, who.account.id);
-        if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.password))) return void res.status(401).json({ error: 'Your password is not right.' });
+        if (hasPassword && !(await checkPassword(db, who.account.id, req.body?.password))) {
+          for (const k of keys) unlinkFailures(k);
+          return void res.status(401).json({ error: 'Your password is not right.' });
+        }
         await unlinkGoogle(db, who.account.id);
         res.json({ ok: true });
       })
