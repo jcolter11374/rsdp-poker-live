@@ -268,6 +268,7 @@ export function handSearchRoutes(app: express.Express, db: Db | null, opts: { sh
       const snap = (await snapsOf([row.tableId])).get(row.tableId);
       const id = newId();
       const createdAt = now();
+      const hideMine = req.body?.hideMine === true;
       const snapshot: SharedHandView = {
         id,
         tableName: snap?.settings?.table.name ?? '',
@@ -275,8 +276,10 @@ export function handSearchRoutes(app: express.Express, db: Db | null, opts: { sh
         seatCount: snap?.seats?.length ?? 9,
         felt: snap?.settings?.table.felt ?? null,
         sharedBy: who.player.displayName || nameIn(snap)(mine),
+        // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
+        ...(hideMine ? {} : { sharerSeat: past.seats.find((x) => x.playerId === mine)!.seat }),
         createdAt,
-        hand: savedHandView(snap, past, mine, { hideMine: req.body?.hideMine === true }),
+        hand: savedHandView(snap, past, mine, { hideMine }),
       };
       await shared.create({ id, tableId: row.tableId, handNumber: row.number, createdBy: who.player.id, snapshot });
       res.json({ id });

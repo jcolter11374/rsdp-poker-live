@@ -225,4 +225,57 @@ describe('tournaments on the server', () => {
     expect(rt.state.seats.find((x) => x?.playerId === offered.playerId)?.stack).toBe(100);
     expect(rt.state.hand && rt.state.hand.phase !== 'complete').toBe(true);
   }, 30_000);
+
+  it('with re-entry open to the end, the last player left wins a minute after the last bust with nobody doing anything', async () => {
+    const env = setup();
+    const id = await env.manager.create(
+      'host',
+      defaultSettings({
+        name: 'Re-entry',
+        startingStack: 100,
+        seatsPerTable: 6,
+        lateRegistration: { enabled: false, throughLevel: null },
+        reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+      }),
+    );
+    for (const p of players(2)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const state = () => env.manager.view(id)!.state;
+    playUntil(env, () => state().entries.filter((e) => e.status === 'seated').length === 1);
+    // The busted player has a minute to re-enter; then the server's own wake-up ends the event.
+    const lastOut = Math.max(...state().eliminations.map((g) => g.at));
+    env.clock.advance(lastOut + MIN - 1 - env.clock.now());
+    expect(state().status).toBe('running');
+    env.clock.advance(1);
+    expect(state().status).toBe('finished');
+    expect(standings(state()).map((s) => s.place)).toEqual([1, 2]);
+    expect(env.errors).toEqual([]);
+  }, 30_000);
+
+  it('a last player left waiting on the host to answer a late registration does not keep the server waking with nothing to do', async () => {
+    const env = setup();
+    const id = await env.manager.create(
+      'host',
+      defaultSettings({
+        name: 'Re-entry',
+        startingStack: 100,
+        seatsPerTable: 6,
+        lateRegistration: { enabled: true, throughLevel: 4 },
+        registrationApproval: true,
+        reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+      }),
+    );
+    const state = () => env.manager.view(id)!.state;
+    for (const p of players(2)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    for (const r of state().requests) await env.manager.command(id, 'host', '', { type: 'approve', by: 'host', requestId: r.id });
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    await env.manager.command(id, 'late', 'Late', { type: 'register', playerId: 'late', displayName: 'Late' });
+    playUntil(env, () => state().entries.filter((e) => e.status === 'seated').length === 1);
+    // The re-entry minute runs out while the late registration still waits for the host: nothing to do until they answer.
+    env.clock.advance(2 * MIN);
+    expect(state().status).toBe('running');
+    await env.manager.command(id, 'host', '', { type: 'reject', by: 'host', requestId: state().requests[0].id });
+    expect(state().status).toBe('finished');
+    expect(env.errors).toEqual([]);
+  }, 30_000);
 });

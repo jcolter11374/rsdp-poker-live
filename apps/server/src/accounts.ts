@@ -5,8 +5,8 @@
 // secret (X-Guest-Token) and, once signed in, its session token (X-Session-Token).
 
 import express from 'express';
-import { standings, type TournamentState } from '@rsdp/tournament';
-import { leaderboard, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
+import { fromLocal, isValidTimeZone, standings, toLocal, type TournamentState } from '@rsdp/tournament';
+import { leaderboard, leaderData, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderData, type LeaderRow } from './db';
 import { StorageError } from './db/errors';
 import {
   adoptGuest,
@@ -87,6 +87,8 @@ export function accountRoutes(
     isAdmin: AdminCheck;
     confirmations: GoogleConfirmations;
     now: () => number;
+    /** A timer on the same clock as `now`. */
+    setTimeout: (fn: () => void, ms: number) => unknown;
     log: (message: string, err?: unknown) => void;
     /** Admin actions go in the public record (audit.ts). */
     onAdmin?: (action: string) => void;
@@ -287,23 +289,39 @@ export function accountRoutes(
     }),
   );
 
-  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period.
-  const boards = new Map<string, { at: number; rows: Promise<LeaderRow[]> }>();
+  // The group's leaderboards: this month, this year or all time. The hands are read at most once a minute for all of
+  // them, from every time zone, and each board is worked out once from that read.
+  let read: { at: number; data: Promise<LeaderData>; boards: Map<string, Promise<LeaderRow[]>> } | null = null;
   app.get(
     '/api/leaderboard',
     route(async (req, res, db) => {
       if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const period = ['month', 'year', 'all'].includes(String(req.query.period)) ? String(req.query.period) : 'month';
+      // The month and year start at midnight where the browser is (it sends its time zone), so a game on the last
+      // evening of a month counts in that month. A missing or unknown time zone counts in UTC.
+      const tz = typeof req.query.tz === 'string' && req.query.tz.length <= 64 && isValidTimeZone(req.query.tz) ? req.query.tz : 'UTC';
       const t = now();
-      const d = new Date(t);
-      const since = period === 'month' ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) : period === 'year' ? new Date(Date.UTC(d.getUTCFullYear(), 0, 1)) : undefined;
-      let cached = boards.get(period);
-      if (!cached || t - cached.at >= LEADERBOARD_CACHE_MS) {
-        cached = { at: t, rows: leaderboard(db, since) };
-        boards.set(period, cached);
-        cached.rows.catch(() => boards.get(period) === cached && boards.delete(period));
+      const here = toLocal(t, tz);
+      const since = period === 'all' ? undefined : new Date(fromLocal({ year: here.year, month: period === 'month' ? here.month : 1, day: 1, hour: 0, minute: 0 }, tz));
+      if (!read || t - read.at >= LEADERBOARD_CACHE_MS) {
+        const fresh = { at: t, data: leaderData(db), boards: new Map<string, Promise<LeaderRow[]>>() };
+        read = fresh;
+        fresh.data.catch(() => read === fresh && (read = null));
+        // Every real game's hands are a lot to hold: once the minute is up they are let go, not kept until the next
+        // visit, which may be days away. The timer doesn't keep the server running on its own.
+        const expiry = opts.setTimeout(() => read === fresh && (read = null), LEADERBOARD_CACHE_MS);
+        (expiry as { unref?: () => void } | null)?.unref?.();
       }
-      res.json({ period, since: since?.toISOString() ?? null, rows: await cached.rows });
+      const { data, boards } = read;
+      // Time zones whose period starts at the same moment share one answer.
+      const key = `${period} ${since?.getTime() ?? ''}`;
+      let rows = boards.get(key);
+      if (!rows) {
+        const made = data.then((d) => leaderboard(db, d, since));
+        boards.set(key, (rows = made));
+        made.catch(() => boards.get(key) === made && boards.delete(key));
+      }
+      res.json({ period, since: since?.toISOString() ?? null, rows: await rows });
     }),
   );
 

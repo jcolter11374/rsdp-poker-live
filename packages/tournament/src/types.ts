@@ -203,6 +203,11 @@ export interface TournamentState {
   coHosts?: CoHost[];
   /** Hidden from lists; set by the host or by cleanup. Missing or null: not archived. */
   archivedAt?: number | null;
+  /**
+   * The event before this one, when the server opened it as the next of a series or Sit & Go. Missing: the host made
+   * it (states saved before this field existed get it from the event before's saved link when the server loads them).
+   */
+  spawnedFrom?: string;
   settings: TournamentSettings;
   status: TournamentStatus;
   createdAt: number;

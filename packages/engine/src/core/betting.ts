@@ -20,11 +20,20 @@ export interface FixedLimitRound {
   uncapped: boolean;
 }
 
-/** Stud third street while the bring-in is still to be posted or is the only live bet. */
+/**
+ * Stud third street while the bring-in is still to be posted, or is the only live bet and short of a full
+ * bet. A bring-in as big as the completion is itself the opening bet, after which the round is ordinary.
+ */
 export interface BringInRound {
   amount: Chips;
   /** Total a completion goes to (the small bet). */
   completeTo: Chips;
+  /**
+   * This seat is the one the bring-in rule chose (the low card, or the high card in razz), so it must bring in or
+   * complete and may not fold. Unset for the seat that opens instead when that one is all in from the ante: it may
+   * bring in, complete or fold.
+   */
+  forced?: boolean;
 }
 
 /** One seat's decision point, built by the hand machine from HandState and the seat. */
@@ -63,7 +72,8 @@ export function potLimitMax(currentBet: Chips, potTotal: Chips, toCall: Chips): 
 /**
  * Legal actions for the seat described by `ctx`. minTo and maxTo are 0 when
  * canRaise is false. The stud bring-in seat (bringIn set, nothing bet yet)
- * cannot check: it brings in or completes.
+ * cannot check. The low card cannot fold either: the bring-in is forced, so it
+ * brings in or completes.
  */
 export function computeLegal(ctx: BettingContext): LegalActions {
   const toCall = Math.max(0, ctx.currentBet - ctx.bet);
@@ -71,12 +81,15 @@ export function computeLegal(ctx: BettingContext): LegalActions {
   const allInTo = ctx.trimTo === undefined ? ctx.bet + ctx.stack : Math.min(ctx.bet + ctx.stack, ctx.trimTo);
   const canBringIn = !!ctx.bringIn && ctx.currentBet === 0 && ctx.stack > 0;
   const { base, step, completing } = fullRaise(ctx);
-  const fullTo = base + step;
   // Raising must leave the seat above what calling (or bringing in) would.
   const floor = canBringIn ? ctx.bringIn!.amount : ctx.currentBet;
-  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor;
+  // A bring-in as big as the completion leaves nothing to complete. In fixed limit the low card just brings in;
+  // in no-limit and pot-limit it may still open for any amount above the bring-in.
+  const nothingToComplete = canBringIn && ctx.bringIn!.amount >= ctx.bringIn!.completeTo;
+  const fullTo = nothingToComplete ? floor + 1 : base + step;
+  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !(nothingToComplete && ctx.betting === 'fixed-limit');
   return {
-    canFold: true,
+    canFold: !(canBringIn && ctx.bringIn!.forced),
     canCheck: toCall === 0 && !canBringIn,
     callAmount: Math.min(toCall, ctx.stack),
     canRaise,

@@ -232,6 +232,58 @@ describe('clock, breaks and pause', () => {
     sim.do({ type: 'editStructure', by: 'host', structure: later });
     expect(sim.of('structureEdited')).toHaveLength(1);
   });
+
+  it('levels added while the last level runs past its length start from the edit, one at a time', () => {
+    const short = levels.slice(0, 2);
+    const sim = new Sim({ structure: short });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.at(T0 + 10 * MIN);
+    // Level 2 is the last: it runs on long past its 10 minutes.
+    sim.at(T0 + 120 * MIN);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 2, bb: 200 });
+    const edit = sim.now;
+    sim.do({
+      type: 'editStructure',
+      by: 'host',
+      structure: [
+        ...short,
+        { kind: 'level', sb: 200, bb: 400, ante: 0, anteType: 'none', minutes: 10 },
+        { kind: 'break', minutes: 5, addOn: false },
+        { kind: 'level', sb: 300, bb: 600, ante: 0, anteType: 'none', minutes: 10 },
+        { kind: 'level', sb: 500, bb: 1000, ante: 0, anteType: 'none', minutes: 10 },
+      ],
+    });
+    // The next level starts now, and the ones after it follow at their own lengths.
+    expect(nextWakeAt(sim.state)).toBe(edit);
+    const before = sim.events.length;
+    sim.at(edit + 1000);
+    expect(sim.events.slice(before).map((e) => e.type)).toEqual(['levelUp']);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 3, bb: 400 });
+    sim.at(edit + 10 * MIN);
+    expect(sim.of('breakStarted').at(-1)).toMatchObject({ minutes: 5, endsAt: edit + 15 * MIN });
+    expect(tableGate(sim.state, t, sim.now)).toBe('hold');
+    sim.at(edit + 15 * MIN);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 4, bb: 600 });
+    expect(tableGate(sim.state, t, sim.now)).toBe('deal');
+  });
+
+  it('a level added during a pause, with the last level past its length, starts when play resumes', () => {
+    const short = levels.slice(0, 2);
+    const sim = new Sim({ structure: short });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.at(T0 + 10 * MIN);
+    sim.now = T0 + 60 * MIN;
+    sim.do({ type: 'pause', by: 'host' });
+    sim.do({ type: 'editStructure', by: 'host', structure: [...short, { kind: 'level', sb: 200, bb: 400, ante: 0, anteType: 'none', minutes: 10 }] });
+    sim.now = T0 + 70 * MIN;
+    sim.do({ type: 'resume', by: 'host' });
+    expect(nextWakeAt(sim.state)).toBe(sim.now);
+    sim.at(sim.now);
+    expect(levelFor(sim.state, '')).toMatchObject({ levelNumber: 3, bb: 400 });
+  });
 });
 
 describe('busts, rebuys and re-entry', () => {
@@ -327,6 +379,8 @@ describe('busts, rebuys and re-entry', () => {
     sim.hand(t, 'p0', ['p2']);
     // p2 could still re-enter, so p0 waits until re-entry closes after level 2.
     expect(sim.state.status).toBe('running');
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
     sim.at(T0 + 20 * MIN);
     expect(sim.state.status).toBe('finished');
     const st = standings(sim.state);
@@ -335,6 +389,144 @@ describe('busts, rebuys and re-entry', () => {
       ['p2', 1, 2],
       ['p1', 2, 3],
     ]);
+  });
+
+  it('with re-entry open to the end, the last player left wins a minute after the last bust if nobody re-enters', () => {
+    // What the create form sends when the host ticks "Re-entry after busting" and leaves both boxes empty.
+    const sim = new Sim({ reEntry: { enabled: true, throughLevel: null, max: null, approval: false } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1', 'p2']);
+    // The busted players have a minute to come back; the server is woken when it runs out.
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + MIN);
+    sim.at(T0 + MIN - 1000);
+    expect(sim.state.status).toBe('running');
+    sim.at(T0 + MIN);
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.place])).toEqual([
+      ['p0', 1],
+      ['p1', 2],
+      ['p2', 2],
+    ]);
+  });
+
+  it('with re-entry open to the end, a re-entry waiting for the host holds the last player left past that minute', () => {
+    const sim = new Sim({ reEntry: { enabled: true, throughLevel: null, max: null, approval: true } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1']);
+    sim.now += 30_000;
+    sim.do({ type: 'reEnter', playerId: 'p1' });
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
+    sim.do({ type: 'approve', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.entry('p1')).toMatchObject({ entryNo: 2, status: 'seated' });
+    // Busted again, p1 asks again, and the host says no two minutes later: the minute is up, so p0 wins.
+    sim.hand(t, 'p0', ['p1']);
+    sim.do({ type: 'reEnter', playerId: 'p1' });
+    sim.now += 2 * MIN;
+    sim.do({ type: 'reject', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.entryNo, s.place])).toEqual([
+      ['p0', 1, 1],
+      ['p1', 2, 2],
+    ]);
+  });
+
+  it('with re-entry open to the end, a late registration still waiting for the host after that minute does not wake the server again and again', () => {
+    const sim = new Sim({
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+      lateRegistration: { enabled: true, throughLevel: 4 },
+      registrationApproval: true,
+    });
+    sim.register(3);
+    for (const r of sim.of('requestPending')) sim.do({ type: 'approve', by: 'host', requestId: r.request.id });
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.do({ type: 'register', playerId: 'late', displayName: 'Late' });
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1', 'p2']);
+    sim.at(T0 + 2 * MIN);
+    // The minute is up, but p0 still waits for the host's answer: the next wake-up is the end of level 1, not a time already past.
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+    sim.do({ type: 'reject', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.state.status).toBe('finished');
+  });
+
+  it('with re-entry open to the end, a last player left on a rebuy offer is woken when the offer runs out, not when the re-entry minute does', () => {
+    const sim = new Sim({
+      allowQuit: true,
+      rebuy: { max: 2, chips: 1000, approval: false, offerSeconds: 120 },
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+    });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p2']);
+    sim.do({ type: 'declineRebuy', playerId: 'p2' });
+    // p0 leaves during a hand that busts p1, so p1, on a rebuy offer, is the only one left.
+    sim.do({ type: 'handStarted', tableId: t, handNumber: 2 });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({ type: 'handResult', result: { tableId: t, handNumber: 2, startStacks: { p0: 2000, p1: 1000 }, endStacks: { p0: 3000, p1: 0 }, knockedOutBy: { p1: ['p0'] } } });
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    const expiresAt = sim.entry('p1').rebuyOfferExpiresAt!;
+    expect(nextWakeAt(sim.state)).toBe(expiresAt);
+    sim.at(expiresAt);
+    expect(sim.state.status).toBe('finished');
+  });
+
+  it('with re-entry open to the end, a last player left waiting on a rebuy the host has not answered is not woken again and again once the minute is up', () => {
+    const sim = new Sim({
+      allowQuit: true,
+      rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 },
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+    });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p2']);
+    sim.do({ type: 'declineRebuy', playerId: 'p2' });
+    sim.do({ type: 'handStarted', tableId: t, handNumber: 2 });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({ type: 'handResult', result: { tableId: t, handNumber: 2, startStacks: { p0: 2000, p1: 1000 }, endStacks: { p0: 3000, p1: 0 }, knockedOutBy: { p1: ['p0'] } } });
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    sim.at(T0 + 2 * MIN);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+  });
+
+  it('re-entry through the last level, which never ends, is open to the end: the last player left wins a minute after the last bust', () => {
+    const sim = new Sim({ structure: levels.slice(0, 2), reEntry: { enabled: true, throughLevel: 2, max: null, approval: false } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.at(T0 + 15 * MIN);
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 16 * MIN);
+    sim.at(T0 + 16 * MIN);
+    expect(sim.state.status).toBe('finished');
+    expect(standings(sim.state).map((s) => [s.playerId, s.place])).toEqual([
+      ['p0', 1],
+      ['p1', 2],
+    ]);
+  });
+
+  it('re-entry through a level past the end of the structure is open to the end too, until levels are added that reach it', () => {
+    const sim = new Sim({ structure: levels.slice(0, 2), reEntry: { enabled: true, throughLevel: 3, max: null, approval: false } });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1']);
+    expect(nextWakeAt(sim.state)).toBe(T0 + MIN);
+    // With a third level and a fourth after it, re-entry closes when level 3 ends, so p0 waits for that instead.
+    sim.do({ type: 'editStructure', by: 'host', structure: [...levels.slice(0, 2), levels[3], levels[4]] });
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+    sim.at(T0 + 5 * MIN);
+    expect(sim.state.status).toBe('running');
+    sim.at(T0 + 30 * MIN);
+    expect(sim.of('reEntryClosed')).toHaveLength(1);
+    expect(sim.state.status).toBe('finished');
   });
 
   it('late registration is open until it closes', () => {

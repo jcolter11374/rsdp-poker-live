@@ -3,9 +3,9 @@ import type { ClientToServer, ServerToClient, TableView } from '@rsdp/engine/wir
 
 export type Client = Socket<ServerToClient, ClientToServer>;
 
-/** A test browser: acked calls that reject on an error ack, and waiting for a view that matches. */
-export function socketClient(url: string, token: string, clients: Client[]) {
-  const c: Client = connect(url, { auth: { token }, transports: ['websocket'], forceNew: true });
+/** A test browser: acked calls that reject on an error ack, and waiting for a view that matches. `headers` go with the connection (an address, as Fly's proxy sends it). */
+export function socketClient(url: string, token: string, clients: Client[], headers?: Record<string, string>) {
+  const c: Client = connect(url, { auth: { token }, transports: ['websocket'], forceNew: true, ...(headers ? { extraHeaders: headers } : {}) });
   clients.push(c);
   let last: TableView | null = null;
   const waiters: { test: (v: TableView) => boolean; resolve: (v: TableView) => void }[] = [];

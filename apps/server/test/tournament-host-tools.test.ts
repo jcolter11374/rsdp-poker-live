@@ -3,6 +3,7 @@ import { engine, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings, tableAddress, type TournamentSettings } from '@rsdp/tournament';
 import type { TableRuntime } from '../src/runtime/table';
+import { tableView } from '../src/runtime/view';
 import { FINISHED_KEEP_MS, IDLE_ARCHIVE_MS } from '../src/tournament/manager';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
@@ -75,6 +76,43 @@ describe('co-hosts on the server', () => {
     expect(state()).toMatchObject({ hostId: 'p1', coHosts: [{ playerId: 'host', name: 'Dealer' }] });
     await env.manager.command(id, 'p1', 'Player 1', { type: 'resume', by: 'p1' });
     expect(state().status).toBe('running');
+  });
+});
+
+describe('hand-history downloads for the event’s staff', () => {
+  it('stay open to the host and lobby co-hosts who are not playing, and closed to a co-host still in the event', async () => {
+    const env = setup();
+    const id = await env.manager.create('host', defaultSettings({ name: 'Tools', startingStack: 1000, seatsPerTable: 6, lateRegistration: { enabled: false, throughLevel: null } }));
+    const state = () => env.manager.view(id)!.state;
+    await registerAll(env, id, 3);
+    // Cy helps run the night but doesn't play: she is named a co-host while registered, then unregisters.
+    await env.manager.command(id, 'cy', 'Cy', { type: 'register', playerId: 'cy', displayName: 'Cy' });
+    await env.manager.command(id, 'host', 'Host', { type: 'setCoHost', by: 'host', playerId: 'cy', powers: ['run'] });
+    await env.manager.command(id, 'cy', 'Cy', { type: 'unregister', playerId: 'cy' });
+    // Player 2 is a co-host who plays.
+    await env.manager.command(id, 'host', 'Host', { type: 'setCoHost', by: 'host', playerId: 'p2', powers: ['run'] });
+    await env.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const rt = [...env.tables.values()][0];
+    untilDealt(env, rt);
+    expect(state().status).toBe('running');
+    expect(state().entries.some((e) => e.playerId === 'cy')).toBe(false);
+
+    expect(rt.recordsLocked('host')).toBe(false);
+    expect(rt.recordsLocked('cy')).toBe(false);
+    expect(tableView(rt, 'cy', env.clock.now(), id).recordsLocked).toBe(false);
+    // A co-host who plays is closed like any player, and so is someone who only watches.
+    expect(rt.recordsLocked('p2')).toBe(true);
+    expect(rt.recordsLocked('stranger')).toBe(true);
+
+    // The host hands the role on mid-event and stays as a co-host: still not playing, so still open.
+    await env.manager.command(id, 'host', 'Dealer', { type: 'transferHost', by: 'host', to: 'p1' });
+    expect(state()).toMatchObject({ hostId: 'p1', coHosts: expect.arrayContaining([expect.objectContaining({ playerId: 'host' })]) });
+    expect(rt.recordsLocked('host')).toBe(false);
+    // The new host plays, so they stay closed until they are out.
+    expect(rt.recordsLocked('p1')).toBe(true);
+    // A co-host who steps down is an onlooker again.
+    await env.manager.command(id, 'cy', 'Cy', { type: 'removeCoHost', by: 'cy', playerId: 'cy' });
+    expect(rt.recordsLocked('cy')).toBe(true);
   });
 });
 

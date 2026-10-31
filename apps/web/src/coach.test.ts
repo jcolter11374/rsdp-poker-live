@@ -213,6 +213,13 @@ describe('tip text: the examples', () => {
     expect(coachFacts(view, tip).map((f) => f.text)).toEqual(['Neither of the other two kings is showing, so both are still live.']);
     const bringIn = tipOf({ ...checked, share: 0.1, opponents: 5, vs: 5, move: { type: 'bring-in' }, rule: 'bring-in' });
     expect(textOf(view, bringIn).verdict).toBe('About 10% to win against 5 others: bring it in for 1.');
+    // The low card has to bring in; the player who opens because the low card is all in from the ante may fold.
+    const maths = (canFold: boolean) => {
+      const at = { ...view, legal: { canFold, canCheck: false, callAmount: 0, canRaise: true, minTo: 4, maxTo: 4, canBringIn: true } as TableView['legal'] };
+      return textOf(at, bringIn).why.flatMap((s) => s.lines).find((l) => /start the betting/.test(l));
+    };
+    expect(maths(false)).toBe('You must start the betting: bring it in for 1, or complete to 4. The tip completes only with a strong start.');
+    expect(maths(true)).toBe('You start the betting because the player who had to bring in is all in: bring it in for 1, or complete to 4, or fold. The tip completes only with a strong start.');
     const complete = tipOf({ ...checked, share: 0.6, opponents: 5, vs: 5, move: { type: 'complete', to: 4, fraction: null, allIn: false }, rule: 'complete' });
     expect(textOf(view, complete).verdict).toBe('About 60% to win against 5 others: complete to 4.');
     expect(textOf(view, complete).set).toBeNull();

@@ -228,7 +228,13 @@ function whyOf(tip: CoachTip, view: TableView, fmt: Fmt, name: (seat: number) =>
   const maths: string[] = [];
   if (tip.kind === 'bet' && (tip.rule === 'bring-in' || tip.rule === 'complete')) {
     const complete = legal?.canBringIn && legal.canRaise ? `, or complete to ${fmt(legal.minTo)}` : '';
-    maths.push(`You must start the betting: bring it in for ${fmt(view.hand?.stakes.bringIn ?? 0)}${complete}. The tip completes only with a strong start.`);
+    const bringIn = fmt(view.hand?.stakes.bringIn ?? 0);
+    // Only the card that has to bring in can't fold; when it's all in from the ante, the next player opens and may fold.
+    maths.push(
+      legal?.canFold
+        ? `You start the betting because the player who had to bring in is all in: bring it in for ${bringIn}${complete}, or fold. The tip completes only with a strong start.`
+        : `You must start the betting: bring it in for ${bringIn}${complete}. The tip completes only with a strong start.`,
+    );
   } else if (tip.kind === 'bet' && tip.call > 0 && tip.cost !== null) {
     const after = tip.pot + tip.call;
     maths.push(`The pot will be ${fmt(after)} once you call ${fmt(tip.call)}. ${fmt(tip.call)} is ${pct(tip.cost)} of ${fmt(after)}, so calling pays off over time if you win more than ${breakEvenWords(tip.cost)}.`);

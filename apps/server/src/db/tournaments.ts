@@ -73,6 +73,13 @@ export async function listLiveTournaments<S = unknown>(db: Db): Promise<Tourname
   return rows as TournamentRecord<S>[];
 }
 
+/** For each of `ids` that the server opened as the next of another (a series or Sit & Go), that other's id. */
+export async function previousTournaments(db: Db, ids: string[]): Promise<Map<string, string>> {
+  if (!ids.length) return new Map();
+  const rows = await db.select({ id: tournaments.id, nextId: tournaments.nextId }).from(tournaments).where(inArray(tournaments.nextId, ids));
+  return new Map(rows.map((r) => [r.nextId!, r.id]));
+}
+
 /** Tournaments a player hosted or holds an entry in, changed since `since`, newest first. */
 export async function listPlayerTournaments<S = unknown>(db: Db, playerId: string, since: Date, limit = 50): Promise<TournamentRecord<S>[]> {
   const entered = sql`${tournaments.state} -> 'entries' @> ${JSON.stringify([{ playerId }])}::jsonb`;

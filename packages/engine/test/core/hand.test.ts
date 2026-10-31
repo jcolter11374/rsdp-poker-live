@@ -91,6 +91,33 @@ describe("hold'em: raising rules", () => {
     expect(legalActions(s, 3)).toMatchObject({ canRaise: false, callAmount: 4 });
   });
 
+  it('short all-ins that add up to a full raise reopen the betting for a player who already acted', () => {
+    // Blinds 1/2. Seat 3 opens to 10 (a raise of 8); seats 0 and 1 go all in for 15 and 20, each 5 more: short.
+    const s = start({ stacks: [15, 20, 500, 500], button: 0 });
+    act(s, 3, { type: 'raise', to: 10 });
+    act(s, 0, { type: 'raise', to: 15 });
+    act(s, 1, { type: 'raise', to: 20 });
+    act(s, 2, { type: 'call' });
+    // Seat 3 faces 10 more than it put in, at least the last full raise of 8.
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 10, canRaise: true, minTo: 28 });
+  });
+
+  it('in fixed limit, short all-ins that add up to half a bet reopen it', () => {
+    const s = start({ stacks: [500, 500, 500, 24, 28], button: 0, stakes: { smallBlind: 5, bigBlind: 10, smallBet: 10, bigBet: 20 } });
+    s.input.betting = 'fixed-limit';
+    for (const seat of [3, 4, 0, 1]) act(s, seat, { type: 'call' });
+    act(s, 2, { type: 'check' });
+    // Flop: seat 1 bets 10, seat 3 is all in for 14 and seat 4 for 18, each less than half a bet more.
+    act(s, 1, { type: 'bet', to: 10 });
+    act(s, 2, { type: 'call' });
+    act(s, 3, { type: 'raise', to: 14 });
+    expect(legalActions(s, 4)).toMatchObject({ canRaise: true, maxTo: 18 });
+    act(s, 4, { type: 'raise', to: 18 });
+    act(s, 0, { type: 'call' });
+    // Seats 1 and 2 face 8 more, at least half a bet, so they may raise again.
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 8, canRaise: true, minTo: 28 });
+  });
+
   it('a big blind all in for less still makes others call the full blind', () => {
     const s = start({ stacks: [100, 100, 1] });
     expect(eventsOf(s, 'post').find((e) => e.seat === 2)).toMatchObject({ amount: 1, allIn: true });
@@ -374,6 +401,73 @@ describe('fixed-limit cap counts the bets that are really made', () => {
   });
 });
 
+describe('fixed limit: no cap heads-up', () => {
+  /** Limit hold'em 2/4 with a cap of 4: three players limp, and the flop is seat 1's to bet. */
+  function threeOnTheFlop() {
+    const s = start({ stacks: [500, 500, 500], button: 0, stakes: { smallBet: 2, bigBet: 4 }, options: { uncappedHeadsUp: true } });
+    s.input.betting = 'fixed-limit';
+    act(s, 0, { type: 'call' });
+    act(s, 1, { type: 'call' });
+    act(s, 2, { type: 'check' });
+    return s;
+  }
+
+  it('a round capped three-handed stays capped when a fold leaves two, and the next round is uncapped', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'raise', to: 6 });
+    act(s, 1, { type: 'raise', to: 8 });
+    act(s, 2, { type: 'fold' });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 2, canRaise: false });
+    act(s, 0, { type: 'call' });
+    // Turn, heads-up from the start: no cap.
+    act(s, 1, { type: 'bet', to: 4 });
+    act(s, 0, { type: 'raise', to: 8 });
+    act(s, 1, { type: 'raise', to: 12 });
+    act(s, 0, { type: 'raise', to: 16 });
+    expect(legalActions(s, 1)).toMatchObject({ canRaise: true, minTo: 20 });
+  });
+
+  it('also when the third player leaves out of turn', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'raise', to: 6 });
+    act(s, 1, { type: 'raise', to: 8 });
+    engine.foldOutOfTurn(s, 0);
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 4, canRaise: false });
+  });
+
+  it('a cap the blinds and straddles reach on their own, four-handed, stays on when an early leaver and a fold leave two', () => {
+    // Cap 2: the big blind is the bet and seat 3's straddle the raise, so nobody may raise before the flop.
+    const s = start({
+      stacks: [500, 500, 500, 500],
+      button: 0,
+      betting: 'fixed-limit',
+      stakes: { smallBlind: 1, bigBlind: 2, smallBet: 2, bigBet: 4 },
+      options: { uncappedHeadsUp: true, fixedLimitCap: 2 },
+      straddles: 'utg',
+      straddlers: [3],
+    });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 4, canRaise: false });
+    // The small blind leaves before anyone acts, then the button folds: the big blind and the straddler are left.
+    engine.foldOutOfTurn(s, 1);
+    act(s, 0, { type: 'fold' });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 2, canRaise: false });
+  });
+
+  it('heads-up before the cap is reached, the raising goes on past it', () => {
+    const s = threeOnTheFlop();
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'raise', to: 4 });
+    act(s, 0, { type: 'fold' });
+    act(s, 1, { type: 'raise', to: 6 });
+    act(s, 2, { type: 'raise', to: 8 });
+    expect(legalActions(s, 1)).toMatchObject({ canRaise: true, minTo: 10 });
+  });
+});
+
 describe('the stud bring-in', () => {
   const STUD = { ante: 1, anteType: 'per-player' as const, bringIn: 1, smallBet: 2, bigBet: 4 };
   // Seat 0 shows the 2c and owes the bring-in.
@@ -388,10 +482,174 @@ describe('the stud bring-in', () => {
     expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, callAmount: 1 });
   });
 
-  it('passes to the next seat if the low card folds, which cannot "call" nothing either', () => {
+  it('is forced: the low card may not fold instead of bringing it in', () => {
     const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
-    act(s, 0, { type: 'fold' });
-    expect(() => act(s, 1, { type: 'call' })).toThrow(ActionError);
-    expect(eventsOf(s, 'action').some((e) => e.action === 'call' && e.amount === 0)).toBe(false);
+    expect(legalActions(s, 0)).toMatchObject({ canBringIn: true, canFold: false });
+    expect(() => act(s, 0, { type: 'fold' })).toThrow(ActionError);
+    expect(s.seats.find((x) => x.seat === 0)!.folded).toBe(false);
+    act(s, 0, { type: 'bring-in' });
+    act(s, 1, { type: 'bet', to: 2 });
+    act(s, 2, { type: 'call' });
+    // Once the bring-in is in, the low card may fold to a completion like anyone else.
+    expect(legalActions(s, 0)).toMatchObject({ canFold: true, callAmount: 1 });
+  });
+
+  it('a low card who leaves on their turn has the bring-in posted, then folds, so the next seat faces it', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
+    engine.foldOutOfTurn(s, 0);
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount, e.auto])).toEqual([
+      [0, 'bring-in', 1, true],
+      [0, 'fold', 0, true],
+    ]);
+    expect(s.toAct).toBe(1);
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, canCheck: false, callAmount: 1 });
+  });
+
+  it('a leaving low card whose bring-in puts them all in stays in the hand', () => {
+    const s = start({ game: 'stud', stacks: [2, 100, 100], stakes: STUD, top: deal });
+    engine.foldOutOfTurn(s, 0);
+    expect(s.seats.find((x) => x.seat === 0)).toMatchObject({ allIn: true, folded: false, bet: 1 });
+    expect(s.toAct).toBe(1);
+  });
+
+  // Four players: seat 0 shows the 2c but has only the ante, so seat 1 (Ah) opens third street, then seats 2 (Qh) and 3 (9s).
+  const fourHanded = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '3c', 'Qh', '9s', '2c', 'Ah'];
+
+  it('when the low card is all in from the ante, the next seat may bring in, complete or fold', () => {
+    const s = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    expect(s.seats.find((x) => x.seat === 0)!.allIn).toBe(true);
+    expect(s.toAct).toBe(1);
+    // Seat 1 is not the low card, so nothing forces it to put chips in.
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: true, canCheck: false, canFold: true, canRaise: true, minTo: 2 });
+    act(s, 1, { type: 'fold' });
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount])).toEqual([[1, 'fold', 0]]);
+    expect(s.toAct).toBe(2);
+    expect(legalActions(s, 2)).toMatchObject({ canBringIn: true, canFold: true });
+  });
+
+  it('when the low card is all in from the ante, the next seat who leaves just folds without bringing in', () => {
+    const s = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    engine.foldOutOfTurn(s, 1);
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount])).toEqual([[1, 'fold', 0]]);
+    // Only the ante is gone.
+    expect(stacks(s)[1]).toBe(99);
+    expect(s.toAct).toBe(2);
+  });
+
+  it('when the low card is all in from the ante, an away or timed-out next seat still brings in, as before', () => {
+    const away = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded, away: [1] });
+    expect(eventsOf(away, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+    const slow = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    engine.timeout(slow, 1);
+    expect(eventsOf(slow, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+  });
+
+  it('after a leaving low card brings in, an away player next acts at once', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal, away: [1] });
+    engine.foldOutOfTurn(s, 0);
+    // Seat 1 is away and folds to the bring-in, so seat 2 wins the antes and the bring-in.
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'fold', auto: true });
+    expect(s.phase).toBe('complete');
+    expect(stacks(s)).toEqual({ 0: 98, 1: 99, 2: 103 });
+  });
+});
+
+describe('stud: short all-ins after the bring-in that add up to a completion', () => {
+  // Four players: seat 3 shows the 2c and brings in; seats 0, 1 and 2 act after it.
+  const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '3c', 'Qh', '2c', '9s', 'Ah'];
+  const stakes = { ante: 1, anteType: 'per-player' as const, bringIn: 5, smallBet: 20, bigBet: 40, smallBlind: 10, bigBlind: 20 };
+
+  it('no limit: all-ins to 12 and then 20 reopen the betting for the low card, like one completion to 20', () => {
+    const s = start({ game: 'stud', stacks: [13, 21, 500, 500], stakes, top: deal });
+    s.input.betting = 'no-limit';
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'bet', to: 12 });
+    act(s, 1, { type: 'raise', to: 20 });
+    act(s, 2, { type: 'call' });
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 15, canRaise: true, minTo: 40 });
+  });
+
+  it('fixed limit: all-ins to 6 and then 12 reopen it too, as one all-in completion to 12 would', () => {
+    const s = start({ game: 'stud', stacks: [7, 13, 500, 500], stakes, top: deal });
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'bet', to: 6 });
+    act(s, 1, { type: 'raise', to: 12 });
+    act(s, 2, { type: 'call' });
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 7, canRaise: true, minTo: 32 });
+  });
+
+  it('the same for a player who only called the bring-in', () => {
+    const s = start({ game: 'stud', stacks: [500, 13, 21, 500], stakes, top: deal });
+    s.input.betting = 'no-limit';
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'call' });
+    act(s, 1, { type: 'bet', to: 12 });
+    act(s, 2, { type: 'raise', to: 20 });
+    act(s, 3, { type: 'call' });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 15, canRaise: true, minTo: 40 });
+  });
+});
+
+describe('a stud bring-in as big as the small bet', () => {
+  // Seat 0 shows the 2c and owes the bring-in; seats 1 and 2 act after it.
+  const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '2c', 'Ah', 'Kc', '3d', '5s'];
+
+  it('is the opening bet: the next seat calls it or raises a full bet', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    // Nothing is left to complete, so the low card just brings in.
+    expect(legalActions(s, 0)).toMatchObject({ canBringIn: true, canRaise: false });
+    act(s, 0, { type: 'bring-in' });
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, callAmount: 2, canRaise: true, raiseKind: 'raise', minTo: 4, maxTo: 4 });
+    act(s, 1, { type: 'raise', to: 4 });
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'raise', to: 4 });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 4, minTo: 6, maxTo: 6 });
+  });
+
+  it('counts toward the cap like a big blind: bring-in and three raises', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    act(s, 1, { type: 'raise', to: 4 });
+    act(s, 2, { type: 'raise', to: 6 });
+    expect(legalActions(s, 0)!.canRaise).toBe(true);
+    act(s, 0, { type: 'raise', to: 8 });
+    // The bots read raisesThisRound as the raises players chose to make, so the forced bring-in is not one of them.
+    expect(s.raisesThisRound).toBe(3);
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 4, canRaise: false });
+  });
+
+  it('whole-chip 1/2 stud, where the bring-in is filled in as 1: third street can still be raised', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 0, anteType: 'none', bringIn: 1, smallBet: 1, bigBet: 2 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 1, canRaise: true, minTo: 2, maxTo: 2 });
+    act(s, 1, { type: 'call' });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 1, canRaise: true, minTo: 2, maxTo: 2 });
+  });
+
+  it('a short all-in bring-in is completed to the small bet, and the round goes on from there', () => {
+    const s = start({ game: 'stud', stacks: [2, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    expect(s.currentBet).toBe(1);
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 1, canRaise: true, raiseKind: 'bet', minTo: 2, maxTo: 2 });
+    act(s, 1, { type: 'bet', to: 2 });
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'complete', to: 2 });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 2, canRaise: true, raiseKind: 'raise', minTo: 4, maxTo: 4 });
+  });
+
+  it('in no-limit and pot-limit the low card may still open for more than the bring-in', () => {
+    const nl = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    nl.input.betting = 'no-limit';
+    expect(legalActions(nl, 0)).toMatchObject({ canBringIn: true, canRaise: true, raiseKind: 'bet', minTo: 3, maxTo: 99 });
+    act(nl, 0, { type: 'bet', to: 10 });
+    expect(legalActions(nl, 1)).toMatchObject({ canBringIn: false, callAmount: 10, canRaise: true, minTo: 20 });
+
+    // A bring-in above the small bet: still no bet below it, but any amount over it.
+    const big = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 5, smallBet: 2, bigBet: 4 }, top: deal });
+    big.input.betting = 'no-limit';
+    expect(legalActions(big, 0)).toMatchObject({ canBringIn: true, canRaise: true, minTo: 6, maxTo: 99 });
+
+    // Pot limit, antes 3: the bet over the bring-in stays legal even when the pot is smaller.
+    const pl = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    pl.input.betting = 'pot-limit';
+    expect(legalActions(pl, 0)).toMatchObject({ canBringIn: true, canRaise: true, minTo: 3, maxTo: 3 });
   });
 });
