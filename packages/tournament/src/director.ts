@@ -1251,9 +1251,10 @@ function handResult(c: Ctx, r: HandResult) {
     e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
     payBounty(c, e);
   }
-  for (const reason of ['quit', 'removed'] as const) eliminate(c, leavers.filter((e) => e.leaveRequested === reason), reason, hfhRound);
 
-  const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0);
+  // The others who lost every chip. Their bounties are paid while the leavers are still in, so a leaver who
+  // busted them collects it before going.
+  const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0 && !e.leaveRequested);
   const out: Entry[] = [];
   for (const e of busted) {
     e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
@@ -1264,6 +1265,7 @@ function handResult(c: Ctx, r: HandResult) {
       emit(c, { type: 'rebuyOffered', entryId: e.id, playerId: e.playerId, expiresAt: e.rebuyOfferExpiresAt, chips: s.settings.rebuy.chips });
     } else out.push(e);
   }
+  for (const reason of ['quit', 'removed'] as const) eliminate(c, leavers.filter((e) => e.leaveRequested === reason), reason, hfhRound);
   eliminate(c, out, 'busted', hfhRound);
   advanceHandForHand(s);
 }
