@@ -473,8 +473,10 @@ export function nextWakeAt(s: TournamentState): number | null {
   }
   if (started(s)) {
     for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined && !rebuyAsked(s, e)) times.push(e.rebuyOfferExpiresAt);
-    // The last player left wins once nobody has re-entered in time.
-    const reEntryWait = aliveEntries(s).length === 1 ? reEntryWaitEnds(s) : null;
+    // The last player left wins once nobody has re-entered in time. While something else holds them too (a rebuy
+    // offer, a registration waiting for the host), that time passing changes nothing, so it is not a time to wake for.
+    const alive = aliveEntries(s);
+    const reEntryWait = alive.length === 1 && alive[0].status !== 'rebuy-offer' && !lateRegistrationHolds(s) ? reEntryWaitEnds(s) : null;
     if (reEntryWait !== null && Number.isFinite(reEntryWait)) times.push(reEntryWait);
     if (s.status === 'running' && s.clock.runningSince !== null) {
       const rows = s.settings.structure;
@@ -851,15 +853,23 @@ function checkFinish(c: Ctx) {
   if (!started(s)) return;
   const alive = aliveEntries(s);
   if (alive.length > 1 || alive.some((e) => e.status === 'rebuy-offer')) return;
-  // A lone survivor waits while a busted player can still re-enter (see reEntryWaitEnds). Once someone
-  // has won every chip in play, open late registration no longer holds it, unless a registration is
-  // waiting for the host; before anyone has busted (the others quit or were removed) it waits for late entries.
+  // A lone survivor waits while a busted player can still re-enter (see reEntryWaitEnds), and while
+  // late registration holds it.
   const waitEnds = reEntryWaitEnds(s);
   if (alive.length === 1 && waitEnds !== null && c.now < waitEnds) return;
+  if (alive.length === 1 && lateRegistrationHolds(s)) return;
+  finish(c);
+}
+
+/**
+ * Whether open late registration keeps a lone survivor from winning. Once someone has won every chip in play it no
+ * longer does, unless a registration is waiting for the host; before anyone has busted (the others quit or were
+ * removed) it waits for late entries.
+ */
+function lateRegistrationHolds(s: TournamentState): boolean {
   const someoneBusted = s.entries.some((e) => e.status === 'busted');
   const registrationWaiting = s.requests.some((r) => r.kind === 'register');
-  if (alive.length === 1 && registrationOpen(s) && (!someoneBusted || registrationWaiting)) return;
-  finish(c);
+  return registrationOpen(s) && (!someoneBusted || registrationWaiting);
 }
 
 function finish(c: Ctx) {

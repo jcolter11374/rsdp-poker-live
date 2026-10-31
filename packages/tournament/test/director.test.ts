@@ -436,6 +436,67 @@ describe('busts, rebuys and re-entry', () => {
     ]);
   });
 
+  it('with re-entry open to the end, a late registration still waiting for the host after that minute does not wake the server again and again', () => {
+    const sim = new Sim({
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+      lateRegistration: { enabled: true, throughLevel: 4 },
+      registrationApproval: true,
+    });
+    sim.register(3);
+    for (const r of sim.of('requestPending')) sim.do({ type: 'approve', by: 'host', requestId: r.request.id });
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.do({ type: 'register', playerId: 'late', displayName: 'Late' });
+    sim.hand(sim.state.tables[0].id, 'p0', ['p1', 'p2']);
+    sim.at(T0 + 2 * MIN);
+    // The minute is up, but p0 still waits for the host's answer: the next wake-up is the end of level 1, not a time already past.
+    expect(sim.state.status).toBe('running');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+    sim.do({ type: 'reject', by: 'host', requestId: sim.of('requestPending').at(-1)!.request.id });
+    expect(sim.state.status).toBe('finished');
+  });
+
+  it('with re-entry open to the end, a last player left on a rebuy offer is woken when the offer runs out, not when the re-entry minute does', () => {
+    const sim = new Sim({
+      allowQuit: true,
+      rebuy: { max: 2, chips: 1000, approval: false, offerSeconds: 120 },
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+    });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p2']);
+    sim.do({ type: 'declineRebuy', playerId: 'p2' });
+    // p0 leaves during a hand that busts p1, so p1, on a rebuy offer, is the only one left.
+    sim.do({ type: 'handStarted', tableId: t, handNumber: 2 });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({ type: 'handResult', result: { tableId: t, handNumber: 2, startStacks: { p0: 2000, p1: 1000 }, endStacks: { p0: 3000, p1: 0 }, knockedOutBy: { p1: ['p0'] } } });
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    const expiresAt = sim.entry('p1').rebuyOfferExpiresAt!;
+    expect(nextWakeAt(sim.state)).toBe(expiresAt);
+    sim.at(expiresAt);
+    expect(sim.state.status).toBe('finished');
+  });
+
+  it('with re-entry open to the end, a last player left waiting on a rebuy the host has not answered is not woken again and again once the minute is up', () => {
+    const sim = new Sim({
+      allowQuit: true,
+      rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 },
+      reEntry: { enabled: true, throughLevel: null, max: null, approval: false },
+    });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p2']);
+    sim.do({ type: 'declineRebuy', playerId: 'p2' });
+    sim.do({ type: 'handStarted', tableId: t, handNumber: 2 });
+    sim.do({ type: 'quit', playerId: 'p0' });
+    sim.do({ type: 'handResult', result: { tableId: t, handNumber: 2, startStacks: { p0: 2000, p1: 1000 }, endStacks: { p0: 3000, p1: 0 }, knockedOutBy: { p1: ['p0'] } } });
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    sim.at(T0 + 2 * MIN);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 10 * MIN);
+  });
+
   it('late registration is open until it closes', () => {
     const sim = new Sim({ lateRegistration: { enabled: true, throughLevel: 1 } });
     sim.register(3);
