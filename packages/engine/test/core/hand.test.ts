@@ -373,3 +373,25 @@ describe('fixed-limit cap counts the bets that are really made', () => {
     expect(engine.legalActions(s, 0)).toMatchObject({ callAmount: 33, canRaise: true, minTo: 43, maxTo: 43 });
   });
 });
+
+describe('the stud bring-in', () => {
+  const STUD = { ante: 1, anteType: 'per-player' as const, bringIn: 1, smallBet: 2, bigBet: 4 };
+  // Seat 0 shows the 2c and owes the bring-in.
+  const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '2c', 'Ah', 'Kc', '3d', '5s'];
+
+  it('cannot be skipped with a "call" of nothing', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
+    expect(legalActions(s, 0)).toMatchObject({ canBringIn: true, canCheck: false, callAmount: 0 });
+    expect(() => act(s, 0, { type: 'call' })).toThrow(ActionError);
+    act(s, 0, { type: 'bring-in' });
+    expect(s.seats.find((x) => x.seat === 0)!.bet).toBe(1);
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, callAmount: 1 });
+  });
+
+  it('passes to the next seat if the low card folds, which cannot "call" nothing either', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
+    act(s, 0, { type: 'fold' });
+    expect(() => act(s, 1, { type: 'call' })).toThrow(ActionError);
+    expect(eventsOf(s, 'action').some((e) => e.action === 'call' && e.amount === 0)).toBe(false);
+  });
+});

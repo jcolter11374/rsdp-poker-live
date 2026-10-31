@@ -387,6 +387,8 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
       break;
     case 'call':
       if (legal.canCheck) throw new ActionError('nothing to call');
+      // The stud bring-in is owed and nothing is bet yet: a "call" of nothing would skip it.
+      if (legal.canBringIn) throw new ActionError('bring in or complete');
       commit(state, s, legal.callAmount);
       s.lastAction = s.allIn ? 'All in' : 'Call';
       kind = 'call';

@@ -256,7 +256,8 @@ export function ActionBar({
     if (pre.kind === 'checkFold') move = legal.canCheck ? { type: 'check' } : { type: 'fold' };
     else if (pre.kind === 'fold') move = { type: 'fold' };
     else if (pre.kind === 'check' && legal.canCheck) move = { type: 'check' };
-    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : { type: 'call' };
+    // Owing the stud bring-in, staying in means bringing it in.
+    else if (pre.kind === 'callAny') move = legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' };
     else if (pre.kind === 'call' && legal.canCheck) move = { type: 'check' };
     else if (pre.kind === 'call' && legal.callAmount === pre.amount) move = { type: 'call' };
     // A "check" that now faces a bet, or a "call 20" that faces a raise, is dropped so you can
