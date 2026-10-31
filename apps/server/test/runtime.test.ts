@@ -821,6 +821,20 @@ describe('hand-history downloads (no live HUDs)', () => {
   });
 });
 
+describe('hand-history downloads at a practice table', () => {
+  it('stay open while you have only played bots there, and close once it is a real game', () => {
+    const { rt } = table();
+    rt.requestSeat('host', { seat: 0, name: 'John', stack: 200 });
+    rt.addBot('host', { ownerName: 'John' });
+    rt.start('host');
+    expect(rt.state.hand?.phase).toBe('betting');
+    expect(rt.recordsLocked('host')).toBe(false);
+    // Two people have been dealt into a hand here (set at the deal): a HUD would be on a person now.
+    rt.state.realGame = true;
+    expect(rt.recordsLocked('host')).toBe(true);
+  });
+});
+
 describe('hand-history downloads at tournament tables', () => {
   it('stay closed to a player moved to another table until they are out or the event ends', () => {
     const clock = new FakeClock();

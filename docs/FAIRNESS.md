@@ -298,7 +298,9 @@ going over your own hands afterwards is welcome. So:
   downloads are switched off:** the tracker file (OHH), the hands as text or
   JSON, and the full log. They come back as soon as you leave your seat or
   the host stops the game (in a tournament: once you're out, or the event
-  ends). The money ledger (CSV) is always available.
+  ends). The money ledger (CSV) is always available. A practice table where
+  you've only played against bots keeps them open, since a HUD on bots costs
+  nobody anything.
 - Someone watching who hasn't played at the table doesn't get the download
   buttons either until the game stops. The host and co-hosts do while
   they're not seated.
