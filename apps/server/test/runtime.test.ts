@@ -798,6 +798,8 @@ describe('table chat text', () => {
     expect(Array.from(long)).toHaveLength(300);
     expect(long.endsWith('🃏')).toBe(true);
     expect(/\p{Cs}/u.test(long)).toBe(false);
+  });
+});
 
 describe('hand-history downloads (no live HUDs)', () => {
   it('are closed to seated players and onlookers who never played while the game runs, and open when they leave or it stops', () => {
