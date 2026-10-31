@@ -5,7 +5,7 @@
 // secret (X-Guest-Token) and, once signed in, its session token (X-Session-Token).
 
 import express from 'express';
-import { standings, type TournamentState } from '@rsdp/tournament';
+import { fromLocal, isValidTimeZone, standings, toLocal, type TournamentState } from '@rsdp/tournament';
 import { leaderboard, practiceResetAt, practiceSessions, practiceTableUse, profitSessions, resetPracticeGraph, setTableHidden, tableHistory, tournamentRows, type Db, type LeaderRow } from './db';
 import { StorageError } from './db/errors';
 import {
@@ -287,21 +287,28 @@ export function accountRoutes(
     }),
   );
 
-  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period.
+  // The group's leaderboards: this month, this year or all time. Worked out at most once a minute per period start.
   const boards = new Map<string, { at: number; rows: Promise<LeaderRow[]> }>();
   app.get(
     '/api/leaderboard',
     route(async (req, res, db) => {
       if (!profileLoads(clientAddress(req))) return void tooMany(res);
       const period = ['month', 'year', 'all'].includes(String(req.query.period)) ? String(req.query.period) : 'month';
+      // The month and year start at midnight where the browser is (it sends its time zone), so a game on the last
+      // evening of a month counts in that month. A missing or unknown time zone counts in UTC.
+      const tz = typeof req.query.tz === 'string' && req.query.tz.length <= 64 && isValidTimeZone(req.query.tz) ? req.query.tz : 'UTC';
       const t = now();
-      const d = new Date(t);
-      const since = period === 'month' ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) : period === 'year' ? new Date(Date.UTC(d.getUTCFullYear(), 0, 1)) : undefined;
-      let cached = boards.get(period);
+      const here = toLocal(t, tz);
+      const since = period === 'all' ? undefined : new Date(fromLocal({ year: here.year, month: period === 'month' ? here.month : 1, day: 1, hour: 0, minute: 0 }, tz));
+      // Time zones whose period starts at the same moment share one answer.
+      const key = `${period} ${since?.getTime() ?? ''}`;
+      let cached = boards.get(key);
       if (!cached || t - cached.at >= LEADERBOARD_CACHE_MS) {
+        // Old answers (last month's, other time zones') go once they are out of date.
+        for (const [k, b] of boards) if (t - b.at >= LEADERBOARD_CACHE_MS) boards.delete(k);
         cached = { at: t, rows: leaderboard(db, since) };
-        boards.set(period, cached);
-        cached.rows.catch(() => boards.get(period) === cached && boards.delete(period));
+        boards.set(key, cached);
+        cached.rows.catch(() => boards.get(key) === cached && boards.delete(key));
       }
       res.json({ period, since: since?.toISOString() ?? null, rows: await cached.rows });
     }),
