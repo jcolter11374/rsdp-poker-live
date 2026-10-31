@@ -607,3 +607,28 @@ describe('rebuys the host approves', () => {
     expect(sim.entry('p1').status).toBe('busted');
   });
 });
+
+describe('hand-for-hand at two-seat tables', () => {
+  it('a table left with one player does not hold up the round, so play goes on', () => {
+    // 5 players at heads-up tables; the standard payouts pay 2 places at 5 entries.
+    const sim = new Sim({ seatsPerTable: 2, payouts: { structure: payoutPreset('standard', 600), money: { buyIn: 100 } } });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(5);
+    sim.do({ type: 'startNow', by: 'host' });
+    const a = sim.state.tables.find((t) => players(t.id).length === 2)!;
+    sim.hand(a.id, players(a.id)[0], [players(a.id)[1]]);
+    const b = sim.state.tables[0];
+    sim.hand(b.id, players(b.id)[0], [players(b.id)[1]]);
+    // The bubble: 3 left, 2 paid, at tables of 2 and 1.
+    expect(sim.state.handForHand.active).toBe(true);
+    expect(sim.state.tables.map((t) => players(t.id).length).sort()).toEqual([1, 2]);
+    const two = sim.state.tables.find((t) => players(t.id).length === 2)!;
+    for (let round = 0; round < 3; round++) {
+      expect(tableGate(sim.state, two.id, sim.now)).toBe('deal');
+      sim.hand(two.id, players(two.id)[0], []);
+    }
+    sim.hand(two.id, players(two.id)[0], [players(two.id)[1]]);
+    expect(sim.state.handForHand.active).toBe(false);
+  });
+});
