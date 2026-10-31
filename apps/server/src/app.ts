@@ -152,6 +152,9 @@ const SAVE_DEBOUNCE_MS = 500;
 const IDLE_UNLOAD_MS = 45 * 60_000;
 /** How often the server looks for tables to put away. */
 const IDLE_SWEEP_MS = 5 * 60_000;
+/** Table chat lines one player may send per window (across all their tabs): a burst could wipe the table's chat. */
+const CHAT_BURST = 8;
+const CHAT_WINDOW_MS = 10_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
@@ -257,6 +260,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatars = new Map<PlayerId, string | null>();
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
+  const chatTimes = new Map<PlayerId, number[]>();
   const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
@@ -1276,7 +1280,20 @@ export function createApp(deps: AppDeps = {}) {
         log,
       ),
     );
-    on('chat:send', (input, ack) => guarded(ack, () => current().chat(me, String(input?.text ?? '')), log));
+    on('chat:send', (input, ack) =>
+      guarded(
+        ack,
+        () => {
+          const rt = current();
+          const now = clock.now();
+          const recent = (chatTimes.get(me) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
+          if (recent.length >= CHAT_BURST) throw new ActionError('slow down a little');
+          rt.chat(me, String(input?.text ?? ''));
+          chatTimes.set(me, [...recent, now]);
+        },
+        log,
+      ),
+    );
     on('table:gesture', (input, ack) =>
       guarded(
         ack,
@@ -1446,6 +1463,7 @@ export function createApp(deps: AppDeps = {}) {
       if (!playerSockets.get(me)?.size) {
         playerSockets.delete(me);
         gestureTimes.delete(me);
+        chatTimes.delete(me);
         tips.forget(me);
         avatarChanges.delete(me);
         lastLobbyChat.delete(me);
