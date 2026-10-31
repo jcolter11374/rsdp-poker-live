@@ -232,6 +232,58 @@ describe('clock, breaks and pause', () => {
     sim.do({ type: 'editStructure', by: 'host', structure: later });
     expect(sim.of('structureEdited')).toHaveLength(1);
   });
+
+  it('levels added while the last level runs past its length start from the edit, one at a time', () => {
+    const short = levels.slice(0, 2);
+    const sim = new Sim({ structure: short });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.at(T0 + 10 * MIN);
+    // Level 2 is the last: it runs on long past its 10 minutes.
+    sim.at(T0 + 120 * MIN);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 2, bb: 200 });
+    const edit = sim.now;
+    sim.do({
+      type: 'editStructure',
+      by: 'host',
+      structure: [
+        ...short,
+        { kind: 'level', sb: 200, bb: 400, ante: 0, anteType: 'none', minutes: 10 },
+        { kind: 'break', minutes: 5, addOn: false },
+        { kind: 'level', sb: 300, bb: 600, ante: 0, anteType: 'none', minutes: 10 },
+        { kind: 'level', sb: 500, bb: 1000, ante: 0, anteType: 'none', minutes: 10 },
+      ],
+    });
+    // The next level starts now, and the ones after it follow at their own lengths.
+    expect(nextWakeAt(sim.state)).toBe(edit);
+    const before = sim.events.length;
+    sim.at(edit + 1000);
+    expect(sim.events.slice(before).map((e) => e.type)).toEqual(['levelUp']);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 3, bb: 400 });
+    sim.at(edit + 10 * MIN);
+    expect(sim.of('breakStarted').at(-1)).toMatchObject({ minutes: 5, endsAt: edit + 15 * MIN });
+    expect(tableGate(sim.state, t, sim.now)).toBe('hold');
+    sim.at(edit + 15 * MIN);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 4, bb: 600 });
+    expect(tableGate(sim.state, t, sim.now)).toBe('deal');
+  });
+
+  it('a level added during a pause, with the last level past its length, starts when play resumes', () => {
+    const short = levels.slice(0, 2);
+    const sim = new Sim({ structure: short });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.at(T0 + 10 * MIN);
+    sim.now = T0 + 60 * MIN;
+    sim.do({ type: 'pause', by: 'host' });
+    sim.do({ type: 'editStructure', by: 'host', structure: [...short, { kind: 'level', sb: 200, bb: 400, ante: 0, anteType: 'none', minutes: 10 }] });
+    sim.now = T0 + 70 * MIN;
+    sim.do({ type: 'resume', by: 'host' });
+    expect(nextWakeAt(sim.state)).toBe(sim.now);
+    sim.at(sim.now);
+    expect(levelFor(sim.state, '')).toMatchObject({ levelNumber: 3, bb: 400 });
+  });
 });
 
 describe('busts, rebuys and re-entry', () => {

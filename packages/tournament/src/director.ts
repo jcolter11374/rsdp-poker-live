@@ -1147,6 +1147,11 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           const keep = s.clock.rowIndex + 1;
           if (JSON.stringify(cmd.structure.slice(0, keep)) !== JSON.stringify(s.settings.structure.slice(0, keep)))
             fail('Only levels after the current one can change');
+          // The last level runs on past its length. Rows added after it would count that extra time as already
+          // played and be skipped, so the current level ends now and the next row starts from the edit.
+          if (clockAt(cmd.structure, elapsed(s, now)).rowIndex > s.clock.rowIndex) {
+            s.clock = { ...s.clock, elapsedMs: rowStartMs(cmd.structure, keep), runningSince: s.clock.runningSince === null ? null : now };
+          }
         }
         s.settings.structure = structuredClone(cmd.structure);
         emit(c, { type: 'structureEdited' });
