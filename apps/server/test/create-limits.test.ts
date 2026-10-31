@@ -195,6 +195,11 @@ describe('limits on making tables and tournaments', () => {
     const open = await hosted();
     expect(open.filter((t) => t.status === 'registering')).toHaveLength(1);
     expect(open.filter((t) => t.status !== 'registering')).toHaveLength(10);
+    // The server knows which event each was opened after, but browsers aren't told: it would let anyone walk back through the chain.
+    const next = open.find((t) => t.status === 'registering')!.id;
+    expect((await before.app.tournaments.peek(next))?.spawnedFrom).toBeTruthy();
+    expect(before.app.tournaments.view(next, 'someone-else')!.state).not.toHaveProperty('spawnedFrom');
+    expect(before.app.tournaments.view(next)!.state).not.toHaveProperty('spawnedFrom');
     // They made one, so they have room for more of their own.
     const plain = { ...defaultSettings(), name: 'Sunday main' };
     await host.call('tournament:create', { settings: plain });

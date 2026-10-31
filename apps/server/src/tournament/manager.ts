@@ -260,11 +260,15 @@ export class TournamentManager {
     return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;
   }
 
-  /** What a browser is sent. The seating seed stays on the server, and only the host sees invite codes (no viewer: everything, for the server's own use). */
+  /**
+   * What a browser is sent. The seating seed and the event this one was opened after (which would let anyone walk
+   * back through a series) stay on the server, and only the host sees invite codes (no viewer: everything else, for
+   * the server's own use).
+   */
   view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);
     if (!live) return null;
-    const state = viewer === undefined ? live.state : viewFor(live.state, viewer);
+    const { spawnedFrom: _hidden, ...state } = viewer === undefined ? live.state : viewFor(live.state, viewer);
     return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
   }
 
