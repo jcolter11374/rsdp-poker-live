@@ -209,7 +209,7 @@ export function SharedHandPage({ id }: { id: string }) {
         start={0}
         tableName={data.tableName}
         seatCount={Math.max(data.seatCount, ...data.hand.seats.map((s) => s.seat + 1))}
-        myId={sharedHandViewer(data)}
+        {...sharedHandViewer(data)}
         felt={(data.felt ?? undefined) as TableView['settings']['table']['felt']}
         fmt={fmt}
         onClose={() => (location.href = '/')}

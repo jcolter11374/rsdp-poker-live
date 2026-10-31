@@ -176,22 +176,35 @@ describe('shared hand links', () => {
     ...(hideMine ? {} : { sharerSeat: 0 }),
     hand: record(s, hideMine ? null : 0),
   });
-  /** Seat 0's cards at the end of the replay, as the shared page draws them. */
-  const onScreen = (shared: SharedHandView) => {
-    const viewer = sharedHandViewer(shared);
-    const frames = replayFrames(shared.hand, viewer, fmt);
-    return frameView(shared.tableName, shared.seatCount, shared.hand, frames.at(-1)!, viewer).seats[0]!.cards.map((c) => c.card);
-  };
-
-  it('shows the sharer’s cards with Show my cards, even when nobody turned them over', () => {
-    // Heads up, seat 0 on the button raises with aces and seat 1 folds: no showdown.
+  /** Heads up, seat 0 on the button raises with aces and seat 1 folds: no showdown. */
+  const aces = () => {
     const s = start({ stacks: [100, 100], button: 0, top: ['Kh', 'As', 'Ks', 'Ad'] });
     engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.minTo });
     engine.act(s, s.toAct!, { type: 'fold' });
     expect(s.phase).toBe('complete');
-    expect(onScreen(link(s, false))).toEqual(['As', 'Ad']);
-    expect(replayFrames(link(s, false).hand, sharedHandViewer(link(s, false)), fmt).some((f) => f.caption.startsWith('You are dealt'))).toBe(true);
+    return s;
+  };
+  /** The shared page's replay of a link, as whoever opens it sees it: seat 0's cards at the end, the captions, and who "me" is. */
+  const replay = (shared: SharedHandView) => {
+    const { myId, sharerSeat } = sharedHandViewer(shared);
+    const frames = replayFrames(shared.hand, myId, fmt, sharerSeat);
+    const view = frameView(shared.tableName, shared.seatCount, shared.hand, frames.at(-1)!, myId, undefined, sharerSeat);
+    return { myId, captions: frames.map((f) => f.caption), cards: view.seats[0]!.cards.map((c) => c.card), me: view.me };
+  };
+
+  it('shows the sharer’s cards with Show my cards, even when nobody turned them over', () => {
+    expect(replay(link(aces(), false)).cards).toEqual(['As', 'Ad']);
     // A link made with the cards hidden still shows them face down.
-    expect(onScreen(link(s, true))).toEqual(['??', '??']);
+    expect(replay(link(aces(), true)).cards).toEqual(['??', '??']);
+  });
+
+  it('never calls whoever opens a link “you”: the hand and its result are the sharer’s', () => {
+    const shown = replay(link(aces(), false));
+    // No viewer, so the header shows nobody's result as "you", and the deal names the sharer.
+    expect(shown.myId).toBeNull();
+    expect(shown.captions.filter((c) => c.includes('You are dealt'))).toEqual([]);
+    expect(shown.captions.some((c) => c.includes('p0 is dealt [As] [Ad]'))).toBe(true);
+    // Still seen from the sharer's chair.
+    expect(shown.me).toEqual({ playerId: '', seat: 0 });
   });
 });

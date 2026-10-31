@@ -92,9 +92,10 @@ const cardsText = (cards: string[]) => cards.map((c) => `[${c}]`).join(' ');
 
 /**
  * Turns hand events into log lines, naming board cards Flop, Turn and River
- * by how many are out. Hidden cards are left out.
+ * by how many are out. Hidden cards are left out. My deal (`mySeat`) reads
+ * "You are dealt"; a shared link's sharer's (`sharerSeat`) gives their name.
  */
-export function eventLines(events: HandEvent[], name: (seat: number) => string, fmt: Fmt, mySeat: number | null = null): string[] {
+export function eventLines(events: HandEvent[], name: (seat: number) => string, fmt: Fmt, mySeat: number | null = null, sharerSeat: number | null = null): string[] {
   const lines: string[] = [];
   let gameFamily = '';
   let split = false;
@@ -124,6 +125,8 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         const seen = e.cards.filter((c) => c.card !== '??');
         if (!seen.length) break;
         if (e.seat === mySeat) lines.push(`You are dealt ${cardsText(e.cards.map((c) => c.card).filter((c) => c !== '??'))}`);
+        // A shared link's sharer, as someone else watching it sees them.
+        else if (e.seat === sharerSeat) lines.push(`${name(e.seat)} is dealt ${cardsText(seen.map((c) => c.card))}`);
         else if (gameFamily === 'stud') lines.push(`${name(e.seat)} gets ${cardsText(seen.map((c) => c.card))}`);
         break;
       }

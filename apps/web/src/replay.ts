@@ -53,22 +53,25 @@ function clone(f: Frame): Frame {
 }
 
 /**
- * Who a shared hand link plays back as: the sharer, when they kept their own
- * cards in it, so those show face up from their chair. Otherwise nobody, and
- * only shown cards are face up.
+ * How a shared hand link plays back. Whoever opens it is nobody at that table,
+ * so nothing calls them "you" or shows the sharer's result as theirs. When the
+ * sharer kept their own cards in the link, those are face up from the deal,
+ * seen from the sharer's chair; otherwise only shown cards are face up.
  */
-export function sharedHandViewer(shared: Pick<SharedHandView, 'hand' | 'sharerSeat'>): string | null {
-  if (shared.sharerSeat === undefined) return null;
-  return shared.hand.seats.find((s) => s.seat === shared.sharerSeat)?.playerId ?? null;
+export function sharedHandViewer(shared: Pick<SharedHandView, 'hand' | 'sharerSeat'>): { myId: null; sharerSeat: number | null } {
+  return { myId: null, sharerSeat: shared.sharerSeat ?? null };
 }
 
 /**
  * Plays a hand's events into frames. Other players' cards stay face down until
- * they are shown, as at the table; your own are face up from the deal.
+ * they are shown, as at the table; your own are face up from the deal, and so
+ * are a shared link's sharer's (`sharerSeat`) when someone else watches it.
  */
-export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt): Frame[] {
+export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt, sharerSeat: number | null = null): Frame[] {
   const names = new Map(hand.seats.map((s) => [s.seat, s.name]));
   const mySeat = hand.seats.find((s) => s.playerId === myId)?.seat ?? null;
+  // The seat whose cards are face up from the deal.
+  const ownSeat = mySeat ?? sharerSeat;
   let f: Frame = {
     seats: new Map(
       hand.seats.map((s) => [s.seat, { name: s.name, playerId: s.playerId, stack: s.stack, bet: 0, folded: false, allIn: false, cards: [], action: null }]),
@@ -83,7 +86,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     upTo: 0,
     why: [],
   };
-  const lines = (upTo: number) => eventLines(hand.events.slice(0, upTo), (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat);
+  const lines = (upTo: number) => eventLines(hand.events.slice(0, upTo), (seat) => names.get(seat) ?? `Seat ${seat + 1}`, fmt, mySeat, sharerSeat);
   const gather = () => {
     for (const s of f.seats.values()) {
       f.pot += s.bet;
@@ -97,7 +100,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     // Deals to every seat show as one step.
     const merge = e.t === 'deal' && prev?.t === 'deal' && frames.length > 0;
     f = merge ? f : clone(f);
-    apply(f, e, gather, mySeat);
+    apply(f, e, gather, ownSeat);
     f.upTo = i + 1;
     const all = lines(i + 1);
     const fresh = all.slice(lineCount).map((l) => l.replace(/^--- /, ''));
@@ -124,7 +127,7 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
   return shown;
 }
 
-function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null) {
+function apply(f: Frame, e: HandEvent, gather: () => void, ownSeat: number | null) {
   const seat = 'seat' in e && typeof e.seat === 'number' ? f.seats.get(e.seat) : undefined;
   switch (e.t) {
     case 'hand-start':
@@ -140,7 +143,7 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
       break;
     case 'deal':
       if (!seat) break;
-      for (const c of e.cards) seat.cards.push({ card: c.card, up: c.up, shown: c.up || e.seat === mySeat });
+      for (const c of e.cards) seat.cards.push({ card: c.card, up: c.up, shown: c.up || e.seat === ownSeat });
       break;
     case 'street':
       gather();
@@ -169,7 +172,7 @@ function apply(f: Frame, e: HandEvent, gather: () => void, mySeat: number | null
       if (!seat) break;
       if (e.positions) for (const p of e.positions) seat.cards.splice(p, 1);
       else discardUnknown(seat, e.discarded);
-      for (const c of e.cards) seat.cards.push({ card: c, up: false, shown: e.seat === mySeat });
+      for (const c of e.cards) seat.cards.push({ card: c, up: false, shown: e.seat === ownSeat });
       seat.action = e.discarded ? `Draw ${e.discarded}` : 'Stand pat';
       break;
     case 'uncalled':
@@ -296,9 +299,12 @@ export function frameView(
   frame: Frame,
   myId: string | null,
   felt?: TableView['settings']['table']['felt'],
+  /** A shared link's sharer, when someone else watches it: the table is seen from their chair. */
+  sharerSeat: number | null = null,
 ): TableView {
   const n = Math.max(seatCount, ...hand.seats.map((s) => s.seat + 1));
-  const mySeat = hand.seats.find((s) => s.playerId === myId)?.seat ?? null;
+  // The chair the table is seen from: mine, or a shared link's sharer's.
+  const chair = hand.seats.find((s) => s.playerId === myId)?.seat ?? sharerSeat;
   const start = hand.events.find((e): e is Extract<HandEvent, { t: 'hand-start' }> => e.t === 'hand-start');
   const gameId = start?.gameId ?? 'nlhe';
   let family: HandView['family'] = 'flop';
@@ -370,7 +376,7 @@ export function frameView(
     rabbit: { available: false, cards: null },
     nit: null,
     rakeTotal: null,
-    me: { playerId: myId ?? '', seat: mySeat },
+    me: { playerId: myId ?? '', seat: chair },
     hostId: '',
     seats,
     started: true,
