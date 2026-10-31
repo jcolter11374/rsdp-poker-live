@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "id": "2026-10-31-b",
+      "date": "2026-10-31",
+      "fixes": [
+        "Tournaments have their own table rules (decision clock, time bank, rabbit hunting). New ones use the RSDP rules: 10-second clock, 20-second time bank refilled every 30 hands, no rabbit hunting. Before, tournament tables always had a 30-second clock, a 30-second time bank refilled every 10 hands, and rabbit hunting. Straddles stay off in tournaments, as before."
+      ]
+    },
+    {
+      "id": "2026-10-31",
+      "date": "2026-10-31",
+      "fixes": [
+        "New tournaments start on the group's RSDP structure (63,000 chips, 28 eight-minute levels, no antes, late registration through level 5), also offered as the RSDP starter."
+      ]
+    },
+    {
       "id": "2026-10-30-c",
       "date": "2026-10-30",
       "fixes": [

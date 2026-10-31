@@ -59,6 +59,21 @@ describe('tournaments on the server', () => {
     expect(env.moves.filter((m) => m.from !== '').length).toBeGreaterThan(0);
   }, 60_000);
 
+  it("gives every table the event's clock, time bank and rabbit hunt rules", async () => {
+    const env = setup();
+    const tableRules = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
+    const id = await env.manager.create('host', defaultSettings({ name: 'RSDP', start: { kind: 'manual' }, startingStack: 1000, tableRules }));
+    for (const p of players(3)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await env.manager.command(id, 'host', 'Host', { type: 'startNow', by: 'host' });
+    env.clock.advance(MIN);
+    const rt = [...env.tables.values()][0]!;
+    expect(rt.state.settings.timing).toMatchObject({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30 });
+    expect(rt.state.settings.play).toMatchObject({ rabbitHunt: false });
+    expect(rt.state.seats.find((x) => x)?.timeBank).toBe(20);
+    // Once tables exist the rules are locked, so every table plays the same way.
+    await expect(env.manager.command(id, 'host', 'Host', { type: 'updateSettings', by: 'host', settings: { tableRules: { ...tableRules, rabbitHunt: true } } })).rejects.toThrow(/tableRules is locked/);
+  });
+
   it("keeps a player's mood emoji when they are moved to another table", async () => {
     const env = setup();
     const settings: TournamentSettings = defaultSettings({

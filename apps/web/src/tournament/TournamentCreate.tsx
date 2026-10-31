@@ -3,8 +3,8 @@ import {
   copySettings,
   defaultSettings,
   nextOccurrence,
+  applyStarter,
   payoutPreset,
-  presetStructure,
   upcomingOccurrences,
   validateSchedule,
   validateSettings,
@@ -12,6 +12,7 @@ import {
   type RecurrenceRule,
   type Schedule,
   type StructureRow,
+  type TableRules,
   type TournamentSettings,
   type Weekday,
 } from '@rsdp/tournament';
@@ -25,6 +26,11 @@ import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
 import { SavedStructures } from './SavedStructures';
 import { SiteHeader } from '../components/SiteHeader';
+
+/** A new tournament starts on the group's own RSDP structure. */
+const RSDP_DEFAULTS = applyStarter(defaultSettings(), 'rsdp');
+/** What tournament tables did before events had their own table rules. */
+const SITE_TABLE_RULES: TableRules = { decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, rabbitHunt: true };
 
 type StartKind = 'scheduled' | 'sng' | 'manual';
 type Repeat = 'none' | 'daily' | 'weekly' | 'monthly-day' | 'monthly-nth';
@@ -129,7 +135,7 @@ export function TournamentCreate({
   const first = useMemo(() => startFields(initial), [initial]);
   const [name, setName] = useState(initial?.name ?? 'Friday Night Tournament');
   const [games, setGames] = useState<string[]>(initial?.games ?? ['nlhe']);
-  const [startingStack, setStartingStack] = useState(initial?.startingStack ?? 10_000);
+  const [startingStack, setStartingStack] = useState(initial?.startingStack ?? RSDP_DEFAULTS.startingStack);
   const [seatsPerTable, setSeats] = useState(initial?.seatsPerTable ?? 9);
   const [maxEntrants, setMaxEntrants] = useState(initial?.maxEntrants ?? 100);
   const [startKind, setStartKind] = useState<StartKind>(initial?.start.kind ?? 'scheduled');
@@ -140,10 +146,10 @@ export function TournamentCreate({
   const [weekdays, setWeekdays] = useState<Weekday[]>(first.weekdays);
   const [nth, setNth] = useState<1 | 2 | 3 | 4 | -1>(first.nth);
   const [sng, setSng] = useState(initial?.start.kind === 'sng' ? { playersNeeded: initial.start.playersNeeded, startDelaySeconds: initial.start.startDelaySeconds, autoSpawn: initial.start.autoSpawn } : { playersNeeded: 9, startDelaySeconds: 30, autoSpawn: true });
-  const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? presetStructure('regular', { startingStack: 10_000, expectedEntrants: 20 }));
+  const [structure, setStructure] = useState<StructureRow[]>(() => initial?.structure ?? structuredClone(RSDP_DEFAULTS.structure));
   // Copied settings keep the fields this form has no inputs for (seating lead, grace, hand-for-hand, rotation stop).
   const base = useMemo(() => {
-    if (!initial) return defaultSettings({ startingStack: 10_000 });
+    if (!initial) return RSDP_DEFAULTS;
     // Formats, payouts and the season come back from their own inputs, so one switched off is left out.
     const { bounty: _b, invites: _i, checkIn: _c, payouts: _p, season: _s, ...rest } = initial;
     return rest;
@@ -154,6 +160,7 @@ export function TournamentCreate({
   const [reEntry, setReEntry] = useState(base.reEntry);
   const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
+  const [tableRules, setTableRules] = useState<TableRules>(() => ({ ...(base.tableRules ?? SITE_TABLE_RULES) }));
   const [payoutsOn, setPayoutsOn] = useState(initial ? !!initial.payouts : true);
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('rsdp', 600));
@@ -218,6 +225,7 @@ export function TournamentCreate({
     reEntry,
     registrationApproval,
     allowQuit,
+    tableRules,
     ...(formats.bounty ? { bounty: formats.bounty } : {}),
     ...(formats.invites ? { invites: formats.invites } : {}),
     ...(formats.checkIn && startKind !== 'sng' ? { checkIn: formats.checkIn } : {}),
@@ -437,6 +445,27 @@ export function TournamentCreate({
           </section>
 
           <section className="tn-card">
+            <h2>At the tables</h2>
+            <div className="tn-grid3">
+              <label>
+                Decision clock (s)
+                <input type="number" min={0} max={600} value={tableRules.decisionSeconds} onChange={(e) => setTableRules({ ...tableRules, decisionSeconds: int(e.target.value) })} />
+              </label>
+              <label>
+                Time bank (s)
+                <input type="number" min={0} max={300} value={tableRules.timeBankSeconds} onChange={(e) => setTableRules({ ...tableRules, timeBankSeconds: int(e.target.value) })} />
+              </label>
+              <label>
+                Refill bank every (hands)
+                <input type="number" min={0} max={200} value={tableRules.timeBankRefillHands} onChange={(e) => setTableRules({ ...tableRules, timeBankRefillHands: int(e.target.value) })} />
+              </label>
+            </div>
+            <label className="tn-check">
+              <input type="checkbox" checked={tableRules.rabbitHunt} onChange={(e) => setTableRules({ ...tableRules, rabbitHunt: e.target.checked })} />Allow rabbit hunting
+            </label>
+          </section>
+
+          <section className="tn-card">
             <h2>Entries</h2>
             <label className="tn-check">
               <input type="checkbox" checked={registrationApproval} onChange={(e) => setRegistrationApproval(e.target.checked)} />I approve each registration
@@ -489,10 +518,15 @@ export function TournamentCreate({
               <label className="tn-check">
                 <input type="checkbox" checked={addOn.max > 0} onChange={(e) => {
                     setAddOn({ ...addOn, max: e.target.checked ? 1 : 0, chips: addOn.chips || startingStack });
-                    // Add-ons need a break that offers them: default to the first break.
+                    // Add-ons need a break that offers them: default to the first break, or add one after level 4 (RSDP has none).
                     const first = structure.findIndex((r) => r.kind === 'break');
-                    if (e.target.checked && first >= 0 && !structure.some((r) => r.kind === 'break' && r.addOn))
-                      setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                    if (e.target.checked && !structure.some((r) => r.kind === 'break' && r.addOn)) {
+                      if (first >= 0) setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                      else {
+                        const at = Math.max(1, Math.min(4, structure.length - 1));
+                        setStructure([...structure.slice(0, at), { kind: 'break', minutes: 5, addOn: true }, ...structure.slice(at)]);
+                      }
+                    }
                   }} />
                 Add-ons (on breaks marked Add-ons)
               </label>

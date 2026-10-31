@@ -7,6 +7,7 @@ import {
   STARTERS,
   structureToSave,
   validateSettings,
+  validateStructure,
   type TournamentSettings,
 } from '../src';
 
@@ -58,6 +59,29 @@ describe('starters', () => {
     expect(first('turbo')).toMatchObject({ bb: 200, minutes: 8 });
     expect(first('standard')).toMatchObject({ bb: 100, minutes: 15 });
     expect(first('deep')).toMatchObject({ bb: 100, minutes: 20 });
+  });
+
+  it('RSDP is the group\'s PokerNow structure: 63,000 chips, 28 eight-minute levels, no antes or breaks', () => {
+    const s = applyStarter(defaultSettings({ name: 'Mine' }), 'rsdp');
+    expect(s.startingStack).toBe(63_000);
+    expect(s.lateRegistration).toEqual({ enabled: true, throughLevel: 5 });
+    expect(s.structure).toHaveLength(28);
+    expect(s.structure.every((r) => r.kind === 'level' && r.minutes === 8 && r.anteType === 'none' && r.ante === 0)).toBe(true);
+    const blinds = s.structure.map((r) => (r.kind === 'level' ? [r.sb, r.bb] : []));
+    expect(blinds.slice(0, 5)).toEqual([[100, 200], [200, 300], [200, 400], [300, 500], [300, 600]]);
+    expect(blinds.at(-1)).toEqual([60_000, 120_000]);
+    expect(validateStructure(s.structure).warnings).toEqual([]);
+    expect(s.tableRules).toEqual({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false });
+    // Other starters leave the table rules as they were.
+    expect(applyStarter(s, 'turbo').tableRules).toEqual(s.tableRules);
+  });
+
+  it('checks table rules', () => {
+    const rules = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
+    expect(validateSettings(defaultSettings({ tableRules: rules }))).toEqual([]);
+    expect(validateSettings(defaultSettings({ tableRules: { ...rules, decisionSeconds: 0 } }))).toEqual([]);
+    expect(validateSettings(defaultSettings({ tableRules: { ...rules, decisionSeconds: 3 } }))).toEqual(['Decision clock must be 0 (no clock) or 5-600 seconds']);
+    expect(validateSettings(defaultSettings({ tableRules: { ...rules, timeBankSeconds: 301, timeBankRefillHands: -1 } }))).toHaveLength(2);
   });
 
   it('keep rebuys and add-ons on, with levels and a break that offer them', () => {
