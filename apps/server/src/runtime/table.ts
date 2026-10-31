@@ -223,8 +223,9 @@ export class TableRuntime {
    * Nobody could act while the server was down (a deploy or a crash), and the clocks saved with the table kept
    * running in the meantime: the player to act gets a fresh decision clock, and an open run-it-twice vote a fresh
    * vote clock, instead of being timed out the moment the table comes back. A paused game keeps its time left.
+   * resume() does this; a tournament also does it as each table is loaded, since its catch-up runs before resume().
    */
-  private restartClocks() {
+  restartClocks() {
     const s = this.state;
     const hand = s.hand;
     if (s.paused || !hand || hand.phase === 'complete') return;

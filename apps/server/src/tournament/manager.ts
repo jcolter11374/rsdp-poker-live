@@ -489,7 +489,11 @@ export class TournamentManager {
         if (saved) {
           // The host may have changed after the table was last saved.
           saved.hostId = state.hostId;
-          this.mount(live, t.id, new TableRuntime(saved, this.runtimeDeps(live, t.id)), Promise.resolve());
+          const rt = new TableRuntime(saved, this.runtimeDeps(live, t.id));
+          // Before anything below can poke the table (a replayed report, the catch-up tick): nobody could act while
+          // the server was down, so the clocks saved with it must not time anyone out.
+          rt.restartClocks();
+          this.mount(live, t.id, rt, Promise.resolve());
         }
         else {
           // No snapshot yet (the server stopped right after seating): rebuild the seats from the director.

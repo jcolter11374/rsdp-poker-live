@@ -246,6 +246,24 @@ describe('tournaments after a crash', () => {
     expect(standings(now())[0].stack).toBe(4000);
   }, 60_000);
 
+  it.each([30_000, 70_000])('the player to act keeps their hand when the server is back %i ms later, even if a level went up meanwhile', async (gap) => {
+    const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 1 });
+    const { env, id, state } = await started(3, { structure: [level(10), level(20), level(40)] });
+    const [rt] = env.tables.values();
+    for (let i = 0; i < 100 && !(rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null); i++) env.clock.advance(250);
+    const hand = rt.state.hand!;
+    expect(hand.phase).toBe('betting');
+    const thinker = hand.seats.find((x) => x.seat === hand.toAct)!.playerId;
+
+    // Down for a while: with 1-minute levels, 70 s means a level went up before the server came back.
+    const after = await restart(await savedAs(state()), env.snapshots, env.clock.t + gap);
+    const table = after.tables.get(rt.state.id)!;
+    const seat = table.state.hand!.seats.find((x) => x.playerId === thinker)!;
+    expect({ folded: seat.folded, toAct: table.state.hand!.toAct, timeouts: table.seatOf(thinker)!.timeouts }).toEqual({ folded: false, toAct: seat.seat, timeouts: 0 });
+    expect(after.manager.view(id)!.state.status).toBe('running');
+    expect(after.errors).toEqual([]);
+  });
+
   it('an add-on bought during a hand the director never heard end is kept', async () => {
     const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 5 });
     const structure = [level(10), { kind: 'break', minutes: 5, addOn: true } as const, level(20), level(40)];
