@@ -328,3 +328,48 @@ describe('trimming excess bets', () => {
     expect(legalActions(s, 3)).toMatchObject({ maxTo: 500 });
   });
 });
+
+describe('fixed-limit cap counts the bets that are really made', () => {
+  it('before the flop the big blind is the bet: 2-4-6-8 at 2/4 with a cap of 4', () => {
+    const s = start({ stacks: [500, 500, 500], button: 0, stakes: { smallBet: 2, bigBet: 4 } });
+    s.input.betting = 'fixed-limit';
+    engine.act(s, 0, { type: 'raise', to: 4 });
+    engine.act(s, 1, { type: 'raise', to: 6 });
+    engine.act(s, 2, { type: 'raise', to: 8 });
+    expect(engine.legalActions(s, 0)).toMatchObject({ callAmount: 4, canRaise: false });
+  });
+
+  it('the same in a limit draw game', () => {
+    const s = start({ game: 'td27', stacks: [500, 500, 500], button: 0, stakes: { smallBet: 2, bigBet: 4 } });
+    engine.act(s, 0, { type: 'raise', to: 4 });
+    engine.act(s, 1, { type: 'raise', to: 6 });
+    engine.act(s, 2, { type: 'raise', to: 8 });
+    expect(engine.legalActions(s, 0)!.canRaise).toBe(false);
+  });
+
+  it('after the flop it is still the bet plus three raises', () => {
+    const s = start({ stacks: [500, 500, 500], button: 0, stakes: { smallBet: 2, bigBet: 4 } });
+    s.input.betting = 'fixed-limit';
+    engine.act(s, 0, { type: 'call' });
+    engine.act(s, 1, { type: 'call' });
+    engine.act(s, 2, { type: 'check' });
+    engine.act(s, 1, { type: 'bet', to: 2 });
+    engine.act(s, 2, { type: 'raise', to: 4 });
+    engine.act(s, 0, { type: 'raise', to: 6 });
+    expect(engine.legalActions(s, 1)!.canRaise).toBe(true);
+    engine.act(s, 1, { type: 'raise', to: 8 });
+    expect(engine.legalActions(s, 2)!.canRaise).toBe(false);
+  });
+
+  it('an all-in short of half a bet is not a raise and leaves the capping bet open', () => {
+    const s = start({ stacks: [500, 500, 500, 500, 43], button: 0, stakes: { smallBlind: 5, bigBlind: 10, smallBet: 10, bigBet: 20 } });
+    s.input.betting = 'fixed-limit';
+    for (const seat of [3, 4, 0, 1]) engine.act(s, seat, { type: 'call' });
+    engine.act(s, 2, { type: 'check' });
+    engine.act(s, 1, { type: 'bet', to: 10 });
+    engine.act(s, 2, { type: 'raise', to: 20 });
+    engine.act(s, 3, { type: 'raise', to: 30 });
+    engine.act(s, 4, { type: 'raise', to: 33 });
+    expect(engine.legalActions(s, 0)).toMatchObject({ callAmount: 33, canRaise: true, minTo: 43, maxTo: 43 });
+  });
+});
