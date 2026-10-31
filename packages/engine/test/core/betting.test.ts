@@ -355,6 +355,12 @@ describe('stud bring-in', () => {
     expect(computeLegal(stud({ currentBet: 16, raisesThisRound: 4 })).canRaise).toBe(false);
   });
 
+  it('a bring-in as big as the completion leaves nothing to complete', () => {
+    expect(computeLegal(stud({ bringIn: { amount: 4, completeTo: 4 } }))).toMatchObject({ canBringIn: true, canRaise: false, minTo: 0, maxTo: 0 });
+    // No-limit stud with the bring-in above the small bet: no "bet" smaller than the forced bring-in.
+    expect(computeLegal(stud({ betting: 'no-limit', bringIn: { amount: 5, completeTo: 2 } }))).toMatchObject({ canBringIn: true, canRaise: false });
+  });
+
   it('respects seatCanRaise facing the bring-in', () => {
     expect(computeLegal(stud({ currentBet: 1, seatCanRaise: false }))).toMatchObject({ canRaise: false, callAmount: 1 });
   });

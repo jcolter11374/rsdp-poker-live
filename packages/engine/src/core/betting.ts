@@ -20,7 +20,10 @@ export interface FixedLimitRound {
   uncapped: boolean;
 }
 
-/** Stud third street while the bring-in is still to be posted or is the only live bet. */
+/**
+ * Stud third street while the bring-in is still to be posted, or is the only live bet and short of a full
+ * bet. A bring-in as big as the completion is itself the opening bet, after which the round is ordinary.
+ */
 export interface BringInRound {
   amount: Chips;
   /** Total a completion goes to (the small bet). */
@@ -74,7 +77,9 @@ export function computeLegal(ctx: BettingContext): LegalActions {
   const fullTo = base + step;
   // Raising must leave the seat above what calling (or bringing in) would.
   const floor = canBringIn ? ctx.bringIn!.amount : ctx.currentBet;
-  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor;
+  // A bring-in as big as the completion leaves nothing to complete: the low card just brings in.
+  const nothingToComplete = canBringIn && ctx.bringIn!.amount >= ctx.bringIn!.completeTo;
+  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !nothingToComplete;
   return {
     canFold: true,
     canCheck: toCall === 0 && !canBringIn,

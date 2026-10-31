@@ -395,3 +395,49 @@ describe('the stud bring-in', () => {
     expect(eventsOf(s, 'action').some((e) => e.action === 'call' && e.amount === 0)).toBe(false);
   });
 });
+
+describe('a stud bring-in as big as the small bet', () => {
+  // Seat 0 shows the 2c and owes the bring-in; seats 1 and 2 act after it.
+  const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '2c', 'Ah', 'Kc', '3d', '5s'];
+
+  it('is the opening bet: the next seat calls it or raises a full bet', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    // Nothing is left to complete, so the low card just brings in.
+    expect(legalActions(s, 0)).toMatchObject({ canBringIn: true, canRaise: false });
+    act(s, 0, { type: 'bring-in' });
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: false, callAmount: 2, canRaise: true, raiseKind: 'raise', minTo: 4, maxTo: 4 });
+    act(s, 1, { type: 'raise', to: 4 });
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'raise', to: 4 });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 4, minTo: 6, maxTo: 6 });
+  });
+
+  it('counts toward the cap like a big blind: bring-in and three raises', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    act(s, 1, { type: 'raise', to: 4 });
+    act(s, 2, { type: 'raise', to: 6 });
+    expect(legalActions(s, 0)!.canRaise).toBe(true);
+    act(s, 0, { type: 'raise', to: 8 });
+    // The bots read raisesThisRound as the raises players chose to make, so the forced bring-in is not one of them.
+    expect(s.raisesThisRound).toBe(3);
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 4, canRaise: false });
+  });
+
+  it('whole-chip 1/2 stud, where the bring-in is filled in as 1: third street can still be raised', () => {
+    const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 0, anteType: 'none', bringIn: 1, smallBet: 1, bigBet: 2 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 1, canRaise: true, minTo: 2, maxTo: 2 });
+    act(s, 1, { type: 'call' });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 1, canRaise: true, minTo: 2, maxTo: 2 });
+  });
+
+  it('a short all-in bring-in is completed to the small bet, and the round goes on from there', () => {
+    const s = start({ game: 'stud', stacks: [2, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    act(s, 0, { type: 'bring-in' });
+    expect(s.currentBet).toBe(1);
+    expect(legalActions(s, 1)).toMatchObject({ callAmount: 1, canRaise: true, raiseKind: 'bet', minTo: 2, maxTo: 2 });
+    act(s, 1, { type: 'bet', to: 2 });
+    expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'complete', to: 2 });
+    expect(legalActions(s, 2)).toMatchObject({ callAmount: 2, canRaise: true, raiseKind: 'raise', minTo: 4, maxTo: 4 });
+  });
+});

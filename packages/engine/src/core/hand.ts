@@ -314,7 +314,22 @@ function bringInContext(state: HandState) {
   const { game, stakes } = state.input;
   if (game.family !== 'stud' || state.street !== 0) return undefined;
   if (state.currentBet > stakes.bringIn) return undefined;
+  // A bring-in of a full small bet is the opening bet: from there on the round is ordinary.
+  if (state.currentBet > 0 && state.currentBet >= stakes.smallBet) return undefined;
   return { amount: stakes.bringIn, completeTo: stakes.smallBet };
+}
+
+/**
+ * Fixed limit: forced bets in the first round that count toward the cap. The big blind is the round's bet and
+ * each straddle a raise; in stud, a bring-in of a full small bet is the bet. raisesThisRound counts only the
+ * bets and raises players choose to make.
+ */
+function forcedBets(state: HandState): number {
+  if (state.street !== 0) return 0;
+  const { posts, stakes, game } = state.input;
+  const blinds = (posts.some((p) => p.kind === 'big-blind') ? 1 : 0) + posts.filter((p) => p.kind === 'straddle').length;
+  const fullBringIn = game.family === 'stud' && state.events.some((e) => e.t === 'action' && e.action === 'bring-in' && e.to >= stakes.smallBet);
+  return blinds + (fullBringIn ? 1 : 0);
 }
 
 function bettingContext(state: HandState, s: HandSeat): BettingContext {
@@ -336,8 +351,7 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
         ? {
             unit: st.betSize === 'big' ? input.stakes.bigBet : input.stakes.smallBet,
             cap: input.options.fixedLimitCap,
-            // Before the flop (or the first draw) the big blind is the round's bet and each straddle a raise.
-            forced: state.street === 0 ? (input.posts.some((p) => p.kind === 'big-blind') ? 1 : 0) + input.posts.filter((p) => p.kind === 'straddle').length : 0,
+            forced: forcedBets(state),
             uncapped: input.options.uncappedHeadsUp && live(state).length === 2,
           }
         : undefined,
@@ -397,6 +411,8 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
       if (!legal.canBringIn) throw new ActionError('no bring-in now');
       commit(state, s, state.input.stakes.bringIn - s.bet);
       state.currentBet = Math.max(state.currentBet, s.bet);
+      // A bring-in of a full small bet is the opening bet, so a raise over it is at least its size.
+      if (s.bet >= state.input.stakes.smallBet) state.lastFullRaise = Math.max(state.lastFullRaise, s.bet);
       s.lastAction = s.allIn ? 'All in' : 'Bring-in';
       kind = 'bring-in';
       break;
