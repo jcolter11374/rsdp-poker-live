@@ -32,7 +32,7 @@ import {
   usableCode,
   validateFormats,
 } from './formats';
-import { placePrizes, prizePool, prizesForPlaces, validatePayoutStructure, type PrizeMoney } from './payouts';
+import { placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
 import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
 import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type LevelRow } from './structure';
@@ -327,8 +327,7 @@ export function reEntryOpen(s: TournamentState): boolean {
 
 export function paidPlaces(s: TournamentState): number {
   if (!s.settings.payouts) return 0;
-  const range = s.settings.payouts.structure.ranges.find((r) => s.entries.length >= r.minEntries && s.entries.length <= r.maxEntries);
-  return range?.percents.length ?? 0;
+  return rangeFor(s.settings.payouts.structure, s.entries.length)?.percents.length ?? 0;
 }
 
 export function currentPrizePool(s: TournamentState): number {
@@ -362,6 +361,10 @@ function places(s: TournamentState): Map<EntryId, number> {
 export function standings(s: TournamentState): Standing[] {
   const placeOf = places(s);
   const prizes = s.settings.payouts ? placePrizes(currentPrizePool(s), s.settings.payouts.structure, s.entries.length) : [];
+  // Re-entries count towards the places paid, but only one entry per player can finish: prizes for places nobody can
+  // reach go to 1st, like any other remainder, so the prizes still add up to the pool.
+  const reachable = rankedEntries(s).length;
+  if (prizes.length > reachable && reachable > 0) prizes[0] += prizes.splice(reachable).reduce((a, b) => a + b, 0);
   const prizeOf = prizesForPlaces(Object.fromEntries(placeOf), prizes);
   // Bounties and knockouts follow the player through re-entries.
   const ofPlayer = (playerId: PlayerId, f: (e: Entry) => number) => s.entries.reduce((a, e) => a + (e.playerId === playerId ? f(e) : 0), 0);
