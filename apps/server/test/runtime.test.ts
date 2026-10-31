@@ -787,3 +787,16 @@ describe('changing the table size between hands', () => {
     }
   });
 });
+
+describe('table chat text', () => {
+  it('never keeps half an emoji: lone surrogates go, and a long line is cut by whole characters', () => {
+    const { rt } = table();
+    rt.chat('a', 'hi \ud83d there');
+    expect(rt.state.chat.at(-1)!.text).toBe('hi  there');
+    rt.chat('a', `${'x'.repeat(299)}🃏🃏`);
+    const long = rt.state.chat.at(-1)!.text;
+    expect(Array.from(long)).toHaveLength(300);
+    expect(long.endsWith('🃏')).toBe(true);
+    expect(/\p{Cs}/u.test(long)).toBe(false);
+  });
+});

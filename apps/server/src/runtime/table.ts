@@ -1274,7 +1274,12 @@ export class TableRuntime {
   }
 
   chat(playerId: PlayerId | null, text: string) {
-    let clean = text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
+    // No lone UTF-16 surrogates (Postgres refuses them, and the table could no longer be saved), and cut by whole
+    // characters so a long line never splits an emoji into one.
+    let clean = Array.from(String(text).replace(/\p{Cs}/gu, '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim())
+      .slice(0, 300)
+      .join('')
+      .trim();
     if (!clean) return;
     if (playerId) {
       if (this.state.muted?.includes(playerId)) throw new ActionError('the host has muted you');

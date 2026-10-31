@@ -107,7 +107,7 @@ describe('defaults', () => {
 describe('field ranges', () => {
   // [path, values that must be rejected, boundary values that must pass]
   const cases: [string, unknown[], unknown[]][] = [
-    ['table.name', ['', '   ', 'x'.repeat(41), 'tab\tname', 'line\nbreak', 5, null], ['x', 'x'.repeat(40)]],
+    ['table.name', ['', '   ', 'x'.repeat(41), 'tab\tname', 'line\nbreak', 5, null, 'half \ud83d', '\udc00'], ['x', 'x'.repeat(40), 'Friday 🃏']],
     ['table.maxSeats', [1, 11, 0, -2, 2.5, '10', null], [2, 10]],
     ['table.mode', ['ring', '', 1], ['cash']],
     ['table.felt', ['plaid', '', 1, null], ['green', 'teal']],

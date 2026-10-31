@@ -27,7 +27,15 @@ export function dbStore(db: Db): TableStore {
       await saveSnapshot(db, state.id, { version: RUNTIME_VERSION, state });
     },
     async saveTable(state) {
-      await saveSnapshot(db, state.id, { version: RUNTIME_VERSION, state });
+      try {
+        await saveSnapshot(db, state.id, { version: RUNTIME_VERSION, state });
+      } catch (e) {
+        // Postgres refuses a whole snapshot over one lone UTF-16 surrogate in any string, which would stop every save
+        // of a money table. Anything that lets one in is a bug, but the table is saved without it rather than not at all.
+        const clean = withoutLoneSurrogates(state);
+        if (clean === state) throw e;
+        await saveSnapshot(db, state.id, { version: RUNTIME_VERSION, state: clean });
+      }
     },
     async loadTable(id) {
       const snap = await loadSnapshot<RuntimeState>(db, id);
@@ -77,4 +85,12 @@ export function pastHandFromRow(r: { number: number; startedAt: Date; endedAt: D
     handId: r.header.input.handId,
     fair: r.header.input.fair,
   };
+}
+
+/** `value` with lone UTF-16 surrogates taken out of every string; the same object when there are none. */
+export function withoutLoneSurrogates<T>(value: T): T {
+  const json = JSON.stringify(value);
+  // JSON.stringify writes a lone surrogate as an escape (\udxxx); a whole emoji stays as it is.
+  if (!/\\ud[89a-f]/i.test(json)) return value;
+  return JSON.parse(json, (_key, v: unknown) => (typeof v === 'string' ? v.replace(/\p{Cs}/gu, '') : v)) as T;
 }
