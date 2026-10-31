@@ -213,9 +213,23 @@ export class TableRuntime {
       this.state.fair.next = this.newServerSeed();
       this.state.fair.clientSeeds = {};
     }
+    this.restartClocks();
     this.giveBotsLooks();
     this.watchHost();
     this.sync();
+  }
+
+  /**
+   * Nobody could act while the server was down (a deploy or a crash), and the clocks saved with the table kept
+   * running in the meantime: the player to act gets a fresh decision clock, and an open run-it-twice vote a fresh
+   * vote clock, instead of being timed out the moment the table comes back. A paused game keeps its time left.
+   */
+  private restartClocks() {
+    const s = this.state;
+    const hand = s.hand;
+    if (s.paused || !hand || hand.phase === 'complete') return;
+    if (s.turn) s.turn = this.newTurn(s.turn.key, s.turn.seat);
+    if (hand.phase === 'rit-vote' && s.ritDeadline !== null) s.ritDeadline = this.clock.now() + RIT_VOTE_SECONDS * 1000;
   }
 
   dispose() {

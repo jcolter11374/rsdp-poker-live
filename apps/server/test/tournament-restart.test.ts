@@ -338,7 +338,11 @@ describe('tournaments after a crash', () => {
     expect(rt.seatOf('p3')).not.toBeNull();
     await env.manager.flush();
 
-    // Back after the player to act ran out of time: once the late registrant is seated, that player is folded and the hand ends.
+    // The player to act had sat out. A restart gives a turn a fresh clock, but a player sitting out is folded at once:
+    // once the late registrant is seated, that player is folded and the hand ends.
+    const saved = JSON.parse(lagging.get(rt.state.id)!) as typeof rt.state;
+    Object.assign(saved.seats[saved.hand!.toAct!]!, { sittingOut: true, sitOutReason: 'timeouts' });
+    lagging.set(rt.state.id, JSON.stringify(saved));
     const after = await restart(env.store, lagging, env.clock.t + 10 * MIN);
     after.clock.advance(0);
     const now = () => after.manager.view(id)!.state;

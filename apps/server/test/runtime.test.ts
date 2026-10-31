@@ -548,7 +548,8 @@ describe('snapshots', () => {
     restored.resume();
     expect(restored.state.hand!.toAct).toBe(rt.state.hand!.toAct);
     const seat = restored.state.hand!.toAct!;
-    clock.advance(25_000);
+    // The clocks run again: the turn starts over after the restart (see 'a restart in the middle of a hand').
+    clock.advance(30_000);
     expect(restored.state.hand!.seats.find((s) => s.seat === seat)!.folded || restored.state.turn?.usingBank).toBeTruthy();
   });
 });
@@ -672,5 +673,54 @@ describe('hole cards after the hand', () => {
     rt.requestSeat('d', { seat: folded.seat, name: 'D', stack: 1000 });
     expect(rt.seatOf('d')?.seat).toBe(folded.seat);
     expect(dealtTo(rt, 'd', folded.seat).every((c) => c === '??' || !folded.cards.some((x) => x.card === c))).toBe(true);
+  });
+});
+
+describe('a restart in the middle of a hand', () => {
+  /** SIGTERM: the table is saved as it is; the new server loads it `downMs` later and the first browser reconnects. */
+  const restart = (rt: TableRuntime, clock: FakeClock, downMs: number, first: string) => {
+    const saved = JSON.parse(JSON.stringify(rt.state));
+    rt.dispose();
+    clock.advance(downMs);
+    const back = new TableRuntime(saved, { clock, rng: seeded(6) });
+    back.resume();
+    back.connect(first);
+    return back;
+  };
+
+  it('gives the player to act a fresh clock instead of folding them', () => {
+    const { rt, clock } = table((s) => (s.timing.decisionSeconds = 30));
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    rt.act(toActId(rt), { type: 'raise', to: 60 });
+    const thinker = toActId(rt);
+    clock.advance(10_000);
+    const back = restart(rt, clock, 20_000, thinker);
+    const seat = back.seatOf(thinker)!;
+    expect(hand(back).seats.find((x) => x.seat === seat.seat)!.folded).toBe(false);
+    expect(seat.timeouts).toBe(0);
+    expect(back.turnDeadline()).toBe(clock.now() + 30_000);
+    back.act(thinker, { type: 'call' });
+    // Someone who doesn't come back still times out, after the usual grace for a dropped player.
+    const next = toActId(back);
+    clock.advance(back.state.settings.seating.offlineGraceSeconds * 1000 + 1);
+    expect(hand(back).seats.find((x) => x.playerId === next)!.folded).toBe(true);
+  });
+
+  it('keeps a run it twice vote open for the players who had not voted', () => {
+    const { rt, clock } = table((s) => (s.play.runItTwice = 'ask'));
+    seatPlayers(rt, 2, 1000);
+    rt.start('host');
+    const h = hand(rt);
+    while (h.phase === 'betting') {
+      const me = h.seats.find((x) => x.seat === h.toAct)!;
+      rt.act(toActId(rt), h.currentBet > me.bet ? { type: 'call' } : { type: 'raise', to: 1000 });
+    }
+    expect(h.phase).toBe('rit-vote');
+    rt.voteRunItTwice('host', true);
+    const back = restart(rt, clock, 20_000, 'a');
+    expect(hand(back).phase).toBe('rit-vote');
+    back.voteRunItTwice('a', true);
+    expect(hand(back).events.some((e) => e.t === 'run-it' && e.times === 2)).toBe(true);
   });
 });
