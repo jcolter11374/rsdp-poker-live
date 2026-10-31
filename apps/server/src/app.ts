@@ -250,8 +250,8 @@ function perPlayerAndAddress(burst: number, windowMs: number, now: () => number)
 
 /**
  * Makes something only while the player, and the address, each have fewer than
- * `max` open: null when either has `max`. One being made holds its place, so a
- * burst can't slip past while the first are saved.
+ * `max` open: when either has `max`, says which (the player first). One being
+ * made holds its place, so a burst can't slip past while the first are saved.
  *
  * The player's count is what they host now (`hosted`), worked out from what the
  * server has loaded, so it still holds after a restart. The address's is only
@@ -267,16 +267,17 @@ function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => nu
     made.set(address, m);
     return m;
   };
-  return async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<string | null> => {
+  return async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<{ id: string } | { full: 'player' | 'address' }> => {
     const theirs = making.get(playerId) ?? 0;
     const here = fromAddress(address);
-    if (hosted(playerId) + theirs >= max || here.ids.length + here.making >= max) return null;
+    if (hosted(playerId) + theirs >= max) return { full: 'player' };
+    if (here.ids.length + here.making >= max) return { full: 'address' };
     making.set(playerId, theirs + 1);
     here.making++;
     try {
       const id = await make();
       here.ids.push(id);
-      return id;
+      return { id };
     } finally {
       // (A new one is hosted a moment before it stops counting as being made; nothing else runs in between.)
       const left = making.get(playerId)! - 1;
@@ -1475,9 +1476,11 @@ export function createApp(deps: AppDeps = {}) {
         async () => {
           const address = socketAddress(socket);
           if (!tournamentCreates(me, address)) throw new ActionError('that is a lot of new tournaments; try again in a few minutes');
-          const id = await openTournaments(me, address, () => tournaments.create(me, input?.settings));
-          if (id === null) throw new ActionError('that is a lot of open tournaments; archive one you made, or wait for one to finish');
-          return { id };
+          const made = await openTournaments(me, address, () => tournaments.create(me, input?.settings));
+          if ('id' in made) return made;
+          if (made.full === 'player') throw new ActionError('that is a lot of open tournaments; archive one you made, or wait for one to finish');
+          // Only their address is full (a club's or an office's Wi-Fi, say): they may have made none to archive.
+          throw new ActionError('too many tournaments are open from your network right now; try again once one finishes');
         },
         log,
       ),

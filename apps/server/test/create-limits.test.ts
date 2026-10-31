@@ -95,6 +95,20 @@ describe('limits on making tables and tournaments', () => {
     expect(await listed()).toHaveLength(20);
   });
 
+  it('tells someone who made none that their network has too many open, not to archive one of theirs', async () => {
+    const settings = { ...defaultSettings(), name: 'Club night' };
+    // Ten friends behind one address each make one.
+    const made = await settled(Array.from({ length: 10 }, (_, i) => client(`open-cap-club-${i}-0123456789`, '192.0.2.30').call('tournament:create', { settings })));
+    expect(made.filter((r) => r === 'ok')).toHaveLength(10);
+    clock.advance(10 * MINUTE);
+    const late = client('open-cap-club-late-0123456789', '192.0.2.30');
+    const refused = late.call('tournament:create', { settings });
+    await expect(refused).rejects.toThrow(/too many tournaments are open from your network/);
+    await expect(refused).rejects.not.toThrow(/archive one you made/);
+    // One of the ten, now on another network, still has room for more of their own.
+    await client('open-cap-club-0-0123456789', '192.0.2.31').call('tournament:create', { settings });
+  });
+
   it('still counts a player’s open tournaments after the server restarts', async () => {
     const settings = { ...defaultSettings(), name: 'Deploy day' };
     const tables = memoryStore();
