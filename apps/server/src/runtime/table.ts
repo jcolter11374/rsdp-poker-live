@@ -291,7 +291,8 @@ export class TableRuntime {
     if (!this.tournament && !s.realGame) return false;
     // A tournament player moved to another table is still playing against this one's players.
     if (this.seatOf(playerId) || this.tournament?.stillPlaying?.(playerId)) return true;
-    if (this.isStaff(playerId)) return false;
+    // A tournament's co-hosts are named in the lobby, so the event is asked as well as the table.
+    if (this.isStaff(playerId) || this.tournament?.isStaff?.(playerId)) return false;
     return !(s.handNames && Object.hasOwn(s.handNames, playerId)) && !Object.hasOwn(s.ledger, playerId);
   }
 
