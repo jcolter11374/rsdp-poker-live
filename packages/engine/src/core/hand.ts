@@ -323,12 +323,13 @@ function bringInSeat(state: HandState): SeatIndex {
   return rules.bringInSeat(game, up);
 }
 
-function bringInContext(state: HandState) {
+/** Stud third street while a bet of `bet` is still only the bring-in, so a completion is measured from zero. */
+function bringInContext(state: HandState, bet = state.currentBet) {
   const { game, stakes } = state.input;
   if (game.family !== 'stud' || state.street !== 0) return undefined;
-  if (state.currentBet > stakes.bringIn) return undefined;
+  if (bet > stakes.bringIn) return undefined;
   // A bring-in of a full small bet is the opening bet: from there on the round is ordinary.
-  if (state.currentBet > 0 && state.currentBet >= stakes.smallBet) return undefined;
+  if (bet > 0 && bet >= stakes.smallBet) return undefined;
   return { amount: stakes.bringIn, completeTo: stakes.smallBet };
 }
 
@@ -461,10 +462,11 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
         }
       } else {
         // Incomplete all-in raise: players who already acted may only call or fold, unless the short
-        // all-ins since they acted add up to a full raise (TDA). Their bet is what they matched then.
+        // all-ins since they acted add up to a full raise (TDA). Their bet is what they matched then;
+        // in stud, a player who has only the bring-in in faces a completion, measured from zero.
         for (const o of state.seats) {
           if (o !== s) {
-            if (o.hasActed || !o.canRaise) o.canRaise = classifyRaise({ ...ctx, currentBet: o.bet }, to).full;
+            if (o.hasActed || !o.canRaise) o.canRaise = classifyRaise({ ...ctx, currentBet: o.bet, bringIn: bringInContext(state, o.bet) }, to).full;
             o.hasActed = false;
           }
         }

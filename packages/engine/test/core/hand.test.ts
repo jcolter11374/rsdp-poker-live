@@ -536,6 +536,42 @@ describe('the stud bring-in', () => {
   });
 });
 
+describe('stud: short all-ins after the bring-in that add up to a completion', () => {
+  // Four players: seat 3 shows the 2c and brings in; seats 0, 1 and 2 act after it.
+  const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '3c', 'Qh', '2c', '9s', 'Ah'];
+  const stakes = { ante: 1, anteType: 'per-player' as const, bringIn: 5, smallBet: 20, bigBet: 40, smallBlind: 10, bigBlind: 20 };
+
+  it('no limit: all-ins to 12 and then 20 reopen the betting for the low card, like one completion to 20', () => {
+    const s = start({ game: 'stud', stacks: [13, 21, 500, 500], stakes, top: deal });
+    s.input.betting = 'no-limit';
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'bet', to: 12 });
+    act(s, 1, { type: 'raise', to: 20 });
+    act(s, 2, { type: 'call' });
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 15, canRaise: true, minTo: 40 });
+  });
+
+  it('fixed limit: all-ins to 6 and then 12 reopen it too, as one all-in completion to 12 would', () => {
+    const s = start({ game: 'stud', stacks: [7, 13, 500, 500], stakes, top: deal });
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'bet', to: 6 });
+    act(s, 1, { type: 'raise', to: 12 });
+    act(s, 2, { type: 'call' });
+    expect(legalActions(s, 3)).toMatchObject({ callAmount: 7, canRaise: true, minTo: 32 });
+  });
+
+  it('the same for a player who only called the bring-in', () => {
+    const s = start({ game: 'stud', stacks: [500, 13, 21, 500], stakes, top: deal });
+    s.input.betting = 'no-limit';
+    act(s, 3, { type: 'bring-in' });
+    act(s, 0, { type: 'call' });
+    act(s, 1, { type: 'bet', to: 12 });
+    act(s, 2, { type: 'raise', to: 20 });
+    act(s, 3, { type: 'call' });
+    expect(legalActions(s, 0)).toMatchObject({ callAmount: 15, canRaise: true, minTo: 40 });
+  });
+});
+
 describe('a stud bring-in as big as the small bet', () => {
   // Seat 0 shows the 2c and owes the bring-in; seats 1 and 2 act after it.
   const deal = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '2c', 'Ah', 'Kc', '3d', '5s'];
