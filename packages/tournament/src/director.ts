@@ -393,6 +393,9 @@ export function standings(s: TournamentState): Standing[] {
 /** Two or more players with chips are seated at the table. */
 const enoughToDeal = (s: TournamentState, t: TableState) => tablePlayers(s, t).filter((e) => e.status === 'seated' && e.stack > 0).length >= 2;
 
+/** The table may still have a hand to play: counting a busted player who may yet rebuy, two or more could play. */
+const mayDeal = (s: TournamentState, t: TableState) => tablePlayers(s, t).filter((e) => (e.status === 'seated' && e.stack > 0) || e.status === 'rebuy-offer').length >= 2;
+
 /** May this table deal its next hand? */
 export function tableGate(s: TournamentState, tableId: TableId, _now: number): Gate {
   if (s.status !== 'running') return 'hold';
@@ -801,15 +804,18 @@ function updateHandForHand(c: Ctx) {
     s.handForHand = { ...s.handForHand, active: false };
     emit(c, { type: 'handForHand', active: false });
   }
+  // A table that was waiting on a rebuy may have nothing left to play now the offer is over.
+  if (s.handForHand.active) advanceHandForHand(s);
 }
 
 /**
  * Advances a hand-for-hand round once every table has played it. A table that can't deal (one player left at it, as
- * with an odd number left at two-seat tables) has nothing to play, so it doesn't hold the round up.
+ * with an odd number left at two-seat tables) has nothing to play, so it doesn't hold the round up; a table waiting
+ * on a busted player's rebuy still may, so it does.
  */
 function advanceHandForHand(s: TournamentState) {
   const h = s.handForHand;
-  if (h.active && s.tables.every((t) => !t.inHand && (t.hfhPlayed >= h.round || !enoughToDeal(s, t)))) h.round++;
+  if (h.active && s.tables.every((t) => !t.inHand && (t.hfhPlayed >= h.round || !mayDeal(s, t)))) h.round++;
 }
 
 function checkFinish(c: Ctx) {

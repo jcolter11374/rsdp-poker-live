@@ -631,4 +631,52 @@ describe('hand-for-hand at two-seat tables', () => {
     sim.hand(two.id, players(two.id)[0], [players(two.id)[1]]);
     expect(sim.state.handForHand.active).toBe(false);
   });
+
+  it('a table whose busted player is still deciding on a rebuy holds the round up', () => {
+    // 4 players at heads-up tables, 3 paid: hand-for-hand from the start.
+    const sim = new Sim({
+      seatsPerTable: 2,
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 300 },
+      payouts: { structure: { name: 'custom', ranges: [{ minEntries: 2, maxEntries: 3, percents: [70, 30] }, { minEntries: 4, maxEntries: 600, percents: [50, 30, 20] }] }, money: { buyIn: 100 } },
+    });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    expect(sim.state.handForHand.active).toBe(true);
+    const [a, b] = sim.state.tables;
+    const [winner, loser] = players(a.id);
+    sim.hand(a.id, winner, [loser]);
+    expect(sim.entry(loser).status).toBe('rebuy-offer');
+    // Table B plays the round, and the next one (A played its hand of that round already).
+    sim.hand(b.id, players(b.id)[0], []);
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('deal');
+    sim.hand(b.id, players(b.id)[0], []);
+    // Now B waits for A, whose busted player may still rebuy and play this round.
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('hold');
+    // The offer runs out: the player is out (the bubble bursts) and B plays on.
+    sim.at(sim.now + 301_000);
+    expect(sim.entry(loser).status).toBe('busted');
+    expect(tableGate(sim.state, b.id, sim.now)).toBe('deal');
+  });
+
+  it('a busted player who rebuys on the bubble plays the round they are owed', () => {
+    const sim = new Sim({
+      seatsPerTable: 2,
+      rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 300 },
+      payouts: { structure: { name: 'custom', ranges: [{ minEntries: 2, maxEntries: 3, percents: [70, 30] }, { minEntries: 4, maxEntries: 600, percents: [50, 30, 20] }] }, money: { buyIn: 100 } },
+    });
+    const players = (tableId: string) =>
+      sim.state.tables.find((x) => x.id === tableId)!.seats.filter((x): x is string => !!x).map((id) => sim.state.entries.find((e) => e.id === id)!.playerId);
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const [a, b] = sim.state.tables;
+    const [winner, loser] = players(a.id);
+    sim.hand(a.id, winner, [loser]);
+    sim.hand(b.id, players(b.id)[0], []);
+    sim.hand(b.id, players(b.id)[0], []);
+    sim.do({ type: 'rebuy', playerId: loser });
+    expect(sim.entry(loser).status).toBe('seated');
+    expect([tableGate(sim.state, a.id, sim.now), tableGate(sim.state, b.id, sim.now)]).toEqual(['deal', 'hold']);
+  });
 });
