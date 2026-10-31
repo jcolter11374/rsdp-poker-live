@@ -30,7 +30,7 @@ import { SiteHeader } from '../components/SiteHeader';
 /** A new tournament starts on the group's own RSDP structure. */
 const RSDP_DEFAULTS = applyStarter(defaultSettings(), 'rsdp');
 /** What tournament tables did before events had their own table rules. */
-const SITE_TABLE_RULES: TableRules = { decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, straddle: true, rabbitHunt: true };
+const SITE_TABLE_RULES: TableRules = { decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, rabbitHunt: true };
 
 type StartKind = 'scheduled' | 'sng' | 'manual';
 type Repeat = 'none' | 'daily' | 'weekly' | 'monthly-day' | 'monthly-nth';
@@ -460,9 +460,6 @@ export function TournamentCreate({
                 <input type="number" min={0} max={200} value={tableRules.timeBankRefillHands} onChange={(e) => setTableRules({ ...tableRules, timeBankRefillHands: int(e.target.value) })} />
               </label>
             </div>
-            <label className="tn-check">
-              <input type="checkbox" checked={tableRules.straddle} onChange={(e) => setTableRules({ ...tableRules, straddle: e.target.checked })} />Allow UTG straddles
-            </label>
             <label className="tn-check">
               <input type="checkbox" checked={tableRules.rabbitHunt} onChange={(e) => setTableRules({ ...tableRules, rabbitHunt: e.target.checked })} />Allow rabbit hunting
             </label>

@@ -696,7 +696,7 @@ export class TournamentManager {
       applyAtNextHand(base, {
         table: { name: tableName(s.settings.name, number), maxSeats: s.settings.seatsPerTable },
         timing: { nextHandDelaySeconds: Math.max(base.timing.nextHandDelaySeconds, TOURNAMENT_NEXT_HAND_SECONDS), ...tableTiming(s.settings.tableRules) },
-        ...(s.settings.tableRules ? { play: { straddle: s.settings.tableRules.straddle ? 'utg' : 'off', rabbitHunt: s.settings.tableRules.rabbitHunt } } : {}),
+        ...(s.settings.tableRules ? { play: { rabbitHunt: s.settings.tableRules.rabbitHunt } } : {}),
       }).settings,
     );
     const rt = TableRuntime.create({ id: tableAddress(tableId), hostId: s.hostId, settings }, this.runtimeDeps(live, tableId));

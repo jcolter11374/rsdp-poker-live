@@ -71,13 +71,13 @@ describe('starters', () => {
     expect(blinds.slice(0, 5)).toEqual([[100, 200], [200, 300], [200, 400], [300, 500], [300, 600]]);
     expect(blinds.at(-1)).toEqual([60_000, 120_000]);
     expect(validateStructure(s.structure).warnings).toEqual([]);
-    expect(s.tableRules).toEqual({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, straddle: false, rabbitHunt: false });
+    expect(s.tableRules).toEqual({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false });
     // Other starters leave the table rules as they were.
     expect(applyStarter(s, 'turbo').tableRules).toEqual(s.tableRules);
   });
 
   it('checks table rules', () => {
-    const rules = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, straddle: false, rabbitHunt: false };
+    const rules = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
     expect(validateSettings(defaultSettings({ tableRules: rules }))).toEqual([]);
     expect(validateSettings(defaultSettings({ tableRules: { ...rules, decisionSeconds: 0 } }))).toEqual([]);
     expect(validateSettings(defaultSettings({ tableRules: { ...rules, decisionSeconds: 3 } }))).toEqual(['Decision clock must be 0 (no clock) or 5-600 seconds']);

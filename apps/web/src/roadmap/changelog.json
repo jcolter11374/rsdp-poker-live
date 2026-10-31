@@ -4,7 +4,7 @@
       "id": "2026-10-31-b",
       "date": "2026-10-31",
       "fixes": [
-        "Tournaments have their own table rules (decision clock, time bank, straddles, rabbit hunting). New ones use the RSDP rules: 10-second clock, 20-second time bank refilled every 30 hands, no straddles, no rabbit hunting. Before, tournament tables always had a 30-second clock with straddles and rabbit hunting allowed."
+        "Tournaments have their own table rules (decision clock, time bank, rabbit hunting). New ones use the RSDP rules: 10-second clock, 20-second time bank refilled every 30 hands, no rabbit hunting. Before, tournament tables always had a 30-second clock, a 30-second time bank refilled every 10 hands, and rabbit hunting. Straddles stay off in tournaments, as before."
       ]
     },
     {

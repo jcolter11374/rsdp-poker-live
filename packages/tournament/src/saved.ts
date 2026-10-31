@@ -47,7 +47,7 @@ export function readSavedStructure(json: string, now: number): TournamentSetting
 export type StarterId = 'rsdp' | 'turbo' | 'standard' | 'deep';
 
 export const STARTERS: { id: StarterId; name: string; blurb: string }[] = [
-  { id: 'rsdp', name: 'RSDP', blurb: '63,000 chips, 28 levels of 8 minutes, no antes, late registration through level 5, 10-second clock, no straddles' },
+  { id: 'rsdp', name: 'RSDP', blurb: '63,000 chips, 28 levels of 8 minutes, no antes, late registration through level 5, 10-second clock' },
   { id: 'turbo', name: 'Turbo', blurb: '10,000 chips (50 big blinds), 8-minute levels' },
   { id: 'standard', name: 'Standard', blurb: '10,000 chips (100 big blinds), 15-minute levels' },
   { id: 'deep', name: 'Deep stack', blurb: '20,000 chips (200 big blinds), 20-minute levels' },

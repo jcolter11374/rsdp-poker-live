@@ -202,7 +202,7 @@ export function validateSettings(s: TournamentSettings): string[] {
     if (!(t.decisionSeconds === 0 || isWhole(t.decisionSeconds, 5, 600))) errors.push('Decision clock must be 0 (no clock) or 5-600 seconds');
     if (!isWhole(t.timeBankSeconds, 0, 300)) errors.push('Time bank must be 0-300 seconds');
     if (!isWhole(t.timeBankRefillHands, 0, 200)) errors.push('Time bank refill must be 0-200 hands');
-    if (typeof t.straddle !== 'boolean' || typeof t.rabbitHunt !== 'boolean') errors.push('On/off settings must be true or false');
+    if (typeof t.rabbitHunt !== 'boolean') errors.push('On/off settings must be true or false');
   }
   errors.push(...validateFormats(s));
   // The structure checks its own rows.

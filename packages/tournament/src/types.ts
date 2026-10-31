@@ -63,7 +63,7 @@ export interface TournamentSettings {
   checkIn?: CheckInSettings;
   /** Counts toward a season leaderboard. An empty id starts a new season named after this event's id. */
   season?: { id: string; name: string };
-  /** Clock, straddles and rabbit hunting at this event's tables; absent = the site's table defaults. */
+  /** Clock, time bank and rabbit hunting at this event's tables (straddles are always off in tournaments); absent = the site's table defaults. */
   tableRules?: TableRules;
 }
 
@@ -74,8 +74,6 @@ export interface TableRules {
   timeBankSeconds: number;
   /** Hands between time bank refills, 0-200 (0 = never refills). */
   timeBankRefillHands: number;
-  /** Players may post a UTG straddle. */
-  straddle: boolean;
   /** Players may see the cards that would have come after a hand ends early. */
   rabbitHunt: boolean;
 }
