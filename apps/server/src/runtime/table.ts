@@ -1753,8 +1753,9 @@ export class TableRuntime {
   }
 
   /**
-   * A cash player leaving (or removed) mid-hand folds, unless they are all in:
-   * their chips are already in the pot and have no more decisions to make, so
+   * A cash player leaving (or removed) mid-hand folds, unless they are all in
+   * or the betting is over (the run-it-twice vote): their chips are already in
+   * the pot and they have no more decisions to make, so
    * the hand plays out for them and they go when it ends (a run-it-twice vote
    * counts as once).
    */
@@ -1762,7 +1763,8 @@ export class TableRuntime {
     const seat = this.seatOf(playerId);
     const hand = this.state.hand;
     const hs = seat && hand ? hand.seats.find((x) => x.seat === seat.seat) : undefined;
-    if (!hand || !hs || !hs.allIn || hs.folded) return this.foldIfLive(playerId);
+    // Someone who called an all-in with chips behind has nothing left to decide during the vote either.
+    if (!hand || !hs || hs.folded || !(hs.allIn || hand.phase === 'rit-vote')) return this.foldIfLive(playerId);
     if (hand.phase === 'rit-vote' && hs.ritVote === null) {
       engine.voteRunItTwice(hand, hs.seat, false);
       this.afterEngine(false);

@@ -724,3 +724,32 @@ describe('a restart in the middle of a hand', () => {
     expect(hand(back).events.some((e) => e.t === 'run-it' && e.times === 2)).toBe(true);
   });
 });
+
+describe('removed during a run it twice vote', () => {
+  it('plays out the hand of a player who called an all-in with chips behind', () => {
+    const { rt } = table((s) => {
+      s.play.runItTwice = 'ask';
+      s.seating.requireApproval = false;
+    });
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 1000 });
+    rt.requestSeat('a', { seat: 1, name: 'Ann', stack: 300 });
+    rt.requestSeat('b', { seat: 2, name: 'Bo', stack: 1000 });
+    rt.start('host');
+    const h = hand(rt);
+    // Ann shoves; Bo, who covers her, calls; the host folds.
+    while (h.phase === 'betting') {
+      const who = toActId(rt);
+      rt.act(who, who === 'a' ? { type: 'raise', to: 300 } : who === 'b' ? { type: 'call' } : { type: 'fold' });
+    }
+    expect(h.phase).toBe('rit-vote');
+    const bo = h.seats.find((x) => x.playerId === 'b')!;
+    expect(bo.allIn).toBe(false);
+    rt.kick('host', 'b');
+    // Bo had nothing left to decide: his called chips stay live, his missing vote counts as no, and he leaves after.
+    expect(bo.folded).toBe(false);
+    expect(h.phase).toBe('complete');
+    expect(h.events.some((e) => e.t === 'showdown' || e.t === 'show')).toBe(true);
+    expect(rt.seatOf('b')).toBeNull();
+    expect(rt.state.ledger.b.cashOut).toBe(1000 - 300 + h.awards.filter((x) => x.seat === bo.seat).reduce((n, x) => n + x.amount, 0));
+  });
+});
