@@ -266,6 +266,8 @@ function latestEntry(s: TournamentState, playerId: PlayerId): Entry | undefined 
 
 /** Entries that count toward max entrants and finishing places (re-entries replace the busted entry). */
 const rankedEntries = (s: TournamentState) => s.entries.filter((e) => !e.supersededBy);
+/** A player who asked to rebuy in time, with approval on: the offer waits for the host's answer. */
+const rebuyAsked = (s: TournamentState, e: Entry) => s.requests.some((r) => r.kind === 'rebuy' && r.entryId === e.id);
 
 function table(s: TournamentState, tableId: TableId): TableState {
   return s.tables.find((t) => t.id === tableId) ?? fail(`Unknown table ${tableId}`);
@@ -439,7 +441,7 @@ export function nextWakeAt(s: TournamentState): number | null {
     if (at !== null) times.push(at);
   }
   if (started(s)) {
-    for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined) times.push(e.rebuyOfferExpiresAt);
+    for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined && !rebuyAsked(s, e)) times.push(e.rebuyOfferExpiresAt);
     if (s.status === 'running' && s.clock.runningSince !== null) {
       const rows = s.settings.structure;
       const lastLevel = rows.map((r) => r.kind).lastIndexOf('level');
@@ -871,7 +873,7 @@ function advanceClock(c: Ctx) {
 }
 
 function expireOffers(c: Ctx) {
-  const expired = c.s.entries.filter((e) => e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt! <= c.now);
+  const expired = c.s.entries.filter((e) => e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt! <= c.now && !rebuyAsked(c.s, e));
   eliminate(c, expired, 'busted');
 }
 

@@ -572,3 +572,38 @@ describe('summaries', () => {
     expect(playerOptions(sim.state, 'p1')).toMatchObject({ canRebuy: true, canDeclineRebuy: true, canQuit: false });
   });
 });
+
+describe('rebuys the host approves', () => {
+  it('a rebuy asked for inside the offer window waits for the host, who can approve it after the window', () => {
+    const sim = new Sim({ rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1']);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    sim.now += 5_000;
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    const req = sim.state.requests.find((r) => r.kind === 'rebuy' && r.playerId === 'p1')!;
+    // The offer's own time runs out while the host is busy: nothing to wake up for, and p1 is still waiting.
+    expect(nextWakeAt(sim.state)).not.toBe(sim.entry('p1').rebuyOfferExpiresAt);
+    sim.at(sim.now + 30_000);
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    sim.do({ type: 'approve', by: 'host', requestId: req.id });
+    expect(sim.entry('p1')).toMatchObject({ status: 'seated', stack: 1000, rebuys: 1 });
+  });
+
+  it('one the host turns down knocks the player out, and an offer nobody takes up still runs out', () => {
+    const sim = new Sim({ rebuy: { max: 2, chips: 1000, approval: true, offerSeconds: 15 } });
+    sim.register(4);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.hand(t, 'p0', ['p1', 'p2']);
+    sim.do({ type: 'rebuy', playerId: 'p1' });
+    sim.at(sim.now + 16_000);
+    expect(sim.entry('p2').status).toBe('busted');
+    expect(sim.entry('p1').status).toBe('rebuy-offer');
+    const req = sim.state.requests.find((r) => r.kind === 'rebuy' && r.playerId === 'p1')!;
+    sim.do({ type: 'reject', by: 'host', requestId: req.id });
+    expect(sim.entry('p1').status).toBe('busted');
+  });
+});
