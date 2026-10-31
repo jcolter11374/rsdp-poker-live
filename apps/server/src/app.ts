@@ -26,7 +26,7 @@ import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby'
 import { memorySharedHands, type SharedHandStore } from './shared';
 import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
-import { adminGate } from './admin';
+import { adminGate, limiter } from './admin';
 import { accountRoutes, type AccountHooks } from './accounts';
 import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
@@ -174,6 +174,14 @@ const SHARE_WINDOW_MS = 60_000;
 /** Picture changes one player may make per window. */
 const AVATAR_BURST = 4;
 const AVATAR_WINDOW_MS = 30_000;
+/**
+ * Cash tables, and tournaments, one player or one address may make per
+ * window. Far more than any host needs, but a script can't fill the server's
+ * memory with tables or bury the home page under events that never start.
+ */
+const TABLES_PER_WINDOW = 20;
+const TOURNAMENTS_PER_WINDOW = 10;
+const CREATE_WINDOW_MS = 10 * 60_000;
 const NAME_MAX = 20;
 
 /**
@@ -222,6 +230,24 @@ export function tipLimits(now: () => number) {
   };
 }
 
+/** A limit kept per player and per address: true, and counted against both, when both have room for one more. */
+function perPlayerAndAddress(burst: number, windowMs: number, now: () => number) {
+  const byPlayer = limiter(burst, windowMs, now);
+  const byAddress = limiter(burst, windowMs, now);
+  return (playerId: PlayerId, address: string) => {
+    if (!byPlayer(playerId, false) || !byAddress(address, false)) return false;
+    byPlayer(playerId);
+    byAddress(address);
+    return true;
+  };
+}
+
+/** A browser's address; Fly puts the real one in a header, as for HTTP requests (clientAddress). */
+function socketAddress(socket: Sock): string {
+  const fly = socket.handshake.headers['fly-client-ip'];
+  return typeof fly === 'string' ? fly : socket.handshake.address;
+}
+
 export function createApp(deps: AppDeps = {}) {
   const clock = deps.clock ?? systemClock;
   const identity = deps.identity ?? memoryIdentity();
@@ -264,6 +290,8 @@ export function createApp(deps: AppDeps = {}) {
   const tips = tipLimits(() => clock.now());
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
+  const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
+  const tournamentCreates = perPlayerAndAddress(TOURNAMENTS_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
     const missing = rt.state.seats.filter((x) => x && !avatars.has(x.playerId)).map((x) => x!.playerId);
@@ -952,6 +980,7 @@ export function createApp(deps: AppDeps = {}) {
           const patch = input?.settings ?? {};
           // Tables made here are cash tables, played for dollars and cents; tournaments make their own.
           const settings = newCashSettings(mergePatches(patch, { table: { mode: 'cash' } }));
+          if (!tableCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tables; try again in a few minutes');
           const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
@@ -1392,7 +1421,16 @@ export function createApp(deps: AppDeps = {}) {
     on('bot:remove', (input, ack) => guarded(ack, () => current().removeBot(me, String(input?.playerId ?? '')), log));
     on('bot:level', (input, ack) => guarded(ack, () => current().setBotLevel(me, String(input?.playerId ?? ''), String(input?.level ?? '') as BotLevel), log));
 
-    on('tournament:create', (input, ack) => guarded(ack, async () => ({ id: await tournaments.create(me, input?.settings) }), log));
+    on('tournament:create', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          if (!tournamentCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tournaments; try again in a few minutes');
+          return { id: await tournaments.create(me, input?.settings) };
+        },
+        log,
+      ),
+    );
     on('tournament:subscribe', (input, ack) =>
       guarded(
         ack,
