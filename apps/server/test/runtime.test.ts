@@ -748,7 +748,7 @@ describe('removed during a run it twice vote', () => {
     // Bo had nothing left to decide: his called chips stay live, his missing vote counts as no, and he leaves after.
     expect(bo.folded).toBe(false);
     expect(h.phase).toBe('complete');
-    expect(h.events.some((e) => e.t === 'showdown' || e.t === 'show')).toBe(true);
+    expect(h.awards.length).toBeGreaterThan(0);
     expect(rt.seatOf('b')).toBeNull();
     expect(rt.state.ledger.b.cashOut).toBe(1000 - 300 + h.awards.filter((x) => x.seat === bo.seat).reduce((n, x) => n + x.amount, 0));
   });

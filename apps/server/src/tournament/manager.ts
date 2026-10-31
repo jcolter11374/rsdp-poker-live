@@ -772,21 +772,27 @@ export class TournamentManager {
       case 'moveSeat': {
         const from = this.table(live, e.from.tableId);
         const to = this.table(live, e.to.tableId) ?? this.openTable(live, e.to.tableId, []);
-        // The mood emoji goes with the player.
-        const mood = from?.seatOf(e.playerId)?.mood;
+        // The mood emoji and what is left of the time bank go with the player.
+        const was = from?.seatOf(e.playerId);
+        const carried = { mood: was?.mood, timeBank: was ? { seconds: was.timeBank, handsSinceRefill: was.handsSinceRefill } : undefined };
         from?.unseatPlayer(e.playerId);
-        place(to, { seat: e.to.seat, playerId: e.playerId, name: name(e.playerId), stack: e.stack, mood });
+        place(to, { seat: e.to.seat, playerId: e.playerId, name: name(e.playerId), stack: e.stack, ...carried });
         this.deps.onMoved(e.playerId, tableAddress(e.from.tableId), to.state.id);
         break;
       }
       case 'seatsSwapped': {
         // Both seats are emptied before either is filled, so neither lands on the other.
-        const moods = new Map(e.moves.map((m) => [m.playerId, this.table(live, m.from.tableId)?.seatOf(m.playerId)?.mood]));
+        const carried = new Map(
+          e.moves.map((m) => {
+            const was = this.table(live, m.from.tableId)?.seatOf(m.playerId);
+            return [m.playerId, { mood: was?.mood, timeBank: was ? { seconds: was.timeBank, handsSinceRefill: was.handsSinceRefill } : undefined }];
+          }),
+        );
         for (const m of e.moves) this.table(live, m.from.tableId)?.unseatPlayer(m.playerId);
         for (const m of e.moves) {
           const to = this.table(live, m.to.tableId);
           if (!to) continue;
-          place(to, { seat: m.to.seat, playerId: m.playerId, name: name(m.playerId), stack: m.stack, mood: moods.get(m.playerId) });
+          place(to, { seat: m.to.seat, playerId: m.playerId, name: name(m.playerId), stack: m.stack, ...carried.get(m.playerId) });
           this.deps.onMoved(m.playerId, tableAddress(m.from.tableId), to.state.id);
         }
         break;

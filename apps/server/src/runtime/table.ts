@@ -1529,7 +1529,7 @@ export class TableRuntime {
   // ---------------------------------------------------------------- tournament seating
 
   /** Tournament: put a player in a seat with a stack (start, late registration, moves). */
-  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number; mood?: string | null }) {
+  placePlayer(input: { seat: number; playerId: PlayerId; name: string; stack: number; mood?: string | null; timeBank?: { seconds: number; handsSinceRefill: number } }) {
     if (this.state.seats[input.seat]) throw new Error(`seat ${input.seat} is taken`);
     this.state.seats[input.seat] = {
       seat: input.seat,
@@ -1544,8 +1544,9 @@ export class TableRuntime {
       waitForBigBlind: false,
       straddle: false,
       timeouts: 0,
-      timeBank: this.settings.timing.timeBankSeconds,
-      handsSinceRefill: 0,
+      // A player moved from another table of the tournament keeps what is left of their time bank.
+      timeBank: Math.min(input.timeBank?.seconds ?? Infinity, this.settings.timing.timeBankSeconds),
+      handsSinceRefill: input.timeBank?.handsSinceRefill ?? 0,
       leaveAfterHand: false,
       pendingChips: 0,
       pendingStack: null,
