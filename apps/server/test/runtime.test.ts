@@ -798,5 +798,41 @@ describe('table chat text', () => {
     expect(Array.from(long)).toHaveLength(300);
     expect(long.endsWith('🃏')).toBe(true);
     expect(/\p{Cs}/u.test(long)).toBe(false);
+
+describe('hand-history downloads (no live HUDs)', () => {
+  it('are closed to seated players and onlookers who never played while the game runs, and open when they leave or it stops', () => {
+    const { rt } = table();
+    seatPlayers(rt, 3);
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([false, false, false, false]);
+    rt.start('host');
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([true, true, true, true]);
+    expect(tableView(rt, 'a', 0).recordsLocked).toBe(true);
+    checkDown(rt);
+    rt.stand('a');
+    // Ann played here and left: she can take her hands home. Cy only watched, so a second device can't fetch them.
+    expect(rt.recordsLocked('a')).toBe(false);
+    expect(rt.recordsLocked('c')).toBe(true);
+    rt.stand('host');
+    expect(rt.recordsLocked('host')).toBe(false);
+    rt.stop('host');
+    expect(['host', 'a', 'b', 'c'].map((p) => rt.recordsLocked(p))).toEqual([false, false, false, false]);
+  });
+});
+
+describe('hand-history downloads at tournament tables', () => {
+  it('stay closed to a player moved to another table until they are out or the event ends', () => {
+    const clock = new FakeClock();
+    let over = false;
+    const alive = new Set(['a', 'b']);
+    const hooks = { busy: () => false, over: () => over, stillPlaying: (p: string) => alive.has(p), gate: () => 'hold' as const, level: () => ({ gameId: 'nlhe', stakes: defaultSettings('tournament').stakes }), handStarted: () => {}, handEnded: () => {} };
+    const rt = TableRuntime.create({ id: 't2', hostId: 'host', settings: defaultSettings('tournament') }, { clock, rng: seeded(), tournament: hooks });
+    // Bob plays at another table now: no seat here, but still in the event.
+    expect(rt.recordsLocked('b')).toBe(true);
+    alive.delete('b');
+    rt.state.handNames = { b: 'Bob' };
+    expect(rt.recordsLocked('b')).toBe(false);
+    over = true;
+    alive.add('b');
+    expect(rt.recordsLocked('b')).toBe(false);
   });
 });

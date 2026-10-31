@@ -161,6 +161,12 @@ export interface TableView {
   started: boolean;
   paused: boolean;
   stopAfterHand: boolean;
+  /**
+   * Hand-history and full-log downloads are closed to me for now, so nobody
+   * can feed a HUD while playing: true while the game runs and I'm seated (or
+   * never played here). Replays in the app stay open.
+   */
+  recordsLocked: boolean;
   seats: (SeatView | null)[];
   hand: HandView | null;
   /** What I may do now (null when it is not my turn). */

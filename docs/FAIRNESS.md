@@ -287,6 +287,38 @@ your cards to a player at the table, so the site makes it hard to miss:
   The warnings always say which.
 - Turning it off works at once, even in the middle of a hand.
 
+## HUDs and tracking software
+
+A HUD is a program (PokerTracker, Holdem Manager and the like) that reads hand
+histories as you play and puts numbers on every opponent, such as how often
+they play a hand or raise. We don't want those running at our tables, but
+going over your own hands afterwards is welcome. So:
+
+- **While the game is running and you're in a seat, the hand-history
+  downloads are switched off:** the tracker file (OHH), the hands as text or
+  JSON, and the full log. They come back as soon as you leave your seat or
+  the host stops the game (in a tournament: once you're out, or the event
+  ends). The money ledger (CSV) is always available.
+- Someone watching who hasn't played at the table doesn't get the download
+  buttons either until the game stops. The host and co-hosts do while
+  they're not seated.
+- **The table's own Stats tab stays on.** It shows everyone's VPIP and PFR
+  to everyone at the table, so it works like a small HUD, but one every
+  player has, so nobody gets an edge from it.
+- **Replays and the Hands tab work the whole time.** Nothing the site sends
+  gets ahead of the table: each finished hand is sent only once it's over, and
+  only as you saw it.
+
+What this can't stop, stated plainly: switching off the downloads removes the
+buttons, not the hands. Every finished hand still reaches your browser (as you
+saw it) so replays, hand search and the Stats tab work, and someone who can
+program could write a script to collect them, from their own seat or a second
+device, and feed a HUD. Someone could also stand up, download and sit back
+down, read the screen, or jot notes by hand. So this keeps ordinary tracking
+software out of the game and makes a live HUD clearly against the rules, but
+it isn't a lock a determined programmer can't get around. If you think someone
+is doing it, tell the host.
+
 ## How a hand is dealt (rsdp-fair-v1)
 
 1. The table keeps a secret `serverSeed` for the next hand: 32 bytes from the

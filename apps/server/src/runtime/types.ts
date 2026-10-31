@@ -289,6 +289,10 @@ export interface TournamentHooks {
    * nothing on its own (turn clocks, deals), so no hand ends before chips or seats on their way arrive.
    */
   busy(): boolean;
+  /** The event has finished or been cancelled (missing in older test doubles: never over). */
+  over?(): boolean;
+  /** This person is still in the event (at any of its tables, or waiting for a seat). */
+  stillPlaying?(playerId: PlayerId): boolean;
   gate(now: number): 'deal' | 'hold';
   level(): { gameId: string; betting?: BettingKind; stakes: Stakes };
   handStarted(handNumber: number): void;
