@@ -358,9 +358,15 @@ describe('stud bring-in', () => {
   });
 
   it('a bring-in as big as the completion leaves nothing to complete', () => {
+    // Fixed limit: the low card just brings in.
     expect(computeLegal(stud({ bringIn: { amount: 4, completeTo: 4 } }))).toMatchObject({ canBringIn: true, canRaise: false, minTo: 0, maxTo: 0 });
-    // No-limit stud with the bring-in above the small bet: no "bet" smaller than the forced bring-in.
-    expect(computeLegal(stud({ betting: 'no-limit', bringIn: { amount: 5, completeTo: 2 } }))).toMatchObject({ canBringIn: true, canRaise: false });
+    // No-limit and pot-limit: it may still open for more, but never for less than the forced bring-in.
+    const nl = computeLegal(stud({ betting: 'no-limit', bringIn: { amount: 5, completeTo: 2 } }));
+    expect(nl).toMatchObject({ canBringIn: true, canRaise: true, raiseKind: 'bet' });
+    expect(range(nl)).toEqual([6, 100]);
+    expect(range(computeLegal(stud({ betting: 'pot-limit', bringIn: { amount: 4, completeTo: 4 } })))).toEqual([5, 8]);
+    // The bet over the bring-in stays legal when the pot is smaller.
+    expect(range(computeLegal(stud({ betting: 'pot-limit', potTotal: 2, bringIn: { amount: 4, completeTo: 4 } })))).toEqual([5, 5]);
   });
 
   it('respects seatCanRaise facing the bring-in', () => {

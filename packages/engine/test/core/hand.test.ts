@@ -548,4 +548,22 @@ describe('a stud bring-in as big as the small bet', () => {
     expect(eventsOf(s, 'action').at(-1)).toMatchObject({ seat: 1, action: 'complete', to: 2 });
     expect(legalActions(s, 2)).toMatchObject({ callAmount: 2, canRaise: true, raiseKind: 'raise', minTo: 4, maxTo: 4 });
   });
+
+  it('in no-limit and pot-limit the low card may still open for more than the bring-in', () => {
+    const nl = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    nl.input.betting = 'no-limit';
+    expect(legalActions(nl, 0)).toMatchObject({ canBringIn: true, canRaise: true, raiseKind: 'bet', minTo: 3, maxTo: 99 });
+    act(nl, 0, { type: 'bet', to: 10 });
+    expect(legalActions(nl, 1)).toMatchObject({ canBringIn: false, callAmount: 10, canRaise: true, minTo: 20 });
+
+    // A bring-in above the small bet: still no bet below it, but any amount over it.
+    const big = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 5, smallBet: 2, bigBet: 4 }, top: deal });
+    big.input.betting = 'no-limit';
+    expect(legalActions(big, 0)).toMatchObject({ canBringIn: true, canRaise: true, minTo: 6, maxTo: 99 });
+
+    // Pot limit, antes 3: the bet over the bring-in stays legal even when the pot is smaller.
+    const pl = start({ game: 'stud', stacks: [100, 100, 100], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 2, bigBet: 4 }, top: deal });
+    pl.input.betting = 'pot-limit';
+    expect(legalActions(pl, 0)).toMatchObject({ canBringIn: true, canRaise: true, minTo: 3, maxTo: 3 });
+  });
 });

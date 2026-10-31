@@ -74,12 +74,13 @@ export function computeLegal(ctx: BettingContext): LegalActions {
   const allInTo = ctx.trimTo === undefined ? ctx.bet + ctx.stack : Math.min(ctx.bet + ctx.stack, ctx.trimTo);
   const canBringIn = !!ctx.bringIn && ctx.currentBet === 0 && ctx.stack > 0;
   const { base, step, completing } = fullRaise(ctx);
-  const fullTo = base + step;
   // Raising must leave the seat above what calling (or bringing in) would.
   const floor = canBringIn ? ctx.bringIn!.amount : ctx.currentBet;
-  // A bring-in as big as the completion leaves nothing to complete: the low card just brings in.
+  // A bring-in as big as the completion leaves nothing to complete. In fixed limit the low card just brings in;
+  // in no-limit and pot-limit it may still open for any amount above the bring-in.
   const nothingToComplete = canBringIn && ctx.bringIn!.amount >= ctx.bringIn!.completeTo;
-  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !nothingToComplete;
+  const fullTo = nothingToComplete ? floor + 1 : base + step;
+  const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !(nothingToComplete && ctx.betting === 'fixed-limit');
   return {
     canFold: !canBringIn,
     canCheck: toCall === 0 && !canBringIn,
