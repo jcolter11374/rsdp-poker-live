@@ -753,3 +753,40 @@ describe('removed during a run it twice vote', () => {
     expect(rt.state.ledger.b.cashOut).toBe(1000 - 300 + h.awards.filter((x) => x.seat === bo.seat).reduce((n, x) => n + x.amount, 0));
   });
 });
+
+describe('changing the table size between hands', () => {
+  const firstHandThenResize = (seed: number, from: number, to: number, players: number) => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    Object.assign(settings.seating, { requireApproval: false });
+    settings.table.maxSeats = from;
+    settings.timing.autoStartNextHand = false;
+    const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+    ['host', 'a', 'b', 'c', 'd'].slice(0, players).forEach((id, seat) => {
+      rt.connect(id);
+      rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 1000 });
+    });
+    rt.start('host');
+    for (let i = 0; i < 20 && hand(rt).phase !== 'complete'; i++) rt.act(toActId(rt), { type: 'fold' });
+    const before = rt.state.positions!;
+    rt.updateSettings('host', { table: { maxSeats: to } });
+    rt.dealNext('host');
+    return { before, after: rt.state.positions! };
+  };
+
+  it('a bigger table keeps the blinds moving one seat', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const { before, after } = firstHandThenResize(seed, 6, 9, 4);
+      expect(after.bigBlind, `seed ${seed}`).not.toBe(before.bigBlind);
+      expect(after.smallBlind, `seed ${seed}`).toBe(before.bigBlind);
+    }
+  });
+
+  it('a smaller table starts the blinds afresh only when one of them sat in a dropped seat', () => {
+    for (let seed = 1; seed <= 12; seed++) {
+      const { before, after } = firstHandThenResize(seed, 9, 6, 5);
+      if (Math.max(before.button, before.smallBlind ?? 0, before.bigBlind ?? 0) < 6) expect(after.smallBlind, `seed ${seed}`).toBe(before.bigBlind);
+      expect(after.bigBlind).toBeLessThan(6);
+    }
+  });
+});

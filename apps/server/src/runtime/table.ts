@@ -1087,7 +1087,10 @@ export class TableRuntime {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
-      s.positions = null;
+      // The blinds move on from where they were, as after any hand; they start afresh only if one of them sat in a
+      // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
+      const p = s.positions;
+      if (p && [p.button, p.smallBlind, p.bigBlind].some((x) => x !== null && x >= seats)) s.positions = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
