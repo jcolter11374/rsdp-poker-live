@@ -494,6 +494,38 @@ describe('the stud bring-in', () => {
     expect(s.toAct).toBe(1);
   });
 
+  // Four players: seat 0 shows the 2c but has only the ante, so seat 1 (Ah) opens third street, then seats 2 (Qh) and 3 (9s).
+  const fourHanded = ['Qs', '7h', 'Th', 'Js', '8h', '6c', 'Kd', '3c', 'Qh', '9s', '2c', 'Ah'];
+
+  it('when the low card is all in from the ante, the next seat may bring in, complete or fold', () => {
+    const s = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    expect(s.seats.find((x) => x.seat === 0)!.allIn).toBe(true);
+    expect(s.toAct).toBe(1);
+    // Seat 1 is not the low card, so nothing forces it to put chips in.
+    expect(legalActions(s, 1)).toMatchObject({ canBringIn: true, canCheck: false, canFold: true, canRaise: true, minTo: 2 });
+    act(s, 1, { type: 'fold' });
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount])).toEqual([[1, 'fold', 0]]);
+    expect(s.toAct).toBe(2);
+    expect(legalActions(s, 2)).toMatchObject({ canBringIn: true, canFold: true });
+  });
+
+  it('when the low card is all in from the ante, the next seat who leaves just folds without bringing in', () => {
+    const s = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    engine.foldOutOfTurn(s, 1);
+    expect(eventsOf(s, 'action').map((e) => [e.seat, e.action, e.amount])).toEqual([[1, 'fold', 0]]);
+    // Only the ante is gone.
+    expect(stacks(s)[1]).toBe(99);
+    expect(s.toAct).toBe(2);
+  });
+
+  it('when the low card is all in from the ante, an away or timed-out next seat still brings in, as before', () => {
+    const away = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded, away: [1] });
+    expect(eventsOf(away, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+    const slow = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
+    engine.timeout(slow, 1);
+    expect(eventsOf(slow, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+  });
+
   it('after a leaving low card brings in, an away player next acts at once', () => {
     const s = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal, away: [1] });
     engine.foldOutOfTurn(s, 0);

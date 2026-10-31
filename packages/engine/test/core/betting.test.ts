@@ -25,9 +25,9 @@ const preflop = (over: Partial<BettingContext> = {}) =>
 const limit = (unit: number, over: Partial<BettingContext> = {}) =>
   ctx({ betting: 'fixed-limit', fixed: { unit, cap: 4, uncapped: false }, ...over });
 
-/** Fixed-limit stud third street: 8 antes of 1, bring-in 1, complete to the small bet 4. */
+/** Fixed-limit stud third street: 8 antes of 1, bring-in 1, complete to the small bet 4. The seat is the low card. */
 const stud = (over: Partial<BettingContext> = {}) =>
-  limit(4, { bigBlind: 4, potTotal: 8, bringIn: { amount: 1, completeTo: 4 }, ...over });
+  limit(4, { bigBlind: 4, potTotal: 8, bringIn: { amount: 1, completeTo: 4, forced: true }, ...over });
 
 const range = (l: ReturnType<typeof computeLegal>) => [l.minTo, l.maxTo];
 
@@ -302,6 +302,12 @@ describe('stud bring-in', () => {
     expect(range(l)).toEqual([4, 4]);
   });
 
+  it('the seat that opens because the low card is all in from the ante may also fold', () => {
+    const l = computeLegal(stud({ bringIn: { amount: 1, completeTo: 4 } }));
+    expect(l).toMatchObject({ canBringIn: true, canCheck: false, canFold: true, canRaise: true });
+    expect(range(l)).toEqual([4, 4]);
+  });
+
   it('bring-in seat covering only the bring-in cannot complete', () => {
     expect(computeLegal(stud({ stack: 1 }))).toMatchObject({ canBringIn: true, canRaise: false });
   });
@@ -481,7 +487,7 @@ describe('invariants', () => {
     const kinds = ['no-limit', 'pot-limit', 'fixed-limit'] as const;
     for (let i = 0; i < 5000; i++) {
       const currentBet = r() < 0.3 ? 0 : int(1, 200);
-      const bringIn = r() < 0.2 ? (() => { const amount = int(1, 5); return { amount, completeTo: amount + int(1, 10) }; })() : undefined;
+      const bringIn = r() < 0.2 ? (() => { const amount = int(1, 5); return { amount, completeTo: amount + int(1, 10), forced: r() < 0.8 }; })() : undefined;
       const c: BettingContext = {
         betting: kinds[int(0, 2)],
         stack: int(0, 300),
@@ -502,7 +508,7 @@ describe('invariants', () => {
       const where = JSON.stringify(c);
 
       for (const v of [l.callAmount, l.minTo, l.maxTo]) expect(Number.isInteger(v), where).toBe(true);
-      expect(l.canFold, where).toBe(!l.canBringIn);
+      expect(l.canFold, where).toBe(!(l.canBringIn && c.bringIn!.forced));
       expect(l.callAmount, where).toBe(Math.min(toCall, c.stack));
       if (!l.canBringIn) expect(l.canCheck, where).toBe(toCall === 0);
       if (!c.seatCanRaise) expect(l.canRaise, where).toBe(false);

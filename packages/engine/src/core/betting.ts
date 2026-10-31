@@ -28,6 +28,12 @@ export interface BringInRound {
   amount: Chips;
   /** Total a completion goes to (the small bet). */
   completeTo: Chips;
+  /**
+   * This seat is the one the bring-in rule chose (the low card, or the high card in razz), so it must bring in or
+   * complete and may not fold. Unset for the seat that opens instead when that one is all in from the ante: it may
+   * bring in, complete or fold.
+   */
+  forced?: boolean;
 }
 
 /** One seat's decision point, built by the hand machine from HandState and the seat. */
@@ -66,7 +72,8 @@ export function potLimitMax(currentBet: Chips, potTotal: Chips, toCall: Chips): 
 /**
  * Legal actions for the seat described by `ctx`. minTo and maxTo are 0 when
  * canRaise is false. The stud bring-in seat (bringIn set, nothing bet yet)
- * cannot check or fold: the bring-in is forced, so it brings in or completes.
+ * cannot check. The low card cannot fold either: the bring-in is forced, so it
+ * brings in or completes.
  */
 export function computeLegal(ctx: BettingContext): LegalActions {
   const toCall = Math.max(0, ctx.currentBet - ctx.bet);
@@ -82,7 +89,7 @@ export function computeLegal(ctx: BettingContext): LegalActions {
   const fullTo = nothingToComplete ? floor + 1 : base + step;
   const canRaise = ctx.seatCanRaise && !capReached(ctx) && allInTo > floor && !(nothingToComplete && ctx.betting === 'fixed-limit');
   return {
-    canFold: !canBringIn,
+    canFold: !(canBringIn && ctx.bringIn!.forced),
     canCheck: toCall === 0 && !canBringIn,
     callAmount: Math.min(toCall, ctx.stack),
     canRaise,

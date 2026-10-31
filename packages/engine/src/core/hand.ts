@@ -260,8 +260,7 @@ function beginBetting(state: HandState, firstRound: boolean) {
 
   if (game.family === 'stud') {
     if (firstRound) {
-      if (!rules.bringInSeat) throw new Error(`${game.id} has no bringInSeat rule`);
-      first = rules.bringInSeat(game, upCards(state));
+      first = bringInSeat(state);
     } else {
       if (!rules.firstToActSeat) throw new Error(`${game.id} has no firstToActSeat rule`);
       const order = clockwiseFrom(state, state.input.button).filter((s) => !s.folded).map((s) => s.seat);
@@ -310,6 +309,20 @@ function settleAutomatic(state: HandState) {
   }
 }
 
+/**
+ * Stud third street: the seat the variant's rule makes bring in (the low card, or the high card in razz). Worked out
+ * from every dealt-in seat's up cards, folded or not, which stay the same all round, so it is always the seat the
+ * round started from, even when that one is all in from the ante and the next seat opens instead.
+ */
+function bringInSeat(state: HandState): SeatIndex {
+  const { game } = state.input;
+  const { rules } = variants.get(game.id);
+  if (!rules.bringInSeat) throw new Error(`${game.id} has no bringInSeat rule`);
+  const up: Record<SeatIndex, Card[]> = {};
+  for (const s of state.seats) up[s.seat] = s.cards.filter((c) => c.up).map((c) => c.card);
+  return rules.bringInSeat(game, up);
+}
+
 function bringInContext(state: HandState) {
   const { game, stakes } = state.input;
   if (game.family !== 'stud' || state.street !== 0) return undefined;
@@ -343,6 +356,7 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
   const { input } = state;
   const st = input.game.streets[state.street];
   const potTotal = state.seats.reduce((sum, x) => sum + x.total, 0);
+  const bringIn = bringInContext(state);
   return {
     betting: input.betting,
     stack: s.stack,
@@ -362,7 +376,7 @@ function bettingContext(state: HandState, s: HandSeat): BettingContext {
             uncapped: input.options.uncappedHeadsUp && live(state).length === 2 && !state.cappedMultiway,
           }
         : undefined,
-    bringIn: bringInContext(state),
+    bringIn: bringIn && { ...bringIn, forced: s.seat === bringInSeat(state) },
     trimTo: input.options.trimExcessBets ? Math.max(0, ...live(state).filter((x) => x !== s).map((x) => x.bet + x.stack)) : undefined,
   };
 }
@@ -476,7 +490,10 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
   state.toAct = nextToAct(state, s.seat, false);
 }
 
-/** What the engine does for a player who is away or out of time: check, post a stud bring-in, or fold. */
+/**
+ * What the engine does for a player who is away or out of time: check, post a stud bring-in, or fold. The seat that
+ * opens instead of a low card all in from the ante may fold, but brings in here like the low card, as it always has.
+ */
 function autoAction(legal: LegalActions): Action {
   if (legal.canCheck) return { type: 'check' };
   if (legal.canBringIn) return { type: 'bring-in' };
@@ -497,10 +514,11 @@ export function foldOutOfTurn(state: HandState, seat: SeatIndex) {
   const s = seatAt(state, seat);
   if (!s || s.folded || state.phase === 'complete') return;
   if (state.toAct === seat && state.phase === 'betting') {
-    if (legalActions(state, seat)!.canBringIn) {
+    if (!legalActions(state, seat)!.canFold) {
       // The low card in stud must bring in even when leaving: it is posted for them, then the hand
       // folds out of turn, so the next seat faces the bring-in rather than owing it. A bring-in that
-      // puts them all in keeps them in the hand, like any player who leaves all in.
+      // puts them all in keeps them in the hand, like any player who leaves all in. The seat that opens
+      // instead of a low card who is all in from the ante owes nothing, so it just folds.
       applyAction(state, s, { type: 'bring-in' }, true);
       if (!s.allIn) foldOutOfTurn(state, seat);
       settleAutomatic(state);

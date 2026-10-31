@@ -36,4 +36,11 @@ describe('pre-moves', () => {
     expect(preMoveAction({ kind: 'check' }, bringIn)).toBeNull();
     expect(preMoveAction({ kind: 'callAny' }, bringIn)).toEqual({ type: 'bring-in' });
   });
+
+  it('the seat that opens because the low card is all in from the ante keeps its fold pre-moves', () => {
+    const opener = legal({ canFold: true, canBringIn: true });
+    expect(preMoveAction({ kind: 'checkFold' }, opener)).toEqual({ type: 'fold' });
+    expect(preMoveAction({ kind: 'fold' }, opener)).toEqual({ type: 'fold' });
+    expect(preMoveAction({ kind: 'callAny' }, opener)).toEqual({ type: 'bring-in' });
+  });
 });
