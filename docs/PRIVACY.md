@@ -112,9 +112,13 @@ for how it works.
 ## Other services involved
 
 - **Fly.io** hosts the site and its database in the USA (Virginia). Like any web host it
-  sees your IP address when you connect. The site uses IP addresses only in
-  memory, for a few minutes, to slow down people guessing passwords or
-  flooding the site with requests, and doesn't save them. The server's own logs record errors, not
+  sees your IP address when you connect. The site keeps IP addresses only in
+  memory and never saves them. It uses them for a few minutes to slow down
+  people guessing passwords or flooding the site with requests. If you make a
+  tournament, the address you made it from is also remembered while that
+  tournament is open, so one address can't fill the home page with events; it
+  is forgotten within a few minutes of the tournament ending, and whenever the
+  server restarts. The server's own logs record errors, not
   visitors, and they stay in Fly's log service, not in the site's database.
 - **GitHub** holds the code, the hourly copy of the public record and the
   nightly backups (below).

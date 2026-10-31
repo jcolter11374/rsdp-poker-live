@@ -209,4 +209,22 @@ describe('limits on making tables and tournaments', () => {
       await after.app.close();
     }
   });
+
+  it('forgets an address once nothing made from it is open (the privacy page says addresses are kept only that long)', async () => {
+    const own = await boot(new FakeClock(), memoryStore(), memoryTournamentStore());
+    try {
+      const settings = { ...defaultSettings(), name: 'Forget me' };
+      const host = own.client('open-cap-forget-host-0123456789', '192.0.2.70');
+      const { id } = await host.call<{ id: string }>('tournament:create', { settings });
+      expect(own.app.openTournamentAddresses()).toBe(1);
+      // A create refused on the server leaves nothing behind for its address.
+      await expect(own.client('open-cap-forget-other-0123456789', '192.0.2.71').call('tournament:create', { settings: { ...settings, season: { id: 'no-such-season', name: 'Nope' } } })).rejects.toThrow(/season was not found/);
+      expect(own.app.openTournamentAddresses()).toBe(1);
+      // Once the one made from 192.0.2.70 is put away, the address is forgotten.
+      await host.call('tournament:command', { id, command: { type: 'archive' } });
+      expect(own.app.openTournamentAddresses()).toBe(0);
+    } finally {
+      await own.app.close();
+    }
+  });
 });

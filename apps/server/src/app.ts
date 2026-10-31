@@ -259,22 +259,27 @@ function perPlayerAndAddress(burst: number, windowMs: number, now: () => number)
  * the next of a series or Sit & Go, which the server opens), worked out from
  * what the server has loaded, so it still holds after a restart. The address's
  * is only the ones made from it since this server started: no address is saved
- * with anything, so after a restart it starts again from zero.
+ * with anything, so after a restart it starts again from zero. An address is
+ * kept (in memory only) just while something made from it is open or being
+ * made; `sweep` forgets the rest, and runs every few minutes.
  */
 function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => number, isOpen: (id: string) => boolean) {
   const making = new Map<PlayerId, number>();
   const made = new Map<string, { ids: string[]; making: number }>();
-  const fromAddress = (address: string) => {
-    const m = made.get(address) ?? { ids: [], making: 0 };
-    m.ids = m.ids.filter(isOpen);
-    made.set(address, m);
-    return m;
+  /** Forgets addresses with nothing open and nothing being made. */
+  const sweep = () => {
+    for (const [address, m] of made) {
+      m.ids = m.ids.filter(isOpen);
+      if (!m.ids.length && !m.making) made.delete(address);
+    }
   };
-  return async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<{ id: string } | { full: 'player' | 'address' }> => {
+  const open = async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<{ id: string } | { full: 'player' | 'address' }> => {
     const theirs = making.get(playerId) ?? 0;
-    const here = fromAddress(address);
     if (hosted(playerId) + theirs >= max) return { full: 'player' };
+    const here = made.get(address) ?? { ids: [], making: 0 };
+    here.ids = here.ids.filter(isOpen);
     if (here.ids.length + here.making >= max) return { full: 'address' };
+    made.set(address, here);
     making.set(playerId, theirs + 1);
     here.making++;
     try {
@@ -287,10 +292,10 @@ function openPerPlayerAndAddress(max: number, hosted: (playerId: PlayerId) => nu
       if (left) making.set(playerId, left);
       else making.delete(playerId);
       here.making--;
-      // Addresses with nothing open are swept now and then.
-      if (made.size > 5_000) for (const [k, m] of made) if (!m.making && !m.ids.some(isOpen)) made.delete(k);
+      if (!here.ids.length && !here.making) made.delete(address);
     }
   };
+  return Object.assign(open, { sweep, addresses: () => made.size });
 }
 
 /** A browser's address; Fly puts the real one in a header, as for HTTP requests (clientAddress). */
@@ -775,6 +780,7 @@ export function createApp(deps: AppDeps = {}) {
     } catch (e) {
       log('putting idle tables away failed', e);
     }
+    openTournaments.sweep();
   }, Math.min(IDLE_SWEEP_MS, Math.max(1_000, (deps.idleUnloadMs ?? IDLE_UNLOAD_MS) / 3)));
   sweep?.unref();
 
@@ -1598,6 +1604,11 @@ export function createApp(deps: AppDeps = {}) {
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: () => tournaments.resumeAll(),
+    /** How many addresses the open-tournament limit remembers now (each has something open); the server sweeps every few minutes. */
+    openTournamentAddresses: () => {
+      openTournaments.sweep();
+      return openTournaments.addresses();
+    },
     async close() {
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
