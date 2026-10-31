@@ -109,6 +109,28 @@ describe('limits on making tables and tournaments', () => {
     await client('open-cap-club-0-0123456789', '192.0.2.31').call('tournament:create', { settings });
   });
 
+  it('doesn’t count a create refused for too many open tournaments against the 10 in 10 minutes', async () => {
+    const settings = { ...defaultSettings(), name: 'Full house' };
+    const host = client('open-cap-retry-host-0123456789', '192.0.2.40');
+    expect((await settled(Array.from({ length: 10 }, () => host.call('tournament:create', { settings })))).filter((r) => r === 'ok')).toHaveLength(10);
+    clock.advance(60 * MINUTE);
+    // Trying again and again while all ten are open costs nothing...
+    const tries = await settled(Array.from({ length: 10 }, () => host.call('tournament:create', { settings })));
+    expect(tries.every((r) => /a lot of open tournaments/.test(r))).toBe(true);
+    // ...so archiving one makes room straight away.
+    const mine = (await host.call<{ tournaments: { id: string; name: string; me: { hosting: boolean } }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Full house' && t.me.hosting);
+    await host.call('tournament:command', { id: mine[0].id, command: { type: 'archive' } });
+    await host.call('tournament:create', { settings });
+  });
+
+  it('still counts a create that fails on the server, so made-up season ids can’t be looked up for free', async () => {
+    const settings = { ...defaultSettings(), name: 'Lost season' };
+    const script = client('season-probe-script-0123456789', '192.0.2.45');
+    const tries = await settled(Array.from({ length: 10 }, (_, i) => script.call('tournament:create', { settings: { ...settings, season: { id: `no-such-season-${i}`, name: 'Nope' } } })));
+    expect(tries.every((r) => /that season was not found/.test(r))).toBe(true);
+    await expect(script.call('tournament:create', { settings })).rejects.toThrow(/a lot of new tournaments/);
+  });
+
   it('still counts a player’s open tournaments after the server restarts', async () => {
     const settings = { ...defaultSettings(), name: 'Deploy day' };
     const tables = memoryStore();

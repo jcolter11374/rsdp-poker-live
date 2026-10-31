@@ -236,14 +236,16 @@ export function tipLimits(now: () => number) {
   };
 }
 
-/** A limit kept per player and per address: true, and counted against both, when both have room for one more. */
+/** A limit kept per player and per address: true, and counted against both (unless `count` is false), when both have room for one more. */
 function perPlayerAndAddress(burst: number, windowMs: number, now: () => number) {
   const byPlayer = limiter(burst, windowMs, now);
   const byAddress = limiter(burst, windowMs, now);
-  return (playerId: PlayerId, address: string) => {
+  return (playerId: PlayerId, address: string, count = true) => {
     if (!byPlayer(playerId, false) || !byAddress(address, false)) return false;
-    byPlayer(playerId);
-    byAddress(address);
+    if (count) {
+      byPlayer(playerId);
+      byAddress(address);
+    }
     return true;
   };
 }
@@ -1475,8 +1477,15 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const address = socketAddress(socket);
-          if (!tournamentCreates(me, address)) throw new ActionError('that is a lot of new tournaments; try again in a few minutes');
-          const made = await openTournaments(me, address, () => tournaments.create(me, input?.settings));
+          const tooMany = () => new ActionError('that is a lot of new tournaments; try again in a few minutes');
+          // Asked first without counting, so someone past both limits hears about this one. It's counted only once
+          // the open limit lets it through, so being told to archive one costs nothing; one that fails after that
+          // (a season that isn't there) still counts, so a script can't look up seasons for free.
+          if (!tournamentCreates(me, address, false)) throw tooMany();
+          const made = await openTournaments(me, address, async () => {
+            if (!tournamentCreates(me, address)) throw tooMany();
+            return tournaments.create(me, input?.settings);
+          });
           if ('id' in made) return made;
           if (made.full === 'player') throw new ActionError('that is a lot of open tournaments; archive one you made, or wait for one to finish');
           // Only their address is full (a club's or an office's Wi-Fi, say): they may have made none to archive.
