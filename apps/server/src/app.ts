@@ -182,6 +182,12 @@ const AVATAR_WINDOW_MS = 30_000;
 const TABLES_PER_WINDOW = 20;
 const TOURNAMENTS_PER_WINDOW = 10;
 const CREATE_WINDOW_MS = 10 * 60_000;
+/**
+ * Tournaments one player, or one address, may have open at once (not over or
+ * archived). The limit above only slows down a script that waits it out; this
+ * keeps what one of them can put on everyone's home page small.
+ */
+const OPEN_TOURNAMENTS = 10;
 const NAME_MAX = 20;
 
 /**
@@ -242,6 +248,35 @@ function perPlayerAndAddress(burst: number, windowMs: number, now: () => number)
   };
 }
 
+/**
+ * Makes something only while the player, and the address, each have fewer than
+ * `max` of the ones they made still open: null when either has `max`. One being
+ * made holds its place, so a burst can't slip past while the first are saved.
+ */
+function openPerPlayerAndAddress(max: number, isOpen: (id: string) => boolean) {
+  const made = new Map<string, { ids: string[]; making: number }>();
+  const count = (key: string) => {
+    const m = made.get(key) ?? { ids: [], making: 0 };
+    m.ids = m.ids.filter(isOpen);
+    made.set(key, m);
+    return m;
+  };
+  return async (playerId: PlayerId, address: string, make: () => Promise<string>): Promise<string | null> => {
+    const counts = [count(`player ${playerId}`), count(`address ${address}`)];
+    if (counts.some((m) => m.ids.length + m.making >= max)) return null;
+    for (const m of counts) m.making++;
+    try {
+      const id = await make();
+      for (const m of counts) m.ids.push(id);
+      return id;
+    } finally {
+      for (const m of counts) m.making--;
+      // Players and addresses with nothing open are swept now and then.
+      if (made.size > 5_000) for (const [k, m] of made) if (!m.making && !m.ids.some(isOpen)) made.delete(k);
+    }
+  };
+}
+
 /** A browser's address; Fly puts the real one in a header, as for HTTP requests (clientAddress). */
 function socketAddress(socket: Sock): string {
   const fly = socket.handshake.headers['fly-client-ip'];
@@ -292,6 +327,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatarChanges = new Map<PlayerId, number[]>();
   const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
   const tournamentCreates = perPlayerAndAddress(TOURNAMENTS_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
+  const openTournaments = openPerPlayerAndAddress(OPEN_TOURNAMENTS, (id) => tournaments.isOpen(id));
   /** Loads the pictures of seated players the server has not seen yet (after a restart), then shows them. */
   function loadAvatars(rt: TableRuntime) {
     const missing = rt.state.seats.filter((x) => x && !avatars.has(x.playerId)).map((x) => x!.playerId);
@@ -1425,8 +1461,11 @@ export function createApp(deps: AppDeps = {}) {
       guarded(
         ack,
         async () => {
-          if (!tournamentCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tournaments; try again in a few minutes');
-          return { id: await tournaments.create(me, input?.settings) };
+          const address = socketAddress(socket);
+          if (!tournamentCreates(me, address)) throw new ActionError('that is a lot of new tournaments; try again in a few minutes');
+          const id = await openTournaments(me, address, () => tournaments.create(me, input?.settings));
+          if (id === null) throw new ActionError('that is a lot of open tournaments; archive one you made, or wait for one to finish');
+          return { id };
         },
         log,
       ),

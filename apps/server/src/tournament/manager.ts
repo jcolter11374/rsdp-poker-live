@@ -238,6 +238,12 @@ export class TournamentManager {
     return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
   }
 
+  /** Still to come or under way, and not archived (every such event is in memory). */
+  isOpen(id: string): boolean {
+    const s = this.live.get(id)?.state;
+    return !!s && isLive(s) && !isArchived(s);
+  }
+
   /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
   async peek(id: string): Promise<TournamentState | null> {
     return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;

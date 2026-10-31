@@ -60,7 +60,37 @@ describe('limits on making tables and tournaments', () => {
     const visitor = client('limit-events-visitor-0123456789', '198.51.100.3');
     const { tournaments } = await visitor.call<{ tournaments: { name: string }[] }>('tournament:list');
     expect(tournaments.filter((t) => t.name === 'Free chips')).toHaveLength(10);
+    // Archiving one leaves room under the open limit (below), but not under this one until ten minutes are up.
+    const mine = (await script.call<{ tournaments: { id: string; name: string; me: { hosting: boolean } }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Free chips' && t.me.hosting);
+    await script.call('tournament:command', { id: mine[0].id, command: { type: 'archive' } });
+    await expect(script.call('tournament:create', { settings })).rejects.toThrow(/a lot of new tournaments/);
     clock.advance(10 * MINUTE);
     await script.call('tournament:create', { settings });
+  });
+
+  it('keeps at most 10 open tournaments per player or address, so waiting out the limit can’t fill the home page', async () => {
+    const settings = { ...defaultSettings(), name: 'Spam night' };
+    // Every 10 minutes: a new guest from the same address, and the same guest from a new address, each try 10 more.
+    const roamer = 'open-cap-roamer-0123456789';
+    for (let round = 0; round < 4; round++) {
+      const guest = client(`open-cap-guest-${round}-0123456789`, '192.0.2.1');
+      const moved = client(roamer, `192.0.2.${10 + round}`);
+      const made = await settled([
+        ...Array.from({ length: 10 }, () => guest.call('tournament:create', { settings })),
+        ...Array.from({ length: 10 }, () => moved.call('tournament:create', { settings })),
+      ]);
+      if (round > 0) expect(made.filter((r) => r === 'ok')).toHaveLength(0);
+      clock.advance(10 * MINUTE);
+    }
+    const visitor = client('open-cap-visitor-0123456789', '192.0.2.99');
+    const listed = async () => (await visitor.call<{ tournaments: { name: string }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Spam night');
+    expect(await listed()).toHaveLength(20);
+    // Archiving one makes room for one more.
+    const host = client(roamer, '192.0.2.20');
+    const mine = (await host.call<{ tournaments: { id: string; name: string; me: { hosting: boolean } }[] }>('tournament:list')).tournaments.filter((t) => t.name === 'Spam night' && t.me.hosting);
+    await expect(host.call('tournament:create', { settings })).rejects.toThrow(/a lot of open tournaments/);
+    await host.call('tournament:command', { id: mine[0].id, command: { type: 'archive' } });
+    await host.call('tournament:create', { settings });
+    expect(await listed()).toHaveLength(20);
   });
 });
