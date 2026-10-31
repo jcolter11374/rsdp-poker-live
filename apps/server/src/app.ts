@@ -26,7 +26,7 @@ import { LobbyLog, memoryLobbyStore, type LobbyStore } from './tournament/lobby'
 import { memorySharedHands, type SharedHandStore } from './shared';
 import { memorySuggestions, suggestionRoutes, type SuggestionStore } from './suggestions';
 import { newId } from './db/ids';
-import { adminGate, limiter } from './admin';
+import { adminGate, limiter, sweepLimiters } from './admin';
 import { accountRoutes, type AccountHooks } from './accounts';
 import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
@@ -774,13 +774,19 @@ export function createApp(deps: AppDeps = {}) {
     track(id, done);
   }
 
+  /** Forgets addresses the limits no longer need (the privacy page promises at most about an hour). */
+  function forgetOldAddresses() {
+    openTournaments.sweep();
+    sweepLimiters();
+  }
+
   const sweep = deps.idleUnloadMs === 0 ? null : setInterval(() => {
     try {
       unloadIdle();
     } catch (e) {
       log('putting idle tables away failed', e);
     }
-    openTournaments.sweep();
+    forgetOldAddresses();
   }, Math.min(IDLE_SWEEP_MS, Math.max(1_000, (deps.idleUnloadMs ?? IDLE_UNLOAD_MS) / 3)));
   sweep?.unref();
 
@@ -1604,11 +1610,10 @@ export function createApp(deps: AppDeps = {}) {
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: () => tournaments.resumeAll(),
-    /** How many addresses the open-tournament limit remembers now (each has something open); the server sweeps every few minutes. */
-    openTournamentAddresses: () => {
-      openTournaments.sweep();
-      return openTournaments.addresses();
-    },
+    /** Forgets addresses the limits no longer need now (the server also does this every few minutes). */
+    forgetOldAddresses,
+    /** How many addresses the open-tournament limit remembers now. */
+    openTournamentAddresses: () => openTournaments.addresses(),
     async close() {
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.

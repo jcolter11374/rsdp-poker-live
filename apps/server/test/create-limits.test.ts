@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings } from '@rsdp/tournament';
+import { limiterKeys } from '../src/admin';
 import { createApp, memoryStore } from '../src/app';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
@@ -215,19 +216,28 @@ describe('limits on making tables and tournaments', () => {
     }
   });
 
-  it('forgets an address once nothing made from it is open (the privacy page says addresses are kept only that long)', async () => {
-    const own = await boot(new FakeClock(), memoryStore(), memoryTournamentStore());
+  it('forgets an address once nothing made from it is open and its limits have passed (the privacy page says at most about an hour)', async () => {
+    const at = new FakeClock();
+    const own = await boot(at, memoryStore(), memoryTournamentStore());
     try {
       const settings = { ...defaultSettings(), name: 'Forget me' };
       const host = own.client('open-cap-forget-host-0123456789', '192.0.2.70');
       const { id } = await host.call<{ id: string }>('tournament:create', { settings });
       expect(own.app.openTournamentAddresses()).toBe(1);
-      // A create refused on the server leaves nothing behind for its address.
+      // A create refused on the server leaves nothing behind in the open count for its address.
       await expect(own.client('open-cap-forget-other-0123456789', '192.0.2.71').call('tournament:create', { settings: { ...settings, season: { id: 'no-such-season', name: 'Nope' } } })).rejects.toThrow(/season was not found/);
       expect(own.app.openTournamentAddresses()).toBe(1);
-      // Once the one made from 192.0.2.70 is put away, the address is forgotten.
+      // Once the one made from 192.0.2.70 is put away, the open count forgets the address at the next sweep...
       await host.call('tournament:command', { id, command: { type: 'archive' } });
+      expect(own.app.openTournamentAddresses()).toBe(1);
+      own.app.forgetOldAddresses();
       expect(own.app.openTournamentAddresses()).toBe(0);
+      // ...and the 10-in-10-minutes count forgets both addresses at the first sweep after its window.
+      expect(limiterKeys('192.0.2.70')).toBeGreaterThan(0);
+      at.advance(10 * MINUTE + 1);
+      own.app.forgetOldAddresses();
+      expect(limiterKeys('192.0.2.70')).toBe(0);
+      expect(limiterKeys('192.0.2.71')).toBe(0);
     } finally {
       await own.app.close();
     }
