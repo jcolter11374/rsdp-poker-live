@@ -815,7 +815,10 @@ describe('what a seat sees (seenBy)', () => {
           checked++;
           if (rt.state.seats[h.toAct]?.playerId === 'host') {
             if (h.phase === 'drawing') rt.draw('host', [0]);
-            else rt.act('host', engine.legalActions(h, h.toAct)!.canCheck ? { type: 'check' } : { type: 'call' });
+            else {
+              const legal = engine.legalActions(h, h.toAct)!;
+              rt.act('host', legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' });
+            }
             continue;
           }
         }

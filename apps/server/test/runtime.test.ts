@@ -38,11 +38,8 @@ function checkDown(rt: TableRuntime) {
       continue;
     }
     if (h.toAct === null) break;
-    try {
-      rt.act(toActId(rt), { type: 'check' });
-    } catch {
-      rt.act(toActId(rt), { type: 'call' });
-    }
+    const legal = engine.legalActions(h, h.toAct)!;
+    rt.act(toActId(rt), legal.canCheck ? { type: 'check' } : legal.canBringIn ? { type: 'bring-in' } : { type: 'call' });
   }
 }
 
