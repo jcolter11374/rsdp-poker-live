@@ -112,7 +112,8 @@ describe('hand search', () => {
     const { id } = (await share.json()) as { id: string };
     const link = (await (await fetch(`${url}/api/shared/${id}`)).json()) as { tableName: string; sharerSeat?: number; hand: Found['hand'] };
     expect(link.tableName).toBe('With Cal');
-    // Hidden: my cards are face down too, and the link doesn't say which seat was mine.
+    // Hidden: my cards are face down too, and the link carries no sharerSeat, since there are no cards of mine to show.
+    // (It still names me as the sharer, so this isn't anonymous.)
     for (const e of link.hand.events.filter((x) => x.t === 'deal')) for (const c of e.cards ?? []) expect(c.card).toBe('??');
     expect(link.sharerSeat).toBeUndefined();
     // Shown: my cards are face up, and the link names my seat so the replay shows them.

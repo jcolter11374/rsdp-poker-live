@@ -67,7 +67,8 @@ describe('shared hands and the full log', () => {
     const hidden = await host.call<{ id: string }>('hand:share', { handNumber, hideMine: true });
     const hiddenHand = (await (await fetch(`${url}/api/shared/${hidden.id}`)).json()) as SharedHandView;
     expect(deals(hiddenHand.hand).every((d) => d.cards.every((c) => c.card === '??'))).toBe(true);
-    // With my cards hidden, the link doesn't say which seat was mine either.
+    // With my cards hidden, the link carries no sharerSeat either: there are no cards of mine for the replay to show.
+    // It still names me as the sharer, so this isn't anonymous.
     expect(hiddenHand.sharerSeat).toBeUndefined();
 
     await expect(guest.call('hand:unshare', { id })).rejects.toThrow(/not one of yours/);
