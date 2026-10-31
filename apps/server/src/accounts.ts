@@ -87,6 +87,8 @@ export function accountRoutes(
     isAdmin: AdminCheck;
     confirmations: GoogleConfirmations;
     now: () => number;
+    /** A timer on the same clock as `now`. */
+    setTimeout: (fn: () => void, ms: number) => unknown;
     log: (message: string, err?: unknown) => void;
     /** Admin actions go in the public record (audit.ts). */
     onAdmin?: (action: string) => void;
@@ -305,6 +307,10 @@ export function accountRoutes(
         const fresh = { at: t, data: leaderData(db), boards: new Map<string, Promise<LeaderRow[]>>() };
         read = fresh;
         fresh.data.catch(() => read === fresh && (read = null));
+        // Every real game's hands are a lot to hold: once the minute is up they are let go, not kept until the next
+        // visit, which may be days away. The timer doesn't keep the server running on its own.
+        const expiry = opts.setTimeout(() => read === fresh && (read = null), LEADERBOARD_CACHE_MS);
+        (expiry as { unref?: () => void } | null)?.unref?.();
       }
       const { data, boards } = read;
       // Time zones whose period starts at the same moment share one answer.

@@ -415,7 +415,15 @@ export function createApp(deps: AppDeps = {}) {
     },
   };
   const confirmations = googleConfirmations(() => clock.now());
-  accountRoutes(app, deps.accounts ?? null, { isAdmin, confirmations, now: () => clock.now(), log, hooks: accountHooks, onAdmin: (action) => audit.admin(action) });
+  accountRoutes(app, deps.accounts ?? null, {
+    isAdmin,
+    confirmations,
+    now: () => clock.now(),
+    setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
+    log,
+    hooks: accountHooks,
+    onAdmin: (action) => audit.admin(action),
+  });
   handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.

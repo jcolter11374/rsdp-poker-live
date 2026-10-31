@@ -2,6 +2,8 @@
 // time zone), not at UTC midnight, so the last evening of a month still counts in that month.
 
 import type { AddressInfo } from 'node:net';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -62,6 +64,14 @@ async function game(id: string, annWon: number, handTimes: string[]) {
   }
 }
 
+/** A full garbage collection once the current step has finished, so a test can see what is still kept. */
+async function collectGarbage() {
+  setFlagsFromString('--expose-gc');
+  const gc = runInNewContext('gc') as () => void;
+  await new Promise((resolve) => setImmediate(resolve));
+  gc();
+}
+
 /** Ann's line on the board at the clock's time, and where the period starts. */
 async function board(query: string) {
   const res = (await (await fetch(`${url}/api/leaderboard?${query}`, { headers: { 'x-guest-token': 'a-guest-secret-0123456789' } })).json()) as {
@@ -120,6 +130,52 @@ describe('leaderboard periods', () => {
       clock.t += 60_000;
       await board('period=month&tz=UTC');
       expect(reads).toBe(2);
+    } finally {
+      db.execute = execute;
+    }
+  });
+
+  it('keeps no bot table’s hands, and lets go of the rest once a minute passes with no visit', async () => {
+    // A practice table against a bot: it never counts on the boards.
+    await createTable(db, { id: 'practice', ownerPlayerId: 'ann', settings: { table: { name: 'practice' } }, mode: 'cash' });
+    await saveHand(db, {
+      id: 'practice-1',
+      tableId: 'practice',
+      number: 1,
+      gameId: 'nlhe',
+      startedAt: new Date('2026-11-01T15:00:00Z'),
+      endedAt: new Date('2026-11-01T15:00:00Z'),
+      header: { input: {}, seats: [{ seat: 0, playerId: 'ann', startStack: 10000 }, { seat: 1, playerId: 'bot-1', startStack: 10000 }] },
+      events: [],
+    });
+    // Watches one hand of a real game and one of the practice table as the hands are read, without keeping them.
+    const execute = db.execute.bind(db);
+    const dialect = new PgDialect();
+    let real: WeakRef<object> | undefined;
+    let practice: WeakRef<object> | undefined;
+    db.execute = ((query: SQL) => {
+      const result = execute(query);
+      if (!/\bfrom hands\b/.test(dialect.sqlToQuery(query).sql)) return result;
+      return result.then((res) => {
+        const rows = (res as unknown as { rows: { table_id: string }[] }).rows;
+        real = new WeakRef(rows.find((r) => r.table_id === 'oct-9')!);
+        practice = new WeakRef(rows.find((r) => r.table_id === 'practice')!);
+        return res;
+      });
+    }) as typeof db.execute;
+    try {
+      // Past the minute of the last read above, so the hands are read again.
+      clock.advance(60_000);
+      expect((await board('period=all')).games).toBe(3);
+      expect(real && practice).toBeTruthy();
+      await collectGarbage();
+      expect(practice!.deref()).toBeUndefined();
+      // Within the minute the real games' hands are kept, so the next board needn't read them again.
+      expect(real!.deref()).toBeDefined();
+      // Nobody looks again: after a minute they are let go anyway.
+      clock.advance(60_000);
+      await collectGarbage();
+      expect(real!.deref()).toBeUndefined();
     } finally {
       db.execute = execute;
     }

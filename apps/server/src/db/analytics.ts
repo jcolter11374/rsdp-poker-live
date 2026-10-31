@@ -248,10 +248,11 @@ interface LeaderTable {
 }
 
 /**
- * What the leaderboards are worked out from: every cash hand, read once, and
- * the games and accounts the boards have needed so far, each read once.
+ * What the leaderboards are worked out from: every real game's hands, read
+ * once, and the games and accounts the boards have needed so far, each read once.
  */
 export interface LeaderData {
+  /** Only real games' hands: practice and bot tables never count, so they aren't kept. */
   hands: HandRow[];
   real: Set<string>;
   /** When each real game's last hand started. */
@@ -268,9 +269,10 @@ export interface LeaderData {
  * (leaderboard), which reads the rest as it needs it.
  */
 export async function leaderData(db: Db): Promise<LeaderData> {
-  const hands = await cashHands(db);
+  const all = await cashHands(db);
   // Whether a table is real depends on all its hands, not only the period's.
-  const real = realTables(hands);
+  const real = realTables(all);
+  const hands = all.filter((r) => real.has(r.table_id));
   const lastHand = new Map<string, number>();
   for (const r of hands) if (real.has(r.table_id)) lastHand.set(r.table_id, Math.max(lastHand.get(r.table_id) ?? 0, new Date(r.started_at).getTime()));
   return { hands, real, lastHand, tables: new Map(), owners: new Map() };
