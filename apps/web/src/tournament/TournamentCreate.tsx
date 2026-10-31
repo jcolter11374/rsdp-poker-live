@@ -492,10 +492,15 @@ export function TournamentCreate({
               <label className="tn-check">
                 <input type="checkbox" checked={addOn.max > 0} onChange={(e) => {
                     setAddOn({ ...addOn, max: e.target.checked ? 1 : 0, chips: addOn.chips || startingStack });
-                    // Add-ons need a break that offers them: default to the first break.
+                    // Add-ons need a break that offers them: default to the first break, or add one after level 4 (RSDP has none).
                     const first = structure.findIndex((r) => r.kind === 'break');
-                    if (e.target.checked && first >= 0 && !structure.some((r) => r.kind === 'break' && r.addOn))
-                      setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                    if (e.target.checked && !structure.some((r) => r.kind === 'break' && r.addOn)) {
+                      if (first >= 0) setStructure(structure.map((r, i) => (i === first ? { ...r, addOn: true } : r)));
+                      else {
+                        const at = Math.max(1, Math.min(4, structure.length - 1));
+                        setStructure([...structure.slice(0, at), { kind: 'break', minutes: 5, addOn: true }, ...structure.slice(at)]);
+                      }
+                    }
                   }} />
                 Add-ons (on breaks marked Add-ons)
               </label>
