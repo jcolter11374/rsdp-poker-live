@@ -75,6 +75,12 @@ function check(proof, say) {
   if (hex(proof.serverSeed) !== proof.commit) problems.push(`the server seed does not match the commitment (sha256 = ${hex(proof.serverSeed)})`);
   const handSeed = hex(`rsdp-fair-v1|${proof.serverSeed}|${[...proof.clientSeeds].sort().join(',')}`);
   if (proof.handSeed && proof.handSeed !== handSeed) problems.push(`the hand seed should be ${handSeed}`);
+  // At most one fresh seed per player dealt in: a copy or an extra seed changes the deck with nobody vouching for it.
+  for (const s of new Set(proof.clientSeeds)) {
+    const times = proof.clientSeeds.filter((c) => c === s).length;
+    if (times > 1) problems.push(`the seed ${s} is listed ${times} times, but each player sends one fresh seed`);
+  }
+  if (proof.seats && proof.clientSeeds.length > proof.seats.length) problems.push(`${proof.clientSeeds.length} seeds are listed for ${proof.seats.length} seats dealt in`);
   const original = shuffle(freshDeck(), seededRng(handSeed, 'deck'));
   say(`Deck, top first: ${original.join(' ')}`);
 

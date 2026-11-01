@@ -305,6 +305,8 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
+  // Worked out once per render: it reads this browser's saved notes.
+  const seedWarning = liveSeedProblem(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
   const pending = view.powers.includes('approve') ? view.requests.length : 0;
@@ -562,7 +564,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
-          {liveSeedProblem(view) && <div className="banner warn">⚠ Fair dealing: {liveSeedProblem(view)}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
+          {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">

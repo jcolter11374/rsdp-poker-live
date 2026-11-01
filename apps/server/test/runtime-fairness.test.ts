@@ -223,6 +223,24 @@ describe('provably fair dealing', () => {
       clock.advance(FAIR_STOP_REVEAL_MS);
       expect(saved().serverSeed).toBe(first.hand.input.fair!.serverSeed);
     });
+
+    it('a saved table never marks someone with a seed as a bot, even if their id starts with bot-', () => {
+      const { rt, clock } = table();
+      const commit = rt.nextCommit();
+      rt.addClientSeed('a', { commit, seed: 'aaaaaaaaaaaaaaaa' });
+      rt.start('host');
+      rt.act(toActId(rt), { type: 'fold' });
+      rt.act(toActId(rt), { type: 'fold' });
+      // A forgotten table (no bots, no ledger) where a person's id and a seatmate's happen to start with 'bot-'.
+      const past = structuredClone(pastHand(rt.state.history.at(-1)!));
+      const rename = (id: string) => (id === 'a' ? 'bot-a' : id === 'b' ? 'bot-b' : id);
+      past.seats.forEach((x) => (x.playerId = rename(x.playerId)));
+      past.fair!.clientSeeds.forEach((c) => (c.playerId = rename(c.playerId)));
+      const seats = savedHandView({}, past, 'host', { now: clock.now() }).seats;
+      // The seed shows 'bot-a' is a person: bots never send one. 'bot-b' sent none, so the old guess stands.
+      expect(seats.find((x) => x.playerId === 'bot-a')!.bot).toBeUndefined();
+      expect(seats.find((x) => x.playerId === 'bot-b')!.bot).toBeDefined();
+    });
   });
 
   it('reveals a hand 12 hours after it ends even if the game goes on', () => {

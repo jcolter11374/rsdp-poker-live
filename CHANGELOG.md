@@ -18,6 +18,17 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.01.7] - 2026-11-01
+
+### Fixed and changed
+
+- Cash games: the betting buttons now stay locked until your move is answered or the turn moves on, so a chat message or someone sitting down can no longer unlock them early and let a second tap through.
+- Cash games: if the host sets the stack of a player who ran out of chips, that player is now dealt back in, just as after a rebuy, instead of staying stuck as out of chips.
+- Fair dealing: your browser now warns about extra seeds no one else would check (more than one under your name, one under a practice bot or someone not dealt in, or the same seed twice), and "Check this hand" and the proof checker catch them too.
+- Tournament structures: "+ Add level" now stops at the most the site allows (100 levels), and new levels' blinds and ante stop at the maximum chip amount.
+- Saving a tournament structure or table preset without signing in now applies the same size and count limits as an account, so what you save can be brought over when you sign in.
+- Behind the scenes: our automated tests now deal more varied hands and fail less often on a busy machine. Nothing changes at the tables.
+
 ## [2026.11.01.6] - 2026-11-01
 
 ### Fixed and changed
@@ -507,6 +518,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.01.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.7
 [2026.11.01.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.6
 [2026.11.01.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.5
 [2026.11.01.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.4

@@ -192,8 +192,10 @@ export function ActionBar({
         release();
       });
   };
-  // A new turn (or hand) means the last move was dealt with, answered or not.
-  useEffect(release, [legal, hand?.handNumber]);
+  // A new turn (or hand) means the last move was dealt with, answered or not. Only a new turn: every view carries a
+  // fresh `legal`, and a chat line or someone sitting down while a move is unanswered must not free the buttons.
+  const { handNumber: turnHand, at: turnAt } = turnKey(view);
+  useEffect(release, [!!legal, turnHand, hand?.street, turnAt]);
   // Each move carries the turn on screen when it was pressed, read then rather than from an older render: the server
   // refuses one that arrives after that turn has passed (usually the second of two taps on a slow connection), so it
   // isn't played on a later street.

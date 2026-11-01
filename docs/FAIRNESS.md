@@ -35,19 +35,31 @@ first, details after.
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
   although it was sent in good time, a seed your browser never sent is
-  listed under your name, or the commitment for the next hand was swapped for
-  another without being dealt, the table shows a warning straight away. Your browser
-  also writes down what it saw during the hand: the button, who was dealt in,
-  the board, and every card shown to you.
+  listed under your name, more than one seed is listed under your name (even
+  copies of yours: each copy changes the deck), a seed is listed for a practice
+  bot (bots never send one) or for someone who wasn't dealt in (checked once
+  your browser has seen everyone who was), the same seed is listed twice, or
+  the commitment for the next hand was swapped for another without being
+  dealt, the table shows a warning straight away. Your browser
+  also writes down what it saw during the hand: the button, who was dealt in
+  and which of them were bots, the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
   **🔒 Check this hand**. Once the hand is revealed, your browser rebuilds the
   deck from the seeds and *deals the hand again* by the rules: hole cards one
   at a time clockwise from the left of the button, then the board, draws and
-  reshuffles. Every card dealt, shown or won with must match, the record must
+  reshuffles. Each seed listed must come from a different person the record
+  shows dealt in, never from a practice bot, with no seed listed twice: an
+  extra seed where nobody's browser would check it could steer the deck. If
+  your browser was at the table, the record's list of who was dealt in, and
+  which were bots, must match what it wrote down there; otherwise the record's
+  own list is all it has to go on. Every card dealt, shown
+  or won with must match, the record must
   match the hand's history, and it must agree with what your browser wrote
   down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's
-  built-in OpenSSL SHA-256 and none of the app's code.
+  built-in OpenSSL SHA-256 and none of the app's code. The file holds the seeds
+  but not whose they are, so the script can only fail a seed listed twice or
+  more seeds than seats dealt in.
 - **When hands are revealed** (decided 25 October 2026, the half hour added
   1 November 2026): once the game has stayed stopped for 30 minutes, or 12
   hours after the hand, whichever comes first. The reveal shows the whole deck,
@@ -378,8 +390,8 @@ The code: [`packages/engine/src/fairness.ts`](../packages/engine/src/fairness.ts
 SHA-256 against OpenSSL on every input length from 0 to 300 bytes, pin the
 deck for a known seed (so old hands stay checkable), and deal up to 3,000
 random hands spread across every game, reshuffles included, then check each one with both
-checkers. They also check that a swapped card, cards handed out of turn and a
-shown card nobody was dealt are all caught.
+checkers. They also check that a swapped card, cards handed out of turn, a
+shown card nobody was dealt, and a seed listed twice are all caught.
 
 ### Checking a hand by hand
 
@@ -415,7 +427,10 @@ Limits, stated plainly:
   (whatever the server answered: an honest server only turns down a seed that
   arrived after the deal); if its seed was left out of a hand dealt less than
   2 seconds after it saw the commitment appear; and if the server uses a seed
-  it said it turned down. The browser only knows when a commitment appeared if
+  it said it turned down. It also warns about extra seeds no one else would
+  check: more than one under its name, one under a practice bot, one under
+  someone who wasn't dealt in (once it has seen everyone who was), and the
+  same seed listed twice. The browser only knows when a commitment appeared if
   it was already showing that table, seated or watching, on the same
   connection, and kept running. One that opens the table (including when a
   tournament moves you), reconnects, or wakes from a frozen tab or a sleeping

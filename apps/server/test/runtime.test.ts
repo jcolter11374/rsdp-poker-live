@@ -470,6 +470,43 @@ describe('chips and leaving', () => {
     expect(rt.state.hand!.phase).not.toBe('complete');
   });
 
+  it('a busted player the host gives a stack to is back in, as after a rebuy', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.decisionSeconds = 0;
+      s.play.runItTwice = 'off';
+    });
+    seatPlayers(rt, 2, 100);
+    rt.start('host');
+    for (let i = 0; i < 20; i++) {
+      const h = hand(rt);
+      if (h.phase !== 'complete') {
+        const legal = engine.legalActions(h, h.toAct!)!;
+        const id = toActId(rt);
+        if (legal.canRaise) rt.act(id, { type: legal.raiseKind, to: legal.maxTo });
+        else rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
+        continue;
+      }
+      if (rt.state.seats.some((s) => s && s.stack === 0)) break;
+      clock.advance(10_000);
+    }
+    const busted = rt.state.seats.find((s) => s && s.stack === 0)!;
+    expect(busted).toMatchObject({ sittingOut: true, sitOutReason: 'busted' });
+    clock.advance(20_000);
+    rt.setStack('host', busted.playerId, 150);
+    expect(rt.seatOf(busted.playerId)).toMatchObject({ stack: 150, sittingOut: false, sitOutReason: null });
+    expect(rt.state.ledger[busted.playerId].buyIn).toBe(250);
+    clock.advance(1);
+    expect(rt.state.hand!.phase).not.toBe('complete');
+  });
+
+  it("leaves a player sitting out by choice sitting out when the host sets their stack", () => {
+    const { rt } = table();
+    seatPlayers(rt, 3);
+    rt.sitOut('a', true);
+    rt.setStack('host', 'a', 300);
+    expect(rt.seatOf('a')).toMatchObject({ stack: 300, sittingOut: true, sitOutReason: 'player' });
+  });
+
   it("tells a sitting-out player with no chips that they can't sit back in, by the rule sitting in uses", () => {
     const { rt } = table();
     seatPlayers(rt, 3);
@@ -536,7 +573,8 @@ describe('chips and leaving', () => {
           else if (roll < 4) rt.act(id, { type: 'raise', to: (h.currentBet || 2) * 2 });
           else rt.act(id, { type: 'call' });
         } catch {
-          rt.act(id, { type: 'check' });
+          // A raise past the stack (or a call with nothing to call) is refused; check, or call if there's a bet.
+          rt.act(id, engine.legalActions(h, h.toAct)!.canCheck ? { type: 'check' } : { type: 'call' });
         }
       } else clock.advance(10_000);
       if (i === 100) rt.stand('d', { afterHand: true });

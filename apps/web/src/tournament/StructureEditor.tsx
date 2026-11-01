@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  MAX_LEVELS,
   generateStructure,
   plannedMinutes,
   presetStructure,
@@ -10,6 +11,7 @@ import {
   type StructureRow,
 } from '@rsdp/tournament';
 import { GAMES, chips } from './format';
+import { canAddStructureLevel, nextStructureLevel } from './structureRows';
 
 interface Props {
   rows: StructureRow[];
@@ -64,11 +66,6 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
   const insert = (i: number, row: StructureRow) => onChange([...rows.slice(0, i), row, ...rows.slice(i)]);
   const remove = (i: number) => onChange(rows.filter((_, j) => j !== i));
 
-  const addLevel = () => {
-    const last = [...rows].reverse().find((r): r is LevelRow => r.kind === 'level');
-    const sb = last ? last.sb * 2 : 25;
-    insert(rows.length, { kind: 'level', sb, bb: sb * 2, ante: last?.anteType === 'none' ? 0 : (last?.ante ?? 0) * 2, anteType: last?.anteType ?? 'none', minutes: last?.minutes ?? 15, ...(last?.rebuy ? { rebuy: true } : {}) });
-  };
 
   let levelNo = 0;
   return (
@@ -200,7 +197,12 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
           );
         })}
       </div>
-      <button type="button" onClick={addLevel}>
+      <button
+        type="button"
+        disabled={!canAddStructureLevel(rows)}
+        title={canAddStructureLevel(rows) ? undefined : `A structure holds up to ${MAX_LEVELS} levels`}
+        onClick={() => insert(rows.length, nextStructureLevel(rows))}
+      >
         + Add level
       </button>
       </details>
