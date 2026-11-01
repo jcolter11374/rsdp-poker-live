@@ -431,7 +431,8 @@ export function createApp(deps: AppDeps = {}) {
     hooks: accountHooks,
     onAdmin: (action) => audit.admin(action),
   });
-  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
+  // A loaded table's own fairness state, which may be ahead of its last save (a game started again before its stopped hands opened).
+  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log, liveFair: (id) => (tables.has(id) ? (tables.get(id)!.state.fair ?? null) : undefined) });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {

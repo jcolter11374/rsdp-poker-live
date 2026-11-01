@@ -257,6 +257,8 @@ function allHands(view: TableView): Promise<HandRecordView[]> {
   if (pending) return pending.catch(() => undefined).then(() => allHands(view));
   const job = (async () => {
     let hands = handCache.get(view.id);
+    // Hands a stopped game has since opened (openThrough moved) come again in full, seeds and every card.
+    if (hands?.some((h) => h.fair && !h.fair.serverSeed && h.handNumber <= view.fair.openThrough)) hands = undefined;
     if (!hands) hands = (await call<{ hands: HandRecordView[] }>('table:export')).hands;
     const last = hands.at(-1)?.handNumber;
     const have = new Set(hands.filter((h) => h.handNumber !== last).map((h) => h.handNumber));

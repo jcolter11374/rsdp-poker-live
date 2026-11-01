@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from '../src/app';
-import { closeDb, type Db } from '../src/db';
+import { closeDb, loadSnapshot, saveSnapshot, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { dbIdentity, dbStore } from '../src/storage';
 import { dbSharedHands } from '../src/shared';
@@ -37,7 +37,7 @@ afterAll(async () => {
   await closeDb(db);
 });
 
-type Found = { handId: string; tableName: string; myId: string; pot: number; hand: { handNumber: number; seats: { name: string }[]; events: { t: string; seat?: number; cards?: { card: string }[] }[] } };
+type Found = { handId: string; tableId: string; tableName: string; myId: string; pot: number; hand: { fair?: { serverSeed: string | null } | null; handNumber: number; seats: { name: string }[]; events: { t: string; seat?: number; cards?: { card: string }[] }[] } };
 const search = async (query: string, guest = ANN) => {
   const res = await fetch(`${url}/api/hands/search?${query}`, { headers: { 'x-guest-token': guest } });
   return { status: res.status, ...((await res.json()) as { hands: Found[]; next: string | null; error?: string }) };
@@ -127,5 +127,21 @@ describe('hand search', () => {
 
     const games = (await (await fetch(`${url}/api/hands/games`, { headers: { 'x-guest-token': ANN } })).json()) as { games: { id: string; hands: number }[] };
     expect(games.games).toEqual([expect.objectContaining({ hands: 5 })]);
+  });
+});
+
+describe('hand search and a stopped game', () => {
+  it('follows the running table, not a save left from before the game started again', { timeout: 30_000 }, async () => {
+    const DAN = 'hs-dan-secret-0123456789';
+    const EVE = 'hs-eve-secret-0123456789';
+    const tableId = await play('Stopped and started', DAN, EVE, ['Dan', 'Eve'], 1);
+    // The save still says the game was stopped after hand 1, long enough ago that its hands would be open
+    // (a save that failed after the host started again); the table running now says otherwise.
+    const snap = await loadSnapshot<{ fair: { stopped?: { through: number; at: number } } }>(db, tableId);
+    snap!.state.fair.stopped = { through: 1, at: 0 };
+    await saveSnapshot(db, tableId, snap!);
+    const found = (await search('', DAN)).hands.find((h) => h.tableId === tableId)!;
+    expect(found.hand.fair).toBeTruthy();
+    expect(found.hand.fair!.serverSeed).toBeNull();
   });
 });

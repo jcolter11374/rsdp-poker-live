@@ -193,6 +193,16 @@ describe('provably fair dealing', () => {
       expect(handRecordView(rt, record, 'b').fair!.serverSeed).toBe(record.hand.input.fair!.serverSeed);
     });
 
+    it('pressing Stop again while stopped does not put the half hour back', () => {
+      const { rt, clock } = table();
+      const first = playHand(rt);
+      rt.stop('host');
+      clock.advance(20 * 60_000);
+      rt.stop('host');
+      clock.advance(FAIR_STOP_REVEAL_MS - 20 * 60_000);
+      expect(handRecordView(rt, first, 'b').fair!.serverSeed).toBe(first.hand.input.fair!.serverSeed);
+    });
+
     it('tells open browsers when the half hour is up, so they fetch the hands again', () => {
       const { rt, clock } = table();
       playHand(rt);

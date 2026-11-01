@@ -658,6 +658,9 @@ function unseat(c: Ctx, e: Entry) {
   }
 }
 
+/** Players who lost their last chip (not leavers); groups saved before they were marked are told by their members. */
+const bustGroup = (s: TournamentState, g: EliminationGroup) => !!g.busted || (g.busted === undefined && g.members.every((m) => entry(s, m.entryId).status === 'busted'));
+
 /** When a group went out, which is the order groups place in (see EliminationGroup.bustAt). */
 const outAt = (g: EliminationGroup) => g.bustAt ?? g.at;
 
@@ -667,13 +670,12 @@ const outAt = (g: EliminationGroup) => g.bustAt ?? g.at;
  */
 function joinBustGroup(s: TournamentState, e: Entry, m: EliminationGroup['members'][number], now: number) {
   const bust = e.bust!;
+  // The same hand: a member busted at this table at this moment (also finds groups saved before groups were marked),
+  // or in hand-for-hand, the same round at any table. Never a group of players who left.
   const sameHand = (g: EliminationGroup) =>
-    bust.hfhRound !== undefined
-      ? g.hfhRound === bust.hfhRound
-      : g.hfhRound === undefined &&
-        outAt(g) === bust.at &&
-        !!g.busted &&
-        g.members.some((o) => o.tableId === bust.tableId);
+    bustGroup(s, g) &&
+    ((bust.hfhRound !== undefined && g.hfhRound === bust.hfhRound) ||
+      g.members.some((o) => o.tableId === bust.tableId && entry(s, o.entryId).bust?.at === bust.at));
   const group = s.eliminations.find(sameHand);
   if (group) {
     group.members.push(m);
@@ -702,10 +704,17 @@ function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'remove
   const late = members.filter((e) => e.status === 'rebuy-offer' && e.bust);
   const now = members.filter((e) => !late.includes(e));
   if (now.length) {
-    // Hand-for-hand busts in the same round share one group, so they tie across tables.
-    const existing = hfhRound !== undefined ? s.eliminations.find((g) => g.hfhRound === hfhRound) : undefined;
+    // Hand-for-hand busts in the same round share one group, so they tie across tables. Players who leave in that
+    // round have their own group, below the round's busts, as leavers are below the busts of their hand.
+    const round = hfhRound !== undefined ? s.eliminations.filter((g) => g.hfhRound === hfhRound) : [];
+    const existing = round.find((g) => bustGroup(s, g) === (reason === 'busted'));
     if (existing) existing.members.push(...now.map(member));
-    else s.eliminations.push({ members: now.map(member), at: c.now, ...(reason === 'busted' ? { busted: true as const } : {}), ...(hfhRound !== undefined ? { hfhRound } : {}) });
+    else {
+      const group: EliminationGroup = { members: now.map(member), at: c.now, ...(reason === 'busted' ? { busted: true as const } : {}), ...(hfhRound !== undefined ? { hfhRound } : {}) };
+      const busts = reason === 'busted' ? -1 : s.eliminations.findIndex((g) => round.includes(g) && bustGroup(s, g));
+      if (busts < 0) s.eliminations.push(group);
+      else s.eliminations.splice(busts, 0, group);
+    }
   }
   for (const e of late) joinBustGroup(s, e, member(e), c.now);
   const seats = members.map((e) => ({ tableId: e.tableId, seat: e.seat }));

@@ -174,4 +174,45 @@ describe('places after a rebuy offer', () => {
     expect(sim.entry(offered).status).toBe('busted');
     expect({ offered: sim.places()[offered], out: sim.places()[out] }).toEqual({ offered: 3, out: 3 });
   });
+
+  const fivePaidFour: Partial<TournamentSettings> = {
+    seatsPerTable: 3,
+    allowQuit: true,
+    rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 },
+    payouts: { structure: { name: 'custom', ranges: [{ minEntries: 2, maxEntries: 4, percents: [100] }, { minEntries: 5, maxEntries: 600, percents: [40, 30, 20, 10] }] }, money: { buyIn: 100 } },
+  };
+
+  it('hand-for-hand: someone leaving in the hand still places below a player whose offer runs out, whatever the stacks', () => {
+    const sim = new Sim(fivePaidFour);
+    for (let i = 0; i < 5; i++) sim.do({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
+    sim.do({ type: 'startNow', by: 'host' });
+    expect(sim.state.handForHand.active).toBe(true);
+    const t = sim.state.tables.find((x) => sim.players(x.id).length === 3)!.id;
+    const [win, busted, leaver] = sim.players(t);
+    sim.state.entries.find((e) => e.playerId === busted)!.stack = 500;
+    sim.state.entries.find((e) => e.playerId === leaver)!.stack = 1500;
+    sim.do({ type: 'handStarted', tableId: t, handNumber: 1 });
+    sim.do({ type: 'quit', playerId: leaver });
+    sim.do({ type: 'handResult', result: { tableId: t, handNumber: 1, startStacks: { [win]: 1000, [busted]: 500, [leaver]: 1500 }, endStacks: { [win]: 3000, [busted]: 0, [leaver]: 0 }, knockedOutBy: { [busted]: [win], [leaver]: [win] } } });
+    expect(sim.entry(busted).status).toBe('rebuy-offer');
+    sim.at(T0 + 15_000);
+    expect({ busted: sim.places()[busted], leaver: sim.places()[leaver] }).toEqual({ busted: 4, leaver: 5 });
+  });
+
+  it('a tournament saved before this fix, with a player on an offer, still groups them with their hand', () => {
+    const sim = new Sim(rebuyOnce);
+    for (let i = 0; i < 4; i++) sim.do({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    const [win, small, big] = sim.players(t);
+    sim.state.entries.find((e) => e.playerId === small)!.stack = 400;
+    sim.state.entries.find((e) => e.playerId === win)!.stack = 1600;
+    sim.state.entries.find((e) => e.playerId === big)!.rebuys = 1;
+    sim.hand(t, win, [small, big]);
+    // As the old code saved it: no marks on the groups.
+    for (const g of sim.state.eliminations) delete g.busted;
+    sim.at(T0 + 15_000);
+    expect(sim.places()).toMatchObject({ [small]: 4, [big]: 3 });
+  });
 });
+

@@ -833,6 +833,8 @@ export class TableRuntime {
   /** The host stopped the game: every hand so far may be checked once it stays stopped FAIR_STOP_REVEAL_MS. */
   private revealHands() {
     const f = this.fairState();
+    // Stopped again with nothing dealt since: the half hour still counts from the first stop.
+    if (f.stopped && f.stopped.through >= this.state.handNumber) return;
     this.fairResumed();
     if (this.state.handNumber > f.revealedThrough) f.stopped = { through: this.state.handNumber, at: this.clock.now() };
   }
