@@ -10,6 +10,7 @@ import { existsSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { backupLines, restoreBackup } from './backup';
 import { closeDb, createDb } from './client';
+import { errorText } from './errors';
 
 export const RESTORE_FILE = 'restore.jsonl.gz';
 
@@ -33,7 +34,7 @@ export async function restoreIfWaiting(dataDir: string, log: (message: string) =
   } catch (e) {
     rmSync(fresh, { recursive: true, force: true });
     renameSync(file, `${file}.failed-${stamp}`);
-    log(`restore failed, the data is as it was: ${e instanceof Error ? e.message : String(e)}`);
+    log(`restore failed, the data is as it was: ${errorText(e)}`);
     return;
   }
   if (existsSync(dir)) renameSync(dir, `${dir}-before-restore-${stamp}`);

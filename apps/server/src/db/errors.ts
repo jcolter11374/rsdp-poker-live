@@ -1,3 +1,5 @@
+import { DrizzleQueryError } from 'drizzle-orm';
+
 export type StorageErrorCode = 'not-found' | 'conflict' | 'invalid';
 
 /** Expected storage failures (missing row, stale version, bad input) that callers turn into user-facing errors. */
@@ -9,6 +11,21 @@ export class StorageError extends Error {
     super(message);
     this.name = 'StorageError';
   }
+}
+
+/**
+ * The database's own error behind a failed query. drizzle-orm wraps it in a DrizzleQueryError whose message is the
+ * SQL and every parameter (a whole table snapshot, a backup's rows): too long for a log, holding players' data, and
+ * without the reason, which is only in `cause`. Anything else comes back as it is.
+ */
+export function dbCause(err: unknown): unknown {
+  return err instanceof DrizzleQueryError && err.cause !== undefined ? err.cause : err;
+}
+
+/** An error's message for a log line or an admin, with the database's reason rather than drizzle's wrapper. */
+export function errorText(err: unknown): string {
+  const e = dbCause(err);
+  return e instanceof Error ? e.message : String(e);
 }
 
 /** True for Postgres unique_violation, whichever driver raised it (drivers may wrap the error in `cause`). */

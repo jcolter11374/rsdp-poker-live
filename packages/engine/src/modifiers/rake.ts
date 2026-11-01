@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { HandState, Modifier, Pot } from '../core/types';
-import { MAX_CHIPS } from '../settings/schema';
+import { MAX_CHIPS, wholeNumber } from '../settings/schema';
 import { registerModifierSchema } from '../settings/modifiers';
 
 /**
@@ -9,7 +9,7 @@ import { registerModifierSchema } from '../settings/modifiers';
  * anywhere; the table just keeps a running total.
  */
 
-const chips = z.number().int().min(0).max(MAX_CHIPS);
+const chips = wholeNumber({ min: 0, max: MAX_CHIPS });
 /** Up to two decimals, e.g. 2.5 (%). */
 const percent = z
   .number()
@@ -31,7 +31,7 @@ export const RakeSchema = z
     /** A second rate for short tables: used when this many players or fewer are dealt in; 0 = off. */
     shortHanded: z
       .object({
-        players: z.number().int().min(0).max(10),
+        players: wholeNumber({ min: 0, max: 10 }),
         percent,
         cap: chips,
       })

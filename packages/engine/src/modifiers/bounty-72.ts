@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Card } from '../cards';
 import type { HandEvent, HandState, Modifier, SeatIndex } from '../core/types';
-import { MAX_CHIPS } from '../settings/schema';
+import { MAX_CHIPS, wholeNumber } from '../settings/schema';
 import { registerModifierSchema } from '../settings/modifiers';
 
 /**
@@ -18,7 +18,7 @@ export const Bounty72Schema = z
   .object({
     enabled: z.boolean(),
     /** Chips each other player pays (not a big blind multiple). */
-    amount: z.number().int().min(1).max(MAX_CHIPS),
+    amount: wholeNumber({ min: 1, max: MAX_CHIPS }),
     /** Which 7-2 hands count. */
     suits: z.enum(BOUNTY_SUITS),
     /** Show a 7-2 winner's cards for them when nobody else saw them (an uncontested win). */

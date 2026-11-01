@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Server, type Socket as ServerSocket } from 'socket.io';
 import { io, type Socket } from 'socket.io-client';
-import { callerFor, DROPPED, NO_ANSWER, NoAnswerError, type AnswerSocket } from './call';
+import { callerFor, DROPPED, NO_ANSWER, NoAnswerError, Refusal, type AnswerSocket } from './call';
 
 type Ack = (res: { ok: boolean; error?: string; n?: number }) => void;
 
@@ -41,6 +41,9 @@ describe('call', () => {
     await expect(call<{ n: number }>('good', 1)).resolves.toMatchObject({ ok: true, n: 2 });
     const refused = await call('bad').catch((e: Error) => e);
     expect(refused).toMatchObject({ message: 'not your turn' });
+    // Marked as a refusal of that command, so an error report can leave its text out (reportError.ts).
+    expect(refused).toBeInstanceOf(Refusal);
+    expect(refused).toMatchObject({ event: 'bad' });
     // A refusal is the server's answer, not a lost one.
     expect(refused).not.toBeInstanceOf(NoAnswerError);
   });

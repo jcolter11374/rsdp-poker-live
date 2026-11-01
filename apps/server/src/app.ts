@@ -8,7 +8,7 @@ import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
-import type { Ack, BotLevel, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
@@ -31,9 +31,10 @@ import { accountRoutes, type AccountHooks } from './accounts';
 import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
-import { StorageError } from './db/errors';
+import { dbCause, StorageError } from './db/errors';
 import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
+import { clientErrorRoutes } from './clientErrors';
 import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
@@ -316,7 +317,8 @@ export function createApp(deps: AppDeps = {}) {
   const setups = deps.setups ?? memorySetups();
   const avatarStore = deps.avatars ?? memoryAvatars();
   const sharedStore = deps.shared ?? memorySharedHands();
-  const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
+  // A failed query's own error: drizzle's wrapper repeats every value the query carried (a whole table snapshot).
+  const log = deps.log ?? ((m, e) => console.error(m, dbCause(e) ?? ''));
   const audit = deps.audit ?? AuditLog.after(memoryAuditStore(), null, { now: () => clock.now(), log });
   const build = deps.build ?? buildFromEnv();
   const startedAt = clock.now();
@@ -597,6 +599,12 @@ export function createApp(deps: AppDeps = {}) {
       res.type('html').send(html);
     });
   }
+  // What broke in a browser, one line in the log (it compares the page's build with webApp).
+  clientErrorRoutes(app, { now: () => clock.now(), log, build, served: webApp });
+  // Last: anything a route passes on. Express's own handler would print the stack trace of every body that is
+  // too big or isn't JSON (express.json in the API routes), so anyone could fill the log; those get a short
+  // answer instead, and only real failures are logged.
+  app.use(requestFailed(log));
 
   function broadcast(rt: TableRuntime) {
     const id = rt.state.id;
@@ -1248,11 +1256,16 @@ export function createApp(deps: AppDeps = {}) {
     );
     on('waitlist:leave', (ack) => guarded(ack, () => current().leaveWaitlist(me), log));
 
-    on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action)), log));
-    on('hand:draw', ({ discard }, ack) => guarded(ack, () => current().draw(me, toIndexes(discard)), log));
+    // A move carries the turn it was pressed on (TurnKey), checked apart from the move itself so it never reaches the engine.
+    on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action), turnOf(action)), log));
+    on('hand:draw', (input, ack) => guarded(ack, () => current().draw(me, toIndexes(input?.discard), turnOf(input)), log));
     on('hand:runItTwice', ({ yes }, ack) => guarded(ack, () => current().voteRunItTwice(me, !!yes), log));
-    on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
-    on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
+    on('hand:show', (input, ack) => guarded(ack, () => current().show(me, toIndexes(input?.cards), { handNumber: turnOf(input).handNumber }), log));
+    on('hand:timeBank', (...args) => {
+      // The ack comes last; a page from before turn keys sends nothing before it.
+      const ack = args.at(-1) as Ack;
+      return guarded(ack, () => current().useTimeBank(me, turnOf(args.length > 1 ? args[0] : undefined)), log);
+    });
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
     on('hand:tip', (input, ack) =>
       guarded(
@@ -1647,6 +1660,25 @@ export function createApp(deps: AppDeps = {}) {
   };
 }
 
+/**
+ * The error handler behind every route. A request the client got wrong (a body too big or not JSON, which
+ * express.json and express.static mark with a 4xx status and `expose`) is answered with that status and a
+ * short JSON error, and not logged. Anything else is logged once and answered 500, without its details.
+ */
+export function requestFailed(log: (message: string, err?: unknown) => void): express.ErrorRequestHandler {
+  return (err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = typeof err?.status === 'number' ? err.status : typeof err?.statusCode === 'number' ? err.statusCode : 500;
+    if (status >= 400 && status < 500 && err?.expose !== false) {
+      res.status(status).json({ error: status === 413 ? 'That request is too large.' : 'That request could not be read.' });
+      return;
+    }
+    // The route's pattern, not the address: an address can hold a table's or a hand's link.
+    log(`${req.method} ${req.route?.path ?? 'request'} failed`, err);
+    res.status(500).json({ error: 'Something went wrong on the server.' });
+  };
+}
+
 /** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
 export const DB_HEALTH_MS = 1_000;
 
@@ -1686,6 +1718,23 @@ export function databaseHealth(check: () => Promise<unknown>, log: (message: str
 function toIndexes(value: unknown): number[] {
   if (!Array.isArray(value)) throw new ActionError('pick some cards');
   return value.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v >= 0 && v < 10);
+}
+
+/**
+ * The turn a move was sent for, as the runtime checks it: each part a whole
+ * number, like hand:tip's. A part left out (or null) is not checked; any
+ * other part that isn't a whole number becomes NaN, which matches no turn.
+ */
+function turnOf(input: unknown): TurnKey {
+  const x = (input ?? {}) as { handNumber?: unknown; at?: unknown };
+  const part = (v: unknown) => {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : NaN;
+  };
+  const handNumber = part(x.handNumber);
+  const at = part(x.at);
+  return { ...(handNumber !== undefined ? { handNumber } : {}), ...(at !== undefined ? { at } : {}) };
 }
 
 function sanitizeAction(action: unknown) {

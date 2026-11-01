@@ -7,7 +7,7 @@ it. It is written from what the code actually does, and the code is public on
 GitHub, so anyone can check it. It is not legal advice, and nobody here is a
 lawyer.
 
-Last updated: 31 October 2026. Every change to this page is in its
+Last updated: 1 November 2026. Every change to this page is in its
 [history on GitHub](https://github.com/jcolter11374/rsdp-poker-live/commits/main/docs/PRIVACY.md).
 
 ## Who is responsible
@@ -121,6 +121,12 @@ for how it works.
   events; it is forgotten within a few minutes of the tournament ending. A
   server restart forgets them all. The server's own logs record errors, not
   visitors, and they stay in Fly's log service, not in the site's database.
+  When something breaks on a page in your browser, the page sends the server
+  a short note for those logs: the error and where in the site's code it
+  happened, the kind of page (such as "a table", never its link) and which
+  version of the site it was running. The server logs it without your IP
+  address or who you are. The error's own text can show which kind of browser
+  it came from (for example Chrome or Safari), but nothing more about it.
 - **GitHub** holds the code, the regular copy of the public record and the
   daily backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy

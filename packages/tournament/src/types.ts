@@ -1,11 +1,21 @@
 // Tournament director contracts. State is plain JSON and is snapshotted by the
-// server; bump STATE_VERSION when its shape changes.
+// server (see STATE_VERSION before changing its shape).
 
 import type { CoHost, HostPower } from '@rsdp/engine/roles';
 import type { PayoutStructure, PrizeMoney } from './payouts';
 import type { Schedule } from './recurrence';
 import type { AnteType, StructureRow } from './structure';
 
+/**
+ * Layout version of a saved TournamentState. Don't bump it to mark a new field: the server ignores any saved
+ * tournament with another version (`usable` in apps/server/src/tournament/store.ts), so after a bump every running
+ * and past tournament would vanish from the lobby, players' histories and season boards.
+ *
+ * Keep old states readable instead: add fields as optional ("missing in state saved before ...") and fill them in
+ * where a tournament is loaded (as the store does for `spawnedFrom`, and the manager for an event's table rules).
+ * Only a change old states can't be read under at all needs a bump, and then the store must convert the old version
+ * first. RUNTIME_VERSION for tables (apps/server/src/runtime/types.ts) works the same way.
+ */
 export const STATE_VERSION = 1;
 
 /** Opaque account or guest id from the server. */

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { closeDb, type Db } from '../src/db/client';
-import { StorageError } from '../src/db/errors';
+import { dbCause, StorageError } from '../src/db/errors';
 import {
   checkLedger,
   closeSeatSession,
@@ -126,8 +126,12 @@ describe('recordMovement', () => {
 
   it('is append-only in the database itself', async () => {
     const m = await move({ kind: 'buy-in', playerId: alice, stackBefore: 0, amount: 100 });
-    await expect(db.update(chipMovements).set({ amount: 1_000_000 }).where(eq(chipMovements.id, m.id))).rejects.toThrow(/append-only/);
-    await expect(db.delete(chipMovements).where(eq(chipMovements.id, m.id))).rejects.toThrow(/append-only/);
+    // The database's own error, which drizzle wraps.
+    const reason = (e: unknown) => {
+      throw dbCause(e);
+    };
+    await expect(db.update(chipMovements).set({ amount: 1_000_000 }).where(eq(chipMovements.id, m.id)).catch(reason)).rejects.toThrow(/append-only/);
+    await expect(db.delete(chipMovements).where(eq(chipMovements.id, m.id)).catch(reason)).rejects.toThrow(/append-only/);
     expect((await listMovements(db, tableId))[0].amount).toBe(100);
   });
 

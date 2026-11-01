@@ -10,7 +10,7 @@ import { socket } from './socket';
  */
 
 /** The entry script this page loaded, as index.html names it. Null in development, where it isn't hashed. */
-function pageBuild(): string | null {
+export function pageBuild(): string | null {
   const src = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute('src') ?? null;
   return src && /\/assets\//.test(src) ? src : null;
 }

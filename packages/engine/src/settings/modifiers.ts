@@ -29,7 +29,7 @@ export interface ModifierSchemaOptions {
 /** What registerModifierSchema returns. Keep it to read the section back with its type. */
 export interface RegisteredModifier<T extends ModifierSection = ModifierSection> {
   readonly id: string;
-  readonly schema: z.ZodType<T, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<T, unknown>;
   readonly cashOnly: boolean;
   /** A fresh copy of the defaults (always disabled). */
   defaults(): T;
@@ -48,7 +48,7 @@ const registry = new Map<string, RegisteredModifier>();
  * (and tournament defaults never trip the cash-only gate). Registering an id
  * again replaces it, which keeps hot reload working.
  */
-export function registerModifierSchema<S extends z.ZodType<ModifierSection, z.ZodTypeDef, unknown>>(
+export function registerModifierSchema<S extends z.ZodType<ModifierSection, unknown>>(
   id: string,
   schema: S,
   defaults: z.input<S>,
@@ -57,7 +57,7 @@ export function registerModifierSchema<S extends z.ZodType<ModifierSection, z.Zo
   if (!MODIFIER_ID.test(id)) {
     throw new Error(`modifier id "${id}" must be 1-40 lowercase letters, digits or dashes`);
   }
-  const parsed = schema.safeParse(defaults, { errorMap: settingsErrorMap });
+  const parsed = schema.safeParse(defaults, { error: settingsErrorMap });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `${formatPath(i.path) || '(root)'}: ${i.message}`);
     throw new Error(`modifier "${id}" defaults do not match its schema: ${problems.join('; ')}`);
@@ -69,7 +69,7 @@ export function registerModifierSchema<S extends z.ZodType<ModifierSection, z.Zo
   const frozen = cloneJson(parsed.data as z.output<S>);
   const entry: RegisteredModifier<z.output<S>> = {
     id,
-    schema: schema as z.ZodType<z.output<S>, z.ZodTypeDef, unknown>,
+    schema: schema as unknown as z.ZodType<z.output<S>, unknown>,
     cashOnly: options.cashOnly ?? false,
     defaults: () => cloneJson(frozen),
     get: (settings) => {
@@ -120,12 +120,13 @@ export function parseModifierSections(raw: Record<string, unknown>, ctx: z.Refin
   for (const [id, value] of Object.entries(raw)) {
     const entry = registry.get(id);
     if (!entry) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [id], message: 'unknown modifier (not registered)' });
+      ctx.addIssue({ code: 'custom', path: [id], message: 'unknown modifier (not registered)', continue: true });
       continue;
     }
-    const result = entry.schema.safeParse(value, { errorMap: settingsErrorMap });
+    const result = entry.schema.safeParse(value, { error: settingsErrorMap });
     if (!result.success) {
-      for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: [id, ...issue.path] });
+      // continue: the cross-section rules still run, so a host sees every problem at once.
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: [id, ...issue.path], continue: true });
       continue;
     }
     out[id] = result.data;
