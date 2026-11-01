@@ -1,0 +1,130 @@
+name: Upgrade rehearsal
+
+# A release starts new code on the data the live site already has. The other
+# checks all start from an empty database, so this rehearses that step on a
+# copy, for every pull request into main: main's image (what is live) makes
+# data with main's own smoke test, this pull request's image starts on the same
+# volume and must give the same answers, and main's image must still start on
+# the upgraded data (a rollback). Nothing here contacts the live site.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upgrade-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    name: Upgrade from what is live
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SITE: http://localhost:3001
+      ADMIN_KEY: ci-admin-key-0123456789
+    steps:
+      - uses: actions/checkout@v6
+      # Built before main is checked out into live/, so that folder isn't copied into this image.
+      - name: Build this pull request's image
+        run: docker build -t rsdp-next .
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          path: live
+      - name: Build main's image (what is live)
+        run: docker build -t rsdp-live ./live
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      # main's smoke test needs only playwright: run from live/e2e, it finds the one installed here.
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Start main's image on a new volume
+        run: |
+          docker run -d --name rsdp-live -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY rsdp-live
+          for _ in $(seq 1 60); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
+          docker logs rsdp-live; exit 1
+      - name: Make data with main's own smoke test
+        run: node live/e2e/smoke.mjs
+        env:
+          BASE_URL: ${{ env.SITE }}
+      - name: Save what main answers, and a copy of its public record
+        run: |
+          mkdir -p rehearsal
+          # The players have left, but a cash table can play one more hand on its own first. The server works
+          # the leaderboard out at most once a minute, so wait until two answers a minute apart agree.
+          prev=
+          for i in $(seq 1 5); do
+            scripts/backup/expect.sh "$SITE" > rehearsal/live.json
+            now=$(jq -S .leaderboard rehearsal/live.json)
+            [ "$now" = "$prev" ] && break
+            [ "$i" = 5 ] && { echo "The leaderboard was still changing after 4 minutes"; exit 1; }
+            prev=$now
+            sleep 61
+          done
+          test "$(jq '.leaderboard | length' rehearsal/live.json)" -gt 0
+          node scripts/transparency/mirror.mjs "$SITE" rehearsal/record
+      # Fly gives the server 30 seconds to save and exit; a kill would exit 137.
+      - name: Stop main cleanly
+        run: |
+          docker stop -t 30 rsdp-live
+          test "$(docker inspect rsdp-live --format '{{.State.ExitCode}}')" = 0
+
+      - name: Start this pull request's image on the same volume
+        run: |
+          docker run -d --name rsdp-next -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY rsdp-next
+          for _ in $(seq 1 120); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
+          docker logs rsdp-next; exit 1
+      # What must match and what may differ is explained at the top of compare.mjs.
+      - name: Same answers after the upgrade
+        run: |
+          scripts/backup/expect.sh "$SITE" > rehearsal/next.json
+          node scripts/upgrade/compare.mjs rehearsal/live.json rehearsal/next.json
+      - name: Public record unchanged after the upgrade
+        run: |
+          # Fails if any entry copied from main changed or went missing, or the chain broke.
+          node scripts/transparency/mirror.mjs "$SITE" rehearsal/record
+          # Always give --site (as two words): without it, verify-audit.mjs checks the live site.
+          node scripts/verify-audit.mjs --site "$SITE" --copy rehearsal/record
+      - name: Stop this pull request's image cleanly
+        run: |
+          docker stop -t 30 rsdp-next
+          test "$(docker inspect rsdp-next --format '{{.State.ExitCode}}')" = 0
+
+      # If a release goes wrong, going back to main's image must still work on the data the release touched.
+      - name: Roll back to main's image on the upgraded volume
+        run: |
+          docker run -d --name rsdp-back -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY rsdp-live
+          for _ in $(seq 1 60); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
+          docker logs rsdp-back; exit 1
+      - name: Same answers after the rollback
+        run: |
+          scripts/backup/expect.sh "$SITE" > rehearsal/back.json
+          node scripts/upgrade/compare.mjs rehearsal/live.json rehearsal/back.json
+          node scripts/transparency/mirror.mjs "$SITE" rehearsal/record
+      - name: Stop main cleanly again
+        run: |
+          docker stop -t 30 rsdp-back
+          test "$(docker inspect rsdp-back --format '{{.State.ExitCode}}')" = 0
+
+      # Made-up players only, so the logs and answers are safe to keep.
+      - name: Collect server logs
+        if: failure()
+        run: |
+          mkdir -p rehearsal/logs
+          for c in rsdp-live rsdp-next rsdp-back; do docker logs "$c" > "rehearsal/logs/$c.log" 2>&1 || true; done
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: upgrade-rehearsal
+          path: |
+            rehearsal/
+            live/e2e/out/
+          if-no-files-found: ignore
