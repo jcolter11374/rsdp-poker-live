@@ -49,7 +49,7 @@ async function headsUp(name: string, settings: object = {}) {
   await ann.call('host:start');
   await ann.until((v) => !!v.hand);
   await ben.until((v) => !!v.hand);
-  return { ann, ben };
+  return { ann, ben, tableId };
 }
 
 /** The turn as this player's view shows it, as the action bar sends it. */
@@ -179,6 +179,32 @@ describe('a move for a turn that has passed', () => {
     expect(bb.view().turn!.usingBank).toBe(false);
     await bb.call('hand:timeBank', keyOf(flop));
     expect(bb.view().turn!.usingBank).toBe(true);
+  });
+});
+
+describe('someone watching without a seat', () => {
+  it('gets the same answer whatever turn a move names, so a table running behind for them gives nothing away', async () => {
+    const { ann, ben, tableId } = await headsUp('watch', { spectators: { allowed: true, delaySeconds: 120 } });
+    const fan = client('late-watch-fan-0123456789');
+    await fan.call('table:join', { tableId });
+    const watching = await fan.until((v) => !!v.spectator);
+    // Two minutes behind, the watcher hasn't seen this hand dealt yet.
+    expect(watching.hand).toBeNull();
+    const live = (ann.view().legal ? ann : ben).view().hand!;
+    const answer = (event: string, ...args: unknown[]) =>
+      fan.call(event, ...args).then(
+        () => 'played',
+        (e: Error) => e.message,
+      );
+    // Every hand number and event count around the live ones, the right ones among them, and none at all.
+    const keys = [{}];
+    for (let handNumber = 0; handNumber <= live.handNumber + 1; handNumber++)
+      for (let at = 0; at <= live.events.length + 2; at++) keys.push({ handNumber, at });
+    const answers = async (send: (key: object) => Promise<string>) => new Set(await Promise.all(keys.map(send)));
+    expect(await answers((key) => answer('hand:act', { type: 'fold', ...key }))).toEqual(new Set(['you are not in this hand']));
+    expect(await answers((key) => answer('hand:draw', { discard: [], ...key }))).toEqual(new Set(['you are not in this hand']));
+    expect(await answers((key) => answer('hand:timeBank', key))).toEqual(new Set(['you are not in this hand']));
+    expect(await answers((key) => answer('hand:show', { cards: [0], ...key }))).toEqual(new Set(['you were not in the last hand']));
   });
 });
 

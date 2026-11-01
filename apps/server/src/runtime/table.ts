@@ -1713,7 +1713,7 @@ export class TableRuntime {
   // ---------------------------------------------------------------- playing
 
   act(playerId: PlayerId, action: Action, sentFor: TurnKey = {}) {
-    this.checkTurn(sentFor, 'That move arrived too late: the turn it was for is over.');
+    this.checkTurn(playerId, sentFor, 'That move arrived too late: the turn it was for is over.');
     const hand = this.liveHandFor(playerId);
     const seat = this.seatOf(playerId)!;
     this.spendBank(seat);
@@ -1723,7 +1723,7 @@ export class TableRuntime {
   }
 
   draw(playerId: PlayerId, discard: number[], sentFor: TurnKey = {}) {
-    this.checkTurn(sentFor, 'That move arrived too late: the turn it was for is over.');
+    this.checkTurn(playerId, sentFor, 'That move arrived too late: the turn it was for is over.');
     const hand = this.liveHandFor(playerId);
     const seat = this.seatOf(playerId)!;
     this.spendBank(seat);
@@ -1743,7 +1743,7 @@ export class TableRuntime {
 
   show(playerId: PlayerId, cardIndexes: number[], sentFor: Pick<TurnKey, 'handNumber'> = {}) {
     // Only the hand: shows (anyone's) add events after it ends, so its event count is no turn.
-    this.checkTurn(sentFor, 'Too late to show those cards: a new hand has been dealt.');
+    this.checkTurn(playerId, sentFor, 'Too late to show those cards: a new hand has been dealt.');
     const hand = this.state.hand;
     // By player, not seat: seats may have been shuffled since the hand.
     const hs = this.seatOf(playerId) ? hand?.seats.find((x) => x.playerId === playerId) : undefined;
@@ -1829,12 +1829,16 @@ export class TableRuntime {
   /**
    * A move sent with the turn it was for (TurnKey: the hand's number and event
    * count, as the player's view showed them) is refused once that turn has
-   * passed, before anything else is checked: a slow tap the player gave up on
-   * must not be played on a later street as well as the tap after it. A part
-   * left out is not checked, so a page from before they were sent plays as
-   * it always did; one that isn't a number (NaN) matches no turn.
+   * passed, before anything else is checked: a tap that arrives after its turn
+   * (on a slow connection, usually the second of two) must not be played on a
+   * later street. A part left out is not checked, so a page from before they
+   * were sent plays as it always did; one that isn't a number (NaN) matches no
+   * turn. Only a seated player's key is checked: they see the live table, but
+   * a spectator may watch it running behind, and the answer must not tell them
+   * where the live hand is (they are refused further on, whatever they send).
    */
-  private checkTurn(sentFor: TurnKey, message: string) {
+  private checkTurn(playerId: PlayerId, sentFor: TurnKey, message: string) {
+    if (!this.seatOf(playerId)) return;
     const hand = this.state.hand;
     if (sentFor.handNumber !== undefined && sentFor.handNumber !== hand?.input.handNumber) throw new ActionError(message);
     if (sentFor.at !== undefined && sentFor.at !== hand?.events.length) throw new ActionError(message);
@@ -1889,7 +1893,7 @@ export class TableRuntime {
 
   /** The player turns their time bank on: it is added to their clock now and spent only past the normal time. */
   useTimeBank(playerId: PlayerId, sentFor: TurnKey = {}) {
-    this.checkTurn(sentFor, "Your time bank wasn't started: the turn it was for is over.");
+    this.checkTurn(playerId, sentFor, "Your time bank wasn't started: the turn it was for is over.");
     const hand = this.liveHandFor(playerId);
     const seat = this.seatOf(playerId)!;
     const turn = this.state.turn;
