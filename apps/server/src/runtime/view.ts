@@ -423,6 +423,10 @@ export function savedHandView(
     if (bot) return { ownerName: bot.ownerName, look: bot.look ?? 0 };
     const row = state?.ledger?.[id];
     if (row?.bot) return { ownerName: row.owner ?? '', look: row.look ?? 0 };
+    // Older snapshots may have forgotten a bot entirely, so the 'bot-' prefix is the last guess. A person's id can
+    // start with it too, so not for anyone with a seed in this hand: bots never send one, and marking a person's
+    // honest seed as a bot's would make "Check this hand" report it as one picked to steer the deck.
+    if (past.fair?.clientSeeds.some((c) => c.playerId === id)) return null;
     return id.startsWith('bot-') ? { ownerName: '', look: 0 } : null;
   };
   const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
