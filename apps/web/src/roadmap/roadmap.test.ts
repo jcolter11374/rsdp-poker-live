@@ -17,11 +17,24 @@ describe('roadmap.json', () => {
     for (const s of data.sections) {
       expect(s.title).toBeTruthy();
       expect(s.items.length).toBeGreaterThan(0);
+      // The page uses each title as a React key.
+      expect(new Set(s.items.map((it) => it.title)).size).toBe(s.items.length);
       for (const it of s.items) {
         expect(it.title).toBeTruthy();
         expect(it.detail).toBeTruthy();
       }
     }
+  });
+
+  it('was updated within a week of the newest release', () => {
+    // Dates from the files only, never today's, so the answer is the same on any day.
+    const newest = changelog.reduce((max, r) => (r.date > max ? r.date : max), '');
+    const daysBehind = (Date.parse(newest) - Date.parse(data.lastUpdated)) / 86_400_000;
+    expect(
+      daysBehind,
+      `roadmap.json was last updated ${data.lastUpdated}, more than a week before the newest release in changelog.json (${newest}). ` +
+        'Update apps/web/src/roadmap/roadmap.json before releasing: move what shipped into "Live now", check "Coming in the next release" and "Later", and set lastUpdated.',
+    ).toBeLessThanOrEqual(7);
   });
 });
 
