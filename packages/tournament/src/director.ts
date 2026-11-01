@@ -93,6 +93,11 @@ export function defaultSettings(overrides: Partial<TournamentSettings> = {}): To
 }
 
 const NAME_MAX = 40;
+/**
+ * Longest settings, as JSON: what a saved structure may hold, so any tournament that can be made can be saved
+ * too. Real ones are a few kilobytes; a big preset payout table takes most of the rest.
+ */
+export const MAX_SETTINGS_LENGTH = 64 * 1024;
 /** The end of year 9999: later start times cannot be shown, stored in Postgres, or handled by the time-zone maths. */
 const MAX_DATE_MS = 253_402_300_799_999;
 const CHIPS_LABEL = MAX_CHIPS.toLocaleString('en-US');
@@ -207,6 +212,7 @@ export function validateSettings(s: TournamentSettings): string[] {
   errors.push(...validateFormats(s));
   // The structure checks its own rows.
   if (hasUnstorableText({ ...s, structure: null })) errors.push('Settings contain characters that cannot be saved');
+  if (JSON.stringify(s).length > MAX_SETTINGS_LENGTH) errors.push('These settings are too big to keep: use fewer payout ranges or blind levels');
   return errors;
 }
 

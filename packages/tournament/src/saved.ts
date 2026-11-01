@@ -2,12 +2,12 @@
 // tap when making a new tournament. Also the built-in starters.
 
 import { copySettings } from './copy';
-import { defaultSettings, validateSettings } from './director';
+import { defaultSettings, MAX_SETTINGS_LENGTH, validateSettings } from './director';
 import { presetStructure, rsdpStructure, RSDP_STACK, RSDP_TABLE_RULES, type PresetName, type StructureRow } from './structure';
 import type { TournamentSettings } from './types';
 
-/** Longest saved structure, as JSON. Real ones are a few kilobytes. */
-export const MAX_SAVED_STRUCTURE_LENGTH = 64 * 1024;
+/** Longest saved structure, as JSON: the longest settings a tournament may have (validateSettings checks it). */
+export const MAX_SAVED_STRUCTURE_LENGTH = MAX_SETTINGS_LENGTH;
 
 /**
  * The settings to keep for a structure: everything on the form. A scheduled

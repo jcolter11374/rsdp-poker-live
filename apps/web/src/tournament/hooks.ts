@@ -31,6 +31,7 @@ export function useTournament(id: string) {
   const [state, setState] = useState<TournamentState | null>(null);
   const [skew, setSkew] = useState(0);
   const [nextId, setNextId] = useState<string | null>(null);
+  const [nextError, setNextError] = useState<string | null>(null);
   const [error, setError] = useState('');
   useEffect(
     () =>
@@ -40,13 +41,14 @@ export function useTournament(id: string) {
           setState(v.state);
           setSkew(v.serverNow - Date.now());
           setNextId(v.nextId ?? null);
+          setNextError(v.nextError ?? null);
           setError('');
         },
         setError,
       ),
     [client, id],
   );
-  return { state, skew, nextId, error };
+  return { state, skew, nextId, nextError, error };
 }
 
 /** Changes page without reloading; App follows popstate. */

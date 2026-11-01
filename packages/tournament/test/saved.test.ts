@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyStarter,
+  curvePercents,
   defaultSettings,
+  MAX_PAID_PLACES,
+  MAX_PAYOUT_RANGES,
+  MAX_SAVED_STRUCTURE_LENGTH,
+  payoutPreset,
   readSavedStructure,
   savedStructureErrors,
   STARTERS,
   structureToSave,
   validateSettings,
+  validatePayoutStructure,
   validateStructure,
   type TournamentSettings,
 } from '../src';
@@ -43,6 +49,28 @@ describe('saved structures', () => {
     expect(() => readSavedStructure('{nope', NOW)).toThrow(/damaged/);
     expect(() => readSavedStructure('[1]', NOW)).toThrow(/damaged/);
     expect(() => readSavedStructure('"x"'.padEnd(70_000, ' '), NOW)).toThrow(/too big/);
+  });
+});
+
+describe('settings too big to save', () => {
+  it('are refused when the tournament is made, not only when it is saved', () => {
+    // A payout table within the caps on ranges and places that still runs past what a saved structure may hold.
+    const ranges = [
+      { minEntries: 2, maxEntries: MAX_PAID_PLACES, percents: [100] },
+      ...Array.from({ length: MAX_PAYOUT_RANGES - 1 }, (_, i) => ({ minEntries: MAX_PAID_PLACES + 1 + i, maxEntries: MAX_PAID_PLACES + 1 + i, percents: curvePercents(MAX_PAID_PLACES, 0) })),
+    ];
+    ranges[ranges.length - 1].maxEntries = 600;
+    const big = defaultSettings({ payouts: { structure: { name: 'custom', ranges }, money: { buyIn: 2000 } } });
+    expect(validatePayoutStructure(big.payouts!.structure, big.maxEntrants)).toEqual([]);
+    expect(JSON.stringify(structureToSave(big)).length).toBeGreaterThan(MAX_SAVED_STRUCTURE_LENGTH);
+    expect(validateSettings(big)).toEqual(['These settings are too big to keep: use fewer payout ranges or blind levels']);
+    expect(savedStructureErrors(structureToSave(big))).toEqual(validateSettings(big));
+  });
+
+  it('leave room for the biggest preset payout table', () => {
+    const s = defaultSettings({ payouts: { structure: payoutPreset('flat', 600), money: { buyIn: 2000 } } });
+    expect(validateSettings(s)).toEqual([]);
+    expect(() => readSavedStructure(JSON.stringify(structureToSave(s)), NOW)).not.toThrow();
   });
 });
 
