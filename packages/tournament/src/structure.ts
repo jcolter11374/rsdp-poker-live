@@ -3,6 +3,7 @@
 // pure clock lookup that says which row is live after some elapsed play time.
 
 import { hasUnstorableText, isId } from './text';
+import type { TableRules, TournamentSettings } from './types';
 
 export type AnteType = 'none' | 'per-player' | 'big-blind';
 
@@ -314,7 +315,17 @@ const RSDP_BLINDS: [sb: number, bb: number][] = [
 export const RSDP_STACK = 63_000;
 export const RSDP_LEVEL_MINUTES = 8;
 /** The RSDP table rules: 10-second decisions, a 20-second time bank refilled every 30 hands, no rabbit hunting (tournaments never have straddles). */
-export const RSDP_TABLE_RULES = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false } as const;
+export const RSDP_TABLE_RULES: Readonly<TableRules> = Object.freeze({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false });
+/**
+ * What every tournament table did before events had their own table rules
+ * (31 Oct 2026): a 30-second clock, a 30-second time bank refilled every 10
+ * hands, and rabbit hunting. Events saved before then, and series and Sit &
+ * Gos carried on from them, still play this way until a host changes them.
+ */
+export const LEGACY_TABLE_RULES: Readonly<TableRules> = Object.freeze({ decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, rabbitHunt: true });
+
+/** The rules this event's tables play by. */
+export const tableRulesOf = (s: Pick<TournamentSettings, 'tableRules'>): TableRules => ({ ...(s.tableRules ?? LEGACY_TABLE_RULES) });
 
 /** The RSDP blind levels. Levels up to `rebuyThroughLevel` allow rebuys. */
 export function rsdpStructure(opts: Pick<BuildOptions, 'rebuyThroughLevel'> = {}): StructureRow[] {

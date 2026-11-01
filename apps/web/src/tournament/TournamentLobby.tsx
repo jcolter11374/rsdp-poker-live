@@ -8,19 +8,21 @@ import {
   standings,
   summarize,
   tableAddress,
+  tableRulesOf,
   tournamentPowers,
   type Command,
   type StructureRow,
   type TournamentState,
 } from '@rsdp/tournament';
 import { LocalTournamentClient, tournamentClient, type Session } from './client';
-import { blinds, chips, countdown, gameName, localTime, money, ordinal } from './format';
+import { blinds, chips, clockText, countdown, gameName, localTime, money, ordinal, tableRulesText } from './format';
 import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
 import { savedName } from '../socket';
 import { CoHostPanel, EventPanel, PlayerManager, RequestRow } from './HostPanels';
 import { InvitesPanel } from './InvitesPanel';
 import { PrizeList } from './PayoutEditor';
 import { StructureEditor, StructureTable } from './StructureEditor';
+import { TableRulesEditor } from './TableRules';
 import { AlertsToggle } from './TournamentAlerts';
 import { downloadResults } from './results';
 import { Activity, LobbyChat, useLobbyLog, useUnreadChat } from './LobbyLog';
@@ -99,7 +101,7 @@ export function TournamentLobby({ id }: { id: string }) {
             <span className={`tn-status tn-status-${state.status}`}>{STATUS_LABEL[state.status]}</span>
           </div>
           <p className="muted">
-            {state.settings.games.map(gameName).join(' / ')} · {chips(state.settings.startingStack)} chips · {state.settings.seatsPerTable}-max
+            {state.settings.games.map(gameName).join(' / ')} · {chips(state.settings.startingStack)} chips · {state.settings.seatsPerTable}-max · {clockText(tableRulesOf(state.settings))}
             {state.settings.start.kind === 'sng' ? ' · Sit & Go' : ''}
             {state.settings.bounty ? ` · ${money(state.settings.bounty.amount)} ${state.settings.bounty.progressivePercent > 0 ? 'progressive bounty' : 'bounty'}` : ''}
           </p>
@@ -139,6 +141,9 @@ export function TournamentLobby({ id }: { id: string }) {
           {tab === 'activity' && <Activity items={log} />}
           {tab === 'structure' && (
             <>
+              <p>
+                <strong>At the tables:</strong> {tableRulesText(tableRulesOf(state.settings))}
+              </p>
               <StructureTable rows={state.settings.structure} currentRow={sum.clock && state.status !== 'finished' ? state.clock.rowIndex : undefined} />
               <p className="muted">
                 <a href={`/tn/new?from=${state.id}`}>Copy these settings into a new tournament</a>
@@ -614,6 +619,8 @@ function HostTools({ state, me, powers, send }: { state: TournamentState; me: st
             </div>
           )}
 
+          <h3>At the tables</h3>
+          <TableRulesEditor state={state} by={by} send={send} />
         </>
       )}
 
