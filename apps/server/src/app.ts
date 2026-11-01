@@ -34,6 +34,7 @@ import type { Db } from './db';
 import { StorageError } from './db/errors';
 import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
+import { clientErrorRoutes } from './clientErrors';
 import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
@@ -591,6 +592,8 @@ export function createApp(deps: AppDeps = {}) {
       res.type('html').send(html);
     });
   }
+  // What broke in a browser, one line in the log (it compares the page's build with webApp).
+  clientErrorRoutes(app, { now: () => clock.now(), log, build, served: webApp });
 
   function broadcast(rt: TableRuntime) {
     const id = rt.state.id;
