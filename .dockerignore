@@ -7,3 +7,9 @@ e2e/out
 *.log
 Dockerfile
 .dockerignore
+# Never copy keys, env files or backups into the image, wherever they sit.
+**/.env
+**/.env.*
+**/rsdp-backup-key*
+**/*.age
+**/*.jsonl.gz

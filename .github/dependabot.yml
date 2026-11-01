@@ -1,0 +1,35 @@
+# Dependabot opens pull requests that update our libraries and GitHub Actions.
+# GitHub reads this file from main only, so it takes effect after it is released.
+# Update PRs go into develop, like any other change, and get CI and our usual review.
+# Major versions are left to deliberate PRs (they usually need code changes).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: [dependencies, 'no issue needed']
+    groups:
+      # drizzle and PGlite are 0.x, where a "minor" version can break things: one PR of their own.
+      database:
+        patterns: ['drizzle-*', '@electric-sql/pglite']
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: monthly
+    labels: [dependencies, 'no issue needed']
+    groups:
+      actions:
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
