@@ -27,7 +27,7 @@ export function cleanKind(raw: unknown): SetupKind {
 export function cleanSetupName(raw: unknown): string {
   const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
   if (!name) throw new ActionError('give it a name');
-  if (Array.from(name).length > SETUP_NAME_MAX) throw new ActionError(`names can be up to ${SETUP_NAME_MAX} characters`);
+  if (name.length > SETUP_NAME_MAX) throw new ActionError(`names can be up to ${SETUP_NAME_MAX} characters`);
   if (/[\u0000-\u001f\u007f]/.test(name)) throw new ActionError('names cannot contain control characters');
   return name;
 }
@@ -64,7 +64,10 @@ export function freeName(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name;
   for (let n = 2; ; n++) {
     const suffix = ` (${n})`;
-    const candidate = Array.from(name).slice(0, SETUP_NAME_MAX - suffix.length).join('') + suffix;
+    // Shortened a whole character at a time, so an emoji is never cut in half.
+    const chars = Array.from(name);
+    while (chars.join('').length + suffix.length > SETUP_NAME_MAX) chars.pop();
+    const candidate = chars.join('') + suffix;
     if (!taken.has(candidate)) return candidate;
   }
 }

@@ -102,7 +102,7 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
   const tidy = (name: string, json: string) => {
     const clean = cleanSetupName(name);
     if (!clean) throw new Error('Give it a name');
-    if (Array.from(clean).length > SETUP_NAME_MAX) throw new Error(`Names can be up to ${SETUP_NAME_MAX} characters`);
+    if (clean.length > SETUP_NAME_MAX) throw new Error(`Names can be up to ${SETUP_NAME_MAX} characters`);
     return retitle({ name: clean, json });
   };
 
