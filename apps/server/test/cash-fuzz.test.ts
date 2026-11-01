@@ -82,28 +82,31 @@ function run(seed: number, steps: number) {
     return { type: 'fold' };
   };
 
+  // Plays the hand on: whoever is to act acts, or time passes.
+  const play = () => {
+    const hand = rt.state.hand;
+    if (!hand || hand.phase === 'complete') return void clock.advance(1000 + rng(8000));
+    if (hand.phase === 'rit-vote') {
+      const voters = hand.seats.filter((x) => !x.folded && x.ritVote === null);
+      if (!voters.length) return void clock.advance(1000);
+      const v = pick(voters);
+      trace.push(`vote ${v.playerId}`);
+      return rt.voteRunItTwice(v.playerId, chance(60));
+    }
+    if (hand.toAct === null) return void clock.advance(500);
+    const id = rt.state.seats[hand.toAct]?.playerId;
+    if (!id) return void clock.advance(500);
+    if (hand.phase === 'drawing') {
+      trace.push(`draw ${id}`);
+      return rt.draw(id, [0, 1, 2, 3, 4].filter(() => chance(40)));
+    }
+    const a = randomAction(hand.toAct);
+    trace.push(`act ${id} ${JSON.stringify(a)}`);
+    rt.act(id, a);
+  };
+
   const ops: [number, () => void][] = [
-    [40, () => {
-      const hand = rt.state.hand;
-      if (!hand || hand.phase === 'complete') return void clock.advance(1000 + rng(8000));
-      if (hand.phase === 'rit-vote') {
-        const voters = hand.seats.filter((x) => !x.folded && x.ritVote === null);
-        if (!voters.length) return void clock.advance(1000);
-        const v = pick(voters);
-        trace.push(`vote ${v.playerId}`);
-        return rt.voteRunItTwice(v.playerId, chance(60));
-      }
-      if (hand.toAct === null) return void clock.advance(500);
-      const id = rt.state.seats[hand.toAct]?.playerId;
-      if (!id) return void clock.advance(500);
-      if (hand.phase === 'drawing') {
-        trace.push(`draw ${id}`);
-        return rt.draw(id, [0, 1, 2, 3, 4].filter(() => chance(40)));
-      }
-      const a = randomAction(hand.toAct);
-      trace.push(`act ${id} ${JSON.stringify(a)}`);
-      rt.act(id, a);
-    }],
+    [40, play],
     [6, () => { trace.push('clock 31s'); clock.advance(31_000); }],
     [4, () => { trace.push('clock 2m'); clock.advance(120_000); }],
     [12, () => {
@@ -185,25 +188,92 @@ function run(seed: number, steps: number) {
     }],
   ];
   const totalWeight = ops.reduce((n, [w]) => n + w, 0);
+  // Runs one step. The runtime refusing it is fine; any other error is a bug.
+  const attempt = (where: string, fn: () => void) => {
+    try {
+      fn();
+    } catch (e) {
+      if (!(e instanceof ActionError) && !(e instanceof SettingsError)) {
+        throw new Error(`${where}: ${(e as Error).stack}\n${trace.slice(-25).join('\n')}`);
+      }
+    }
+  };
+  // A hand could be dealt now: the game on, and two connected players with chips who aren't sitting out.
+  const canDeal = () => {
+    const s = rt.state;
+    return s.started && !s.paused && s.seats.filter((x) => x && !x.sittingOut && x.stack > 0 && online.has(x.playerId)).length >= 2;
+  };
+  // Steps since the last new hand at which one could have been dealt: seeds 1-400 reach at most 23,
+  // so 50 means the table has stopped dealing.
+  let missed = 0;
+  let lastHand = rt.state.handNumber;
 
   for (let i = 0; i < steps; i++) {
     let r = rng(totalWeight);
     const op = ops.find(([w]) => (r -= w) < 0)![1];
-    try {
-      op();
-    } catch (e) {
-      if (!(e instanceof ActionError) && !(e instanceof SettingsError)) {
-        throw new Error(`seed ${seed} step ${i}: ${(e as Error).stack}\n${trace.slice(-25).join('\n')}`);
-      }
-    }
+    attempt(`seed ${seed} step ${i}`, op);
     check(`seed ${seed} step ${i}`);
+    const s = rt.state;
+    if (s.handNumber !== lastHand) {
+      lastHand = s.handNumber;
+      missed = 0;
+    } else if ((!s.hand || s.hand.phase === 'complete') && canDeal() && ++missed >= 50) {
+      throw new Error(`seed ${seed} step ${i}: no new hand in ${missed} steps when one could be dealt\n${trace.slice(-25).join('\n')}`);
+    }
+  }
+
+  // A few seeds (392 is one) end the steps above with everyone sat out or the game stopped, and
+  // rightly no hands. So the fuzz then brings everyone back itself: all online, at least two
+  // seated, everyone with chips and sitting in, the game on. That doesn't depend on what the
+  // runtime says about who can play, so a runtime that wrongly sits everyone out fails below.
+  const topUp = (where: string) => {
+    for (const x of rt.state.seats) if (x && x.stack + x.pendingChips === 0) attempt(where, () => rt.rebuy(x.playerId, 200));
+  };
+  const comeBack = (where: string) => {
+    trace.push('everyone back');
+    for (const id of PLAYERS) connect(id);
+    attempt(where, () => rt.updateSettings(host(), { seating: { maxBuyIn: 0, ratholeMinutes: 0 } }));
+    for (const id of PLAYERS) {
+      const free = rt.state.seats.findIndex((x) => !x);
+      if (rt.state.seats.filter(Boolean).length >= 2 || free < 0) break;
+      if (!rt.state.seats.some((x) => x?.playerId === id)) attempt(where, () => rt.requestSeat(id, { seat: free, name: id, stack: 200 }));
+    }
+    topUp(where);
+    for (const x of rt.state.seats) if (x) attempt(where, () => rt.sitOut(x.playerId, false));
+    attempt(where, () => rt.pause(host(), false));
+    // Only when stopped: starting again deals at once, which would skip the runtime's own next-hand timer.
+    if (!rt.state.started) attempt(where, () => rt.start(host()));
+  };
+  // Then the table must deal 5 more hands within 500 steps (seeds 1-1000 need at most 189).
+  // Everyone is brought back now, perhaps mid-hand (the game may be paused), and again once that
+  // hand is over, when its stand-ups and a stop take effect. After that, between hands only a
+  // player with no chips left is helped, by a rebuy: nobody else has a reason to sit out now, so a
+  // runtime that sits people out fails here too.
+  const after = rt.state.handNumber;
+  let settled = false;
+  let toppedUp = -1;
+  for (let i = 0; rt.state.handNumber < after + 5; i++) {
+    const where = `seed ${seed} after everyone came back, step ${i}`;
+    if (i >= 500) throw new Error(`${where}: only ${rt.state.handNumber - after} new hands since\n${trace.slice(-25).join('\n')}`);
+    const between = !rt.state.hand || rt.state.hand.phase === 'complete';
+    if (i === 0 || (between && !settled)) {
+      settled = between;
+      comeBack(where);
+    } else if (between && toppedUp !== rt.state.handNumber) {
+      toppedUp = rt.state.handNumber;
+      topUp(where);
+    }
+    attempt(where, play);
+    check(where);
   }
   return rt.state.handNumber;
 }
 
+// SEEDS=400 runs more of them; FIRST_SEED=392 SEEDS=1 replays seed 392 alone.
 describe('cash table fuzz', () => {
+  const first = Number(process.env.FIRST_SEED ?? 1);
   const seeds = Number(process.env.SEEDS ?? 12);
-  for (let seed = 1; seed <= seeds; seed++) {
+  for (let seed = first; seed < first + seeds; seed++) {
     it(`seed ${seed}: chips always add up`, () => {
       expect(run(seed, 1500)).toBeGreaterThan(5);
     });

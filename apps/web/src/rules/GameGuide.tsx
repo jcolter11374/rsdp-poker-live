@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { TableSettings } from '@rsdp/engine/settings';
 import { PlayingCard } from '../components/PlayingCard';
 import { EXTRAS, extraFor, type ExtraGuide } from './extras';
 import { GUIDES, cardsOf, guideFor, type CardList, type Guide } from './guides';
@@ -17,27 +18,30 @@ function Cards({ cards }: { cards: CardList }) {
 type Picked = Guide | ExtraGuide;
 const isGame = (g: Picked): g is Guide => 'games' in g;
 
-/** A game guide or a side game / house rule guide, by id. */
-function anyGuide(id: string): Picked | null {
-  return guideFor(id) ?? extraFor(id);
+/** A game guide or a side game / house rule guide, by id (with this table's numbers, given its settings). */
+function anyGuide(id: string, settings?: TableSettings): Picked | null {
+  return guideFor(id) ?? extraFor(id, settings);
 }
 
 /**
  * The guides for `gameIds` first (tagged "now" for `current`), then every
  * other game, then the side games and house rules: those in `extraIds` (the
  * ones on at this table) first. `current` may name a game or a side game.
+ * `settings` are the table's, so a guide's examples can use its numbers.
  */
-export function GameGuide({ gameIds = [], extraIds, current = null }: { gameIds?: string[]; extraIds?: string[]; current?: string | null }) {
+export function GameGuide({ gameIds = [], extraIds, current = null, settings }: { gameIds?: string[]; extraIds?: string[]; current?: string | null; settings?: TableSettings }) {
   const here = [...new Set(gameIds.map(guideFor).filter((g): g is Guide => !!g))];
   const others = GUIDES.filter((g) => !here.includes(g));
-  const extrasHere = (extraIds ?? []).map(extraFor).filter((g): g is ExtraGuide => !!g);
-  const extrasOther = EXTRAS.filter((g) => !extrasHere.includes(g));
-  const [picked, setPicked] = useState<Picked>((current && anyGuide(current)) || here[0] || GUIDES[0]);
+  const extrasHere = (extraIds ?? []).map((id) => extraFor(id, settings)).filter((g): g is ExtraGuide => !!g);
+  const extrasOther = EXTRAS.filter((g) => !extrasHere.some((h) => h.id === g.id)).map((g) => extraFor(g.id, settings)!);
+  // By id: a guide with the table's numbers is rebuilt when the settings change.
+  const [pickedId, setPicked] = useState<string>(((current && anyGuide(current)) || here[0] || GUIDES[0]).id);
+  const picked = anyGuide(pickedId, settings) ?? GUIDES[0];
   // "now" only makes sense at a table.
   const nowId = current && here.length ? guideFor(current)?.id : null;
 
   const chip = (g: Picked) => (
-    <button key={g.id} className={`guide-chip ${g === picked ? 'on' : ''}`} aria-pressed={g === picked} onClick={() => setPicked(g)}>
+    <button key={g.id} className={`guide-chip ${g.id === picked.id ? 'on' : ''}`} aria-pressed={g.id === picked.id} onClick={() => setPicked(g.id)}>
       {g.name}
       {g.id === nowId && <span className="tag">now</span>}
     </button>

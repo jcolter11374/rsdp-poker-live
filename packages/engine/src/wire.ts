@@ -154,7 +154,12 @@ export interface TableView {
   powers: HostPower[];
   /** Cash tables: the host's co-hosts and their powers. */
   coHosts: CoHost[];
-  me: { playerId: PlayerId; seat: number | null };
+  me: {
+    playerId: PlayerId;
+    seat: number | null;
+    /** Seated with chips to sit back in with (TableRuntime.canSitIn). Absent from servers before it was added. */
+    canSitIn?: boolean;
+  };
   settings: TableSettings;
   /** Host edits waiting for the next hand. */
   pendingSettings: SettingsPatch | null;
@@ -341,7 +346,8 @@ export interface ClientToServer {
   'waitlist:leave': (ack: Ack) => void;
   'hand:act': (action: Action & TurnKey, ack: Ack) => void;
   'hand:draw': (input: { discard: number[] } & TurnKey, ack: Ack) => void;
-  'hand:runItTwice': (input: { yes: boolean }, ack: Ack) => void;
+  /** `handNumber`: the hand whose vote I pressed it in, so a vote that arrives during a later hand's vote is ignored, not counted there. */
+  'hand:runItTwice': (input: { yes: boolean; handNumber?: number }, ack: Ack) => void;
   /** `handNumber`: the hand I pressed it after, so a show that arrives once the next hand is dealt is refused, not played on that hand. */
   'hand:show': (input: { cards: number[]; handNumber?: number }, ack: Ack) => void;
   /** Add my time bank to my clock now, on the turn I pressed it on (a page from before turn keys sends the ack alone). */
@@ -528,6 +534,8 @@ export interface BotNote {
   alt?: { thrown: number; share: number };
   /** Hard: acts last for the rest of the hand. */
   last?: true;
+  /** Stud: it brought in only because the player who had to was all in from the ante, so it could have folded. */
+  opened?: true;
   /** Hard: what it made of how you (the one person in the hand) play, and how often you bet or raised this hand. */
   you?: 'folds-often' | 'calls-often';
   yourBets?: number;
@@ -538,6 +546,10 @@ export const SETUP_KINDS = ['table', 'tournament'] as const;
 export type SetupKind = (typeof SETUP_KINDS)[number];
 /** Most setups of one kind an account keeps. */
 export const SETUPS_PER_KIND = 100;
+/**
+ * Longest name for a saved setup. Counted like an input's maxLength, an emoji
+ * as two, the same as a table preset's name, so a name that fits here fits there.
+ */
 export const SETUP_NAME_MAX = 60;
 
 /** A setup saved under a name: for a table, a preset file; for a tournament, its settings as JSON. */

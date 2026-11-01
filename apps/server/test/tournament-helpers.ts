@@ -8,7 +8,7 @@ import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock, seeded } from './fake-clock';
 
 /** A manager with in-memory storage, plus the tables it has open. */
-export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>; snapshots: Map<string, string>; clock: FakeClock }) {
+export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>; snapshots: Map<string, string>; clock: FakeClock }, opts: { fairLeadMs?: number } = {}) {
   const clock = shared?.clock ?? new FakeClock();
   const store = shared?.store ?? memoryTournamentStore();
   const snapshots = shared?.snapshots ?? new Map<string, string>();
@@ -39,6 +39,7 @@ export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>
     onState: () => {},
     onMoved: (playerId, from, to) => moves.push({ playerId, from, to }),
     log: (m, e) => errors.push([m, e]),
+    fairLeadMs: opts.fairLeadMs,
   });
   return { clock, store, snapshots, tables, moves, errors, manager };
 }

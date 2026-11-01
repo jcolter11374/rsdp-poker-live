@@ -123,6 +123,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const view = useRunoutReveal(live);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
+  /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
+  const [seatError, setSeatError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
   const [sheet, setSheet] = useState<'menu' | 'chat' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
@@ -309,6 +311,19 @@ export function TablePage({ tableId }: { tableId: string }) {
   const handLive = !!view.hand && view.hand.phase !== 'complete';
   const inHand = !!mySeat?.inHand && handLive;
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
+  // The server's own rule (chips, or chips coming after this hand). A server from before it sent this: chips shown.
+  const canSitIn = view.me.canSitIn ?? (!!mySeat && mySeat.stack > 0);
+  // Like run() in the host panel: a refusal or a lost answer shows, instead of the button seeming dead.
+  const seatCall = (event: 'seat:sitOut' | 'seat:prefs', payload: object) =>
+    call(event, payload)
+      .then(() => setSeatError(''))
+      .catch((e: Error) => setSeatError(e.message));
+  const seatErrorLine = seatError && (
+    <div className="banner warn" role="alert">
+      {seatError}{' '}
+      <button onClick={() => setSeatError('')}>OK</button>
+    </div>
+  );
   // A player sees only their own bots' requests; the host sees everyone's and never has to ask.
   const myBotRequests = view.powers.includes('approve') ? [] : view.requests.filter((r) => r.bot);
   const myBots = view.seats.filter((s) => s?.bot?.ownerId === view.me.playerId).length + myBotRequests.length;
@@ -352,7 +367,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const seatButtons = mySeat && (
     <>
       {canRebuy && <button onClick={() => setDialog({ kind: 'rebuy' })}>Add chips</button>}
-      <button onClick={() => call('seat:sitOut', { value: !mySeat.sittingOut })}>{mySeat.sittingOut ? "I'm back" : 'Sit out'}</button>
+      {(!mySeat.sittingOut || canSitIn) && <button onClick={() => seatCall('seat:sitOut', { value: !mySeat.sittingOut })}>{mySeat.sittingOut ? "I'm back" : 'Sit out'}</button>}
       {cash && (
         <button
           onClick={() =>
@@ -369,13 +384,13 @@ export function TablePage({ tableId }: { tableId: string }) {
     <div className="seat-options">
       {straddleOn && (
         <label className="toggle">
-          <input type="checkbox" checked={mySeat.straddle} onChange={(e) => call('seat:prefs', { straddle: e.target.checked })} />
+          <input type="checkbox" checked={mySeat.straddle} onChange={(e) => seatCall('seat:prefs', { straddle: e.target.checked })} />
           Straddle when I'm under the gun
         </label>
       )}
       {mySeat.waiting && (
         <label className="toggle">
-          <input type="checkbox" checked={mySeat.waitForBigBlind} onChange={(e) => call('seat:prefs', { waitForBigBlind: e.target.checked })} />
+          <input type="checkbox" checked={mySeat.waitForBigBlind} onChange={(e) => seatCall('seat:prefs', { waitForBigBlind: e.target.checked })} />
           Wait for the big blind
         </label>
       )}
@@ -389,13 +404,13 @@ export function TablePage({ tableId }: { tableId: string }) {
           className="seat-chip"
           aria-pressed={mySeat.straddle}
           title="Straddle automatically when you're under the gun"
-          onClick={() => call('seat:prefs', { straddle: !mySeat.straddle })}
+          onClick={() => seatCall('seat:prefs', { straddle: !mySeat.straddle })}
         >
           {mySeat.straddle && <span aria-hidden>✓ </span>}Straddle
         </button>
       )}
       {mySeat.waiting && (
-        <button className="seat-chip" aria-pressed={mySeat.waitForBigBlind} title="Wait for the big blind before you're dealt in" onClick={() => call('seat:prefs', { waitForBigBlind: !mySeat.waitForBigBlind })}>
+        <button className="seat-chip" aria-pressed={mySeat.waitForBigBlind} title="Wait for the big blind before you're dealt in" onClick={() => seatCall('seat:prefs', { waitForBigBlind: !mySeat.waitForBigBlind })}>
           {mySeat.waitForBigBlind && <span aria-hidden>✓ </span>}Wait for the big blind
         </button>
       )}
@@ -559,19 +574,20 @@ export function TablePage({ tableId }: { tableId: string }) {
                     ? 'The host sat you out.'
                     : "You're sitting out."}
               {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
-              {mySeat.sitOutReason === 'busted' && canRebuy ? (
+              {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
                 <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
                   Add chips
                 </button>
+              ) : canSitIn ? (
+                <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
+                  I'm back
+                </button>
               ) : (
-                mySeat.stack > 0 && (
-                  <button className="primary" onClick={() => call('seat:sitOut', { value: false })}>
-                    I'm back
-                  </button>
-                )
+                mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
               )}
             </div>
           )}
+          {seatErrorLine}
           <Table
             view={view}
             skew={skew}
@@ -673,6 +689,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             {volumeButton}
           </div>
           {seatOptions}
+          {seatErrorLine}
         </Sheet>
       )}
       {portrait && sheet === 'chat' && (

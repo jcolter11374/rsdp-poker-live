@@ -213,6 +213,11 @@ export function ActionBar({
     const { handNumber } = turnKey(onScreen.current);
     run(() => call('hand:show', { cards, handNumber }));
   };
+  // A run it twice vote carries only its hand too (each vote adds an event): one that arrives during a later hand's vote is ignored.
+  const vote = (yes: boolean) => {
+    const { handNumber } = turnKey(onScreen.current);
+    run(() => call('hand:runItTwice', { yes, handNumber }));
+  };
   const startBank = () => call('hand:timeBank', turnKey(onScreen.current)).catch((e: Error) => setError(e.message));
   /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
   const settled = () => !inFlight.current && Date.now() - lastSent.current > DOUBLE_TAP_MS;
@@ -390,8 +395,8 @@ export function ActionBar({
         {errorLine}
         <div className="prompt">Everyone is all in. Run it twice?{left !== null && <span className="muted"> {left}s</span>}</div>
         <div className="buttons">
-          <button onClick={() => run(() => call('hand:runItTwice', { yes: false }))}>Run it once</button>
-          <button className="primary" onClick={() => run(() => call('hand:runItTwice', { yes: true }))}>
+          <button onClick={() => vote(false)}>Run it once</button>
+          <button className="primary" onClick={() => vote(true)}>
             Run it twice
           </button>
         </div>

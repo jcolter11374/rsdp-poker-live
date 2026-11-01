@@ -277,6 +277,25 @@ export const hands = pgTable(
   (t) => [uniqueIndex('hands_table_number_idx').on(t.tableId, t.number)],
 );
 
+/**
+ * Every line of a table's log and chat, oldest first by `n`, kept like its hands
+ * (the snapshot keeps only the latest few for the side panel).
+ */
+export const tableLog = pgTable(
+  'table_log',
+  {
+    n: bigserial('n', { mode: 'number' }).primaryKey(),
+    tableId: text('table_id')
+      .notNull()
+      .references(() => tables.id),
+    kind: text('kind', { enum: ['log', 'chat'] }).notNull(),
+    at: at('at').notNull(),
+    /** The rest of a TableLogEntry or ChatMessage (runtime/types.ts), without its time. */
+    item: jsonb('item').$type<unknown>().notNull(),
+  },
+  (t) => [index('table_log_table_idx').on(t.tableId, t.n)],
+);
+
 // ---------------------------------------------------------------- tournaments
 
 /** Tournament director state, saved after every change; its tables live in `tables` with mode 'tournament' (tournament_id is not filled in). */

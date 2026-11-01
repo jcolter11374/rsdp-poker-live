@@ -18,6 +18,24 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.01.5] - 2026-11-01
+
+### Fixed and changed
+
+- Cash games: if the server crashed just as a hand ended, that hand could come back unfinished and be played again after the restart; it now stays finished with the result it had.
+- Cash games: a run-it-twice vote that arrives very late on a slow connection no longer counts toward the next hand's vote.
+- At a table, Sit out, I'm back, straddle and wait for the big blind now show a message if the server says no or the connection drops, and I'm back no longer shows when you have no chips to sit back in with.
+- If you're sitting at a table, waiting for a seat, or entered in a tournament as a guest, signing in to an account you made on another device now asks you to leave first and links you to that table or tournament, instead of quietly leaving your seat or entry behind.
+- Stud and Razz: if the player who must bring in is all in from the ante, the next player no longer has a bring-in posted for them when they are away or out of time (they fold instead), and practice bots that open in that spot explain it correctly.
+- Tournaments: when a tournament ends, its last table just shows the winner, with no countdown to a next hand that never comes.
+- How to play: the time bank and rabbit hunt guides now explain that tournaments set their own clock, time bank and rabbit hunting, and at a table the time bank example uses that table's own numbers.
+- “Download full log” now includes every chat message and table event since the table started, not just the most recent ones. For tables played before this update, it has whatever had not already dropped off.
+- Table settings: “Add game” and “Add level” now stop at the most the site allows (20 games, 100 levels), and new blind levels stop at the maximum chip amount.
+- Saved table setups and tournament structures count each emoji in the name as two characters, the same as the name box, so a long name gets a clear “names can be up to 60 characters” message instead of a confusing “Invalid preset” error.
+- Signing in with many large setups saved in your browser no longer drops the connection: they come over to your account in smaller steps.
+- The Roadmap page is up to date again.
+- Behind the scenes: more automatic tests, including the betting bar, a nightly run of the long game simulations, and a rehearsal of each release's upgrade on saved data.
+
 ## [2026.11.01.4] - 2026-11-01
 
 ### Fixed and changed
@@ -483,6 +501,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.01.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.5
 [2026.11.01.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.4
 [2026.11.01.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.3
 [2026.11.01.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.2

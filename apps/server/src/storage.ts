@@ -1,7 +1,7 @@
 import type { Db } from './db';
-import { allHandsOfTable, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, allTableLog, appendTableLog, hasTableLog, createTable, deleteTableForGood, getTable, handOfTable, loadSnapshot, saveHand, saveSnapshot, tablesSeatingInSaves } from './db';
 import { setDisplayName, whoIs } from './identity';
-import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
+import { RUNTIME_VERSION, type ChatMessage, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
 import type { IdentityService, TableStore } from './app';
 
@@ -22,9 +22,12 @@ export function dbIdentity(db: Db): IdentityService {
 export function dbStore(db: Db): TableStore {
   return {
     async createTable(state) {
+      // Taken now: lines added from here on go to saveLines.
+      const lines = startingLines(state);
       if (await getTable(db, state.id)) return;
       await createTable(db, { id: state.id, ownerPlayerId: state.hostId, settings: state.settings, mode: state.settings.table.mode });
       await saveSnapshot(db, state.id, { version: RUNTIME_VERSION, state });
+      await saveLines(state.id, lines);
     },
     async saveTable(state) {
       try {
@@ -63,8 +66,43 @@ export function dbStore(db: Db): TableStore {
       const rows = await allHandsOfTable<SavedHeader, PastHand['events'][number]>(db, tableId);
       return rows.map(pastHandFromRow);
     },
+    saveLines,
+    async keepEarlierLines(tableId, lines) {
+      if (!lines.length || (await hasTableLog(db, tableId))) return;
+      await saveLines(tableId, lines);
+    },
+    async loadLines(tableId) {
+      const rows = await allTableLog<Record<string, unknown>>(db, tableId);
+      return splitLines(rows.map((r) => ({ kind: r.kind, entry: { at: r.at.getTime(), ...r.item } }) as TableLine));
+    },
+    async loadHand(tableId, handNumber) {
+      const row = await handOfTable<SavedHeader, PastHand['events'][number]>(db, tableId, handNumber);
+      return row && pastHandFromRow(row);
+    },
     deleteTable: (tableId) => deleteTableForGood(db, tableId),
+    tablesSeating: (playerId) => tablesSeatingInSaves(db, playerId, RUNTIME_VERSION),
   };
+
+  async function saveLines(tableId: string, lines: TableLine[]) {
+    // The time has its own column; the rest of the line goes in as it is. A lone surrogate (in a name, say) is
+    // taken out, as in snapshots, rather than stop every save of the table's log.
+    const rows = withoutLoneSurrogates(lines.map(({ kind, entry: { at, ...item } }) => ({ kind, at, item })));
+    await appendTableLog(db, tableId, rows.map((r) => ({ ...r, at: new Date(r.at) })));
+  }
+}
+
+/** The log and chat lines a new table starts with (a practice table's bots are asked for before it is saved). */
+export function startingLines(state: RuntimeState): TableLine[] {
+  return [...state.log.map((entry) => ({ kind: 'log' as const, entry })), ...state.chat.map((entry) => ({ kind: 'chat' as const, entry }))].sort((a, b) => a.entry.at - b.entry.at);
+}
+
+export function splitLines(lines: TableLine[]): { log: TableLogEntry[]; chat: ChatMessage[] } {
+  const out = { log: [] as TableLogEntry[], chat: [] as ChatMessage[] };
+  for (const l of lines) {
+    if (l.kind === 'log') out.log.push(l.entry);
+    else out.chat.push(l.entry);
+  }
+  return out;
 }
 
 /** What a saved hand's header holds (see saveHand above). */

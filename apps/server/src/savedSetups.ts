@@ -27,7 +27,7 @@ export function cleanKind(raw: unknown): SetupKind {
 export function cleanSetupName(raw: unknown): string {
   const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
   if (!name) throw new ActionError('give it a name');
-  if (Array.from(name).length > SETUP_NAME_MAX) throw new ActionError(`names can be up to ${SETUP_NAME_MAX} characters`);
+  if (name.length > SETUP_NAME_MAX) throw new ActionError(`names can be up to ${SETUP_NAME_MAX} characters`);
   if (/[\u0000-\u001f\u007f]/.test(name)) throw new ActionError('names cannot contain control characters');
   return name;
 }
@@ -59,14 +59,38 @@ export function renamed(kind: SetupKind, setup: SavedSetup, to: string): SavedSe
   return { name: to, json: kind === 'table' ? exportPreset(importPreset(setup.json).settings, to) : setup.json };
 }
 
-/** A name not in `taken`: the name itself, or with " (2)", " (3)"… on the end. */
+/**
+ * The name cut to at most `room` (counted like SETUP_NAME_MAX, an emoji as
+ * two), dropping whole characters as a reader sees them, so an emoji is never
+ * cut in half, not even one joined from several (a family, a flag, a skin tone).
+ */
+export function fitName(name: string, room: number): string {
+  if (name.length <= room) return name;
+  const chars = Array.from(new Intl.Segmenter().segment(name), (s) => s.segment);
+  while (chars.join('').length > room) chars.pop();
+  return chars.join('').trimEnd();
+}
+
+/** A name not in `taken`: the name itself, or with " (2)", " (3)"… on the end, shortened so it still fits. */
 export function freeName(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name;
   for (let n = 2; ; n++) {
     const suffix = ` (${n})`;
-    const candidate = Array.from(name).slice(0, SETUP_NAME_MAX - suffix.length).join('') + suffix;
+    const candidate = fitName(name, SETUP_NAME_MAX - suffix.length) + suffix;
     if (!taken.has(candidate)) return candidate;
   }
+}
+
+/**
+ * A setup a browser brings onto the account at sign-in. A browser could keep
+ * names that are too long now (tournament structures saved before names
+ * counted an emoji as two); such a name is shortened to fit rather than the
+ * setup being left behind.
+ */
+export function cleanImportedSetup(kind: SetupKind, raw: unknown, now: number): SavedSetup {
+  const input = (raw ?? {}) as Partial<Record<keyof SavedSetup, unknown>>;
+  const name = typeof input.name === 'string' ? fitName(input.name.replace(/\s+/g, ' ').trim(), SETUP_NAME_MAX) : input.name;
+  return cleanSetup(kind, { ...input, name }, now);
 }
 
 export function memorySetups(): SetupStore {

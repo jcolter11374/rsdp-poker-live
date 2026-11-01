@@ -39,13 +39,16 @@ import {
   RUNTIME_VERSION,
   systemClock,
   type BotInfo,
+  type ChatMessage,
   type Clock,
   type FairState,
   type HandRecord,
+  type PastHand,
   type RuntimeState,
   type SeatRequest,
   type SideGameState,
   type SeatState,
+  type TableLine,
   type TournamentHooks,
   type WaitlistEntry,
 } from './types';
@@ -56,6 +59,7 @@ import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../b
 import { coachTip as buildCoachTip } from '../bots/coach';
 import { botNote, plainNote } from '../bots/reasons';
 
+/** Chat and log lines the state keeps, for the side panel; every one is also handed to onLine to be kept for good. */
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
@@ -141,6 +145,8 @@ export class TableRuntime {
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
   onHandFinished: (record: HandRecord) => void = () => {};
+  /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
+  onLine: (line: TableLine) => void = () => {};
 
   private readonly clock: Clock;
   private readonly rng: Rng;
@@ -626,10 +632,16 @@ export class TableRuntime {
     this.forgetBot(seat.playerId);
   }
 
+  /** Has chips to sit back in with: some in front of them, or some on the way after this hand. The view shows the seat bar's I'm back by this. */
+  canSitIn(playerId: PlayerId): boolean {
+    const seat = this.seatOf(playerId);
+    return !!seat && (seat.stack + seat.pendingChips > 0 || seat.pendingStack !== null);
+  }
+
   sitOut(playerId: PlayerId, value: boolean) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
-    if (!value && seat.stack + seat.pendingChips <= 0 && seat.pendingStack === null) throw new ActionError('rebuy before sitting back in');
+    if (!value && !this.canSitIn(playerId)) throw new ActionError('rebuy before sitting back in');
     seat.sittingOut = value;
     seat.sitOutReason = value ? 'player' : null;
     if (!value) seat.timeouts = 0;
@@ -908,9 +920,7 @@ export class TableRuntime {
   /** Rake and the Nit game after a cash hand, once stacks are back on the seats. */
   private settleSideGames(hand: HandState) {
     const sg = this.sideGames();
-    const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
-    if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
-    this.logBounty(hand, 0);
+    this.feeAndBounty(hand);
 
     const round = sg.nit;
     if (!round || !this.nitStillOn()) return;
@@ -923,8 +933,16 @@ export class TableRuntime {
     if (round.holders.length === 1) this.nitPays(round.holders[0], 'is the last nit');
   }
 
+  /** A finished cash hand's house fee joins the fee total, and its 7-2 bounties go in the table log. */
+  private feeAndBounty(hand: { events: HandState['events']; seats: { seat: number; playerId: PlayerId }[] }) {
+    const sg = this.sideGames();
+    const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
+    if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
+    this.logBounty(hand, 0);
+  }
+
   /** A line in the table log for each 7-2 bounty paid, so the whole table sees it. */
-  private logBounty(hand: HandState, fromEvent: number) {
+  private logBounty(hand: { events: HandState['events']; seats: { seat: number; playerId: PlayerId }[] }, fromEvent: number) {
     const collected = new Map<number, number>();
     for (const e of hand.events.slice(fromEvent)) {
       if (e.t === 'transfer' && e.kind === 'bounty-72' && e.to !== 'house') collected.set(e.to, (collected.get(e.to) ?? 0) + e.amount);
@@ -1367,8 +1385,7 @@ export class TableRuntime {
       if (!this.settings.chat.guestChat && !this.seatOf(playerId) && !this.isStaff(playerId)) throw new ActionError('only players at the table can chat here');
       if (this.settings.chat.profanityFilter) clean = maskProfanity(clean);
     }
-    this.state.chat.push({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
-    if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
+    this.addChat({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
     this.onChange();
   }
 
@@ -1732,12 +1749,15 @@ export class TableRuntime {
     this.afterEngine();
   }
 
-  voteRunItTwice(playerId: PlayerId, yes: boolean) {
+  voteRunItTwice(playerId: PlayerId, yes: boolean, sentFor: Pick<TurnKey, 'handNumber'> = {}) {
     // Refused the same way whether or not a vote is open: see liveHandFor.
     if (!this.seatOf(playerId)) throw new ActionError('you are not in this hand');
-    // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change.
+    // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change,
+    // and neither does one for an earlier hand's vote: it must not count in this one. Only the hand is sent (each
+    // vote adds an event, so the count is no turn); a page from before sends none and votes as it always did.
     const current = this.state.hand;
     if (!current || current.phase !== 'rit-vote') return;
+    if (sentFor.handNumber !== undefined && sentFor.handNumber !== current.input.handNumber) return;
     const hand = this.liveHandFor(playerId);
     engine.voteRunItTwice(hand, this.seatOf(playerId)!.seat, yes);
     this.afterEngine();
@@ -2020,7 +2040,62 @@ export class TableRuntime {
       if (seat && seat.playerId === hs.playerId) seat.stack = hs.stack;
     }
 
-    // Queued chips and stack edits land now; leavers go.
+    this.queuedChipsLand();
+    if (!this.isTournament) this.settleSideGames(hand);
+    const report = this.tournament ? handReport(record, s.seats) : null;
+    this.leaversGo();
+
+    this.onHandFinished(record);
+    if (this.tournament && report) this.tournament.handEnded(report);
+
+    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
+    this.afterHand(now, (hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds) * 1000 + runoutMs(hand.events));
+  }
+
+  /**
+   * Cash, after a crash: the table was saved while hand `past` was being played, and the hand was saved as
+   * finished before the server went down (a table is saved up to half a second after it changes; a hand at
+   * once). Closes the hand with its saved result instead of playing it again (issue #224): every stack is
+   * as the hand left it, then queued chips, leavers, busted players and the next deal go on as after any
+   * hand. Its house fee joins the fee total and its 7-2 bounties are logged, as after any hand. The hand
+   * itself isn't kept to show again here (its history has it), and a Nit round isn't settled from it. False, changing nothing, when `past` is not the hand saved in progress. Call before resume().
+   */
+  closeSavedHand(past: PastHand): boolean {
+    const s = this.state;
+    const hand = s.hand;
+    if (this.isTournament || !hand || !this.handLive() || past.handNumber !== s.handNumber) return false;
+    if (past.handId && hand.input.handId && past.handId !== hand.input.handId) return false;
+    // Stacks at the end of the hand, then whatever a show after it moved (as the replayer reads them).
+    let end: Record<number, number> | null = null;
+    for (const e of past.events) {
+      if (e.t === 'hand-end') end = { ...e.stacks };
+      else if (e.t === 'transfer' && end) {
+        if (e.from !== 'house' && end[e.from] !== undefined) end[e.from] -= e.amount;
+        if (e.to !== 'house' && end[e.to] !== undefined) end[e.to] += e.amount;
+      }
+    }
+    if (!end) return false;
+    for (const x of past.seats) {
+      const seat = s.seats[x.seat];
+      if (seat && seat.playerId === x.playerId && end[x.seat] !== undefined) seat.stack = end[x.seat];
+    }
+    for (const key of ['turn', 'next', 'rit', 'bot'] as const) this.clearTimer(key);
+    s.hand = null;
+    s.handStartedAt = null;
+    s.turn = null;
+    s.ritDeadline = null;
+    if (realGameHand(past.seats)) s.realGame = true;
+    this.log(`Hand #${past.handNumber} had already ended when the server stopped, so it was closed with its saved result`);
+    this.queuedChipsLand();
+    this.feeAndBounty(past);
+    this.leaversGo();
+    this.afterHand(this.clock.now(), s.settings.timing.nextHandDelaySeconds * 1000);
+    return true;
+  }
+
+  /** After a hand: queued chips and stack edits land, and time banks refill. */
+  private queuedChipsLand() {
+    const s = this.state;
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.pendingStack !== null) {
@@ -2039,8 +2114,11 @@ export class TableRuntime {
         seat.handsSinceRefill = 0;
       }
     }
-    if (!this.isTournament) this.settleSideGames(hand);
-    const report = this.tournament ? handReport(record, s.seats) : null;
+  }
+
+  /** After a hand: leavers go, and busted players sit out (a bot buys back in). */
+  private leaversGo() {
+    const s = this.state;
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.leaveAfterHand) {
@@ -2054,19 +2132,19 @@ export class TableRuntime {
         }
       }
     }
+  }
 
-    this.onHandFinished(record);
-    if (this.tournament && report) this.tournament.handEnded(report);
-
+  /** After a hand: a stop asked for during it takes effect, or the next deal is set `delayMs` after `now`. */
+  private afterHand(now: number, delayMs: number) {
+    const s = this.state;
     if (s.stopAfterHand) {
       s.started = false;
       s.stopAfterHand = false;
       this.revealHands();
     }
-    const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
-    const auto = this.isTournament || s.settings.timing.autoStartNextHand;
-    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
-    s.nextHandAt = s.started && auto ? now + delay * 1000 + runoutMs(hand.events) : null;
+    // The director hears the result at once, so a hand that ended the event (or one ending after it was cancelled) is the last.
+    const auto = this.isTournament ? !this.tournament?.over?.() : s.settings.timing.autoStartNextHand;
+    s.nextHandAt = s.started && auto ? now + delayMs : null;
   }
 
   /** 7-2 bounty with auto-show: turn up a winning 7-2 nobody saw, which pays the bounty before stacks are read. */
@@ -2476,10 +2554,10 @@ export class TableRuntime {
       }
       return true;
     }
-    // Nothing scheduled: a tournament table deals when its gate opens, a running cash
+    // Nothing scheduled: a tournament table deals when its gate opens (never once its event is over), a running cash
     // table when enough players are back. A failed attempt leaves things as they were.
     if (s.nextHandAt === null && (!hand || hand.phase === 'complete')) {
-      const auto = this.tournament || (s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand);
+      const auto = this.tournament ? !this.tournament.over?.() : s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand;
       if (auto && now < ready) {
         s.nextHandAt = ready;
         this.seedWait = ready > (s.fair?.committedAt ?? 0) + this.fairLeadMs;
@@ -2645,13 +2723,20 @@ export class TableRuntime {
 
   /** A chat line from the dealer, for things everyone at the table must see. */
   private dealerSays(text: string) {
-    this.state.chat.push({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+    this.addChat({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+  }
+
+  private addChat(entry: ChatMessage) {
+    this.state.chat.push(entry);
     if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
+    this.onLine({ kind: 'chat', entry: { ...entry } });
   }
 
   private log(text: string) {
-    this.state.log.push({ at: this.clock.now(), text });
+    const entry = { at: this.clock.now(), text };
+    this.state.log.push(entry);
     if (this.state.log.length > LOG_LIMIT) this.state.log.splice(0, this.state.log.length - LOG_LIMIT);
+    this.onLine({ kind: 'log', entry: { ...entry } });
   }
 }
 
