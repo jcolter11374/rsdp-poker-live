@@ -201,9 +201,11 @@ function run(seed: number, steps: number) {
   return rt.state.handNumber;
 }
 
+// SEEDS=400 runs more of them; FIRST_SEED=392 SEEDS=1 replays seed 392 alone.
 describe('cash table fuzz', () => {
+  const first = Number(process.env.FIRST_SEED ?? 1);
   const seeds = Number(process.env.SEEDS ?? 12);
-  for (let seed = 1; seed <= seeds; seed++) {
+  for (let seed = first; seed < first + seeds; seed++) {
     it(`seed ${seed}: chips always add up`, () => {
       expect(run(seed, 1500)).toBeGreaterThan(5);
     });
