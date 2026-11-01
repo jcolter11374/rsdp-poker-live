@@ -42,6 +42,7 @@ import {
   type Clock,
   type FairState,
   type HandRecord,
+  type PastHand,
   type RuntimeState,
   type SeatRequest,
   type SideGameState,
@@ -2020,7 +2021,61 @@ export class TableRuntime {
       if (seat && seat.playerId === hs.playerId) seat.stack = hs.stack;
     }
 
-    // Queued chips and stack edits land now; leavers go.
+    this.queuedChipsLand();
+    if (!this.isTournament) this.settleSideGames(hand);
+    const report = this.tournament ? handReport(record, s.seats) : null;
+    this.leaversGo();
+
+    this.onHandFinished(record);
+    if (this.tournament && report) this.tournament.handEnded(report);
+
+    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
+    this.afterHand(now, (hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds) * 1000 + runoutMs(hand.events));
+  }
+
+  /**
+   * Cash, after a crash: the table was saved while hand `past` was being played, and the hand was saved as
+   * finished before the server went down (a table is saved up to half a second after it changes; a hand at
+   * once). Closes the hand with its saved result instead of playing it again (issue #224): every stack is
+   * as the hand left it, then queued chips, leavers, busted players and the next deal go on as after any
+   * hand. The hand itself isn't kept to show again here (its history has it), and a Nit round isn't settled
+   * from it. False, changing nothing, when `past` is not the hand saved in progress. Call before resume().
+   */
+  closeSavedHand(past: PastHand): boolean {
+    const s = this.state;
+    const hand = s.hand;
+    if (this.isTournament || !hand || !this.handLive() || past.handNumber !== s.handNumber) return false;
+    if (past.handId && hand.input.handId && past.handId !== hand.input.handId) return false;
+    // Stacks at the end of the hand, then whatever a show after it moved (as the replayer reads them).
+    let end: Record<number, number> | null = null;
+    for (const e of past.events) {
+      if (e.t === 'hand-end') end = { ...e.stacks };
+      else if (e.t === 'transfer' && end) {
+        if (e.from !== 'house' && end[e.from] !== undefined) end[e.from] -= e.amount;
+        if (e.to !== 'house' && end[e.to] !== undefined) end[e.to] += e.amount;
+      }
+    }
+    if (!end) return false;
+    for (const x of past.seats) {
+      const seat = s.seats[x.seat];
+      if (seat && seat.playerId === x.playerId && end[x.seat] !== undefined) seat.stack = end[x.seat];
+    }
+    for (const key of ['turn', 'next', 'rit', 'bot'] as const) this.clearTimer(key);
+    s.hand = null;
+    s.handStartedAt = null;
+    s.turn = null;
+    s.ritDeadline = null;
+    if (realGameHand(past.seats)) s.realGame = true;
+    this.log(`Hand #${past.handNumber} had already ended when the server stopped, so it was closed with its saved result`);
+    this.queuedChipsLand();
+    this.leaversGo();
+    this.afterHand(this.clock.now(), s.settings.timing.nextHandDelaySeconds * 1000);
+    return true;
+  }
+
+  /** After a hand: queued chips and stack edits land, and time banks refill. */
+  private queuedChipsLand() {
+    const s = this.state;
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.pendingStack !== null) {
@@ -2039,8 +2094,11 @@ export class TableRuntime {
         seat.handsSinceRefill = 0;
       }
     }
-    if (!this.isTournament) this.settleSideGames(hand);
-    const report = this.tournament ? handReport(record, s.seats) : null;
+  }
+
+  /** After a hand: leavers go, and busted players sit out (a bot buys back in). */
+  private leaversGo() {
+    const s = this.state;
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.leaveAfterHand) {
@@ -2054,19 +2112,18 @@ export class TableRuntime {
         }
       }
     }
+  }
 
-    this.onHandFinished(record);
-    if (this.tournament && report) this.tournament.handEnded(report);
-
+  /** After a hand: a stop asked for during it takes effect, or the next deal is set `delayMs` after `now`. */
+  private afterHand(now: number, delayMs: number) {
+    const s = this.state;
     if (s.stopAfterHand) {
       s.started = false;
       s.stopAfterHand = false;
       this.revealHands();
     }
-    const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
     const auto = this.isTournament || s.settings.timing.autoStartNextHand;
-    // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
-    s.nextHandAt = s.started && auto ? now + delay * 1000 + runoutMs(hand.events) : null;
+    s.nextHandAt = s.started && auto ? now + delayMs : null;
   }
 
   /** 7-2 bounty with auto-show: turn up a winning 7-2 nobody saw, which pays the bounty before stacks are read. */
