@@ -35,7 +35,7 @@ A deploy restarts the process:
 - Tournaments keep their clocks, and scheduled ones still start on time.
 - Players' browsers reconnect by themselves.
 
-**Each release's upgrade is rehearsed first.** Every pull request into `main` runs "Upgrade from what is live" (`.github/workflows/upgrade.yml`) on GitHub's machines, never on the live site. It runs `main`'s image and makes data with `main`'s own smoke test, then starts the pull request's image on that same volume. The new image must give the same leaderboard, and every entry of the public record must be unchanged. Then it starts `main`'s image again on the upgraded data, as a rollback would. The play-test before a release (see CONTRIBUTING.md) can use the scripts in `e2e/playtest/`, which play a cash game and a tournament through real browsers on a local copy (see their README).
+**Each release's upgrade is rehearsed first.** Every pull request into `main` runs "Upgrade from what is live" (`.github/workflows/upgrade.yml`) on GitHub's machines, never on the live site. It runs `main`'s image and makes data with `main`'s own smoke test, then starts the pull request's image on that same volume. The new image must give the same leaderboard and keep every entry of the public record unchanged. It must also read back every saved table, with the same hands and players, and every saved tournament: a release that can't read them would drop them at deploy, even with the leaderboard unchanged. Then it starts `main`'s image again on the upgraded data, as a rollback would, and checks the same things. The play-test before a release (see CONTRIBUTING.md) can use the scripts in `e2e/playtest/`, which play a cash game and a tournament through real browsers on a local copy (see their README).
 
 ## Backups
 
