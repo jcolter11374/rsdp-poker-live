@@ -70,13 +70,14 @@ beforeAll(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'rsdp-upgrade-saved-'));
   await writeFile(path.join(dir, 'index.html'), INDEX);
   await start();
-});
+  // Opening PGlite and migrating it can take well over the default 10 s on a busy machine.
+}, 60_000);
 
 afterAll(async () => {
   for (const c of clients) c.close();
-  await server.close();
-  await closeDb(db);
-  await rm(dir, { recursive: true, force: true });
+  await server?.close();
+  if (db) await closeDb(db);
+  if (dir) await rm(dir, { recursive: true, force: true });
 });
 
 describe('upgrade rehearsal: saved tables and tournaments', { timeout: 30_000 }, () => {
