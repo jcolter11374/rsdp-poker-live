@@ -38,7 +38,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      # The migrations agree with each other (check), and build exactly what schema.ts describes (generate adds nothing).
+      # The migration files agree with each other (check), and schema.ts has no change they miss (generate adds nothing).
+      # Both read the snapshots in meta/, not the SQL; test/migrations.test.ts checks the SQL builds what schema.ts says.
       - run: npm run db:check
       - name: Migrations match schema.ts
         timeout-minutes: 5
@@ -50,7 +51,7 @@ jobs:
           echo "$out"
           if ! grep -q 'No schema changes' <<<"$out" || [ -n "$(git status --porcelain apps/server/drizzle)" ]; then
             git status --porcelain apps/server/drizzle
-            echo "::error::apps/server/src/db/schema.ts differs from the migrations. Run npm run db:generate and commit the new migration."
+            echo "::error::apps/server/src/db/schema.ts has a change no migration covers. Run npm run db:generate and commit the new migration."
             exit 1
           fi
       # Engine (including the hand fuzzer), tournament director, and server.
