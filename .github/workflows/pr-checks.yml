@@ -1,0 +1,30 @@
+name: PR checks
+
+# Every pull request names the issue it works on ("Closes #12"), and a
+# release into main carries exactly one new changelog entry with a version.
+# See CONTRIBUTING.md. Reads the pull request and the repository only.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Linked issue and release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # main and the base branch too, to compare their changelog.json.
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node scripts/release/pr-check.mjs
