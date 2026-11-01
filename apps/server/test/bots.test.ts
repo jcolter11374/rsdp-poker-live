@@ -3,7 +3,7 @@ import { engine, variants, type BettingKind, type Card, type HandState } from '@
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
 import { BOT_THINK_MS, hashKey, HOST_HANDOFF_MS, TableRuntime } from '../src/runtime/table';
-import { handRecordView, tableView } from '../src/runtime/view';
+import { handRecordView, pastHand, savedHandView, tableView } from '../src/runtime/view';
 import { BOT_LEVELS, BOT_LOOKS } from '@rsdp/engine/wire';
 import {
   botTuning,
@@ -167,6 +167,32 @@ describe('practice bots', () => {
     const record = handRecordView(rt, rt.state.history[0], 'host');
     expect(record.seats.find((x) => x.playerId === bot)).toMatchObject({ name: 'Chip', bot: { ownerName: 'Host', look: 1 } });
     expect(record.seats.find((x) => x.playerId === 'host')?.bot).toBeUndefined();
+  });
+
+  it('are told from people the same way in hand search as in the replay, whatever the id looks like', () => {
+    // A person's id may start with 'bot-'; only the table's bot list and the bot's ledger row say who is a bot.
+    const { rt, clock } = table((s) => (s.timing.decisionSeconds = 0));
+    rt.connect('bot-person');
+    rt.requestSeat('bot-person', { seat: 0, name: 'Pat', stack: 200 });
+    rt.requestSeat('host', { seat: 1, name: 'Host', stack: 200 });
+    const bot = rt.addBot('host', { ownerName: 'Host' });
+    rt.start('host');
+    for (let i = 0; i < 20_000 && rt.state.handNumber === 1 && rt.state.hand?.phase !== 'complete'; i++) {
+      const h = rt.state.hand!;
+      const who = h.toAct === null ? null : rt.state.seats[h.toAct]!.playerId;
+      if (who && who !== bot) {
+        const legal = engine.legalActions(h, h.toAct!)!;
+        rt.act(who, legal.canCheck ? { type: 'check' } : { type: 'call' });
+      } else clock.advance(500);
+    }
+    expect(rt.state.history).toHaveLength(1);
+    rt.removeBot('host', bot);
+    const replay = handRecordView(rt, rt.state.history[0], 'host');
+    const saved = savedHandView(structuredClone(rt.state), pastHand(rt.state.history[0]), 'host');
+    for (const view of [replay, saved]) {
+      expect(view.seats.find((x) => x.playerId === 'bot-person')?.bot).toBeUndefined();
+      expect(view.seats.find((x) => x.playerId === bot)?.bot).toEqual({ ownerName: 'Host', look: 0 });
+    }
   });
 
   it('fill a whole table with no two bots alike', () => {

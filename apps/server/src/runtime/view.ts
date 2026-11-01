@@ -397,9 +397,10 @@ export function savedHandView(
   const botOf = (id: PlayerId) => {
     const bot = state?.bots?.[id];
     if (bot) return { ownerName: bot.ownerName, look: bot.look ?? 0 };
+    // As TableRuntime.botBadge: the table's bots and the ledger rows bots keep for good (bots have had flagged rows
+    // since they came), never the 'bot-' prefix, which a person's id may have too.
     const row = state?.ledger?.[id];
-    if (row?.bot) return { ownerName: row.owner ?? '', look: row.look ?? 0 };
-    return id.startsWith('bot-') ? { ownerName: '', look: 0 } : null;
+    return row?.bot ? { ownerName: row.owner ?? '', look: row.look ?? 0 } : null;
   };
   const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
   return {

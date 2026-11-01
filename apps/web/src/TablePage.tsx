@@ -427,6 +427,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     />
   );
 
+  // Read once per render: it reads this browser's saved seeds.
+  const seedProblem = liveSeedProblem(view);
 
   return (
     <div className={`table-page ${portrait ? 'portrait' : ''}`}>
@@ -562,7 +564,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
-          {liveSeedProblem(view) && <div className="banner warn">⚠ Fair dealing: {liveSeedProblem(view)}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
+          {seedProblem && <div className="banner warn">⚠ Fair dealing: {seedProblem}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
           {mySeat?.sittingOut && (
             <div className="banner">
