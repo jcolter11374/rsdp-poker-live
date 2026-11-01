@@ -17,6 +17,7 @@ import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
+import { PartBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
@@ -629,8 +630,12 @@ export function TablePage({ tableId }: { tableId: string }) {
         {!portrait && (
           <aside className="side">
             {hostPanel}
-            <SidePanel view={view} fmt={fmt} />
-            <ChatBox view={view} />
+            <PartBoundary name="side panel">
+              <SidePanel view={view} fmt={fmt} />
+            </PartBoundary>
+            <PartBoundary name="chat">
+              <ChatBox view={view} />
+            </PartBoundary>
           </aside>
         )}
       </div>
@@ -672,12 +677,16 @@ export function TablePage({ tableId }: { tableId: string }) {
       )}
       {portrait && sheet === 'chat' && (
         <Sheet title="Chat" onClose={close} className="chat-sheet">
-          <ChatBox view={view} autoFocus />
+          <PartBoundary name="chat">
+            <ChatBox view={view} autoFocus />
+          </PartBoundary>
         </Sheet>
       )}
       {portrait && sheet && sheet !== 'menu' && sheet !== 'chat' && (
         <Sheet title="Table" onClose={close} tall>
-          <SidePanel view={view} fmt={fmt} initialTab={sheet} />
+          <PartBoundary name="side panel">
+            <SidePanel view={view} fmt={fmt} initialTab={sheet} />
+          </PartBoundary>
         </Sheet>
       )}
 
