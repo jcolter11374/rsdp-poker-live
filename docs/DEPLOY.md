@@ -70,7 +70,7 @@ The live site is backed up once a day, off Fly, by GitHub Actions (`.github/work
 
 1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header; one at a time, and a server shutting down stops it first). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action the moment it starts (so one stopped part-way shows too), because a copy holds any hand being played at that moment.
 2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
-3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next night's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
+3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next day's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
 4. A failure opens the issue "Nightly backup failed", mentioning John; the next good run closes it.
 
 Fly's own daily volume snapshots carry on as a second copy (same company, same region).
@@ -97,7 +97,7 @@ On Fly, the server does the swap itself when it starts, because swapping folders
 3. Restart: `fly machine restart`. Before it opens the database, the server restores the file into a new folder (`apps/server/src/db/restoreOnStart.ts`) and swaps it in. It keeps the old data as `/data/pglite-before-restore-<time>` and renames the file to `restore.jsonl.gz.done-<time>`. If the backup doesn't restore, nothing changes, the file becomes `restore.jsonl.gz.failed-<time>`, and the log says why (`fly logs`).
 4. Once all is well, delete the old folder and the file to free the space.
 
-If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the night of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended). Unlocking needs `age` on your computer (`brew install age` on a Mac, `winget install FiloSottile.age` on Windows).
+If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the moment of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended). Unlocking needs `age` on your computer (`brew install age` on a Mac, `winget install FiloSottile.age` on Windows).
 
 - **Postgres:** `restore.ts` restores into an empty Postgres database too, with a role that may skip foreign key checks while loading (a superuser). With managed Postgres, also use the provider's own backups.
 
@@ -169,8 +169,10 @@ Costs: Fly bills one always-on small machine and a 1 GB volume to John's account
 
 ```bash
 docker build -t rsdp-poker .
-docker run --rm -p 3001:8080 -v rsdp-data:/data rsdp-poker
+docker run -d --name copy -p 3001:8080 -v rsdp-data:/data rsdp-poker
+for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && break; sleep 1; done
 BASE_URL=http://localhost:3001 npm run smoke
+docker stop copy && docker rm copy
 ```
 
 ## Fly.io (production)

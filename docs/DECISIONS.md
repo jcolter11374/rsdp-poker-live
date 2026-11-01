@@ -174,7 +174,7 @@ How this file works:
   - The group's payout table is the default (PR #158), and the prize pool is on by default with a $20 buy-in (PR #161).
   - Table rules: 10 seconds to act, a 20-second time bank that refills every 30 hands, and no rabbit hunting (PR #165). Straddles are never allowed in tournaments.
   - Hosts can change the table rules until the first table opens (PR #172).
-- **Where:** `packages/tournament/src/structure.ts` (RSDP levels and table rules), `saved.ts` (the RSDP starter), `payouts.ts` (the RSDP payout table), and `apps/web/src/tournament/TournamentCreate.tsx`, which makes them the new-tournament default. `defaultSettings()` in `director.ts` is the package's generic fallback and stays different on purpose.
+- **Where:** `packages/tournament/src/structure.ts` (RSDP levels and table rules), `saved.ts` (the RSDP starter), `payouts.ts` (the RSDP payout table), and `apps/web/src/tournament/TournamentCreate.tsx`, which makes them the new-tournament default. The package's own `defaultSettings()` in `director.ts` is still the generic 10,000-chip setup; the form starts from it and applies the RSDP starter.
 
 ## D17. Tournament rules chosen by Claude
 
