@@ -1,0 +1,1372 @@
+## (root)
+(root): required  <=  missing
+(root): must be an object, not null  <=  null
+(root): must be an object, not boolean  <=  true, false
+(root): must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+(root): must be an object, not nan  <=  NaN
+(root): must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+(root): must be an object, not array  <=  [], [1]
+version: must be 1 (use migrateSettings for older settings) | table: required | game: required | stakes: required | blindSchedule: required | timing: required | seating: required | play: required | chat: required | spectators: required | modifiers: required  <=  {}
+version: must be 1 (use migrateSettings for older settings) | table: required | game: required | stakes: required | blindSchedule: required | timing: required | seating: required | play: required | chat: required | spectators: required | modifiers: required | enabled: unknown field  <=  {"enabled":true}
+## version
+version: must be 1 (use migrateSettings for older settings)  <=  missing, null, true, false, -100000000000000000000, -101, -1, -0, 0, 0.5, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, NaN, Infinity, -Infinity, "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏", [], [1], {}, {"enabled":true}
+ok  <=  1
+## table
+table: required  <=  missing
+table: must be an object, not null  <=  null
+table: must be an object, not boolean  <=  true, false
+table: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+table: must be an object, not nan  <=  NaN
+table: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+table: must be an object, not array  <=  [], [1]
+table.name: required | table.maxSeats: required | table.mode: required  <=  {}
+table.name: required | table.maxSeats: required | table.mode: required | table.enabled: unknown field  <=  {"enabled":true}
+## table.name
+table.name: required  <=  missing
+table.name: must be text, not null  <=  null
+table.name: must be text, not boolean  <=  true, false
+table.name: must be text, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+table.name: must be text, not nan  <=  NaN
+table.name: must not be blank  <=  "", " "
+ok  <=  "x", "1", "30", "NL", "plo", "Friday 🃏", "has space", "dot.id", 'x'×40, '🃏'×20
+ok, changed table.name "  Friday  " -> "Friday"  <=  "  Friday  "
+table.name: must not contain control characters  <=  "tab\there", "bell\u0007"
+table.name: must not contain half of an emoji  <=  "half \ud83d", "\udc00"
+table.name: must be at most 40 characters  <=  'x'×41, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+ok, changed table.name "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  " -> 'x'×40  <=  "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  "
+table.name: must be text, not array  <=  [], [1]
+table.name: must be text, not object  <=  {}, {"enabled":true}
+## table.maxSeats
+table.maxSeats: required  <=  missing
+table.maxSeats: must be a number, not null  <=  null
+table.maxSeats: must be a number, not boolean  <=  true, false
+table.maxSeats: must be at least 2  <=  -100000000000000000000, -101, -1, -0, 0, 1
+table.maxSeats: must be a whole number; must be at least 2  <=  0.5, 1.5, -Infinity
+ok  <=  2, 3, 4, 5, 6, 7, 9, 10
+table.maxSeats: must be a whole number  <=  2.25, 2.345, 2.5
+table.maxSeats: must be at most 10  <=  11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+table.maxSeats: must be a number, not nan  <=  NaN
+table.maxSeats: must be a whole number; must be at most 10  <=  Infinity
+table.maxSeats: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+table.maxSeats: must be a number, not array  <=  [], [1]
+table.maxSeats: must be a number, not object  <=  {}, {"enabled":true}
+## table.mode
+table.mode: required  <=  missing
+table.mode: must be 'cash' | 'tournament', not null  <=  null
+table.mode: must be 'cash' | 'tournament', not boolean  <=  true, false
+table.mode: must be 'cash' | 'tournament', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+table.mode: must be 'cash' | 'tournament', not nan  <=  NaN
+table.mode: must be one of 'cash', 'tournament'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+table.mode: must be 'cash' | 'tournament', not array  <=  [], [1]
+table.mode: must be 'cash' | 'tournament', not object  <=  {}, {"enabled":true}
+## table.felt
+ok  <=  missing
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not null  <=  null
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not boolean  <=  true, false
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not nan  <=  NaN
+table.felt: must be one of 'green', 'blue', 'red', 'purple', 'charcoal', 'teal'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not array  <=  [], [1]
+table.felt: must be 'green' | 'blue' | 'red' | 'purple' | 'charcoal' | 'teal', not object  <=  {}, {"enabled":true}
+## game
+game: required  <=  missing
+game: must be an object, not null  <=  null
+game: must be an object, not boolean  <=  true, false
+game: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game: must be an object, not nan  <=  NaN
+game: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game: must be an object, not array  <=  [], [1]
+game.gameId: required | game.betting: required | game.rotation: required  <=  {}
+game.gameId: required | game.betting: required | game.rotation: required | game.enabled: unknown field  <=  {"enabled":true}
+## game.gameId
+game.gameId: required  <=  missing
+game.gameId: must be text, not null  <=  null
+game.gameId: must be text, not boolean  <=  true, false
+game.gameId: must be text, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.gameId: must be text, not nan  <=  NaN
+game.gameId: must be 1-40 letters, digits, dashes or underscores  <=  "", " ", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+ok  <=  "x", "1", "30", "NL", "plo", 'x'×40
+game.gameId: must be text, not array  <=  [], [1]
+game.gameId: must be text, not object  <=  {}, {"enabled":true}
+## game.betting
+game.betting: required  <=  missing
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not null  <=  null
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not boolean  <=  true, false
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not nan  <=  NaN
+game.betting: must be one of 'no-limit', 'pot-limit', 'fixed-limit'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not array  <=  [], [1]
+game.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not object  <=  {}, {"enabled":true}
+## game.rotation
+game.rotation: required  <=  missing
+game.rotation: must be an object, not null  <=  null
+game.rotation: must be an object, not boolean  <=  true, false
+game.rotation: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation: must be an object, not nan  <=  NaN
+game.rotation: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation: must be an object, not array  <=  [], [1]
+game.rotation.enabled: required | game.rotation.steps: required  <=  {}
+game.rotation.steps: required  <=  {"enabled":true}
+## game.rotation.enabled
+game.rotation.enabled: required  <=  missing
+game.rotation.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+game.rotation.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.enabled: must be true or false, not nan  <=  NaN
+game.rotation.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.enabled: must be true or false, not array  <=  [], [1]
+game.rotation.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## game.rotation.steps
+game.rotation.steps: required  <=  missing
+game.rotation.steps: must be a list, not null  <=  null
+game.rotation.steps: must be a list, not boolean  <=  true, false
+game.rotation.steps: must be a list, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.steps: must be a list, not nan  <=  NaN
+game.rotation.steps: must be a list, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.steps: add at least one step to rotate games  <=  []
+game.rotation.steps[0]: must be an object, not number  <=  [1]
+game.rotation.steps: must be a list, not object  <=  {}, {"enabled":true}
+## game.rotation.steps[0]
+game.rotation.steps[0]: required  <=  missing
+game.rotation.steps[0]: must be an object, not null  <=  null
+game.rotation.steps[0]: must be an object, not boolean  <=  true, false
+game.rotation.steps[0]: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.steps[0]: must be an object, not nan  <=  NaN
+game.rotation.steps[0]: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.steps[0]: must be an object, not array  <=  [], [1]
+game.rotation.steps[0].gameId: required | game.rotation.steps[0].betting: required | game.rotation.steps[0].length: required | game.rotation.steps[0].unit: required  <=  {}
+game.rotation.steps[0].gameId: required | game.rotation.steps[0].betting: required | game.rotation.steps[0].length: required | game.rotation.steps[0].unit: required | game.rotation.steps[0].enabled: unknown field  <=  {"enabled":true}
+## game.rotation.steps[0].gameId
+game.rotation.steps[0].gameId: required  <=  missing
+game.rotation.steps[0].gameId: must be text, not null  <=  null
+game.rotation.steps[0].gameId: must be text, not boolean  <=  true, false
+game.rotation.steps[0].gameId: must be text, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.steps[0].gameId: must be text, not nan  <=  NaN
+game.rotation.steps[0].gameId: must be 1-40 letters, digits, dashes or underscores  <=  "", " ", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+ok  <=  "x", "1", "30", "NL", "plo", 'x'×40
+game.rotation.steps[0].gameId: must be text, not array  <=  [], [1]
+game.rotation.steps[0].gameId: must be text, not object  <=  {}, {"enabled":true}
+## game.rotation.steps[0].betting
+game.rotation.steps[0].betting: required  <=  missing
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not null  <=  null
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not boolean  <=  true, false
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not nan  <=  NaN
+game.rotation.steps[0].betting: must be one of 'no-limit', 'pot-limit', 'fixed-limit'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not array  <=  [], [1]
+game.rotation.steps[0].betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not object  <=  {}, {"enabled":true}
+## game.rotation.steps[0].length
+game.rotation.steps[0].length: required  <=  missing
+game.rotation.steps[0].length: must be a number, not null  <=  null
+game.rotation.steps[0].length: must be a number, not boolean  <=  true, false
+game.rotation.steps[0].length: must be at least 1  <=  -100000000000000000000, -101, -1, -0, 0
+game.rotation.steps[0].length: must be a whole number; must be at least 1  <=  0.5, -Infinity
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000
+game.rotation.steps[0].length: must be a whole number  <=  1.5, 2.25, 2.345, 2.5
+game.rotation.steps[0].length: must be at most 1000  <=  1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+game.rotation.steps[0].length: must be a number, not nan  <=  NaN
+game.rotation.steps[0].length: must be a whole number; must be at most 1000  <=  Infinity
+game.rotation.steps[0].length: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.steps[0].length: must be a number, not array  <=  [], [1]
+game.rotation.steps[0].length: must be a number, not object  <=  {}, {"enabled":true}
+## game.rotation.steps[0].unit
+game.rotation.steps[0].unit: required  <=  missing
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not null  <=  null
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not boolean  <=  true, false
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not nan  <=  NaN
+game.rotation.steps[0].unit: must be one of 'hands', 'orbits'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not array  <=  [], [1]
+game.rotation.steps[0].unit: must be 'hands' | 'orbits', not object  <=  {}, {"enabled":true}
+## stakes
+stakes: required  <=  missing
+stakes: must be an object, not null  <=  null
+stakes: must be an object, not boolean  <=  true, false
+stakes: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+stakes: must be an object, not nan  <=  NaN
+stakes: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes: must be an object, not array  <=  [], [1]
+stakes.smallBlind: required | stakes.bigBlind: required | stakes.ante: required | stakes.anteType: required | stakes.bringIn: required | stakes.smallBet: required | stakes.bigBet: required | stakes.centsMode: required  <=  {}
+stakes.smallBlind: required | stakes.bigBlind: required | stakes.ante: required | stakes.anteType: required | stakes.bringIn: required | stakes.smallBet: required | stakes.bigBet: required | stakes.centsMode: required | stakes.enabled: unknown field  <=  {"enabled":true}
+## stakes.smallBlind
+stakes.smallBlind: required  <=  missing
+stakes.smallBlind: must be a number, not null  <=  null
+stakes.smallBlind: must be a number, not boolean  <=  true, false
+stakes.smallBlind: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2
+stakes.smallBlind: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+stakes.smallBlind: must not exceed the big blind (2)  <=  3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.smallBlind: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.smallBlind: must be a number, not nan  <=  NaN
+stakes.smallBlind: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.smallBlind: must be a whole number; must be at least 0  <=  -Infinity
+stakes.smallBlind: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.smallBlind: must be a number, not array  <=  [], [1]
+stakes.smallBlind: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.bigBlind
+stakes.bigBlind: required  <=  missing
+stakes.bigBlind: must be a number, not null  <=  null
+stakes.bigBlind: must be a number, not boolean  <=  true, false
+stakes.bigBlind: must be at least 0  <=  -100000000000000000000, -101, -1
+stakes.smallBlind: must not exceed the big blind (0) | stakes.bigBlind: must be at least 1 for no-limit and pot-limit games  <=  -0, 0
+stakes.bigBlind: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.bigBlind: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.bigBlind: must be a number, not nan  <=  NaN
+stakes.bigBlind: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.bigBlind: must be a whole number; must be at least 0  <=  -Infinity
+stakes.bigBlind: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.bigBlind: must be a number, not array  <=  [], [1]
+stakes.bigBlind: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.ante
+stakes.ante: required  <=  missing
+stakes.ante: must be a number, not null  <=  null
+stakes.ante: must be a number, not boolean  <=  true, false
+stakes.ante: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0
+stakes.ante: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+stakes.ante: must be 0 when stakes.anteType is 'none'  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.ante: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.ante: must be a number, not nan  <=  NaN
+stakes.ante: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.ante: must be a whole number; must be at least 0  <=  -Infinity
+stakes.ante: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.ante: must be a number, not array  <=  [], [1]
+stakes.ante: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.anteType
+stakes.anteType: required  <=  missing
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not null  <=  null
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not boolean  <=  true, false
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not nan  <=  NaN
+stakes.anteType: must be one of 'none', 'per-player', 'big-blind'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not array  <=  [], [1]
+stakes.anteType: must be 'none' | 'per-player' | 'big-blind', not object  <=  {}, {"enabled":true}
+## stakes.bringIn
+stakes.bringIn: required  <=  missing
+stakes.bringIn: must be a number, not null  <=  null
+stakes.bringIn: must be a number, not boolean  <=  true, false
+stakes.bringIn: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.bringIn: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+stakes.bringIn: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.bringIn: must be a number, not nan  <=  NaN
+stakes.bringIn: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.bringIn: must be a whole number; must be at least 0  <=  -Infinity
+stakes.bringIn: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.bringIn: must be a number, not array  <=  [], [1]
+stakes.bringIn: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.smallBet
+stakes.smallBet: required  <=  missing
+stakes.smallBet: must be a number, not null  <=  null
+stakes.smallBet: must be a number, not boolean  <=  true, false
+stakes.smallBet: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.smallBet: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+stakes.smallBet: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.smallBet: must be a number, not nan  <=  NaN
+stakes.smallBet: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.smallBet: must be a whole number; must be at least 0  <=  -Infinity
+stakes.smallBet: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.smallBet: must be a number, not array  <=  [], [1]
+stakes.smallBet: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.bigBet
+stakes.bigBet: required  <=  missing
+stakes.bigBet: must be a number, not null  <=  null
+stakes.bigBet: must be a number, not boolean  <=  true, false
+stakes.bigBet: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+stakes.bigBet: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+stakes.bigBet: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+stakes.bigBet: must be a number, not nan  <=  NaN
+stakes.bigBet: must be a whole number; must be at most 1000000000000  <=  Infinity
+stakes.bigBet: must be a whole number; must be at least 0  <=  -Infinity
+stakes.bigBet: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.bigBet: must be a number, not array  <=  [], [1]
+stakes.bigBet: must be a number, not object  <=  {}, {"enabled":true}
+## stakes.centsMode
+stakes.centsMode: required  <=  missing
+stakes.centsMode: must be true or false, not null  <=  null
+ok  <=  true, false
+stakes.centsMode: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+stakes.centsMode: must be true or false, not nan  <=  NaN
+stakes.centsMode: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+stakes.centsMode: must be true or false, not array  <=  [], [1]
+stakes.centsMode: must be true or false, not object  <=  {}, {"enabled":true}
+## blindSchedule
+blindSchedule: required  <=  missing
+blindSchedule: must be an object, not null  <=  null
+blindSchedule: must be an object, not boolean  <=  true, false
+blindSchedule: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+blindSchedule: must be an object, not nan  <=  NaN
+blindSchedule: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule: must be an object, not array  <=  [], [1]
+blindSchedule.enabled: required | blindSchedule.countdown: required | blindSchedule.levels: required  <=  {}
+blindSchedule.countdown: required | blindSchedule.levels: required  <=  {"enabled":true}
+## blindSchedule.enabled
+blindSchedule.enabled: required  <=  missing
+blindSchedule.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+blindSchedule.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+blindSchedule.enabled: must be true or false, not nan  <=  NaN
+blindSchedule.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.enabled: must be true or false, not array  <=  [], [1]
+blindSchedule.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## blindSchedule.countdown
+blindSchedule.countdown: required  <=  missing
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not null  <=  null
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not boolean  <=  true, false
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not nan  <=  NaN
+blindSchedule.countdown: must be one of 'per-level-timer', 'hands'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not array  <=  [], [1]
+blindSchedule.countdown: must be 'per-level-timer' | 'hands', not object  <=  {}, {"enabled":true}
+## blindSchedule.levels
+blindSchedule.levels: required  <=  missing
+blindSchedule.levels: must be a list, not null  <=  null
+blindSchedule.levels: must be a list, not boolean  <=  true, false
+blindSchedule.levels: must be a list, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+blindSchedule.levels: must be a list, not nan  <=  NaN
+blindSchedule.levels: must be a list, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels: add at least one level  <=  []
+blindSchedule.levels[0]: must be an object, not number  <=  [1]
+blindSchedule.levels: must be a list, not object  <=  {}, {"enabled":true}
+## blindSchedule.levels[0]
+blindSchedule.levels[0]: required  <=  missing
+blindSchedule.levels[0]: must be an object, not null  <=  null
+blindSchedule.levels[0]: must be an object, not boolean  <=  true, false
+blindSchedule.levels[0]: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+blindSchedule.levels[0]: must be an object, not nan  <=  NaN
+blindSchedule.levels[0]: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0]: must be an object, not array  <=  [], [1]
+blindSchedule.levels[0].smallBlind: required | blindSchedule.levels[0].bigBlind: required | blindSchedule.levels[0].ante: required | blindSchedule.levels[0].minutes: required | blindSchedule.levels[0].hands: required  <=  {}
+blindSchedule.levels[0].smallBlind: required | blindSchedule.levels[0].bigBlind: required | blindSchedule.levels[0].ante: required | blindSchedule.levels[0].minutes: required | blindSchedule.levels[0].hands: required | blindSchedule.levels[0].enabled: unknown field  <=  {"enabled":true}
+## blindSchedule.levels[0].smallBlind
+blindSchedule.levels[0].smallBlind: required  <=  missing
+blindSchedule.levels[0].smallBlind: must be a number, not null  <=  null
+blindSchedule.levels[0].smallBlind: must be a number, not boolean  <=  true, false
+blindSchedule.levels[0].smallBlind: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2
+blindSchedule.levels[0].smallBlind: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+blindSchedule.levels[0].smallBlind: must not exceed the big blind (2)  <=  3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+blindSchedule.levels[0].smallBlind: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+blindSchedule.levels[0].smallBlind: must be a number, not nan  <=  NaN
+blindSchedule.levels[0].smallBlind: must be a whole number; must be at most 1000000000000  <=  Infinity
+blindSchedule.levels[0].smallBlind: must be a whole number; must be at least 0  <=  -Infinity
+blindSchedule.levels[0].smallBlind: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0].smallBlind: must be a number, not array  <=  [], [1]
+blindSchedule.levels[0].smallBlind: must be a number, not object  <=  {}, {"enabled":true}
+## blindSchedule.levels[0].bigBlind
+blindSchedule.levels[0].bigBlind: required  <=  missing
+blindSchedule.levels[0].bigBlind: must be a number, not null  <=  null
+blindSchedule.levels[0].bigBlind: must be a number, not boolean  <=  true, false
+blindSchedule.levels[0].bigBlind: must be at least 0  <=  -100000000000000000000, -101, -1
+blindSchedule.levels[0].smallBlind: must not exceed the big blind (0) | blindSchedule.levels[0].bigBlind: must be at least 1 for no-limit and pot-limit games  <=  -0, 0
+blindSchedule.levels[0].bigBlind: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+blindSchedule.levels[0].bigBlind: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+blindSchedule.levels[0].bigBlind: must be a number, not nan  <=  NaN
+blindSchedule.levels[0].bigBlind: must be a whole number; must be at most 1000000000000  <=  Infinity
+blindSchedule.levels[0].bigBlind: must be a whole number; must be at least 0  <=  -Infinity
+blindSchedule.levels[0].bigBlind: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0].bigBlind: must be a number, not array  <=  [], [1]
+blindSchedule.levels[0].bigBlind: must be a number, not object  <=  {}, {"enabled":true}
+## blindSchedule.levels[0].ante
+blindSchedule.levels[0].ante: required  <=  missing
+blindSchedule.levels[0].ante: must be a number, not null  <=  null
+blindSchedule.levels[0].ante: must be a number, not boolean  <=  true, false
+blindSchedule.levels[0].ante: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0
+blindSchedule.levels[0].ante: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+blindSchedule.levels[0].ante: must be 0 when stakes.anteType is 'none'  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+blindSchedule.levels[0].ante: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+blindSchedule.levels[0].ante: must be a number, not nan  <=  NaN
+blindSchedule.levels[0].ante: must be a whole number; must be at most 1000000000000  <=  Infinity
+blindSchedule.levels[0].ante: must be a whole number; must be at least 0  <=  -Infinity
+blindSchedule.levels[0].ante: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0].ante: must be a number, not array  <=  [], [1]
+blindSchedule.levels[0].ante: must be a number, not object  <=  {}, {"enabled":true}
+## blindSchedule.levels[0].minutes
+blindSchedule.levels[0].minutes: required  <=  missing
+blindSchedule.levels[0].minutes: must be a number, not null  <=  null
+blindSchedule.levels[0].minutes: must be a number, not boolean  <=  true, false
+blindSchedule.levels[0].minutes: must be at least 2  <=  -100000000000000000000, -101, -1, -0, 0, 1
+blindSchedule.levels[0].minutes: must be a whole number; must be at least 2  <=  0.5, 1.5, -Infinity
+ok  <=  2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240
+blindSchedule.levels[0].minutes: must be a whole number  <=  2.25, 2.345, 2.5
+blindSchedule.levels[0].minutes: must be at most 240  <=  241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+blindSchedule.levels[0].minutes: must be a number, not nan  <=  NaN
+blindSchedule.levels[0].minutes: must be a whole number; must be at most 240  <=  Infinity
+blindSchedule.levels[0].minutes: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0].minutes: must be a number, not array  <=  [], [1]
+blindSchedule.levels[0].minutes: must be a number, not object  <=  {}, {"enabled":true}
+## blindSchedule.levels[0].hands
+blindSchedule.levels[0].hands: required  <=  missing
+blindSchedule.levels[0].hands: must be a number, not null  <=  null
+blindSchedule.levels[0].hands: must be a number, not boolean  <=  true, false
+blindSchedule.levels[0].hands: must be at least 1  <=  -100000000000000000000, -101, -1, -0, 0
+blindSchedule.levels[0].hands: must be a whole number; must be at least 1  <=  0.5, -Infinity
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000
+blindSchedule.levels[0].hands: must be a whole number  <=  1.5, 2.25, 2.345, 2.5
+blindSchedule.levels[0].hands: must be at most 1000  <=  1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+blindSchedule.levels[0].hands: must be a number, not nan  <=  NaN
+blindSchedule.levels[0].hands: must be a whole number; must be at most 1000  <=  Infinity
+blindSchedule.levels[0].hands: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+blindSchedule.levels[0].hands: must be a number, not array  <=  [], [1]
+blindSchedule.levels[0].hands: must be a number, not object  <=  {}, {"enabled":true}
+## timing
+timing: required  <=  missing
+timing: must be an object, not null  <=  null
+timing: must be an object, not boolean  <=  true, false
+timing: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+timing: must be an object, not nan  <=  NaN
+timing: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing: must be an object, not array  <=  [], [1]
+timing.decisionSeconds: required | timing.timeBankSeconds: required | timing.timeBankRefillHands: required | timing.autoActivateTimeBank: required | timing.autoStartNextHand: required | timing.showdownSeconds: required | timing.nextHandDelaySeconds: required  <=  {}
+timing.decisionSeconds: required | timing.timeBankSeconds: required | timing.timeBankRefillHands: required | timing.autoActivateTimeBank: required | timing.autoStartNextHand: required | timing.showdownSeconds: required | timing.nextHandDelaySeconds: required | timing.enabled: unknown field  <=  {"enabled":true}
+## timing.decisionSeconds
+timing.decisionSeconds: required  <=  missing
+timing.decisionSeconds: must be a number, not null  <=  null
+timing.decisionSeconds: must be a number, not boolean  <=  true, false
+timing.decisionSeconds: must be 0 (no clock) or 5-600  <=  -100000000000000000000, -101, -1, 1, 2, 3, 4, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+ok  <=  -0, 0, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600
+timing.decisionSeconds: must be a whole number; must be 0 (no clock) or 5-600  <=  0.5, 1.5, 2.25, 2.345, 2.5, Infinity, -Infinity
+timing.decisionSeconds: must be a number, not nan  <=  NaN
+timing.decisionSeconds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.decisionSeconds: must be a number, not array  <=  [], [1]
+timing.decisionSeconds: must be a number, not object  <=  {}, {"enabled":true}
+## timing.timeBankSeconds
+timing.timeBankSeconds: required  <=  missing
+timing.timeBankSeconds: must be a number, not null  <=  null
+timing.timeBankSeconds: must be a number, not boolean  <=  true, false
+timing.timeBankSeconds: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300
+timing.timeBankSeconds: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+timing.timeBankSeconds: must be at most 300  <=  301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+timing.timeBankSeconds: must be a number, not nan  <=  NaN
+timing.timeBankSeconds: must be a whole number; must be at most 300  <=  Infinity
+timing.timeBankSeconds: must be a whole number; must be at least 0  <=  -Infinity
+timing.timeBankSeconds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.timeBankSeconds: must be a number, not array  <=  [], [1]
+timing.timeBankSeconds: must be a number, not object  <=  {}, {"enabled":true}
+## timing.timeBankRefillHands
+timing.timeBankRefillHands: required  <=  missing
+timing.timeBankRefillHands: must be a number, not null  <=  null
+timing.timeBankRefillHands: must be a number, not boolean  <=  true, false
+timing.timeBankRefillHands: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200
+timing.timeBankRefillHands: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+timing.timeBankRefillHands: must be at most 200  <=  201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+timing.timeBankRefillHands: must be a number, not nan  <=  NaN
+timing.timeBankRefillHands: must be a whole number; must be at most 200  <=  Infinity
+timing.timeBankRefillHands: must be a whole number; must be at least 0  <=  -Infinity
+timing.timeBankRefillHands: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.timeBankRefillHands: must be a number, not array  <=  [], [1]
+timing.timeBankRefillHands: must be a number, not object  <=  {}, {"enabled":true}
+## timing.autoActivateTimeBank
+timing.autoActivateTimeBank: required  <=  missing
+timing.autoActivateTimeBank: must be true or false, not null  <=  null
+ok  <=  true, false
+timing.autoActivateTimeBank: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+timing.autoActivateTimeBank: must be true or false, not nan  <=  NaN
+timing.autoActivateTimeBank: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.autoActivateTimeBank: must be true or false, not array  <=  [], [1]
+timing.autoActivateTimeBank: must be true or false, not object  <=  {}, {"enabled":true}
+## timing.autoStartNextHand
+timing.autoStartNextHand: required  <=  missing
+timing.autoStartNextHand: must be true or false, not null  <=  null
+ok  <=  true, false
+timing.autoStartNextHand: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+timing.autoStartNextHand: must be true or false, not nan  <=  NaN
+timing.autoStartNextHand: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.autoStartNextHand: must be true or false, not array  <=  [], [1]
+timing.autoStartNextHand: must be true or false, not object  <=  {}, {"enabled":true}
+## timing.showdownSeconds
+timing.showdownSeconds: required  <=  missing
+timing.showdownSeconds: must be 3, 6 or 9  <=  null, true, false, -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 4, 5, 7, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, NaN, Infinity, -Infinity, "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏", [], [1], {}, {"enabled":true}
+ok  <=  3, 6, 9
+## timing.nextHandDelaySeconds
+timing.nextHandDelaySeconds: required  <=  missing
+timing.nextHandDelaySeconds: must be a number, not null  <=  null
+timing.nextHandDelaySeconds: must be a number, not boolean  <=  true, false
+timing.nextHandDelaySeconds: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30
+timing.nextHandDelaySeconds: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+timing.nextHandDelaySeconds: must be at most 30  <=  31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+timing.nextHandDelaySeconds: must be a number, not nan  <=  NaN
+timing.nextHandDelaySeconds: must be a whole number; must be at most 30  <=  Infinity
+timing.nextHandDelaySeconds: must be a whole number; must be at least 0  <=  -Infinity
+timing.nextHandDelaySeconds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+timing.nextHandDelaySeconds: must be a number, not array  <=  [], [1]
+timing.nextHandDelaySeconds: must be a number, not object  <=  {}, {"enabled":true}
+## seating
+seating: required  <=  missing
+seating: must be an object, not null  <=  null
+seating: must be an object, not boolean  <=  true, false
+seating: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating: must be an object, not nan  <=  NaN
+seating: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating: must be an object, not array  <=  [], [1]
+seating.requireApproval: required | seating.allowRebuys: required | seating.rebuyRequiresApproval: required | seating.minBuyIn: required | seating.maxBuyIn: required | seating.ratholeMinutes: required | seating.waitlist: required | seating.dealToAway: required | seating.awayAfterTimeouts: required | seating.offlineGraceSeconds: required | seating.releaseOfflineSeatMinutes: required  <=  {}
+seating.requireApproval: required | seating.allowRebuys: required | seating.rebuyRequiresApproval: required | seating.minBuyIn: required | seating.maxBuyIn: required | seating.ratholeMinutes: required | seating.waitlist: required | seating.dealToAway: required | seating.awayAfterTimeouts: required | seating.offlineGraceSeconds: required | seating.releaseOfflineSeatMinutes: required | seating.enabled: unknown field  <=  {"enabled":true}
+## seating.requireApproval
+seating.requireApproval: required  <=  missing
+seating.requireApproval: must be true or false, not null  <=  null
+ok  <=  true, false
+seating.requireApproval: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.requireApproval: must be true or false, not nan  <=  NaN
+seating.requireApproval: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.requireApproval: must be true or false, not array  <=  [], [1]
+seating.requireApproval: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.allowRebuys
+seating.allowRebuys: required  <=  missing
+seating.allowRebuys: must be true or false, not null  <=  null
+ok  <=  true, false
+seating.allowRebuys: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.allowRebuys: must be true or false, not nan  <=  NaN
+seating.allowRebuys: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.allowRebuys: must be true or false, not array  <=  [], [1]
+seating.allowRebuys: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.rebuyRequiresApproval
+seating.rebuyRequiresApproval: required  <=  missing
+seating.rebuyRequiresApproval: must be true or false, not null  <=  null
+ok  <=  true, false
+seating.rebuyRequiresApproval: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.rebuyRequiresApproval: must be true or false, not nan  <=  NaN
+seating.rebuyRequiresApproval: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.rebuyRequiresApproval: must be true or false, not array  <=  [], [1]
+seating.rebuyRequiresApproval: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.minBuyIn
+seating.minBuyIn: required  <=  missing
+seating.minBuyIn: must be a number, not null  <=  null
+seating.minBuyIn: must be a number, not boolean  <=  true, false
+seating.minBuyIn: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+seating.minBuyIn: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.minBuyIn: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.minBuyIn: must be a number, not nan  <=  NaN
+seating.minBuyIn: must be a whole number; must be at most 1000000000000  <=  Infinity
+seating.minBuyIn: must be a whole number; must be at least 0  <=  -Infinity
+seating.minBuyIn: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.minBuyIn: must be a number, not array  <=  [], [1]
+seating.minBuyIn: must be a number, not object  <=  {}, {"enabled":true}
+## seating.maxBuyIn
+seating.maxBuyIn: required  <=  missing
+seating.maxBuyIn: must be a number, not null  <=  null
+seating.maxBuyIn: must be a number, not boolean  <=  true, false
+seating.maxBuyIn: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+seating.maxBuyIn: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.maxBuyIn: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.maxBuyIn: must be a number, not nan  <=  NaN
+seating.maxBuyIn: must be a whole number; must be at most 1000000000000  <=  Infinity
+seating.maxBuyIn: must be a whole number; must be at least 0  <=  -Infinity
+seating.maxBuyIn: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.maxBuyIn: must be a number, not array  <=  [], [1]
+seating.maxBuyIn: must be a number, not object  <=  {}, {"enabled":true}
+## seating.ratholeMinutes
+seating.ratholeMinutes: required  <=  missing
+seating.ratholeMinutes: must be a number, not null  <=  null
+seating.ratholeMinutes: must be a number, not boolean  <=  true, false
+seating.ratholeMinutes: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440
+seating.ratholeMinutes: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.ratholeMinutes: must be at most 1440  <=  1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.ratholeMinutes: must be a number, not nan  <=  NaN
+seating.ratholeMinutes: must be a whole number; must be at most 1440  <=  Infinity
+seating.ratholeMinutes: must be a whole number; must be at least 0  <=  -Infinity
+seating.ratholeMinutes: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.ratholeMinutes: must be a number, not array  <=  [], [1]
+seating.ratholeMinutes: must be a number, not object  <=  {}, {"enabled":true}
+## seating.waitlist
+seating.waitlist: required  <=  missing
+seating.waitlist: must be true or false, not null  <=  null
+ok  <=  true, false
+seating.waitlist: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.waitlist: must be true or false, not nan  <=  NaN
+seating.waitlist: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.waitlist: must be true or false, not array  <=  [], [1]
+seating.waitlist: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.randomSeats
+ok  <=  missing, true, false
+seating.randomSeats: must be true or false, not null  <=  null
+seating.randomSeats: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.randomSeats: must be true or false, not nan  <=  NaN
+seating.randomSeats: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.randomSeats: must be true or false, not array  <=  [], [1]
+seating.randomSeats: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.allowPlayerBots
+ok  <=  missing, true, false
+seating.allowPlayerBots: must be true or false, not null  <=  null
+seating.allowPlayerBots: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.allowPlayerBots: must be true or false, not nan  <=  NaN
+seating.allowPlayerBots: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.allowPlayerBots: must be true or false, not array  <=  [], [1]
+seating.allowPlayerBots: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.dealToAway
+seating.dealToAway: required  <=  missing
+seating.dealToAway: must be true or false, not null  <=  null
+ok  <=  true, false
+seating.dealToAway: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+seating.dealToAway: must be true or false, not nan  <=  NaN
+seating.dealToAway: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.dealToAway: must be true or false, not array  <=  [], [1]
+seating.dealToAway: must be true or false, not object  <=  {}, {"enabled":true}
+## seating.awayAfterTimeouts
+seating.awayAfterTimeouts: required  <=  missing
+seating.awayAfterTimeouts: must be a number, not null  <=  null
+seating.awayAfterTimeouts: must be a number, not boolean  <=  true, false
+seating.awayAfterTimeouts: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10
+seating.awayAfterTimeouts: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.awayAfterTimeouts: must be at most 10  <=  11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.awayAfterTimeouts: must be a number, not nan  <=  NaN
+seating.awayAfterTimeouts: must be a whole number; must be at most 10  <=  Infinity
+seating.awayAfterTimeouts: must be a whole number; must be at least 0  <=  -Infinity
+seating.awayAfterTimeouts: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.awayAfterTimeouts: must be a number, not array  <=  [], [1]
+seating.awayAfterTimeouts: must be a number, not object  <=  {}, {"enabled":true}
+## seating.offlineGraceSeconds
+seating.offlineGraceSeconds: required  <=  missing
+seating.offlineGraceSeconds: must be a number, not null  <=  null
+seating.offlineGraceSeconds: must be a number, not boolean  <=  true, false
+seating.offlineGraceSeconds: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300
+seating.offlineGraceSeconds: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.offlineGraceSeconds: must be at most 300  <=  301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.offlineGraceSeconds: must be a number, not nan  <=  NaN
+seating.offlineGraceSeconds: must be a whole number; must be at most 300  <=  Infinity
+seating.offlineGraceSeconds: must be a whole number; must be at least 0  <=  -Infinity
+seating.offlineGraceSeconds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.offlineGraceSeconds: must be a number, not array  <=  [], [1]
+seating.offlineGraceSeconds: must be a number, not object  <=  {}, {"enabled":true}
+## seating.releaseOfflineSeatMinutes
+seating.releaseOfflineSeatMinutes: required  <=  missing
+seating.releaseOfflineSeatMinutes: must be a number, not null  <=  null
+seating.releaseOfflineSeatMinutes: must be a number, not boolean  <=  true, false
+seating.releaseOfflineSeatMinutes: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440
+seating.releaseOfflineSeatMinutes: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+seating.releaseOfflineSeatMinutes: must be at most 1440  <=  1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+seating.releaseOfflineSeatMinutes: must be a number, not nan  <=  NaN
+seating.releaseOfflineSeatMinutes: must be a whole number; must be at most 1440  <=  Infinity
+seating.releaseOfflineSeatMinutes: must be a whole number; must be at least 0  <=  -Infinity
+seating.releaseOfflineSeatMinutes: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+seating.releaseOfflineSeatMinutes: must be a number, not array  <=  [], [1]
+seating.releaseOfflineSeatMinutes: must be a number, not object  <=  {}, {"enabled":true}
+## play
+play: required  <=  missing
+play: must be an object, not null  <=  null
+play: must be an object, not boolean  <=  true, false
+play: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play: must be an object, not nan  <=  NaN
+play: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play: must be an object, not array  <=  [], [1]
+play.runItTwice: required | play.rabbitHunt: required | play.straddle: required | play.revealAllAtShowdown: required | play.trimExcessBets: required | play.fixedLimitCap: required | play.uncappedHeadsUp: required  <=  {}
+play.runItTwice: required | play.rabbitHunt: required | play.straddle: required | play.revealAllAtShowdown: required | play.trimExcessBets: required | play.fixedLimitCap: required | play.uncappedHeadsUp: required | play.enabled: unknown field  <=  {"enabled":true}
+## play.runItTwice
+play.runItTwice: required  <=  missing
+play.runItTwice: must be 'off' | 'ask' | 'always', not null  <=  null
+play.runItTwice: must be 'off' | 'ask' | 'always', not boolean  <=  true, false
+play.runItTwice: must be 'off' | 'ask' | 'always', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.runItTwice: must be 'off' | 'ask' | 'always', not nan  <=  NaN
+play.runItTwice: must be one of 'off', 'ask', 'always'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.runItTwice: must be 'off' | 'ask' | 'always', not array  <=  [], [1]
+play.runItTwice: must be 'off' | 'ask' | 'always', not object  <=  {}, {"enabled":true}
+## play.rabbitHunt
+play.rabbitHunt: required  <=  missing
+play.rabbitHunt: must be true or false, not null  <=  null
+ok  <=  true, false
+play.rabbitHunt: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.rabbitHunt: must be true or false, not nan  <=  NaN
+play.rabbitHunt: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.rabbitHunt: must be true or false, not array  <=  [], [1]
+play.rabbitHunt: must be true or false, not object  <=  {}, {"enabled":true}
+## play.straddle
+play.straddle: required  <=  missing
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not null  <=  null
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not boolean  <=  true, false
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not nan  <=  NaN
+play.straddle: must be one of 'off', 'utg', 'utg-and-button'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not array  <=  [], [1]
+play.straddle: must be 'off' | 'utg' | 'utg-and-button', not object  <=  {}, {"enabled":true}
+## play.revealAllAtShowdown
+play.revealAllAtShowdown: required  <=  missing
+play.revealAllAtShowdown: must be true or false, not null  <=  null
+ok  <=  true, false
+play.revealAllAtShowdown: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.revealAllAtShowdown: must be true or false, not nan  <=  NaN
+play.revealAllAtShowdown: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.revealAllAtShowdown: must be true or false, not array  <=  [], [1]
+play.revealAllAtShowdown: must be true or false, not object  <=  {}, {"enabled":true}
+## play.trimExcessBets
+play.trimExcessBets: required  <=  missing
+play.trimExcessBets: must be true or false, not null  <=  null
+ok  <=  true, false
+play.trimExcessBets: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.trimExcessBets: must be true or false, not nan  <=  NaN
+play.trimExcessBets: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.trimExcessBets: must be true or false, not array  <=  [], [1]
+play.trimExcessBets: must be true or false, not object  <=  {}, {"enabled":true}
+## play.fixedLimitCap
+play.fixedLimitCap: required  <=  missing
+play.fixedLimitCap: must be a number, not null  <=  null
+play.fixedLimitCap: must be a number, not boolean  <=  true, false
+play.fixedLimitCap: must be at least 2  <=  -100000000000000000000, -101, -1, -0, 0, 1
+play.fixedLimitCap: must be a whole number; must be at least 2  <=  0.5, 1.5, -Infinity
+ok  <=  2, 3, 4, 5, 6, 7, 9, 10
+play.fixedLimitCap: must be a whole number  <=  2.25, 2.345, 2.5
+play.fixedLimitCap: must be at most 10  <=  11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+play.fixedLimitCap: must be a number, not nan  <=  NaN
+play.fixedLimitCap: must be a whole number; must be at most 10  <=  Infinity
+play.fixedLimitCap: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.fixedLimitCap: must be a number, not array  <=  [], [1]
+play.fixedLimitCap: must be a number, not object  <=  {}, {"enabled":true}
+## play.uncappedHeadsUp
+play.uncappedHeadsUp: required  <=  missing
+play.uncappedHeadsUp: must be true or false, not null  <=  null
+ok  <=  true, false
+play.uncappedHeadsUp: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+play.uncappedHeadsUp: must be true or false, not nan  <=  NaN
+play.uncappedHeadsUp: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+play.uncappedHeadsUp: must be true or false, not array  <=  [], [1]
+play.uncappedHeadsUp: must be true or false, not object  <=  {}, {"enabled":true}
+## chat
+chat: required  <=  missing
+chat: must be an object, not null  <=  null
+chat: must be an object, not boolean  <=  true, false
+chat: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+chat: must be an object, not nan  <=  NaN
+chat: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+chat: must be an object, not array  <=  [], [1]
+chat.guestChat: required | chat.profanityFilter: required  <=  {}
+chat.guestChat: required | chat.profanityFilter: required | chat.enabled: unknown field  <=  {"enabled":true}
+## chat.guestChat
+chat.guestChat: required  <=  missing
+chat.guestChat: must be true or false, not null  <=  null
+ok  <=  true, false
+chat.guestChat: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+chat.guestChat: must be true or false, not nan  <=  NaN
+chat.guestChat: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+chat.guestChat: must be true or false, not array  <=  [], [1]
+chat.guestChat: must be true or false, not object  <=  {}, {"enabled":true}
+## chat.profanityFilter
+chat.profanityFilter: required  <=  missing
+chat.profanityFilter: must be true or false, not null  <=  null
+ok  <=  true, false
+chat.profanityFilter: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+chat.profanityFilter: must be true or false, not nan  <=  NaN
+chat.profanityFilter: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+chat.profanityFilter: must be true or false, not array  <=  [], [1]
+chat.profanityFilter: must be true or false, not object  <=  {}, {"enabled":true}
+## spectators
+spectators: required  <=  missing
+spectators: must be an object, not null  <=  null
+spectators: must be an object, not boolean  <=  true, false
+spectators: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+spectators: must be an object, not nan  <=  NaN
+spectators: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+spectators: must be an object, not array  <=  [], [1]
+spectators.allowed: required | spectators.seeAllCards: required | spectators.delaySeconds: required  <=  {}
+spectators.allowed: required | spectators.seeAllCards: required | spectators.delaySeconds: required | spectators.enabled: unknown field  <=  {"enabled":true}
+## spectators.allowed
+spectators.allowed: required  <=  missing
+spectators.allowed: must be true or false, not null  <=  null
+ok  <=  true, false
+spectators.allowed: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+spectators.allowed: must be true or false, not nan  <=  NaN
+spectators.allowed: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+spectators.allowed: must be true or false, not array  <=  [], [1]
+spectators.allowed: must be true or false, not object  <=  {}, {"enabled":true}
+## spectators.seeAllCards
+spectators.seeAllCards: required  <=  missing
+spectators.seeAllCards: must be true or false, not null  <=  null
+ok  <=  true, false
+spectators.seeAllCards: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+spectators.seeAllCards: must be true or false, not nan  <=  NaN
+spectators.seeAllCards: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+spectators.seeAllCards: must be true or false, not array  <=  [], [1]
+spectators.seeAllCards: must be true or false, not object  <=  {}, {"enabled":true}
+## spectators.delaySeconds
+spectators.delaySeconds: required  <=  missing
+spectators.delaySeconds: must be a number, not null  <=  null
+spectators.delaySeconds: must be a number, not boolean  <=  true, false
+spectators.delaySeconds: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600
+spectators.delaySeconds: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+spectators.delaySeconds: must be at most 600  <=  601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+spectators.delaySeconds: must be a number, not nan  <=  NaN
+spectators.delaySeconds: must be a whole number; must be at most 600  <=  Infinity
+spectators.delaySeconds: must be a whole number; must be at least 0  <=  -Infinity
+spectators.delaySeconds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+spectators.delaySeconds: must be a number, not array  <=  [], [1]
+spectators.delaySeconds: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers
+modifiers: required  <=  missing
+modifiers: must be an object, not null  <=  null
+modifiers: must be an object, not boolean  <=  true, false
+modifiers: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers: must be an object, not nan  <=  NaN
+modifiers: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers: must be an object, not array  <=  [], [1]
+ok, changed modifiers.bounty-72 missing -> {"enabled":false,"amount":10,"suits":"any","autoShow":true}, modifiers.double-board missing -> {"enabled":false,"when":"bomb-pots"}, modifiers.rake missing -> {"enabled":false,"percent":5,"cap":0,"minPot":0,"noFlopNoDrop":true,"shortHanded":{"players":0,"percent":2.5,"cap":0},"visibleTo":"host"}, modifiers.bomb-pot missing -> {"enabled":false,"chancePercent":10,"everyHands":0,"bigBlinds":5,"gameId":"","betting":"pot-limit"}, modifiers.nit missing -> {"enabled":false,"prizeBigBlinds":10,"minPlayers":3}  <=  {}
+modifiers.enabled: unknown modifier (not registered)  <=  {"enabled":true}
+## modifiers.bounty-72
+ok, changed modifiers.bounty-72 missing -> {"enabled":false,"amount":10,"suits":"any","autoShow":true}  <=  missing
+modifiers.bounty-72: must be an object, not null  <=  null
+modifiers.bounty-72: must be an object, not boolean  <=  true, false
+modifiers.bounty-72: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bounty-72: must be an object, not nan  <=  NaN
+modifiers.bounty-72: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bounty-72: must be an object, not array  <=  [], [1]
+modifiers.bounty-72.enabled: required | modifiers.bounty-72.amount: required | modifiers.bounty-72.suits: required | modifiers.bounty-72.autoShow: required  <=  {}
+modifiers.bounty-72.amount: required | modifiers.bounty-72.suits: required | modifiers.bounty-72.autoShow: required  <=  {"enabled":true}
+## modifiers.bounty-72.enabled
+modifiers.bounty-72.enabled: required  <=  missing
+modifiers.bounty-72.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.bounty-72.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bounty-72.enabled: must be true or false, not nan  <=  NaN
+modifiers.bounty-72.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bounty-72.enabled: must be true or false, not array  <=  [], [1]
+modifiers.bounty-72.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.bounty-72.amount
+modifiers.bounty-72.amount: required  <=  missing
+modifiers.bounty-72.amount: must be a number, not null  <=  null
+modifiers.bounty-72.amount: must be a number, not boolean  <=  true, false
+modifiers.bounty-72.amount: must be at least 1  <=  -100000000000000000000, -101, -1, -0, 0
+modifiers.bounty-72.amount: must be a whole number; must be at least 1  <=  0.5, -Infinity
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+modifiers.bounty-72.amount: must be a whole number  <=  1.5, 2.25, 2.345, 2.5
+modifiers.bounty-72.amount: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.bounty-72.amount: must be a number, not nan  <=  NaN
+modifiers.bounty-72.amount: must be a whole number; must be at most 1000000000000  <=  Infinity
+modifiers.bounty-72.amount: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bounty-72.amount: must be a number, not array  <=  [], [1]
+modifiers.bounty-72.amount: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.bounty-72.suits
+modifiers.bounty-72.suits: required  <=  missing
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not null  <=  null
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not boolean  <=  true, false
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not nan  <=  NaN
+modifiers.bounty-72.suits: must be one of 'any', 'offsuit', 'suited'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not array  <=  [], [1]
+modifiers.bounty-72.suits: must be 'any' | 'offsuit' | 'suited', not object  <=  {}, {"enabled":true}
+## modifiers.bounty-72.autoShow
+modifiers.bounty-72.autoShow: required  <=  missing
+modifiers.bounty-72.autoShow: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.bounty-72.autoShow: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bounty-72.autoShow: must be true or false, not nan  <=  NaN
+modifiers.bounty-72.autoShow: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bounty-72.autoShow: must be true or false, not array  <=  [], [1]
+modifiers.bounty-72.autoShow: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.double-board
+ok, changed modifiers.double-board missing -> {"enabled":false,"when":"bomb-pots"}  <=  missing
+modifiers.double-board: must be an object, not null  <=  null
+modifiers.double-board: must be an object, not boolean  <=  true, false
+modifiers.double-board: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.double-board: must be an object, not nan  <=  NaN
+modifiers.double-board: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.double-board: must be an object, not array  <=  [], [1]
+modifiers.double-board.enabled: required | modifiers.double-board.when: required  <=  {}
+modifiers.double-board.when: required  <=  {"enabled":true}
+## modifiers.double-board.enabled
+modifiers.double-board.enabled: required  <=  missing
+modifiers.double-board.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.double-board.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.double-board.enabled: must be true or false, not nan  <=  NaN
+modifiers.double-board.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.double-board.enabled: must be true or false, not array  <=  [], [1]
+modifiers.double-board.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.double-board.when
+modifiers.double-board.when: required  <=  missing
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not null  <=  null
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not boolean  <=  true, false
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not nan  <=  NaN
+modifiers.double-board.when: must be one of 'always', 'bomb-pots'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not array  <=  [], [1]
+modifiers.double-board.when: must be 'always' | 'bomb-pots', not object  <=  {}, {"enabled":true}
+## modifiers.rake
+ok, changed modifiers.rake missing -> {"enabled":false,"percent":5,"cap":0,"minPot":0,"noFlopNoDrop":true,"shortHanded":{"players":0,"percent":2.5,"cap":0},"visibleTo":"host"}  <=  missing
+modifiers.rake: must be an object, not null  <=  null
+modifiers.rake: must be an object, not boolean  <=  true, false
+modifiers.rake: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.rake: must be an object, not nan  <=  NaN
+modifiers.rake: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake: must be an object, not array  <=  [], [1]
+modifiers.rake.enabled: required | modifiers.rake.percent: required | modifiers.rake.cap: required | modifiers.rake.minPot: required | modifiers.rake.noFlopNoDrop: required | modifiers.rake.shortHanded: required | modifiers.rake.visibleTo: required  <=  {}
+modifiers.rake.percent: required | modifiers.rake.cap: required | modifiers.rake.minPot: required | modifiers.rake.noFlopNoDrop: required | modifiers.rake.shortHanded: required | modifiers.rake.visibleTo: required  <=  {"enabled":true}
+## modifiers.rake.enabled
+modifiers.rake.enabled: required  <=  missing
+modifiers.rake.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.rake.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.rake.enabled: must be true or false, not nan  <=  NaN
+modifiers.rake.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.enabled: must be true or false, not array  <=  [], [1]
+modifiers.rake.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.rake.percent
+modifiers.rake.percent: required  <=  missing
+modifiers.rake.percent: must be a number, not null  <=  null
+modifiers.rake.percent: must be a number, not boolean  <=  true, false
+modifiers.rake.percent: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100
+modifiers.rake.percent: must have at most two decimals  <=  2.345
+modifiers.rake.percent: must be at most 100  <=  101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.percent: must be a number, not nan  <=  NaN
+modifiers.rake.percent: must be at most 100; must have at most two decimals  <=  Infinity
+modifiers.rake.percent: must be at least 0; must have at most two decimals  <=  -Infinity
+modifiers.rake.percent: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.percent: must be a number, not array  <=  [], [1]
+modifiers.rake.percent: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.cap
+modifiers.rake.cap: required  <=  missing
+modifiers.rake.cap: must be a number, not null  <=  null
+modifiers.rake.cap: must be a number, not boolean  <=  true, false
+modifiers.rake.cap: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+modifiers.rake.cap: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.rake.cap: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.cap: must be a number, not nan  <=  NaN
+modifiers.rake.cap: must be a whole number; must be at most 1000000000000  <=  Infinity
+modifiers.rake.cap: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.rake.cap: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.cap: must be a number, not array  <=  [], [1]
+modifiers.rake.cap: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.minPot
+modifiers.rake.minPot: required  <=  missing
+modifiers.rake.minPot: must be a number, not null  <=  null
+modifiers.rake.minPot: must be a number, not boolean  <=  true, false
+modifiers.rake.minPot: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+modifiers.rake.minPot: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.rake.minPot: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.minPot: must be a number, not nan  <=  NaN
+modifiers.rake.minPot: must be a whole number; must be at most 1000000000000  <=  Infinity
+modifiers.rake.minPot: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.rake.minPot: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.minPot: must be a number, not array  <=  [], [1]
+modifiers.rake.minPot: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.noFlopNoDrop
+modifiers.rake.noFlopNoDrop: required  <=  missing
+modifiers.rake.noFlopNoDrop: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.rake.noFlopNoDrop: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.rake.noFlopNoDrop: must be true or false, not nan  <=  NaN
+modifiers.rake.noFlopNoDrop: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.noFlopNoDrop: must be true or false, not array  <=  [], [1]
+modifiers.rake.noFlopNoDrop: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.rake.shortHanded
+modifiers.rake.shortHanded: required  <=  missing
+modifiers.rake.shortHanded: must be an object, not null  <=  null
+modifiers.rake.shortHanded: must be an object, not boolean  <=  true, false
+modifiers.rake.shortHanded: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.rake.shortHanded: must be an object, not nan  <=  NaN
+modifiers.rake.shortHanded: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.shortHanded: must be an object, not array  <=  [], [1]
+modifiers.rake.shortHanded.players: required | modifiers.rake.shortHanded.percent: required | modifiers.rake.shortHanded.cap: required  <=  {}
+modifiers.rake.shortHanded.players: required | modifiers.rake.shortHanded.percent: required | modifiers.rake.shortHanded.cap: required | modifiers.rake.shortHanded.enabled: unknown field  <=  {"enabled":true}
+## modifiers.rake.shortHanded.players
+modifiers.rake.shortHanded.players: required  <=  missing
+modifiers.rake.shortHanded.players: must be a number, not null  <=  null
+modifiers.rake.shortHanded.players: must be a number, not boolean  <=  true, false
+modifiers.rake.shortHanded.players: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10
+modifiers.rake.shortHanded.players: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.rake.shortHanded.players: must be at most 10  <=  11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.shortHanded.players: must be a number, not nan  <=  NaN
+modifiers.rake.shortHanded.players: must be a whole number; must be at most 10  <=  Infinity
+modifiers.rake.shortHanded.players: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.rake.shortHanded.players: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.shortHanded.players: must be a number, not array  <=  [], [1]
+modifiers.rake.shortHanded.players: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.shortHanded.percent
+modifiers.rake.shortHanded.percent: required  <=  missing
+modifiers.rake.shortHanded.percent: must be a number, not null  <=  null
+modifiers.rake.shortHanded.percent: must be a number, not boolean  <=  true, false
+modifiers.rake.shortHanded.percent: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100
+modifiers.rake.shortHanded.percent: must have at most two decimals  <=  2.345
+modifiers.rake.shortHanded.percent: must be at most 100  <=  101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.shortHanded.percent: must be a number, not nan  <=  NaN
+modifiers.rake.shortHanded.percent: must be at most 100; must have at most two decimals  <=  Infinity
+modifiers.rake.shortHanded.percent: must be at least 0; must have at most two decimals  <=  -Infinity
+modifiers.rake.shortHanded.percent: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.shortHanded.percent: must be a number, not array  <=  [], [1]
+modifiers.rake.shortHanded.percent: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.shortHanded.cap
+modifiers.rake.shortHanded.cap: required  <=  missing
+modifiers.rake.shortHanded.cap: must be a number, not null  <=  null
+modifiers.rake.shortHanded.cap: must be a number, not boolean  <=  true, false
+modifiers.rake.shortHanded.cap: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000
+modifiers.rake.shortHanded.cap: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.rake.shortHanded.cap: must be at most 1000000000000  <=  1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.rake.shortHanded.cap: must be a number, not nan  <=  NaN
+modifiers.rake.shortHanded.cap: must be a whole number; must be at most 1000000000000  <=  Infinity
+modifiers.rake.shortHanded.cap: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.rake.shortHanded.cap: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.shortHanded.cap: must be a number, not array  <=  [], [1]
+modifiers.rake.shortHanded.cap: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.rake.visibleTo
+modifiers.rake.visibleTo: required  <=  missing
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not null  <=  null
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not boolean  <=  true, false
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not nan  <=  NaN
+modifiers.rake.visibleTo: must be one of 'host', 'everyone'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not array  <=  [], [1]
+modifiers.rake.visibleTo: must be 'host' | 'everyone', not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot
+ok, changed modifiers.bomb-pot missing -> {"enabled":false,"chancePercent":10,"everyHands":0,"bigBlinds":5,"gameId":"","betting":"pot-limit"}  <=  missing
+modifiers.bomb-pot: must be an object, not null  <=  null
+modifiers.bomb-pot: must be an object, not boolean  <=  true, false
+modifiers.bomb-pot: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bomb-pot: must be an object, not nan  <=  NaN
+modifiers.bomb-pot: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot: must be an object, not array  <=  [], [1]
+modifiers.bomb-pot.enabled: required | modifiers.bomb-pot.chancePercent: required | modifiers.bomb-pot.everyHands: required | modifiers.bomb-pot.bigBlinds: required | modifiers.bomb-pot.gameId: required | modifiers.bomb-pot.betting: required  <=  {}
+modifiers.bomb-pot.chancePercent: required | modifiers.bomb-pot.everyHands: required | modifiers.bomb-pot.bigBlinds: required | modifiers.bomb-pot.gameId: required | modifiers.bomb-pot.betting: required  <=  {"enabled":true}
+## modifiers.bomb-pot.enabled
+modifiers.bomb-pot.enabled: required  <=  missing
+modifiers.bomb-pot.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.bomb-pot.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bomb-pot.enabled: must be true or false, not nan  <=  NaN
+modifiers.bomb-pot.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.enabled: must be true or false, not array  <=  [], [1]
+modifiers.bomb-pot.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot.chancePercent
+modifiers.bomb-pot.chancePercent: required  <=  missing
+modifiers.bomb-pot.chancePercent: must be a number, not null  <=  null
+modifiers.bomb-pot.chancePercent: must be a number, not boolean  <=  true, false
+modifiers.bomb-pot.chancePercent: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100
+modifiers.bomb-pot.chancePercent: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.bomb-pot.chancePercent: must be at most 100  <=  101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.bomb-pot.chancePercent: must be a number, not nan  <=  NaN
+modifiers.bomb-pot.chancePercent: must be a whole number; must be at most 100  <=  Infinity
+modifiers.bomb-pot.chancePercent: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.bomb-pot.chancePercent: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.chancePercent: must be a number, not array  <=  [], [1]
+modifiers.bomb-pot.chancePercent: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot.everyHands
+modifiers.bomb-pot.everyHands: required  <=  missing
+modifiers.bomb-pot.everyHands: must be a number, not null  <=  null
+modifiers.bomb-pot.everyHands: must be a number, not boolean  <=  true, false
+modifiers.bomb-pot.everyHands: must be at least 0  <=  -100000000000000000000, -101, -1
+ok  <=  -0, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000
+modifiers.bomb-pot.everyHands: must be a whole number  <=  0.5, 1.5, 2.25, 2.345, 2.5
+modifiers.bomb-pot.everyHands: must be at most 1000  <=  1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.bomb-pot.everyHands: must be a number, not nan  <=  NaN
+modifiers.bomb-pot.everyHands: must be a whole number; must be at most 1000  <=  Infinity
+modifiers.bomb-pot.everyHands: must be a whole number; must be at least 0  <=  -Infinity
+modifiers.bomb-pot.everyHands: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.everyHands: must be a number, not array  <=  [], [1]
+modifiers.bomb-pot.everyHands: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot.bigBlinds
+modifiers.bomb-pot.bigBlinds: required  <=  missing
+modifiers.bomb-pot.bigBlinds: must be a number, not null  <=  null
+modifiers.bomb-pot.bigBlinds: must be a number, not boolean  <=  true, false
+modifiers.bomb-pot.bigBlinds: must be at least 1  <=  -100000000000000000000, -101, -1, -0, 0
+modifiers.bomb-pot.bigBlinds: must be a whole number; must be at least 1  <=  0.5, -Infinity
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100
+modifiers.bomb-pot.bigBlinds: must be a whole number  <=  1.5, 2.25, 2.345, 2.5
+modifiers.bomb-pot.bigBlinds: must be at most 100  <=  101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.bomb-pot.bigBlinds: must be a number, not nan  <=  NaN
+modifiers.bomb-pot.bigBlinds: must be a whole number; must be at most 100  <=  Infinity
+modifiers.bomb-pot.bigBlinds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.bigBlinds: must be a number, not array  <=  [], [1]
+modifiers.bomb-pot.bigBlinds: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot.gameId
+modifiers.bomb-pot.gameId: required  <=  missing
+modifiers.bomb-pot.gameId: must be text, not null  <=  null
+modifiers.bomb-pot.gameId: must be text, not boolean  <=  true, false
+modifiers.bomb-pot.gameId: must be text, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bomb-pot.gameId: must be text, not nan  <=  NaN
+ok  <=  "", "x", "1", "30", "NL", "plo", 'x'×40
+modifiers.bomb-pot.gameId: must be a game id or empty  <=  " ", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.gameId: must be text, not array  <=  [], [1]
+modifiers.bomb-pot.gameId: must be text, not object  <=  {}, {"enabled":true}
+## modifiers.bomb-pot.betting
+modifiers.bomb-pot.betting: required  <=  missing
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not null  <=  null
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not boolean  <=  true, false
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not nan  <=  NaN
+modifiers.bomb-pot.betting: must be one of 'no-limit', 'pot-limit', 'fixed-limit'  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not array  <=  [], [1]
+modifiers.bomb-pot.betting: must be 'no-limit' | 'pot-limit' | 'fixed-limit', not object  <=  {}, {"enabled":true}
+## modifiers.nit
+ok, changed modifiers.nit missing -> {"enabled":false,"prizeBigBlinds":10,"minPlayers":3}  <=  missing
+modifiers.nit: must be an object, not null  <=  null
+modifiers.nit: must be an object, not boolean  <=  true, false
+modifiers.nit: must be an object, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.nit: must be an object, not nan  <=  NaN
+modifiers.nit: must be an object, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.nit: must be an object, not array  <=  [], [1]
+modifiers.nit.enabled: required | modifiers.nit.prizeBigBlinds: required | modifiers.nit.minPlayers: required  <=  {}
+modifiers.nit.prizeBigBlinds: required | modifiers.nit.minPlayers: required  <=  {"enabled":true}
+## modifiers.nit.enabled
+modifiers.nit.enabled: required  <=  missing
+modifiers.nit.enabled: must be true or false, not null  <=  null
+ok  <=  true, false
+modifiers.nit.enabled: must be true or false, not number  <=  -100000000000000000000, -101, -1, -0, 0, 0.5, 1, 1.5, 2, 2.25, 2.345, 2.5, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000, Infinity, -Infinity
+modifiers.nit.enabled: must be true or false, not nan  <=  NaN
+modifiers.nit.enabled: must be true or false, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.nit.enabled: must be true or false, not array  <=  [], [1]
+modifiers.nit.enabled: must be true or false, not object  <=  {}, {"enabled":true}
+## modifiers.nit.prizeBigBlinds
+modifiers.nit.prizeBigBlinds: required  <=  missing
+modifiers.nit.prizeBigBlinds: must be a number, not null  <=  null
+modifiers.nit.prizeBigBlinds: must be a number, not boolean  <=  true, false
+modifiers.nit.prizeBigBlinds: must be at least 1  <=  -100000000000000000000, -101, -1, -0, 0
+modifiers.nit.prizeBigBlinds: must be a whole number; must be at least 1  <=  0.5, -Infinity
+ok  <=  1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 20, 21, 24, 30, 31, 40, 41, 100
+modifiers.nit.prizeBigBlinds: must be a whole number  <=  1.5, 2.25, 2.345, 2.5
+modifiers.nit.prizeBigBlinds: must be at most 100  <=  101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.nit.prizeBigBlinds: must be a number, not nan  <=  NaN
+modifiers.nit.prizeBigBlinds: must be a whole number; must be at most 100  <=  Infinity
+modifiers.nit.prizeBigBlinds: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.nit.prizeBigBlinds: must be a number, not array  <=  [], [1]
+modifiers.nit.prizeBigBlinds: must be a number, not object  <=  {}, {"enabled":true}
+## modifiers.nit.minPlayers
+modifiers.nit.minPlayers: required  <=  missing
+modifiers.nit.minPlayers: must be a number, not null  <=  null
+modifiers.nit.minPlayers: must be a number, not boolean  <=  true, false
+modifiers.nit.minPlayers: must be at least 2  <=  -100000000000000000000, -101, -1, -0, 0, 1
+modifiers.nit.minPlayers: must be a whole number; must be at least 2  <=  0.5, 1.5, -Infinity
+ok  <=  2, 3, 4, 5, 6, 7, 9, 10
+modifiers.nit.minPlayers: must be a whole number  <=  2.25, 2.345, 2.5
+modifiers.nit.minPlayers: must be at most 10  <=  11, 20, 21, 24, 30, 31, 40, 41, 100, 101, 200, 201, 240, 241, 300, 301, 600, 601, 1000, 1001, 1440, 1441, 1000000000000, 1000000000001, 9007199254740992, 9007199254740994, 100000000000000000000
+modifiers.nit.minPlayers: must be a number, not nan  <=  NaN
+modifiers.nit.minPlayers: must be a whole number; must be at most 10  <=  Infinity
+modifiers.nit.minPlayers: must be a number, not string  <=  "", " ", "x", "1", "30", "NL", "plo", "  Friday  ", "Friday 🃏", "has space", "dot.id", "tab\there", "bell\u0007", "half \ud83d", "\udc00", 'x'×40, 'x'×41, "  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  ", '🃏'×20, '🃏'×21, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🃏"
+modifiers.nit.minPlayers: must be a number, not array  <=  [], [1]
+modifiers.nit.minPlayers: must be a number, not object  <=  {}, {"enabled":true}
+## table with an unknown field
+table.zzz: unknown field
+## game with an unknown field
+game.zzz: unknown field
+## game.rotation with an unknown field
+game.rotation.zzz: unknown field
+## game.rotation.steps[0] with an unknown field
+game.rotation.steps[0].zzz: unknown field
+## stakes with an unknown field
+stakes.zzz: unknown field
+## blindSchedule with an unknown field
+blindSchedule.zzz: unknown field
+## blindSchedule.levels[0] with an unknown field
+blindSchedule.levels[0].zzz: unknown field
+## timing with an unknown field
+timing.zzz: unknown field
+## seating with an unknown field
+seating.zzz: unknown field
+## play with an unknown field
+play.zzz: unknown field
+## chat with an unknown field
+chat.zzz: unknown field
+## spectators with an unknown field
+spectators.zzz: unknown field
+## modifiers with an unknown field
+modifiers.zzz: unknown modifier (not registered)
+## modifiers.bounty-72 with an unknown field
+modifiers.bounty-72.zzz: unknown field
+## modifiers.double-board with an unknown field
+modifiers.double-board.zzz: unknown field
+## modifiers.rake with an unknown field
+modifiers.rake.zzz: unknown field
+## modifiers.rake.shortHanded with an unknown field
+modifiers.rake.shortHanded.zzz: unknown field
+## modifiers.bomb-pot with an unknown field
+modifiers.bomb-pot.zzz: unknown field
+## modifiers.nit with an unknown field
+modifiers.nit.zzz: unknown field
+## (root) with an unknown field
+zzz: unknown field
+# Scenarios
+## unknown field next to a small blind over the big blind
+stakes.zzz: unknown field | stakes.smallBlind: must not exceed the big blind (2)
+## unknown root field next to run it twice in a tournament
+zzz: unknown field | play.runItTwice: must be 'off' in tournament mode
+## unknown field in one section, cross-section rule broken elsewhere
+chat.zzz: unknown field | stakes.bigBlind: must be at least 1 for no-limit and pot-limit games
+## wrong type in one section, cross-section rule broken elsewhere
+chat.guestChat: must be true or false, not string
+## out of range in one section, cross-section rule broken elsewhere
+table.maxSeats: must be at most 10 | stakes.bigBlind: must be at least 1 for no-limit and pot-limit games
+## out of range next to a small blind over the big blind
+stakes.smallBlind: must be at most 1000000000000
+## fraction below the minimum
+stakes.ante: must be a whole number; must be at least 0
+## fraction above the maximum
+table.maxSeats: must be a whole number; must be at most 10
+## huge fraction
+stakes.bigBlind: must be a whole number; must be at most 1000000000000
+## long name with a control character
+table.name: must be at most 40 characters; must not contain control characters
+## tab only name
+table.name: must not be blank
+## every section missing
+table: required | game: required | stakes: required | blindSchedule: required | timing: required | seating: required | play: required | chat: required | spectators: required | modifiers: required
+## empty object
+version: must be 1 (use migrateSettings for older settings) | table: required | game: required | stakes: required | blindSchedule: required | timing: required | seating: required | play: required | chat: required | spectators: required | modifiers: required
+## version 0 with everything else right
+version: must be 1 (use migrateSettings for older settings)
+## blind level missing fields
+blindSchedule.levels[0].bigBlind: required | blindSchedule.levels[0].ante: required | blindSchedule.levels[0].minutes: required | blindSchedule.levels[0].hands: required
+## blind level with an unknown field and a small blind over its big blind
+blindSchedule.levels[0].zzz: unknown field | blindSchedule.levels[0].smallBlind: must not exceed the big blind (2)
+## blind levels: several bad at once
+blindSchedule.levels[0].minutes: must be at least 2 | blindSchedule.levels[0].hands: must be at least 1 | blindSchedule.levels[0].smallBlind: must not exceed the big blind (2) | blindSchedule.levels[1]: must be an object, not null | blindSchedule.levels[2]: must be an object, not string
+## rotation step not an object
+game.rotation.steps[0]: must be an object, not string
+## rotation enabled with no steps and an unknown field
+game.rotation.zzz: unknown field | game.rotation.steps: add at least one step to rotate games
+## fixed limit rotation step with bad bet sizes
+stakes.smallBet: must not exceed the big bet (4) | stakes.bringIn: must not exceed the small bet (8)
+## ante with ante type none, on the table and a level
+stakes.ante: must be 0 when stakes.anteType is 'none' | blindSchedule.levels[0].ante: must be 0 when stakes.anteType is 'none'
+## min buy-in over max buy-in, both fractions
+seating.minBuyIn: must be a whole number | seating.maxBuyIn: must be a whole number
+## decision clock wrong type
+timing.decisionSeconds: must be a number, not string
+## decision clock fraction outside the range
+timing.decisionSeconds: must be a whole number; must be 0 (no clock) or 5-600
+## every cash-only modifier on in a tournament
+modifiers.bounty-72.enabled: cash games only: turn it off in tournament mode | modifiers.double-board.enabled: cash games only: turn it off in tournament mode | modifiers.rake.enabled: cash games only: turn it off in tournament mode | modifiers.bomb-pot.enabled: cash games only: turn it off in tournament mode | modifiers.nit.enabled: cash games only: turn it off in tournament mode
+## bad modifier field in a tournament with the modifier on
+modifiers.rake.percent: must be at most 100
+## unknown modifier field in a tournament with the modifier on
+modifiers.nit.zzz: unknown field
+## modifier on in a tournament, and run it twice on
+play.runItTwice: must be 'off' in tournament mode | modifiers.nit.enabled: cash games only: turn it off in tournament mode
+## bad modifier field in a tournament, and run it twice on
+modifiers.rake.percent: must be at most 100 | play.runItTwice: must be 'off' in tournament mode
+## unregistered modifier in a tournament, and run it twice on
+modifiers.sparkles: unknown modifier (not registered) | play.runItTwice: must be 'off' in tournament mode
+## modifiers missing entirely
+modifiers: required
+## modifiers empty
+ok, changed modifiers.bounty-72 missing -> {"enabled":false,"amount":10,"suits":"any","autoShow":true}, modifiers.double-board missing -> {"enabled":false,"when":"bomb-pots"}, modifiers.rake missing -> {"enabled":false,"percent":5,"cap":0,"minPot":0,"noFlopNoDrop":true,"shortHanded":{"players":0,"percent":2.5,"cap":0},"visibleTo":"host"}, modifiers.bomb-pot missing -> {"enabled":false,"chancePercent":10,"everyHands":0,"bigBlinds":5,"gameId":"","betting":"pot-limit"}, modifiers.nit missing -> {"enabled":false,"prizeBigBlinds":10,"minPlayers":3}
+## only one modifier given
+ok, changed modifiers.bounty-72 missing -> {"enabled":false,"amount":10,"suits":"any","autoShow":true}, modifiers.double-board missing -> {"enabled":false,"when":"bomb-pots"}, modifiers.rake missing -> {"enabled":false,"percent":5,"cap":0,"minPot":0,"noFlopNoDrop":true,"shortHanded":{"players":0,"percent":2.5,"cap":0},"visibleTo":"host"}, modifiers.bomb-pot missing -> {"enabled":false,"chancePercent":10,"everyHands":0,"bigBlinds":5,"gameId":"","betting":"pot-limit"}
+## unregistered modifier
+modifiers.sparkles: unknown modifier (not registered)
+## modifier section missing its switch
+modifiers.double-board.enabled: required
+## rake with two bad percents and a bad cap
+modifiers.rake.percent: must have at most two decimals | modifiers.rake.cap: must be at least 0 | modifiers.rake.shortHanded.percent: must be at least 0
+## rake short-handed section not an object
+modifiers.rake.shortHanded: must be an object, not array
+## bomb pot game id with a dot
+modifiers.bomb-pot.gameId: must be a game id or empty
+## __proto__ key in a section
+stakes.__proto__: unknown field
+## __proto__ key at the root
+__proto__: unknown field
+## __proto__ modifier id
+ok, changed modifiers.__proto__ {"enabled":true} -> missing
+## constructor modifier id
+modifiers.constructor: unknown modifier (not registered)
+## settings with a null prototype
+ok
+## a class instance for settings
+version: must be 1 (use migrateSettings for older settings) | table: required | game: required | stakes: required | blindSchedule: required | timing: required | seating: required | play: required | chat: required | spectators: required | modifiers: required
+## a date for a number
+table.maxSeats: must be a number, not date
+## a bigint for a number
+table.maxSeats: must be a number, not bigint
+## a function for a boolean
+chat.guestChat: must be true or false, not function
+## a symbol for text
+table.name: must be text, not symbol
+## sparse blind levels
+blindSchedule.levels[0]: required
+## migrate: nothing stored
+ok, differs from cash defaults at nothing; dropped []
+## migrate: MVP flat config
+ok, differs from cash defaults at table.maxSeats = 9, stakes.smallBlind = 5, stakes.bigBlind = 10, timing.decisionSeconds = 20; dropped []
+## migrate: MVP flat config with a fractional short clock
+ok, differs from cash defaults at table.maxSeats = 6, timing.decisionSeconds = 5; dropped []
+## migrate: MVP flat config with bad values
+table.maxSeats: must be at most 10 | stakes.smallBlind: must be a number, not string | stakes.bigBlind: must be at least 0 | timing.decisionSeconds: must be a number, not string
+## migrate: MVP flat config with a huge clock
+ok, differs from cash defaults at timing.decisionSeconds = 600; dropped []
+## migrate: MVP flat config with an infinite clock
+timing.decisionSeconds: must be a whole number; must be 0 (no clock) or 5-600
+## migrate: MVP flat config with nested sections and unknown keys
+ok, differs from cash defaults at stakes.smallBlind = 2, stakes.bigBlind = 4; dropped ["theme"]
+## migrate: version 1 tournament, partial
+ok, differs from tournament defaults at table.name = "Final", timing.decisionSeconds = 45; dropped []
+## migrate: version 1 partial modifiers
+ok, differs from cash defaults at modifiers.rake.enabled = true, modifiers.rake.percent = 2.5; dropped ["modifiers.retired"]
+## migrate: version 1 modifier section not an object
+modifiers.rake: must be an object, not string
+## migrate: version 1 levels and steps missing fields
+ok, differs from cash defaults at game.rotation.enabled = true, game.rotation.steps[0] = {"gameId":"plo","betting":"pot-limit","length":2,"unit":"hands"}, blindSchedule.enabled = true, blindSchedule.levels[0] = {"smallBlind":1,"bigBlind":2,"ante":0,"minutes":15,"hands":20}, blindSchedule.levels[1] = {"smallBlind":2,"bigBlind":4,"ante":0,"minutes":15,"hands":20}; dropped ["blindSchedule.levels[1].colour"]
+## migrate: version 1 with a wrong section type
+seating: must be an object, not array
+## migrate: version 1 with several bad fields
+table.name: must not be blank | table.maxSeats: must be at least 2 | stakes.smallBlind: must not exceed the big blind (2)
+## migrate: newer version
+version: 2 is newer than this build supports (1)
+## migrate: fractional version
+version: must be a whole number
+## import preset: current
+ok, named "Friday", differs from cash defaults at nothing
+## import preset: MVP settings inside
+ok, named "Friday", differs from cash defaults at stakes.smallBlind = 10, stakes.bigBlind = 20, timing.decisionSeconds = 5
+## import preset: tournament settings, partial
+settings.play.runItTwice: must be 'off' in tournament mode
+## import preset: bad settings inside
+settings.table.maxSeats: must be at least 2 | settings.stakes.ante: must be a whole number
+## import preset: name padded
+ok, named "Friday night", differs from cash defaults at nothing
+## import preset: name missing
+name: required
+## import preset: name null
+name: must be text, not null
+## import preset: name 5
+name: must be text, not number
+## import preset: name ""
+name: must not be blank
+## import preset: name "   "
+name: must not be blank
+## import preset: name "tab\there"
+name: must not contain control characters
+## import preset: name 'x'×60
+ok, named 'x'×60, differs from cash defaults at nothing
+## import preset: name 'x'×61
+name: must be at most 60 characters
+## import preset: name '🃏'×30
+ok, named '🃏'×30, differs from cash defaults at nothing
+## import preset: name '🃏'×31
+name: must be at most 60 characters
+## import preset: name ["Friday"]
+name: must be text, not array
+## import preset: wrong format
+format: must be "rsdp-table-preset"
+## import preset: version 0
+version: must be a whole number
+## import preset: version 2
+version: 2 is newer than this build supports (1)
+## import preset: settings missing
+settings: required
+## import preset: settings not an object
+settings: settings must be a JSON object
+## import preset: not JSON
+(root): not valid JSON
+## import preset: JSON array
+(root): preset must be a JSON object
+## export preset: name with a tab
+name: must not contain control characters
+## export preset: good
+ok, 2527 characters
+## export preset: invalid settings
+table.maxSeats: must be at least 2
