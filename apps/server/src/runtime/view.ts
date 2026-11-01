@@ -169,9 +169,12 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow'>;
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow' | 'fair' | 'bombPotNext' | 'nit' | 'rakeTotal' | 'started' | 'stopAfterHand'>;
 
-/** The ledger, hand list and next-hand countdown run behind too, or they would give away how a hand ends. */
+/**
+ * The ledger, hand list, next-hand countdown and fair-dealing commits run behind too, or they would give away
+ * how (and when) a hand ends: a new commit shows up the moment the live hand finishes.
+ */
 export const delayedPart = (view: TableView): DelayedPart => ({
   seats: view.seats,
   hand: view.hand,
@@ -182,7 +185,19 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   upcoming: view.upcoming,
   paused: view.paused,
   serverNow: view.serverNow,
+  fair: view.fair,
+  // These change as the live hand ends or the next is dealt, so they would tell how it went too.
+  bombPotNext: view.bombPotNext,
+  nit: view.nit,
+  rakeTotal: view.rakeTotal,
+  started: view.started,
+  stopAfterHand: view.stopAfterHand,
 });
+
+/** What a spectator on a delay sees of the next hand's commit before anything is old enough to show. */
+const NO_FAIR: TableView['fair'] = { nextCommit: '', handCommit: null, openThrough: 0 };
+/** Spectators on a delay can't rabbit hunt: the button would show when the live hand ended (app.ts refuses it too). */
+const NO_RABBIT: TableView['rabbit'] = { available: false, cards: null };
 
 /**
  * A spectator's view with the table as it was `delayMs` ago: seats, cards,
@@ -196,17 +211,19 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
   if (!past) {
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [] };
+    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT };
   }
   // A paused snapshot's clocks stand still: they move on with the time shown, not by the delay.
   const move = past.paused ? live.serverNow - past.serverNow : delayMs;
   const later = (t: number | null) => (t === null ? null : t + move);
   const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + move, deadline: later(past.turn.deadline) };
   const hand = past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
-  // Whoever has sat down since still shows in their seat, without cards.
+  // Whoever has sat down since still shows in their seat, without cards. A seat emptied since still shows who sat
+  // there then: players who bust, are knocked out or leave go when the live hand ends, which would give it away.
   const seats = live.seats.map((x, i) => {
     const then = past.seats[i];
-    return then && x && then.playerId === x.playerId ? then : x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null };
+    if (!x) return then;
+    return then && then.playerId === x.playerId ? then : { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null };
   });
   return {
     ...live,
@@ -219,6 +236,13 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     nextHandAt: later(past.nextHandAt),
     upcoming: past.upcoming,
     paused: past.paused,
+    fair: past.fair,
+    bombPotNext: past.bombPotNext,
+    nit: past.nit,
+    rakeTotal: past.rakeTotal,
+    started: past.started,
+    stopAfterHand: past.stopAfterHand,
+    rabbit: NO_RABBIT,
   };
 }
 
