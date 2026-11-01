@@ -154,11 +154,12 @@ Reading this path once is the fastest way to see how the parts fit.
 
 1. You press **Raise** in
    [`ActionBar.tsx`](../apps/web/src/components/ActionBar.tsx). It sends the
-   socket message `hand:act` with `{ type: 'raise', to: 120 }` (raise to 120 chips in total this round).
+   socket message `hand:act` with `{ type: 'raise', to: 120 }` (raise to 120 chips in total this round),
+   plus the turn it was pressed on: the hand's number and how many events it had.
 2. In [`app.ts`](../apps/server/src/app.ts), `on('hand:act', …)` cleans up
    the input and calls `act` on your table's `TableRuntime`. If anything
-   throws (not your turn, too small a raise), the error goes back to your
-   browser only.
+   throws (that turn has already passed, not your turn, too small a raise),
+   the error goes back to your browser only.
 3. [`TableRuntime.act`](../apps/server/src/runtime/table.ts) finds your seat
    and calls the engine's `act` in
    [`core/hand.ts`](../packages/engine/src/core/hand.ts), which checks the
