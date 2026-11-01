@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { SETUP_NAME_MAX, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
+import { MAX_SAVED_STRUCTURE_LENGTH } from '@rsdp/tournament';
 import { call, currentSession, onSession, socket, type Session } from './socket';
 
 /**
@@ -60,6 +61,31 @@ function broughtOver(kind: SetupKind) {
   }
 }
 
+/**
+ * Most one message bringing setups over may weigh. The server drops the connection on a message over 1 MB
+ * (its Socket.IO limit), so a big pile goes over in several. The biggest setup the account takes is well under this.
+ */
+const IMPORT_BATCH_BYTES = 512 * 1024;
+
+/** The setups in turn, in groups that each fit in one message. */
+function importBatches(setups: SavedSetup[]): SavedSetup[][] {
+  const out: SavedSetup[][] = [];
+  let batch: SavedSetup[] = [];
+  let bytes = 0;
+  for (const setup of setups) {
+    const size = new TextEncoder().encode(JSON.stringify(setup)).length;
+    if (batch.length && bytes + size > IMPORT_BATCH_BYTES) {
+      out.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(setup);
+    bytes += size;
+  }
+  if (batch.length) out.push(batch);
+  return out;
+}
+
 export const cleanSetupName = (name: string) => name.replace(/\s+/g, ' ').trim();
 
 /**
@@ -118,10 +144,11 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
     try {
       // What this browser saved as a guest moves onto the account once, when it's the player's own device.
       // Only what the account took leaves the browser; anything refused stays and shows again after sign-out.
-      const mine = mayBring(kind) ? readLocal() : [];
-      if (mine.length) {
-        const { kept } = await call<{ kept: string[] }>('setups:import', { kind, setups: mine });
-        updateLocal((cur) => cur.filter((p) => !(kept.includes(p.name) && mine.some((m) => m.name === p.name && m.json === p.json))));
+      // One too big for the account to take isn't sent: it stays here.
+      const mine = mayBring(kind) ? readLocal().filter((p) => p.json.length <= MAX_SAVED_STRUCTURE_LENGTH) : [];
+      for (const batch of importBatches(mine)) {
+        const { kept } = await call<{ kept: string[] }>('setups:import', { kind, setups: batch });
+        updateLocal((cur) => cur.filter((p) => !(kept.includes(p.name) && batch.some((m) => m.name === p.name && m.json === p.json))));
       }
       if (mayBring(kind)) broughtOver(kind);
       const pushedBefore = pushes;
