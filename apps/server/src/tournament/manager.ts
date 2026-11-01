@@ -22,6 +22,7 @@ import {
   nextWakeAt,
   tableAddress,
   tableGate,
+  tableRulesOf,
   tick,
   viewFor,
   type Command,
@@ -126,10 +127,6 @@ const nextTournamentId = (id: string) => createHash('sha256').update(`${id}:next
 
 /** Seconds between tournament hands; keeps director updates ahead of the next deal. */
 const TOURNAMENT_NEXT_HAND_SECONDS = 2;
-
-/** The event's clock and time bank for its tables, or nothing to keep the table defaults. */
-const tableTiming = (rules: TournamentSettings['tableRules']) =>
-  rules ? { decisionSeconds: rules.decisionSeconds, timeBankSeconds: rules.timeBankSeconds, timeBankRefillHands: rules.timeBankRefillHands } : {};
 
 /**
  * Runs tournament directors on the server: applies commands, wakes the
@@ -721,11 +718,18 @@ export class TournamentManager {
     const s = live.state;
     const number = s.tables.findIndex((t) => t.id === tableId) + 1;
     const base = defaultSettings('tournament');
+    // An event saved before events had their own rules plays by the rules tournament tables had then.
+    const rules = tableRulesOf(s.settings);
     const settings = parseSettings(
       applyAtNextHand(base, {
         table: { name: tableName(s.settings.name, number), maxSeats: s.settings.seatsPerTable },
-        timing: { nextHandDelaySeconds: Math.max(base.timing.nextHandDelaySeconds, TOURNAMENT_NEXT_HAND_SECONDS), ...tableTiming(s.settings.tableRules) },
-        ...(s.settings.tableRules ? { play: { rabbitHunt: s.settings.tableRules.rabbitHunt } } : {}),
+        timing: {
+          nextHandDelaySeconds: Math.max(base.timing.nextHandDelaySeconds, TOURNAMENT_NEXT_HAND_SECONDS),
+          decisionSeconds: rules.decisionSeconds,
+          timeBankSeconds: rules.timeBankSeconds,
+          timeBankRefillHands: rules.timeBankRefillHands,
+        },
+        play: { rabbitHunt: rules.rabbitHunt },
       }).settings,
     );
     const rt = TableRuntime.create({ id: tableAddress(tableId), hostId: s.hostId, settings }, this.runtimeDeps(live, tableId));

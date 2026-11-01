@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026.11.01.2",
+      "date": "2026-11-01",
+      "title": "Tournament clock rules on show",
+      "items": [
+        { "title": "See the clock before you sit down", "detail": "A tournament's page now shows its table rules: the heading says how long you get to act, and the Structure tab spells out the time bank, rabbit hunting and straddles (always off in tournaments). A host can also change these rules from the Host tab until the first table opens, so a repeating tournament set up before the RSDP rules arrived can switch to them with one button. Later events in that series keep the new rules.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026-10-31-d",
       "date": "2026-10-31",
       "title": "Review your hands, but no HUDs at the table",

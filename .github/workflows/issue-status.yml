@@ -1,0 +1,33 @@
+name: Issue status
+
+# When a pull request is merged into develop (or straight into main), every
+# issue it closes ("Closes #12") gets the "status: on develop" label and a
+# note of the merge commit: GitHub itself only closes issues for merges into
+# main, and then before the deploy. The Release workflow closes them, or notes
+# that they went live, once they are on the live site. See CONTRIBUTING.md.
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  on-develop:
+    name: Note the merge on the issues it closes
+    if: github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The scripts as merged on develop, not the pull request's own copy.
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node scripts/release/on-merge.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -1,7 +1,20 @@
 {
   "releases": [
     {
-      "id": "2026-11-01",
+      "id": "2026.11.01.2",
+      "date": "2026-11-01",
+      "fixes": [
+        "Tournaments: a host can change the clock, time bank and rabbit hunting from the lobby's Host tab until the first table opens. Before, an event made before the RSDP table rules (31 Oct) was stuck on a 30-second clock with rabbit hunting, and so was every later event in its series.",
+        "Tournaments: copying an event made before 31 Oct, or loading a setup saved before then, now fills in the RSDP table rules instead of the old 30-second clock with rabbit hunting.",
+        "Tournaments: the lobby shows the table rules to everyone.",
+        "Everywhere: if your connection drops just after you press a button (a phone losing signal, or the server restarting for an update), the button no longer stays busy until you reload. You get a message to check whether it went through and try again. A button pressed while you're already offline still waits until the connection is back.",
+        "The Changelog page shows each release's version number. It matches the release of the same name on GitHub, whose notes also list the bug reports and requests that release closed.",
+        "Every release is now checked on the live site automatically after it goes out, and the code's outside building blocks are pinned and kept up to date."
+      ]
+    },
+    {
+      "id": "2026.11.01",
+      "commit": "3f42934e831c23bcd9d3ce22c701ee9cb9125dbd",
       "date": "2026-11-01",
       "fixes": [
         "Tournaments: a busted player who lets a rebuy offer run out (or declines it) now places by when they busted. Before, anyone who busted while they were deciding placed below them, and players busted in the same hand were no longer ordered by their starting stacks.",

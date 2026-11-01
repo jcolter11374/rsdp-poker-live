@@ -5,3 +5,10 @@ dist
 .claude/
 .data/
 e2e/out/
+# Never commit secrets or backups: local settings, the backup private key, or a
+# downloaded or unlocked backup (see docs/DEPLOY.md, "Backups").
+.env
+.env.*
+rsdp-backup-key*
+*.age
+*.jsonl.gz

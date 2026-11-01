@@ -5,6 +5,7 @@ import {
   nextOccurrence,
   applyStarter,
   payoutPreset,
+  RSDP_TABLE_RULES,
   upcomingOccurrences,
   validateSchedule,
   validateSettings,
@@ -25,12 +26,11 @@ import { FormatsEditor, NO_FORMATS, type Formats } from './FormatsEditor';
 import { PayoutEditor } from './PayoutEditor';
 import { StructureEditor } from './StructureEditor';
 import { SavedStructures } from './SavedStructures';
+import { TableRulesFields } from './TableRules';
 import { SiteHeader } from '../components/SiteHeader';
 
-/** A new tournament starts on the group's own RSDP structure. */
+/** A new tournament starts on the group's own RSDP structure and table rules. */
 const RSDP_DEFAULTS = applyStarter(defaultSettings(), 'rsdp');
-/** What tournament tables did before events had their own table rules. */
-const SITE_TABLE_RULES: TableRules = { decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, rabbitHunt: true };
 
 type StartKind = 'scheduled' | 'sng' | 'manual';
 type Repeat = 'none' | 'daily' | 'weekly' | 'monthly-day' | 'monthly-nth';
@@ -162,7 +162,8 @@ export function TournamentCreate({
   const [reEntry, setReEntry] = useState(base.reEntry);
   const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
-  const [tableRules, setTableRules] = useState<TableRules>(() => ({ ...(base.tableRules ?? SITE_TABLE_RULES) }));
+  // A copy of an event made before events had their own table rules never picked any, so it gets the RSDP ones.
+  const [tableRules, setTableRules] = useState<TableRules>(() => ({ ...(base.tableRules ?? RSDP_TABLE_RULES) }));
   const [payoutsOn, setPayoutsOn] = useState(initial ? !!initial.payouts : true);
   const [money, setMoney] = useState({ buyIn: 2000, rebuy: 2000, addOn: 2000, feePercent: 0, added: 0, ...initial?.payouts?.money });
   const [payouts, setPayouts] = useState(() => initial?.payouts?.structure ?? payoutPreset('rsdp', 600));
@@ -448,23 +449,7 @@ export function TournamentCreate({
 
           <section className="tn-card">
             <h2>At the tables</h2>
-            <div className="tn-grid3">
-              <label>
-                Decision clock (s)
-                <input type="number" min={0} max={600} value={tableRules.decisionSeconds} onChange={(e) => setTableRules({ ...tableRules, decisionSeconds: int(e.target.value) })} />
-              </label>
-              <label>
-                Time bank (s)
-                <input type="number" min={0} max={300} value={tableRules.timeBankSeconds} onChange={(e) => setTableRules({ ...tableRules, timeBankSeconds: int(e.target.value) })} />
-              </label>
-              <label>
-                Refill bank every (hands)
-                <input type="number" min={0} max={200} value={tableRules.timeBankRefillHands} onChange={(e) => setTableRules({ ...tableRules, timeBankRefillHands: int(e.target.value) })} />
-              </label>
-            </div>
-            <label className="tn-check">
-              <input type="checkbox" checked={tableRules.rabbitHunt} onChange={(e) => setTableRules({ ...tableRules, rabbitHunt: e.target.checked })} />Allow rabbit hunting
-            </label>
+            <TableRulesFields rules={tableRules} onChange={setTableRules} />
           </section>
 
           <section className="tn-card">

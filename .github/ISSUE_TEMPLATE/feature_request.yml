@@ -1,0 +1,15 @@
+name: Feature request
+description: An idea for something new, or a change to how something works.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      description: What it would let you or the group do. "PokerNow does it like this" is a fine answer too.
