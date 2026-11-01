@@ -1,0 +1,46 @@
+name: Release
+
+# After each deploy to the live site: tags the release with its version from
+# changelog.json (v2026.11.01), publishes a GitHub release with its notes,
+# and closes the issues it put live. It never moves or deletes a tag.
+# Can also be run by hand from main (Actions > Release > Run workflow) to
+# finish a release whose run failed. See CONTRIBUTING.md.
+on:
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  # Tags and releases.
+  contents: write
+  # Comment on and close the issues a release put live.
+  issues: write
+  # Read the Deploy run's jobs, to tell a real deploy from a skipped one.
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag, publish notes, close shipped issues
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          # Reads changelog.json at the deployed commit.
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node scripts/release/release.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

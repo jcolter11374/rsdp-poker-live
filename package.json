@@ -1,6 +1,7 @@
 {
   "name": "rsdp-poker-live",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "workspaces": [
     "packages/*",
@@ -12,7 +13,8 @@
     "start": "npm run start -w @rsdp/server",
     "test": "npm test -w @rsdp/engine && npm test -w @rsdp/tournament && npm test -w @rsdp/server && npm test -w @rsdp/web",
     "typecheck": "tsc -p packages/engine && tsc -p packages/tournament && tsc -p apps/server && tsc -p apps/web",
-    "smoke": "node e2e/smoke.mjs"
+    "smoke": "node e2e/smoke.mjs",
+    "changelog": "node scripts/changelog.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

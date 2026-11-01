@@ -303,7 +303,7 @@ export class AuditLog {
 const KINDS: AuditKind[] = ['boot', 'hand', 'chips', 'admin', 'deleted'];
 const PAGE = 1_000;
 
-/** Read-only routes anyone may use; GitHub copies them every hour. */
+/** Read-only routes anyone may use; GitHub's Transparency watcher copies them every few hours. */
 export function auditRoutes(app: express.Express, audit: AuditLog, build: BuildInfo, startedAt: number, log: (message: string, err?: unknown) => void) {
   const fail = (res: express.Response) => (e: unknown) => {
     log('public record read failed', e);

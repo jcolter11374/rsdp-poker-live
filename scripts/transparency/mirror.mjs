@@ -25,7 +25,7 @@ const folder = path.join(dir, 'audit');
 function fail(problem) {
   const now = new Date().toISOString();
   const aside = `audit-replaced-${now.replace(/[:.]/g, '-')}`;
-  const text = `# The public record changed\n\nFound ${now} by the hourly copy.\n\n${problem}\n\nThe copy as it was is kept in ${aside}/. Compare it with ${site}/api/audit/entries. From the next run, the copy starts again from the record as the site has it now.\n`;
+  const text = `# The public record changed\n\nFound ${now} by the watcher's copy.\n\n${problem}\n\nThe copy as it was is kept in ${aside}/. Compare it with ${site}/api/audit/entries. From the next run, the copy starts again from the record as the site has it now.\n`;
   writeFileSync(path.join(dir, 'PROBLEM.md'), text);
   renameSync(folder, path.join(dir, aside));
   console.error(problem);

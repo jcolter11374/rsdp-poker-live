@@ -1,0 +1,26 @@
+[
+  { "name": "bug", "color": "d73a4a", "description": "Something on the site is broken or wrong" },
+  { "name": "enhancement", "color": "a2eeef", "description": "New feature or request" },
+  { "name": "documentation", "color": "0075ca", "description": "Docs, and the pages that explain things" },
+  { "name": "question", "color": "d876e3", "description": "Further information is requested" },
+  { "name": "duplicate", "color": "cfd3d7", "description": "This issue or pull request already exists" },
+  { "name": "wontfix", "color": "ffffff", "description": "This will not be worked on" },
+  { "name": "dependencies", "color": "0366d6", "description": "Updates a package or tool we depend on" },
+  { "name": "security", "color": "b60205", "description": "A security problem, or hardening against one" },
+  { "name": "chore", "color": "c2e0c6", "description": "Upkeep players won't see: cleanup, tests, tooling, hosting tasks" },
+
+  { "name": "status: in progress", "color": "fbca04", "description": "Someone is working on it right now" },
+  { "name": "status: on develop", "color": "0e8a16", "description": "Done on develop, not on the live site yet; closes by itself when released" },
+  { "name": "status: waiting on John", "color": "d93f0b", "description": "Needs John: a decision, a setting, or something only he can do" },
+  { "name": "status: waiting on others", "color": "c5def5", "description": "Waiting on someone outside the project" },
+  { "name": "priority: high", "color": "b60205", "description": "Breaks games or stops people playing; do this first" },
+  { "name": "no issue needed", "color": "ededed", "description": "A tiny pull request with no issue of its own (skips the linked-issue check)" },
+
+  { "name": "area: cash", "color": "bfdadc", "description": "Cash games" },
+  { "name": "area: tournaments", "color": "bfdadc", "description": "Tournaments and Sit & Gos" },
+  { "name": "area: table", "color": "bfdadc", "description": "The table screen: cards, seats, buttons, sounds" },
+  { "name": "area: accounts", "color": "bfdadc", "description": "Sign-in, profiles, records, leaderboard, the group roster" },
+  { "name": "area: fairness", "color": "bfdadc", "description": "Fair dealing, the public record, checking John" },
+  { "name": "area: site", "color": "bfdadc", "description": "Pages around the game: home, roadmap, What's new, About" },
+  { "name": "area: ops", "color": "bfdadc", "description": "Hosting, deploys, backups, CI and GitHub jobs" }
+]

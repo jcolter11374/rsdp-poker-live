@@ -1,14 +1,24 @@
 name: Transparency watcher
 
-# Every hour, from outside the server: copies the site's public record to the
+# From outside the server: copies the site's public record to the
 # `transparency` branch (so later edits to it show), and checks that the live
 # machine runs an image GitHub built and signed from main, with no settings or
 # secrets that could change what it runs. Anything wrong opens an issue, which
 # notifies everyone watching the repo. Read-only on the site and on Fly.
 # See docs/FAIRNESS.md ("Checking John").
+#
+# Scheduled every hour, but GitHub starts scheduled jobs late, by hours: it has
+# run every 3 to 8 hours, never at the minute set. So it also runs right after
+# every successful Deploy, which checks each image GitHub releases even when the
+# next release replaces it before the schedule comes round. A release made any
+# other way (flyctl from a laptop) is only seen on the next scheduled run.
 on:
   schedule:
     - cron: '17 * * * *'
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,10 +28,6 @@ permissions:
   # To see whether a deploy is running.
   actions: read
 
-concurrency:
-  group: transparency
-  cancel-in-progress: false
-
 env:
   SITE: https://rsdp-poker-live.fly.dev
   FLY_APP: rsdp-poker-live
@@ -29,8 +35,14 @@ env:
 jobs:
   watch:
     name: Copy the record and check the deploy
-    # Only main's own scripts may write the copy.
-    if: github.ref == 'refs/heads/main'
+    # Only main's own scripts may write the copy (a workflow_run always runs main's copy of this file),
+    # and only after a deploy that went through.
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    # On the job, not the workflow: a run whose job is skipped (after a skipped Deploy) then never
+    # takes the one pending place from a real check waiting behind one in progress.
+    concurrency:
+      group: transparency
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -48,11 +60,12 @@ jobs:
             git -C copy switch -c transparency
           elif [ $found -eq 2 ]; then
             git worktree add --orphan -b transparency copy
-            printf '# Transparency\n\nWritten every hour by the Transparency watcher workflow on main. See docs/FAIRNESS.md.\n\n- audit/: a copy of the public record from %s/api/audit/entries\n- deploys/: what the live machine ran, whether GitHub built and signed it, its settings and secrets (as fingerprints), and every start\n' "$SITE" > copy/README.md
           else
             echo "Couldn't reach the transparency branch"; exit 1
           fi
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+          # Written on every run, so a change to this text reaches the existing branch too.
+          printf '# Transparency\n\nWritten by the Transparency watcher workflow on main: right after every successful deploy, and on a schedule set to every hour that GitHub starts hours late (every few hours in practice). See docs/FAIRNESS.md.\n\n- audit/: a copy of the public record from %s/api/audit/entries\n- deploys/: what the live machine ran, whether GitHub built and signed it, its settings and secrets (as fingerprints), and every start\n' "$SITE" > copy/README.md
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       # Each check exits 1 for a real problem and 2 when it couldn't reach the
       # site, Fly or GitHub; only a real problem opens an issue.
       - name: Copy the public record
@@ -70,7 +83,7 @@ jobs:
           WATCH_KEY: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set +e
-          # Mid-deploy, Fly and the site can disagree for a moment: check next hour instead.
+          # Mid-deploy, Fly and the site can disagree for a moment: check on the next run instead.
           deploying=$(gh run list --workflow deploy.yml --json status --jq '[.[] | select(.status != "completed")] | length')
           if [ "$deploying" != "0" ]; then
             echo "A deploy is running (or gh couldn't say: '$deploying')"; echo "code=2" >> "$GITHUB_OUTPUT"; exit 0
@@ -105,4 +118,4 @@ jobs:
           exit 1
       - name: Note a check that couldn't run
         if: (steps.record.outputs.code != '0' && steps.record.outputs.code != '1') || (steps.deploy.outputs.code != '0' && steps.deploy.outputs.code != '1')
-        run: echo "::warning::A check couldn't reach the site, Fly or GitHub this hour (record ${{ steps.record.outputs.code }}, deploy ${{ steps.deploy.outputs.code }}). The next run tries again."
+        run: echo "::warning::A check couldn't reach the site, Fly or GitHub this time (record ${{ steps.record.outputs.code }}, deploy ${{ steps.deploy.outputs.code }}). The next run tries again."

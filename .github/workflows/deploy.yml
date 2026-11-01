@@ -3,7 +3,8 @@ name: Deploy
 # Deploys main to Fly.io after CI passes on it. Can also be run by hand.
 # GitHub builds the image here from the public code, signs a record of which
 # commit it came from (build provenance), and Fly runs that exact image. The
-# hourly Transparency watcher checks the live machine against these records.
+# Transparency watcher checks the live machine against these records, right
+# after each successful deploy and on its schedule.
 on:
   workflow_run:
     workflows: [CI]
@@ -43,7 +44,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       # First deploy only: create the app and its data volume if they are missing.
       - run: scripts/fly-provision.sh
       # The roadmap admin key: copied from the ADMIN_KEY repository secret when one is set; the deploy below applies it.
@@ -79,10 +80,10 @@ jobs:
           fi
       - name: Sign in to Fly's image registry
         run: flyctl auth docker
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build the image
         id: image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
@@ -90,7 +91,7 @@ jobs:
           build-args: BUILD_COMMIT=${{ github.event.workflow_run.head_sha || github.sha }}
           provenance: false
       - name: Sign the build record
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: registry.fly.io/${{ env.FLY_APP }}
           subject-digest: ${{ steps.image.outputs.digest }}
@@ -104,3 +105,35 @@ jobs:
           done
           flyctl logs --app "$FLY_APP" --no-tail | tail -100
           exit 1
+      # Every release gets the read-only checks that used to be run by hand (live-check.yml).
+      # Read only: nothing here creates tables, tournaments or players on the live site.
+      - name: Read-only checks on the live site
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          site="https://$FLY_APP.fly.dev"
+          # Each request retries a few times, so one proxy blip right after the restart doesn't turn the deploy red.
+          get() { curl -sf --retry 3 --retry-delay 5 --retry-all-errors --max-time 15 "$@"; }
+          # The server answering is the one just deployed (BUILD_COMMIT, reported by /api/version).
+          for i in $(seq 1 12); do
+            live=$(curl -sf --max-time 10 "$site/api/version" | jq -r '.commit // empty') || live=
+            [ "$live" = "$SHA" ] && break
+            sleep 5
+          done
+          echo "Live commit: ${live:-none}; deployed: $SHA"
+          [ "$live" = "$SHA" ] || { echo "::error::The live site doesn't report the commit just deployed."; exit 1; }
+          # The website's pages load.
+          for path in / /rules/badugi /tn/new; do
+            get "$site$path" | grep -q '<div id="root">' || { echo "::error::$path did not serve the app"; exit 1; }
+          done
+          # Unknown avatars and share links answer 404, and the operator-only endpoint stays closed
+          # to the internet (it answers only a shell on the server).
+          for path in api/avatars/nobody api/shared/nothing api/admin/tournaments; do
+            code=$(curl -s --retry 3 --retry-delay 5 --max-time 15 -o /dev/null -w '%{http_code}' "$site/$path") || true
+            echo "$path $code"
+            [ "$code" = 404 ] || { echo "::error::$path answered ${code:-nothing}, expected 404"; exit 1; }
+          done
+          # The sign-in setup answers (whether Google sign-in is on is printed, not checked).
+          cfg=$(get "$site/api/auth/config") && jq -e 'has("google")' <<<"$cfg" > /dev/null \
+            || { echo "::error::/api/auth/config didn't answer"; exit 1; }
+          echo "Google sign-in on: $(jq -r '.google' <<<"$cfg")"
