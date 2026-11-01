@@ -3,7 +3,16 @@ import type { SettingsChange, SettingsPatch, TableSettings } from '@rsdp/engine/
 import type { CoHost } from '@rsdp/engine/roles';
 import type { BotLevel, BotNote } from '@rsdp/engine/wire';
 
-/** Snapshot layout version for RuntimeState. Bump it when the shape changes. */
+/**
+ * Snapshot layout version for RuntimeState. Don't bump it to mark a new field: a saved table whose snapshot has
+ * another version is not loaded at all (loadTable in storage.ts returns null). After a bump, every saved cash table
+ * would be "not found", its players unable to get back to it or cash out, and every running tournament table would
+ * start again from the director's seats, losing its hand in play, its old snapshot overwritten at the next save.
+ *
+ * Keep old snapshots readable instead: add fields as optional ("missing in older snapshots") and fill them in when a
+ * table loads or resumes (as getTable in app.ts does for realGame, and giveBotsLooks in table.ts for bot looks). Only
+ * a change old snapshots can't be read under at all needs a bump, and then loadTable must convert the old version first.
+ */
 export const RUNTIME_VERSION = 1;
 
 /** Time and timers, injected so tests can run a table on a fake clock. */
