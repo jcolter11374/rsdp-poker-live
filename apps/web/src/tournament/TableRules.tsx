@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RSDP_TABLE_RULES, tableRulesOf, validateTableRules, type Command, type TableRules, type TournamentState } from '@rsdp/tournament';
+import { nextOccurrence, RSDP_TABLE_RULES, tableRulesOf, validateTableRules, type Command, type TableRules, type TournamentState } from '@rsdp/tournament';
 import { tableRulesText } from './format';
 
 const int = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
@@ -7,25 +7,25 @@ const same = (a: TableRules, b: TableRules) =>
   a.decisionSeconds === b.decisionSeconds && a.timeBankSeconds === b.timeBankSeconds && a.timeBankRefillHands === b.timeBankRefillHands && a.rabbitHunt === b.rabbitHunt;
 
 /** The clock, time bank and rabbit hunting inputs, on the new tournament form and in the lobby's Host tab. */
-export function TableRulesFields({ rules, onChange }: { rules: TableRules; onChange: (r: TableRules) => void }) {
+export function TableRulesFields({ rules, onChange, disabled = false }: { rules: TableRules; onChange: (r: TableRules) => void; disabled?: boolean }) {
   return (
     <>
       <div className="tn-grid3">
         <label>
           Decision clock (s)
-          <input type="number" min={0} max={600} value={rules.decisionSeconds} onChange={(e) => onChange({ ...rules, decisionSeconds: int(e.target.value) })} />
+          <input type="number" min={0} max={600} disabled={disabled} value={rules.decisionSeconds} onChange={(e) => onChange({ ...rules, decisionSeconds: int(e.target.value) })} />
         </label>
         <label>
           Time bank (s)
-          <input type="number" min={0} max={300} value={rules.timeBankSeconds} onChange={(e) => onChange({ ...rules, timeBankSeconds: int(e.target.value) })} />
+          <input type="number" min={0} max={300} disabled={disabled} value={rules.timeBankSeconds} onChange={(e) => onChange({ ...rules, timeBankSeconds: int(e.target.value) })} />
         </label>
         <label>
           Refill bank every (hands)
-          <input type="number" min={0} max={200} value={rules.timeBankRefillHands} onChange={(e) => onChange({ ...rules, timeBankRefillHands: int(e.target.value) })} />
+          <input type="number" min={0} max={200} disabled={disabled} value={rules.timeBankRefillHands} onChange={(e) => onChange({ ...rules, timeBankRefillHands: int(e.target.value) })} />
         </label>
       </div>
       <label className="tn-check">
-        <input type="checkbox" checked={rules.rabbitHunt} onChange={(e) => onChange({ ...rules, rabbitHunt: e.target.checked })} />
+        <input type="checkbox" disabled={disabled} checked={rules.rabbitHunt} onChange={(e) => onChange({ ...rules, rabbitHunt: e.target.checked })} />
         Allow rabbit hunting
       </label>
       <p className="muted">Straddles are always off in tournaments.</p>
@@ -65,13 +65,14 @@ export function TableRulesEditor({ state, by, send }: { state: TournamentState; 
     }
   };
   const { start } = state.settings;
-  const carried =
-    start.kind === 'sng' && start.autoSpawn ? ' The next Sit & Go gets them too.' : start.kind === 'scheduled' && start.schedule?.repeat ? ' Later events in this series get them too.' : '';
+  const carried = start.kind === 'sng' && start.autoSpawn ? ' The next Sit & Go gets them too.' : moreToCome(state) ? ' Later events in this series get them too.' : '';
   return (
     <>
       <p className="muted">Change these until the first table opens.{carried}</p>
+      {/* Locked while a save is on its way, so an edit made meanwhile can't be lost when it lands. */}
       <TableRulesFields
         rules={draft}
+        disabled={busy}
         onChange={(r) => {
           setDraft(r);
           setDirty(true);
@@ -103,4 +104,15 @@ export function TableRulesEditor({ state, by, send }: { state: TournamentState; 
       </div>
     </>
   );
+}
+
+/** A repeating event with another date still to come (the last one of a series with an end date has none). */
+function moreToCome(state: TournamentState) {
+  const { start } = state.settings;
+  if (start.kind !== 'scheduled' || !start.schedule?.repeat) return false;
+  try {
+    return nextOccurrence(start.schedule, start.startAt) !== null;
+  } catch {
+    return false;
+  }
 }
