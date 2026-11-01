@@ -4,7 +4,7 @@
       "id": "2026-11-01-c",
       "date": "2026-11-01",
       "fixes": [
-        "Everywhere: if your connection drops just after you press a button (a phone losing signal, or the server restarting for an update), the button no longer stays busy until you reload. You get a message to check whether it went through and try again. A command still waiting to be sent gives up after 30 seconds instead of going through later. A table or tournament page that loses its connection while opening comes back by itself instead of showing an error."
+        "Everywhere: if your connection drops just after you press a button (a phone losing signal, or the server restarting for an update), the button no longer stays busy until you reload. You get a message to check whether it went through and try again. A button pressed while you're already offline still waits until the connection is back."
       ]
     },
     {

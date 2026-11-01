@@ -63,16 +63,16 @@ describe('call', () => {
     expect(Date.now() - started).toBeLessThan(250);
   });
 
-  it('drops a command still waiting to be sent when it gives up, so it never goes through later', async () => {
+  it('a command made while offline waits for the connection, then goes out once', async () => {
     const { client, call, heard } = await pair((s) => s.on('late', (ack: Ack) => ack({ ok: true })));
     client.io.reconnection(false);
     client.disconnect();
-    // Sent while offline: socket.io holds it until the connection is back.
+    // Longer offline than the time limit: the limit only starts once the command goes out.
     const pending = call('late');
-    await expect(pending).rejects.toThrow(NO_ANSWER);
-    client.connect();
-    await new Promise<void>((r) => client.once('connect', () => r()));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 500));
     expect(heard).not.toContain('late');
+    client.connect();
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(heard.filter((e) => e === 'late')).toHaveLength(1);
   });
 });
