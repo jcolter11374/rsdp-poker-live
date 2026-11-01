@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.01.3] - 2026-11-01
+
+### Fixed and changed
+
+- Checking John and Fair dealing: the pages now say plainly that GitHub's checks run right after each release GitHub deploys and otherwise every few hours, not every hour as they claimed (GitHub starts its scheduled jobs hours late). Checking John no longer wrongly says the checks have stopped whenever the last one is over three hours old. The privacy page now says the backup runs once a day, not every night.
+
 ## [2026.11.01.2] - 2026-11-01
 
 _Tournament clock rules on show_
@@ -34,7 +40,6 @@ _Tournament clock rules on show_
 - Everywhere: if your connection drops just after you press a button (a phone losing signal, or the server restarting for an update), the button no longer stays busy until you reload. You get a message to check whether it went through and try again. A button pressed while you're already offline still waits until the connection is back.
 - The Changelog page shows each release's version number. It matches the release of the same name on GitHub, whose notes also list the bug reports and requests that release closed.
 - Every release is now checked on the live site automatically after it goes out, and the code's outside building blocks are pinned and kept up to date.
-- Checking John and Fair dealing: the pages now say plainly that GitHub's checks run right after each release GitHub deploys and otherwise every few hours, not every hour as they claimed (GitHub starts its scheduled jobs hours late). Checking John no longer wrongly says the checks have stopped whenever the last one is over three hours old. The privacy page now says the backup runs once a day, not every night.
 
 ## [2026.11.01] - 2026-11-01
 
@@ -469,5 +474,6 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.01.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.3
 [2026.11.01.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.2
 [2026.11.01]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01
