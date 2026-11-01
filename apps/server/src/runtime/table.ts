@@ -632,10 +632,16 @@ export class TableRuntime {
     this.forgetBot(seat.playerId);
   }
 
+  /** Has chips to sit back in with: some in front of them, or some on the way after this hand. The view shows the seat bar's I'm back by this. */
+  canSitIn(playerId: PlayerId): boolean {
+    const seat = this.seatOf(playerId);
+    return !!seat && (seat.stack + seat.pendingChips > 0 || seat.pendingStack !== null);
+  }
+
   sitOut(playerId: PlayerId, value: boolean) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
-    if (!value && seat.stack + seat.pendingChips <= 0 && seat.pendingStack === null) throw new ActionError('rebuy before sitting back in');
+    if (!value && !this.canSitIn(playerId)) throw new ActionError('rebuy before sitting back in');
     seat.sittingOut = value;
     seat.sitOutReason = value ? 'player' : null;
     if (!value) seat.timeouts = 0;
