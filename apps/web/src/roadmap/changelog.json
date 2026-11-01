@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.01.4",
+      "date": "2026-11-01",
+      "fixes": [
+        "The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so."
+      ]
+    },
+    {
       "id": "2026.11.01.3",
       "date": "2026-11-01",
       "fixes": [

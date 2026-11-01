@@ -1,6 +1,8 @@
 # Deploying RSDP Poker Live!
 
-The whole site is one container: the game server plus the built web app, built from the `Dockerfile` at the repo root. CI builds that same image and runs the browser smoke test against it on every pull request.
+The whole site is one container: the game server plus the built web app, built from the `Dockerfile` at the repo root. On every pull request, CI builds an image from that Dockerfile and runs the browser smoke test against it. The deploy builds its own image from the same commit (see [Fly.io](#flyio-production)).
+
+What to do when something goes wrong is in [RUNBOOK.md](RUNBOOK.md).
 
 ## What the host must provide
 
@@ -15,12 +17,39 @@ The whole site is one container: the game server plus the built web app, built f
 
 ## Settings
 
-| Variable | Default in the image | Meaning |
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| `PORT` | `8080` | Port the server listens on. |
+| `PORT` | `8080` in the image, `3001` when run locally | Port the server listens on. |
 | `DATABASE_URL` | unset | Postgres connection string. When set, PGlite is not used. |
-| `PGLITE_DIR` | `/data/pglite` | Where the embedded database lives when `DATABASE_URL` is unset. |
-| `NODE_ENV` | `production` | Turns off development CORS. |
+| `PGLITE_DIR` | `/data/pglite` in the image | Where the embedded database lives when `DATABASE_URL` is unset. |
+| `NODE_ENV` | `production` in the image | Turns off development CORS. |
+| `PUBLIC_URL` | unset; `fly.toml` sets the live address | The site's public address. Link previews use it, and Google sends people back to `PUBLIC_URL` + `/auth/google/callback`. Unset, the request's own address is used. |
+| `ADMIN_KEY` | unset (a secret) | Turns on the roadmap admin page and the backup download (`/api/admin/backup`). At least 12 characters, or the server ignores it. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset (secrets) | Sign in with Google is on only when both are set. |
+| `BUILD_COMMIT` | set when the image is built | The commit the image came from. `deploy.yml` passes it as a build argument, and `/api/version` reports it. |
+| `FLY_IMAGE_REF`, `FLY_MACHINE_ID` | set by Fly | Reported by `/api/version`. `FLY_IMAGE_REF` also goes in the public record each time the server starts, with the commit. |
+
+On the live site, the plain settings live in `fly.toml` under `[env]`. The three secrets are copied to Fly by `deploy.yml` from GitHub's repository secrets, on every deploy.
+
+### GitHub secrets
+
+| Secret | Used by | What it is |
+| --- | --- | --- |
+| `FLY_API_TOKEN` | `deploy.yml`, `fly-setup.yml`, `transparency.yml` | A Fly API token for the app (see [Fly.io](#flyio-production)). The watcher also uses it as its fingerprint key (`WATCH_KEY`), so a new token changes every published secret fingerprint once. The public record then says the app's secrets changed, which is expected. |
+| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `deploy.yml` (copies them to Fly) | The Google sign-in client, from the Google Cloud console. |
+
+Only workflows on `main` should use these. GitHub never shows a secret's value again, so replacing one means making a new value at its source. The steps are in [RUNBOOK.md](RUNBOOK.md#a-key-may-have-leaked).
+
+### Adding a setting or secret
+
+The transparency watcher publishes the names of the live app's secrets and a fingerprint of its settings. It opens a **public** issue for any secret not in `SECRETS`, and for any setting that `fly.toml` on main doesn't have or sets differently. So, in this order:
+
+1. In the same pull request that starts reading it, add a new **secret** to `SECRETS` in `scripts/transparency/deploys.mjs`, or put a new **plain setting** in `fly.toml` under `[env]`. Add it to the tables above.
+2. For a secret, add the step that copies it to Fly in `deploy.yml`. Set it with `flyctl secrets set`, as the admin key step does, not with `secrets import`, which cuts a value off at the first `#`. (The Google step still uses `secrets import`. That's safe only because Google's values never contain a `#`.)
+3. Merge and release. Only then add the GitHub secret (John), and run Deploy once.
+
+Never set a secret on Fly by hand. The watcher can't tell who set it.
 
 The schema migrates itself at startup. Concurrent starts are serialised with an advisory lock.
 
@@ -41,7 +70,7 @@ The live site is backed up once a day, off Fly, by GitHub Actions (`.github/work
 
 1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header; one at a time, and a server shutting down stops it first). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action the moment it starts (so one stopped part-way shows too), because a copy holds any hand being played at that moment.
 2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
-3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next night's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
+3. It locks the copy with [age](https://age-encryption.org) to the public key in `scripts/backup/recipient.txt` and keeps it as a workflow artifact for 90 days. The repo is public and anyone signed in to GitHub can download artifacts, so the lock is what keeps the copy private. Only the matching private key opens it. John made the pair on his own computer (`ssh-keygen -t ed25519 -f rsdp-backup-key -N ""`; age takes an SSH public key as a recipient, and `ssh-keygen` comes with macOS and Windows) and keeps the private half outside GitHub, in his password manager. It is in no secret, file or server of ours, so nothing GitHub or Fly holds can open a backup. It is a random key, not a password, so it can't be guessed. Lose it and the backups can't be opened: make a new pair, put the new public key in `recipient.txt`, and the next day's copy uses it. Locking needs no secret, so this adds nothing to Fly and the transparency watcher is unaffected.
 4. A failure opens the issue "Nightly backup failed", mentioning John; the next good run closes it.
 
 Fly's own daily volume snapshots carry on as a second copy (same company, same region).
@@ -68,7 +97,7 @@ On Fly, the server does the swap itself when it starts, because swapping folders
 3. Restart: `fly machine restart`. Before it opens the database, the server restores the file into a new folder (`apps/server/src/db/restoreOnStart.ts`) and swaps it in. It keeps the old data as `/data/pglite-before-restore-<time>` and renames the file to `restore.jsonl.gz.done-<time>`. If the backup doesn't restore, nothing changes, the file becomes `restore.jsonl.gz.failed-<time>`, and the log says why (`fly logs`).
 4. Once all is well, delete the old folder and the file to free the space.
 
-If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the night of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended). Unlocking needs `age` on your computer (`brew install age` on a Mac, `winget install FiloSottile.age` on Windows).
+If the volume is gone, deploy first so a new one exists. Restoring takes the site back to the moment of the backup: tell players, and expect the public record on GitHub to show where the site's record went back (that is the record working as intended). Unlocking needs `age` on your computer (`brew install age` on a Mac, `winget install FiloSottile.age` on Windows).
 
 - **Postgres:** `restore.ts` restores into an empty Postgres database too, with a role that may skip foreign key checks while loading (a superuser). With managed Postgres, also use the provider's own backups.
 
@@ -78,12 +107,72 @@ If the volume is gone, deploy first so a new one exists. Restoring takes the sit
 
 **A quick alert needs an outside monitor** in John's own name (issue #180): a free monitor such as UptimeRobot, type Keyword, URL `https://rsdp-poker-live.fly.dev/api/health`, keyword `"ok":true`, every 5 minutes, alerting John's email and phone. That keyword only tells whether the server answers. `/api/health` always answers `ok: true` with status 200 while the server runs (Fly's own health check relies on that), plus `db`: `"ok"`, `"slow"` (no answer within a second) or `"error"`. Only the GitHub check reads `db`, counting anything but `"ok"` as down; a monitor on the keyword `"db":"ok"` would catch a stuck database too, but could also alert on a single slow moment.
 
+## Before a release: testing on a copy
+
+There is no standing staging server (a second Fly machine would roughly double the bill). A release is tested on a **copy**: the production image, run locally by whoever prepares the release. Rules:
+
+- **Never the live site, and never real player data.** Don't restore a real backup into a copy: it holds every player's hands. Make test data on the copy itself.
+- **Production settings and code.** Run the image as it ships. If a test needs something production doesn't have (for example, a shorter wait before hands are revealed, which takes a code change), say so in the release PR, and test the real behaviour too where you can.
+- **Start from the live version when the release changes the database.** That is what the live site goes through at deploy time, and CI doesn't rehearse it yet (#189):
+
+  ```bash
+  wait_up() { for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && return; sleep 1; done; docker logs copy; return 1; }
+  git fetch origin
+  git switch --detach origin/main && docker build -t rsdp-live .        # what's live now
+  docker volume rm rsdp-upgrade 2>/dev/null                              # start from an empty volume
+  docker run -d --name copy -p 3001:8080 -v rsdp-upgrade:/data rsdp-live && wait_up
+  BASE_URL=http://localhost:3001 npm run smoke                           # main's own smoke test makes some data
+  docker stop copy && docker rm copy
+  git switch --detach origin/develop && docker build -t rsdp-release .  # what the release ships
+  docker run -d --name copy -p 3001:8080 -v rsdp-upgrade:/data rsdp-release && wait_up   # the upgrade
+  ```
+
+  Then check the old tables, results and leaderboard are still there, run the smoke test again (now develop's), and finish with `docker stop copy && docker rm copy`.
+
+The commands:
+
+```bash
+docker build -t rsdp-poker .
+docker volume rm rsdp-copy 2>/dev/null                         # for a fresh copy; leave this out to keep its data
+docker run -d --name copy -p 3001:8080 -v rsdp-copy:/data rsdp-poker
+for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && break; sleep 1; done
+BASE_URL=http://localhost:3001 npm run smoke                   # cash table, practice hand, tournament
+docker stop copy && docker rm copy                             # when you're done
+```
+
+Then try what the release changes, by hand in a browser or with bots placed by hand. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
+
+## Releasing
+
+Work merges into `develop` as it's ready. A release is a pull request from `develop` into `main`, and merging it deploys.
+
+- **Who decides.** John gave a standing OK on 2026-10-26: finished work may go live without asking him each time. Ask him first about anything that costs money or changes what the product is. Tell him what shipped after each release.
+- **The release PR** says `Closes #n` for every issue it ships, and its changelog entry follows the rules in [CONTRIBUTING.md](../CONTRIBUTING.md#releases) (version, What's new only for features, the roadmap page). It lists the review passes and the copy test.
+- **Timing.** A deploy restarts the server. Hands in progress resume and browsers reconnect by themselves, but players see a short pause, so prefer quiet times.
+- **After the merge,** Deploy runs by itself once CI passes on `main`. It checks that the live site reports the new commit, and runs the read-only checks (pages load, closed endpoints stay closed, sign-in setup answers). Watch that run. If it goes red, see [RUNBOOK.md](RUNBOOK.md#a-bad-release).
+- **A fix made straight on `main`** (a hotfix) must be merged back into `develop` right away, or the next release conflicts.
+- **To undo a release,** revert it with a pull request into `main` and keep any database migrations. See [RUNBOOK.md](RUNBOOK.md#a-bad-release).
+
+## Outside accounts and costs
+
+Everything runs on John's own accounts. No values here, only what each one is for.
+
+| Account | What depends on it |
+| --- | --- |
+| GitHub (`jcolter11374`) | The code, CI, deploys, daily backups, the public record (`transparency` branch), issues and alerts. |
+| Fly.io | The live server, its data volume and daily volume snapshots, and the image registry. Billed by usage. |
+| Google Cloud | The OAuth client behind "Sign in with Google". |
+
+Costs: Fly bills one always-on small machine and a 1 GB volume to John's account, by usage. GitHub (public repository) and Google sign-in cost nothing. Anything that adds cost needs John's OK first: a second machine, a bigger volume, a paid service, or audio and video. If John loses access to one of these accounts, the site loses what it provides, so each one should have two-factor sign-in and saved recovery codes (#180).
+
 ## Local check of the production image
 
 ```bash
 docker build -t rsdp-poker .
-docker run --rm -p 3001:8080 -v rsdp-data:/data rsdp-poker
+docker run -d --name copy -p 3001:8080 -v rsdp-data:/data rsdp-poker
+for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && break; sleep 1; done
 BASE_URL=http://localhost:3001 npm run smoke
+docker stop copy && docker rm copy
 ```
 
 ## Fly.io (production)

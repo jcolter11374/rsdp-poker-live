@@ -1,6 +1,7 @@
 {
   "name": "rsdp-poker-live",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "workspaces": [
     "packages/*",
