@@ -39,6 +39,7 @@ import {
   RUNTIME_VERSION,
   systemClock,
   type BotInfo,
+  type ChatMessage,
   type Clock,
   type FairState,
   type HandRecord,
@@ -46,6 +47,7 @@ import {
   type SeatRequest,
   type SideGameState,
   type SeatState,
+  type TableLine,
   type TournamentHooks,
   type WaitlistEntry,
 } from './types';
@@ -56,6 +58,7 @@ import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../b
 import { coachTip as buildCoachTip } from '../bots/coach';
 import { botNote, plainNote } from '../bots/reasons';
 
+/** Chat and log lines the state keeps, for the side panel; every one is also handed to onLine to be kept for good. */
 const CHAT_LIMIT = 200;
 const LOG_LIMIT = 300;
 const HISTORY_LIMIT = 30;
@@ -141,6 +144,8 @@ export class TableRuntime {
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
   onHandFinished: (record: HandRecord) => void = () => {};
+  /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
+  onLine: (line: TableLine) => void = () => {};
 
   private readonly clock: Clock;
   private readonly rng: Rng;
@@ -1367,8 +1372,7 @@ export class TableRuntime {
       if (!this.settings.chat.guestChat && !this.seatOf(playerId) && !this.isStaff(playerId)) throw new ActionError('only players at the table can chat here');
       if (this.settings.chat.profanityFilter) clean = maskProfanity(clean);
     }
-    this.state.chat.push({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
-    if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
+    this.addChat({ at: this.clock.now(), playerId, name: playerId ? this.nameOf(playerId) : 'Dealer', text: clean });
     this.onChange();
   }
 
@@ -2645,13 +2649,20 @@ export class TableRuntime {
 
   /** A chat line from the dealer, for things everyone at the table must see. */
   private dealerSays(text: string) {
-    this.state.chat.push({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+    this.addChat({ at: this.clock.now(), playerId: null, name: 'Dealer', text });
+  }
+
+  private addChat(entry: ChatMessage) {
+    this.state.chat.push(entry);
     if (this.state.chat.length > CHAT_LIMIT) this.state.chat.splice(0, this.state.chat.length - CHAT_LIMIT);
+    this.onLine({ kind: 'chat', entry: { ...entry } });
   }
 
   private log(text: string) {
-    this.state.log.push({ at: this.clock.now(), text });
+    const entry = { at: this.clock.now(), text };
+    this.state.log.push(entry);
     if (this.state.log.length > LOG_LIMIT) this.state.log.splice(0, this.state.log.length - LOG_LIMIT);
+    this.onLine({ kind: 'log', entry: { ...entry } });
   }
 }
 

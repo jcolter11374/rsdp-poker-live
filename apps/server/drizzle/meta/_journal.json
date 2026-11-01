@@ -99,6 +99,13 @@
       "when": 1793000500000,
       "tag": "0013_practice_resets",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793567834762,
+      "tag": "0014_table_log",
+      "breakpoints": true
     }
   ]
 }

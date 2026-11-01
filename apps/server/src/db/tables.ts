@@ -7,7 +7,7 @@ import { and, desc, eq, lt, ne, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { clampLimit, StorageError } from './errors';
 import { newId, newTableId } from './ids';
-import { chipMovements, hands, hiddenTables, seatSessions, settingsChanges, sharedHands, tables, tableSnapshots, type TableMode, type TableStatus } from './schema';
+import { chipMovements, hands, hiddenTables, seatSessions, settingsChanges, sharedHands, tableLog, tables, tableSnapshots, type TableMode, type TableStatus } from './schema';
 
 type TableRow = typeof tables.$inferSelect;
 
@@ -210,7 +210,7 @@ export async function archiveTable(db: Db, tableId: string, now: Date = new Date
 }
 
 /**
- * Deletes a cash table for good: its hands, share links, snapshot, settings
+ * Deletes a cash table for good: its hands, log and chat, share links, snapshot, settings
  * log and every player's "hidden" mark. Returns false when there was no such
  * table. Tournament tables go with their tournament and are refused, and so
  * is a table with rows in the append-only chip ledger.
@@ -225,6 +225,7 @@ export async function deleteTableForGood(db: Db, tableId: string): Promise<boole
     await tx.delete(sharedHands).where(eq(sharedHands.tableId, tableId));
     await tx.delete(hiddenTables).where(eq(hiddenTables.tableId, tableId));
     await tx.delete(hands).where(eq(hands.tableId, tableId));
+    await tx.delete(tableLog).where(eq(tableLog.tableId, tableId));
     await tx.delete(seatSessions).where(eq(seatSessions.tableId, tableId));
     // The snapshot and the settings log go with the table (on delete cascade).
     await tx.delete(tables).where(eq(tables.id, tableId));

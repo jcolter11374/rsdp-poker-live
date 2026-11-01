@@ -39,6 +39,7 @@ describe('createDb', () => {
       'settings_changes',
       'shared_hands',
       'suggestions',
+      'table_log',
       'table_snapshots',
       'tables',
       'tournament_log',
