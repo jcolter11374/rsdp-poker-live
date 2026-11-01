@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import type { TournamentClientToServer, TournamentServerToClient } from '@rsdp/tournament';
-import { callerFor, type TimedEmitter } from './call';
+import { callerFor, type AnswerSocket } from './call';
 export { NoAnswerError } from './call';
 
 const TOKEN_KEY = 'rsdp.guestId';
@@ -96,7 +96,7 @@ export function onSession(cb: (s: Session) => void): () => void {
  * with the server's message when it refuses, or after a time limit or a
  * dropped connection (see call.ts). Events without a payload pass none.
  */
-export const call = callerFor<keyof C2S & string>(socket as unknown as TimedEmitter);
+export const call = callerFor<keyof C2S & string>(socket as unknown as AnswerSocket);
 
 const NAME_KEY = 'rsdp.name';
 export function savedName(): string {

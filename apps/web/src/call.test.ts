@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Server, type Socket as ServerSocket } from 'socket.io';
 import { io, type Socket } from 'socket.io-client';
-import { callerFor, DROPPED, NO_ANSWER, NoAnswerError, type TimedEmitter } from './call';
+import { callerFor, DROPPED, NO_ANSWER, NoAnswerError, type AnswerSocket } from './call';
 
 type Ack = (res: { ok: boolean; error?: string; n?: number }) => void;
 
@@ -21,7 +21,7 @@ async function pair(handle: (s: ServerSocket) => void) {
   const client: Socket = io(url, { transports: ['websocket'], forceNew: true, reconnectionDelay: 50, reconnectionDelayMax: 50 });
   await new Promise<void>((r) => client.once('connect', () => r()));
   open.push({ server, client, http });
-  return { server, client, heard, call: callerFor(client as unknown as TimedEmitter, () => 300) };
+  return { server, client, heard, call: callerFor(client as unknown as AnswerSocket, () => 300) };
 }
 const open: { server: Server; client: Socket; http: ReturnType<typeof createServer> }[] = [];
 afterEach(async () => {
@@ -74,5 +74,28 @@ describe('call', () => {
     client.connect();
     await expect(pending).resolves.toMatchObject({ ok: true });
     expect(heard.filter((e) => e === 'late')).toHaveLength(1);
+  });
+
+  it('a table move made while offline is refused after the reconnect, not played late', async () => {
+    // Like the table server: a move needs the player re-joined to the table, and joining takes a moment.
+    const { client, call, heard } = await pair((s) => {
+      let joined = false;
+      s.on('join', async (ack: Ack) => {
+        await new Promise((r) => setTimeout(r, 5));
+        joined = true;
+        ack({ ok: true });
+      });
+      s.on('act', (ack: Ack) => ack(joined ? { ok: true } : { ok: false, error: 'join a table first' }));
+    });
+    // Like the table page: join again on every connect.
+    client.on('connect', () => void call('join').catch(() => {}));
+    client.io.reconnection(false);
+    client.disconnect();
+    const check = call('act');
+    const fold = call('act');
+    client.connect();
+    await expect(check).rejects.toThrow('join a table first');
+    await expect(fold).rejects.toThrow('join a table first');
+    expect(heard).toEqual(['act', 'act', 'join']);
   });
 });

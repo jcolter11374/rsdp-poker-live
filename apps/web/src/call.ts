@@ -3,15 +3,12 @@
 
 type AckResult = { ok: true } | { ok: false; error: string };
 
-/**
- * What socket.io gives call(): whether it is connected, its connect event,
- * and emit with a time limit, whose answer callback hears about time running
- * out or the connection dropping.
- */
-export interface TimedEmitter {
-  connected: boolean;
-  once(event: 'connect', listener: () => void): unknown;
-  timeout(ms: number): { emit(event: string, ...args: unknown[]): unknown };
+/** What call() needs from a socket.io client socket. */
+export interface AnswerSocket {
+  readonly connected: boolean;
+  emit(event: string, ...args: unknown[]): unknown;
+  on(event: 'connect' | 'disconnect', listener: () => void): unknown;
+  off(event: 'connect' | 'disconnect', listener: () => void): unknown;
 }
 
 /**
@@ -39,23 +36,43 @@ export class NoAnswerError extends Error {
 /**
  * call() for a socket: emits an event that takes an answer and resolves with
  * the reply; rejects with the server's message when it refuses, and with a
- * NoAnswerError (NO_ANSWER or DROPPED) when no answer comes. A command made
- * while offline waits for the connection to come back before it goes out (as
- * it always did), so a page's first load still works after a long outage;
- * the time limit starts when it goes out. Events without a payload pass none.
+ * NoAnswerError when no answer comes: DROPPED at once when the connection
+ * drops after the command went out, NO_ANSWER when the time limit runs out.
+ *
+ * A command made while offline is left to socket.io, as it always was: it
+ * waits until the connection is back, then goes out before any of the page's
+ * own reconnect handlers run. So a table move made offline reaches a server
+ * that hasn't re-joined this player to the table yet, and is refused instead
+ * of being played late, perhaps on a later street. The time limit starts only
+ * once the command has gone out, so a page opened while offline still loads.
+ * Events without a payload pass none.
  */
-export function callerFor<Event extends string = string>(socket: TimedEmitter, limitFor: (event: Event) => number = (e) => SLOW_CALLS[e] ?? CALL_TIMEOUT_MS) {
+export function callerFor<Event extends string = string>(socket: AnswerSocket, limitFor: (event: Event) => number = (e) => SLOW_CALLS[e] ?? CALL_TIMEOUT_MS) {
   return function call<T extends object = object>(event: Event, ...payload: unknown[]): Promise<T> {
     return new Promise((resolve, reject) => {
-      const send = () =>
-        socket.timeout(limitFor(event)).emit(event, ...payload, (err: Error | null, res?: AckResult & T) => {
-          if (err) reject(new NoAnswerError(/disconnect/i.test(err.message)));
-          else if (res?.ok) resolve(res);
-          else reject(new Error((res && !res.ok && res.error) || NO_ANSWER));
-        });
-      // Listeners added earlier (a table's re-join) run first, so the command reaches a page that is set up again.
-      if (socket.connected) send();
-      else socket.once('connect', send);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const settle = (done: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.off('connect', sent);
+        socket.off('disconnect', dropped);
+        done();
+      };
+      // socket.io forgets a plain answer callback when the connection drops, so listen for the drop here.
+      const dropped = () => settle(() => reject(new NoAnswerError(true)));
+      const sent = () => {
+        socket.off('connect', sent);
+        socket.on('disconnect', dropped);
+        timer = setTimeout(() => settle(() => reject(new NoAnswerError(false))), limitFor(event));
+      };
+      socket.emit(event, ...payload, (res?: AckResult & T) =>
+        settle(() => (res?.ok ? resolve(res) : reject(new Error((res && !res.ok && res.error) || NO_ANSWER)))),
+      );
+      if (socket.connected) sent();
+      // socket.io sends what it held while offline before it tells anyone it's connected.
+      else socket.on('connect', sent);
     });
   };
 }
