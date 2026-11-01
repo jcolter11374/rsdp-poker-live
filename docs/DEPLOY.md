@@ -24,7 +24,7 @@ The whole site is one container: the game server plus the built web app, built f
 
 The schema migrates itself at startup. Concurrent starts are serialised with an advisory lock.
 
-- **Health check:** `GET /api/health` returns `{"ok":true,...}`.
+- **Health check:** `GET /api/health` returns `{"ok":true,...,"db":"ok"}` (see [Site-down alert](#site-down-alert) for `db`).
 - **Shutdown:** on `SIGTERM` the server saves every table and tournament and then exits, within 10 seconds. Give the host's stop timeout at least that long.
 
 ## Restarts and deploys
@@ -74,7 +74,9 @@ If the volume is gone, deploy first so a new one exists. Restoring takes the sit
 
 ## Site-down alert
 
-`.github/workflows/uptime.yml` asks `/api/health` every 5 minutes (GitHub sometimes runs it later). If the site doesn't answer for about 3 minutes and no deploy is running, it opens the issue "The site is down", mentioning John so GitHub emails him, and closes it when the site answers again. GitHub turns off scheduled workflows in a public repo after 60 days without a commit; re-enable them under Actions if that happens.
+`.github/workflows/uptime.yml` asks `/api/health` whether the site is up and its database answers. If not for about 3 minutes, and no deploy is running, it opens the issue "The site is down", mentioning John so GitHub emails him, and closes it when the site is fine again. It is scheduled every 5 minutes, but GitHub starts scheduled jobs late when it is busy: since 26 October 2026 it has run only every 3 to 7 hours. So it is a slow backstop, and an outage overnight or at a tournament's automatic start could go unnoticed for hours. GitHub also turns off scheduled workflows in a public repo after 60 days without a commit; re-enable them under Actions if that happens.
+
+**The quick alert is an outside monitor** in John's own name: a free monitor such as UptimeRobot, type Keyword, URL `https://rsdp-poker-live.fly.dev/api/health`, keyword `"ok":true`, every 5 minutes, alerting John's email and phone; issue #180 tracks setting it up. `/api/health` always answers `ok: true` with status 200 while the server runs (Fly's own health check relies on that), plus `db`: `"ok"`, `"slow"` (no answer within a second) or `"error"`. The GitHub check treats `"error"` as down.
 
 ## Local check of the production image
 

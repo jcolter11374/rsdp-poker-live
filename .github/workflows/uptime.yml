@@ -1,10 +1,14 @@
 name: Site-down alert
 
-# Every 5 minutes (GitHub sometimes runs it later), from outside Fly: asks the
-# live site if it is up. If it doesn't answer for about 3 minutes, and no deploy
-# is running, it opens an issue that mentions John, so GitHub emails him. When
-# the site answers again it says so on the issue and closes it. Read-only on
-# the site; costs nothing (public repos run Actions free). See docs/DEPLOY.md.
+# From outside Fly: asks the live site if it is up and its database answers.
+# If not for about 3 minutes, and no deploy is running, it opens an issue that
+# mentions John, so GitHub emails him. When the site is fine again it says so
+# on the issue and closes it. Read-only on the site; costs nothing (public
+# repos run Actions free). See docs/DEPLOY.md.
+#
+# Scheduled every 5 minutes, but GitHub starts scheduled jobs late when it is
+# busy: in practice it has run only every 3 to 7 hours. So this is a slow
+# backstop. The quick alert is an outside monitor (docs/DEPLOY.md, issue #180).
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -36,14 +40,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          up() { curl -sf --max-time 15 "$SITE/api/health" | jq -e '.ok == true' > /dev/null; }
+          # Up means the server answers and its database isn't failing (a slow database alone isn't news).
+          up() { curl -sf --max-time 15 "$SITE/api/health" | jq -e '.ok == true and .db != "error"' > /dev/null; }
           open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
           # A blip (a restart, one lost request) isn't news: try for about 3 minutes.
           for i in $(seq 1 7); do
             if up; then
               echo "The site is up"
               if [ -n "$open" ]; then
-                gh issue close "$open" --comment "The site answers again ($(date -u '+%H:%M UTC')). Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                gh issue close "$open" --comment "The site and its database answer again ($(date -u '+%H:%M UTC')). Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
               fi
               exit 0
             fi
@@ -58,11 +63,11 @@ jobs:
           if [ -n "$open" ]; then
             echo "Still down; issue #$open is already open"
           else
-            gh issue create --title "$TITLE" --body "@jcolter11374 the live site ($SITE) hasn't answered for about 3 minutes, as of $(date -u '+%H:%M UTC'). Nobody can play until it's back. This issue closes itself when the site answers again.
+            gh issue create --title "$TITLE" --body "@jcolter11374 the live site ($SITE) hasn't answered, or says its database isn't working, for about 3 minutes, as of $(date -u '+%H:%M UTC'). Nobody can play until it's back. This issue closes itself when the site is fine again.
 
           What to try: open the Fly dashboard (https://fly.io/apps/rsdp-poker-live/monitoring) and look at the machine and its logs, or ask Dealer.
 
           Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           fi
-          # The issue is the alert; a red run every 5 minutes would only add emails.
+          # The issue is the alert; a red run on every check would only add emails.
           echo "::warning::The site is down."
