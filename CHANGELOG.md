@@ -20,8 +20,17 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ## [2026.11.01.2] - 2026-11-01
 
+_Tournament clock rules on show_
+
+### New
+
+- **See the clock before you sit down.** A tournament's page now shows its table rules: the heading says how long you get to act, and the Structure tab spells out the time bank, rabbit hunting and straddles (always off in tournaments). A host can also change these rules from the Host tab until the first table opens, so a repeating tournament set up before the RSDP rules arrived can switch to them with one button. Later events in that series keep the new rules. (Suggested by John.)
+
 ### Fixed and changed
 
+- Tournaments: a host can change the clock, time bank and rabbit hunting from the lobby's Host tab until the first table opens. Before, an event made before the RSDP table rules (31 Oct) was stuck on a 30-second clock with rabbit hunting, and so was every later event in its series.
+- Tournaments: copying an event made before 31 Oct, or loading a setup saved before then, now fills in the RSDP table rules instead of the old 30-second clock with rabbit hunting.
+- Tournaments: the lobby shows the table rules to everyone.
 - The Changelog page shows each release's version number. It matches the release of the same name on GitHub, whose notes also list the bug reports and requests that release closed.
 
 ## [2026.11.01] - 2026-11-01
