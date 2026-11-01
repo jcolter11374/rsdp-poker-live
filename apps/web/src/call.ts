@@ -5,7 +5,8 @@ type AckResult = { ok: true } | { ok: false; error: string };
 
 /** What call() needs from a socket.io client socket. */
 export interface AnswerSocket {
-  readonly connected: boolean;
+  /** Commands socket.io is holding until it is connected again. */
+  readonly sendBuffer: readonly unknown[];
   emit(event: string, ...args: unknown[]): unknown;
   on(event: 'connect' | 'disconnect', listener: () => void): unknown;
   off(event: 'connect' | 'disconnect', listener: () => void): unknown;
@@ -67,12 +68,14 @@ export function callerFor<Event extends string = string>(socket: AnswerSocket, l
         socket.on('disconnect', dropped);
         timer = setTimeout(() => settle(() => reject(new NoAnswerError(false))), limitFor(event));
       };
+      const held = socket.sendBuffer.length;
       socket.emit(event, ...payload, (res?: AckResult & T) =>
         settle(() => (res?.ok ? resolve(res) : reject(new Error((res && !res.ok && res.error) || NO_ANSWER)))),
       );
-      if (socket.connected) sent();
-      // socket.io sends what it held while offline before it tells anyone it's connected.
-      else socket.on('connect', sent);
+      // socket.io holds a command when it is offline, or has just found the connection dead (a phone or laptop
+      // waking up), and sends what it held before it tells anyone it's connected again.
+      if (socket.sendBuffer.length > held) socket.on('connect', sent);
+      else sent();
     });
   };
 }

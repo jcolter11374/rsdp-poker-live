@@ -76,6 +76,17 @@ describe('call', () => {
     expect(heard.filter((e) => e === 'late')).toHaveLength(1);
   });
 
+  it('a command made just as a sleeping device wakes waits for the reconnect instead of failing', async () => {
+    let made = 0;
+    const { client, call } = await pair((s) => s.on('make', (ack: Ack) => ack({ ok: true, n: ++made })));
+    // What waking up looks like to socket.io: the heartbeat's deadline has passed, but its timer hasn't fired yet,
+    // so it still counts as connected. It holds the command and closes the connection straight after.
+    (client.io.engine as unknown as { _pingTimeoutTime: number })._pingTimeoutTime = 1;
+    expect(client.connected).toBe(true);
+    await expect(call('make')).resolves.toMatchObject({ ok: true, n: 1 });
+    expect(made).toBe(1);
+  });
+
   it('a table move made while offline is refused after the reconnect, not played late', async () => {
     // Like the table server: a move needs the player re-joined to the table, and joining takes a moment.
     const { client, call, heard } = await pair((s) => {
