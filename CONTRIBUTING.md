@@ -1,0 +1,155 @@
+# How we track and ship work
+
+This is how work on RSDP Poker Live! is tracked, reviewed and released. It
+is the ordinary GitHub way: **issues** for every piece of work, **pull
+requests** that name their issue, and **tagged releases** with notes. John
+owns the product and makes the product calls. Most of the code is written by
+Claude (an AI coding assistant) in several parallel sessions, and the same
+rules apply to everyone.
+
+The one idea behind it: **the state of the work lives on GitHub, not in
+anyone's notes or chat.** If it isn't an open issue, it isn't open work. If
+an issue is open, the work isn't done.
+
+## Where to see what's going on
+
+| I want to see… | Link |
+| --- | --- |
+| Known bugs that aren't fixed | [Open bugs](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3Abug) |
+| What someone is working on right now | [In progress](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+in+progress%22) |
+| Finished, but not on the live site yet | [On develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22) |
+| What needs John | [Waiting on John](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+waiting+on+John%22) |
+| What needs someone else | [Waiting on others](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+waiting+on+others%22) |
+| Everything open | [All open issues](https://github.com/jcolter11374/rsdp-poker-live/issues) |
+| What each release changed | [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases), [CHANGELOG.md](CHANGELOG.md), or the site's [Changelog](https://rsdp-poker-live.fly.dev/changelog) |
+
+Friends without a GitHub account can send ideas through the site's
+[suggestion box](https://rsdp-poker-live.fly.dev/roadmap). When one is taken
+up, it gets an issue too.
+
+## The rules
+
+1. **Every piece of work is an issue, opened the moment it comes up.** A bug
+   someone found, a feature John agreed to, a follow-up someone promised,
+   something waiting on John: each gets an issue straight away, even a
+   small one.
+2. **An issue's labels say where it stands** (see [Labels](#labels)). Change
+   them when the state changes, in the same sitting.
+3. **Every pull request names its issue.** "Closes #123" when it finishes
+   the work, "Part of #123" when it does some of it. A check fails until it
+   does. A tiny change that needs no issue gets the `no issue needed` label.
+4. **An issue closes only with proof.** Normally the Release workflow closes
+   it when the change is live. Anyone closing one by hand links the pull
+   request, release or message that settles it.
+5. **Every release adds one changelog entry with a version.** The tag, the
+   GitHub release and CHANGELOG.md all follow from it (see
+   [Releases](#releases)).
+6. **Status reports come from these lists, not from memory** (see
+   [Reporting status](#reporting-status)).
+
+## Labels
+
+Every issue gets a **type**, and usually an **area**. **Status** labels only
+go on while they're true; an open issue with no status label simply hasn't
+been started.
+
+| Label | Means |
+| --- | --- |
+| `bug` | Something on the site is broken or wrong |
+| `enhancement` | A new feature or a change to how something works |
+| `documentation`, `security`, `dependencies`, `question` | What they say |
+| `status: in progress` | Someone is working on it right now (a session, a pull request). Take it off if the work stops. |
+| `status: on develop` | Done and merged into `develop`, not on the live site yet. Added and removed by the workflows. |
+| `status: waiting on John` | Needs John: a decision, a setting, something only he can do |
+| `status: waiting on others` | Waiting on someone outside the project |
+| `priority: high` | Breaks games or stops people playing; do it first |
+| `area: cash`, `area: tournaments`, `area: table`, `area: accounts`, `area: fairness`, `area: site`, `area: ops` | Which part of the site it's about (`ops` is hosting, deploys, backups, CI) |
+| `no issue needed` | On a pull request only: it skips the linked-issue check |
+
+The labels are defined in [`.github/labels.json`](.github/labels.json). Edit
+that file to add or change one; a workflow applies it.
+
+## The life of a change
+
+1. **Issue.** Open one with the bug or feature form (or a blank issue).
+   Give it a type and an area label.
+2. **Start.** Label it `status: in progress` and assign it. Make a branch
+   from `develop`.
+3. **Pull request into `develop`.** The description says "Closes #123" (the
+   [template](.github/pull_request_template.md) has a place for it). The
+   checks run: typecheck, every test, a production build, a browser smoke
+   test against the real Docker image, a backup restore drill, and the PR
+   check for the issue link and release notes. We also run a separate review
+   pass with another AI session. That pass is ours, not an outside audit.
+4. **Merge into `develop`.** GitHub only closes issues for merges into the
+   default branch (`main`), so a workflow labels each issue the pull request
+   closes `status: on develop` and comments on it.
+5. **Release.** A pull request from `develop` into `main`, with the
+   release's changelog entry already on `develop`. We play-test the release
+   on a copy of the site first, never on the live one. Merging it runs the
+   checks again and then deploys. After the deploy, the Release workflow
+   tags the commit (`v2026.11.01`), publishes a GitHub release with its
+   notes and the issues it closed, and closes those issues with a comment
+   saying when they went live.
+
+A fix that has to go straight into `main` follows the same rules: its pull
+request says "Closes #123" (GitHub closes the issue when it merges) and adds
+the changelog entry. Merge `main` back into `develop` afterwards so the two
+don't drift.
+
+## Releases
+
+Release notes are written once, in the site's own data:
+[`apps/web/src/roadmap/changelog.json`](apps/web/src/roadmap/changelog.json)
+(every release, with its small fixes) and
+[`whatsnew.json`](apps/web/src/roadmap/whatsnew.json) (new features only).
+From those come the site's Changelog and What's new pages, CHANGELOG.md
+(`npm run changelog` writes it; a test fails if it's out of date) and the
+notes on each GitHub release.
+
+- **Version.** A release's id is its version: the date, as `2026.11.01`,
+  and `2026.11.01.2`, `2026.11.01.3` for later releases that day (calendar
+  versioning). Its git tag is `v` plus the version. Releases from before
+  1 November 2026 keep their old ids (`2026-10-31-d`) and have no tags.
+- **One entry per release.** If the top entry in changelog.json isn't on
+  `main` yet, it belongs to the next release: add your lines to it. If every
+  entry is already on `main`, start a new one at the top with today's
+  version. The PR check enforces both.
+- **Plain English.** The notes are for the players. Say what changed for
+  them; no pull request numbers or code names.
+- **What goes where.** What's new is for new features and changes people
+  will notice; small fixes only go in the changelog (John's rule).
+
+If a Release run fails, fix the cause and run it again by hand from the
+Actions tab (Release → Run workflow). It picks up whatever is missing and
+never moves a tag.
+
+## Reporting status
+
+Whoever reports to John (a person or a Claude session) reports straight from
+the issue lists, every time, in this order:
+
+1. **Known open bugs**, with links, or "no open bugs" with the
+   [link](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
+2. In progress.
+3. Done but not live yet (`status: on develop`).
+4. Waiting on John.
+5. Waiting on others.
+
+Link every issue so John can check it himself. "Done" means its issue is
+closed with proof. Before asking John for anything, search the issues
+(open and closed) to see whether he has already given it.
+
+## What we don't use, and why
+
+- **Milestones.** They suit planned versions. We release small changes
+  continuously, and each release is a tag with its own notes.
+- **A project board.** GitHub Projects can show these issues as columns, but
+  only the account owner can create one. The links above give the same
+  view without it.
+
+## Code, tests and running it
+
+See [docs/CODE_TOUR.md](docs/CODE_TOUR.md) for how the code fits together,
+how to run it, and how a commit reaches the live site. Before opening a pull
+request, run `npm run typecheck` and `npm test`.

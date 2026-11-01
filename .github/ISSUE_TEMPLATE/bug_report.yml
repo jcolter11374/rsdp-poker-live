@@ -1,0 +1,49 @@
+name: Bug report
+description: Something on the site is broken or wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Plain words are fine; screenshots help a lot.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it happen?
+      description: The steps that lead to it, if you know them.
+      placeholder: |
+        1. Start a cash table with run it twice on
+        2. Go all in on the turn
+        3. ...
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where on the site?
+      options:
+        - Cash game
+        - Tournament or Sit & Go
+        - Practice table with bots
+        - Account, profile or leaderboard
+        - Another page
+  - type: input
+    id: link
+    attributes:
+      label: Link to the table or tournament
+      description: The address from your browser, if you have it.
+  - type: input
+    id: when
+    attributes:
+      label: When did it happen?
+      description: Roughly, with your time zone, e.g. "Sat 9:40 pm New York".
+  - type: input
+    id: device
+    attributes:
+      label: Phone or computer, and browser
+      placeholder: iPhone, Safari

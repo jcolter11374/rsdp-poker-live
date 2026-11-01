@@ -55,10 +55,16 @@ packages/tournament  The tournament director: levels, seating, payouts. No I/O.
 apps/server          The game server: tables, tournaments, accounts, database.
 apps/web             The website: lobby, table, tournament pages, replayer.
 e2e/                 A browser "smoke test" that plays real hands through the UI.
-scripts/             Stand-alone checkers (hands, the public record), backups, deploy helpers.
-.github/workflows/   Automated jobs on GitHub: tests, deploys, backups, watchers.
+scripts/             Stand-alone checkers (hands, the public record), backups, deploy helpers,
+                     and scripts/release/ (issue links, versions, release notes).
+.github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
+.github/             Also the issue forms, the pull request template and labels.json.
 docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md.
 ```
+
+At the top level, [CONTRIBUTING.md](../CONTRIBUTING.md) says how work is
+tracked in GitHub issues and released, and [CHANGELOG.md](../CHANGELOG.md)
+lists every release (made from the site's own release notes).
 
 It is one npm "workspace": a single `npm install` at the top sets up all four
 parts, and they import each other by name (`@rsdp/engine`,
@@ -243,9 +249,11 @@ The same production image the live site runs can be built with Docker; see
 
 | Step | Where |
 | --- | --- |
-| Most work happens on branches that are merged into `develop`; releases then go from `develop` to `main`. Some small, finished changes are merged straight into `main`. | |
+| Every piece of work starts as a GitHub issue. Work happens on branches whose pull requests name their issue ("Closes #123") and are merged into `develop`; releases then go from `develop` to `main`. A fix that can't wait goes straight into `main` the same way. | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Every pull request, and every push to `main` or `develop`, runs the checks: typecheck, all tests (including fuzz tests that deal up to 3,000 random hands across every game through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, and a backup restore drill. | [`ci.yml`](../.github/workflows/ci.yml) |
+| Every pull request is also checked for a linked issue, and a release into `main` for exactly one new changelog entry with a version. When a pull request is merged into `develop`, the issues it closes are labelled `status: on develop`. | [`pr-checks.yml`](../.github/workflows/pr-checks.yml), [`issue-status.yml`](../.github/workflows/issue-status.yml), [`scripts/release/`](../scripts/release) |
 | When those pass on `main`, GitHub builds the image, signs a record of which commit it came from, and tells Fly.io to run exactly that image. | [`deploy.yml`](../.github/workflows/deploy.yml) |
+| After each deploy, the commit is tagged with the release's version (`v2026.11.01`), a GitHub release is published with its notes, and the issues it put live are closed. | [`release.yml`](../.github/workflows/release.yml), [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
 | Every hour, a GitHub job checks which image the live site really runs, and copies the public record to the `transparency` branch. Anything wrong opens a public issue. | [`transparency.yml`](../.github/workflows/transparency.yml), [`scripts/transparency/`](../scripts/transparency) |
 | Every night, a GitHub job takes an encrypted backup and test-restores it. | [`backup.yml`](../.github/workflows/backup.yml), [DEPLOY.md](DEPLOY.md#backups) |
 | Every 5 minutes, a GitHub job checks the site is up. | [`uptime.yml`](../.github/workflows/uptime.yml) |

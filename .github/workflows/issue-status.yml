@@ -1,0 +1,32 @@
+name: Issue status
+
+# When a pull request is merged into develop, every issue it closes
+# ("Closes #12") gets the "status: on develop" label and a comment: GitHub
+# itself only closes issues for merges into main. The Release workflow
+# closes them once they are on the live site. See CONTRIBUTING.md.
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  on-develop:
+    name: Mark closed issues as on develop
+    if: github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The scripts as merged on develop, not the pull request's own copy.
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node scripts/release/on-merge.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

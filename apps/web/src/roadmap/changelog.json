@@ -1,7 +1,15 @@
 {
   "releases": [
     {
-      "id": "2026-11-01",
+      "id": "2026.11.01.2",
+      "date": "2026-11-01",
+      "fixes": [
+        "The Changelog page shows each release's version number. It matches the release of the same name on GitHub, whose notes also list the bug reports and requests that release closed."
+      ]
+    },
+    {
+      "id": "2026.11.01",
+      "commit": "3f42934e831c23bcd9d3ce22c701ee9cb9125dbd",
       "date": "2026-11-01",
       "fixes": [
         "Tournaments: a busted player who lets a rebuy offer run out (or declines it) now places by when they busted. Before, anyone who busted while they were deciding placed below them, and players busted in the same hand were no longer ordered by their starting stacks.",

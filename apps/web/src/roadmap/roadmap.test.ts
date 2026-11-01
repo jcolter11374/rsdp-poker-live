@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import roadmap from './roadmap.json';
 import { formatDay, type Roadmap } from './RoadmapPage';
 import { logOrder, type Suggestion } from './suggestions';
-import { changelog, releases } from './whatsNew';
+import { compareReleaseIds, isVersion as libIsVersion } from '../../../../scripts/release/lib.mjs';
+import { changelog, isVersion, releases } from './whatsNew';
 
 describe('roadmap.json', () => {
   const data = roadmap as Roadmap;
@@ -48,8 +49,8 @@ describe('whatsnew.json', () => {
       expect(r.items.length).toBeGreaterThan(0);
       for (const it of r.items) expect(it.title && it.detail).toBeTruthy();
     }
-    const dates = releases.map((r) => r.date);
-    expect([...dates].sort().reverse()).toEqual(dates);
+    const ids = releases.map((r) => r.id);
+    expect([...ids].sort(compareReleaseIds)).toEqual(ids);
   });
 });
 
@@ -62,7 +63,25 @@ describe('changelog.json', () => {
       expect(formatDay(r.date)).not.toContain('Invalid');
       for (const fix of r.fixes) expect(fix).toBeTruthy();
     }
-    expect([...ids].sort().reverse()).toEqual(ids);
+    expect([...ids].sort(compareReleaseIds)).toEqual(ids);
+  });
+
+  it('gives every release since versions began a version as its id, on its own date', () => {
+    // The oldest versioned release (the list is newest first).
+    const first = changelog.map((r) => isVersion(r.id)).lastIndexOf(true);
+    expect(first).toBeGreaterThanOrEqual(0);
+    for (const r of changelog.slice(0, first + 1)) {
+      expect(isVersion(r.id), `${r.id} should be a version like 2026.11.01 (see CONTRIBUTING.md)`).toBe(true);
+      expect(r.id.slice(0, 10).replaceAll('.', '-')).toBe(r.date);
+    }
+    for (const r of changelog.slice(first + 1)) expect(r.commit).toBeUndefined();
+    for (const r of changelog) if (r.commit !== undefined) expect(r.commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('agrees with the release scripts on what a version is', () => {
+    for (const id of [...changelog.map((r) => r.id), '2026.11.01.10', '2026.11.01.1', '2026.11.1', 'v2026.11.01']) {
+      expect(isVersion(id), id).toBe(libIsVersion(id));
+    }
   });
 
   it('keeps small fixes off What\'s new', () => {
