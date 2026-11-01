@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComponentProps } from 'react';
+import { useEffect, useRef, type ComponentProps } from 'react';
 import type { LegalActions, Stakes } from '@rsdp/engine/core';
 import { defaultSettings } from '@rsdp/engine/settings';
 import type { HandView, SeatView, TableView } from '@rsdp/engine/wire';
@@ -200,6 +200,24 @@ function renderBar(view: TableView, props: Partial<Props> = {}) {
   const all: Props = { fmt, skew: 0, discard: [], clearDiscard: () => {}, ...props };
   const r = render(<ActionBar view={view} {...all} />);
   return { update: (next: TableView, more: Partial<Props> = {}) => r.rerender(<ActionBar view={next} {...all} {...more} />) };
+}
+
+/**
+ * The bar inside a page that, like TablePage, keeps what onPreAction last said in a ref and reads it in its own
+ * effect on each new view. That effect runs after the bar's, in the same commit, and is where TablePage decides
+ * on the your-turn sound, so `queuedPerView` holds what the page knew on each view it was given.
+ */
+function renderInPage(view: TableView) {
+  const queuedPerView: boolean[] = [];
+  function Page({ view }: { view: TableView }) {
+    const queued = useRef(false);
+    useEffect(() => {
+      queuedPerView.push(queued.current);
+    }, [view]);
+    return <ActionBar view={view} fmt={fmt} skew={0} discard={[]} clearDiscard={() => {}} onPreAction={(q) => (queued.current = q)} />;
+  }
+  const r = render(<Page view={view} />);
+  return { update: (next: TableView) => r.rerender(<Page view={next} />), queuedPerView };
 }
 
 // Taken before the fake timers go in: one real task lets every promise callback already queued run.
@@ -602,11 +620,13 @@ describe('pre-moves', () => {
   });
 
   it('calls whatever it costs with Call any', async () => {
-    const bar = renderBar(waitingOn(100));
+    const page = renderInPage(waitingOn(100));
     await tap('Call any');
-    bar.update(facingBet(300));
+    page.update(facingBet(300));
     await settle();
     expect(moves()).toEqual([expect.objectContaining({ type: 'call' })]);
+    // On the view that gave Ann the turn the page knew a move was queued, so it did not call her with the turn sound.
+    expect(page.queuedPerView).toEqual([false, true]);
   });
 
   it('turns check/fold into fold once someone bets, and folds when the turn comes', async () => {
@@ -644,16 +664,15 @@ describe('pre-moves', () => {
     expect(moves()).toEqual([]);
   });
 
-  it('drops a pre-move that no longer fits when the turn comes, and says so', async () => {
-    const onPreAction = vi.fn();
-    const bar = renderBar(waitingOn(100), { onPreAction });
+  it('drops a pre-move that no longer fits when the turn comes, and says so before the page picks a sound', async () => {
+    const page = renderInPage(waitingOn(100));
     await tap('Call 100');
-    onPreAction.mockClear();
     // Cy raised to 300, and that view is the one that gives Ann the turn.
-    bar.update(facingBet(300));
+    page.update(facingBet(300));
     await settle();
     expect(moves()).toEqual([]);
-    expect(onPreAction).toHaveBeenCalledWith(false);
+    // The page already knew on that view that nothing is queued, so it calls Ann with the turn sound.
+    expect(page.queuedPerView).toEqual([false, false]);
     expect(labels('.buttons')).toEqual(['Fold', 'Call 300', 'Raise to 600']);
   });
 
