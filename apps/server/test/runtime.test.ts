@@ -536,7 +536,8 @@ describe('chips and leaving', () => {
           else if (roll < 4) rt.act(id, { type: 'raise', to: (h.currentBet || 2) * 2 });
           else rt.act(id, { type: 'call' });
         } catch {
-          rt.act(id, { type: 'check' });
+          // A raise past the stack (or a call with nothing to call) is refused; check, or call if there's a bet.
+          rt.act(id, engine.legalActions(h, h.toAct)!.canCheck ? { type: 'check' } : { type: 'call' });
         }
       } else clock.advance(10_000);
       if (i === 100) rt.stand('d', { afterHand: true });

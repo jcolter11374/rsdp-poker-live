@@ -201,7 +201,12 @@ describe('tournaments after a crash', () => {
     const saved = when === 'during' ? during : between;
     expect(saved.tables[0].inHand).toBe(when === 'during');
     expect(saved.tables[0].lastHandNumber).toBe(when === 'during' ? rt.state.handNumber : rt.state.handNumber - 1);
-    const busted = rt.state.seats.flatMap((x) => (x?.stack === 0 ? [x.playerId] : [])).sort();
+    // Out: whoever the save already had out (busted in an earlier hand and gone from the table), and whoever this hand busted.
+    const busted = [
+      ...saved.entries.filter((e) => e.status === 'busted').map((e) => e.playerId),
+      ...rt.state.seats.flatMap((x) => (x?.stack === 0 ? [x.playerId] : [])),
+    ].sort();
+    expect(rt.state.seats.some((x) => x?.stack === 0)).toBe(true);
 
     const after = await restart(await savedAs(saved), env.snapshots, env.clock.t);
     const now = () => after.manager.view(id)!.state;
