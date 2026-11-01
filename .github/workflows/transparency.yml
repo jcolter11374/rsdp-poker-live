@@ -52,7 +52,7 @@ jobs:
           else
             echo "Couldn't reach the transparency branch"; exit 1
           fi
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       # Each check exits 1 for a real problem and 2 when it couldn't reach the
       # site, Fly or GitHub; only a real problem opens an issue.
       - name: Copy the public record
