@@ -3,7 +3,7 @@ import { handDigest, verifyHand } from '@rsdp/engine';
 import { engine, variants, type HandState } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { TableRuntime } from '../src/runtime/table';
+import { FAIR_STOP_REVEAL_MS, TableRuntime } from '../src/runtime/table';
 import { delayedPart, handRecordView, pastHand, tableView } from '../src/runtime/view';
 import { botTuning, coachTuning } from '../src/bots/strategy';
 import type { RuntimeState } from '../src/runtime/types';
@@ -446,6 +446,7 @@ describe('why the bots played that way', () => {
     expect(digest(stripped.hand)).toBe(digest(record.hand));
     // The hand still checks out once the host stops the game and the seeds are shown.
     rt.stop('host');
+    clock.advance(FAIR_STOP_REVEAL_MS);
     const view = handRecordView(rt, record, 'host', { notes: true });
     expect(view.botNotes!.length).toBeGreaterThan(0);
     const fair = view.fair!;

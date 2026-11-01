@@ -383,7 +383,7 @@ export function frameView(
     muted: [],
     spectator: null,
     cardsWatched: null,
-    fair: { nextCommit: '', handCommit: null },
+    fair: { nextCommit: '', handCommit: null, openThrough: 0 },
     bombPotNext: false,
     rabbit: { available: false, cards: null },
     nit: null,

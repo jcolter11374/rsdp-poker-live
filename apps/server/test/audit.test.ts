@@ -24,7 +24,7 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function start() {
   const audit = await AuditLog.open(dbAuditStore(db), { log: () => {} });
-  server = createApp({ identity: dbIdentity(db), store: dbStore(db), accounts: db, adminKey: KEY, audit, build: { commit: 'abc1234', image: null, machine: null }, log: () => {} });
+  server = createApp({ identity: dbIdentity(db), store: dbStore(db), accounts: db, adminKey: KEY, audit, fairStopRevealMs: 0, build: { commit: 'abc1234', image: null, machine: null }, log: () => {} });
   await new Promise<void>((resolve) => server.http.listen(0, resolve));
   url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
 }

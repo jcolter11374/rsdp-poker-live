@@ -1,7 +1,7 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { FAIR_REVEAL_AFTER_MS, fillStakes, rabbitCards, type TableRuntime } from './table';
+import { fairRevealsAt, fillStakes, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
 import { spectatorsSeeCards } from '@rsdp/engine/settings';
@@ -164,7 +164,7 @@ export function tableView(
         }
       : null,
     spectator: isSpectator ? { delaySeconds: s.settings.spectators.delaySeconds, seeAll: viewer.seeAll, blocked } : null,
-    fair: { nextCommit: rt.nextCommit(), handCommit: hand?.input.fair?.commit ?? null },
+    fair: { nextCommit: rt.nextCommit(), handCommit: hand?.input.fair?.commit ?? null, openThrough: rt.fairOpenThrough() },
   };
 }
 
@@ -360,14 +360,15 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
-    fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealed(past.handNumber, past.endedAt), (id) => rt.nameOf(id)),
+    fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealsAt(past.handNumber, past.endedAt), rt.now(), (id) => rt.nameOf(id)),
     ...(notes.length ? { botNotes: notes.map((n) => ({ ...n })) } : {}),
   };
 }
 
-function fairRecordView(past: PastHand, revealed: boolean, nameOf: (id: PlayerId) => string): FairRecordView | null {
+function fairRecordView(past: PastHand, revealsAt: number, now: number, nameOf: (id: PlayerId) => string): FairRecordView | null {
   const { fair, handId } = past;
   if (!fair || !handId) return null;
+  const revealed = now >= revealsAt;
   return {
     version: fair.version,
     handId,
@@ -375,7 +376,7 @@ function fairRecordView(past: PastHand, revealed: boolean, nameOf: (id: PlayerId
     clientSeeds: fair.clientSeeds.map((c) => ({ ...c, name: nameOf(c.playerId) })),
     serverSeed: revealed ? fair.serverSeed : null,
     handSeed: revealed ? fair.handSeed : null,
-    revealsAt: revealed ? null : past.endedAt + FAIR_REVEAL_AFTER_MS,
+    revealsAt: revealed ? null : revealsAt,
     events: revealed ? past.events : null,
   };
 }
@@ -417,6 +418,6 @@ export function savedHandView(
     fair:
       opts.now === undefined || opts.hideMine
         ? null
-        : fairRecordView(past, past.handNumber <= (state?.fair?.revealedThrough ?? 0) || opts.now - past.endedAt >= FAIR_REVEAL_AFTER_MS, nameOf),
+        : fairRecordView(past, fairRevealsAt(state?.fair, past.handNumber, past.endedAt), opts.now, nameOf),
   };
 }

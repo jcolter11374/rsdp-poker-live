@@ -48,12 +48,14 @@ first, details after.
   down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's
   built-in OpenSSL SHA-256 and none of the app's code.
-- **When hands are revealed** (decided 25 October 2026): when the host stops
-  the game, or 12 hours after the hand, whichever comes first. The reveal shows
-  the whole deck, including folded and mucked hands, so it waits until the
-  game is over. The Stop button warns the host of this and points to Pause
-  for a break, since a game started again after a stop keeps its earlier
-  hands revealed. Practice bots explain each move to the one person who played
+- **When hands are revealed** (decided 25 October 2026, the half hour added
+  1 November 2026): once the game has stayed stopped for 30 minutes, or 12
+  hours after the hand, whichever comes first. The reveal shows the whole deck,
+  including folded and mucked hands, so it waits until the game is over. A
+  host who stops and starts again within the half hour is still in the same
+  game, so earlier hands stay private. A game started again after the half
+  hour keeps its earlier hands revealed, so the Stop button says so and points
+  to Pause for a break. Practice bots explain each move to the one person who played
   that hand against only bots, once it is over. The explanations give rough
   numbers, never cards, so a folded bot's cards still wait for the reveal.
 - **Your cards stay private during play.** The server sends each person only

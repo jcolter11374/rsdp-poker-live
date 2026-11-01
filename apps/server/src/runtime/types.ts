@@ -142,8 +142,10 @@ export interface FairState {
   next: { serverSeed: string; commit: string };
   /** Client seeds sent for the next hand, by player. */
   clientSeeds: Record<PlayerId, string>;
-  /** Hands up to this number are revealed (the host stopped the game after it). */
+  /** Hands up to this number are revealed (the game stayed stopped FAIR_STOP_REVEAL_MS after it). */
   revealedThrough: number;
+  /** The host stopped the game after hand `through` at `at`: those hands open FAIR_STOP_REVEAL_MS later unless it starts again first. */
+  stopped?: { through: number; at: number };
   /** When `next` was committed to. Missing in snapshots from before it existed. */
   committedAt?: number;
 }
