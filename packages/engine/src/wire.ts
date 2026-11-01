@@ -154,7 +154,12 @@ export interface TableView {
   powers: HostPower[];
   /** Cash tables: the host's co-hosts and their powers. */
   coHosts: CoHost[];
-  me: { playerId: PlayerId; seat: number | null };
+  me: {
+    playerId: PlayerId;
+    seat: number | null;
+    /** Seated with chips to sit back in with (TableRuntime.canSitIn). Absent from servers before it was added. */
+    canSitIn?: boolean;
+  };
   settings: TableSettings;
   /** Host edits waiting for the next hand. */
   pendingSettings: SettingsPatch | null;
