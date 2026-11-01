@@ -50,10 +50,11 @@ export interface AccountHooks {
   /** The account's sign-ins ended (new password): drop these players' connections, except the browser with `keepGuestToken`. */
   signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
   /**
-   * A seat (or a seat asked for) at a cash table, or an entry in a tournament that isn't over, that this player holds,
-   * by name; null when there is none. Signing in makes the browser play as another player id, and neither can move.
+   * A seat at a cash table, a place in line for one (a seat request, the waitlist or a seat held from it), or an entry
+   * in a tournament that isn't over, that this player holds: its id and name; null when there is none. Signing in
+   * makes the browser play as another player id, and none of these can move.
    */
-  heldBy?(playerId: string): Promise<{ table: string } | { tournament: string } | null>;
+  heldBy?(playerId: string): Promise<{ table: string; id: string; waiting: boolean } | { tournament: string; id: string } | null>;
   /** How many people have this table open right now (0 when nobody is at it). */
   peopleAt?(tableId: string): number;
   /**
@@ -85,17 +86,29 @@ const MESSAGE: Partial<Record<IdentityError['code'], string>> = {
 };
 
 /**
- * Why this browser's guest can't sign in to an account it didn't make yet, or null. The browser would play as the
- * account's player from then on, and a seat or a tournament entry stays with the guest it was taken as.
+ * Why this browser's guest can't sign in to an account it didn't make yet, with the address of the table or
+ * tournament to sort it out at, or null. The browser would play as the account's player from then on, and a seat, a
+ * place in line for one, or a tournament entry stays with the guest it was taken as.
  */
-export async function heldMessage(hooks: AccountHooks, guestId: string): Promise<string | null> {
+export async function heldMessage(hooks: AccountHooks, guestId: string): Promise<{ error: string; code: 'seated'; href: string } | null> {
   const held = await hooks.heldBy?.(guestId);
   if (!held) return null;
   const named = (name: string, otherwise: string) => (name.trim() ? `“${name.trim()}”` : otherwise);
-  if ('table' in held) {
-    return `You have a seat at ${named(held.table, 'a table')} as a guest on this device, and it can't move into your account. Stand up and leave the table first, then sign in.`;
+  if ('tournament' in held) {
+    return {
+      error: `You're in ${named(held.tournament, 'a tournament')} as a guest on this device, and your entry can't move into your account. Unregister, or sign in once you're out of it.`,
+      code: 'seated',
+      href: `/tn/${held.id}`,
+    };
   }
-  return `You're in ${named(held.tournament, 'a tournament')} as a guest on this device, and your entry can't move into your account. Unregister, or sign in once you're out of it.`;
+  const at = named(held.table, 'a table');
+  return {
+    error: held.waiting
+      ? `You're waiting for a seat at ${at} as a guest on this device, and your place can't move into your account. Cancel your seat request or leave the waitlist first, then sign in.`
+      : `You have a seat at ${at} as a guest on this device, and it can't move into your account. Stand up and leave the table first, then sign in.`,
+    code: 'seated',
+    href: `/t/${held.id}`,
+  };
 }
 
 export function accountRoutes(
@@ -184,7 +197,7 @@ export function accountRoutes(
       const who = await identify(req, db);
       if (who.account) return void res.status(409).json({ error: `You're signed in as ${who.account.username}. Sign out first.` });
       const held = await heldMessage(hooks, who.guest.id);
-      if (held) return void res.status(409).json({ error: held, code: 'seated' });
+      if (held) return void res.status(409).json(held);
       let result;
       try {
         result = await login(db, username, password, { now: new Date(now()) });

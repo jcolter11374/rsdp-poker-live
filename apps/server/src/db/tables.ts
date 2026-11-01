@@ -265,12 +265,17 @@ export async function saveSnapshot(
 
 /**
  * The cash tables whose last save (in snapshot format `version`, the one that still loads) has this player in a
- * seat or asking for one, with their names. Tables put away while idle keep their seats only there.
+ * seat, asking for one, or on the waitlist (a seat held for them included), with their names and whether they have
+ * the seat. Tables put away while idle keep these only there.
  */
-export async function tablesSeatingInSaves(db: Db, playerId: string, version: number): Promise<{ id: string; name: string }[]> {
+export async function tablesSeatingInSaves(db: Db, playerId: string, version: number): Promise<{ id: string; name: string; seated: boolean }[]> {
   const me = JSON.stringify([{ playerId }]);
   return db
-    .select({ id: tables.id, name: sql<string>`coalesce(${tableSnapshots.state} -> 'settings' -> 'table' ->> 'name', '')` })
+    .select({
+      id: tables.id,
+      name: sql<string>`coalesce(${tableSnapshots.state} -> 'settings' -> 'table' ->> 'name', '')`,
+      seated: sql<boolean>`coalesce(${tableSnapshots.state} -> 'seats' @> ${me}::jsonb, false)`,
+    })
     .from(tables)
     .innerJoin(tableSnapshots, eq(tableSnapshots.tableId, tables.id))
     .where(
@@ -278,7 +283,10 @@ export async function tablesSeatingInSaves(db: Db, playerId: string, version: nu
         ne(tables.status, 'archived'),
         eq(tables.mode, 'cash'),
         eq(tableSnapshots.version, version),
-        or(sql`${tableSnapshots.state} -> 'seats' @> ${me}::jsonb`, sql`${tableSnapshots.state} -> 'requests' @> ${me}::jsonb`),
+        or(
+          // Fixed field names, written into the SQL rather than sent as parameters (`jsonb -> $1` is ambiguous in Postgres).
+          ...(['seats', 'requests', 'waitlist', 'offers'] as const).map((field) => sql`${tableSnapshots.state} -> ${sql.raw(`'${field}'`)} @> ${me}::jsonb`),
+        ),
       ),
     );
 }

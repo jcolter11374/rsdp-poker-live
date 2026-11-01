@@ -163,6 +163,7 @@ describe('sign in with Google', () => {
     const refused = await googleSignIn(LAPTOP, { sub: 'g-1', name: 'Mike' });
     expect(refused).toMatchObject({ status: 409, code: 'seated' });
     expect(refused.finished!.error).toMatch(/Kitchen/);
+    expect(refused.finished!.href).toBe(`/t/${tableId}`);
     expect(refused.finished!.session).toBeUndefined();
 
     // A Google account made here plays as this guest, so the seat comes along.

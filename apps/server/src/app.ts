@@ -63,8 +63,8 @@ export interface TableStore {
   loadHands(tableId: string): Promise<PastHand[]>;
   /** Deletes a cash table and its hands for good; false when there was no such table. */
   deleteTable(tableId: string): Promise<boolean>;
-  /** Saved cash tables with this player in a seat or asking for one, as their last saves have it. Optional. */
-  tablesSeating?(playerId: PlayerId): Promise<{ id: string; name: string }[]>;
+  /** Saved cash tables with this player in a seat, asking for one or on the waitlist, as their last saves have it. Optional. */
+  tablesSeating?(playerId: PlayerId): Promise<{ id: string; name: string; seated: boolean }[]>;
 }
 
 export function memoryIdentity(): IdentityService {
@@ -400,15 +400,20 @@ export function createApp(deps: AppDeps = {}) {
       for (const id of playerIds) for (const s of playerSockets.get(id) ?? []) if (s.data.device !== keep) s.disconnect(true);
     },
     heldBy: async (playerId) => {
-      const holds = (rt: TableRuntime) => !!rt.seatOf(playerId) || rt.state.requests.some((r) => r.playerId === playerId);
-      for (const rt of tables.values()) if (!rt.isTournament && holds(rt)) return { table: rt.state.settings.table.name };
+      const mine = (list: { playerId: PlayerId }[] | undefined) => !!list?.some((x) => x.playerId === playerId);
+      const waits = (rt: TableRuntime) => mine(rt.state.requests) || mine(rt.state.waitlist) || mine(rt.state.offers);
+      for (const [id, rt] of tables) {
+        if (rt.isTournament) continue;
+        const seated = !!rt.seatOf(playerId);
+        if (seated || waits(rt)) return { table: rt.state.settings.table.name, id, waiting: !seated };
+      }
       const event = tournaments.enteredIn(playerId);
-      if (event !== null) return { tournament: event };
+      if (event !== null) return { tournament: event.name, id: event.id };
       // Tables put away while idle keep their seats in their last save; one being put away now is saved first.
       await Promise.allSettled([...unloading.values()]);
       const saved = (await store.tablesSeating?.(playerId)) ?? [];
       const away = saved.find((t) => !tables.has(t.id) && !deleted.has(t.id));
-      return away ? { table: away.name } : null;
+      return away ? { table: away.name, id: away.id, waiting: !away.seated } : null;
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
     deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {

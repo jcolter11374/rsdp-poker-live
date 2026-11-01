@@ -311,7 +311,7 @@ export function googleRoutes(
       if (account) {
         // A new account below keeps playing as this guest; an existing one would leave its seat or entry behind.
         const held = await heldMessage(hooks, who.guest.id);
-        if (held) return void res.status(409).json({ error: held, code: 'seated' });
+        if (held) return void res.status(409).json(held);
         merged = t.bringOver && (await adoptGuest(db, account.id, who.guest.id));
       } else {
         const made = await createGoogleAccount(db, { sub: t.sub, name: t.name || t.givenName, guestId: who.guest.id }, { now: at });

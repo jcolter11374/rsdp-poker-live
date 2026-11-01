@@ -252,10 +252,10 @@ export class TournamentManager {
     return n;
   }
 
-  /** The name of an open event (as in isOpen) this player is still in: registered, seated, or offered a rebuy. */
-  enteredIn(playerId: PlayerId): string | null {
+  /** The id and name of an open event (as in isOpen) this player is still in: registered, seated, or offered a rebuy. */
+  enteredIn(playerId: PlayerId): { id: string; name: string } | null {
     for (const { state: s } of this.live.values()) {
-      if (isLive(s) && !isArchived(s) && aliveEntries(s).some((e) => e.playerId === playerId)) return s.settings.name;
+      if (isLive(s) && !isArchived(s) && aliveEntries(s).some((e) => e.playerId === playerId)) return { id: s.id, name: s.settings.name };
     }
     return null;
   }

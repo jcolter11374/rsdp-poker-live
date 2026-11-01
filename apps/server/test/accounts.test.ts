@@ -5,11 +5,11 @@ import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { defaultSettings } from '@rsdp/tournament';
 import { createApp } from '../src/app';
-import { closeDb, createTable, loadSnapshot, saveHand, saveSnapshot, type Db } from '../src/db';
+import { closeDb, createTable, loadSnapshot, saveHand, saveSnapshot, tablesSeatingInSaves, type Db } from '../src/db';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { dbAvatars } from '../src/avatars';
 import { dbNotes } from '../src/notes';
-import type { RuntimeState } from '../src/runtime/types';
+import { RUNTIME_VERSION, type RuntimeState } from '../src/runtime/types';
 import { dbIdentity, dbStore } from '../src/storage';
 import { getPlayer } from '../src/identity';
 import { FakeClock } from './fake-clock';
@@ -165,6 +165,8 @@ describe('accounts', () => {
     expect(refused.status).toBe(409);
     expect(refused.body.error).toMatch(/Kitchen/);
     expect(refused.body.error).toMatch(/stand up/i);
+    // A link to the table, since names need not be unique and it may be one the player has lost.
+    expect(refused.body).toMatchObject({ code: 'seated', href: `/t/${tableId}` });
     expect(refused.body.session).toBeUndefined();
     // Nothing changed: the browser still plays as its guest, which keeps the seat.
     expect((await me(LAPTOP)).account).toBeNull();
@@ -198,6 +200,63 @@ describe('accounts', () => {
     const refused = await signIn(LAPTOP);
     expect(refused.status).toBe(409);
     expect(refused.body.error).toMatch(/Garage/);
+    expect(refused.body.href).toBe(`/t/${tableId}`);
+
+    // Following the link opens the table again, and standing up there lets the sign-in through.
+    const back = socketClient(url, LAPTOP, clients);
+    await new Promise((r) => back.socket.once('session', r));
+    await back.call('table:join', { tableId });
+    back.socket.emit('seat:stand', {});
+    await back.until((v) => v.seats.every((x) => !x));
+    expect((await signIn(LAPTOP)).status).toBe(200);
+  });
+
+  it('won’t sign in on a device whose guest is on a waitlist or has a seat held for it, and links to the table', async () => {
+    await signUp(PHONE);
+    const laptop = socketClient(url, LAPTOP, clients);
+    const guest = await new Promise<{ playerId: string }>((r) => laptop.socket.once('session', r));
+    const { tableId } = await laptop.call<{ tableId: string }>('table:create', {
+      settings: { table: { name: 'Porch', maxSeats: 2 }, seating: { requireApproval: false, waitlist: true }, timing: { autoStartNextHand: false } },
+    });
+    await laptop.call('table:join', { tableId });
+    const rt = server.tables.get(tableId)!;
+    rt.requestSeat('ann', { seat: 0, name: 'Ann', stack: 100 });
+    rt.requestSeat('bo', { seat: 1, name: 'Bo', stack: 100 });
+    await laptop.call('waitlist:join', { name: 'Guest', stack: 100 });
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual([guest.playerId]);
+
+    const refused = await signIn(LAPTOP);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/Porch/);
+    expect(refused.body.error).toMatch(/waitlist/);
+    expect(refused.body).toMatchObject({ code: 'seated', href: `/t/${tableId}` });
+
+    // A seat held for the guest from the waitlist counts too.
+    rt.stand('bo');
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual([guest.playerId]);
+    rt.state.waitlist = [];
+    expect((await signIn(LAPTOP)).status).toBe(409);
+
+    rt.state.offers = [];
+    expect((await signIn(LAPTOP)).status).toBe(200);
+  });
+
+  it('counts a waitlist place or a held seat in a put-away table’s last save, but not someone else’s', async () => {
+    const host = (await sessionOf(PHONE)).playerId;
+    const save = async (id: string, name: string, state: Partial<RuntimeState>) => {
+      await createTable(db, { id, ownerPlayerId: host, settings: { table: { name } }, mode: 'cash' });
+      await saveSnapshot(db, id, { version: RUNTIME_VERSION, state: { settings: { table: { name } }, seats: [], requests: [], ...state } });
+    };
+    await save('t-line', 'Line', { waitlist: [{ playerId: 'me', name: 'Me', stack: 100, at: 0 }] });
+    await save('t-held', 'Held', { offers: [{ seat: 1, playerId: 'me', expiresAt: 0 }] });
+    await save('t-sat', 'Sat', { seats: [{ playerId: 'me' } as never] });
+    await save('t-other', 'Other', { waitlist: [{ playerId: 'you', name: 'You', stack: 100, at: 0 }] });
+    const found = await tablesSeatingInSaves(db, 'me', RUNTIME_VERSION);
+    expect(found.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: 't-held', name: 'Held', seated: false },
+      { id: 't-line', name: 'Line', seated: false },
+      { id: 't-sat', name: 'Sat', seated: true },
+    ]);
   });
 
   it('won’t sign in on a device whose guest is entered in a tournament that isn’t over', async () => {
@@ -210,6 +269,7 @@ describe('accounts', () => {
     const refused = await signIn(LAPTOP);
     expect(refused.status).toBe(409);
     expect(refused.body.error).toMatch(/Sunday Cup/);
+    expect(refused.body.href).toBe(`/tn/${id}`);
     expect((await me(LAPTOP)).account).toBeNull();
 
     await laptop.call('tournament:command', { id, command: { type: 'unregister' } });
