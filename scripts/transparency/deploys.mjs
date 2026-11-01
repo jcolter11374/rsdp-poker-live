@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The deploy watcher's check, run every hour by .github/workflows/transparency.yml:
+// The deploy watcher's check, run by .github/workflows/transparency.yml (scheduled hourly, often hours late, and after each deploy):
 // which image Fly says the live machine runs, whether GitHub built and signed
 // that exact image with deploy.yml from a commit that is still on main, and
 // when the machine started. It also checks the machine's settings and secret
@@ -87,7 +87,7 @@ async function attestation(image, digest) {
   } catch (e) {
     // Signed, but not by deploy.yml from main, or the signature doesn't hold.
     if (/verification failed|failed to verify|did not match|none of the|no matching|expected .* got/i.test(errText(e))) return null;
-    // Anything else (the registry, Sigstore, a rate limit) is a hiccup: try again next hour.
+    // Anything else (the registry, Sigstore, a rate limit) is a hiccup: try again on the next run.
     throw new Unreachable(`checking GitHub's signature: ${errText(e)}`);
   }
 }

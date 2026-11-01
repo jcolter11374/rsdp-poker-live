@@ -86,7 +86,7 @@ no profiling. No money changes hands through the site.
 
 To make cheating by John easy to spot, the site keeps a public, append-only
 record of fingerprints of every hand, admin actions and server starts, and
-copies it to GitHub every hour. It also lists each player's buy-ins and
+copies it to GitHub every few hours. It also lists each player's buy-ins and
 cash-outs at each table, as amounts. It holds **no names, no cards and no
 table links**: a table and each player at it appear only as fingerprints that
 someone who already has the table's link can match up. See [Checking John](/transparency)
@@ -121,7 +121,7 @@ for how it works.
   events; it is forgotten within a few minutes of the tournament ending. A
   server restart forgets them all. The server's own logs record errors, not
   visitors, and they stay in Fly's log service, not in the site's database.
-- **GitHub** holds the code, the hourly copy of the public record and the
+- **GitHub** holds the code, the regular copy of the public record and the
   nightly backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy
   policy covers what Google does. The site asks Google only for the basic

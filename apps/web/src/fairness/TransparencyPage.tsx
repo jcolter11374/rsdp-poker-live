@@ -6,6 +6,8 @@ import './fairness.css';
 
 const REPO = 'https://github.com/jcolter11374/rsdp-poker-live';
 const WATCHER = 'https://raw.githubusercontent.com/jcolter11374/rsdp-poker-live/transparency/deploys/current.json';
+/** A watcher report older than this means it has stopped: GitHub starts its hourly schedule late, 3 to 8 hours apart in practice. */
+const STALE_HOURS = 12;
 
 type Version = { commit: string | null; image: string | null; startedAt: string };
 type Head = { seq: number; hash: string; copied?: string };
@@ -58,8 +60,8 @@ export function TransparencyPage() {
   }, []);
 
   const running = watcher && watcher !== 'none' ? watcher.machines.find((m) => m.state === 'started') : null;
-  // The watcher runs hourly; a much older report means it has stopped, or can't get through.
-  const stale = watcher && watcher !== 'none' && Date.now() - new Date(watcher.checked).getTime() > 3 * 3_600_000;
+  // The same limit as scripts/transparency/status.mjs, which opens an issue on GitHub.
+  const stale = watcher && watcher !== 'none' && Date.now() - new Date(watcher.checked).getTime() > STALE_HOURS * 3_600_000;
 
   return (
     <div className="site-page">
@@ -85,8 +87,9 @@ export function TransparencyPage() {
             {version && <>, started {when(version.startedAt)}</>}. That is the server describing itself, so on its own it proves nothing.
           </li>
           <li>
-            GitHub&rsquo;s hourly watcher asks Fly which image the live machine runs, and checks GitHub&rsquo;s own signed record of how that image was built. It also
-            checks the machine&rsquo;s start command, settings and secret names, which could otherwise make the same image run other code.{' '}
+            GitHub&rsquo;s watcher asks Fly which image the live machine runs, and checks GitHub&rsquo;s own signed record of how that image was built. It also
+            checks the machine&rsquo;s start command, settings and secret names, which could otherwise make the same image run other code. It runs right after every
+            release, and on a schedule set to every hour, though GitHub often starts scheduled jobs hours late, so in practice it checks every few hours.{' '}
             {watcher === null ? (
               'Loading…'
             ) : watcher === 'none' ? (
@@ -105,7 +108,7 @@ export function TransparencyPage() {
               <>Last check: {when(watcher.checked)}.</>
             )}{' '}
             {watcher && watcher !== 'none' && watcher.notes?.length ? <>Noted: {watcher.notes.join(' ')} </> : null}
-            {stale && <span className="down">That is more than three hours ago, so the watcher has stopped or can&rsquo;t get through. </span>}
+            {stale && <span className="down">That is more than {STALE_HOURS} hours ago, longer than GitHub&rsquo;s usual delays, so the watcher has stopped or can&rsquo;t get through. </span>}
             <a href={`${REPO}/tree/transparency/deploys`}>Every check</a>
           </li>
         </ul>
@@ -118,7 +121,7 @@ export function TransparencyPage() {
         <ul>
           <li>The site&rsquo;s record has {head ? `${head.seq.toLocaleString()} entries` : '…'}.</li>
           <li>
-            GitHub copies it every hour:{' '}
+            GitHub&rsquo;s watcher copies it each time it runs (every few hours):{' '}
             {copy === null ? '…' : copy === 'none' ? 'no copy yet.' : `up to entry ${copy.seq.toLocaleString()}, copied ${copy.copied ? when(copy.copied) : ''}.`}{' '}
             <a href={`${REPO}/tree/transparency/audit`}>The copy</a>
           </li>
