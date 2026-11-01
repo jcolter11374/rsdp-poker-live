@@ -1341,7 +1341,7 @@ export function createApp(deps: AppDeps = {}) {
     // A move carries the turn it was pressed on (TurnKey), checked apart from the move itself so it never reaches the engine.
     on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action), turnOf(action)), log));
     on('hand:draw', (input, ack) => guarded(ack, () => current().draw(me, toIndexes(input?.discard), turnOf(input)), log));
-    on('hand:runItTwice', ({ yes }, ack) => guarded(ack, () => current().voteRunItTwice(me, !!yes), log));
+    on('hand:runItTwice', (input, ack) => guarded(ack, () => current().voteRunItTwice(me, !!input?.yes, { handNumber: turnOf(input).handNumber }), log));
     on('hand:show', (input, ack) => guarded(ack, () => current().show(me, toIndexes(input?.cards), { handNumber: turnOf(input).handNumber }), log));
     on('hand:timeBank', (...args) => {
       // The ack comes last; a page from before turn keys sends nothing before it.

@@ -341,7 +341,8 @@ export interface ClientToServer {
   'waitlist:leave': (ack: Ack) => void;
   'hand:act': (action: Action & TurnKey, ack: Ack) => void;
   'hand:draw': (input: { discard: number[] } & TurnKey, ack: Ack) => void;
-  'hand:runItTwice': (input: { yes: boolean }, ack: Ack) => void;
+  /** `handNumber`: the hand whose vote I pressed it in, so a vote that arrives during a later hand's vote is ignored, not counted there. */
+  'hand:runItTwice': (input: { yes: boolean; handNumber?: number }, ack: Ack) => void;
   /** `handNumber`: the hand I pressed it after, so a show that arrives once the next hand is dealt is refused, not played on that hand. */
   'hand:show': (input: { cards: number[]; handNumber?: number }, ack: Ack) => void;
   /** Add my time bank to my clock now, on the turn I pressed it on (a page from before turn keys sends the ack alone). */

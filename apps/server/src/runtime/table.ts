@@ -1743,12 +1743,15 @@ export class TableRuntime {
     this.afterEngine();
   }
 
-  voteRunItTwice(playerId: PlayerId, yes: boolean) {
+  voteRunItTwice(playerId: PlayerId, yes: boolean, sentFor: Pick<TurnKey, 'handNumber'> = {}) {
     // Refused the same way whether or not a vote is open: see liveHandFor.
     if (!this.seatOf(playerId)) throw new ActionError('you are not in this hand');
-    // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change.
+    // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change,
+    // and neither does one for an earlier hand's vote: it must not count in this one. Only the hand is sent (each
+    // vote adds an event, so the count is no turn); a page from before sends none and votes as it always did.
     const current = this.state.hand;
     if (!current || current.phase !== 'rit-vote') return;
+    if (sentFor.handNumber !== undefined && sentFor.handNumber !== current.input.handNumber) return;
     const hand = this.liveHandFor(playerId);
     engine.voteRunItTwice(hand, this.seatOf(playerId)!.seat, yes);
     this.afterEngine();
