@@ -1,3 +1,9 @@
+// Play-test: a cash game. Four players (one on a phone) sit at a host's
+// table and play Hold'em, run it twice, a bomb pot, Omaha and Stud, then the
+// ledger, hands and replayer are opened. Takes about 4 minutes.
+//   BASE_URL=http://localhost:3001 node e2e/playtest/cash.mjs
+// See README.md.
+
 import { writeFileSync } from 'node:fs';
 import { BASE, OUT, DESK, PHONE, browser, errors, open, shot, shots, bot, handOver } from './lib.mjs';
 

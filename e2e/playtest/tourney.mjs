@@ -1,3 +1,9 @@
+// Play-test: a scheduled tournament. Seven players (one on a phone) register,
+// nobody presses start, and it starts on its own at the set time; then
+// everyone shoves until there is a winner. Takes about 3 minutes.
+//   BASE_URL=http://localhost:3001 node e2e/playtest/tourney.mjs
+// See README.md.
+
 import { writeFileSync } from 'node:fs';
 import { BASE, OUT, DESK, PHONE, browser, errors, open, shot, shots, bot } from './lib.mjs';
 
@@ -14,11 +20,13 @@ try {
   await john.locator('label:has-text("Name") input').first().fill('Sunday Shootout');
   await john.locator('label:has-text("Starting stack") input').fill('1500');
   await john.locator('label:has-text("Seats per table") input').fill('4');
+  // The form takes the browser's time zone, which is this computer's, so local time (not UTC) here too.
   const start = new Date(Date.now() + 150_000);
-  start.setUTCSeconds(0, 0);
-  const hh = String(start.getUTCHours()).padStart(2, '0');
-  const mm = String(start.getUTCMinutes()).padStart(2, '0');
-  await john.locator('label:has-text("Date") input').fill(start.toISOString().slice(0, 10));
+  start.setSeconds(0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  const hh = pad(start.getHours());
+  const mm = pad(start.getMinutes());
+  await john.locator('label:has-text("Date") input').fill(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`);
   await john.locator('label:has-text("Time") input[type=time]').fill(`${hh}:${mm}`);
   await john.waitForTimeout(500);
   await shot(john, 't-create', `Creating a tournament set to start on its own at ${hh}:${mm}. Nobody has to press start.`);
@@ -57,7 +65,8 @@ try {
   let tookMerge = false;
   for (let i = 0; i < 400; i++) {
     const text = await lobby.locator('body').innerText();
-    if (/Winner/.test(text)) break;
+    // The lobby shows "Winner" in capitals (CSS), so innerText has it as WINNER.
+    if (/Winner/i.test(text)) break;
     if (/Players\s*1 \/ 7/.test(text) && !globalThis.lone) {
       globalThis.lone = true;
       await lobby.getByRole('tab', { name: /^Players/ }).click().catch(() => {});

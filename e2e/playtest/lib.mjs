@@ -1,8 +1,21 @@
+// What cash.mjs and tourney.mjs share: real browsers, screenshots, and bots
+// that click the same buttons a player would. See README.md.
+
 import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 export const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
-export const OUT = process.env.OUT;
+// It creates tables and a tournament with made-up players, so it never runs against the live site.
+if (/fly\.dev/.test(BASE)) {
+  console.error('play-test refused: it would leave test tables and tournaments on the live site');
+  process.exit(1);
+}
+// Only the server under test is ever contacted: any other request is blocked and listed with the errors.
+const LOCAL = new Set(['localhost', '127.0.0.1', '[::1]']);
+const SERVER = new URL(BASE).host;
+export const OUT = process.env.OUT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'out', 'playtest');
 mkdirSync(OUT, { recursive: true });
 export const DESK = { width: 1280, height: 800 };
 export const PHONE = { width: 390, height: 844 };
@@ -17,6 +30,12 @@ export async function open(label, viewport = DESK, video = false) {
     isMobile: viewport.width < 500,
     hasTouch: viewport.width < 500,
     ...(video ? { recordVideo: { dir: `${OUT}/video`, size: viewport } } : {}),
+  });
+  await ctx.route('**/*', (route) => {
+    const url = new URL(route.request().url());
+    if (LOCAL.has(url.hostname) || url.host === SERVER) return route.continue();
+    errors.push(`${label}: blocked a request to ${url.origin}`);
+    return route.abort();
   });
   const p = await ctx.newPage();
   p.label = label;
