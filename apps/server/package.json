@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.2.14",
+    "@electric-sql/pglite": "^0.5.13",
     "@rsdp/engine": "*",
     "@rsdp/tournament": "*",
     "drizzle-orm": "^0.36.4",
