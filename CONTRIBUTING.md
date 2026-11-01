@@ -148,6 +148,10 @@ notes on each GitHub release.
   them; no pull request numbers or code names.
 - **What goes where.** What's new is for new features and changes people
   will notice; small fixes only go in the changelog (John's rule).
+- **The roadmap page.** If the release ships or changes something on the
+  public roadmap, update
+  [`apps/web/src/roadmap/roadmap.json`](apps/web/src/roadmap/roadmap.json)
+  and its `lastUpdated` in the same release.
 
 If a Release run fails, fix the cause and run it again by hand from the
 Actions tab (Release → Run workflow). It picks up whatever is missing and
