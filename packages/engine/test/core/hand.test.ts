@@ -536,12 +536,26 @@ describe('the stud bring-in', () => {
     expect(s.toAct).toBe(2);
   });
 
-  it('when the low card is all in from the ante, an away or timed-out next seat still brings in, as before', () => {
+  it('when the low card is all in from the ante, an away or timed-out next seat folds instead of bringing in', () => {
     const away = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded, away: [1] });
-    expect(eventsOf(away, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+    expect(eventsOf(away, 'action')[0]).toMatchObject({ seat: 1, action: 'fold', amount: 0, auto: true });
+    expect(stacks(away)[1]).toBe(99);
+    expect(away.toAct).toBe(2);
     const slow = start({ game: 'stud', stacks: [1, 100, 100, 100], stakes: STUD, top: fourHanded });
     engine.timeout(slow, 1);
-    expect(eventsOf(slow, 'action')[0]).toMatchObject({ seat: 1, action: 'bring-in', amount: 1, auto: true });
+    expect(eventsOf(slow, 'action')[0]).toMatchObject({ seat: 1, action: 'fold', amount: 0, auto: true });
+    expect(stacks(slow)[1]).toBe(99);
+    expect(slow.toAct).toBe(2);
+  });
+
+  it('the low card itself, away or timed out, still has the bring-in posted', () => {
+    const away = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal, away: [0] });
+    expect(eventsOf(away, 'action')[0]).toMatchObject({ seat: 0, action: 'bring-in', amount: 1, auto: true });
+    expect(away.toAct).toBe(1);
+    const slow = start({ game: 'stud', stacks: [100, 100, 100], stakes: STUD, top: deal });
+    engine.timeout(slow, 0);
+    expect(eventsOf(slow, 'action')[0]).toMatchObject({ seat: 0, action: 'bring-in', amount: 1, auto: true });
+    expect(slow.toAct).toBe(1);
   });
 
   it('after a leaving low card brings in, an away player next acts at once', () => {

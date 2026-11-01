@@ -528,6 +528,8 @@ export interface BotNote {
   alt?: { thrown: number; share: number };
   /** Hard: acts last for the rest of the hand. */
   last?: true;
+  /** Stud: it brought in only because the player who had to was all in from the ante, so it could have folded. */
+  opened?: true;
   /** Hard: what it made of how you (the one person in the hand) play, and how often you bet or raised this hand. */
   you?: 'folds-often' | 'calls-often';
   yourBets?: number;

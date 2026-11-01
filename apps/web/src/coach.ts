@@ -503,6 +503,8 @@ export function noteText(note: BotNote, name: string, ctx: NoteContext = {}): st
         ? `${who} completed to steal the antes: few players were left, and you've folded to a lot of bets lately.`
         : `${who} completed to steal the antes: few players were left, and they fold a lot.`;
     case 'bring-in':
+      // A note saved before `opened` existed reads as the forced bring-in, as it always did.
+      if (note.opened) return `${who} brought it in: the player who had to bring in was all in, so it started the betting, with nothing worth completing.`;
       return `${who} brought it in: ${ctx.gameId === 'razz' ? 'highest' : 'lowest'} card showing and nothing worth completing.`;
     case 'complete':
       if (!chance) return '';
