@@ -104,3 +104,28 @@ jobs:
           done
           flyctl logs --app "$FLY_APP" --no-tail | tail -100
           exit 1
+      # Every release gets the read-only checks that used to be run by hand (live-check.yml).
+      # Read only: nothing here creates tables, tournaments or players on the live site.
+      - name: Read-only checks on the live site
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          site="https://$FLY_APP.fly.dev"
+          # The server answering is the one just deployed (BUILD_COMMIT, reported by /api/version).
+          for i in $(seq 1 12); do
+            live=$(curl -sf "$site/api/version" | jq -r '.commit // empty') || live=
+            [ "$live" = "$SHA" ] && break
+            sleep 5
+          done
+          echo "Live commit: ${live:-none}; deployed: $SHA"
+          [ "$live" = "$SHA" ] || { echo "::error::The live site doesn't report the commit just deployed."; exit 1; }
+          # The website's pages load.
+          for path in / /rules/badugi /tn/new; do
+            curl -sf "$site$path" | grep -q '<div id="root">' || { echo "::error::$path did not serve the app"; exit 1; }
+          done
+          # The operator-only endpoint stays closed to the internet (it answers only a shell on the server).
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/admin/tournaments")
+          echo "api/admin/tournaments $code"
+          [ "$code" = 404 ] || { echo "::error::api/admin/tournaments answered $code, expected 404"; exit 1; }
+          # Sign-in setup answers (prints whether Google sign-in is on; not a failure either way).
+          echo "Google sign-in on: $(curl -sf "$site/api/auth/config" | jq -r '.google')"
