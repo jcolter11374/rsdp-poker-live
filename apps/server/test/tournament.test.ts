@@ -280,7 +280,11 @@ describe('tournaments on the server', () => {
     playUntil(env, () => state().entries.some((e) => e.status === 'rebuy-offer'));
     const offered = state().entries.find((e) => e.status === 'rebuy-offer')!;
     const [rt] = env.tables.values();
-    env.clock.advance(5000);
+    // Wait past the deal the table scheduled (the showdown pause, plus any run-out), still well inside the 30 s offer:
+    // the table must not deal while the player decides.
+    const dueIn = (rt.state.nextHandAt ?? env.clock.t) - env.clock.t;
+    expect(dueIn).toBeLessThan(25_000);
+    env.clock.advance(Math.max(5000, dueIn + 2000));
     expect(rt.state.hand?.phase ?? 'complete').toBe('complete');
     await env.manager.command(id, offered.playerId, offered.displayName, { type: 'rebuy', playerId: offered.playerId });
     env.clock.advance(5000);

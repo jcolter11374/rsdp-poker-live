@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "id": "2026.11.01.7",
+      "date": "2026-11-01",
+      "fixes": [
+        "Cash games: the betting buttons now stay locked until your move is answered or the turn moves on, so a chat message or someone sitting down can no longer unlock them early and let a second tap through.",
+        "Cash games: if the host sets the stack of a player who ran out of chips, that player is now dealt back in, just as after a rebuy, instead of staying stuck as out of chips.",
+        "Fair dealing: your browser now warns about extra seeds no one else would check (more than one under your name, one under a practice bot or someone not dealt in, or the same seed twice), and \"Check this hand\" and the proof checker catch them too.",
+        "Tournament structures: \"+ Add level\" now stops at the most the site allows (100 levels), and new levels' blinds and ante stop at the maximum chip amount.",
+        "Saving a tournament structure or table preset without signing in now applies the same size and count limits as an account, so what you save can be brought over when you sign in.",
+        "Behind the scenes: our automated tests now deal more varied hands and fail less often on a busy machine. Nothing changes at the tables."
+      ]
+    },
+    {
       "id": "2026.11.01.6",
       "date": "2026-11-01",
       "fixes": [

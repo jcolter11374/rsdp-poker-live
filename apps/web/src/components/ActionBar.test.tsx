@@ -335,10 +335,9 @@ describe('double taps and moves in flight', () => {
     expect(moves()).toHaveLength(2);
   });
 
-  // Bug: the buttons come back on any new view, not only a new turn. Every table:state carries a new `legal` object,
-  // so a chat line (or anyone sitting down) while a move is unanswered frees them, and a tap more than half a second
-  // after the move sends a second one, which can land on the next street. Remove .fails once fixed.
-  it.fails('keeps the buttons held while a move is unanswered when a view that is not a new turn arrives', async () => {
+  // Every table:state carries a new `legal` object, so a chat line (or anyone sitting down) while a move is unanswered
+  // must not free the buttons: a tap more than half a second after the move would send a second one.
+  it('keeps the buttons held while a move is unanswered when a view that is not a new turn arrives', async () => {
     call.mockReturnValueOnce(new Promise(() => {}));
     const bar = renderBar(facingBet(100));
     await tap('Call 100');

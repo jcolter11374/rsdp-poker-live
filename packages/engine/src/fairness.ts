@@ -188,6 +188,12 @@ export function verifyHand(args: {
   add('Server seed matches the commitment shown before the deal', commitOk, `SHA-256(${args.serverSeed}) = ${commitmentOf(args.serverSeed)}`);
   const handSeed = handSeedOf(args.serverSeed, args.clientSeeds);
   if (args.handSeed != null) add('Hand seed comes from the server seed and the players\u2019 seeds', handSeed === args.handSeed, handSeed);
+  // An honest server lists at most one seed per player dealt in, all fresh. A copy or an extra seed changes the deck
+  // without anyone's browser vouching for it, so it could have been picked to steer the deal. Shown only when it fails.
+  const copies = [...new Set(args.clientSeeds)].filter((s) => args.clientSeeds.indexOf(s) !== args.clientSeeds.lastIndexOf(s));
+  const extra: string[] = copies.map((s) => `${s} is listed ${args.clientSeeds.filter((c) => c === s).length} times`);
+  if (args.seats && args.clientSeeds.length > args.seats.length) extra.push(`${args.clientSeeds.length} seeds are listed for ${args.seats.length} seats dealt in`);
+  if (extra.length) add('Each seed is listed once, at most one per seat dealt in', false, extra.join('; '));
   const original = deckFromSeed(handSeed);
 
   let deck = original.slice();

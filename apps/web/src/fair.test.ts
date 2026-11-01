@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
 vi.mock('./socket', () => ({ socket: mockSocket }));
-const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, liveRecordFor, liveSeedProblem, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -450,5 +450,118 @@ describe('sending my seed', () => {
     store.set('rsdp.fairSent', JSON.stringify({ T10: JSON.stringify({ seed: 'aa', at: 0, rejected: { after: 5 } }) }));
     contributeSeed(seated('T10'));
     expect(emitted).toHaveLength(1);
+  });
+});
+
+describe('seeds that nobody checks', () => {
+  it('catches my own seed listed more than once: each copy changes the deck', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    expect(seedProblem(C, listed('aa'), 'me', true, 10_000)).toBeNull();
+    expect(seedProblem(C, [...listed('aa'), ...listed('aa')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(aa, aa\).*one seed per player.*steer/);
+    expect(seedProblem(C, [1, 2, 3, 4, 5].flatMap(() => listed('aa')), 'me', true, 10_000)).toMatch(/^5 seeds/);
+    // Mine plus one the server chose after seeing all the others, in either order.
+    expect(seedProblem(C, [...listed('aa'), ...listed('ff')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(aa, ff\).*steer/);
+    expect(seedProblem(C, [...listed('ff'), ...listed('aa')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(ff, aa\).*steer/);
+    expect(seedProblem(C, [{ playerId: 'other', seed: 'ff' }, ...listed('aa')], 'me', true, 10_000)).toBeNull();
+  });
+
+  it('is quiet about an honest list: one seed each, from people dealt in', () => {
+    const honest = [
+      { playerId: 'me', seed: 'aa' },
+      { playerId: 'p2', seed: 'bb' },
+    ];
+    expect(seedListProblem(honest, { bots: ['bot-1'], dealt: ['me', 'p2', 'bot-1', 'p3'] })).toBeNull();
+    expect(seedListProblem(honest, { bots: [] })).toBeNull();
+    expect(seedListProblem([], { bots: [], dealt: [] })).toBeNull();
+  });
+
+  it('catches a seed listed for a bot, for someone not dealt in, twice for one player, or one seed listed twice', () => {
+    const dealt = ['me', 'p2', 'bot-1'];
+    const bots = ['bot-1'];
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }], { bots, dealt })).toMatch(/\(ff\).*practice bot/);
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'ghost', seed: 'ff' }], { bots, dealt })).toMatch(/\(ff\).*wasn't dealt in/);
+    expect(seedListProblem([{ playerId: 'p2', seed: 'bb' }, { playerId: 'p2', seed: 'ff' }], { bots, dealt })).toMatch(/more than one seed.*same player/);
+    // My seed copied under another person's name: their browser would warn, but only if they look.
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'p2', seed: 'aa' }], { bots, dealt })).toMatch(/same seed \(aa\) was listed twice/);
+  });
+
+  it('warns at the table about a seed listed for a bot, or one seed listed twice', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    const view = (clientSeeds: { playerId: string; seed: string }[]) =>
+      ({
+        id: 't1',
+        me: { playerId: 'me', seat: 0 },
+        seats: [{ seat: 0, playerId: 'me' }, { seat: 1, playerId: 'bot-1', bot: { ownerId: 'me', ownerName: 'Me', look: 0 } }, null],
+        hand: { names: { 0: 'Me', 1: 'Bot' }, fair: { commit: C, clientSeeds } },
+      }) as unknown as Parameters<typeof liveSeedProblem>[0];
+    store.set('rsdp.fairLive', JSON.stringify({ [C]: JSON.stringify({ at: 10_000, button: 0, seats: [0, 1], board: [], cards: {} }) }));
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }]))).toMatch(/\(ff\).*practice bot/);
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }]))).toMatch(/same seed \(aa\)/);
+  });
+
+  it('notes who was dealt in and who is a bot, so "Check this hand" need not take the record\'s word for it', () => {
+    type V = Parameters<typeof contributeSeed>[0];
+    const bot = { ownerId: 'me', ownerName: 'Me', look: 0 };
+    const seat = (n: number, playerId: string, inHand: boolean, isBot = false) => ({ seat: n, playerId, inHand, cards: [], ...(isBot ? { bot } : {}) });
+    const view = (seats: unknown[]) =>
+      ({ id: 't1', fair: { nextCommit: null }, me: { playerId: 'me', seat: 0 }, seats, hand: { button: 0, boards: [], names: { 0: 'Me', 1: 'Bot', 2: 'P2' }, fair: { commit: C, clientSeeds: [] } } }) as unknown as V;
+    contributeSeed(view([seat(0, 'me', true), seat(1, 'bot-1', true, true), seat(2, 'p2', true), seat(3, 'late', false)]));
+    // Someone taking a seat later, or the bot leaving mid-hand, doesn't change what was noted.
+    contributeSeed(view([seat(0, 'me', true), null, seat(2, 'p2', true), seat(3, 'late', false)]));
+    const live = liveRecordFor(C)!;
+    expect(live.players).toEqual({ 0: 'me', 1: 'bot-1', 2: 'p2' });
+    expect(live.bots).toEqual(['bot-1']);
+
+    const record = [
+      { seat: 0, playerId: 'me' },
+      { seat: 1, playerId: 'bot-1', bot: { ownerName: 'Me', look: 0 } },
+      { seat: 2, playerId: 'p2' },
+    ];
+    const seeds = [
+      { playerId: 'me', seed: 'aa' },
+      { playerId: 'p2', seed: 'bb' },
+    ];
+    expect(recordSeedProblem(seeds, record, live)).toBeNull();
+    // The record drops the bot mark to pass off a seed of its own as the bot's.
+    const unmarked = record.map((x) => ({ seat: x.seat, playerId: x.playerId }));
+    expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], unmarked, live)).toMatch(/\(ff\).*practice bot/);
+    // Or lists someone else in a seat, or a seat nobody was dealt in, to make room for a seed nobody checks.
+    expect(recordSeedProblem([...seeds, { playerId: 'ghost', seed: 'ff' }], [...record.slice(0, 2), { seat: 2, playerId: 'ghost' }], live)).toMatch(/seat 3/);
+    expect(recordSeedProblem([...seeds, { playerId: 'ghost', seed: 'ff' }], [...record, { seat: 4, playerId: 'ghost' }], live)).toMatch(/seats/);
+    // With nothing noted at the table (another browser, or a record from before this was noted), the record is all there is.
+    expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], unmarked, null)).toBeNull();
+    expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], unmarked, { at: 0, button: 0, seats: [0, 1, 2], board: [], cards: {} })).toBeNull();
+    expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], record, null)).toMatch(/practice bot/);
+    // So when the list passes, it only says no seed came from a bot when the table note backs that.
+    expect(seedListPassed(2, live)).toBe('2 seeds, one per person your browser saw dealt in, none from a bot');
+    for (const without of [null, { at: 0, button: 0, seats: [0, 1, 2], board: [], cards: {} }]) {
+      expect(seedListPassed(1, without)).toMatch(/^1 seed, one per person the record shows dealt in.*record's own list/);
+      expect(seedListPassed(1, without)).not.toMatch(/none from a bot/);
+    }
+  });
+
+  it('warns at the table about a seed listed for someone not dealt in, once it knows everyone who was', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    const view = (clientSeeds: { playerId: string; seed: string }[]) =>
+      ({
+        id: 't1',
+        me: { playerId: 'me', seat: 0 },
+        seats: [{ seat: 0, playerId: 'me' }, { seat: 1, playerId: 'p2' }, null],
+        hand: { names: { 0: 'Me', 1: 'P2' }, fair: { commit: C, clientSeeds } },
+      }) as unknown as Parameters<typeof liveSeedProblem>[0];
+    const ghost = [
+      { playerId: 'me', seed: 'aa' },
+      { playerId: 'ghost', seed: 'ff' },
+    ];
+    store.set('rsdp.fairLive', JSON.stringify({ [C]: JSON.stringify({ at: 10_000, button: 0, seats: [0, 1], board: [], cards: {}, players: { 0: 'me', 1: 'p2' }, bots: [] }) }));
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'p2', seed: 'bb' }]))).toBeNull();
+    expect(liveSeedProblem(view(ghost))).toMatch(/\(ff\).*wasn't dealt in/);
+    // Not everyone dealt in was seen at the table (one left before this browser saw the hand): it can't tell.
+    store.set('rsdp.fairLive', JSON.stringify({ [C]: JSON.stringify({ at: 10_000, button: 0, seats: [0, 1], board: [], cards: {}, players: { 0: 'me' }, bots: [] }) }));
+    expect(liveSeedProblem(view(ghost))).toBeNull();
   });
 });

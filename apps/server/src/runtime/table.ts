@@ -1211,6 +1211,11 @@ export class TableRuntime {
     } else {
       this.ledgerEdit(playerId, stack - seat.stack);
       seat.stack = stack;
+      // Chips from the host bring a busted player back in, as a rebuy does.
+      if (stack > 0 && seat.sitOutReason === 'busted') {
+        seat.sittingOut = false;
+        seat.sitOutReason = null;
+      }
     }
     this.log(`The host set ${seat.name}'s stack to ${this.money(stack)}${this.inHand(playerId) ? ' after this hand' : ''}`);
     this.sync();
@@ -2102,6 +2107,10 @@ export class TableRuntime {
         this.ledgerEdit(seat.playerId, seat.pendingStack - seat.stack);
         seat.stack = seat.pendingStack;
         seat.pendingStack = null;
+        if (seat.stack > 0 && seat.sitOutReason === 'busted') {
+          seat.sittingOut = false;
+          seat.sitOutReason = null;
+        }
       }
       if (seat.pendingChips) {
         seat.stack += seat.pendingChips;
