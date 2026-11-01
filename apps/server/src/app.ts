@@ -18,7 +18,7 @@ import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
 import { BOT_LEVELS, GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
-import { cleanKind, cleanSetup, cleanSetupName, freeName, memorySetups, renamed, type SetupStore } from './savedSetups';
+import { cleanImportedSetup, cleanKind, cleanSetup, cleanSetupName, freeName, memorySetups, renamed, type SetupStore } from './savedSetups';
 import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
@@ -1451,7 +1451,7 @@ export function createApp(deps: AppDeps = {}) {
           for (const raw of list) {
             let setup: SavedSetup;
             try {
-              setup = cleanSetup(kind, raw, clock.now());
+              setup = cleanImportedSetup(kind, raw, clock.now());
             } catch {
               continue;
             }
@@ -1461,7 +1461,9 @@ export function createApp(deps: AppDeps = {}) {
               kept.push(sent);
               continue;
             }
-            setup = { ...setup, name: freeName(setup.name, taken) };
+            // A numbered table preset carries its new name inside too, so its export file says so.
+            const name = freeName(setup.name, taken);
+            if (name !== setup.name) setup = renamed(kind, setup, name);
             try {
               await setups.save(me, kind, setup);
             } catch {

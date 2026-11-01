@@ -540,6 +540,10 @@ export const SETUP_KINDS = ['table', 'tournament'] as const;
 export type SetupKind = (typeof SETUP_KINDS)[number];
 /** Most setups of one kind an account keeps. */
 export const SETUPS_PER_KIND = 100;
+/**
+ * Longest name for a saved setup. Counted like an input's maxLength, an emoji
+ * as two, the same as a table preset's name, so a name that fits here fits there.
+ */
 export const SETUP_NAME_MAX = 60;
 
 /** A setup saved under a name: for a table, a preset file; for a tournament, its settings as JSON. */
