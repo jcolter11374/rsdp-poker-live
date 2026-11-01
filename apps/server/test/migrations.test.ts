@@ -1,5 +1,6 @@
 /**
- * The migration files, and upgrading a database that already has data in it.
+ * The migration files, upgrading a database that already has data in it, and
+ * whether the migrations build what schema.ts describes.
  *
  * Why the journal must stay in order: Drizzle's migrator (the same code for
  * node-postgres and PGlite) reads only the newest row of
@@ -20,6 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
+import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
 import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
@@ -122,17 +124,22 @@ async function rowsOf(db: Db, columns: Record<string, string[]>) {
   return out;
 }
 
-/** Columns, indexes, constraints and triggers, to compare an upgraded database with a fresh one. */
-async function shapeOf(db: Db) {
+/** Columns (type, nullability, default, identity), indexes and constraints: what schema.ts describes, as Postgres prints it. */
+async function tablesOf(db: Db) {
   const rows = await queryRows<{ s: string }>(
     db,
-    sql`select table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') as s from information_schema.columns where table_schema = 'public'
+    sql`select table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') || ' ' || is_identity || ' ' || coalesce(identity_generation, '') as s from information_schema.columns where table_schema = 'public'
         union all select indexdef from pg_indexes where schemaname = 'public'
-        union all select conrelid::regclass::text || ' ' || conname || ' ' || pg_get_constraintdef(oid) from pg_constraint where connamespace = 'public'::regnamespace
-        union all select tgrelid::regclass::text || ' ' || tgname from pg_trigger where not tgisinternal`,
+        union all select conrelid::regclass::text || ' ' || conname || ' ' || pg_get_constraintdef(oid) from pg_constraint where connamespace = 'public'::regnamespace`,
   );
   // Sorted here: PGlite and a Postgres server may sort text differently.
   return rows.map((r) => r.s).sort();
+}
+
+/** The tables plus the triggers, which only hand-written SQL makes, to compare an upgraded database with a fresh one. */
+async function shapeOf(db: Db) {
+  const triggers = await queryRows<{ s: string }>(db, sql`select tgrelid::regclass::text || ' ' || tgname as s from pg_trigger where not tgisinternal`);
+  return [...(await tablesOf(db)), ...triggers.map((r) => r.s).sort()];
 }
 
 async function migrationsRecorded(db: Db) {
@@ -246,6 +253,28 @@ describe('upgrading a database with data in it', { timeout: 60_000 }, () => {
       }
       await admin.query(`drop database if exists ${name} with (force)`);
       await admin.end();
+    }
+  });
+});
+
+describe('the migrations', () => {
+  it('build the tables schema.ts describes', { timeout: 60_000 }, async () => {
+    // CI's drift step compares schema.ts with the snapshots drizzle-kit keeps in meta/, never with the SQL the
+    // server runs, and every generated migration is edited by hand (docs/ARCHITECTURE.md). So build the tables
+    // twice, from the migrations and from schema.ts alone (drizzle-kit's own CREATE statements), and compare:
+    // a slip while editing, such as a lost NOT NULL or default, shows here.
+    const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
+    const client = new PGlite();
+    const migrated = await createTestDb();
+    try {
+      const described = drizzlePglite(client, { schema });
+      for (const statement of statements) await described.execute(sql.raw(statement));
+      expect(await tablesOf(migrated), 'the migrations build other tables than schema.ts describes: run npm run db:generate, or fix the SQL').toEqual(
+        await tablesOf(described),
+      );
+    } finally {
+      await closeDb(migrated);
+      await client.close();
     }
   });
 });
