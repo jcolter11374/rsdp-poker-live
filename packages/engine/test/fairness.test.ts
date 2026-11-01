@@ -185,4 +185,44 @@ describe('verifyHand', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('the standalone checker fails a seed listed for a practice bot, for someone not dealt in, or twice for one player', () => {
+    // Every card matches in each of these: only whose the seeds are gives the extra one away.
+    const dir = mkdtempSync(path.join(tmpdir(), 'proof-'));
+    const run = (seeds: string[], more: object) => {
+      const events = engine.visibleEvents(playOut(fairHand(serverSeed, seeds)), { seat: null, seeAll: true }) as CardEvent[];
+      const file = path.join(dir, `${Math.random()}.json`);
+      writeFileSync(file, JSON.stringify({ commit: commitmentOf(serverSeed), serverSeed, clientSeeds: seeds, handSeed: handSeedOf(serverSeed, seeds), button: 0, seats: [0, 1, 2], events, ...more }));
+      return spawnSync(process.execPath, [path.resolve(__dirname, '../../../scripts/verify-hand.mjs'), file], { encoding: 'utf8' });
+    };
+    const players = [
+      { seat: 0, playerId: 'p0' },
+      { seat: 1, playerId: 'p1' },
+      { seat: 2, playerId: 'bot-2', bot: true },
+    ];
+    const two = ['01'.repeat(8), '02'.repeat(8)];
+    try {
+      const honest = run(two, { players, seedOwners: ['p0', 'p1'] });
+      expect(honest.stdout).toMatch(/This hand checks out/);
+      expect(honest.stdout).not.toMatch(/doesn't say whose/);
+      expect(honest.status).toBe(0);
+      const bot = run(two, { players, seedOwners: ['p0', 'bot-2'] });
+      expect(bot.stdout).toMatch(/FAIL .*0202020202020202.*practice bot in seat 3/);
+      expect(bot.status).toBe(1);
+      const ghost = run(two, { players, seedOwners: ['p0', 'ghost'] });
+      expect(ghost.stdout).toMatch(/FAIL .*0202020202020202.*ghost, who wasn't dealt in/);
+      expect(ghost.status).toBe(1);
+      const doubled = run(two, { players, seedOwners: ['p1', 'p1'] });
+      expect(doubled.stdout).toMatch(/FAIL +more than one seed is listed for p1/);
+      expect(doubled.status).toBe(1);
+      expect(run(two, { players, seedOwners: ['p0'] }).stdout).toMatch(/FAIL +2 seeds are listed but 1 owners/);
+      expect(run(two, { players: players.slice(0, 2), seedOwners: ['p0', 'p1'] }).stdout).toMatch(/FAIL +the players listed are not in the seats dealt in/);
+      // A file saved before it said whose each seed is still checks, and says what it can't check.
+      const old = run(two, {});
+      expect(old.stdout).toMatch(/doesn't say whose each seed is/);
+      expect(old.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

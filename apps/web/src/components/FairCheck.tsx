@@ -3,7 +3,7 @@ import { tableRef, verifyHand, type CardEvent } from '@rsdp/engine';
 import { digestOf, handInRecord, tableHand, type HandEntries } from '../audit';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
-import { liveRecordFor, mySeedFor, recordSeedProblem, seedListPassed, seedProblem, shownAs } from '../fair';
+import { liveRecordFor, mySeedFor, proofSeeds, recordSeedProblem, seedListPassed, seedProblem, shownAs } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
@@ -52,7 +52,8 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     const proof = {
       commit: fair.commit,
       serverSeed: fair.serverSeed,
-      clientSeeds: fair.clientSeeds.map((c) => c.seed),
+      // The seeds, whose each one is, and who was dealt in, so scripts/verify-hand.mjs can check the seed list too.
+      ...proofSeeds(fair.clientSeeds, hand.seats, live),
       handSeed: fair.handSeed,
       button: hand.button,
       seats: hand.seats.map((s) => s.seat),
