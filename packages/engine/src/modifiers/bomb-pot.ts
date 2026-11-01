@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { BettingKind, Rng } from '../core/types';
-import { BETTING_KINDS } from '../settings/schema';
+import { BETTING_KINDS, wholeNumber } from '../settings/schema';
 import { registerModifierSchema } from '../settings/modifiers';
 
 /**
@@ -17,18 +17,17 @@ export const BOMB_POT_LIMITS = {
 } as const;
 
 const L = BOMB_POT_LIMITS;
-const int = (r: { min: number; max: number }) => z.number().int().min(r.min).max(r.max);
 
 export const BombPotSchema = z
   .object({
     /** Deal bomb pots on their own (by chance or every N hands). The host's "next hand" button works either way. */
     enabled: z.boolean(),
     /** Chance each hand is a bomb pot, 0-100%. */
-    chancePercent: int(L.chancePercent),
+    chancePercent: wholeNumber(L.chancePercent),
     /** Also a bomb pot every N hands, counted from the last one; 0 = off. */
-    everyHands: int(L.everyHands),
+    everyHands: wholeNumber(L.everyHands),
     /** What each player posts, in big blinds (1-100). */
-    bigBlinds: int(L.bigBlinds),
+    bigBlinds: wholeNumber(L.bigBlinds),
     /** Game for bomb pots, e.g. PLO at a Hold'em table; '' = the table's game. Must be a game with a flop. */
     gameId: z.string().regex(/^([A-Za-z0-9_-]{1,40})?$/, 'must be a game id or empty'),
     /** Betting structure when gameId is set. */

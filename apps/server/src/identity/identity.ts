@@ -44,19 +44,24 @@ export class IdentityError extends Error {
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Lengths are counted like the forms' minLength and maxLength, an emoji as
+ * two; zod's .min() and .max() would count it as one.
+ */
+const lengthIn = (min: number, max: number) => (s: string) => s.length >= min && s.length <= max;
+
 const displayNameSchema = z
   .string()
   .transform((s) => s.trim().replace(/\s+/g, ' '))
   .pipe(
     z
       .string()
-      .min(1)
-      .max(24)
+      .refine(lengthIn(1, 24))
       .regex(/^\P{Cc}+$/u),
   );
 
 const usernameSchema = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{2,23}$/);
-const passwordSchema = z.string().min(8).max(200);
+const passwordSchema = z.string().refine(lengthIn(8, 200));
 
 const accountColumns = {
   id: accounts.id,
