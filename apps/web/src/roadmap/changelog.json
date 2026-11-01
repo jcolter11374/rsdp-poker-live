@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026-11-01",
+      "date": "2026-11-01",
+      "fixes": [
+        "Tournaments: a busted player who lets a rebuy offer run out (or declines it) now places by when they busted. Before, anyone who busted while they were deciding placed below them, and players busted in the same hand were no longer ordered by their starting stacks.",
+        "Cash games: stopping the game opens every hand so far for checking once it has stayed stopped for half an hour. A host who stops and starts again sooner no longer shows everyone the earlier folded hands."
+      ]
+    },
+    {
       "id": "2026-10-31-d",
       "date": "2026-10-31",
       "fixes": [

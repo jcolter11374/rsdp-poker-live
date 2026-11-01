@@ -234,9 +234,11 @@ export interface TableView {
   /**
    * Provably fair dealing (docs/FAIRNESS.md): the published commitment to the
    * next hand's server seed (seated browsers answer with fair:seed), and the
-   * one the hand in progress was dealt from.
+   * one the hand in progress was dealt from. openThrough: hands up to this
+   * number may be checked because the game stayed stopped after them (it
+   * moves when that happens, so browsers fetch the hands again).
    */
-  fair: { nextCommit: string; handCommit: string | null };
+  fair: { nextCommit: string; handCommit: string | null; openThrough: number };
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */
@@ -259,7 +261,7 @@ export interface HandRecordView {
 
 /**
  * A finished hand's fairness record. serverSeed and handSeed are null until the
- * hand is revealed (the host stopped the game, or at revealsAt): they give away
+ * hand is revealed (at revealsAt: half an hour after the host stops the game, or 12 hours after the hand): they give away
  * every card in the deck, folded hands included.
  */
 export interface FairRecordView {

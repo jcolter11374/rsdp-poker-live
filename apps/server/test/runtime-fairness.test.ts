@@ -7,8 +7,8 @@ import { commitmentOf, deckFromSeed, handSeedOf, verifyHand } from '@rsdp/engine
 import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { FAIR_REVEAL_AFTER_MS, FAIR_SEED_WAIT_MS, TableRuntime } from '../src/runtime/table';
-import { handRecordView, tableView } from '../src/runtime/view';
+import { FAIR_REVEAL_AFTER_MS, FAIR_SEED_WAIT_MS, FAIR_STOP_REVEAL_MS, TableRuntime } from '../src/runtime/table';
+import { handRecordView, pastHand, savedHandView, tableView } from '../src/runtime/view';
 import { FakeClock, seeded } from './fake-clock';
 
 beforeAll(() => registerAllVariants(variants));
@@ -93,14 +93,15 @@ describe('provably fair dealing', () => {
     }
   });
 
-  it('reveals hands when the host stops the game, and they check out', () => {
-    const { rt } = table();
+  it('reveals hands once the host has stopped the game for half an hour, and they check out', () => {
+    const { rt, clock } = table();
     const commit = rt.nextCommit();
     rt.addClientSeed('a', { commit, seed: '0123456789abcdef' });
     rt.start('host');
     checkDown(rt);
     expect(handRecordView(rt, rt.state.history.at(-1)!, 'b').fair!.serverSeed).toBeNull();
     rt.stop('host');
+    clock.advance(FAIR_STOP_REVEAL_MS);
     const view = handRecordView(rt, rt.state.history.at(-1)!, 'b');
     const fair = view.fair!;
     expect(fair.serverSeed).toBe(hand(rt).input.fair!.serverSeed);
@@ -128,6 +129,90 @@ describe('provably fair dealing', () => {
     expect(good.status).toBe(0);
     const events = proof.events.map((e) => (e.t === 'board' ? { ...e, cards: e.cards.map((c) => (c === '2c' ? '3c' : '2c')) } : e));
     expect(run({ ...proof, events }).status).toBe(1);
+  });
+
+  describe('stopping and starting again', () => {
+    const playHand = (rt: TableRuntime) => {
+      if (!rt.state.hand || rt.state.hand.phase === 'complete') rt.dealNext('host');
+      rt.act(toActId(rt), { type: 'fold' });
+      rt.act(toActId(rt), { type: 'fold' });
+      return rt.state.history.at(-1)!;
+    };
+
+    it('a host who stops and starts again within half an hour keeps the earlier hands private', () => {
+      const { rt, clock } = table();
+      const first = playHand(rt);
+      rt.stop('host');
+      const sealed = handRecordView(rt, first, 'b').fair!;
+      expect(sealed.serverSeed).toBeNull();
+      expect(sealed.events).toBeNull();
+      expect(sealed.revealsAt).toBe(clock.now() + FAIR_STOP_REVEAL_MS);
+      clock.advance(FAIR_STOP_REVEAL_MS - 1);
+      expect(handRecordView(rt, first, 'b').fair!.serverSeed).toBeNull();
+      rt.start('host');
+      clock.advance(1);
+      // Play goes on: the hand from before the stop stays sealed, and so does the next one.
+      expect(handRecordView(rt, first, 'b').fair!.serverSeed).toBeNull();
+      expect(handRecordView(rt, first, 'b').fair!.revealsAt).toBe(first.endedAt + FAIR_REVEAL_AFTER_MS);
+      const second = playHand(rt);
+      clock.advance(FAIR_STOP_REVEAL_MS);
+      expect(handRecordView(rt, second, 'b').fair!.serverSeed).toBeNull();
+      expect(tableView(rt, 'b', 0).fair.openThrough).toBe(0);
+      // Stopped for good this time: both open half an hour later.
+      rt.stop('host');
+      clock.advance(FAIR_STOP_REVEAL_MS);
+      expect(handRecordView(rt, first, 'b').fair!.serverSeed).toBe(first.hand.input.fair!.serverSeed);
+      expect(handRecordView(rt, second, 'b').fair!.serverSeed).toBe(second.hand.input.fair!.serverSeed);
+      expect(tableView(rt, 'b', 0).fair.openThrough).toBe(second.handNumber);
+    });
+
+    it('after the half hour, starting again keeps the hands from before the stop open, and only those', () => {
+      const { rt, clock } = table();
+      const first = playHand(rt);
+      rt.stop('host');
+      clock.advance(FAIR_STOP_REVEAL_MS);
+      rt.start('host');
+      const second = playHand(rt);
+      expect(handRecordView(rt, first, 'b').fair!.serverSeed).toBe(first.hand.input.fair!.serverSeed);
+      expect(handRecordView(rt, second, 'b').fair!.serverSeed).toBeNull();
+      expect(rt.state.fair!.revealedThrough).toBe(first.handNumber);
+    });
+
+    it('stopping after the hand in play counts the half hour from when that hand ends', () => {
+      const { rt, clock } = table();
+      rt.dealNext('host');
+      rt.stop('host');
+      clock.advance(5_000);
+      rt.act(toActId(rt), { type: 'fold' });
+      rt.act(toActId(rt), { type: 'fold' });
+      const record = rt.state.history.at(-1)!;
+      expect(rt.state.started).toBe(false);
+      clock.advance(FAIR_STOP_REVEAL_MS - 1);
+      expect(handRecordView(rt, record, 'b').fair!.serverSeed).toBeNull();
+      clock.advance(1);
+      expect(handRecordView(rt, record, 'b').fair!.serverSeed).toBe(record.hand.input.fair!.serverSeed);
+    });
+
+    it('tells open browsers when the half hour is up, so they fetch the hands again', () => {
+      const { rt, clock } = table();
+      playHand(rt);
+      rt.stop('host');
+      const seen: number[] = [];
+      rt.onChange = () => seen.push(tableView(rt, 'b', 0).fair.openThrough);
+      clock.advance(FAIR_STOP_REVEAL_MS);
+      expect(seen.at(-1)).toBe(1);
+    });
+
+    it('a saved table (hand search) opens them on the same rule', () => {
+      const { rt, clock } = table();
+      const first = playHand(rt);
+      rt.stop('host');
+      const saved = () => savedHandView(structuredClone(rt.state), pastHand(first), 'b', { now: clock.now() }).fair!;
+      expect(saved().serverSeed).toBeNull();
+      expect(saved().revealsAt).toBe(clock.now() + FAIR_STOP_REVEAL_MS);
+      clock.advance(FAIR_STOP_REVEAL_MS);
+      expect(saved().serverSeed).toBe(first.hand.input.fair!.serverSeed);
+    });
   });
 
   it('reveals a hand 12 hours after it ends even if the game goes on', () => {

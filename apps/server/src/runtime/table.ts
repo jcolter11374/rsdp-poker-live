@@ -40,6 +40,7 @@ import {
   systemClock,
   type BotInfo,
   type Clock,
+  type FairState,
   type HandRecord,
   type RuntimeState,
   type SeatRequest,
@@ -63,6 +64,19 @@ const HISTORY_LIMIT = 30;
 export const realGameHand = (seats: readonly { playerId: PlayerId }[]) => seats.filter((x) => !x.playerId.startsWith('bot-')).length >= 2;
 /** Hands become checkable this long after they end, if the host hasn't stopped the game sooner (docs/FAIRNESS.md). */
 export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
+/**
+ * Stopping the game opens every hand so far once it has stayed stopped this long (John's call, 2026-11-01): a host
+ * who stops and starts again sooner is still in the same game, so folded hands stay private.
+ */
+export const FAIR_STOP_REVEAL_MS = 30 * 60 * 1000;
+
+/** When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours after it ended. */
+export function fairRevealsAt(fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined, handNumber: number, endedAt: number, stopRevealMs = FAIR_STOP_REVEAL_MS): number {
+  if (handNumber <= (fair?.revealedThrough ?? 0)) return -Infinity;
+  const late = endedAt + FAIR_REVEAL_AFTER_MS;
+  const stop = fair?.stopped;
+  return stop && handNumber <= stop.through ? Math.min(late, stop.at + stopRevealMs) : late;
+}
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
 /**
@@ -105,6 +119,8 @@ export interface RuntimeDeps {
    * production; tests that deal at once leave it 0).
    */
   fairLeadMs?: number;
+  /** How long a stopped game waits before its hands open (FAIR_STOP_REVEAL_MS unless a test says otherwise). */
+  fairStopRevealMs?: number;
 }
 
 /** The game, betting and stakes the next hand is dealt with. */
@@ -129,6 +145,7 @@ export class TableRuntime {
   private readonly clock: Clock;
   private readonly rng: Rng;
   private readonly fairLeadMs: number;
+  private readonly fairStopRevealMs: number;
   readonly tournament: TournamentHooks | null;
   private readonly logError: (message: string, err?: unknown) => void;
   private readonly connections = new Map<PlayerId, number>();
@@ -137,7 +154,7 @@ export class TableRuntime {
   private readonly offlineSince = new Map<PlayerId, number>();
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
-  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null };
+  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null, reveal: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
@@ -154,6 +171,7 @@ export class TableRuntime {
     this.clock = deps.clock ?? systemClock;
     this.rng = deps.rng ?? cryptoRng;
     this.fairLeadMs = deps.fairLeadMs ?? 0;
+    this.fairStopRevealMs = deps.fairStopRevealMs ?? FAIR_STOP_REVEAL_MS;
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
@@ -715,6 +733,7 @@ export class TableRuntime {
     this.state.stopAfterHand = false;
     this.state.paused = false;
     this.state.pausedLeft = null;
+    this.fairResumed();
     if (!this.state.hand || this.state.hand.phase === 'complete') this.state.nextHandAt = this.clock.now();
     this.log('The host started the game');
     this.sync();
@@ -811,14 +830,49 @@ export class TableRuntime {
     f.clientSeeds = {};
   }
 
-  /** The host stopped the game: every hand so far may be checked. */
+  /** The host stopped the game: every hand so far may be checked once it stays stopped FAIR_STOP_REVEAL_MS. */
   private revealHands() {
-    this.fairState().revealedThrough = this.state.handNumber;
+    const f = this.fairState();
+    this.fairResumed();
+    if (this.state.handNumber > f.revealedThrough) f.stopped = { through: this.state.handNumber, at: this.clock.now() };
   }
 
-  /** A finished hand's server seed may be shown once the game stopped after it, or this long after it ended. */
+  /** The game goes on: hands the last stop has already opened stay open; the rest stay private. */
+  private fairResumed() {
+    const f = this.state.fair;
+    if (!f?.stopped) return;
+    if (this.clock.now() >= f.stopped.at + this.fairStopRevealMs) f.revealedThrough = Math.max(f.revealedThrough, f.stopped.through);
+    delete f.stopped;
+  }
+
+  /** When the hands the last stop covers open, while that's still to come. */
+  private fairStopDue(): number | null {
+    const stop = this.state.fair?.stopped;
+    if (!stop) return null;
+    const due = stop.at + this.fairStopRevealMs;
+    return due > this.clock.now() ? due : null;
+  }
+
+  /** The highest hand number anyone may check now through a stop (12-hour reveals aside). Views send it so browsers fetch again. */
+  fairOpenThrough(): number {
+    const f = this.state.fair;
+    if (!f) return 0;
+    const stopOpen = f.stopped && this.clock.now() >= f.stopped.at + this.fairStopRevealMs ? f.stopped.through : 0;
+    return Math.max(f.revealedThrough, stopOpen);
+  }
+
+  /** When a finished hand's server seed may be shown (see fairRevealsAt). */
+  fairRevealsAt(handNumber: number, endedAt: number): number {
+    return fairRevealsAt(this.state.fair, handNumber, endedAt, this.fairStopRevealMs);
+  }
+
   fairRevealed(handNumber: number, endedAt: number): boolean {
-    return handNumber <= (this.state.fair?.revealedThrough ?? 0) || this.clock.now() - endedAt >= FAIR_REVEAL_AFTER_MS;
+    return this.now() >= this.fairRevealsAt(handNumber, endedAt);
+  }
+
+  /** The table's clock. */
+  now(): number {
+    return this.clock.now();
   }
 
   /** Deal now (when the next hand doesn't start by itself). */
@@ -827,6 +881,7 @@ export class TableRuntime {
     if (this.isTournament) throw new ActionError('the tournament runs this table');
     if (this.handLive()) throw new ActionError('a hand is still being played');
     this.state.started = true;
+    this.fairResumed();
     this.state.nextHandAt = this.clock.now();
     this.sync();
   }
@@ -2531,6 +2586,8 @@ export class TableRuntime {
     };
     // Seat offers run out even while the game is paused.
     at('upkeep', this.upkeepDue());
+    // A stopped game's hands open for checking: tell the browsers, which fetch them again.
+    at('reveal', this.fairStopDue());
     if (s.paused) return;
     at('turn', this.turnDeadline());
     at('bot', this.botDue());
@@ -2563,7 +2620,7 @@ export class TableRuntime {
   }
 }
 
-const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep', 'bot'] as const;
+const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep', 'bot', 'reveal'] as const;
 type TimerKey = (typeof TIMER_KEYS)[number];
 
 /** Fills in limit sizes and the bring-in when the settings leave them at 0. */
