@@ -1,6 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServer, ServerToClient } from '@rsdp/engine/wire';
 import type { TournamentClientToServer, TournamentServerToClient } from '@rsdp/tournament';
+import { callerFor, type TimedEmitter } from './call';
+export { NoAnswerError } from './call';
 
 const TOKEN_KEY = 'rsdp.guestId';
 /** Where the first version kept the secret; read once so old browsers keep their seat. */
@@ -89,19 +91,12 @@ export function onSession(cb: (s: Session) => void): () => void {
   return () => sessionListeners.delete(cb);
 }
 
-type AckResult = { ok: true } | { ok: false; error: string };
-
 /**
- * Emits an event that takes an ack and resolves with the reply; rejects with
- * the server's message when it refuses. Events without a payload pass none.
+ * Emits an event that takes an answer and resolves with the reply; rejects
+ * with the server's message when it refuses, or after a time limit or a
+ * dropped connection (see call.ts). Events without a payload pass none.
  */
-export function call<T extends object = object>(event: keyof C2S, ...payload: unknown[]): Promise<T> {
-  return new Promise((resolve, reject) => {
-    (socket.emit as (e: string, ...a: unknown[]) => void)(event, ...payload, (res: AckResult & T) =>
-      res.ok ? resolve(res) : reject(new Error(res.error)),
-    );
-  });
-}
+export const call = callerFor<keyof C2S & string>(socket as unknown as TimedEmitter);
 
 const NAME_KEY = 'rsdp.name';
 export function savedName(): string {
