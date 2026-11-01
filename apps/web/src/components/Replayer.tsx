@@ -8,6 +8,7 @@ import { LogText } from './PlayingCard';
 import { usePortrait } from '../layout';
 import { explainNote, NOTES_FOOTNOTE } from '../coach';
 import { usePrefs } from '../prefs';
+import { reportError } from '../reportError';
 
 const SPEEDS = [1, 2, 4];
 
@@ -16,6 +17,9 @@ class ReplayBoundary extends Component<{ onClose: () => void; children: ReactNod
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    reportError(error, 'part');
   }
   render() {
     if (!this.state.failed) return this.props.children;

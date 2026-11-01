@@ -131,6 +131,13 @@ opens the connection and keeps your browser's secret.
   [`src/components/`](../apps/web/src/components): `Table.tsx` (the felt and
   seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, hands, stats), `table/Chat.tsx`,
   `Replayer.tsx` and `FairCheck.tsx`.
+- [`components/ErrorBoundary.tsx`](../apps/web/src/components/ErrorBoundary.tsx)
+  shows "Something broke" and a Reload button when a page crashes, instead
+  of a blank screen (the table's side panel and chat have their own, so the
+  table stays). [`src/reportError.ts`](../apps/web/src/reportError.ts)
+  sends what broke to `POST /api/client-error`
+  ([`clientErrors.ts`](../apps/server/src/clientErrors.ts)), which writes
+  one line to the server log: the kind of page (`/t/:id`), never its link.
 - [`src/fair.ts`](../apps/web/src/fair.ts) is your browser's half of fair
   dealing: it sends your seed for the next hand and watches that it was used.
   [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
