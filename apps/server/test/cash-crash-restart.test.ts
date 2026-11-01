@@ -79,6 +79,8 @@ describe('a crash right after a cash hand ends (#224)', () => {
     await pause(700);
     await store.saveTable(JSON.parse(midHand) as RuntimeState);
     expect((await store.loadHands(id)).map((h) => h.handNumber)).toEqual([1]);
+    expect((await store.loadHand(id, 1))?.handNumber).toBe(1);
+    expect(await store.loadHand(id, 2)).toBeNull();
 
     // The next server loads the table: the hand is over, with the stacks it ended with.
     const second = await serverOn(store, auditStore, clock);

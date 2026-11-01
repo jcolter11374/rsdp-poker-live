@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { allHandsOfTable, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, createTable, handOfTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
 import { setDisplayName, whoIs } from './identity';
 import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
@@ -62,6 +62,10 @@ export function dbStore(db: Db): TableStore {
     async loadHands(tableId) {
       const rows = await allHandsOfTable<SavedHeader, PastHand['events'][number]>(db, tableId);
       return rows.map(pastHandFromRow);
+    },
+    async loadHand(tableId, handNumber) {
+      const row = await handOfTable<SavedHeader, PastHand['events'][number]>(db, tableId, handNumber);
+      return row && pastHandFromRow(row);
     },
     deleteTable: (tableId) => deleteTableForGood(db, tableId),
   };
