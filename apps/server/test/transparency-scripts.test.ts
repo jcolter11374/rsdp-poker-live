@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { handDigest, playerRef, tableRef } from '@rsdp/engine';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore, memoryAuditStore } from '../src/audit';
-import { closeDb, type Db } from '../src/db';
+import { closeDb, dbCause, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 
 const run = promisify(execFile);
@@ -189,7 +189,11 @@ describe('the record in the database', () => {
     expect(second.latest()).toEqual(first.latest());
     second.admin('two', null);
     expect((await second.after(0, 10)).map((e) => e.seq)).toEqual([1, 2]);
-    await expect(db.execute(sql`update audit_log set kind = 'admin' where seq = 1`)).rejects.toThrow(/append-only/);
-    await expect(db.execute(sql`delete from audit_log where seq = 1`)).rejects.toThrow(/append-only/);
+    // The database's own error, which drizzle wraps.
+    const reason = (e: unknown) => {
+      throw dbCause(e);
+    };
+    await expect(db.execute(sql`update audit_log set kind = 'admin' where seq = 1`).catch(reason)).rejects.toThrow(/append-only/);
+    await expect(db.execute(sql`delete from audit_log where seq = 1`).catch(reason)).rejects.toThrow(/append-only/);
   });
 });
