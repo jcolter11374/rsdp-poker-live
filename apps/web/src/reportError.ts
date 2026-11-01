@@ -1,11 +1,13 @@
 import { pageBuild } from './freshness';
+import { Refusal } from './call';
 
 /*
  * When something breaks in the browser, the server is told (POST
  * /api/client-error) and writes one line to its log: the error and its
  * stack, the kind of page (/t/:id, never the address: a table link is a
  * private invite) and the build this page runs. Nothing else is sent: no
- * names, nothing typed. Each different error is sent once, at most a few per
+ * names, nothing typed, not even the server's answer to a request nobody
+ * caught (see Refusal). Each different error is sent once, at most a few per
  * page load (and the page crashing), and reporting never throws, so it can't
  * set off another report.
  */
@@ -71,9 +73,14 @@ function safely(read: () => unknown, otherwise: string): string {
 
 /** What is sent about one error. */
 export function errorReport(error: unknown, kind: ErrorKind, path: string, build: string | null): ErrorReport {
-  const message =
+  let message =
     error instanceof Error ? safely(() => `${error.name}: ${error.message}`, 'Error') : safely(() => String(error), 'something that is not an error');
-  const stack = error instanceof Error ? safely(() => error.stack, '') : '';
+  let stack = error instanceof Error ? safely(() => error.stack, '') : '';
+  if (error instanceof Refusal) {
+    // Only which request the server refused: its answer stays out of the message and the stack.
+    message = `Refusal of ${error.event} (the server's answer is left out)`;
+    if (error.message) stack = stack.split(error.message).join('…');
+  }
   return { message: message.slice(0, MESSAGE_MAX), stack: stack.slice(0, STACK_MAX), route: routePattern(path), build, kind };
 }
 

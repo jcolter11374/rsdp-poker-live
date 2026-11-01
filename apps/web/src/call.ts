@@ -26,6 +26,16 @@ export const SLOW_CALLS: Record<string, number> = { 'table:export': 120_000, 'ta
 export const NO_ANSWER = 'No answer from the server. Check your connection, then try again.';
 export const DROPPED = 'The connection dropped before the server answered. Check whether it went through, then try again.';
 
+/** The server said no to `event`. Its message is for the player and can name people at the table, so error reports leave it out. */
+export class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly event: string,
+  ) {
+    super(message);
+  }
+}
+
 /** No answer came: time ran out, or the connection dropped. The server may or may not have done it. */
 export class NoAnswerError extends Error {
   constructor(readonly dropped: boolean) {
@@ -70,7 +80,7 @@ export function callerFor<Event extends string = string>(socket: AnswerSocket, l
       };
       const held = socket.sendBuffer.length;
       socket.emit(event, ...payload, (res?: AckResult & T) =>
-        settle(() => (res?.ok ? resolve(res) : reject(new Error((res && !res.ok && res.error) || NO_ANSWER)))),
+        settle(() => (res?.ok ? resolve(res) : reject(res && !res.ok && res.error ? new Refusal(res.error, event) : new Error(NO_ANSWER)))),
       );
       // socket.io holds a command when it is offline, or has just found the connection dead (a phone or laptop
       // waking up), and sends what it held before it tells anyone it's connected again.

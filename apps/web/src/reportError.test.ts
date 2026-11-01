@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./socket', () => ({ socket: { on: () => {} } }));
 const { buildName, errorReport, reportGate, routePattern } = await import('./reportError');
+const { Refusal } = await import('./call');
 
 describe('reporting what broke in the browser', () => {
   it('names the kind of page, never its address', () => {
@@ -55,6 +56,12 @@ describe('reporting what broke in the browser', () => {
     const odd = new Error('odd');
     Object.defineProperty(odd, 'stack', { get: () => { throw new Error('no'); } });
     expect(errorReport(odd, 'error', '/', null)).toMatchObject({ message: 'Error: odd', stack: '' });
+  });
+
+  it("leaves out the server's answer to a request nobody caught, which can name people at the table", () => {
+    const report = errorReport(new Refusal('Ann has asked for that seat', 'host:approve'), 'rejection', '/t/Xy3_k9-Qa1', null);
+    expect(report.message).toBe("Refusal of host:approve (the server's answer is left out)");
+    expect(JSON.stringify(report)).not.toContain('Ann');
   });
 
   it('shows the build as the name of its entry script', () => {
