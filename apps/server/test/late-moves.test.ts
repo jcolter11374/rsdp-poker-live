@@ -284,6 +284,34 @@ describe('someone watching on a delay, after the live hand ends early', () => {
   });
 });
 
+describe('someone watching a short delay behind', () => {
+  it('sees the fair-dealing commits and the seats as they were, not as the live hand ended', async () => {
+    const { ann, ben, tableId } = await headsUp('short', { spectators: { allowed: true, delaySeconds: 1 } });
+    const fan = client('late-short-fan-0123456789');
+    await fan.call('table:join', { tableId });
+    // Once a second has passed, the watcher sees the first hand being played.
+    const playing = await fan.until((v) => !!v.hand && v.hand.phase !== 'complete');
+    const commits = playing.fair;
+    expect(commits.handCommit).toBe(ann.view().fair.handCommit);
+    // Ann leaves after this hand; the live hand ends at once and her seat empties.
+    (ann.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', { afterHand: true });
+    await pause(50);
+    const sb = ann.view().legal ? ann : ben;
+    await sb.call('hand:act', { type: 'fold' });
+    await ben.until((v) => v.hand?.phase === 'complete' && !v.seats[0]);
+    // Still a second behind: the hand still running, the same commits, Ann still in her seat.
+    await pause(100);
+    const now = fan.view();
+    expect(now.hand?.phase).not.toBe('complete');
+    expect(now.fair).toEqual(commits);
+    expect(now.seats[0]?.name).toBe('Ann');
+    expect(now.rabbit).toEqual({ available: false, cards: null });
+    // Then it catches up.
+    const later = await fan.until((v) => v.hand?.phase === 'complete' || !v.hand);
+    expect(later.seats[0]).toBeNull();
+  });
+});
+
 describe('someone without a seat, between hands and during them', () => {
   // Their answer must not say whether a hand is live, paused or voting on running it twice.
   it('gets the same refusal from every move whatever the live table is doing', () => {
