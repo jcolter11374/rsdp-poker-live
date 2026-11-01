@@ -1,15 +1,16 @@
 import type { TableSettings } from '@rsdp/engine/settings';
 import { bombPotSchema, bounty72Schema, doubleBoardSchema, nitSchema, rakeSchema } from '@rsdp/engine/modifiers';
 import { getVariant } from '@rsdp/engine/variants';
+import { RSDP_TABLE_RULES } from '@rsdp/tournament';
 import type { CardList } from './guides';
 
 /*
  * Plain-language guides to the side games and house rules: what each one is,
  * how it works here, worked examples and the host settings that change it.
  * The numbers in the examples come from the constants below, and
- * extras.test.ts checks the straddle, bomb pot, 7-2, split-pot and house fee
- * numbers against the engine, so a guide can't promise a payout or a minimum
- * raise the table would work out differently.
+ * extras.test.ts checks the numbers in every example against the engine, so
+ * a guide can't promise a payout or a minimum raise the table would work out
+ * differently. At a table, the time bank example uses that table's own clock.
  */
 
 /** One worked example: a short story with real numbers, and optional cards to show. */
@@ -84,10 +85,33 @@ export const RAKE_EX = {
   ],
 } as const;
 
-/** Time bank: the default 30-second clock and 30-second bank. */
+/** Time bank: a cash table's default 30-second clock and 30-second bank. */
 export const TIME_EX = { clock: 30, bank: 30, firstThink: 42, refillHands: 10 } as const;
-const bankUsed = TIME_EX.firstThink - TIME_EX.clock;
-const bankLeft = TIME_EX.bank - bankUsed;
+/** Tournaments set their own; new ones start on the RSDP rules. */
+const RSDP = RSDP_TABLE_RULES;
+const rsdpClock = `${RSDP.decisionSeconds} seconds to act, a ${RSDP.timeBankSeconds}-second time bank refilled every ${RSDP.timeBankRefillHands} hands`;
+
+/**
+ * The time bank example. `atTable` uses a table's own numbers: the first think
+ * then spends two fifths of the bank, as the default example does (12 of 30).
+ */
+function timeExample(t: { clock: number; bank: number; refillHands: number; firstThink?: number }, atTable: boolean): Example {
+  const firstThink = t.firstThink ?? t.clock + Math.max(1, Math.round((t.bank * 2) / 5));
+  const used = firstThink - t.clock;
+  const left = t.bank - used;
+  const refill =
+    t.refillHands === 0
+      ? `At this table the bank never refills, so you have ${left} seconds of it for the rest of the game.`
+      : `At the next refill (every ${t.refillHands === 1 ? 'hand' : `${t.refillHands} hands`}${atTable ? ' at this table' : ' by default'}) the bank is back to ${t.bank}.`;
+  return {
+    title: `${atTable ? 'This table: a' : 'A'} ${t.clock}-second clock and a ${t.bank}-second bank`,
+    lines: [
+      `You think for ${firstThink} seconds before calling. The first ${t.clock} are your normal time, so ${used} come out of the bank and ${left} are left.`,
+      `Next time you're stuck, you have ${t.clock} + ${left} = ${t.clock + left} seconds before you're checked or folded.`,
+      refill,
+    ],
+  };
+}
 
 export const EXTRAS: ExtraGuide[] = [
   {
@@ -330,15 +354,18 @@ export const EXTRAS: ExtraGuide[] = [
         lines: ['Ben folds his flush draw to Ana\'s big bet on the flop. He taps Rabbit hunt and sees the ten of hearts on the turn: he would have made his flush. Ana still wins the pot.'],
       },
     ],
-    settings: ['Table settings → Rules → "Rabbit hunting": on by default.'],
-    elsewhere: ['On some sites rabbit hunting starts switched off. Here it starts on.'],
+    settings: [
+      'Cash tables: Table settings → Rules → "Rabbit hunting": on by default.',
+      `Tournaments follow the event's own rules: the host sets "Allow rabbit hunting" on the new tournament form or in the lobby's Host tab, until the first table opens. The RSDP rules a new tournament starts on have it ${RSDP.rabbitHunt ? 'on' : 'off'}.`,
+    ],
+    elsewhere: ['On some sites rabbit hunting starts switched off. Here it starts on at cash tables.'],
   },
   {
     id: 'time-bank',
     name: 'Time bank',
     idea: 'Extra thinking time for big decisions, on top of the normal clock. You keep what you don\'t use, and it fills back up every so many hands.',
     steps: [
-      'Each turn you have the normal clock: 30 seconds by default.',
+      `Each turn you have the normal clock: ${TIME_EX.clock} seconds by default at a cash table. Tournaments follow the event's own rules: the RSDP rules are ${rsdpClock}.`,
       'Your time bank is extra seconds you carry from hand to hand.',
       'When your normal time runs out, the bank starts by itself (unless the host turned that off, or you\'re offline or sitting out). You can also start it early with the "Time bank" button on your turn.',
       "You only spend time you use past the normal clock, rounded up to whole seconds. Starting it early and then acting in your normal time costs nothing.",
@@ -346,21 +373,13 @@ export const EXTRAS: ExtraGuide[] = [
       'Every so many hands (counted from the last refill) the bank goes back to full, whether you used it or not.',
       'When the host pauses the game, every clock stops where it is.',
     ],
-    examples: [
-      {
-        title: `A ${TIME_EX.clock}-second clock and a ${TIME_EX.bank}-second bank`,
-        lines: [
-          `You think for ${TIME_EX.firstThink} seconds before calling. The first ${TIME_EX.clock} are your normal time, so ${bankUsed} come out of the bank and ${bankLeft} are left.`,
-          `Next time you're stuck, you have ${TIME_EX.clock} + ${bankLeft} = ${TIME_EX.clock + bankLeft} seconds before you're checked or folded.`,
-          `At the next refill (every ${TIME_EX.refillHands} hands by default) the bank is back to ${TIME_EX.bank}.`,
-        ],
-      },
-    ],
+    examples: [timeExample(TIME_EX, false)],
     settings: [
-      'Table settings → Clock: "Seconds to act" (0 = no clock), "Time bank (seconds)" (0 to 300), "Refill every (hands)" (0 = never) and "Use the time bank automatically".',
-      'Table settings → Seats → "Timeouts before away": how many timeouts in a row before a player is sat out (2 by default, 0 = never).',
+      'Cash tables: Table settings → Clock: "Seconds to act" (0 = no clock), "Time bank (seconds)" (0 to 300), "Refill every (hands)" (0 = never) and "Use the time bank automatically".',
+      'Cash tables: Table settings → Seats → "Timeouts before away": how many timeouts in a row before a player is sat out (2 by default, 0 = never).',
+      `Tournaments: the host sets "Decision clock", "Time bank" and "Refill bank every (hands)" on the new tournament form or in the lobby's Host tab, until the first table opens. A new tournament starts on the RSDP rules: ${rsdpClock}.`,
     ],
-    elsewhere: ['Here the bank refills all at once: every 10 hands by default it goes back to full, rather than topping up a little each hand.'],
+    elsewhere: [`Here the bank refills all at once: every so many hands (${TIME_EX.refillHands} by default at a cash table) it goes back to full, rather than topping up a little each hand.`],
   },
   {
     id: 'showdown',
@@ -456,8 +475,16 @@ export const EXTRAS: ExtraGuide[] = [
 
 const BY_ID = new Map(EXTRAS.map((g) => [g.id, g]));
 
-export function extraFor(id: string): ExtraGuide | null {
-  return BY_ID.get(id) ?? null;
+/**
+ * A guide by id. Given a table's settings, the time bank example uses that
+ * table's clock, bank and refill (a tournament's can differ from a cash
+ * table's defaults).
+ */
+export function extraFor(id: string, settings?: TableSettings): ExtraGuide | null {
+  const g = BY_ID.get(id) ?? null;
+  const t = settings?.timing;
+  if (g?.id !== 'time-bank' || !t || t.decisionSeconds <= 0 || t.timeBankSeconds <= 0) return g;
+  return { ...g, examples: [timeExample({ clock: t.decisionSeconds, bank: t.timeBankSeconds, refillHands: t.timeBankRefillHands }, true)] };
 }
 
 /** Guides for the side games and house rules switched on at a table, in guide order. */
