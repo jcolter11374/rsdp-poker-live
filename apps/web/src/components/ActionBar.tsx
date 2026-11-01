@@ -11,6 +11,7 @@ import { LogText, suitSymbol } from './PlayingCard';
 import { useNow } from './Table';
 import { CoachWhy } from './CoachWhy';
 import { preMoveAction, type PreAction } from '../premoves';
+import { turnKey } from '../turn';
 
 const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}` : '');
 
@@ -193,7 +194,25 @@ export function ActionBar({
   };
   // A new turn (or hand) means the last move was dealt with, answered or not.
   useEffect(release, [legal, hand?.handNumber]);
-  const send = (action: Action) => run(() => call('hand:act', action));
+  // Each move carries the turn on screen when it was pressed, read then rather than from an older render: the server
+  // refuses one that arrives after that turn has passed, so a slow tap given up on isn't played on a later street.
+  const onScreen = useRef(view);
+  onScreen.current = view;
+  const send = (action: Action) => {
+    const sentFor = turnKey(onScreen.current);
+    run(() => call('hand:act', { ...action, ...sentFor }));
+  };
+  const draw = (cards: number[]) => {
+    const sentFor = turnKey(onScreen.current);
+    run(() => call('hand:draw', { discard: cards, ...sentFor }).then(clearDiscard));
+  };
+  // A show carries only the hand it was pressed after (shows add events once a hand is over, so the count is no turn):
+  // one that arrives after the next deal must not show that hand's cards.
+  const show = (cards: number[]) => {
+    const { handNumber } = turnKey(onScreen.current);
+    run(() => call('hand:show', { cards, handNumber }));
+  };
+  const startBank = () => call('hand:timeBank', turnKey(onScreen.current)).catch((e: Error) => setError(e.message));
   /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
   const settled = () => !inFlight.current && Date.now() - lastSent.current > DOUBLE_TAP_MS;
 
@@ -283,7 +302,7 @@ export function ActionBar({
         )}
         {hint}
         {canBank && (
-          <button className="time-bank" onClick={() => call('hand:timeBank').catch((e: Error) => setError(e.message))}>
+          <button className="time-bank" onClick={startBank}>
             Time bank +{me.timeBank}s
           </button>
         )}
@@ -350,10 +369,10 @@ export function ActionBar({
         {hint}
         {errorLine}
         <div className="buttons small">
-          <button onClick={() => run(() => call('hand:show', { cards: view.canShow }))}>Show cards</button>
+          <button onClick={() => show(view.canShow)}>Show cards</button>
           {view.canShow.length > 1 &&
             view.canShow.map((i) => (
-              <button key={i} onClick={() => run(() => call('hand:show', { cards: [i] }))}>
+              <button key={i} onClick={() => show([i])}>
                 Show {cardName(myCards[i])}
               </button>
             ))}
@@ -397,7 +416,7 @@ export function ActionBar({
           <button
             className="primary"
             disabled={n > view.canDraw.max}
-            onClick={() => run(() => call('hand:draw', { discard }).then(clearDiscard))}
+            onClick={() => draw(discard)}
           >
             {n === 0 ? 'Stand pat' : `Draw ${n}`}
           </button>
