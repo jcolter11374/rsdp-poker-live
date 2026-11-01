@@ -1,8 +1,8 @@
 name: Upgrade rehearsal
 
-# A release starts new code on the data the live site already has. The other
-# checks all start from an empty database, so this rehearses that step on a
-# copy, for every pull request into main: main's image (what is live) makes
+# A release starts new code on the data the live site already has. CI's smoke
+# test starts from an empty database, so this rehearses that step on made-up
+# data, for every pull request into main: main's image (what is live) makes
 # data with main's own smoke test, this pull request's image starts on the same
 # volume and must give the same answers, and main's image must still start on
 # the upgraded data (a rollback). Nothing here contacts the live site.
