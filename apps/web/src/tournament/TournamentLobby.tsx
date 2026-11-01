@@ -60,7 +60,7 @@ function useSend(id: string) {
 const sentence = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
 
 export function TournamentLobby({ id }: { id: string }) {
-  const { state, skew, nextId, error } = useTournament(id);
+  const { state, skew, nextId, nextError, error } = useTournament(id);
   const session = useSession();
   const now = useNow() + skew;
   const [tab, setTab] = useState<Tab>('players');
@@ -121,6 +121,11 @@ export function TournamentLobby({ id }: { id: string }) {
         {nextId && (
           <p className="tn-windows">
             <a href={`/tn/${nextId}`}>{state.settings.start.kind === 'sng' ? 'The next Sit & Go is open' : 'The next one in this series is open'} →</a>
+          </p>
+        )}
+        {!nextId && nextError && (
+          <p className="error tn-windows">
+            {state.settings.start.kind === 'sng' ? 'The next Sit & Go' : 'The next one in this series'} could not be made: {nextError}
           </p>
         )}
         <Stats state={state} now={now} />

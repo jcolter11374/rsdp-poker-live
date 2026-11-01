@@ -18,6 +18,16 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.01.8] - 2026-11-01
+
+### Fixed and changed
+
+- In the tournament structure editor, a typed small blind, big blind or ante now stops at the site's maximum chip amount instead of letting you enter a value that can't be saved.
+- Tournament payout tables now have a size limit: up to 150 ranges, each paying up to 200 places. A tournament whose settings would be too big to save as a structure is now refused when you make it, not later when you try to save it. If an existing repeating series or Sit & Go has a payout table over the limit, its lobby now says why its next event couldn't be made.
+- Fair dealing: the "Download proof" file now says whose each seed is and who was dealt in, so the standalone checker script can also catch a seed listed for a practice bot, for someone who wasn't dealt in, or twice for one player.
+- Hand search no longer shows a robot badge on a real player whose account id happens to look like a bot's.
+- Behind the scenes: our automated tests now replay tournaments exactly and clean up after themselves. Nothing changes at the tables.
+
 ## [2026.11.01.7] - 2026-11-01
 
 ### Fixed and changed
@@ -518,6 +528,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.01.8]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.8
 [2026.11.01.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.7
 [2026.11.01.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.6
 [2026.11.01.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.5

@@ -237,9 +237,9 @@ describe('provably fair dealing', () => {
       past.seats.forEach((x) => (x.playerId = rename(x.playerId)));
       past.fair!.clientSeeds.forEach((c) => (c.playerId = rename(c.playerId)));
       const seats = savedHandView({}, past, 'host', { now: clock.now() }).seats;
-      // The seed shows 'bot-a' is a person: bots never send one. 'bot-b' sent none, so the old guess stands.
+      // Neither is a bot: with no bot list or flagged ledger row, the 'bot-' prefix says nothing (#268).
       expect(seats.find((x) => x.playerId === 'bot-a')!.bot).toBeUndefined();
-      expect(seats.find((x) => x.playerId === 'bot-b')!.bot).toBeDefined();
+      expect(seats.find((x) => x.playerId === 'bot-b')!.bot).toBeUndefined();
     });
   });
 

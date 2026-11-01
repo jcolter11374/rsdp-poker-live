@@ -404,6 +404,20 @@ export function recordSeedProblem(listed: { playerId: string; seed: string }[], 
 }
 
 /**
+ * Whose each seed is, for the proof file: who the record shows dealt in, marking as bots those it marks and those this
+ * browser saw as bots at the table, so scripts/verify-hand.mjs can run the same check as seedListProblem on its own.
+ * `seedOwners` is in the order of the proof's `clientSeeds`, which stay bare strings so older copies of the script can
+ * still read the file.
+ */
+export function proofSeeds(listed: { playerId: string; seed: string }[], seats: { seat: number; playerId: string; bot?: unknown }[], live: LiveRecord | null) {
+  return {
+    clientSeeds: listed.map((c) => c.seed),
+    seedOwners: listed.map((c) => c.playerId),
+    players: seats.map((s) => ({ seat: s.seat, playerId: s.playerId, ...(s.bot || live?.bots?.includes(s.playerId) ? { bot: true } : {}) })),
+  };
+}
+
+/**
  * What's wrong with a hand's list of seeds as a whole, whoever's they are, if anything. An honest server lists at most
  * one seed for each person dealt in, none for a practice bot (bots never send one), and fresh random seeds never
  * match. Anything else is an extra seed that nobody's browser checks, so it could have been picked to steer the deck.

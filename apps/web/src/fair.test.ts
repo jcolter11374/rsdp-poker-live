@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
 vi.mock('./socket', () => ({ socket: mockSocket }));
-const { contributeSeed, liveRecordFor, liveSeedProblem, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, liveRecordFor, liveSeedProblem, proofSeeds, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -541,6 +541,32 @@ describe('seeds that nobody checks', () => {
       expect(seedListPassed(1, without)).toMatch(/^1 seed, one per person the record shows dealt in.*record's own list/);
       expect(seedListPassed(1, without)).not.toMatch(/none from a bot/);
     }
+  });
+
+  it('puts whose each seed is, and who was dealt in, into the proof file', () => {
+    const seats = [
+      { seat: 0, playerId: 'me', name: 'Me' },
+      { seat: 1, playerId: 'bot-1', name: 'Bot', bot: { ownerName: 'Me', look: 0 } },
+      { seat: 3, playerId: 'p2', name: 'P2' },
+    ];
+    const seeds = [
+      { playerId: 'p2', seed: 'bb', name: 'P2' },
+      { playerId: 'me', seed: 'aa', name: 'Me' },
+    ];
+    expect(proofSeeds(seeds, seats, null)).toEqual({
+      clientSeeds: ['bb', 'aa'],
+      seedOwners: ['p2', 'me'],
+      players: [
+        { seat: 0, playerId: 'me' },
+        { seat: 1, playerId: 'bot-1', bot: true },
+        { seat: 3, playerId: 'p2' },
+      ],
+    });
+    // A bot the record no longer marks is still marked when this browser saw it at the table.
+    const unmarked = seats.map(({ bot: _, ...s }) => s);
+    expect(proofSeeds(seeds, unmarked, null).players.filter((p) => 'bot' in p)).toEqual([]);
+    const live = { at: 0, button: 0, seats: [0, 1, 3], board: [], cards: {}, players: { 0: 'me', 1: 'bot-1', 3: 'p2' }, bots: ['bot-1'] };
+    expect(proofSeeds(seeds, unmarked, live).players[1]).toEqual({ seat: 1, playerId: 'bot-1', bot: true });
   });
 
   it('warns at the table about a seed listed for someone not dealt in, once it knows everyone who was', () => {
