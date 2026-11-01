@@ -56,6 +56,7 @@ import {
   type TableRules,
   type TableState,
   type TournamentSettings,
+  type EliminationGroup,
   type TournamentState,
 } from './types';
 
@@ -657,6 +658,38 @@ function unseat(c: Ctx, e: Entry) {
   }
 }
 
+/** When a group went out, which is the order groups place in (see EliminationGroup.bustAt). */
+const outAt = (g: EliminationGroup) => g.bustAt ?? g.at;
+
+/**
+ * A busted player whose rebuy offer ended goes out with the hand that busted them: into that hand's group (so
+ * starting stacks still order them, and equal ones tie), or a new group where that hand falls among the others.
+ */
+function joinBustGroup(s: TournamentState, e: Entry, m: EliminationGroup['members'][number], now: number) {
+  const bust = e.bust!;
+  const sameHand = (g: EliminationGroup) =>
+    bust.hfhRound !== undefined
+      ? g.hfhRound === bust.hfhRound
+      : g.hfhRound === undefined &&
+        outAt(g) === bust.at &&
+        !!g.busted &&
+        g.members.some((o) => o.tableId === bust.tableId);
+  const group = s.eliminations.find(sameHand);
+  if (group) {
+    group.members.push(m);
+    if (now > group.at) {
+      group.bustAt ??= group.at;
+      group.at = now;
+    }
+    return;
+  }
+  const fresh: EliminationGroup = { members: [m], at: now, busted: true, ...(now > bust.at ? { bustAt: bust.at } : {}), ...(bust.hfhRound !== undefined ? { hfhRound: bust.hfhRound } : {}) };
+  // After every group that went out by then (a quit in the same hand ranks below), before any that went out later.
+  const i = s.eliminations.findIndex((g) => outAt(g) > bust.at);
+  if (i < 0) s.eliminations.push(fresh);
+  else s.eliminations.splice(i, 0, fresh);
+}
+
 /**
  * Knocks out a set of entries together. The emitted place is provisional:
  * later re-entries or hand-for-hand ties can change it; standings() is final.
@@ -664,11 +697,17 @@ function unseat(c: Ctx, e: Entry) {
 function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'removed', hfhRound?: number) {
   if (!members.length) return;
   const s = c.s;
-  const groupMembers = members.map((e) => ({ entryId: e.id, startStack: e.bust?.startStack ?? e.stack, tableId: e.bust?.tableId ?? e.tableId }));
-  // Hand-for-hand busts in the same round share one group, so they tie across tables.
-  const existing = hfhRound !== undefined ? s.eliminations.find((g) => g.hfhRound === hfhRound) : undefined;
-  if (existing) existing.members.push(...groupMembers);
-  else s.eliminations.push({ members: groupMembers, at: c.now, ...(hfhRound !== undefined ? { hfhRound } : {}) });
+  const member = (e: Entry) => ({ entryId: e.id, startStack: e.bust?.startStack ?? e.stack, tableId: e.bust?.tableId ?? e.tableId });
+  // Busted players who were offered a rebuy went out in the hand that busted them, however long the offer took.
+  const late = members.filter((e) => e.status === 'rebuy-offer' && e.bust);
+  const now = members.filter((e) => !late.includes(e));
+  if (now.length) {
+    // Hand-for-hand busts in the same round share one group, so they tie across tables.
+    const existing = hfhRound !== undefined ? s.eliminations.find((g) => g.hfhRound === hfhRound) : undefined;
+    if (existing) existing.members.push(...now.map(member));
+    else s.eliminations.push({ members: now.map(member), at: c.now, ...(reason === 'busted' ? { busted: true as const } : {}), ...(hfhRound !== undefined ? { hfhRound } : {}) });
+  }
+  for (const e of late) joinBustGroup(s, e, member(e), c.now);
   const seats = members.map((e) => ({ tableId: e.tableId, seat: e.seat }));
   // Leaving with a bounty nobody won: it stays the player's own, as it does for whoever is left at the end.
   if (reason !== 'busted') {
@@ -1269,7 +1308,7 @@ function handResult(c: Ctx, r: HandResult) {
   const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0 && !e.leaveRequested);
   const out: Entry[] = [];
   for (const e of busted) {
-    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
+    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [], ...(hfhRound !== undefined ? { hfhRound } : {}) };
     payBounty(c, e);
     if (canRebuy(s, e)) {
       e.status = 'rebuy-offer';
