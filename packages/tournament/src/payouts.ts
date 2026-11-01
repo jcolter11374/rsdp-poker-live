@@ -21,6 +21,13 @@ export interface PayoutStructure {
 /** Largest rounding step a structure may ask for: $1,000. */
 export const MAX_ROUND_TO = 100_000;
 
+/**
+ * Most ranges in a table, and most places one range pays. Every preset fits at 600 entrants (Flat has the
+ * most: 120 ranges, up to 120 places), and the caps keep a table to a size the settings can carry.
+ */
+export const MAX_PAYOUT_RANGES = 150;
+export const MAX_PAID_PLACES = 200;
+
 /** Optional display-only money values. All amounts in the smallest unit. */
 export interface PrizeMoney {
   buyIn: number;
@@ -50,10 +57,12 @@ const cents = (n: number) => Math.round(n * 100);
  * Checks a structure. Ranges must be in order with no gaps or overlaps and
  * cover 2 up to `maxEntries`; each range must pay no more places than its
  * smallest entry count, percents must not increase, and each range sums to 100.
+ * At most MAX_PAYOUT_RANGES ranges, each paying at most MAX_PAID_PLACES places.
  */
 export function validatePayoutStructure(s: PayoutStructure, maxEntries: number): string[] {
   const errors: string[] = [];
   if (!Array.isArray(s?.ranges) || !s.ranges.length) return ['Add at least one range'];
+  if (s.ranges.length > MAX_PAYOUT_RANGES) return [`At most ${MAX_PAYOUT_RANGES} ranges`];
   let expectedMin = 2;
   for (const [i, r] of s.ranges.entries()) {
     // Settings arrive from browsers, so a range may not be shaped like one.
@@ -69,6 +78,7 @@ export function validatePayoutStructure(s: PayoutStructure, maxEntries: number):
     expectedMin = r.maxEntries + 1;
     if (!r.percents.length) errors.push(`${label}: pays nobody`);
     if (r.percents.length > r.minEntries) errors.push(`${label}: pays more places than ${r.minEntries} entries`);
+    if (r.percents.length > MAX_PAID_PLACES) errors.push(`${label}: pays more than ${MAX_PAID_PLACES} places`);
     if (r.percents.some((p) => !(p > 0) || Math.abs(p * 100 - cents(p)) > 1e-6))
       errors.push(`${label}: percents must be above 0 with at most two decimals`);
     if (r.percents.some((p, j) => j > 0 && p > r.percents[j - 1])) errors.push(`${label}: a lower place pays more than a higher one`);

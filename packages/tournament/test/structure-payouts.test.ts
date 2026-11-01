@@ -15,6 +15,8 @@ import {
   curvePercents,
   generateStructure,
   icm,
+  MAX_PAID_PLACES,
+  MAX_PAYOUT_RANGES,
   payoutPreset,
   placePrizes,
   plannedMinutes,
@@ -163,6 +165,22 @@ describe('payouts', () => {
     expect(bad([{ minEntries: 2, maxEntries: 10, percents: [100] }, { minEntries: 11, maxEntries: 20, percents: ['50', '50'] }])).toEqual([
       'Range 2 is not a payout range',
     ]);
+  });
+
+  it('caps how many ranges a table has and how many places a range pays', () => {
+    // 2-3, 4-5, ... each paying 1st only: as many ranges as asked for.
+    const ranges = (n: number) => Array.from({ length: n }, (_, i) => ({ minEntries: 2 + 2 * i, maxEntries: 3 + 2 * i, percents: [100] }));
+    expect(validatePayoutStructure({ name: 'x', ranges: ranges(MAX_PAYOUT_RANGES) }, 10)).toEqual([]);
+    expect(validatePayoutStructure({ name: 'x', ranges: ranges(MAX_PAYOUT_RANGES + 1) }, 10)).toEqual([`At most ${MAX_PAYOUT_RANGES} ranges`]);
+    const paying = (places: number) => ({ name: 'x', ranges: [{ minEntries: 2, maxEntries: 600, percents: [100] }, { minEntries: 601, maxEntries: 1000, percents: curvePercents(places, 0) }] });
+    expect(validatePayoutStructure(paying(MAX_PAID_PLACES), 600)).toEqual([]);
+    expect(validatePayoutStructure(paying(MAX_PAID_PLACES + 1), 600)).toEqual([`Range 601-1000: pays more than ${MAX_PAID_PLACES} places`]);
+    // Every preset stays inside both caps at the most entrants an event can have.
+    for (const name of ['rsdp', 'winner-take-all', 'top-two', 'top-three', 'standard', 'flat'] as const) {
+      const s = payoutPreset(name, 600);
+      expect(s.ranges.length).toBeLessThanOrEqual(MAX_PAYOUT_RANGES);
+      expect(Math.max(...s.ranges.map((r) => r.percents.length))).toBeLessThanOrEqual(MAX_PAID_PLACES);
+    }
   });
 
   it('validates ranges', () => {

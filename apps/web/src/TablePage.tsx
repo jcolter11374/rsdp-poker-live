@@ -429,7 +429,6 @@ export function TablePage({ tableId }: { tableId: string }) {
     />
   );
 
-
   return (
     <div className={`table-page ${portrait ? 'portrait' : ''}`}>
       <header className="topbar">

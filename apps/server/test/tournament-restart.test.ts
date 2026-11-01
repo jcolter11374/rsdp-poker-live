@@ -181,6 +181,18 @@ describe('shutting down', () => {
 });
 
 describe('tournaments after a crash', () => {
+  it('the test setup is seeded: the same steps play the same tournament', async () => {
+    // So a failure here can be replayed: the seat draw, the deals and the order players bust in all repeat.
+    const run = async () => {
+      const { env, state } = await started(4);
+      const seats = state().entries.map((e) => [e.playerId, e.seat]);
+      playUntil(env, () => state().status === 'finished');
+      expect(env.errors).toEqual([]);
+      return { seats, busts: state().entries.map((e) => [e.playerId, e.bust?.at]), hands: state().tables[0].lastHandNumber };
+    };
+    expect(await run()).toEqual(await run());
+  }, 60_000);
+
   it.each(['during', 'before'] as const)('a bust the director never saved is replayed from the table (director saved %s the hand)', async (when) => {
     const { env, id, state } = await started(4);
     const [rt] = env.tables.values();
