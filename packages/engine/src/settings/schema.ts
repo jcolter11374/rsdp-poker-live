@@ -359,7 +359,10 @@ function checkAcrossSections(s: z.output<typeof SettingsObject>, ctx: z.Refineme
 /**
  * The whole table settings object, shared by server and web. Every field is
  * required and unknown keys are rejected; use migrateSettings for stored or
- * partial data. Cross-section rules run once each field has the right type.
+ * partial data. Cross-section rules run once each field has the right type
+ * and no list is over its limit. zod refuses an over-long list before reading
+ * its items (its guard against huge lists), so problems in those items and
+ * across sections show once the list is short enough.
  * parseSettings wraps this with readable messages; to use the schema directly
  * with the same messages, pass `{ error: settingsErrorMap }`.
  */

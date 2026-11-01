@@ -154,6 +154,25 @@ scenario('min buy-in over max buy-in, both fractions', fields(busy(), { 'seating
 scenario('decision clock wrong type', fields(busy(), { 'timing.decisionSeconds': '30' }));
 scenario('decision clock fraction outside the range', fields(busy(), { 'timing.decisionSeconds': 2.5 }));
 
+// Lists at and over their limit, next to other problems. A list over its limit is refused before its items
+// are read, so problems inside it and the rules across sections only show once it is short enough.
+const steps = (n: number) => Array.from({ length: n }, () => ({ gameId: 'plo', betting: 'pot-limit', length: 2, unit: 'orbits' }));
+const levels = (n: number) => Array.from({ length: n }, () => ({ smallBlind: 1, bigBlind: 2, ante: 0, minutes: 15, hands: 20 }));
+const badStep = { ...steps(1)[0], length: 0 };
+scenario('20 rotation steps, the last one bad', fields(busy(), { 'game.rotation.steps': [...steps(19), badStep] }));
+scenario('21 rotation steps, the last one bad', fields(busy(), { 'game.rotation.steps': [...steps(20), badStep] }));
+scenario('100 blind levels, the last one not an object', fields(busy(), { 'blindSchedule.levels': [...levels(99), 'x'] }));
+scenario('101 blind levels, the last one not an object', fields(busy(), { 'blindSchedule.levels': [...levels(100), 'x'] }));
+scenario('21 rotation steps, bad fields in other sections', fields(busy(), { 'game.rotation.steps': steps(21), 'table.maxSeats': 11, 'stakes.smallBlind': 5 }));
+scenario('21 rotation steps, bad fields beside them', fields(busy(), { 'game.rotation.steps': steps(21), 'game.rotation.enabled': 'yes', 'game.rotation.zzz': 1 }));
+scenario('21 rotation steps, big blind 0', fields(busy(), { 'game.rotation.steps': steps(21), 'stakes.bigBlind': 0, 'stakes.smallBlind': 0 }));
+scenario('101 blind levels switched off, ante with no ante type', fields(busy(), { 'blindSchedule.enabled': false, 'blindSchedule.levels': levels(101), 'stakes.ante': 5 }));
+scenario(
+  '101 blind levels in a tournament, run it twice on',
+  fields(defaultSettings('tournament'), { 'blindSchedule.enabled': true, 'blindSchedule.levels': levels(101), 'play.runItTwice': 'ask' }),
+);
+scenario('101 blind levels, side-game field bad', fields(busy(), { 'blindSchedule.levels': levels(101), 'modifiers.rake.percent': 101 }));
+
 // Modifiers: the registered sections, the tournament gate, and odd keys.
 const tournamentWith = (set: Record<string, unknown>) => fields(defaultSettings('tournament'), set);
 scenario('every cash-only modifier on in a tournament', tournamentWith(Object.fromEntries(['bomb-pot', 'nit', 'bounty-72', 'rake', 'double-board'].map((id) => [`modifiers.${id}.enabled`, true]))));

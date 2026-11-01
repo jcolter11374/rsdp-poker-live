@@ -1212,6 +1212,26 @@ seating.minBuyIn: must be a whole number | seating.maxBuyIn: must be a whole num
 timing.decisionSeconds: must be a number, not string
 ## decision clock fraction outside the range
 timing.decisionSeconds: must be a whole number; must be 0 (no clock) or 5-600
+## 20 rotation steps, the last one bad
+game.rotation.steps[19].length: must be at least 1
+## 21 rotation steps, the last one bad
+game.rotation.steps: must have at most 20 items
+## 100 blind levels, the last one not an object
+blindSchedule.levels[99]: must be an object, not string
+## 101 blind levels, the last one not an object
+blindSchedule.levels: must have at most 100 items
+## 21 rotation steps, bad fields in other sections
+table.maxSeats: must be at most 10 | game.rotation.steps: must have at most 20 items | stakes.smallBlind: must not exceed the big blind (2)
+## 21 rotation steps, bad fields beside them
+game.rotation.enabled: must be true or false, not string | game.rotation.steps: must have at most 20 items | game.rotation.zzz: unknown field
+## 21 rotation steps, big blind 0
+game.rotation.steps: must have at most 20 items
+## 101 blind levels switched off, ante with no ante type
+blindSchedule.levels: must have at most 100 items
+## 101 blind levels in a tournament, run it twice on
+blindSchedule.levels: must have at most 100 items
+## 101 blind levels, side-game field bad
+blindSchedule.levels: must have at most 100 items | modifiers.rake.percent: must be at most 100
 ## every cash-only modifier on in a tournament
 modifiers.bounty-72.enabled: cash games only: turn it off in tournament mode | modifiers.double-board.enabled: cash games only: turn it off in tournament mode | modifiers.rake.enabled: cash games only: turn it off in tournament mode | modifiers.bomb-pot.enabled: cash games only: turn it off in tournament mode | modifiers.nit.enabled: cash games only: turn it off in tournament mode
 ## bad modifier field in a tournament with the modifier on
