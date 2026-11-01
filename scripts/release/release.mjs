@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { gh, ghAll, summary } from './github.mjs';
-import { compareReleaseIds, isVersion, parseOnDevelopMarkers, renderRelease, tagOf } from './lib.mjs';
+import { compareReleaseIds, dayOf, isVersion, parseOnDevelopMarkers, renderRelease, tagOf } from './lib.mjs';
 
 const DEPLOY_JOB = 'Deploy to Fly.io';
 // Who our workflows comment as.
@@ -58,87 +58,113 @@ const sha = run.head_sha;
 const liveAt = `${run.updated_at.replace('T', ' ').slice(0, 16)} UTC`;
 say(`Deploy run ${run.html_url} put ${sha.slice(0, 7)} live at ${liveAt}.`);
 
+const LIVE_NOTE = 'Live on the site since';
+
 // The issues this deploy put live: labelled "status: on develop" (still open, or already closed
-// by GitHub because a "Closes #n" reached main), with a merge note that is part of the deployed commit.
+// by GitHub because a "Closes #n" reached main), whose newest merge note is part of the deployed commit.
 const shipped = [];
 const labelled = await ghAll(`/repos/{repo}/issues?state=all&labels=${encodeURIComponent(ON_DEVELOP)}`);
 for (const issue of labelled.filter((i) => !i.pull_request)) {
-  const comments = await ghAll(`/repos/{repo}/issues/${issue.number}/comments`);
-  // Only the notes our own workflow left count: anyone can comment on a public repository.
-  const marks = comments.filter((c) => c.user?.login === BOT).flatMap((c) => parseOnDevelopMarkers(c.body));
-  if (!marks.length) {
+  // Only what our own workflows wrote counts: anyone can comment on a public repository.
+  const ours = (await ghAll(`/repos/{repo}/issues/${issue.number}/comments`)).filter((c) => c.user?.login === BOT);
+  const noted = ours.filter((c) => parseOnDevelopMarkers(c.body).length);
+  if (!noted.length) {
     if (issue.state === 'open') say(`#${issue.number} is labelled "${ON_DEVELOP}" but has no merge note; left open for a person to check.`);
     continue;
   }
-  let live = false;
-  for (const m of marks) if (!live && (await contains(sha, m.sha))) live = true;
-  if (live) shipped.push(issue);
+  // The newest note decides: an issue reopened and fixed again waits for its new fix.
+  const last = noted.at(-1);
+  const mark = parseOnDevelopMarkers(last.body).at(-1);
+  if (!(await contains(sha, mark.sha))) continue;
+  // A run that failed after commenting shouldn't comment twice.
+  const commented = ours.some((c) => c.id > last.id && c.body.startsWith(LIVE_NOTE));
+  shipped.push({ issue, mark, commented, release: null });
 }
 
-/** The commit on main that first put release `id` live: the oldest in an unbroken run of main's own commits, up to the deployed one, whose changelog.json has it. */
-function firstCommitWith(id) {
-  const commits = execFileSync('git', ['log', '--first-parent', '--format=%H', sha, '--', 'apps/web/src/roadmap/changelog.json'], { encoding: 'utf8' })
-    .split('\n')
-    .filter(Boolean);
-  let found = null;
-  for (const c of commits) {
-    let has = false;
-    try {
-      has = json(c, 'changelog.json').some((r) => r.id === id);
-    } catch {}
-    if (!has) break;
-    found = c;
-  }
-  return found;
-}
-
-// A GitHub release for every versioned entry that has none yet, oldest first. Creating the release
-// creates its tag, or uses the tag if it's already there: a tag is never moved or deleted, and a
-// failure leaves nothing a re-run can't finish.
 const changelog = json(sha, 'changelog.json');
 const features = new Map(json(sha, 'whatsnew.json').map((r) => [r.id, r]));
 const versions = changelog.filter((r) => isVersion(r.id)).sort((a, b) => compareReleaseIds(b.id, a.id));
+const releases = new Map((await ghAll('/repos/{repo}/releases')).map((r) => [r.tag_name, r]));
+const missing = versions.filter((e) => !releases.has(tagOf(e.id)));
+
+// Where each version without a release first went live: one walk back through main's changes to
+// changelog.json, stopping once every such version has dropped out of the file.
+const firstSeen = new Map();
+const tracking = new Set(missing.filter((e) => !e.commit).map((e) => e.id));
+if (tracking.size) {
+  const commits = execFileSync('git', ['log', '--first-parent', '--format=%H', sha, '--', 'apps/web/src/roadmap/changelog.json'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+  for (const c of commits) {
+    if (!tracking.size) break;
+    let here = new Set();
+    try {
+      here = new Set(json(c, 'changelog.json').map((r) => r.id));
+    } catch {}
+    for (const id of [...tracking]) {
+      if (here.has(id)) firstSeen.set(id, c);
+      else tracking.delete(id);
+    }
+  }
+}
+
+// This deploy's own release is the newest version (one without a `commit`, which only the first,
+// back-filled release has). It is new if it has no release yet; a re-run finds the one it made.
+const own = versions.filter((e) => !e.commit).at(-1) ?? null;
 let current = null;
-for (const [i, entry] of versions.entries()) {
-  const tag = tagOf(entry.id);
-  const target = entry.commit ?? firstCommitWith(entry.id);
-  const isThisDeploy = !entry.commit && target === sha;
-  const existing = await gh('GET', `/repos/{repo}/releases/tags/${encodeURIComponent(tag)}`, null, { allow404: true });
-  if (existing) {
-    if (isThisDeploy) current = existing;
-    continue;
-  }
+if (own && releases.has(tagOf(own.id))) {
+  const made = releases.get(tagOf(own.id));
+  if (made.target_commitish === sha) current = made;
+}
+
+// A GitHub release for every version that has none yet, oldest first. Creating the release creates
+// its tag, or uses the tag if it's already there: a tag is never moved or deleted.
+const fresh = [];
+for (const entry of missing) {
+  const isOwn = entry === own;
+  const target = entry.commit ?? (isOwn ? sha : firstSeen.get(entry.id));
   if (!target || (entry.commit && !(await contains(sha, entry.commit)))) {
-    say(`::warning::Couldn't find the commit that put ${entry.id} live${entry.commit ? ` (${entry.commit} isn't part of the deployed commit)` : ''}; no release made for it.`);
+    say(`::warning::Couldn't find the commit that put ${entry.id} live; no release made for it.`);
     continue;
   }
+  fresh.push({ entry, target, isOwn });
+}
+// Each shipped issue belongs to the oldest new release that contains its fix (several can go live
+// in one deploy); the rest belong to this deploy's own release.
+for (const s of shipped) {
+  for (const f of fresh) if (!s.release && !f.isOwn && (await contains(f.target, s.mark.sha))) s.release = f;
+}
+for (const f of fresh) {
+  const { entry, target, isOwn } = f;
+  const i = versions.indexOf(entry);
   const feature = features.get(entry.id);
+  const closed = shipped.filter((s) => s.release === f || (isOwn && !s.release)).map((s) => ({ number: s.issue.number, title: s.issue.title }));
   const release = await gh('POST', '/repos/{repo}/releases', {
-    tag_name: tag,
+    tag_name: tagOf(entry.id),
     target_commitish: target,
-    name: feature ? `${tag} · ${feature.title}` : tag,
-    body: renderRelease({
-      entry,
-      feature,
-      closed: isThisDeploy ? shipped.map((x) => ({ number: x.number, title: x.title })) : [],
-      previous: i > 0 ? versions[i - 1].id : null,
-      liveAt: isThisDeploy ? liveAt : null,
-    }),
-    make_latest: isThisDeploy ? 'true' : 'false',
+    name: feature ? `${tagOf(entry.id)} · ${feature.title}` : tagOf(entry.id),
+    body: renderRelease({ entry, feature, closed, previous: i > 0 ? versions[i - 1].id : null, liveAt: isOwn ? liveAt : null }),
+    make_latest: isOwn ? 'true' : 'false',
   });
-  say(`Published ${release.html_url} (${tag} at ${target.slice(0, 7)}).`);
-  if (isThisDeploy) current = release;
+  say(`Published ${release.html_url} (${release.tag_name} at ${target.slice(0, 7)}).`);
+  f.made = release;
+  if (isOwn) current = release;
+}
+if (own && current && dayOf(own.id) && Math.abs(Date.parse(dayOf(own.id)) - Date.parse(run.updated_at.slice(0, 10))) > 86_400_000) {
+  say(`::warning::${own.id} is dated ${dayOf(own.id)} but went live on ${run.updated_at.slice(0, 10)}. Next time, rename the entry on the day the release merges (see CONTRIBUTING.md).`);
 }
 if (!current && shipped.length) {
   say('::warning::This deploy has no new versioned changelog entry, so it has no release of its own. Every release to main should add one (see CONTRIBUTING.md).');
 }
 
-for (const issue of shipped) {
-  const where = current ? `[${current.tag_name}](${current.html_url})` : `the deploy of ${sha.slice(0, 7)} (${run.html_url})`;
+for (const { issue, commented, release } of shipped) {
+  const rel = release?.made ?? current;
+  const where = rel ? `[${rel.tag_name}](${rel.html_url})` : `the deploy of ${sha.slice(0, 7)} (${run.html_url})`;
+  // Comment first, then close and drop the label in one step: if either fails, the issue still has
+  // its label, so a re-run finds it again (and doesn't comment twice).
+  if (!commented) await gh('POST', `/repos/{repo}/issues/${issue.number}/comments`, { body: `${LIVE_NOTE} ${liveAt}, in ${where}.` });
   const labels = issue.labels.map((l) => (typeof l === 'string' ? l : l.name)).filter((n) => n !== ON_DEVELOP);
-  // Close it and drop the label in one step, so if this fails a re-run still finds it.
   await gh('PATCH', `/repos/{repo}/issues/${issue.number}`, issue.state === 'open' ? { state: 'closed', state_reason: 'completed', labels } : { labels });
-  await gh('POST', `/repos/{repo}/issues/${issue.number}/comments`, { body: `Live on the site since ${liveAt}, in ${where}.` });
   say(`${issue.state === 'open' ? 'Closed' : 'Noted'} #${issue.number} (${issue.title}) as live.`);
 }
 if (!shipped.length) say('No issues waiting on this release.');

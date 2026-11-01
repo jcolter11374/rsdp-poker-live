@@ -40,6 +40,8 @@ const read = (file) => ({
   pr: JSON.parse(readFileSync(`${DIR}/${file}`, 'utf8')).releases,
   base: releasesAt(base, file),
   main: releasesAt('origin/main', file),
+  // For a fix straight into main: the release waiting on develop already has its version.
+  develop: releasesAt('origin/develop', file),
 });
 const problems = prProblems({
   pr: { base: pr.base.ref, head: pr.head.ref, body: pr.body ?? '', labels: (pr.labels ?? []).map((l) => l.name) },

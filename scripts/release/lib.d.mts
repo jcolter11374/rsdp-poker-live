@@ -25,8 +25,8 @@ export function parseOnDevelopMarkers(text: string | null | undefined): { pr: nu
 export function prProblems(input: {
   pr: { base: string; head: string; body: string; labels: string[] };
   repo: string;
-  logs: { pr: ChangelogEntry[]; base: ChangelogEntry[]; main: ChangelogEntry[] };
-  features?: { pr: WhatsNewEntry[]; base: WhatsNewEntry[]; main: WhatsNewEntry[] };
+  logs: { pr: ChangelogEntry[]; base: ChangelogEntry[]; main: ChangelogEntry[]; develop?: ChangelogEntry[] };
+  features?: { pr: WhatsNewEntry[]; base: WhatsNewEntry[]; main: WhatsNewEntry[]; develop?: WhatsNewEntry[] };
   /** The UTC date, YYYY-MM-DD; without it a release's version date isn't checked. */
   today?: string;
 }): string[];

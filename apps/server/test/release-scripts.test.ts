@@ -75,7 +75,7 @@ describe('release versions', () => {
 describe('pull request checks', () => {
   const entry = (id: string, more: Partial<ChangelogEntry> = {}): ChangelogEntry => ({ id, date: dayOf(id) ?? '2026-11-01', fixes: ['x'], ...more });
   const live = [entry('2026.11.01', { commit: 'a'.repeat(40) }), entry('2026-10-31-d')];
-  type Logs = { pr: ChangelogEntry[]; base?: ChangelogEntry[]; main?: ChangelogEntry[] };
+  type Logs = { pr: ChangelogEntry[]; base?: ChangelogEntry[]; main?: ChangelogEntry[]; develop?: ChangelogEntry[] };
   const check = (pr: { base?: string; head?: string; body?: string; labels?: string[] }, logs: Logs, today?: string) =>
     prProblems({
       pr: { base: 'develop', head: 'claude/x', body: '', labels: [], ...pr },
@@ -137,12 +137,48 @@ describe('pull request checks', () => {
     const release = { base: 'main', head: 'develop' };
     expect(check(release, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-02')).toEqual([]);
     expect(check(release, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-04')).toEqual([
-      "This release's version 2026.11.01.2 is from 2026-11-01, but a version is the day the release goes live. Rename it to 2026.11.04 (and its date to 2026-11-04, in whatsnew.json too), then run npm run changelog.",
+      "This release's version 2026.11.01.2 is for 2026-11-01, but a version is the day the release goes live. Rename it to 2026.11.04 (and its date to 2026-11-04, in whatsnew.json too), then run npm run changelog.",
     ]);
     const hotfix = [entry('2026.11.03'), ...live];
     expect(check(release, { main: hotfix, pr: [entry('2026.11.03'), entry('2026.11.02'), ...live] }, '2026-11-03')).toEqual([
       "This release's version 2026.11.02 isn't newer than 2026.11.03, which is already live. Rename it to 2026.11.03.2 (and its date to 2026-11-03, in whatsnew.json too), then run npm run changelog.",
     ]);
+  });
+
+  it('refuses versions dated in the future, and says when a live one is', () => {
+    expect(check({ body: 'Closes #4' }, { pr: [entry('2026.11.30'), ...live] }, '2026-11-03')).toEqual([
+      'The changelog entry 2026.11.30 is dated in the future. Rename it to 2026.11.03 (and its date to 2026-11-03, in whatsnew.json too), then run npm run changelog.',
+    ]);
+    const typo = [entry('2026.11.30'), ...live];
+    expect(check({ base: 'main', head: 'develop' }, { main: typo, base: typo, pr: [entry('2026.11.05'), ...typo] }, '2026-11-05')[0]).toMatch(
+      /isn't newer than 2026\.11\.30.*a person needs to look at it/,
+    );
+  });
+
+  it('keeps a fix straight into main off the version waiting on develop', () => {
+    const waiting = [entry('2026.11.03'), ...live];
+    expect(check({ base: 'main', head: 'claude/fix', body: 'Fixes #9' }, { develop: waiting, pr: [entry('2026.11.03'), ...live] }, '2026-11-03')).toEqual([
+      '2026.11.03 is already the version of the release waiting on develop. Rename it to 2026.11.03.2 (and its date to 2026-11-03, in whatsnew.json too), then run npm run changelog.',
+    ]);
+    expect(check({ base: 'main', head: 'claude/fix', body: 'Fixes #9' }, { develop: waiting, pr: [entry('2026.11.03.2'), ...live] }, '2026-11-03')).toEqual([]);
+  });
+
+  it('refuses renaming or removing a live entry, except the one-time move to versions', () => {
+    const shipped = [entry('2026.11.02'), ...live];
+    expect(check({ body: 'Closes #4' }, { main: shipped, base: shipped, pr: [entry('2026.11.04'), ...live] }, '2026-11-04')).toEqual([
+      '"2026.11.02" is already live, so it can\'t be renamed or removed. Put new lines in the next release\'s entry, or start one at the top.',
+    ]);
+    expect(check({ base: 'main', head: 'develop' }, { main: shipped, base: shipped, pr: [entry('2026.11.04'), ...live] }, '2026-11-04')[0]).toMatch(/can't be renamed or removed/);
+    const before = [entry('2026-11-01'), entry('2026-10-31-d')];
+    expect(check({ body: 'Closes #4' }, { main: before, base: before, pr: live })).toEqual([]);
+  });
+
+  it('doesn\'t block other work when develop\'s copy of a live entry has drifted, and lets it be put back', () => {
+    const onMain = [entry('2026.11.02', { fixes: ['a'] }), ...live];
+    const drifted = [entry('2026.11.02', { fixes: ['a', 'b'] }), ...live];
+    expect(check({ body: 'Closes #4' }, { main: onMain, base: drifted, pr: drifted })).toEqual([]);
+    expect(check({ body: 'Closes #4' }, { main: onMain, base: drifted, pr: onMain })).toEqual([]);
+    expect(check({ base: 'main', head: 'develop' }, { main: onMain, base: onMain, pr: [entry('2026.11.03'), ...drifted] }, '2026-11-03')[0]).toMatch(/make it match main/);
   });
 
   it('treats a fix straight into main as a release that also names its issue', () => {
@@ -156,7 +192,10 @@ describe('pull request checks', () => {
     const oldMain = [entry('2026-11-01'), entry('2026-10-31-d')];
     expect(check({ body: 'Closes #1' }, { base: oldMain, main: oldMain, pr: renamed })).toEqual([]);
     expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01.2'), ...renamed] }, '2026-11-01')).toEqual([]);
-    expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01'), ...renamed.slice(1)] }, '2026-11-01')).toEqual([]);
+    // Dropping the live entry instead of carrying it over (with its commit) is not a migration.
+    expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01'), ...renamed.slice(1)] }, '2026-11-01')).toEqual([
+      expect.stringContaining('"2026-11-01" is already live'),
+    ]);
   });
 });
 

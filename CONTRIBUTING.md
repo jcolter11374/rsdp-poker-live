@@ -98,9 +98,11 @@ it: changing only the file makes a new, empty label.
 
 A fix that has to go straight into `main` follows the same rules: its pull
 request says "Closes #123" (GitHub closes the issue when it merges) and adds
-its own changelog entry with today's version. Merge `main` back into
-`develop` afterwards so the two don't drift, keeping the fix's entry exactly
-as it is on `main`.
+its own changelog entry with today's version. If the release waiting on
+`develop` already has today's version, the fix takes the next one
+(`2026.11.01.2`); the PR check says which. Merge `main` back into `develop`
+afterwards so the two don't drift, keeping the fix's entry exactly as it is
+on `main`.
 
 GitHub also closes an issue by itself when "Closes #123" reaches `main` in a
 release pull request's description or in a commit message. That's fine: the
@@ -132,6 +134,10 @@ notes on each GitHub release.
   opening the release. The release's version must also be newer than every
   release already live. The PR check enforces all of this and says what to
   rename it to.
+- **Merge it the same day.** The check runs when the release pull request is
+  opened or changed, not when it merges. If a release waits past the day
+  its version names, rename it again before merging. (The Release workflow
+  warns if a version and its deploy day are more than a day apart.)
 - **Plain English.** The notes are for the players. Say what changed for
   them; no pull request numbers or code names.
 - **What goes where.** What's new is for new features and changes people

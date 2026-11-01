@@ -87,24 +87,27 @@ export function parseOnDevelopMarkers(text) {
 /**
  * What a pull request is missing before it can merge. `pr` is {base, head,
  * body, labels}; `logs` holds changelog.json's release lists and `features`
- * whatsnew.json's (optional), each as they are in the PR, on its base branch
- * and on main; `today` is the UTC date, YYYY-MM-DD. Returns plain-English
- * problems, each saying what to do.
+ * whatsnew.json's (optional), each as they are in the PR, on its base branch,
+ * on main and (optional) on develop; `today` is the UTC date, YYYY-MM-DD.
+ * Returns plain-English problems, each saying what to do.
  */
 export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main: [] }, today }) {
   const problems = [];
   const isRelease = pr.base === 'main' && pr.head === 'develop';
+  const isHotfix = pr.base === 'main' && !isRelease;
   if (!isRelease && !pr.labels.includes('no issue needed') && issueRefs(pr.body, repo).length === 0) {
     problems.push(
       'Link the issue this pull request works on: put "Closes #123" in its description (or "Part of #123" if it only does some of it). ' +
         'For a tiny change that needs no issue, add the "no issue needed" label instead.',
     );
   }
+  const develop = logs.develop ?? [];
   const ids = (list) => new Set(list.map((r) => r.id));
   const onMain = ids(logs.main);
   const onBase = ids(logs.base);
-  const used = [...new Set([...logs.pr, ...logs.base, ...logs.main].map((r) => r.id))];
-  for (const id of new Set(logs.pr.map((r) => r.id))) {
+  const prIds = ids(logs.pr);
+  const used = [...new Set([...logs.pr, ...logs.base, ...logs.main, ...develop].map((r) => r.id))];
+  for (const id of prIds) {
     if (logs.pr.filter((r) => r.id === id).length > 1) problems.push(`The changelog has two entries called "${id}"; ids must be unique.`);
   }
   // An entry with a `commit` records a release that is already live (one from before tags existed).
@@ -113,8 +116,13 @@ export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main
   // Entries new to the base branch that are live already (merging main back into develop brings these).
   const addedPending = added.filter((r) => !onMain.has(r.id));
   const waiting = pending.filter((r) => !addedPending.includes(r));
+  const live = [...logs.main, ...logs.pr.filter((r) => r.commit)].map((r) => r.id).filter(isVersion);
+  const newestLive = [...live].sort(compareReleaseIds)[0];
   for (const r of addedPending) {
-    if (isVersion(r.id)) continue;
+    if (isVersion(r.id)) {
+      if (today && daysBefore(today, dayOf(r.id)) > 1) problems.push(`The changelog entry ${r.id} is dated in the future. ${renameTo(today, used.filter((id) => id !== r.id), newestLive)}`);
+      continue;
+    }
     problems.push(
       pr.base !== 'main' && waiting.length
         ? `"${r.id}" shouldn't be a new changelog entry: add its lines to ${waiting[0].id}, the next release's entry.`
@@ -122,18 +130,26 @@ export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main
     );
   }
 
-  // A release that is live already keeps its notes: new lines go in the next release's entry.
+  // A release that is live already keeps its notes and its name: new lines go in the next release's entry.
   const notes = (list, featureList, id) =>
     JSON.stringify([list.find((r) => r.id === id)?.fixes ?? null, featureList.find((r) => r.id === id) ?? null]);
-  const [refLog, refFeatures] = pr.base === 'main' ? [logs.main, features.main] : [logs.base, features.base];
+  const nextEntry = waiting[0] ? ` (${waiting[0].id})` : '';
   for (const r of logs.pr) {
-    if (!onMain.has(r.id) || !refLog.some((x) => x.id === r.id)) continue;
-    if (notes(logs.pr, features.pr, r.id) !== notes(refLog, refFeatures, r.id)) {
-      problems.push(
-        `"${r.id}" is already live, so its notes can't change. Put the new lines in the next release's entry` +
-          `${waiting[0] ? ` (${waiting[0].id})` : ''}, or start one at the top.`,
-      );
+    if (!onMain.has(r.id)) continue;
+    const mine = notes(logs.pr, features.pr, r.id);
+    // Main's copy is the truth. Into develop, a copy develop already has passes too, so a pull request
+    // that doesn't touch the entry isn't blocked by an earlier slip, and one that restores main's copy passes.
+    const asMain = mine === notes(logs.main, features.main, r.id);
+    const asBase = pr.base !== 'main' && onBase.has(r.id) && mine === notes(logs.base, features.base, r.id);
+    if (!asMain && !asBase) {
+      problems.push(`"${r.id}" is already live, so its notes can't change: make it match main, and put new lines in the next release's entry${nextEntry} or start one at the top.`);
     }
+  }
+  for (const r of pr.base === 'main' ? logs.main : logs.base) {
+    if (!onMain.has(r.id) || prIds.has(r.id)) continue;
+    // The one-time move to versions: a live old-style id became a version of the same day that names its `commit`.
+    if (!isVersion(r.id) && logs.pr.some((x) => x.commit && isVersion(x.id) && dayOf(x.id) === dayOf(r.id))) continue;
+    problems.push(`"${r.id}" is already live, so it can't be renamed or removed. Put new lines in the next release's entry${nextEntry}, or start one at the top.`);
   }
 
   if (pr.base === 'main') {
@@ -144,14 +160,14 @@ export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main
     } else if (isVersion(pending[0].id)) {
       // The version is the day the release goes live, and newer than every release before it.
       const p = pending[0];
-      const live = [...logs.main, ...logs.pr.filter((r) => r.commit)].map((r) => r.id).filter(isVersion);
-      const newest = [...live].sort(compareReleaseIds)[0];
-      const rename = today ? versionFor(today, used.filter((id) => id !== p.id)) : null;
-      const how = rename ? ` Rename it to ${rename} (and its date to ${today}, in whatsnew.json too), then run npm run changelog.` : '';
-      if (newest && compareReleaseIds(p.id, newest) >= 0) {
-        problems.push(`This release's version ${p.id} isn't newer than ${newest}, which is already live.${how}`);
-      } else if (today && daysBefore(dayOf(p.id), today) > 1) {
-        problems.push(`This release's version ${p.id} is from ${dayOf(p.id)}, but a version is the day the release goes live.${how}`);
+      const others = used.filter((id) => id !== p.id);
+      const away = today ? daysBefore(dayOf(p.id), today) : 0;
+      if (isHotfix && develop.some((r) => r.id === p.id)) {
+        problems.push(`${p.id} is already the version of the release waiting on develop. ${renameTo(today, used, newestLive)}`);
+      } else if (newestLive && compareReleaseIds(p.id, newestLive) >= 0) {
+        problems.push(`This release's version ${p.id} isn't newer than ${newestLive}, which is already live. ${renameTo(today, others, newestLive)}`);
+      } else if (away > 1 || away < -1) {
+        problems.push(`This release's version ${p.id} is for ${dayOf(p.id)}, but a version is the day the release goes live. ${renameTo(today, others, newestLive)}`);
       }
     }
   } else if (addedPending.length > 1 || (addedPending.length > 0 && waiting.length > 0)) {
@@ -164,6 +180,21 @@ export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main
     }
   }
   return problems;
+}
+
+/** What to rename a release's entry to: today's next free version, if that is newer than every live one. */
+function renameTo(today, used, newestLive) {
+  if (!today) return 'See CONTRIBUTING.md.';
+  const taken = [...used];
+  let v = versionFor(today, taken);
+  while (newestLive && compareReleaseIds(v, newestLive) >= 0 && taken.length < used.length + 100) {
+    taken.push(v);
+    v = versionFor(today, taken);
+  }
+  if (newestLive && compareReleaseIds(v, newestLive) >= 0) {
+    return `The newest live release, ${newestLive}, seems to be dated after today; a person needs to look at it.`;
+  }
+  return `Rename it to ${v} (and its date to ${today}, in whatsnew.json too), then run npm run changelog.`;
 }
 
 /** Whole days from `a` to `b` (both YYYY-MM-DD); 0 when either is missing. */
