@@ -708,6 +708,9 @@ export function createApp(deps: AppDeps = {}) {
     });
   }
 
+  /** One answer for a hand that isn't there and one a spectator's delay still hides. */
+  const HAND_NOT_AVAILABLE = 'that hand isn’t available';
+
   const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isStaff(s.data.playerId);
 
   /**
@@ -1228,8 +1231,8 @@ export function createApp(deps: AppDeps = {}) {
         () => {
           const rt = current();
           const record = rt.state.history.find((h) => h.handNumber === Number(handNumber));
-          if (!record) throw new ActionError('that hand is no longer available');
-          if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
+          // A hand the delay still hides gets the same answer as one that isn't there, or a spectator learns it has ended.
+          if (!record || record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError(HAND_NOT_AVAILABLE);
           return { hand: handRecordView(rt, record, me, { notes: true }) };
         },
         log,
@@ -1289,8 +1292,8 @@ export function createApp(deps: AppDeps = {}) {
           // Kept across reconnects (so reconnecting doesn't reset the limit); old entries are swept now and then.
           if (shareTimes.size > 500) for (const [id, times] of shareTimes) if (now - times.at(-1)! >= SHARE_WINDOW_MS) shareTimes.delete(id);
           const record = rt.state.history.find((h) => h.handNumber === handNumber) ?? (await store.loadHands(rt.state.id)).find((h) => h.handNumber === handNumber);
-          if (!record) throw new ActionError('that hand is no longer available');
-          if (record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError('spectators see that hand once the delay has passed');
+          // The same answer for a hand the delay still hides as for one that isn't there (see table:history).
+          if (!record || record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError(HAND_NOT_AVAILABLE);
           const id = newId();
           // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
           const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
@@ -1366,7 +1369,18 @@ export function createApp(deps: AppDeps = {}) {
       const ack = args.at(-1) as Ack;
       return guarded(ack, () => current().useTimeBank(me, turnOf(args.length > 1 ? args[0] : undefined)), log);
     });
-    on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
+    on('hand:rabbit', (ack) =>
+      guarded(
+        ack,
+        () => {
+          const rt = current();
+          // Checked first, the same answer at any moment: the live hand's end would tell a spectator on a delay what is coming.
+          if (rt.settings.spectators.delaySeconds > 0 && isSpectator(rt, socket)) throw new ActionError('spectators on a delay can’t rabbit hunt');
+          rt.rabbitHunt(me);
+        },
+        log,
+      ),
+    );
     on('hand:tip', (input, ack) =>
       guarded(
         ack,

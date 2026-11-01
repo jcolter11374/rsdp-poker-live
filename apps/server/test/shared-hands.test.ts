@@ -75,7 +75,7 @@ describe('shared hands and the full log', () => {
     await host.call('hand:unshare', { id });
     expect((await fetch(`${url}/api/shared/${id}`)).status).toBe(404);
     expect((await fetch(`${url}/api/shared/nope`)).status).toBe(404);
-    await expect(host.call('hand:share', { handNumber: 999 })).rejects.toThrow(/no longer available/);
+    await expect(host.call('hand:share', { handNumber: 999 })).rejects.toThrow(/that hand isn’t available/);
 
     // No full log while seated in a running game (no live HUDs); stopping the game opens it.
     expect(host.view().recordsLocked).toBe(true);
