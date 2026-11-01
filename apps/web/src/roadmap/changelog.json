@@ -4,7 +4,10 @@
       "id": "2026.11.01.4",
       "date": "2026-11-01",
       "fixes": [
-        "The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so."
+        "The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so.",
+        "At the table: if your connection is slow and you tap again, a tap that reaches the table after its turn is over is now refused instead of being played on the next street.",
+        "If something breaks on a page, you now see a short “Something broke” note with a Reload button instead of a blank screen. At a table, only the chat or the side panel goes if that is what broke. The page also sends the server a short note of what broke for its log, without your IP address or who you are (see the privacy page).",
+        "Behind the scenes: updated the libraries that store the site's data and check settings and account details, fixing two published security warnings. The same settings are accepted and refused as before. New automatic checks help catch a database update being skipped or losing saved data before it goes live."
       ]
     },
     {
