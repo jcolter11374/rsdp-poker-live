@@ -601,6 +601,10 @@ export function createApp(deps: AppDeps = {}) {
   }
   // What broke in a browser, one line in the log (it compares the page's build with webApp).
   clientErrorRoutes(app, { now: () => clock.now(), log, build, served: webApp });
+  // Last: anything a route passes on. Express's own handler would print the stack trace of every body that is
+  // too big or isn't JSON (express.json in the API routes), so anyone could fill the log; those get a short
+  // answer instead, and only real failures are logged.
+  app.use(requestFailed(log));
 
   function broadcast(rt: TableRuntime) {
     const id = rt.state.id;
@@ -1657,6 +1661,25 @@ export function createApp(deps: AppDeps = {}) {
 }
 
 /** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
+/**
+ * The error handler behind every route. A request the client got wrong (a body too big or not JSON, which
+ * express.json and express.static mark with a 4xx status and `expose`) is answered with that status and a
+ * short JSON error, and not logged. Anything else is logged once and answered 500, without its details.
+ */
+export function requestFailed(log: (message: string, err?: unknown) => void): express.ErrorRequestHandler {
+  return (err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = typeof err?.status === 'number' ? err.status : typeof err?.statusCode === 'number' ? err.statusCode : 500;
+    if (status >= 400 && status < 500 && err?.expose !== false) {
+      res.status(status).json({ error: status === 413 ? 'That request is too large.' : 'That request could not be read.' });
+      return;
+    }
+    // The route's pattern, not the address: an address can hold a table's or a hand's link.
+    log(`${req.method} ${req.route?.path ?? 'request'} failed`, err);
+    res.status(500).json({ error: 'Something went wrong on the server.' });
+  };
+}
+
 export const DB_HEALTH_MS = 1_000;
 
 /**
