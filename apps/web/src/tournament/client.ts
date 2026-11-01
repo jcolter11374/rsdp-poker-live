@@ -18,7 +18,7 @@ import {
   type TournamentState,
   type TournamentView,
 } from '@rsdp/tournament';
-import { call, currentSession, onSession, setName, socket, type Session } from '../socket';
+import { call, currentSession, NoAnswerError, onSession, setName, socket, type Session } from '../socket';
 
 export type { Session, TournamentListing, TournamentView };
 
@@ -142,7 +142,11 @@ export class SocketTournamentClient implements TournamentClient {
   }
 
   private follow(id: string) {
-    call('tournament:subscribe', { id }).catch((e: Error) => this.watchers.get(id)?.onError.forEach((cb) => cb(e.message === 'tournament not found' ? 'Tournament not found' : e.message)));
+    call('tournament:subscribe', { id }).catch((e: Error) => {
+      // One lost to a dropped connection is sent again when it comes back.
+      if (e instanceof NoAnswerError) return;
+      this.watchers.get(id)?.onError.forEach((cb) => cb(e.message === 'tournament not found' ? 'Tournament not found' : e.message));
+    });
   }
 }
 

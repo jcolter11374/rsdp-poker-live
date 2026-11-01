@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
-import { call, socket } from './socket';
+import { call, NoAnswerError, socket } from './socket';
 import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
@@ -146,7 +146,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   }, [busy]);
 
   useEffect(() => {
-    const join = () => call('table:join', { tableId }).catch((e: Error) => setError(e.message));
+    // A join lost to a dropped connection is tried again when it comes back, so only a refusal ends the page.
+    const join = () => call('table:join', { tableId }).catch((e: Error) => e instanceof NoAnswerError || setError(e.message));
     let first = true;
     const watch = watchCommitments();
     const nextSeen = watchNextSeen();
