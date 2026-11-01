@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { SETUP_NAME_MAX, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
+import { SETUP_NAME_MAX, SETUPS_PER_KIND, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
 import { MAX_SAVED_STRUCTURE_LENGTH } from '@rsdp/tournament';
 import { call, currentSession, onSession, socket, type Session } from './socket';
 
@@ -190,6 +190,11 @@ export function setupList(kind: SetupKind, storageKey: string, retitle: (setup: 
     async save(name, json) {
       const setup = tidy(name, json);
       if (account) return (await call<{ name: string }>('setups:save', { kind, ...setup })).name;
+      // The browser keeps to what an account takes, so all of it can be brought over at sign-in.
+      // Ones saved before these checks still load; they just stay in the browser.
+      if (setup.json.length > MAX_SAVED_STRUCTURE_LENGTH) throw new Error('That setup is too big to save');
+      const kept = readLocal();
+      if (!kept.some((p) => p.name === setup.name) && kept.length >= SETUPS_PER_KIND) throw new Error(`You can keep up to ${SETUPS_PER_KIND} of these; delete some first`);
       updateLocal((cur) => [...cur.filter((p) => p.name !== setup.name), setup]);
       return setup.name;
     },
