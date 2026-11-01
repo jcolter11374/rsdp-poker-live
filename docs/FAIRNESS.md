@@ -57,9 +57,14 @@ first, details after.
   match the hand's history, and it must agree with what your browser wrote
   down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's
-  built-in OpenSSL SHA-256 and none of the app's code. The file holds the seeds
-  but not whose they are, so the script can only fail a seed listed twice or
-  more seeds than seats dealt in.
+  built-in OpenSSL SHA-256 and none of the app's code. The file says whose
+  each seed is, who the record shows dealt in, and which of them were bots
+  (marked by the record, or seen as bots by your browser at the table), so the
+  script runs the same seed-list check. It can't compare that list with what
+  your browser saw at the table: "Check this hand" does that before you
+  download. Files saved by older versions of the site don't say whose each seed is;
+  for those the script only fails a seed listed twice or more seeds than
+  seats dealt in, and says so.
 - **When hands are revealed** (decided 25 October 2026, the half hour added
   1 November 2026): once the game has stayed stopped for 30 minutes, or 12
   hours after the hand, whichever comes first. The reveal shows the whole deck,
@@ -391,7 +396,9 @@ SHA-256 against OpenSSL on every input length from 0 to 300 bytes, pin the
 deck for a known seed (so old hands stay checkable), and deal up to 3,000
 random hands spread across every game, reshuffles included, then check each one with both
 checkers. They also check that a swapped card, cards handed out of turn, a
-shown card nobody was dealt, and a seed listed twice are all caught.
+shown card nobody was dealt, a seed listed twice, and in the script a seed
+listed for a practice bot, for someone not dealt in, or twice for one player
+are all caught.
 
 ### Checking a hand by hand
 

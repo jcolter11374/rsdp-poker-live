@@ -81,6 +81,21 @@ function check(proof, say) {
     if (times > 1) problems.push(`the seed ${s} is listed ${times} times, but each player sends one fresh seed`);
   }
   if (proof.seats && proof.clientSeeds.length > proof.seats.length) problems.push(`${proof.clientSeeds.length} seeds are listed for ${proof.seats.length} seats dealt in`);
+  // Whose each seed is (files from before this was saved have no seedOwners): one per person dealt in, none from a bot.
+  if (proof.seedOwners && proof.players) {
+    const players = proof.players;
+    if (proof.seats && players.map((p) => p.seat).sort((a, b) => a - b).join() !== [...proof.seats].sort((a, b) => a - b).join()) problems.push('the players listed are not in the seats dealt in');
+    if (proof.seedOwners.length !== proof.clientSeeds.length) problems.push(`${proof.clientSeeds.length} seeds are listed but ${proof.seedOwners.length} owners`);
+    proof.seedOwners.forEach((id, i) => {
+      const seed = proof.clientSeeds[i];
+      const who = players.find((p) => p.playerId === id);
+      if (!who) problems.push(`the seed ${seed} is listed for ${id}, who wasn't dealt in, so nobody checks it`);
+      else if (who.bot) problems.push(`the seed ${seed} is listed for the practice bot in seat ${who.seat + 1}, but bots don't send seeds`);
+      if (proof.seedOwners.indexOf(id) !== i) problems.push(`more than one seed is listed for ${id}, but each player sends one`);
+    });
+  } else {
+    say("This file doesn't say whose each seed is, so only seeds listed twice and more seeds than seats dealt in are checked.");
+  }
   const original = shuffle(freshDeck(), seededRng(handSeed, 'deck'));
   say(`Deck, top first: ${original.join(' ')}`);
 
