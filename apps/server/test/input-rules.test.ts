@@ -107,6 +107,14 @@ describe('saved table presets', () => {
     expect(JSON.parse(exportPreset(defaultSettings('cash'), free)).name).toBe(free);
     expect(freeName(`${'x'.repeat(59)}🂡`, new Set([`${'x'.repeat(59)}🂡`]))).toBe(`${'x'.repeat(56)} (2)`);
   });
+
+  it('numbers a taken name without cutting a joined emoji (a family, a flag) apart', () => {
+    const family = '👨\u200d👩\u200d👧';
+    const name = `${'x'.repeat(50)}${family}`;
+    expect(freeName(name, new Set([name]))).toBe(`${'x'.repeat(50)} (2)`);
+    const flags = '🇳🇱'.repeat(15);
+    expect(freeName(flags, new Set([flags]))).toBe(`${'🇳🇱'.repeat(14)} (2)`);
+  });
 });
 
 describe('account details', () => {
