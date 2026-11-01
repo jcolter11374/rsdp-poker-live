@@ -4,8 +4,9 @@ name: Upgrade rehearsal
 # test starts from an empty database, so this rehearses that step on made-up
 # data, for every pull request into main: main's image (what is live) makes
 # data with main's own smoke test, this pull request's image starts on the same
-# volume and must give the same answers, and main's image must still start on
-# the upgraded data (a rollback). Nothing here contacts the live site.
+# volume and must give the same answers and read back every saved table and
+# tournament, and main's image must still do so on the upgraded data (a
+# rollback). Nothing here contacts the live site.
 
 on:
   pull_request:
@@ -62,14 +63,18 @@ jobs:
           # the leaderboard out at most once a minute, so wait until two answers a minute apart agree.
           prev=
           for i in $(seq 1 5); do
-            scripts/backup/expect.sh "$SITE" > rehearsal/live.json
-            now=$(jq -S .leaderboard rehearsal/live.json)
+            scripts/backup/expect.sh "$SITE" > rehearsal/board.json
+            now=$(jq -S .leaderboard rehearsal/board.json)
             [ "$now" = "$prev" ] && break
             [ "$i" = 5 ] && { echo "The leaderboard was still changing after 4 minutes"; exit 1; }
             prev=$now
             sleep 61
           done
-          test "$(jq '.leaderboard | length' rehearsal/live.json)" -gt 0
+          # Every saved table and tournament (found in main's own backup), as main reads them back.
+          node scripts/upgrade/saved.mjs "$SITE" > rehearsal/saved.json
+          jq -s add rehearsal/board.json rehearsal/saved.json > rehearsal/live.json
+          # Something to compare: players on the leaderboard, tables main can read, and the smoke test's tournament.
+          jq -e '(.leaderboard | length) > 0 and ([.tables[] | select(.missing | not)] | length) > 0 and (.tournaments | length) > 0' rehearsal/live.json
           node scripts/transparency/mirror.mjs "$SITE" rehearsal/record
       # Fly gives the server 30 seconds to save and exit; a kill would exit 137.
       - name: Stop main cleanly
@@ -83,9 +88,11 @@ jobs:
           for _ in $(seq 1 120); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
           docker logs rsdp-next; exit 1
       # What must match and what may differ is explained at the top of compare.mjs.
-      - name: Same answers after the upgrade
+      - name: Same answers and saved tables after the upgrade
         run: |
-          scripts/backup/expect.sh "$SITE" > rehearsal/next.json
+          scripts/backup/expect.sh "$SITE" > rehearsal/board.json
+          node scripts/upgrade/saved.mjs "$SITE" rehearsal/live.json > rehearsal/saved.json
+          jq -s add rehearsal/board.json rehearsal/saved.json > rehearsal/next.json
           node scripts/upgrade/compare.mjs rehearsal/live.json rehearsal/next.json
       - name: Public record unchanged after the upgrade
         run: |
@@ -104,9 +111,11 @@ jobs:
           docker run -d --name rsdp-back -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY rsdp-live
           for _ in $(seq 1 60); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
           docker logs rsdp-back; exit 1
-      - name: Same answers after the rollback
+      - name: Same answers and saved tables after the rollback
         run: |
-          scripts/backup/expect.sh "$SITE" > rehearsal/back.json
+          scripts/backup/expect.sh "$SITE" > rehearsal/board.json
+          node scripts/upgrade/saved.mjs "$SITE" rehearsal/live.json > rehearsal/saved.json
+          jq -s add rehearsal/board.json rehearsal/saved.json > rehearsal/back.json
           node scripts/upgrade/compare.mjs rehearsal/live.json rehearsal/back.json
           node scripts/transparency/mirror.mjs "$SITE" rehearsal/record
       - name: Stop main cleanly again

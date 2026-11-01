@@ -16,10 +16,20 @@ const ann = { key: 'a1', name: 'Ann', profit: 50, sessions: 1, hands: 3, biggest
 const bob = { key: 'b2', name: 'Bob', profit: -50, sessions: 1, hands: 3, biggestPot: 0, games: [{ at: 1000, net: -50 }] };
 const before = { leaderboard: [ann, bob], record: { seq: 12, hash: 'x'.repeat(64) } };
 
-async function compare(after: unknown) {
+// Saved tables and tournaments (scripts/upgrade/saved.mjs): a cash table, and a running tournament's and a finished one's.
+const cash = { id: 'c4sh-tab1e', name: "Ann's table", mode: 'cash', createdAt: '2026-11-01T20:00:00.000Z', hands: 3, players: ['Ann', 'Bob'], realGame: true, live: true };
+const running = { id: 'aaaaaaaaaaaaaaaa', status: 'running', title: 'Smoke Cup · RSDP Poker Live!', description: 'Running now · Level 1 · 3 of 3 left.' };
+const finished = { id: 'bbbbbbbbbbbbbbbb', status: 'finished', title: 'Monday Cup · RSDP Poker Live!', description: 'Won by Ann · 3 players.' };
+const runningTable = { ...cash, id: 'aaaaaaaaaaaaaaaa-t1', name: 'Smoke Cup · Table 1', mode: 'tournament', hands: 6, players: ['Hana', 'Bo'] };
+const finishedTable = { ...runningTable, id: 'bbbbbbbbbbbbbbbb-t1', name: 'Monday Cup · Table 1' };
+const saved = { ...before, tables: [cash, runningTable, finishedTable, { id: 'old-format', missing: true }], tournaments: [running, finished] };
+// What saved.mjs asks again after the switch: the same ids, without the status before.
+const again = (tournaments = [running, finished]) => tournaments.map(({ status: _status, ...t }) => t);
+
+async function compare(after: unknown, from: unknown = before) {
   const b = path.join(dir, 'before.json');
   const a = path.join(dir, 'after.json');
-  writeFileSync(b, JSON.stringify(before));
+  writeFileSync(b, JSON.stringify(from));
   writeFileSync(a, JSON.stringify(after));
   return run(process.execPath, [path.join(root, 'scripts/upgrade/compare.mjs'), b, a]).then(
     (r) => ({ code: 0, out: r.stdout }),
@@ -55,5 +65,37 @@ describe('upgrade rehearsal compare', () => {
     const r = await compare({ leaderboard: [ann, bob], record: { seq: 9, hash: 'z'.repeat(64) } });
     expect(r.code).toBe(1);
     expect(r.out).toContain('ends at entry 9, but went up to 12 before');
+  });
+
+  it('passes saved tables read back the same, a running tournament that kept dealing, and players in another order', async () => {
+    const tables = [{ ...cash, live: false, players: ['Bob', 'Ann'] }, { ...runningTable, hands: 9, players: ['Bo', 'Hana', 'Cy'] }, finishedTable, { id: 'old-format', missing: true }];
+    const r = await compare({ ...before, tables, tournaments: again([{ ...running, description: 'Running now · Level 2 · 2 of 3 left.' }, finished]) }, saved);
+    expect(r.out).toContain("all 3 read back the same (1 the server before couldn't read either)");
+    expect(r.out).toContain('all 2 read back');
+    expect(r.code).toBe(0);
+  });
+
+  it('fails a saved table the new server cannot read, or reads differently', async () => {
+    const tables = [{ id: cash.id, missing: true }, runningTable, { ...finishedTable, hands: 7 }];
+    const r = await compare({ ...before, tables, tournaments: again() }, saved);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`Ann's table (c4sh-tab1e) can't be read any more`);
+    expect(r.out).toContain('Monday Cup · Table 1 (bbbbbbbbbbbbbbbb-t1): hands was 6, now 7');
+  });
+
+  it('fails a running tournament table that lost hands or players', async () => {
+    const tables = [cash, { ...runningTable, hands: 5, players: ['Hana'] }, finishedTable];
+    const r = await compare({ ...before, tables, tournaments: again() }, saved);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('hands was 6, now 5');
+    expect(r.out).toContain('players was ["Hana","Bo"], now ["Hana"]');
+  });
+
+  it("fails a tournament whose page no longer shows it, or a finished one's changed result", async () => {
+    const tournaments = again([{ ...running, title: 'RSDP Poker Live!' }, { ...finished, description: 'Won by Bob · 3 players.' }]);
+    const r = await compare({ ...before, tables: saved.tables, tournaments }, saved);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('aaaaaaaaaaaaaaaa: its page showed "Smoke Cup · RSDP Poker Live!", now "RSDP Poker Live!"');
+    expect(r.out).toContain('Monday Cup · RSDP Poker Live! (finished): its page said "Won by Ann · 3 players.", now "Won by Bob · 3 players."');
   });
 });
