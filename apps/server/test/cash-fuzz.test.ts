@@ -185,6 +185,15 @@ function run(seed: number, steps: number) {
     }],
   ];
   const totalWeight = ops.reduce((n, [w]) => n + w, 0);
+  // A hand could be dealt now: the game on, and two connected players with chips who aren't sitting out.
+  const canDeal = () => {
+    const s = rt.state;
+    return s.started && !s.paused && s.seats.filter((x) => x && !x.sittingOut && x.stack > 0 && online.has(x.playerId)).length >= 2;
+  };
+  // Steps since the last new hand at which one could have been dealt: seeds 1-400 reach at most 23,
+  // so 50 means the table has stopped dealing.
+  let missed = 0;
+  let lastHand = rt.state.handNumber;
 
   for (let i = 0; i < steps; i++) {
     let r = rng(totalWeight);
@@ -197,8 +206,15 @@ function run(seed: number, steps: number) {
       }
     }
     check(`seed ${seed} step ${i}`);
+    const s = rt.state;
+    if (s.handNumber !== lastHand) {
+      lastHand = s.handNumber;
+      missed = 0;
+    } else if ((!s.hand || s.hand.phase === 'complete') && canDeal() && ++missed >= 50) {
+      throw new Error(`seed ${seed} step ${i}: no new hand in ${missed} steps when one could be dealt\n${trace.slice(-25).join('\n')}`);
+    }
   }
-  return rt.state.handNumber;
+  return { hands: rt.state.handNumber, canDeal: canDeal() };
 }
 
 // SEEDS=400 runs more of them; FIRST_SEED=392 SEEDS=1 replays seed 392 alone.
@@ -207,7 +223,11 @@ describe('cash table fuzz', () => {
   const seeds = Number(process.env.SEEDS ?? 12);
   for (let seed = first; seed < first + seeds; seed++) {
     it(`seed ${seed}: chips always add up`, () => {
-      expect(run(seed, 1500)).toBeGreaterThan(5);
+      const { hands, canDeal } = run(seed, 1500);
+      // Enough hands for the checks to mean something. A few seeds' random numbers fall into a short
+      // loop that leaves the table with nobody to deal to, or the game stopped, for good (seed 392 is
+      // one); few hands is right there. A table that could deal but doesn't fails in run().
+      if (canDeal) expect(hands).toBeGreaterThan(5);
     });
   }
 });
