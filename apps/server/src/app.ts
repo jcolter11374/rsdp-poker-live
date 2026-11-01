@@ -377,6 +377,9 @@ export function createApp(deps: AppDeps = {}) {
     // to notice and kept giving them the full clock and time bank. Now it notices within about 20 s.
     pingInterval: 10_000,
     pingTimeout: 10_000,
+    // Socket.IO's default, set on purpose: a message over it drops the connection. The biggest a client sends is
+    // a batch of saved setups being brought onto an account, which the page keeps to half of this.
+    maxHttpBufferSize: 1_000_000,
   });
 
   const tables = new Map<string, TableRuntime>();
