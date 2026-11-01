@@ -195,7 +195,8 @@ export function ActionBar({
   // A new turn (or hand) means the last move was dealt with, answered or not.
   useEffect(release, [legal, hand?.handNumber]);
   // Each move carries the turn on screen when it was pressed, read then rather than from an older render: the server
-  // refuses one that arrives after that turn has passed, so a slow tap given up on isn't played on a later street.
+  // refuses one that arrives after that turn has passed (usually the second of two taps on a slow connection), so it
+  // isn't played on a later street.
   const onScreen = useRef(view);
   onScreen.current = view;
   const send = (action: Action) => {

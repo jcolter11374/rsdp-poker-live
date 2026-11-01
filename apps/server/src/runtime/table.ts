@@ -1829,7 +1829,7 @@ export class TableRuntime {
   /**
    * A move sent with the turn it was for (TurnKey: the hand's number and event
    * count, as the player's view showed them) is refused once that turn has
-   * passed, before anything else is checked: a tap that arrives after its turn
+   * passed, before the move itself is checked: a tap that arrives after its turn
    * (on a slow connection, usually the second of two) must not be played on a
    * later street. A part left out is not checked, so a page from before they
    * were sent plays as it always did; one that isn't a number (NaN) matches no

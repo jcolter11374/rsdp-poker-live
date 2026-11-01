@@ -1,5 +1,5 @@
-// A move sent for a turn that has passed by the time it arrives is refused, not played on a later one (#178): a slow
-// first tap the player gave up on must not be played as well as the second.
+// A move sent for a turn that has passed by the time it arrives is refused, not played on a later one (#178): on a slow
+// connection, a player who gives up waiting and taps again has the first tap played on its turn and the second refused.
 
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

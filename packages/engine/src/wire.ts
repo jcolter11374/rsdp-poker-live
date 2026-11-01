@@ -296,9 +296,10 @@ export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: str
  * The turn a move is for, as my view showed it when I pressed: the hand's
  * number and its event count (view.hand.events.length; the server starts a
  * new turn whenever the count changes). A move that arrives after its turn
- * has passed is refused rather than played on a later one, so a slow tap I
- * gave up on can't be played as well as the one after it. Both are optional:
- * a page from before they were sent plays as it always did.
+ * has passed is refused rather than played on a later one: on a slow
+ * connection, when I give up waiting and tap again, the first tap is played
+ * on its turn and the second, arriving after it, is refused. Both are
+ * optional: a page from before they were sent plays as it always did.
  */
 export interface TurnKey {
   handNumber?: number;
