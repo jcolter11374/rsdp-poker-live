@@ -370,7 +370,22 @@ function dealt(gameId: string, cards: string[], players = 2) {
   });
 }
 
+/**
+ * Every equity estimate deals its full maxSims finishes, however busy the
+ * machine is: left to the clock (thinkMs), a loaded machine deals only a few
+ * and a check on the equity they come to, or on two calls agreeing, can fail.
+ */
+function fixedDeals() {
+  let saved = { ...botTuning };
+  beforeAll(() => {
+    saved = { ...botTuning };
+    botTuning.thinkMs = 1e9;
+  });
+  afterAll(() => Object.assign(botTuning, saved));
+}
+
 describe('bot strategy', () => {
+  fixedDeals();
   it('raises aces and folds the worst hand to a raise', () => {
     // Seat 0 posts the small blind and acts first.
     const aces = dealt('nlhe', ['As', '2c', 'Ah', '7d']);
@@ -608,6 +623,7 @@ describe('bots and the money', () => {
 });
 
 describe('bots keep playing', () => {
+  fixedDeals();
   it('a bot marked busted outside a hand (a late 7-2 claim, the Nit game) buys back in at the next deal', () => {
     const clock = new FakeClock();
     const settings = defaultSettings('cash');
@@ -680,6 +696,7 @@ describe('bots keep playing', () => {
 });
 
 describe('bots explain their moves', () => {
+  fixedDeals();
   it('give the move chooseMove makes, with the numbers behind it', () => {
     const aces = dealt('nlhe', ['As', '2c', 'Ah', '7d']);
     const { move, why } = explainMove(aces, 0, seededRand(1));
