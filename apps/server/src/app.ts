@@ -12,7 +12,8 @@ import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rs
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
-import { systemClock, type Clock, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
+import { systemClock, type ChatMessage, type Clock, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
+import { splitLines, startingLines } from './storage';
 import { cleanName } from './names';
 import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore } from './avatars';
 import { BOT_LEVELS, GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
@@ -54,13 +55,22 @@ export interface IdentityService {
 
 /** Where tables and finished hands are kept. The default keeps them in memory. */
 export interface TableStore {
-  /** A new table, before anything else is saved for it. */
+  /** A new table, before anything else is saved for it, with the log and chat lines it already has. */
   createTable(state: RuntimeState): Promise<void>;
   saveTable(state: RuntimeState): Promise<void>;
   loadTable(id: string): Promise<RuntimeState | null>;
   saveHand(tableId: string, record: HandRecord): Promise<void>;
   /** Every finished hand saved for a table, oldest first. */
   loadHands(tableId: string): Promise<PastHand[]>;
+  /** Keeps new log and chat lines for good, after the ones before them. */
+  saveLines(tableId: string, lines: TableLine[]): Promise<void>;
+  /**
+   * Keeps the lines a table already had when it was loaded, unless some are saved for it already: a table
+   * saved before every line was kept has its latest ones only in its snapshot, and they would drop off from there.
+   */
+  keepEarlierLines(tableId: string, lines: TableLine[]): Promise<void>;
+  /** Every log and chat line saved for a table, oldest first. */
+  loadLines(tableId: string): Promise<{ log: TableLogEntry[]; chat: ChatMessage[] }>;
   /** Deletes a cash table and its hands for good; false when there was no such table. */
   deleteTable(tableId: string): Promise<boolean>;
 }
@@ -81,11 +91,16 @@ export function memoryIdentity(): IdentityService {
 export function memoryStore(): TableStore {
   const tables = new Map<string, string>();
   const hands = new Map<string, PastHand[]>();
+  const lines = new Map<string, TableLine[]>();
   const save = async (state: RuntimeState) => {
     tables.set(state.id, JSON.stringify(state));
   };
   return {
-    createTable: save,
+    async createTable(state) {
+      if (tables.has(state.id)) return;
+      lines.set(state.id, structuredClone(startingLines(state)));
+      await save(state);
+    },
     saveTable: save,
     async loadTable(id) {
       const json = tables.get(id);
@@ -98,11 +113,41 @@ export function memoryStore(): TableStore {
     async loadHands(tableId) {
       return [...(hands.get(tableId) ?? [])].sort((a, b) => a.handNumber - b.handNumber);
     },
+    async saveLines(tableId, added) {
+      lines.set(tableId, [...(lines.get(tableId) ?? []), ...structuredClone(added)]);
+    },
+    async keepEarlierLines(tableId, earlier) {
+      if (!lines.get(tableId)?.length) lines.set(tableId, structuredClone(earlier));
+    },
+    async loadLines(tableId) {
+      return splitLines(structuredClone(lines.get(tableId) ?? []));
+    },
     async deleteTable(tableId) {
       hands.delete(tableId);
+      lines.delete(tableId);
       return tables.delete(tableId);
     },
   };
+}
+
+/**
+ * Every saved line, with the table's own recent ones that aren't among them
+ * added in time order: lines from before the server kept them all (tables
+ * saved earlier), or ones still being saved. Matched whole, so a line said
+ * twice is kept twice.
+ */
+export function withRecent<T extends { at: number }>(saved: T[], recent: T[]): T[] {
+  // Keys in one order: a snapshot read back from jsonb has them in another.
+  const keyOf = (x: T) => JSON.stringify(x, Object.keys(x).sort());
+  const left = new Map<string, number>();
+  for (const x of saved) left.set(keyOf(x), (left.get(keyOf(x)) ?? 0) + 1);
+  const extra = recent.filter((x) => {
+    const key = keyOf(x);
+    const n = left.get(key) ?? 0;
+    if (n) left.set(key, n - 1);
+    return !n;
+  });
+  return extra.length ? [...saved, ...extra].sort((a, b) => a.at - b.at) : saved;
 }
 
 export interface AppDeps {
@@ -715,6 +760,26 @@ export function createApp(deps: AppDeps = {}) {
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
+    // Log and chat lines are saved in order too, the ones that come in while a save runs together in the next.
+    // First the ones the table has now, if none are saved for it yet (a table saved before every line was kept).
+    const earlier = structuredClone(startingLines(rt.state));
+    let lineSaves = (created.get(id) ?? Promise.resolve()).then(() =>
+      store.keepEarlierLines(id, earlier).catch((e) => log(`saving the earlier log of table ${id} failed`, e)),
+    );
+    track(id, lineSaves.catch(() => {}));
+    let waiting: TableLine[] = [];
+    rt.onLine = (line) => {
+      waiting.push(line);
+      if (waiting.length > 1) return;
+      lineSaves = lineSaves
+        .then(() => {
+          const batch = waiting;
+          waiting = [];
+          return store.saveLines(id, batch);
+        })
+        .catch((e) => log(`saving the log of table ${id} failed`, e));
+      track(id, lineSaves);
+    };
     return rt;
   }
 
@@ -759,6 +824,7 @@ export function createApp(deps: AppDeps = {}) {
     const id = rt.state.id;
     rt.onChange = () => {};
     rt.onHandFinished = () => {};
+    rt.onLine = () => {};
     rt.dispose();
     tables.delete(id);
     audit.forgetTable(id);
@@ -821,6 +887,7 @@ export function createApp(deps: AppDeps = {}) {
     if (rt) {
       rt.onChange = () => {};
       rt.onHandFinished = () => {};
+      rt.onLine = () => {};
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
@@ -1166,9 +1233,11 @@ export function createApp(deps: AppDeps = {}) {
           if (now - (socket.data.lastFullLog ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           const cutoff = spectatorCutoff(rt, socket);
           socket.data.lastFullLog = now;
+          // Every line kept for the table; its state holds only the latest, and maybe some from before they were all kept.
+          const saved = await store.loadLines(rt.state.id);
           return {
-            log: rt.state.log.filter((l) => l.at <= cutoff).map((l) => ({ ...l })),
-            chat: rt.state.chat.filter((c) => c.at <= cutoff).map((c) => ({ ...c })),
+            log: withRecent(saved.log, rt.state.log).filter((l) => l.at <= cutoff).map((l) => ({ ...l })),
+            chat: withRecent(saved.chat, rt.state.chat).filter((c) => c.at <= cutoff).map((c) => ({ ...c })),
             hands: await allHandViews(rt, me, cutoff),
           };
         },
