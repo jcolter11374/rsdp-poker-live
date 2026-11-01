@@ -366,13 +366,24 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
 export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
   if (!fair || view.me.seat === null) return null;
-  const mine = seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
-  // Who was dealt in is known once this browser has seen every seat dealt in still taken (a player may leave mid-hand).
   const live = liveRecordFor(fair.commit);
+  const mine = seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, live?.at ?? Date.now());
+  // Who was dealt in is known once this browser has seen every seat dealt in still taken (a player may leave mid-hand).
   const seen = Object.keys(live?.players ?? {});
   const dealt = seen.length === Object.keys(view.hand!.names).length ? Object.values(live!.players!) : undefined;
   const bots = [...view.seats.flatMap((s) => (s?.bot ? [s.playerId] : [])), ...(live?.bots ?? [])];
   return mine ?? seedListProblem(fair.clientSeeds, { bots, dealt });
+}
+
+/**
+ * What "Check this hand" says when the seed list passes. It only says none came from a bot when this browser's own
+ * table note backs that: without one, the record's own list of who was dealt in and who is a bot is all there is.
+ */
+export function seedListPassed(count: number, live: LiveRecord | null): string {
+  const seeds = `${count} ${count === 1 ? 'seed' : 'seeds'}`;
+  return live?.players
+    ? `${seeds}, one per person your browser saw dealt in, none from a bot`
+    : `${seeds}, one per person the record shows dealt in, none it marks as a bot (your browser has no note of who was dealt in, so this goes by the record's own list)`;
 }
 
 /**

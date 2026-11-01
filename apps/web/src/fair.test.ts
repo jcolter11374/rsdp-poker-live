@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
 vi.mock('./socket', () => ({ socket: mockSocket }));
-const { contributeSeed, liveRecordFor, liveSeedProblem, recordSeedProblem, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, liveRecordFor, liveSeedProblem, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -535,6 +535,12 @@ describe('seeds that nobody checks', () => {
     expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], unmarked, null)).toBeNull();
     expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], unmarked, { at: 0, button: 0, seats: [0, 1, 2], board: [], cards: {} })).toBeNull();
     expect(recordSeedProblem([...seeds, { playerId: 'bot-1', seed: 'ff' }], record, null)).toMatch(/practice bot/);
+    // So when the list passes, it only says no seed came from a bot when the table note backs that.
+    expect(seedListPassed(2, live)).toBe('2 seeds, one per person your browser saw dealt in, none from a bot');
+    for (const without of [null, { at: 0, button: 0, seats: [0, 1, 2], board: [], cards: {} }]) {
+      expect(seedListPassed(1, without)).toMatch(/^1 seed, one per person the record shows dealt in.*record's own list/);
+      expect(seedListPassed(1, without)).not.toMatch(/none from a bot/);
+    }
   });
 
   it('warns at the table about a seed listed for someone not dealt in, once it knows everyone who was', () => {

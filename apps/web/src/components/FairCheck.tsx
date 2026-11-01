@@ -3,7 +3,7 @@ import { tableRef, verifyHand, type CardEvent } from '@rsdp/engine';
 import { digestOf, handInRecord, tableHand, type HandEntries } from '../audit';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
-import { liveRecordFor, mySeedFor, recordSeedProblem, seedProblem, shownAs } from '../fair';
+import { liveRecordFor, mySeedFor, recordSeedProblem, seedListPassed, seedProblem, shownAs } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
@@ -45,7 +45,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     // Every seed listed must be its own person's, someone dealt in: an extra one, even a copy, changes the deck unchecked.
     // Who was dealt in, and which were bots, comes from what this browser saw at the table when it was there.
     const listProblem = recordSeedProblem(fair.clientSeeds, hand.seats, live);
-    if (fair.clientSeeds.length) extra.push({ label: 'Each seed is from a different person who was dealt in', ok: !listProblem, detail: listProblem ?? `${fair.clientSeeds.length} ${fair.clientSeeds.length === 1 ? 'seed' : 'seeds'}, none from a bot` });
+    if (fair.clientSeeds.length) extra.push({ label: 'Each seed is from a different person who was dealt in', ok: !listProblem, detail: listProblem ?? seedListPassed(fair.clientSeeds.length, live) });
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };
 
