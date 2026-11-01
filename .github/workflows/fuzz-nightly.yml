@@ -1,0 +1,94 @@
+name: Nightly deep fuzz
+
+# Scheduled nightly; GitHub may start it hours late. Runs the fuzz tests far deeper
+# than CI does on every pull request: 400 random cash tables (CI: 12), 400 random
+# tournaments each played four ways (CI: 4) and 30,000 random hands through the
+# engine (CI: 3,000). Deep runs find bugs the light ones miss (the run it twice
+# spin, #156). Everything runs on GitHub's machine: nothing here talks to the live
+# site. A failure opens an issue naming the failing seeds, or comments on the one
+# already open; the next run that passes closes it.
+on:
+  schedule:
+    # 06:23 UTC: clear of the hourly transparency check (:17) and the nightly backup (09:41).
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fuzz-nightly
+  cancel-in-progress: false
+
+env:
+  TITLE: Nightly deep fuzz found a problem
+
+jobs:
+  fuzz:
+    name: Deep fuzz
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # On a busy 4-core machine the runs took 3 minutes (cash), 7 (tournaments) and 1.5 (engine).
+    # Each step's limit is about three times that, so only a hang or a much slower runner reaches it.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Each run also writes a report the issue step reads the failing tests from. A failing
+      # run doesn't stop the others, so one issue names everything that went wrong.
+      - name: Cash tables, 400 seeds
+        working-directory: apps/server
+        timeout-minutes: 10
+        env:
+          SEEDS: 400
+        run: npx vitest run test/cash-fuzz.test.ts --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/fuzz/cash.json"
+      - name: Tournaments, 400 seeds
+        if: ${{ !cancelled() }}
+        working-directory: apps/server
+        timeout-minutes: 20
+        env:
+          SEEDS: 400
+        run: npx vitest run test/tournament-fuzz.test.ts --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/fuzz/tournament.json"
+      - name: Engine, 30,000 hands
+        if: ${{ !cancelled() }}
+        working-directory: packages/engine
+        timeout-minutes: 6
+        env:
+          FUZZ_HANDS: 30000
+        # One test deals every hand, so vitest's 5-second limit per test is off; the step's limit stands in.
+        run: npx vitest run test/core/fuzz.test.ts --testTimeout=0 --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/fuzz/engine.json"
+      - name: Open an issue if the fuzz found a problem
+        # Cancelled too: a run that hangs until its time limit is a failure.
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Each failing test with the first line of what went wrong. A run that broke off writes no report.
+          failed=$(cat "$RUNNER_TEMP"/fuzz/*.json 2>/dev/null | jq -r '.testResults[].assertionResults[] | select(.status == "failed") | "- \(.fullName): \((.failureMessages[0] // "") | split("\n")[0] | .[0:300])"' || true)
+          count=$(printf '%s' "$failed" | grep -c . || true)
+          if [ "$count" -eq 0 ]; then
+            failed="No single test reported a failure (a run broke off or ran out of time, or a step before the tests failed): the run's log says which."
+          elif [ "$count" -gt 30 ]; then
+            failed="$(printf '%s\n' "$failed" | sed -n '1,30p')
+          - and $((count - 30)) more in the run's log."
+          fi
+          body="The nightly deep fuzz run failed. These tests play thousands of random games against the code on main, on GitHub's machine; the live site is unaffected, and nothing needs doing by players. Someone working on the code should look at the failures below. The next run is tomorrow (or start one from Actions → Nightly deep fuzz → Run workflow).
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          $failed
+
+          To replay one cash table or tournament seed: \`cd apps/server && FIRST_SEED=<seed> SEEDS=1 npx vitest run test/cash-fuzz.test.ts\` (or \`test/tournament-fuzz.test.ts\`). The engine hands: \`cd packages/engine && FUZZ_HANDS=30000 npx vitest run test/core/fuzz.test.ts --testTimeout=0\`."
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$body"; else gh issue create --title "$TITLE" --body "$body"; fi
+      - name: Close the issue once the fuzz passes again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue close "$open" --comment "The deep fuzz passes again: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
