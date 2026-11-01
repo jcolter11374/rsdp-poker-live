@@ -9,6 +9,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { limiterKeys } from '../src/admin';
 import { createApp } from '../src/app';
+import { oneLine } from '../src/clientErrors';
 import { FakeClock } from './fake-clock';
 
 const ENTRY = '/assets/index-AbC123.js';
@@ -72,6 +73,17 @@ describe('POST /api/client-error', () => {
     expect(message.endsWith('…')).toBe(true);
     expect(stack.length).toBeLessThanOrEqual(2_000);
     expect(line.length).toBeLessThan(2_500);
+  });
+
+  it('handles a long run of spaces quickly, so one report cannot stall the tables', async () => {
+    // Every table's clock runs in this one process: a report that took seconds to tidy would freeze them all.
+    const started = performance.now();
+    const line = oneLine(`${' '.repeat(40_000)}x\n${'\t '.repeat(20_000)}at f`);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(line).toBe('x | at f');
+    // The biggest body the route takes, padded with spaces: logged without them.
+    expect((await report({ ...crash, message: `${' '.repeat(7_900)}x`, stack: '' })).status).toBe(204);
+    expect(reported()).toEqual([expect.stringMatching(/\(commit 0123456\): x$/)]);
   });
 
   it('logs the kind of page, never its address, even when the text names a private link', async () => {

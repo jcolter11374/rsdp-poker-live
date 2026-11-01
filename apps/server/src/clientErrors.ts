@@ -38,9 +38,12 @@ function cut(text: string, max: number): string {
 }
 
 /** One line of text: a stack's lines joined with " | ", control characters dropped. */
-function oneLine(text: string): string {
+export function oneLine(text: string): string {
+  // Each line trimmed on its own: a split on /\s*[\r\n]+\s*/ takes time growing with the square of
+  // a long run of spaces, so one report could hold up every table's clock.
   return text
-    .split(/\s*[\r\n]+\s*/)
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
     .filter(Boolean)
     .join(' | ')
     .replace(/\p{Cc}+/gu, ' ');
