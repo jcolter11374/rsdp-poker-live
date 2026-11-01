@@ -1,10 +1,11 @@
 import { freshDeck, type Card } from '@rsdp/engine';
 import { engine, planForcedBets, settle, variants, type HandInput, type HandState, type Pot } from '@rsdp/engine/core';
-import { bounty72Schema, rakeFor, rakeSchema } from '@rsdp/engine/modifiers';
-import { defaultSettings } from '@rsdp/engine/settings';
+import { bounty72Schema, nitClears, nitSchema, rakeFor, rakeSchema } from '@rsdp/engine/modifiers';
+import { defaultSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
+import { RSDP_TABLE_RULES } from '@rsdp/tournament';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { describe, expect, it } from 'vitest';
-import { BOMB_EX, BOUNTY_EX, DOUBLE_EX, EXTRAS, RAKE_EX, RIT_EX, STRADDLE_EX, extraFor, extrasOn } from './extras';
+import { BOMB_EX, BOUNTY_EX, DOUBLE_EX, EXTRAS, NIT_EX, RAKE_EX, RIT_EX, STRADDLE_EX, TIME_EX, extraFor, extrasOn } from './extras';
 import { GUIDES, cardsOf, guideFor } from './guides';
 
 registerAllVariants(variants);
@@ -100,6 +101,49 @@ describe('side game guides', () => {
     const tourney = defaultSettings('tournament');
     expect(extrasOn(tourney)).toEqual(['rabbit-hunt', 'time-bank', 'showdown']);
   });
+
+  it('say tournaments set their own clock, time bank and rabbit hunting, and give the RSDP rules', () => {
+    const r = RSDP_TABLE_RULES;
+    const bank = extraFor('time-bank')!;
+    const bankText = [...bank.steps, ...bank.settings, ...(bank.elsewhere ?? [])].join('\n');
+    expect(bankText).toMatch(/tournament/i);
+    expect(bankText).toContain(`${r.decisionSeconds} seconds to act`);
+    expect(bankText).toContain(`${r.timeBankSeconds}-second time bank`);
+    expect(bankText).toContain(`every ${r.timeBankRefillHands} hands`);
+    expect(bank.settings.join('\n')).toMatch(/new tournament form.*Host tab/);
+    // A cash table's defaults are only promised for cash tables.
+    expect(bankText).not.toMatch(/30 seconds by default\./);
+
+    const rabbit = extraFor('rabbit-hunt')!;
+    expect(r.rabbitHunt).toBe(false);
+    expect(rabbit.settings.join('\n')).toMatch(/new tournament form.*Host tab/);
+    expect(rabbit.settings.join('\n')).toMatch(/RSDP rules.*off/);
+    for (const line of [...rabbit.settings, ...(rabbit.elsewhere ?? [])]) if (/on by default|Here it starts on/.test(line)) expect(line).toMatch(/cash tables/i);
+  });
+
+  it("show the time bank example with the table's own numbers", () => {
+    const t = defaultSettings('tournament');
+    t.timing = { ...t.timing, decisionSeconds: RSDP_TABLE_RULES.decisionSeconds, timeBankSeconds: RSDP_TABLE_RULES.timeBankSeconds, timeBankRefillHands: RSDP_TABLE_RULES.timeBankRefillHands };
+    const [ex] = extraFor('time-bank', t)!.examples;
+    expect(ex.title).toContain(`${RSDP_TABLE_RULES.decisionSeconds}-second clock and a ${RSDP_TABLE_RULES.timeBankSeconds}-second bank`);
+    const text = ex.lines.join('\n');
+    expect(text).toContain(`every ${RSDP_TABLE_RULES.timeBankRefillHands} hands`);
+    // Nothing from a cash table's defaults.
+    expect(text).not.toMatch(/30-second|by default/);
+    // Thinking past the clock spends some of the bank but never more than it holds.
+    const [, think, used, left] = text.match(/think for (\d+) seconds.* so (\d+) come out of the bank and (\d+) are left/)!.map(Number);
+    expect(think - RSDP_TABLE_RULES.decisionSeconds).toBe(used);
+    expect(used).toBeGreaterThan(0);
+    expect(used + left).toBe(RSDP_TABLE_RULES.timeBankSeconds);
+
+    t.timing.timeBankRefillHands = 0;
+    expect(extraFor('time-bank', t)!.examples[0].lines.join('\n')).toMatch(/never refills/);
+    // No clock or no bank at this table: the general guide.
+    t.timing.timeBankSeconds = 0;
+    expect(extraFor('time-bank', t)).toBe(extraFor('time-bank'));
+    // Every other guide is the same at any table.
+    expect(extraFor('rabbit-hunt', t)).toBe(extraFor('rabbit-hunt'));
+  });
 });
 
 describe('the numbers in the side game examples', () => {
@@ -187,6 +231,35 @@ describe('the numbers in the side game examples', () => {
       [0, 0, DOUBLE_EX.top],
       [1, 1, DOUBLE_EX.bottom],
     ]);
+  });
+
+  it("Nit game: the default prize, enough players for a round, and who's off the nit", () => {
+    const cfg = nitSchema.defaults();
+    expect(NIT_EX.prizeBigBlinds).toBe(cfg.prizeBigBlinds);
+    expect(NIT_EX.players).toBeGreaterThanOrEqual(cfg.minPlayers);
+    // The short loser example needs a stack below what they owe.
+    const owed = NIT_EX.prizeBigBlinds * STAKES.bigBlind * (NIT_EX.players - 1);
+    expect(NIT_EX.loserStack).toBeGreaterThan(0);
+    expect(NIT_EX.loserStack).toBeLessThan(owed);
+
+    // Hand 1: Ben (seat 1) bets the flop and everyone folds, so he alone is off the nit.
+    const stacks = Array(NIT_EX.players).fill(200);
+    const s = deal({ stacks });
+    for (const seat of [3, 4, 0, 1]) engine.act(s, seat, { type: 'call' });
+    engine.act(s, 2, { type: 'check' });
+    engine.act(s, 1, { type: 'bet', to: 10 });
+    for (const seat of [2, 3, 4, 0]) engine.act(s, seat, { type: 'fold' });
+    expect(s.phase).toBe('complete');
+    expect(nitClears(s, [0, 1, 2, 3, 4])).toEqual([1]);
+  });
+
+  it('time bank: the example uses the cash table defaults', () => {
+    const { timing } = defaultSettings('cash');
+    expect([TIME_EX.clock, TIME_EX.bank, TIME_EX.refillHands]).toEqual([timing.decisionSeconds, timing.timeBankSeconds, timing.timeBankRefillHands]);
+    expect(TIME_EX.bank).toBeLessThanOrEqual(SETTINGS_LIMITS.timeBankSeconds.max);
+    // Thinks past the clock, but not past the bank.
+    expect(TIME_EX.firstThink).toBeGreaterThan(TIME_EX.clock);
+    expect(TIME_EX.firstThink).toBeLessThan(TIME_EX.clock + TIME_EX.bank);
   });
 
   it('house fee: each example pot pays the fee the guide says', () => {
