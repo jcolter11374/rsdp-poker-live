@@ -292,6 +292,19 @@ export interface SharedHandView {
 
 export type Ack<T = object> = (res: ({ ok: true } & T) | { ok: false; error: string }) => void;
 
+/**
+ * The turn a move is for, as my view showed it when I pressed: the hand's
+ * number and its event count (view.hand.events.length; the server starts a
+ * new turn whenever the count changes). A move that arrives after its turn
+ * has passed is refused rather than played on a later one, so a slow tap I
+ * gave up on can't be played as well as the one after it. Both are optional:
+ * a page from before they were sent plays as it always did.
+ */
+export interface TurnKey {
+  handNumber?: number;
+  at?: number;
+}
+
 export interface CreateTableInput {
   /** Any subset of the settings; the rest come from the defaults. */
   settings: SettingsPatch;
@@ -325,12 +338,13 @@ export interface ClientToServer {
   'waitlist:join': (input: { name: string; stack: number }, ack: Ack) => void;
   /** Leave the waitlist (also turns down a seat being held for you). */
   'waitlist:leave': (ack: Ack) => void;
-  'hand:act': (action: Action, ack: Ack) => void;
-  'hand:draw': (input: { discard: number[] }, ack: Ack) => void;
+  'hand:act': (action: Action & TurnKey, ack: Ack) => void;
+  'hand:draw': (input: { discard: number[] } & TurnKey, ack: Ack) => void;
   'hand:runItTwice': (input: { yes: boolean }, ack: Ack) => void;
-  'hand:show': (input: { cards: number[] }, ack: Ack) => void;
-  /** Add my time bank to my clock now. */
-  'hand:timeBank': (ack: Ack) => void;
+  /** `handNumber`: the hand I pressed it after, so a show that arrives once the next hand is dealt is refused, not played on that hand. */
+  'hand:show': (input: { cards: number[]; handNumber?: number }, ack: Ack) => void;
+  /** Add my time bank to my clock now, on the turn I pressed it on (a page from before turn keys sends the ack alone). */
+  'hand:timeBank': (...args: [ack: Ack] | [input: TurnKey, ack: Ack]) => void;
   /** See the cards that would have come (only I see them). */
   'hand:rabbit': (ack: Ack) => void;
   /**

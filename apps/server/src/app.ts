@@ -8,7 +8,7 @@ import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
-import type { Ack, BotLevel, ClientToServer, ServerToClient } from '@rsdp/engine/wire';
+import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
 import { isArchived, LOBBY_CHAT_MAX, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
@@ -1242,11 +1242,16 @@ export function createApp(deps: AppDeps = {}) {
     );
     on('waitlist:leave', (ack) => guarded(ack, () => current().leaveWaitlist(me), log));
 
-    on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action)), log));
-    on('hand:draw', ({ discard }, ack) => guarded(ack, () => current().draw(me, toIndexes(discard)), log));
+    // A move carries the turn it was pressed on (TurnKey), checked apart from the move itself so it never reaches the engine.
+    on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action), turnOf(action)), log));
+    on('hand:draw', (input, ack) => guarded(ack, () => current().draw(me, toIndexes(input?.discard), turnOf(input)), log));
     on('hand:runItTwice', ({ yes }, ack) => guarded(ack, () => current().voteRunItTwice(me, !!yes), log));
-    on('hand:show', ({ cards }, ack) => guarded(ack, () => current().show(me, toIndexes(cards)), log));
-    on('hand:timeBank', (ack) => guarded(ack, () => current().useTimeBank(me), log));
+    on('hand:show', (input, ack) => guarded(ack, () => current().show(me, toIndexes(input?.cards), { handNumber: turnOf(input).handNumber }), log));
+    on('hand:timeBank', (...args) => {
+      // The ack comes last; a page from before turn keys sends nothing before it.
+      const ack = args.at(-1) as Ack;
+      return guarded(ack, () => current().useTimeBank(me, turnOf(args.length > 1 ? args[0] : undefined)), log);
+    });
     on('hand:rabbit', (ack) => guarded(ack, () => current().rabbitHunt(me), log));
     on('hand:tip', (input, ack) =>
       guarded(
@@ -1644,6 +1649,23 @@ export function createApp(deps: AppDeps = {}) {
 function toIndexes(value: unknown): number[] {
   if (!Array.isArray(value)) throw new ActionError('pick some cards');
   return value.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v >= 0 && v < 10);
+}
+
+/**
+ * The turn a move was sent for, as the runtime checks it: each part a whole
+ * number, like hand:tip's. A part left out (or null) is not checked; any
+ * other part that isn't a whole number becomes NaN, which matches no turn.
+ */
+function turnOf(input: unknown): TurnKey {
+  const x = (input ?? {}) as { handNumber?: unknown; at?: unknown };
+  const part = (v: unknown) => {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : NaN;
+  };
+  const handNumber = part(x.handNumber);
+  const at = part(x.at);
+  return { ...(handNumber !== undefined ? { handNumber } : {}), ...(at !== undefined ? { at } : {}) };
 }
 
 function sanitizeAction(action: unknown) {
