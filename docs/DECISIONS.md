@@ -33,6 +33,7 @@ How this file works:
 | [D20](#d20-group-results-proposed-not-built) | Group results (proposed, not built) | 2026-10-30 | John; plan Claude |
 | [D21](#d21-look-and-feel) | Look and feel | 2026-10-25 to 2026-10-29 | John |
 | [D22](#d22-how-work-is-tracked-and-checked) | How work is tracked and checked | 2026-11-01 | John asked; details Claude |
+| [D23](#d23-the-code-is-under-the-mit-license) | The code is under the MIT license | 2026-11-01 | John |
 
 ---
 
@@ -241,3 +242,9 @@ How this file works:
   - Required approvals on pull requests. Every PR comes from John's one account, and GitHub doesn't let an author approve their own PR.
   - Strict commit formats, and an outside error-tracking service (it would send players' data to another company).
 - **Where:** [CONTRIBUTING.md](../CONTRIBUTING.md), [CLAUDE.md](../CLAUDE.md), `.github/dependabot.yml`.
+
+## D23. The code is under the MIT license
+
+- **Decided:** 2026-11-01, by John, choosing MIT over AGPL-3.0 or keeping all rights reserved (issue #202).
+- **Decision:** the code is open source under the MIT license. Anyone may use, copy, change and run their own copy, as long as the copyright notice and license go with it. Before this the repository had no license, so people could read the code but had no clear permission to copy it, though the fairness page encourages keeping a copy.
+- **Where:** [LICENSE](../LICENSE), the `license` field in every package.json, README, [CREDITS.md](CREDITS.md).
