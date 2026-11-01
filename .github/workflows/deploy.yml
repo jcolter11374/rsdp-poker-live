@@ -111,9 +111,11 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           site="https://$FLY_APP.fly.dev"
+          # Each request retries a few times, so one proxy blip right after the restart doesn't turn the deploy red.
+          get() { curl -sf --retry 3 --retry-delay 5 --retry-all-errors --max-time 15 "$@"; }
           # The server answering is the one just deployed (BUILD_COMMIT, reported by /api/version).
           for i in $(seq 1 12); do
-            live=$(curl -sf "$site/api/version" | jq -r '.commit // empty') || live=
+            live=$(curl -sf --max-time 10 "$site/api/version" | jq -r '.commit // empty') || live=
             [ "$live" = "$SHA" ] && break
             sleep 5
           done
@@ -121,11 +123,16 @@ jobs:
           [ "$live" = "$SHA" ] || { echo "::error::The live site doesn't report the commit just deployed."; exit 1; }
           # The website's pages load.
           for path in / /rules/badugi /tn/new; do
-            curl -sf "$site$path" | grep -q '<div id="root">' || { echo "::error::$path did not serve the app"; exit 1; }
+            get "$site$path" | grep -q '<div id="root">' || { echo "::error::$path did not serve the app"; exit 1; }
           done
-          # The operator-only endpoint stays closed to the internet (it answers only a shell on the server).
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/admin/tournaments")
-          echo "api/admin/tournaments $code"
-          [ "$code" = 404 ] || { echo "::error::api/admin/tournaments answered $code, expected 404"; exit 1; }
-          # Sign-in setup answers (prints whether Google sign-in is on; not a failure either way).
-          echo "Google sign-in on: $(curl -sf "$site/api/auth/config" | jq -r '.google')"
+          # Unknown avatars and share links answer 404, and the operator-only endpoint stays closed
+          # to the internet (it answers only a shell on the server).
+          for path in api/avatars/nobody api/shared/nothing api/admin/tournaments; do
+            code=$(curl -s --retry 3 --retry-delay 5 --max-time 15 -o /dev/null -w '%{http_code}' "$site/$path") || true
+            echo "$path $code"
+            [ "$code" = 404 ] || { echo "::error::$path answered ${code:-nothing}, expected 404"; exit 1; }
+          done
+          # The sign-in setup answers (whether Google sign-in is on is printed, not checked).
+          cfg=$(get "$site/api/auth/config") && jq -e 'has("google")' <<<"$cfg" > /dev/null \
+            || { echo "::error::/api/auth/config didn't answer"; exit 1; }
+          echo "Google sign-in on: $(jq -r '.google' <<<"$cfg")"

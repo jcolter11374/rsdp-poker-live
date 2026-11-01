@@ -41,7 +41,7 @@ jobs:
           count=$(jq '[.vulnerabilities[] | select(.severity == "high" or .severity == "critical")] | length' audit.json)
           echo "count=$count" >> "$GITHUB_OUTPUT"
           jq -r '.vulnerabilities[] | select(.severity == "high" or .severity == "critical")
-            | "- **\(.name)** (\(.severity)), affected versions `\(.range)`: \([.via[] | objects | "[\(.title)](\(.url))"] | unique | join("; ") | if . == "" then "via another package" else . end)"' audit.json > list.md
+            | "- `\(.name)` (\(.severity)), affected versions `\(.range)`: \([.via[] | objects | "[\(.title)](\(.url))"] | unique | join("; ") | if . == "" then "via another package" else . end)"' audit.json > list.md
           echo "High or critical: $count"; cat list.md
       - name: Open or update the issue
         if: steps.audit.outputs.count != '0'
