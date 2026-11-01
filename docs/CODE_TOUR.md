@@ -211,7 +211,9 @@ it happens in that order.
 
 The tests are often the clearest description of intended behaviour. Each
 package has a `test/` folder (the website keeps its tests next to the code as
-`*.test.ts`).
+`*.test.ts`). Website tests run without a page unless the file starts with
+`// @vitest-environment jsdom`: then it can render a screen with Testing
+Library, as `components/ActionBar.test.tsx` does for the betting bar.
 
 ## Running it on your own computer
 
