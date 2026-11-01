@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
-import { getModifierSchema, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
+import { getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, VARIANT_LIST } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -11,6 +11,7 @@ import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
+import { canAddGame, canAddLevel, nextBlindLevel } from './settings/lists';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
 const TABS: { id: Tab; label: string }[] = [
@@ -206,6 +207,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     })}
                     <button
                       type="button"
+                      disabled={!canAddGame(rot.steps)}
+                      title={canAddGame(rot.steps) ? undefined : `A rotation holds up to ${SETTINGS_LIMITS.rotationSteps.max} games`}
                       onClick={() => set('game', { rotation: { ...rot, steps: [...rot.steps, { ...rot.steps[rot.steps.length - 1] }] } })}
                     >
                       Add game
@@ -286,10 +289,9 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                 })}
                 <button
                   type="button"
-                  onClick={() => {
-                    const last = sched.levels[sched.levels.length - 1];
-                    set('blindSchedule', { levels: [...sched.levels, { ...last, smallBlind: last.smallBlind * 2, bigBlind: last.bigBlind * 2, ante: last.ante * 2 }] });
-                  }}
+                  disabled={!canAddLevel(sched.levels)}
+                  title={canAddLevel(sched.levels) ? undefined : `A schedule holds up to ${SETTINGS_LIMITS.blindLevels.max} levels`}
+                  onClick={() => set('blindSchedule', { levels: [...sched.levels, nextBlindLevel(sched.levels[sched.levels.length - 1])] })}
                 >
                   Add level
                 </button>
