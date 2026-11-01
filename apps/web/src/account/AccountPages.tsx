@@ -3,7 +3,7 @@ import { currentSession, onSession, saveSessionToken, setName } from '../socket'
 import { chipFormat } from '../format';
 import { money } from '../tournament/format';
 import { MyProfile } from '../components/table/Persona';
-import { changePassword, deleteAccount, deletePractice, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
+import { AccountError, changePassword, deleteAccount, deletePractice, fetchAuthConfig, fetchProfile, hideTable, reloadTo, resetPassword, signIn, signOut, signUp, startGoogle, finishGoogle, unlinkGoogle, type Profile, type TableRow } from './api';
 import '../components/table/extras.css';
 import { PracticeGraph, ProfitGraph } from './ProfitGraph';
 import './account.css';
@@ -33,18 +33,31 @@ export function Shell({ title, children, narrow = false }: { title: string; chil
 function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [errorLink, setErrorLink] = useState<string | undefined>();
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError('');
+    setErrorLink(undefined);
     try {
       await fn();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
+      setErrorLink(e instanceof AccountError ? e.href : undefined);
     } finally {
       setBusy(false);
     }
   };
-  return { busy, error, run, setError };
+  return { busy, error, errorLink, run, setError };
+}
+
+/** A link to the table or tournament that stopped a sign-in, so the player can leave it there. */
+function HeldLink({ href }: { href?: string }) {
+  if (!href) return null;
+  return (
+    <p className="account-alt">
+      <a href={href}>{href.startsWith('/tn/') ? 'Go to the tournament' : 'Go to the table'}</a>
+    </p>
+  );
 }
 
 /** True once the server says it offers Google sign-in. */
@@ -142,7 +155,7 @@ export function SignInPage() {
   const [password, setPassword] = useState('');
   const [bringOver, setBringOver] = useState(true);
   const google = useGoogle();
-  const { busy, error, run } = useAction();
+  const { busy, error, errorLink, run } = useAction();
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -175,10 +188,11 @@ export function SignInPage() {
           <input type="checkbox" checked={bringOver} onChange={(e) => setBringOver(e.target.checked)} />
           <span>
             Keep what I played here as a guest
-            <span className="hint">Your notes, picture, tables and tournaments on this device move into your account. Untick this on a friend's phone so their things stay theirs.</span>
+            <span className="hint">Your notes and picture from this device move into your account, and the tables and tournaments you played here show in its history. Untick this on a friend's phone so their things stay theirs.</span>
           </span>
         </label>
         {error && <p className="error">{error}</p>}
+        {error && <HeldLink href={errorLink} />}
         <button className="primary" disabled={busy}>
           Sign in
         </button>
@@ -640,6 +654,7 @@ const GOOGLE_ERRORS: Record<string, string> = {
 /** Where Google sends the browser back: finishes with the one-time ticket, then opens the profile. */
 export function AuthDonePage() {
   const [error, setError] = useState('');
+  const [errorLink, setErrorLink] = useState<string | undefined>();
   useEffect(() => {
     const f = new URLSearchParams(location.hash.slice(1));
     // The ticket must not stay in the address bar or the history.
@@ -656,13 +671,17 @@ export function AuthDonePage() {
         saveSessionToken(r.session);
         reloadTo(r.welcome ? '/profile?welcome=1' : r.merged ? '/profile?merged=1' : '/profile?signedin=1');
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        setError(e.message);
+        setErrorLink(e instanceof AccountError ? e.href : undefined);
+      });
   }, []);
   return (
     <Shell title={error ? 'Sign-in did not work' : 'Signing you in…'}>
       {error && (
         <>
           <p className="error">{error}</p>
+          <HeldLink href={errorLink} />
           <p className="account-alt">
             <a href="/signin">Back to sign in</a>
           </p>

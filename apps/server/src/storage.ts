@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { allHandsOfTable, allTableLog, appendTableLog, hasTableLog, createTable, deleteTableForGood, getTable, handOfTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, allTableLog, appendTableLog, hasTableLog, createTable, deleteTableForGood, getTable, handOfTable, loadSnapshot, saveHand, saveSnapshot, tablesSeatingInSaves } from './db';
 import { setDisplayName, whoIs } from './identity';
 import { RUNTIME_VERSION, type ChatMessage, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
@@ -80,6 +80,7 @@ export function dbStore(db: Db): TableStore {
       return row && pastHandFromRow(row);
     },
     deleteTable: (tableId) => deleteTableForGood(db, tableId),
+    tablesSeating: (playerId) => tablesSeatingInSaves(db, playerId, RUNTIME_VERSION),
   };
 
   async function saveLines(tableId: string, lines: TableLine[]) {
