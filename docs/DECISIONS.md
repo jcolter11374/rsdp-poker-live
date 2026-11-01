@@ -6,7 +6,7 @@ How this file works:
 
 - **Who decided** says whether it was John's call or Claude's. Claude sessions make routine engineering and product calls themselves and report them. Those are marked "Claude", and John can overturn any of them.
 - Quotes of John are his own words, checked against his messages. Everything else is a summary.
-- Entries are never rewritten. When a decision changes, add a new entry that says which one it replaces, and mark the old one **Replaced by D*n***.
+- Entries are never rewritten. When a decision changes, add a new entry that says which one it replaces, and mark the old one **Replaced by D*n***. The one exception is an **Open question** line: once John answers, replace it with his answer and the date, and link where he said it.
 - Private details stay out of this public file: friends' names, the group's spreadsheet, budgets.
 
 | # | Decision | Decided | By |
@@ -23,7 +23,7 @@ How this file works:
 | [D10](#d10-provably-fair-dealing-and-when-hands-are-revealed) | Provably fair dealing, and when hands are revealed | 2026-10-25, 2026-11-01 | John; design Claude |
 | [D11](#d11-making-it-harder-for-john-to-cheat) | Making it harder for John to cheat | 2026-10-26 | John picked; design Claude |
 | [D12](#d12-honest-trust-wording) | Honest trust wording | 2026-10-26, 2026-10-29 | John |
-| [D13](#d13-nightly-encrypted-backups) | Nightly encrypted backups | 2026-10-26 | John approved; design Claude |
+| [D13](#d13-daily-encrypted-backups) | Daily encrypted backups | 2026-10-26 | John approved; design Claude |
 | [D14](#d14-no-live-huds-safeguards-for-spectators) | No live HUDs; safeguards for spectators | 2026-10-26 | John; details Claude |
 | [D15](#d15-cash-tables-in-dollars-and-cents) | Cash tables in dollars and cents | 2026-10-27 | John |
 | [D16](#d16-the-groups-tournament-defaults) | The group's tournament defaults | 2026-10-30 to 2026-11-01 | John |
@@ -40,9 +40,9 @@ How this file works:
 ## D01. Scope: full parity, every paid feature free
 
 - **Decided:** 2026-10-25, by John.
-- **Decision:** "Clone" means full feature parity with PokerNow, not a small first version, with John's own additions later. Every feature PokerNow charges for (bomb pots, 7-2, double board, game rotation, Sit & Gos, the replayer and so on) is free for everyone: no payments and no tiers. The code, art, sounds and wording are all original, and the site never names PokerNow.
+- **Decision:** "Clone" means full feature parity with PokerNow, not a small first version, with John's own additions later. Every feature PokerNow charges for (bomb pots, 7-2, double board, game rotation, Sit & Gos, the replayer and so on) is free for everyone: no payments and no tiers. The code, art, sounds and wording are all original. The site's own pages don't name PokerNow (a test checks the About page). Two older release notes do (the all-in runout line in the changelog and "Blinds the RSDP way" in What's new); they are live, so they stay. New pages and notes shouldn't name it.
 - **Why:** getting the paid features to the whole group for free is one of John's main reasons for the project.
-- **Where:** README (free for everyone; original app), [ARCHITECTURE.md](ARCHITECTURE.md) ("No PokerNow code, art, sounds or wording"), `apps/web/src/about/about.test.ts`.
+- **Where:** README (free for everyone; original app), [ARCHITECTURE.md](ARCHITECTURE.md) ("No PokerNow code, art, sounds or wording"), `apps/web/src/about/about.test.ts` (About page only).
 - **Don't** scope a feature down without asking John.
 
 ## D02. The group's games and house rules
@@ -77,7 +77,7 @@ How this file works:
   - **2026-10-25, 21:12 UTC, on a choice card.** He picked "Yes, merge to develop": merge each fix into `develop` once CI is green and a review passes, and report afterwards. Merging into `main` still needed his OK then. (Minutes later he also wrote: "I'll leave all of this up to your discretion. Don't confuse my enthusiasm for impatience.")
   - **2026-10-26, 05:13 UTC.** "Feel free to push things as they are done without asking me." From then on, finished work may go live without asking him each time.
 - **Decision:** feature branch → `develop` → `main`, and a merge into `main` deploys. A review pass means one we run ourselves, recorded on the pull request (D22).
-- **Claude's own conditions** on the standing OK, not John's words: test each release on a copy first, prefer quiet times, tell John after each release, and still ask about anything that costs money or changes the product.
+- **Claude's own conditions** on the standing OK, not John's words: test each release on a copy first, prefer quiet times, and tell John after each release. Asking first about anything that costs money or changes the product is John's own rule (D04, D08).
 - **Open question:** on 2026-10-26 at 23:00 UTC John wrote "go ahead and push updates now. Don't worry about active tables". It's unclear whether that applies to every release or only to that one (PR #114 reads it as that one). It's been asked of John (#236). Until he answers, prefer quiet times.
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CODE_TOUR.md](CODE_TOUR.md).
 
@@ -108,7 +108,7 @@ How this file works:
   - Storage through Drizzle: Postgres when `DATABASE_URL` is set, otherwise embedded PGlite, which is what the live site runs.
   - PGlite has no automatic clean-up, so the server vacuums it at start-up and every 5 minutes. Don't remove that.
   - Idle cash tables are unloaded from memory after 45 minutes.
-- **Why:** pure packages are easy to test and can replay hands in the browser. Without the clean-up, the 1 GB volume fills after a few hundred hands. Why the live site uses PGlite rather than a managed Postgres wasn't recorded.
+- **Why:** pure packages are easy to test and can replay hands in the browser. Without the clean-up, the 1 GB volume fills after roughly 600 to 700 hands (about 1.5 MB a hand). Why the live site uses PGlite rather than a managed Postgres wasn't recorded.
 - **Where:** [ARCHITECTURE.md](ARCHITECTURE.md), `apps/server/src/db/client.ts`.
 
 ## D10. Provably fair dealing, and when hands are revealed
@@ -140,11 +140,11 @@ How this file works:
 - **Where:** [FAIRNESS.md](FAIRNESS.md), [TERMS.md](TERMS.md), README.
 - Any page, release note or doc must keep to this.
 
-## D13. Nightly encrypted backups
+## D13. Daily encrypted backups
 
 - **Decided:** 2026-10-26. John approved, at no cost, and made the key pair himself. The design is Claude's.
 - **Decision:**
-  - GitHub Actions takes a backup every night, test-restores it on a real server, and locks it to John's public key.
+  - GitHub Actions takes a backup once a day (the "Nightly backup" workflow, which GitHub usually starts between about 15:30 and 16:30 UTC; see [DEPLOY.md](DEPLOY.md)), test-restores it on a real server, and locks it to John's public key.
   - Only John holds the private key, and no AI session ever handles it.
   - Backups are kept 90 days.
   - A failure, or the site going down, opens an issue.
@@ -154,27 +154,27 @@ How this file works:
 
 - **Decided:** 2026-10-26, by John. The exemptions and safeguard details are Claude's.
 - **Decision:**
-  - No tracking tools at running tables: hand downloads are locked while you're seated in a running game. Reviewing hands afterwards is fine.
+  - No tracking tools at running tables: while the game runs, hand downloads are locked for anyone seated (in a tournament, anyone still in the event) and for onlookers who never played at the table, so a second device can't fetch them for a seated player. Reviewing hands afterwards is fine.
   - The in-table Stats tab stays. John's call; don't ask again.
   - A host can let spectators see every card, but only between hands and only for later hands. Players must agree before they sit, and everyone sees a warning.
-  - Practice tables, and the host and co-hosts while they aren't playing, are exempt from the download lock.
+  - Exempt from the lock: practice tables where only bots have played against you, the host and co-hosts while they aren't seated, and players who have left the table.
 - **Where:** [FAIRNESS.md](FAIRNESS.md#huds-and-tracking-software), `apps/server/src/runtime/table.ts`, PRs #90, #168.
 
 ## D15. Cash tables in dollars and cents
 
 - **Decided:** 2026-10-27, by John: "I think for cash we just don't have chips as an option. We treat it just like a casino and have chips for all the denomations of money."
-- **Decision:** cash tables always count in dollars and cents (one engine chip is one cent), with casino chips for each denomination. The default is .25/.50. Tournaments stay in plain chips. A table's unit never changes after it's created.
-- **Where:** `packages/engine/src/settings/money.ts`, PR #132.
+- **Decision:** every cash table made since PR #132 (2026-10-27) counts in dollars and cents (one engine chip is one cent), with casino chips for each denomination. Older tables keep counting in chips. The home page starts new tables at .25/.50. Tournaments stay in plain chips. A table's unit never changes after it's created.
+- **Where:** `packages/engine/src/settings/money.ts`, `apps/web/src/Home.tsx` (the .25/.50 start), PR #132.
 
 ## D16. The group's tournament defaults
 
 - **Decided:** 2026-10-30 to 2026-11-01, by John.
 - **Decision:**
-  - New tournaments default to the group's own setup: No-Limit Hold'em, 63,000 chips, 28 levels of 8 minutes, no antes or breaks, and late registration through level 5 (from the group's own structure sheet, PR #163).
-  - The group's payout table is the default (PR #158), and the prize pool is shown.
-  - Table rules: 10 seconds to act, a 20-second time bank that refills every 30 hands, and no rabbit hunting. Straddles are never allowed in tournaments.
+  - New tournaments default to the group's own setup: No-Limit Hold'em, 63,000 chips, 28 levels of 8 minutes, no antes or breaks, and late registration through level 5 (the group's own PokerNow structure, PR #163).
+  - The group's payout table is the default (PR #158), and the prize pool is on by default with a $20 buy-in (PR #161).
+  - Table rules: 10 seconds to act, a 20-second time bank that refills every 30 hands, and no rabbit hunting (PR #165). Straddles are never allowed in tournaments.
   - Hosts can change the table rules until the first table opens (PR #172).
-- **Where:** `packages/tournament/src/structure.ts`, `saved.ts`, `payouts.ts`.
+- **Where:** `packages/tournament/src/structure.ts` (RSDP levels and table rules), `saved.ts` (the RSDP starter), `payouts.ts` (the RSDP payout table), and `apps/web/src/tournament/TournamentCreate.tsx`, which makes them the new-tournament default. `defaultSettings()` in `director.ts` is the package's generic fallback and stays different on purpose.
 
 ## D17. Tournament rules chosen by Claude
 
@@ -182,6 +182,7 @@ How this file works:
 - **Decision:**
   - Auto-start seats players 60 seconds early, and waits up to 15 minutes when there are fewer than 2 entrants.
   - Players busted in the same hand finish in order of their starting stacks, with ties during hand-for-hand.
+  - A busted player who doesn't take a rebuy offer is placed with the hand that busted them, not when the offer ends (PR #170).
   - Bounties are shown per entry. A progressive knockout puts part of each bounty on the winner's head.
   - Invite codes are single-use, or one shared code. Invite-only events stay off the home page.
   - Season points: entrants minus place, plus one.
@@ -196,7 +197,7 @@ How this file works:
   - The Nit game's loser pays from their stack at the end of the round, with no money held aside. A shortfall goes on their buy-in.
   - Hidden rake is cosmetic; the log still shows it.
   - Losing hands are mucked by default, with a show-all option.
-  - Defaults: waitlist off, a freed seat held for 60 seconds, offline players' seats never released, shuffles only between hands, profanity filter off, rabbit hunting on in cash games.
+  - Defaults: waitlist off (when it's on, a freed seat is held 60 seconds for the next person), offline players' seats never released, profanity filter off, rabbit hunting on in cash games. The host can shuffle seats only between hands.
   - Unusual game and betting pairings get a gentle nudge but are never blocked (John, 2026-10-26).
 - **Why:** simpler code with outcomes the group accepts.
 - **Where:** `apps/web/src/rules/extras.ts` (the Nit rule as players are told it).
@@ -210,14 +211,14 @@ How this file works:
   - Password reset works without email, through a one-time code from the admin.
   - Hands and ledgers are kept for good. Anyone can hide a table from their own profile. A host can delete only a table where no real game happened.
   - Practice games are kept apart from real ones.
-  - No ads, no analytics services, no trackers and no third-party scripts. IP addresses are held in memory only, and cleared within about an hour.
+  - No ads, no analytics services, no trackers and no third-party scripts. IP addresses are held in memory only and never saved. Rate-limit entries are forgotten within about an hour; the address a tournament was made from is kept while that tournament is open (PR #168). A restart forgets them all. [PRIVACY.md](PRIVACY.md) has the exact wording.
   - Any new stored data, cookie or outside service needs a [PRIVACY.md](PRIVACY.md) update.
 - **Where:** [ARCHITECTURE.md](ARCHITECTURE.md), [PRIVACY.md](PRIVACY.md).
 
 ## D20. Group results (proposed, not built)
 
 - **Proposed:** 2026-10-30. John set the goal; the plan is Claude's.
-- **Proposal:** the group's own results spreadsheet stays the official record for now. Later, the site may help keep it up to date, with results visible only to signed-in members of the group. The details are still open and nothing is built. The default payout table (D16) is the only part that shipped.
+- **Proposal:** the group's own results spreadsheet stays the official record for now. Later, the site may help keep it up to date, with results visible only to signed-in members of the group. The details are still open. Two parts have shipped: the default payout table (D16, PR #158), and the prize pool on by default with a $20 buy-in, so buy-ins and prizes are saved with each tournament's results (PR #161).
 
 ## D21. Look and feel
 

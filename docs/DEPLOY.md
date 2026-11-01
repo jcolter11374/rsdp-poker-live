@@ -36,14 +36,14 @@ On the live site, the plain settings live in `fly.toml` under `[env]`. The three
 | Secret | Used by | What it is |
 | --- | --- | --- |
 | `FLY_API_TOKEN` | `deploy.yml`, `fly-setup.yml`, `transparency.yml` | A Fly API token for the app (see [Fly.io](#flyio-production)). The watcher also uses it as its fingerprint key (`WATCH_KEY`), so a new token changes every published secret fingerprint once. The public record then says the app's secrets changed, which is expected. |
-| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the nightly backup) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the nightly backups too, because they need it. |
+| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `deploy.yml` (copies them to Fly) | The Google sign-in client, from the Google Cloud console. |
 
 Only workflows on `main` should use these. GitHub never shows a secret's value again, so replacing one means making a new value at its source. The steps are in [RUNBOOK.md](RUNBOOK.md#a-key-may-have-leaked).
 
 ### Adding a setting or secret
 
-The transparency watcher publishes which settings and secrets the live app has, and opens a **public** issue for any secret the code doesn't read. So, in this order:
+The transparency watcher publishes the names of the live app's secrets and a fingerprint of its settings. It opens a **public** issue for any secret not in `SECRETS`, and for any setting that `fly.toml` on main doesn't have or sets differently. So, in this order:
 
 1. In the same pull request that starts reading it, add a new **secret** to `SECRETS` in `scripts/transparency/deploys.mjs`, or put a new **plain setting** in `fly.toml` under `[env]`. Add it to the tables above.
 2. For a secret, add the step that copies it to Fly in `deploy.yml`. Set it with `flyctl secrets set`, as the admin key step does, not with `secrets import`, which cuts a value off at the first `#`. (The Google step still uses `secrets import`. That's safe only because Google's values never contain a `#`.)
@@ -116,25 +116,31 @@ There is no standing staging server (a second Fly machine would roughly double t
 - **Start from the live version when the release changes the database.** That is what the live site goes through at deploy time, and CI doesn't rehearse it yet (#189):
 
   ```bash
-  git switch main && docker build -t rsdp-live .           # what's live now
-  git switch develop && docker build -t rsdp-release .     # what the release ships
-  docker run -d --name copy -p 3001:8080 -v rsdp-upgrade:/data rsdp-live
-  BASE_URL=http://localhost:3001 npm run smoke             # makes some data
+  wait_up() { for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && return; sleep 1; done; docker logs copy; return 1; }
+  git fetch origin
+  git switch --detach origin/main && docker build -t rsdp-live .        # what's live now
+  docker volume rm rsdp-upgrade 2>/dev/null                              # start from an empty volume
+  docker run -d --name copy -p 3001:8080 -v rsdp-upgrade:/data rsdp-live && wait_up
+  BASE_URL=http://localhost:3001 npm run smoke                           # main's own smoke test makes some data
   docker stop copy && docker rm copy
-  docker run --rm -p 3001:8080 -v rsdp-upgrade:/data rsdp-release   # the upgrade
+  git switch --detach origin/develop && docker build -t rsdp-release .  # what the release ships
+  docker run -d --name copy -p 3001:8080 -v rsdp-upgrade:/data rsdp-release && wait_up   # the upgrade
   ```
 
-  Then check the old tables, results and leaderboard are still there, and run the smoke test again.
+  Then check the old tables, results and leaderboard are still there, run the smoke test again (now develop's), and finish with `docker stop copy && docker rm copy`.
 
 The commands:
 
 ```bash
 docker build -t rsdp-poker .
-docker run --rm -p 3001:8080 -v rsdp-copy:/data rsdp-poker   # a fresh copy; reuse the volume name to keep its data
-BASE_URL=http://localhost:3001 npm run smoke                 # cash table, practice hand, tournament
+docker volume rm rsdp-copy 2>/dev/null                         # for a fresh copy; leave this out to keep its data
+docker run -d --name copy -p 3001:8080 -v rsdp-copy:/data rsdp-poker
+for i in $(seq 1 60); do curl -sf localhost:3001/api/health > /dev/null && break; sleep 1; done
+BASE_URL=http://localhost:3001 npm run smoke                   # cash table, practice hand, tournament
+docker stop copy && docker rm copy                             # when you're done
 ```
 
-Then try what the release changes, by hand in a browser or with bots placed by hand. The release PR records it all under a **Tested on a copy** heading: what was run, what passed, and any setting that was changed.
+Then try what the release changes, by hand in a browser or with bots placed by hand. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
 
 ## Releasing
 
@@ -153,7 +159,7 @@ Everything runs on John's own accounts. No values here, only what each one is fo
 
 | Account | What depends on it |
 | --- | --- |
-| GitHub (`jcolter11374`) | The code, CI, deploys, nightly backups, the public record (`transparency` branch), issues and alerts. |
+| GitHub (`jcolter11374`) | The code, CI, deploys, daily backups, the public record (`transparency` branch), issues and alerts. |
 | Fly.io | The live server, its data volume and daily volume snapshots, and the image registry. Billed by usage. |
 | Google Cloud | The OAuth client behind "Sign in with Google". |
 

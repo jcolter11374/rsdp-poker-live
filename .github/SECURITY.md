@@ -18,15 +18,15 @@ Some things John could do as the operator are listed openly on [/fairness](https
 
 ## How to report
 
-- **Best: GitHub's private report.** On this repository, open **Security → Report a vulnerability**. Only John sees it. (If the button isn't there yet, it hasn't been switched on. Use the next option.)
+- **Best: GitHub's private report.** On this repository, open **Security → Report a vulnerability**. Only John can see it, along with the Claude sessions that write the code for him through his GitHub account. It is never made public unless John publishes it. (If the button isn't there yet, it hasn't been switched on. Use the next option.)
 - **Or message John directly**, if you know him.
-- **Don't post the details in a public issue, the table chat or the group chat.** If neither route works for you, open an issue that only says you found a security problem and would like John to get in touch, with no details.
+- **Don't post the details in a public issue, the table chat or the group chat.** If neither route works for you, open an issue that only says you found a security problem and would like John to get in touch, with no details. John will reply there with a private way to send them.
 
 Please say what you did, what happened, and what you expected. A few steps to repeat it help most. Test on your own copy of the site where you can (see the README). On the live site, don't read other players' data, don't disrupt games, and don't run automated traffic against it.
 
 ## What to expect
 
 - John aims to reply within a few days. This is a hobby project, so there's no fixed timetable.
-- Fixes are made quickly, as a small pull request with tests and a review pass we run ourselves, and released straight away. The details stay private until the fix is live. Then the release notes say what was fixed.
+- Fixes are made quickly, as a small pull request with tests and a review pass we run ourselves. Your report stays private, but the fix's code is public in its pull request, which is why it's released the same day under a plain title. Once the fix is live, John adds what was fixed to that release's notes on GitHub.
 - There is no bounty, but you'll be thanked in the release notes if you'd like to be.
 - Reports made in good faith that follow this page won't be treated as an attack on the site.

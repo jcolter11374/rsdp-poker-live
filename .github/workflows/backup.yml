@@ -1,6 +1,6 @@
 name: Nightly backup
 
-# Every night, from outside Fly: downloads a copy of the whole database from the
+# Once a day, from outside Fly: downloads a copy of the whole database from the
 # live site, proves it restores (a real server boots on the copy and gives the
 # same leaderboard and public record as the site), locks it with John's backup
 # key and keeps it on GitHub for 90 days. A failure opens an issue. See docs/DEPLOY.md,
@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # Before anything is downloaded: without a key there would be nothing safe to keep. Until John
-      # has made his, nightly runs stop here quietly instead of failing every night.
+      # has made his, scheduled runs stop here quietly instead of failing every day.
       - id: key
         run: |
           if grep -Eq '^(age1|ssh-ed25519 )' scripts/backup/recipient.txt; then
@@ -109,7 +109,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          body="@jcolter11374 last night's backup didn't finish. The live site is unaffected; the run below says which step failed, and the next run is tomorrow (or start one from Actions → Nightly backup → Run workflow).
+          body="@jcolter11374 the latest daily backup didn't finish. The live site is unaffected; the run below says which step failed, and the next run is tomorrow (or start one from Actions → Nightly backup → Run workflow).
 
           Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           open=$(gh issue list --state open --search 'in:title "Nightly backup failed"' --json number --jq '.[0].number')

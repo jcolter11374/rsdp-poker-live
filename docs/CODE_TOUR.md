@@ -59,7 +59,8 @@ scripts/             Stand-alone checkers (hands, the public record), backups, d
                      and scripts/release/ (issue links, versions, release notes).
 .github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
 .github/             Also the issue forms, the pull request template and labels.json.
-docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md.
+docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md,
+                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why).
 ```
 
 At the top level, [CONTRIBUTING.md](../CONTRIBUTING.md) says how work is
