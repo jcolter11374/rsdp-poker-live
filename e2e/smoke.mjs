@@ -139,7 +139,8 @@ try {
     await host.waitForSelector('.side-panel .records-locked');
     if (await host.locator('button:has-text("Tracker (OHH)")').count()) throw new Error('tracker download offered mid-game');
 
-    // Fair dealing: the hand is sealed while the game runs, and checks out once the host stops it.
+    // Fair dealing: the hand is sealed while the game runs, and still for half an hour after the host stops it.
+    // STOP_REVEAL_WAIT_MS: against a server started with a short fairStopRevealMs, wait that long and check it opens.
     await guest.click('.side-panel .tabs button:has-text("Hands")');
     await guest.locator('.hand-open').first().click();
     await guest.click('.replayer button:has-text("Check this hand")');
@@ -150,9 +151,18 @@ try {
     await guest.waitForTimeout(500);
     await guest.locator('.hand-open').first().click();
     await guest.click('.replayer button:has-text("Check this hand")');
-    await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
-    await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
+    await guest.waitForSelector('.fair-check:has-text("Sealed"):has-text("half an hour after the host stops the game")');
     await guest.click('.replayer button[aria-label="Close"]');
+    const revealWait = Number(process.env.STOP_REVEAL_WAIT_MS ?? 0);
+    if (revealWait > 0) {
+      // No reload: the open page hears the hands have opened and fetches them again.
+      await guest.waitForTimeout(revealWait);
+      await guest.locator('.hand-open').first().click();
+      await guest.click('.replayer button:has-text("Check this hand")');
+      await guest.waitForSelector('.fair-check:has-text("This hand checks out")');
+      await guest.screenshot({ path: path.join(OUT, 'fair-check.png') });
+      await guest.click('.replayer button[aria-label="Close"]');
+    }
 
     // With the game stopped, the tracker file and the full log download.
     await host.click('.side-panel .tabs button:has-text("Hands")');
