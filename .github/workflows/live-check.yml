@@ -1,14 +1,12 @@
 name: Live check
 
-# Read-only checks against the live site. Every deploy already runs these checks, with
-# retries (deploy.yml, "Read-only checks on the live site"); run this one by hand from
-# Actions -> Live check -> Run workflow, or push it on a side branch with extra
-# checks. Never create tables, tournaments or players on the live site: the browser
-# smoke test (e2e/smoke.mjs) is for CI and local servers only.
+# Read-only checks against the live site. Every deploy already runs these checks,
+# with retries (deploy.yml, "Read-only checks on the live site"). Run this one by
+# hand from Actions -> Live check -> Run workflow. Never create tables, tournaments
+# or players on the live site: the browser smoke test (e2e/smoke.mjs) is for CI and
+# local servers only.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/project-thread-5fh1pm]
 
 permissions:
   contents: read

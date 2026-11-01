@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readdirSync } from 'node:fs';
-import { closeDb, createDb } from './db';
+import { closeDb, createDb, errorText } from './db';
 import { backupLines, restoreBackup } from './db/backup';
 
 const [file, target] = process.argv.slice(2);
@@ -29,7 +29,7 @@ try {
   const summary = await restoreBackup(db, backupLines(file));
   console.log(JSON.stringify(summary));
 } catch (e) {
-  console.error(`Restore failed: ${e instanceof Error ? e.message : String(e)}`);
+  console.error(`Restore failed: ${errorText(e)}`);
   process.exitCode = 1;
 } finally {
   await closeDb(db);

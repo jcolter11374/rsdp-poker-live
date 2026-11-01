@@ -12,6 +12,7 @@
 
 import { and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
+import { dbCause } from '../db/errors';
 import { newId } from '../db/ids';
 import { jobs } from '../db/schema';
 
@@ -72,7 +73,8 @@ function realTimer(fn: () => void, ms: number): () => void {
 }
 
 function errorText(err: unknown): string {
-  const text = err instanceof Error ? err.message || err.name : String(err);
+  const e = dbCause(err);
+  const text = e instanceof Error ? e.message || e.name : String(e);
   return text.slice(0, 2000);
 }
 
@@ -105,7 +107,7 @@ export class Scheduler<H extends JobHandlers = JobHandlers> {
     this.backoffMs = opts.backoffMs ?? defaultBackoffMs;
     this.leaseMs = opts.leaseMs ?? 5 * 60_000;
     this.maxSleepMs = opts.maxSleepMs ?? 60_000;
-    this.onError = opts.onError ?? ((err, job) => console.error('scheduler', job?.kind ?? '', job?.id ?? '', err));
+    this.onError = opts.onError ?? ((err, job) => console.error('scheduler', job?.kind ?? '', job?.id ?? '', dbCause(err)));
   }
 
   /**

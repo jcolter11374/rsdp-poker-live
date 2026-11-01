@@ -1,6 +1,7 @@
 {
   "name": "rsdp-poker-live",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "workspaces": [
     "packages/*",
@@ -13,10 +14,13 @@
     "test": "npm test -w @rsdp/engine && npm test -w @rsdp/tournament && npm test -w @rsdp/server && npm test -w @rsdp/web",
     "typecheck": "tsc -p packages/engine && tsc -p packages/tournament && tsc -p apps/server && tsc -p apps/web",
     "smoke": "node e2e/smoke.mjs",
-    "changelog": "node scripts/changelog.mjs"
+    "changelog": "node scripts/changelog.mjs",
+    "db:generate": "drizzle-kit generate --config apps/server/drizzle.config.ts",
+    "db:check": "drizzle-kit check --config apps/server/drizzle.config.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
+    "drizzle-orm": "^0.45.4",
     "playwright": "^1.63.0",
     "typescript": "^5.6.3"
   }

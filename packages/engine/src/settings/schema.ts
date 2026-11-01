@@ -47,9 +47,18 @@ export const SETTINGS_LIMITS = {
 
 const L = SETTINGS_LIMITS;
 
-const int = (range: { min: number; max: number }) => z.number().int().min(range.min).max(range.max);
+/**
+ * A whole number. zod's .int() stops checking at a fraction, so -1.5 would
+ * only be "must be a whole number"; this lets the range checks run too
+ * ("must be a whole number; must be at least 0"), so a host sees every
+ * problem at once.
+ */
+const whole = () => z.number().refine(Number.isInteger, 'must be a whole number');
 
-const chips = int(L.chips);
+/** A whole number in an inclusive range. Modifier sections use it too, so every setting reads the same way. */
+export const wholeNumber = (range: { min: number; max: number }) => whole().min(range.min).max(range.max);
+
+const chips = wholeNumber(L.chips);
 
 /** Cross-field rules only compare amounts that are valid on their own, so one bad field gives one error. */
 const isChips = (v: number) => chips.safeParse(v).success;
@@ -67,7 +76,8 @@ const label = (range: { min: number; max: number }) =>
     .string()
     .trim()
     .min(range.min, 'must not be blank')
-    .max(range.max, `must be at most ${range.max} characters`)
+    // Counted like the form's maxLength, an emoji as two: zod's .max() would count it as one.
+    .refine((s) => s.length <= range.max, `must be at most ${range.max} characters`)
     .refine((s) => !CONTROL_CHARS.test(s), 'must not contain control characters')
     // A lone UTF-16 surrogate (half an emoji) can't be stored: the table could no longer be saved.
     .refine((s) => !/\p{Cs}/u.test(s), 'must not contain half of an emoji');
@@ -78,14 +88,14 @@ const gameId = z
   .regex(/^[A-Za-z0-9_-]{1,40}$/, 'must be 1-40 letters, digits, dashes or underscores');
 
 const custom = (ctx: z.RefinementCtx, path: (string | number)[], message: string) =>
-  ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+  ctx.addIssue({ code: 'custom', path, message });
 
 const TableSection = z
   .object({
     /** Shown in the lobby and the table header. 1-40 characters. */
     name: label(L.tableName),
     /** Seats around the table, 2-10. */
-    maxSeats: int(L.maxSeats),
+    maxSeats: wholeNumber(L.maxSeats),
     /** Cash game, or a table run by the tournament director. */
     mode: z.enum(TABLE_MODES),
     /** Felt colour everyone sees unless they pick their own (green when left out). */
@@ -100,7 +110,7 @@ const RotationStepSchema = z
     /** Betting structure during this step. */
     betting: z.enum(BETTING_KINDS),
     /** How long the step lasts, in `unit`s (1-1000). */
-    length: int(L.rotationLength),
+    length: wholeNumber(L.rotationLength),
     /** Count hands, or full orbits of the button. */
     unit: z.enum(ROTATION_UNITS),
   })
@@ -160,9 +170,9 @@ const BlindLevelSchema = z
     /** Ante for this level, posted the way stakes.anteType says. */
     ante: chips,
     /** Level length when countdown is 'per-level-timer' (2-240). */
-    minutes: int(L.levelMinutes),
+    minutes: wholeNumber(L.levelMinutes),
     /** Level length when countdown is 'hands' (1-1000). */
-    hands: int(L.levelHands),
+    hands: wholeNumber(L.levelHands),
   })
   .strict()
   .superRefine((lv, ctx) => {
@@ -186,27 +196,24 @@ const BlindScheduleSection = z
 const TimingSection = z
   .object({
     /** Seconds per decision: 0 for no clock, otherwise 5-600. */
-    decisionSeconds: z
-      .number()
-      .int()
-      .refine(
-        (v) => v === 0 || (v >= L.decisionSeconds.min && v <= L.decisionSeconds.max),
-        `must be 0 (no clock) or ${L.decisionSeconds.min}-${L.decisionSeconds.max}`,
-      ),
+    decisionSeconds: whole().refine(
+      (v) => v === 0 || (v >= L.decisionSeconds.min && v <= L.decisionSeconds.max),
+      `must be 0 (no clock) or ${L.decisionSeconds.min}-${L.decisionSeconds.max}`,
+    ),
     /** Extra seconds each player can draw on, 0-300. */
-    timeBankSeconds: int(L.timeBankSeconds),
+    timeBankSeconds: wholeNumber(L.timeBankSeconds),
     /** Hands between time bank refills, 0-200 (0 = never refills). */
-    timeBankRefillHands: int(L.timeBankRefillHands),
+    timeBankRefillHands: wholeNumber(L.timeBankRefillHands),
     /** Start the time bank automatically when the decision clock runs out. */
     autoActivateTimeBank: z.boolean(),
     /** Deal the next hand without the host pressing start. */
     autoStartNextHand: z.boolean(),
     /** How long a showdown stays on screen: 3, 6 or 9 seconds. */
-    showdownSeconds: z.union([z.literal(3), z.literal(6), z.literal(9)], {
-      errorMap: (_, ctx) => ({ message: ctx.data === undefined ? 'required' : 'must be 3, 6 or 9' }),
+    showdownSeconds: z.literal(SHOWDOWN_SECONDS, {
+      error: (issue) => (issue.input === undefined ? 'required' : 'must be 3, 6 or 9'),
     }),
     /** Pause between hands, 0-30 seconds. */
-    nextHandDelaySeconds: int(L.nextHandDelaySeconds),
+    nextHandDelaySeconds: wholeNumber(L.nextHandDelaySeconds),
   })
   .strict();
 
@@ -223,7 +230,7 @@ const SeatingSection = z
     /** Largest buy-in; 0 = no maximum. */
     maxBuyIn: chips,
     /** Minutes a player who left must come back with at least their old stack; 0 = off. */
-    ratholeMinutes: int(L.ratholeMinutes),
+    ratholeMinutes: wholeNumber(L.ratholeMinutes),
     /** Queue players for full tables. */
     waitlist: z.boolean(),
     /** New players get a random open seat instead of the one they picked (false when left out). */
@@ -233,11 +240,11 @@ const SeatingSection = z
     /** Keep dealing to away players (they auto check or fold). */
     dealToAway: z.boolean(),
     /** Consecutive timeouts before a player is marked away, 0-10 (0 = never). */
-    awayAfterTimeouts: int(L.awayAfterTimeouts),
+    awayAfterTimeouts: wholeNumber(L.awayAfterTimeouts),
     /** Seconds a disconnected player keeps acting normally before being marked away, 0-300. */
-    offlineGraceSeconds: int(L.offlineGraceSeconds),
+    offlineGraceSeconds: wholeNumber(L.offlineGraceSeconds),
     /** Minutes offline before the seat is released, 0-1440 (0 = never). */
-    releaseOfflineSeatMinutes: int(L.releaseOfflineSeatMinutes),
+    releaseOfflineSeatMinutes: wholeNumber(L.releaseOfflineSeatMinutes),
   })
   .strict()
   .superRefine((s, ctx) => {
@@ -259,7 +266,7 @@ const PlaySection = z
     /** Cut a bet down to the most any opponent can call, returning the excess at once. */
     trimExcessBets: z.boolean(),
     /** Fixed-limit bets per round, the bet included (2-10). */
-    fixedLimitCap: int(L.fixedLimitCap),
+    fixedLimitCap: wholeNumber(L.fixedLimitCap),
     /** No fixed-limit cap when two players are left in the hand. */
     uncappedHeadsUp: z.boolean(),
   })
@@ -283,7 +290,7 @@ const SpectatorsSection = z
     /** Spectators see every hole card (after the delay). */
     seeAllCards: z.boolean(),
     /** Seconds spectators run behind the table, 0-600. */
-    delaySeconds: int(L.spectatorDelaySeconds),
+    delaySeconds: wholeNumber(L.spectatorDelaySeconds),
   })
   .strict();
 
@@ -293,9 +300,7 @@ const ModifiersSection = z.record(z.string(), z.unknown()).transform(parseModifi
 const SettingsObject = z
   .object({
     /** Layout version; migrateSettings upgrades older ones. */
-    version: z.literal(SETTINGS_VERSION, {
-      errorMap: () => ({ message: `must be ${SETTINGS_VERSION} (use migrateSettings for older settings)` }),
-    }),
+    version: z.literal(SETTINGS_VERSION, { error: `must be ${SETTINGS_VERSION} (use migrateSettings for older settings)` }),
     table: TableSection,
     game: GameSection,
     stakes: StakesSection,
@@ -354,9 +359,12 @@ function checkAcrossSections(s: z.output<typeof SettingsObject>, ctx: z.Refineme
 /**
  * The whole table settings object, shared by server and web. Every field is
  * required and unknown keys are rejected; use migrateSettings for stored or
- * partial data. Cross-section rules run once each field has the right type.
+ * partial data. Cross-section rules run once each field has the right type
+ * and no list is over its limit. zod refuses an over-long list before reading
+ * its items (its guard against huge lists), so problems in those items and
+ * across sections show once the list is short enough.
  * parseSettings wraps this with readable messages; to use the schema directly
- * with the same messages, pass `{ errorMap: settingsErrorMap }`.
+ * with the same messages, pass `{ error: settingsErrorMap }`.
  */
 export const TableSettingsSchema = SettingsObject.superRefine(checkAcrossSections);
 

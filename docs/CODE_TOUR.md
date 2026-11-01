@@ -59,7 +59,8 @@ scripts/             Stand-alone checkers (hands, the public record), backups, d
                      and scripts/release/ (issue links, versions, release notes).
 .github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
 .github/             Also the issue forms, the pull request template and labels.json.
-docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md.
+docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md,
+                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why).
 ```
 
 At the top level, [CONTRIBUTING.md](../CONTRIBUTING.md) says how work is
@@ -115,7 +116,7 @@ and seasons (`season.ts`).
 | [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
 | [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. |
-| [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up. |
+| [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
 | [`src/restore.ts`](../apps/server/src/restore.ts), [`db/backup.ts`](../apps/server/src/db/backup.ts) | Backups out, restores in. See [DEPLOY.md](DEPLOY.md#backups). |
 
 ### apps/web: the website
@@ -130,6 +131,13 @@ opens the connection and keeps your browser's secret.
   [`src/components/`](../apps/web/src/components): `Table.tsx` (the felt and
   seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, hands, stats), `table/Chat.tsx`,
   `Replayer.tsx` and `FairCheck.tsx`.
+- [`components/ErrorBoundary.tsx`](../apps/web/src/components/ErrorBoundary.tsx)
+  shows "Something broke" and a Reload button when a page crashes, instead
+  of a blank screen (the table's side panel and chat have their own, so the
+  table stays). [`src/reportError.ts`](../apps/web/src/reportError.ts)
+  sends what broke to `POST /api/client-error`
+  ([`clientErrors.ts`](../apps/server/src/clientErrors.ts)), which writes
+  one line to the server log: the kind of page (`/t/:id`), never its link.
 - [`src/fair.ts`](../apps/web/src/fair.ts) is your browser's half of fair
   dealing: it sends your seed for the next hand and watches that it was used.
   [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
@@ -153,11 +161,12 @@ Reading this path once is the fastest way to see how the parts fit.
 
 1. You press **Raise** in
    [`ActionBar.tsx`](../apps/web/src/components/ActionBar.tsx). It sends the
-   socket message `hand:act` with `{ type: 'raise', to: 120 }` (raise to 120 chips in total this round).
+   socket message `hand:act` with `{ type: 'raise', to: 120 }` (raise to 120 chips in total this round),
+   plus the turn it was pressed on: the hand's number and how many events it had.
 2. In [`app.ts`](../apps/server/src/app.ts), `on('hand:act', …)` cleans up
    the input and calls `act` on your table's `TableRuntime`. If anything
-   throws (not your turn, too small a raise), the error goes back to your
-   browser only.
+   throws (that turn has already passed, not your turn, too small a raise),
+   the error goes back to your browser only.
 3. [`TableRuntime.act`](../apps/server/src/runtime/table.ts) finds your seat
    and calls the engine's `act` in
    [`core/hand.ts`](../packages/engine/src/core/hand.ts), which checks the
@@ -240,7 +249,9 @@ game server: run `npm run build && npm start` in one terminal, then
 To run some of the tests, go into a package and name a file or folder, for
 example `cd packages/engine && npx vitest run test/core` or
 `cd apps/server && npx vitest run test/runtime.test.ts`. The Postgres tests
-are skipped unless `TEST_DATABASE_URL` points at a throwaway database.
+are skipped unless `TEST_DATABASE_URL` points at a throwaway database (the
+upgrade test in `migrations.test.ts` also makes and drops a scratch database
+next to it).
 
 The same production image the live site runs can be built with Docker; see
 [DEPLOY.md](DEPLOY.md#local-check-of-the-production-image).

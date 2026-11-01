@@ -12,6 +12,9 @@ Live at https://rsdp-poker-live.fly.dev. Play money only.
 | Check that the cards are dealt fairly, and see what the operator could still do | [docs/FAIRNESS.md](docs/FAIRNESS.md) (the same text as the site's `/fairness` page) |
 | Know the exact rules each part of the code follows | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Host it, back it up or restore it | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Fix it when something goes wrong (site down, bad release, leaked key) | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Know why things are the way they are, and who decided | [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Report a security problem | [.github/SECURITY.md](.github/SECURITY.md) (privately, please) |
 | See known bugs, what is being worked on, and what is waiting on whom | [Issues](https://github.com/jcolter11374/rsdp-poker-live/issues), and [CONTRIBUTING.md](CONTRIBUTING.md) for how we track and ship work |
 | See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
 
@@ -55,3 +58,5 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (
 John runs the project and makes the product decisions. Most of the code was written with an AI coding assistant (Claude, through Claude Code). Changes are checked by the tests above and by a separate review pass we run ourselves with another AI session; that is not an independent audit, and no outside auditor has reviewed the code. [docs/FAIRNESS.md](docs/FAIRNESS.md) explains what you can check for yourself without trusting us.
 
 This is an original app; it doesn't use any other site's branding, assets or code. It is built on open-source software, credited with licenses in [docs/CREDITS.md](docs/CREDITS.md) and on the site's `/credits` page.
+
+The code is open source under the [MIT license](LICENSE): anyone may use, copy or change it, as long as the copyright notice and license go with it.

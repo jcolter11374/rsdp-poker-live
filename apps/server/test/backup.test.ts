@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore } from '../src/audit';
-import { closeDb, createDb, queryRows, type Db } from '../src/db';
+import { closeDb, createDb, dbCause, queryRows, type Db } from '../src/db';
 import { BackupError, backupLines, restoreBackup } from '../src/db/backup';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { RESTORE_FILE, restoreIfWaiting } from '../src/db/restoreOnStart';
@@ -43,7 +43,11 @@ describe('backups', { timeout: 30_000 }, () => {
       expect((await queryRows<{ id: number }>(copy, sql`select max(id)::int as id from suggestions`))[0].id).toBe(3);
       await copy.execute(sql`insert into chip_movements (id, table_id, player_id, kind, amount, stack_before, stack_after) values ('m2', 't1', 'p2', 'rebuy', 100, 200, 300)`);
       expect((await queryRows<{ seq: number }>(copy, sql`select seq::int from chip_movements where id = 'm2'`))[0].seq).toBe(2);
-      await expect(copy.execute(sql`update audit_log set kind = 'x'`)).rejects.toThrow(/append-only/);
+      await expect(
+        copy.execute(sql`update audit_log set kind = 'x'`).catch((e) => {
+          throw dbCause(e);
+        }),
+      ).rejects.toThrow(/append-only/);
       expect((await queryRows<{ at: string }>(copy, sql`select at::text from audit_log`))[0].at).toBe(BIG);
     } finally {
       await closeDb(copy);
@@ -210,6 +214,25 @@ describe('restoring the live site on start', { timeout: 30_000 }, () => {
       } finally {
         await closeDb(reopened);
       }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("logs the database's reason when it refuses a row, not the rows themselves", async () => {
+    await resetTestDb(db);
+    await fill(db);
+    const { text } = await backupOf(db);
+    // A movement the ledger's check constraint refuses.
+    const bad = text.replace('"kind":"buy-in"', '"kind":"not-a-kind"');
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync(bad));
+      const logged: string[] = [];
+      await restoreIfWaiting(path.join(dir, 'pglite'), (m) => logged.push(m));
+      const failed = logged.find((m) => m.startsWith('restore failed'));
+      expect(failed).toMatch(/check constraint/);
+      expect(failed).not.toContain('not-a-kind');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

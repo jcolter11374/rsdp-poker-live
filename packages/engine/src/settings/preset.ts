@@ -18,7 +18,8 @@ const presetName = z
   .string()
   .trim()
   .min(1, 'must not be blank')
-  .max(60, 'must be at most 60 characters')
+  // Counted like the form's maxLength, an emoji as two: zod's .max() would count it as one.
+  .refine((s) => s.length <= 60, 'must be at most 60 characters')
   .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), 'must not contain control characters');
 
 export interface SettingsPreset {
@@ -78,7 +79,7 @@ export function importPreset(json: string): { name: string; settings: TableSetti
 }
 
 function parseName(name: unknown): string {
-  const result = presetName.safeParse(name, { errorMap: settingsErrorMap });
+  const result = presetName.safeParse(name, { error: settingsErrorMap });
   if (!result.success) throw presetError(prefixed(issuesFromZod(result.error), 'name'));
   return result.data;
 }

@@ -18,6 +18,15 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.01.4] - 2026-11-01
+
+### Fixed and changed
+
+- The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so.
+- At the table: if your connection is slow and you tap again, a tap that reaches the table after its turn is over is now refused instead of being played on the next street.
+- If something breaks on a page, you now see a short “Something broke” note with a Reload button instead of a blank screen. At a table, only the chat or the side panel goes if that is what broke. The page also sends the server a short note of what broke for its log, without your IP address or who you are (see the privacy page).
+- Behind the scenes: updated the libraries that store the site's data and check settings and account details, fixing two published security warnings. The same settings are accepted and refused as before. New automatic checks help catch a database update being skipped or losing saved data before it goes live.
+
 ## [2026.11.01.3] - 2026-11-01
 
 ### Fixed and changed
@@ -474,6 +483,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.01.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.4
 [2026.11.01.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.3
 [2026.11.01.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01.2
 [2026.11.01]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.01

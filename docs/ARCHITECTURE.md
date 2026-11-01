@@ -23,7 +23,7 @@ apps/web               React client. Event-driven store, table, panels.  (Workst
 - Cards are 2-character strings: rank `23456789TJQKA`, suit `cdhs` (e.g. `As`, `Td`).
 - The server is authoritative. Clients send intents and get back views filtered per viewer.
 - Hidden information never leaves the server unfiltered: every hole card goes through `visibleEvents`/views.
-- Randomness: the runtime shuffles with a CSPRNG and passes the full deck order into the hand. Tests inject a seeded RNG.
+- Randomness: each hand's deck comes from its fairness seeds (rsdp-fair-v1, see [FAIRNESS.md](FAIRNESS.md)): a server seed from the runtime's random source, committed one hand ahead, mixed with the seated players' browser seeds. The runtime passes the full deck order into the hand. Tests inject a seeded random source.
 - No PokerNow code, art, sounds or wording. Behaviour reference only.
 
 ## The hand engine (packages/engine/src/core)
@@ -42,8 +42,9 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 
 - One runtime per table. It owns the seat state machine (requested, approved, active, away, busted, leaving), the between-hands pipeline, timers, and permissions.
 - Between hands, in this order: apply queued changes (settings, stack edits, rebuys, removals, approvals, moves), handle busts, check stop or pause, check the gate (`tableGate` for tournament tables), plan forced bets, shuffle, start the hand.
+- Moves carry the turn they were pressed on (`TurnKey` in wire.ts): `hand:act`, `hand:draw` and `hand:timeBank` send `{ handNumber, at }`, where `at` is `view.hand.events.length` (the server's own `hand.events.length`: `visibleEvents` hides cards but never drops an event), and `hand:show` sends the hand number only. `TableRuntime.checkTurn` refuses a seated player's move whose turn has passed, before the move itself is checked, so a tap that arrives after its turn (on a slow connection, usually the second of two) is never played on a later street. It skips anyone without a seat: a spectator may watch the table running behind, and the answer must not tell them where the live hand is. Without them (an older page, tests, scripts) a move counts for the turn now.
 - Settings are one typed, versioned schema (zod) shared with the web. Edits queue and apply at the next hand. Every change is logged as a diff with who made it.
-- Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
+- Storage: Postgres via Drizzle when `DATABASE_URL` is set; otherwise embedded PGlite, which the live site runs on its Fly volume, and which development and most tests use. CI also runs a small set of Postgres tests against a real Postgres (`TEST_DATABASE_URL`): `apps/server/test/postgres.test.ts` (migrations, storage round-trips, jobs, backup and restore) and the Postgres case of `migrations.test.ts` (upgrading a database with data in it); everything else uses PGlite. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
 - Identity: a persistent guest id per browser (localStorage `rsdp.guestId`); guests need no account for anything, tournaments included. Optional username and password accounts (`apps/server/src/accounts.ts`, `/api/account/*`, pages `/signin` `/signup` `/reset` `/profile`):
   - Signing up turns the browser's guest player into the account's primary player, so nothing moves.
   - Signing in elsewhere sends a session token (localStorage `rsdp.session`, socket auth `session`, header `X-Session-Token`); that browser plays as the primary player. When the player ticks "this is my device" (on by default; untick on a friend's phone), its guest id is linked to the account (its tables and tournaments show in the profile history) and its notes and picture are copied over (`adoptGuest`). Signing in while signed in to another account is refused.
@@ -71,14 +72,26 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Host tools in the director: `approve` takes an optional `stack` (a handicap), `setStack` (waits for the player's hand to end; not a rebuy), `movePlayer` (between hands; a taken seat swaps the two players), `archive` (`state.archivedAt`; before the start it also cancels). Lists should skip archived events. The server's hourly cleanup archives manual and Sit & Go events left untouched for 30 days and drops finished events from memory an hour after they end; results are never deleted.
 - After a crash, a table saved behind its director is brought in line (`alignTables` in the manager): a hand the director already closed is dropped rather than played again, and a hand the director heard start but the table never saved is closed with no chips moving. The director also ignores a result for a hand it has already closed.
 
+## Database migrations (apps/server/drizzle)
+
+- `apps/server/src/db/schema.ts` describes the tables; the migrations are the numbered SQL files made from it, listed in order in `meta/_journal.json`. The server applies the pending ones at start-up (`createDb`), on Postgres and PGlite alike.
+- To change the database: edit schema.ts, then from the repo root `npm run db:generate` writes the next migration and `npm run db:check` checks the migration files agree with each other. CI fails when schema.ts has a change no migration covers (it compares schema.ts with the snapshots in `meta/`, not with the SQL). `apps/server/test/migrations.test.ts` checks that the SQL builds the tables schema.ts describes (columns, defaults, indexes and constraints, so a hand edit that changes one of them fails it), checks the journal, and upgrades a database that has data in it from the migration before the newest.
+- Additive and idempotent only: new tables, new columns (nullable or with a default), new indexes and constraints, each safe to run twice (`IF NOT EXISTS`, or a `DO` block that ignores `duplicate_object`). drizzle-kit 0.31 writes neither, so add them to the generated SQL before it ships. The code before the change must still run on the new schema, because a revert runs it there.
+- A drop or rename takes two releases: the first stops using the old column or table (a rename adds the new one and copies the data across), and a later release drops it, once no release we might go back to still reads it.
+- A revert keeps the migration files. Databases that ran a migration keep its changes, so reverting code never deletes a migration or its journal entry, and what it added stays in schema.ts too (or `db:generate` would write a migration dropping it, and CI fails); undo a change with a new migration.
+- Never edit a migration that has shipped: a database that ran it never runs it again, so the edit would reach only new databases. Write a new migration.
+- Each journal entry's `"when"` must be newer than every earlier entry's. Drizzle runs only the entries newer than the last one a database applied, and skips the others with no error, so a migration stamped older would never run in production (fresh test databases still run it). `db:generate` stamps the time it runs; never pick a number by hand. If develop gained a migration while yours waited, delete yours (the .sql file, its snapshot and its journal entry) and run `db:generate` again on top.
+- A migration that rewrites existing rows (not just adds) also needs a step in `restoreBackup` (`db/backup.ts`), which loads older backups straight into the newest tables.
+- Table and tournament state are JSON snapshots inside rows, so changing their shape needs no migration, but saved snapshots must stay readable: see the comments on `RUNTIME_VERSION` (`apps/server/src/runtime/types.ts`) and `STATE_VERSION` (`packages/tournament/src/types.ts`).
+
 ## Branches and ownership
 
-- `main`: releases only (John approves releases; he has given a standing OK for finished, reviewed and play-tested work). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
+- `main`: releases only (John has given a standing OK for finished work to go live without asking him each time; see [DECISIONS.md](DECISIONS.md#d05-branches-merges-and-releases)). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 - Ownership: W1 `packages/tournament`, `apps/server/src/tournament/*` and the tournament pages. W2 `packages/engine/src/modifiers/*` and the cash-table settings sections. W3 `packages/engine/src/variants/*`. W4 shared table components, styles and the records pages. Workstream 0 owns `core/`, the runtime, storage and identity.
 
 ## Changing contracts
 
-Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging, and a version bump of the snapshot format if stored state changes shape.
+Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging. If stored state changes shape, older snapshots must still load: new fields are optional and filled in on load. Bumping a snapshot version instead makes every saved table or tournament of the old version fail to load (see `RUNTIME_VERSION` in `apps/server/src/runtime/types.ts`).
 
 ## Fair dealing
 
