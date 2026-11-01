@@ -443,7 +443,9 @@ export class TournamentManager {
   }
 
   private newState(id: string, hostId: PlayerId, settings: TournamentSettings) {
-    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed: randomBytes(4).readUInt32LE(0) }));
+    // The seed for the seat draw: from the rng the tables use when one is given (tests seed it, so a run repeats).
+    const seed = this.deps.rng ? this.deps.rng(0x100000000) : randomBytes(4).readUInt32LE(0);
+    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed }));
   }
 
   private guard<T>(fn: () => T): T {
