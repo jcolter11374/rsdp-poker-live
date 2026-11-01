@@ -10,7 +10,7 @@ import { asc, desc, gt, and, inArray, sql } from 'drizzle-orm';
 import express from 'express';
 import { AUDIT_GENESIS, auditHash, handDigest, playerRef, tableRef, type AuditEntry, type AuditKind, type AuditValue } from '@rsdp/engine';
 import type { Db } from './db';
-import { queryRows, schema } from './db';
+import { dbCause, queryRows, schema } from './db';
 import type { HandRecord, RuntimeState } from './runtime/types';
 
 export interface AuditStore {
@@ -149,7 +149,7 @@ export class AuditLog {
 
   /** Carries on after `last`, the store's latest entry (null for a new record). */
   static after(store: AuditStore, last: AuditEntry | null, opts: AuditOptions = {}) {
-    return new AuditLog(store, last, opts.now ?? Date.now, opts.log ?? ((m, e) => console.error(m, e ?? '')));
+    return new AuditLog(store, last, opts.now ?? Date.now, opts.log ?? ((m, e) => console.error(m, dbCause(e) ?? '')));
   }
 
   record(kind: AuditKind, data: Record<string, AuditValue>): AuditEntry {

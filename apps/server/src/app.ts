@@ -31,7 +31,7 @@ import { accountRoutes, type AccountHooks } from './accounts';
 import { handSearchRoutes } from './handSearch';
 import { googleConfirmations, googleRoutes, type GoogleConfig } from './google';
 import type { Db } from './db';
-import { StorageError } from './db/errors';
+import { dbCause, StorageError } from './db/errors';
 import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
 import { clientErrorRoutes } from './clientErrors';
@@ -317,7 +317,8 @@ export function createApp(deps: AppDeps = {}) {
   const setups = deps.setups ?? memorySetups();
   const avatarStore = deps.avatars ?? memoryAvatars();
   const sharedStore = deps.shared ?? memorySharedHands();
-  const log = deps.log ?? ((m, e) => console.error(m, e ?? ''));
+  // A failed query's own error: drizzle's wrapper repeats every value the query carried (a whole table snapshot).
+  const log = deps.log ?? ((m, e) => console.error(m, dbCause(e) ?? ''));
   const audit = deps.audit ?? AuditLog.after(memoryAuditStore(), null, { now: () => clock.now(), log });
   const build = deps.build ?? buildFromEnv();
   const startedAt = clock.now();

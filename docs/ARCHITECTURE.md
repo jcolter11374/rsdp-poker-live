@@ -72,6 +72,18 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Host tools in the director: `approve` takes an optional `stack` (a handicap), `setStack` (waits for the player's hand to end; not a rebuy), `movePlayer` (between hands; a taken seat swaps the two players), `archive` (`state.archivedAt`; before the start it also cancels). Lists should skip archived events. The server's hourly cleanup archives manual and Sit & Go events left untouched for 30 days and drops finished events from memory an hour after they end; results are never deleted.
 - After a crash, a table saved behind its director is brought in line (`alignTables` in the manager): a hand the director already closed is dropped rather than played again, and a hand the director heard start but the table never saved is closed with no chips moving. The director also ignores a result for a hand it has already closed.
 
+## Database migrations (apps/server/drizzle)
+
+- `apps/server/src/db/schema.ts` describes the tables; the migrations are the numbered SQL files made from it, listed in order in `meta/_journal.json`. The server applies the pending ones at start-up (`createDb`), on Postgres and PGlite alike.
+- To change the database: edit schema.ts, then from the repo root `npm run db:generate` writes the next migration and `npm run db:check` checks the migration files agree with each other. CI fails when schema.ts has a change no migration covers (it compares schema.ts with the snapshots in `meta/`, not with the SQL). `apps/server/test/migrations.test.ts` checks that the SQL builds the tables schema.ts describes (columns, defaults, indexes and constraints, so a hand edit that changes one of them fails it), checks the journal, and upgrades a database that has data in it from the migration before the newest.
+- Additive and idempotent only: new tables, new columns (nullable or with a default), new indexes and constraints, each safe to run twice (`IF NOT EXISTS`, or a `DO` block that ignores `duplicate_object`). drizzle-kit 0.31 writes neither, so add them to the generated SQL before it ships. The code before the change must still run on the new schema, because a revert runs it there.
+- A drop or rename takes two releases: the first stops using the old column or table (a rename adds the new one and copies the data across), and a later release drops it, once no release we might go back to still reads it.
+- A revert keeps the migration files. Databases that ran a migration keep its changes, so reverting code never deletes a migration or its journal entry, and what it added stays in schema.ts too (or `db:generate` would write a migration dropping it, and CI fails); undo a change with a new migration.
+- Never edit a migration that has shipped: a database that ran it never runs it again, so the edit would reach only new databases. Write a new migration.
+- Each journal entry's `"when"` must be newer than every earlier entry's. Drizzle runs only the entries newer than the last one a database applied, and skips the others with no error, so a migration stamped older would never run in production (fresh test databases still run it). `db:generate` stamps the time it runs; never pick a number by hand. If develop gained a migration while yours waited, delete yours (the .sql file, its snapshot and its journal entry) and run `db:generate` again on top.
+- A migration that rewrites existing rows (not just adds) also needs a step in `restoreBackup` (`db/backup.ts`), which loads older backups straight into the newest tables.
+- Table and tournament state are JSON snapshots inside rows, so changing their shape needs no migration, but saved snapshots must stay readable: see the comment on `RUNTIME_VERSION` (`apps/server/src/runtime/types.ts`).
+
 ## Branches and ownership
 
 - `main`: releases only (John has given a standing OK for finished work to go live without asking him each time; see [DECISIONS.md](DECISIONS.md#d05-branches-merges-and-releases)). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
@@ -79,7 +91,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 
 ## Changing contracts
 
-Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging, and a version bump of the snapshot format if stored state changes shape.
+Changes to `core/types.ts`, `core/api.ts`, the settings schema layout, the event list, or the runtime/tournament integration need a short note to the other workstream threads before merging. If stored state changes shape, older snapshots must still load: new fields are optional and filled in on load. Bumping a snapshot version instead makes every saved table or tournament of the old version fail to load (see `RUNTIME_VERSION` in `apps/server/src/runtime/types.ts`).
 
 ## Fair dealing
 

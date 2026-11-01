@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from '../src/app';
@@ -164,5 +165,23 @@ describe('database storage', () => {
     expect(board).toMatchObject({ name: 'Fall league', events: [], rows: [] });
     await expect(other.call('season:get', { id: 'nope' })).rejects.toThrow(/season not found/);
     expect((await dbTournamentStore(db).listSeason(first.id)).map((s) => s.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it("logs the database's reason when a save fails, not the values it was saving", async () => {
+    // A store whose save the database refuses, on a server left with its own default log.
+    const refusing = { ...dbStore(db), createTable: async () => void (await db.execute(sql`insert into players (id, display_name) values (${'saved-value-0123'}, null)`)) };
+    const own = createApp({ identity: dbIdentity(db), store: refusing });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await new Promise<void>((resolve) => own.http.listen(0, resolve));
+      const c = socketClient(`http://localhost:${(own.http.address() as AddressInfo).port}`, 'db-refused-secret-0123456789', clients);
+      await expect(c.call('table:create', { settings: {} })).rejects.toThrow(/something went wrong/);
+      const [, err] = errors.mock.calls.find(([m]) => m === 'handler failed')!;
+      expect((err as Error).message).toMatch(/null value/);
+      expect((err as Error).message).not.toContain('saved-value-0123');
+    } finally {
+      errors.mockRestore();
+      await own.close();
+    }
   });
 });
