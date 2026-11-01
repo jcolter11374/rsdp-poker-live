@@ -39,3 +39,20 @@ export function blinds(l: { sb: number; bb: number; ante: number; anteType: stri
   const ante = l.anteType === 'none' ? '' : l.anteType === 'big-blind' ? ` · BB ante ${chips(l.ante)}` : ` · ante ${chips(l.ante)}`;
   return `${chips(l.sb)} / ${chips(l.bb)}${ante}`;
 }
+
+/** The clock part of the lobby heading: "10 s to act", or "no clock". */
+export const clockText = (r: { decisionSeconds: number }) => (r.decisionSeconds ? `${r.decisionSeconds} s to act` : 'no clock');
+
+/**
+ * An event's table rules in a sentence, for everyone in the lobby:
+ * "10 seconds to act, a 20-second time bank that refills every 30 hands, no rabbit hunting and no straddles."
+ */
+export function tableRulesText(r: { decisionSeconds: number; timeBankSeconds: number; timeBankRefillHands: number; rabbitHunt: boolean }): string {
+  const clock = r.decisionSeconds ? `${r.decisionSeconds} seconds to act` : 'No turn clock';
+  const bank = !r.timeBankSeconds
+    ? 'no time bank'
+    : `a ${r.timeBankSeconds}-second time bank that ${r.timeBankRefillHands === 0 ? 'never refills' : r.timeBankRefillHands === 1 ? 'refills every hand' : `refills every ${r.timeBankRefillHands} hands`}`;
+  // Without a clock there is nothing for a time bank to add to.
+  const parts = r.decisionSeconds ? [clock, bank] : [clock];
+  return `${parts.join(', ')}, ${r.rabbitHunt ? 'rabbit hunting allowed' : 'no rabbit hunting'} and no straddles.`;
+}

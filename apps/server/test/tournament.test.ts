@@ -74,6 +74,44 @@ describe('tournaments on the server', () => {
     await expect(env.manager.command(id, 'host', 'Host', { type: 'updateSettings', by: 'host', settings: { tableRules: { ...tableRules, rabbitHunt: true } } })).rejects.toThrow(/tableRules is locked/);
   });
 
+  it('an event saved before events had their own rules keeps the old clock and rabbit hunting', async () => {
+    const env = setup();
+    const id = await env.manager.create('host', defaultSettings({ name: 'Old', start: { kind: 'manual' }, startingStack: 1000 }));
+    for (const p of players(3)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    await env.manager.command(id, 'host', 'Host', { type: 'startNow', by: 'host' });
+    const rt = [...env.tables.values()][0]!;
+    expect(rt.state.settings.timing).toMatchObject({ decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10 });
+    expect(rt.state.settings.play.rabbitHunt).toBe(true);
+  });
+
+  it('a host who switches an event to the RSDP rules before the start gets them at every table, and in the next event of the series', async () => {
+    const env = setup();
+    const startAt = env.clock.now() + 10 * MIN;
+    const at = new Date(startAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const schedule = { timeZone: 'UTC', startDate: `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`, time: `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`, repeat: { freq: 'daily' as const } };
+    const id = await env.manager.create(
+      'host',
+      defaultSettings({ name: 'Series', start: { kind: 'scheduled', startAt, schedule }, startingStack: 1000, seatsPerTable: 6, lateRegistration: { enabled: false, throughLevel: null } }),
+    );
+    const rsdp = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
+    await env.manager.command(id, 'host', 'Host', { type: 'updateSettings', by: 'host', settings: { tableRules: rsdp } });
+    for (const p of players(8)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+    env.clock.advance(10 * MIN + 1000);
+    expect(env.manager.view(id)!.state.status).toBe('running');
+    expect(env.tables.size).toBe(2);
+    for (const rt of env.tables.values()) {
+      expect(rt.state.settings.timing).toMatchObject({ decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30 });
+      expect(rt.state.settings.play.rabbitHunt).toBe(false);
+      expect(rt.state.seats.filter((x) => x).every((x) => x!.timeBank === 20)).toBe(true);
+    }
+    // The next event of the series is made from this one's settings.
+    await new Promise((r) => setTimeout(r, 0));
+    const next = env.manager.view(id)!.nextId;
+    expect(next).toBeTruthy();
+    expect((await env.manager.peek(next!))!.settings.tableRules).toEqual(rsdp);
+  });
+
   it("keeps a player's mood emoji when they are moved to another table", async () => {
     const env = setup();
     const settings: TournamentSettings = defaultSettings({

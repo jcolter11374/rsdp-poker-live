@@ -144,6 +144,11 @@ function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSett
     const name = Array.from(cleanText(payoutName)).slice(0, NAME_MAX).join('');
     out.payouts = { ...out.payouts!, structure: { ...out.payouts!.structure, name } };
   }
+  // Only the four rules are kept, so nothing else rides along to every table.
+  if (isObject(out.tableRules)) {
+    const { decisionSeconds, timeBankSeconds, timeBankRefillHands, rabbitHunt } = out.tableRules;
+    out.tableRules = { decisionSeconds, timeBankSeconds, timeBankRefillHands, rabbitHunt };
+  }
   return out;
 }
 
@@ -198,16 +203,21 @@ export function validateSettings(s: TournamentSettings): string[] {
       errors.push('Prize money must be whole amounts of 0 or more');
     if (m.feePercent !== undefined && !(typeof m.feePercent === 'number' && m.feePercent >= 0 && m.feePercent <= 100)) errors.push('The fee must be 0-100%');
   }
-  if (s.tableRules !== undefined) {
-    const t: Partial<TableRules> = isObject(s.tableRules) ? s.tableRules : {};
-    if (!(t.decisionSeconds === 0 || isWhole(t.decisionSeconds, 5, 600))) errors.push('Decision clock must be 0 (no clock) or 5-600 seconds');
-    if (!isWhole(t.timeBankSeconds, 0, 300)) errors.push('Time bank must be 0-300 seconds');
-    if (!isWhole(t.timeBankRefillHands, 0, 200)) errors.push('Time bank refill must be 0-200 hands');
-    if (typeof t.rabbitHunt !== 'boolean') errors.push('On/off settings must be true or false');
-  }
+  if (s.tableRules !== undefined) errors.push(...validateTableRules(s.tableRules));
   errors.push(...validateFormats(s));
   // The structure checks its own rows.
   if (hasUnstorableText({ ...s, structure: null })) errors.push('Settings contain characters that cannot be saved');
+  return errors;
+}
+
+/** What is wrong with an event's table rules (clock, time bank, rabbit hunting), if anything. */
+export function validateTableRules(rules: unknown): string[] {
+  const t: Partial<TableRules> = isObject(rules) ? rules : {};
+  const errors: string[] = [];
+  if (!(t.decisionSeconds === 0 || isWhole(t.decisionSeconds, 5, 600))) errors.push('Decision clock must be 0 (no clock) or 5-600 seconds');
+  if (!isWhole(t.timeBankSeconds, 0, 300)) errors.push('Time bank must be 0-300 seconds');
+  if (!isWhole(t.timeBankRefillHands, 0, 200)) errors.push('Time bank refill must be 0-200 hands');
+  if (typeof t.rabbitHunt !== 'boolean') errors.push('On/off settings must be true or false');
   return errors;
 }
 
