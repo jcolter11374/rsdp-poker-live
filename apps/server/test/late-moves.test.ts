@@ -208,6 +208,61 @@ describe('someone watching without a seat', () => {
   });
 });
 
+describe('someone without a seat, between hands and during them', () => {
+  // Their answer must not say whether a hand is live, paused or voting on running it twice.
+  it('gets the same refusal from every move whatever the live table is doing', () => {
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.play.runItTwice = 'ask';
+    const rt = TableRuntime.create({ id: 't1', hostId: 'p0', settings }, { clock: new FakeClock(), rng: seeded() });
+    for (const [seat, id] of ['p0', 'p1'].entries()) {
+      rt.connect(id);
+      rt.requestSeat(id, { seat, name: id, stack: 1_000 });
+    }
+    rt.connect('fan');
+    const refusals = () => {
+      const tries: (() => unknown)[] = [
+        () => rt.act('fan', { type: 'fold' }),
+        () => rt.draw('fan', []),
+        () => rt.useTimeBank('fan'),
+        () => rt.voteRunItTwice('fan', true),
+        () => rt.coachTip('fan', 1, 0),
+      ];
+      return tries.map((t) => {
+        try {
+          t();
+          return 'played';
+        } catch (e) {
+          return (e as Error).message;
+        }
+      });
+    };
+    const answers = new Set<string>();
+    const seen: string[] = [];
+    const look = (when: string) => {
+      seen.push(when);
+      refusals().forEach((a) => answers.add(a));
+    };
+    look('before the first hand');
+    rt.start('p0');
+    look('during a hand');
+    rt.pause('p0', true);
+    look('paused');
+    rt.pause('p0', false);
+    // Both all in: the hand stops at the run-it-twice vote.
+    const hand = rt.state.hand!;
+    rt.act(rt.state.seats[hand.toAct!]!.playerId, { type: 'raise', to: 1_000 });
+    rt.act(rt.state.seats[hand.toAct!]!.playerId, { type: 'call' });
+    expect(rt.state.hand!.phase).toBe('rit-vote');
+    look('voting on running it twice');
+    for (const id of ['p0', 'p1']) rt.voteRunItTwice(id, false);
+    expect(rt.state.hand!.phase).toBe('complete');
+    look('between hands');
+    expect(seen).toHaveLength(5);
+    expect([...answers]).toEqual(['you are not in this hand']);
+  });
+});
+
 describe('the turn a player sees', () => {
   // The key is only as good as this: every event counts in each player's view, cards they can't see included.
   it.each(['nlhe', 'td27', 'stud'])('is the turn the server has, at every step of a hand of %s', (gameId) => {

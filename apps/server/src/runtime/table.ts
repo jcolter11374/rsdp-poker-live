@@ -1733,6 +1733,8 @@ export class TableRuntime {
   }
 
   voteRunItTwice(playerId: PlayerId, yes: boolean) {
+    // Refused the same way whether or not a vote is open: see liveHandFor.
+    if (!this.seatOf(playerId)) throw new ActionError('you are not in this hand');
     // A vote that lands after the vote closed (timed out, decided, or the hand ended) has nothing left to change.
     const current = this.state.hand;
     if (!current || current.phase !== 'rit-vote') return;
@@ -1844,12 +1846,20 @@ export class TableRuntime {
     if (sentFor.at !== undefined && sentFor.at !== hand?.events.length) throw new ActionError(message);
   }
 
+  /**
+   * The live hand, for a move by someone dealt into it. Someone without a seat
+   * is refused first, with the same answer whatever the live hand is doing: a
+   * spectator may watch the table running behind, and "no hand is being played"
+   * against "you are not in this hand" would tell them, as it happens, when
+   * each live hand ends.
+   */
   private liveHandFor(playerId: PlayerId): HandState {
+    const seat = this.seatOf(playerId);
+    if (!seat) throw new ActionError('you are not in this hand');
     const hand = this.state.hand;
     if (!hand || hand.phase === 'complete') throw new ActionError('no hand is being played');
     if (this.state.paused) throw new ActionError('the game is paused');
-    const seat = this.seatOf(playerId);
-    if (!seat || !hand.seats.some((x) => x.seat === seat.seat)) throw new ActionError('you are not in this hand');
+    if (!hand.seats.some((x) => x.seat === seat.seat)) throw new ActionError('you are not in this hand');
     return hand;
   }
 
