@@ -3,7 +3,7 @@
  * snapshot saved at every hand boundary.
  */
 
-import { and, desc, eq, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { clampLimit, StorageError } from './errors';
 import { newId, newTableId } from './ids';
@@ -261,6 +261,26 @@ export async function saveSnapshot(
       target: tableSnapshots.tableId,
       set: { version: snapshot.version, state: snapshot.state, savedAt: now },
     });
+}
+
+/**
+ * The cash tables whose last save (in snapshot format `version`, the one that still loads) has this player in a
+ * seat or asking for one, with their names. Tables put away while idle keep their seats only there.
+ */
+export async function tablesSeatingInSaves(db: Db, playerId: string, version: number): Promise<{ id: string; name: string }[]> {
+  const me = JSON.stringify([{ playerId }]);
+  return db
+    .select({ id: tables.id, name: sql<string>`coalesce(${tableSnapshots.state} -> 'settings' -> 'table' ->> 'name', '')` })
+    .from(tables)
+    .innerJoin(tableSnapshots, eq(tableSnapshots.tableId, tables.id))
+    .where(
+      and(
+        ne(tables.status, 'archived'),
+        eq(tables.mode, 'cash'),
+        eq(tableSnapshots.version, version),
+        or(sql`${tableSnapshots.state} -> 'seats' @> ${me}::jsonb`, sql`${tableSnapshots.state} -> 'requests' @> ${me}::jsonb`),
+      ),
+    );
 }
 
 export async function loadSnapshot<T = unknown>(db: Db, tableId: string): Promise<TableSnapshot<T> | null> {

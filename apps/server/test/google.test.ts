@@ -6,7 +6,7 @@ import { closeDb, type Db } from '../src/db';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { dbIdentity } from '../src/storage';
 import { FakeClock } from './fake-clock';
-import type { Client } from './socket-client';
+import { socketClient, type Client } from './socket-client';
 
 const CLIENT_ID = 'test-client.apps.googleusercontent.com';
 const PHONE = 'guest-secret-phone-aaaaaaaaaaaa';
@@ -150,6 +150,25 @@ describe('sign in with Google', () => {
     const second = await googleSignIn(LAPTOP, { sub: 'g-1', name: 'Mike' });
     expect(second.finished!.welcome).toBe(false);
     expect((await sessionOf(LAPTOP, (second.finished!.session as string))).playerId).toBe(phone.playerId);
+  });
+
+  it('won’t sign in to an existing account while this device’s guest has a seat, but a new account keeps the seat', async () => {
+    await googleSignIn(PHONE, { sub: 'g-1', name: 'Mike' });
+    const laptop = socketClient(url, LAPTOP, clients);
+    const guest = await new Promise<{ playerId: string }>((r) => laptop.socket.once('session', r));
+    const { tableId } = await laptop.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Kitchen' }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } } });
+    await laptop.call('table:join', { tableId });
+    await laptop.call('seat:request', { seat: 0, name: 'Guest', stack: 100 });
+
+    const refused = await googleSignIn(LAPTOP, { sub: 'g-1', name: 'Mike' });
+    expect(refused).toMatchObject({ status: 409, code: 'seated' });
+    expect(refused.finished!.error).toMatch(/Kitchen/);
+    expect(refused.finished!.session).toBeUndefined();
+
+    // A Google account made here plays as this guest, so the seat comes along.
+    const made = await googleSignIn(LAPTOP, { sub: 'g-2', name: 'Bo' });
+    expect(made.finished).toMatchObject({ welcome: true, session: expect.any(String) });
+    expect((await sessionOf(LAPTOP, made.finished!.session as string)).playerId).toBe(guest.playerId);
   });
 
   it('turns away a token for another app, an expired one, or a replayed state', async () => {

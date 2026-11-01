@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { allHandsOfTable, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot, tablesSeatingInSaves } from './db';
 import { setDisplayName, whoIs } from './identity';
 import { RUNTIME_VERSION, type HandRecord, type PastHand, type RuntimeState } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
@@ -64,6 +64,7 @@ export function dbStore(db: Db): TableStore {
       return rows.map(pastHandFromRow);
     },
     deleteTable: (tableId) => deleteTableForGood(db, tableId),
+    tablesSeating: (playerId) => tablesSeatingInSaves(db, playerId, RUNTIME_VERSION),
   };
 }
 

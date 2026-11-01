@@ -1,12 +1,16 @@
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { io as connect } from 'socket.io-client';
+import { variants } from '@rsdp/engine/core';
+import { registerAllVariants } from '@rsdp/engine/variants';
+import { defaultSettings } from '@rsdp/tournament';
 import { createApp } from '../src/app';
-import { closeDb, createTable, saveHand, saveSnapshot, type Db } from '../src/db';
+import { closeDb, createTable, loadSnapshot, saveHand, saveSnapshot, type Db } from '../src/db';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { dbAvatars } from '../src/avatars';
 import { dbNotes } from '../src/notes';
-import { dbIdentity } from '../src/storage';
+import type { RuntimeState } from '../src/runtime/types';
+import { dbIdentity, dbStore } from '../src/storage';
 import { getPlayer } from '../src/identity';
 import { FakeClock } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
@@ -22,6 +26,7 @@ let url = '';
 const clients: Client[] = [];
 
 beforeAll(async () => {
+  registerAllVariants(variants);
   db = await createTestDb();
 });
 
@@ -146,6 +151,69 @@ describe('accounts', () => {
     const { body } = await signUp(PHONE);
     await signUp(LAPTOP, 'Bo_99');
     expect((await post('/api/account/signin', { username: 'Bo_99', password: 'correct horse' }, { guest: PHONE, session: body.session as string })).status).toBe(409);
+  });
+
+  it('won’t sign in on a device whose guest has a seat, so the seat and its chips aren’t left behind', async () => {
+    await signUp(PHONE);
+    const laptop = socketClient(url, LAPTOP, clients);
+    const guest = await new Promise<{ playerId: string }>((r) => laptop.socket.once('session', r));
+    const { tableId } = await laptop.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Kitchen' }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } } });
+    await laptop.call('table:join', { tableId });
+    await laptop.call('seat:request', { seat: 0, name: 'Guest', stack: 100 });
+
+    const refused = await signIn(LAPTOP);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/Kitchen/);
+    expect(refused.body.error).toMatch(/stand up/i);
+    expect(refused.body.session).toBeUndefined();
+    // Nothing changed: the browser still plays as its guest, which keeps the seat.
+    expect((await me(LAPTOP)).account).toBeNull();
+    expect(server.tables.get(tableId)!.seatOf(guest.playerId)).toBeTruthy();
+
+    laptop.socket.emit('seat:stand', {});
+    await laptop.until((v) => v.seats.every((x) => !x));
+    expect((await signIn(LAPTOP)).status).toBe(200);
+  });
+
+  it('also counts a seat at a table that was put away while nobody had it open', async () => {
+    // A server that saves tables to the database, as the real one does.
+    await server.close();
+    server = createApp({ clock, identity: dbIdentity(db), store: dbStore(db), accounts: db, idleUnloadMs: 60_000, log: (m, e) => console.error(m, e) });
+    await new Promise<void>((resolve) => server.http.listen(0, resolve));
+    url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+    await signUp(PHONE);
+    const laptop = socketClient(url, LAPTOP, clients);
+    await new Promise((r) => laptop.socket.once('session', r));
+    const { tableId } = await laptop.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Garage' }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } } });
+    await laptop.call('table:join', { tableId });
+    await laptop.call('seat:request', { seat: 0, name: 'Guest', stack: 100 });
+    await laptop.until((v) => v.seats.some((x) => !!x));
+    laptop.socket.disconnect();
+    await vi.waitFor(() => {
+      clock.advance(61_000);
+      expect(server.unloadIdle()).toEqual([tableId]);
+    });
+    await vi.waitFor(async () => expect((await loadSnapshot<RuntimeState>(db, tableId))?.state.seats.some(Boolean)).toBe(true));
+
+    const refused = await signIn(LAPTOP);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/Garage/);
+  });
+
+  it('won’t sign in on a device whose guest is entered in a tournament that isn’t over', async () => {
+    await signUp(PHONE);
+    const laptop = socketClient(url, LAPTOP, clients);
+    await new Promise((r) => laptop.socket.once('session', r));
+    const { id } = await laptop.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Sunday Cup', startingStack: 1500 }) });
+    await laptop.call('tournament:command', { id, command: { type: 'register', displayName: 'Guest' } });
+
+    const refused = await signIn(LAPTOP);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/Sunday Cup/);
+    expect((await me(LAPTOP)).account).toBeNull();
+
+    await laptop.call('tournament:command', { id, command: { type: 'unregister' } });
+    expect((await signIn(LAPTOP)).status).toBe(200);
   });
 
   it('signing out ends the session and the device starts over as a new guest', async () => {

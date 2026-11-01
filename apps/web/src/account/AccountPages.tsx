@@ -175,7 +175,7 @@ export function SignInPage() {
           <input type="checkbox" checked={bringOver} onChange={(e) => setBringOver(e.target.checked)} />
           <span>
             Keep what I played here as a guest
-            <span className="hint">Your notes, picture, tables and tournaments on this device move into your account. Untick this on a friend's phone so their things stay theirs.</span>
+            <span className="hint">Your notes and picture from this device move into your account, and the tables and tournaments you played here show in its history. Untick this on a friend's phone so their things stay theirs.</span>
           </span>
         </label>
         {error && <p className="error">{error}</p>}

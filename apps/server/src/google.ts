@@ -21,7 +21,7 @@ import express from 'express';
 import type { Db } from './db';
 import { adoptGuest, checkPassword, createGoogleAccount, findAccountByGoogle, getPlayer, IdentityError, linkGoogle, openSession, setDisplayName, signInMethods, unlinkGoogle, whoIs } from './identity';
 import { clientAddress, limiter } from './admin';
-import type { AccountHooks } from './accounts';
+import { heldMessage, type AccountHooks } from './accounts';
 
 export interface GoogleConfig {
   clientId: string;
@@ -309,6 +309,9 @@ export function googleRoutes(
       let welcome = false;
       let merged = false;
       if (account) {
+        // A new account below keeps playing as this guest; an existing one would leave its seat or entry behind.
+        const held = await heldMessage(hooks, who.guest.id);
+        if (held) return void res.status(409).json({ error: held, code: 'seated' });
         merged = t.bringOver && (await adoptGuest(db, account.id, who.guest.id));
       } else {
         const made = await createGoogleAccount(db, { sub: t.sub, name: t.name || t.givenName, guestId: who.guest.id }, { now: at });

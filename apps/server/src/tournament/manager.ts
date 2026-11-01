@@ -252,6 +252,14 @@ export class TournamentManager {
     return n;
   }
 
+  /** The name of an open event (as in isOpen) this player is still in: registered, seated, or offered a rebuy. */
+  enteredIn(playerId: PlayerId): string | null {
+    for (const { state: s } of this.live.values()) {
+      if (isLive(s) && !isArchived(s) && aliveEntries(s).some((e) => e.playerId === playerId)) return s.settings.name;
+    }
+    return null;
+  }
+
   /** A tournament's state without taking it into memory (link previews): never arms a clock or opens a table. */
   async peek(id: string): Promise<TournamentState | null> {
     return this.live.get(id)?.state ?? (await this.deps.store.load(id))?.state ?? null;

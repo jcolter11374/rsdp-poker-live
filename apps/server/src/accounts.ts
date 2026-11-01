@@ -49,6 +49,11 @@ export interface AccountHooks {
   deleted(playerIds: string[]): void;
   /** The account's sign-ins ended (new password): drop these players' connections, except the browser with `keepGuestToken`. */
   signedOutElsewhere(playerIds: string[], keepGuestToken?: string): void;
+  /**
+   * A seat (or a seat asked for) at a cash table, or an entry in a tournament that isn't over, that this player holds,
+   * by name; null when there is none. Signing in makes the browser play as another player id, and neither can move.
+   */
+  heldBy?(playerId: string): Promise<{ table: string } | { tournament: string } | null>;
   /** How many people have this table open right now (0 when nobody is at it). */
   peopleAt?(tableId: string): number;
   /**
@@ -78,6 +83,20 @@ const MESSAGE: Partial<Record<IdentityError['code'], string>> = {
   'already-linked': 'This device already belongs to an account. Sign in to it instead, or sign out first.',
   'account-not-found': 'No account has that username.',
 };
+
+/**
+ * Why this browser's guest can't sign in to an account it didn't make yet, or null. The browser would play as the
+ * account's player from then on, and a seat or a tournament entry stays with the guest it was taken as.
+ */
+export async function heldMessage(hooks: AccountHooks, guestId: string): Promise<string | null> {
+  const held = await hooks.heldBy?.(guestId);
+  if (!held) return null;
+  const named = (name: string, otherwise: string) => (name.trim() ? `“${name.trim()}”` : otherwise);
+  if ('table' in held) {
+    return `You have a seat at ${named(held.table, 'a table')} as a guest on this device, and it can't move into your account. Stand up and leave the table first, then sign in.`;
+  }
+  return `You're in ${named(held.tournament, 'a tournament')} as a guest on this device, and your entry can't move into your account. Unregister, or sign in once you're out of it.`;
+}
 
 export function accountRoutes(
   app: express.Express,
@@ -164,6 +183,8 @@ export function accountRoutes(
       if (!failuresByAddress(address, false) || !failuresByName(name, false)) return void tooMany(res);
       const who = await identify(req, db);
       if (who.account) return void res.status(409).json({ error: `You're signed in as ${who.account.username}. Sign out first.` });
+      const held = await heldMessage(hooks, who.guest.id);
+      if (held) return void res.status(409).json({ error: held, code: 'seated' });
       let result;
       try {
         result = await login(db, username, password, { now: new Date(now()) });
