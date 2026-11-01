@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { nextOccurrence, RSDP_TABLE_RULES, tableRulesOf, validateTableRules, type Command, type TableRules, type TournamentState } from '@rsdp/tournament';
 import { tableRulesText } from './format';
+
+/** How long a save may wait for the server's answer (the connection may have dropped) before the inputs open again. */
+const SAVE_WAIT_MS = 10_000;
 
 const int = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 const same = (a: TableRules, b: TableRules) =>
@@ -43,6 +46,12 @@ export function TableRulesEditor({ state, by, send }: { state: TournamentState; 
   const [draft, setDraft] = useState<TableRules>(saved);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** A save went unanswered for SAVE_WAIT_MS. */
+  const [slow, setSlow] = useState(false);
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+  /** Counts saves, so only the latest one's answer counts. */
+  const saves = useRef(0);
   const key = JSON.stringify(saved);
   useEffect(() => {
     if (!dirty) setDraft(tableRulesOf(state.settings));
@@ -57,11 +66,25 @@ export function TableRulesEditor({ state, by, send }: { state: TournamentState; 
 
   const errors = validateTableRules(draft);
   const save = async (rules: TableRules) => {
+    const n = ++saves.current;
     setBusy(true);
-    try {
-      if (await send({ type: 'updateSettings', by, settings: { tableRules: rules } })) setDirty(false);
-    } finally {
+    setSlow(false);
+    // A reply lost to a dropped connection never comes, so the inputs open again after a while.
+    const timer = setTimeout(() => {
+      if (saves.current !== n) return;
       setBusy(false);
+      setSlow(true);
+    }, SAVE_WAIT_MS);
+    try {
+      const ok = await send({ type: 'updateSettings', by, settings: { tableRules: rules } });
+      // An edit made after the inputs opened again stays until it is saved or discarded.
+      if (ok && saves.current === n && same(draftNow.current, rules)) {
+        setDirty(false);
+        setSlow(false);
+      }
+    } finally {
+      clearTimeout(timer);
+      if (saves.current === n) setBusy(false);
     }
   };
   const { start } = state.settings;
@@ -79,6 +102,7 @@ export function TableRulesEditor({ state, by, send }: { state: TournamentState; 
         }}
       />
       {errors.length > 0 && <p className="error">{errors.join('. ')}.</p>}
+      {slow && dirty && <p className="error">No answer from the server yet. Check your connection, then save again.</p>}
       <div className="tn-actions">
         {dirty && (
           <>
