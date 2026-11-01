@@ -122,7 +122,7 @@ for how it works.
   server restart forgets them all. The server's own logs record errors, not
   visitors, and they stay in Fly's log service, not in the site's database.
 - **GitHub** holds the code, the regular copy of the public record and the
-  nightly backups (below).
+  daily backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy
   policy covers what Google does. The site asks Google only for the basic
   sign-in scopes (`openid` and `profile`), uses what it gets only to sign you
@@ -144,7 +144,7 @@ privacy laws are weaker than Europe's.
 
 ## Backups
 
-Every night a GitHub job takes a full copy of the database, locks it with a
+Once a day a GitHub job takes a full copy of the database, locks it with a
 key only John holds, and keeps it for 90 days so the site can be restored
 after a disaster. The locked copy can't be opened without that key. Each
 backup also shows up on [Checking John](/transparency).

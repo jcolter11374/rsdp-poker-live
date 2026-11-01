@@ -68,9 +68,9 @@ first, details after.
   we just never offer one there.
 - **Some of what John could do now leaves public traces.** Since 26 October
   2026, GitHub builds and signs every release, checks which build the live
-  site runs (after every release, and on a schedule that in practice runs
-  every few hours), and keeps a copy of a tamper-evident record of every
-  hand, chip total and admin action. See [Checking John](#checking-john) and
+  site runs (every few hours in practice, and since 1 November 2026 also
+  right after each release GitHub deploys), and keeps a copy of a
+  tamper-evident record of every hand, chip total and admin action. See [Checking John](#checking-john) and
   the [/transparency](/transparency) page.
 - **This doesn't make the developer impossible to cheat.** The next section
   lists, plainly, what John could still do as the person who runs the site.
@@ -149,8 +149,9 @@ when they deal at a home game.
 - **Use admin powers, or a shell on the server.** The admin page can remove
   test tables and answer suggestions; each use now goes in the public record
   and on [/transparency](/transparency). Looking is not recorded: the admin
-  page can list tables and who is at them without leaving an entry. Every
-  night GitHub downloads a backup of the whole database with the admin key,
+  page can list tables and who is at them without leaving an entry. Once a
+  day (lately around midday in New York, since GitHub starts the job hours
+  after its 5 am slot) GitHub downloads a backup of the whole database with the admin key,
   locked with a key only John holds. It includes any hand being played at that
   moment, cards and all, so John could open it and look; each download goes in
   the public record, so you can see when one was taken. John can also open a shell on the
@@ -181,8 +182,9 @@ the repository (and pulling the `transparency` branch now and then).
   exact image. The site's footer shows the commit the server says it runs.
   `main` isn't locked against rewriting, so the watcher also checks that the
   commit an image was built from is still on `main`.
-- **The deploy watcher.** Right after every release, and on a schedule set to
-  every hour, GitHub asks Fly which image the live machine runs, its settings and secret names, and the starts and stops Fly
+- **The deploy watcher.** Right after each release GitHub deploys (since 1
+  November 2026), and on a schedule set to every hour, GitHub asks Fly which
+  image the live machine runs, its settings and secret names, and the starts and stops Fly
   reports, checks GitHub's signed record of that image, and writes the result
   to the
   [`transparency` branch](https://github.com/jcolter11374/rsdp-poker-live/tree/transparency/deploys)
@@ -194,11 +196,14 @@ the repository (and pulling the `transparency` branch now and then).
   build from a commit no longer on `main` opens an issue on GitHub, which
   notifies everyone watching the repository. A secret that changes is noted
   in the log (by a fingerprint keyed with a secret only GitHub has, so it
-  can't be used to guess the secret). GitHub starts scheduled jobs late when
-  it is busy, and in practice the schedule has run every 3 to 8 hours rather
-  than every hour. If the watcher can't reach the site, Fly or GitHub, it
-  tries again on its next run, and opens an issue once a check hasn't managed
-  to run for 12 hours, since switching a check off would look the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
+  can't be used to guess the secret). GitHub starts scheduled jobs late, by
+  hours: the schedule has run every 3 to 8 hours rather than every hour. So a
+  release made any other way than through GitHub, say from John's own
+  computer, is only seen at the next scheduled run. If the watcher can't
+  reach the site, Fly or GitHub, it tries again on its next run, and opens an
+  issue on its first run after a check has gone 12 hours without managing to
+  run (with GitHub's delays, up to about 20 hours), since switching a check
+  off would look the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
   release is normal. Fly keeps only its recent events, so a burst of restarts
   between two checks may show only in part.
 - **The public record.** Every hand, every change to a player's buy-ins and

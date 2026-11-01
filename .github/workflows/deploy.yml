@@ -4,7 +4,7 @@ name: Deploy
 # GitHub builds the image here from the public code, signs a record of which
 # commit it came from (build provenance), and Fly runs that exact image. The
 # Transparency watcher checks the live machine against these records, right
-# after each deploy and on its schedule.
+# after each successful deploy and on its schedule.
 on:
   workflow_run:
     workflows: [CI]

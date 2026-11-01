@@ -7,10 +7,11 @@ name: Transparency watcher
 # notifies everyone watching the repo. Read-only on the site and on Fly.
 # See docs/FAIRNESS.md ("Checking John").
 #
-# Scheduled every hour, but GitHub starts scheduled jobs late on busy days: in
-# practice it has run every 3 to 8 hours, never at the minute set. So it also runs
-# right after every successful Deploy, which checks each released image even
-# when the next release replaces it before the schedule comes round.
+# Scheduled every hour, but GitHub starts scheduled jobs late, by hours: it has
+# run every 3 to 8 hours, never at the minute set. So it also runs right after
+# every successful Deploy, which checks each image GitHub releases even when the
+# next release replaces it before the schedule comes round. A release made any
+# other way (flyctl from a laptop) is only seen on the next scheduled run.
 on:
   schedule:
     - cron: '17 * * * *'
@@ -27,10 +28,6 @@ permissions:
   # To see whether a deploy is running.
   actions: read
 
-concurrency:
-  group: transparency
-  cancel-in-progress: false
-
 env:
   SITE: https://rsdp-poker-live.fly.dev
   FLY_APP: rsdp-poker-live
@@ -41,6 +38,11 @@ jobs:
     # Only main's own scripts may write the copy (a workflow_run always runs main's copy of this file),
     # and only after a deploy that went through.
     if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    # On the job, not the workflow: a run whose job is skipped (after a skipped Deploy) then never
+    # takes the one pending place from a real check waiting behind one in progress.
+    concurrency:
+      group: transparency
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,10 +60,11 @@ jobs:
             git -C copy switch -c transparency
           elif [ $found -eq 2 ]; then
             git worktree add --orphan -b transparency copy
-            printf '# Transparency\n\nWritten by the Transparency watcher workflow on main: scheduled every hour (GitHub often starts it hours late) and run after every deploy. See docs/FAIRNESS.md.\n\n- audit/: a copy of the public record from %s/api/audit/entries\n- deploys/: what the live machine ran, whether GitHub built and signed it, its settings and secrets (as fingerprints), and every start\n' "$SITE" > copy/README.md
           else
             echo "Couldn't reach the transparency branch"; exit 1
           fi
+          # Written on every run, so a change to this text reaches the existing branch too.
+          printf '# Transparency\n\nWritten by the Transparency watcher workflow on main: right after every successful deploy, and on a schedule set to every hour that GitHub starts hours late (every few hours in practice). See docs/FAIRNESS.md.\n\n- audit/: a copy of the public record from %s/api/audit/entries\n- deploys/: what the live machine ran, whether GitHub built and signed it, its settings and secrets (as fingerprints), and every start\n' "$SITE" > copy/README.md
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       # Each check exits 1 for a real problem and 2 when it couldn't reach the
       # site, Fly or GitHub; only a real problem opens an issue.

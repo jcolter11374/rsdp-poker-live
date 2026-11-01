@@ -88,8 +88,9 @@ export function TransparencyPage() {
           </li>
           <li>
             GitHub&rsquo;s watcher asks Fly which image the live machine runs, and checks GitHub&rsquo;s own signed record of how that image was built. It also
-            checks the machine&rsquo;s start command, settings and secret names, which could otherwise make the same image run other code. It runs right after every
-            release, and on a schedule set to every hour, though GitHub often starts scheduled jobs hours late, so in practice it checks every few hours.{' '}
+            checks the machine&rsquo;s start command, settings and secret names, which could otherwise make the same image run other code. It runs right after each
+            release GitHub builds and deploys, and on a schedule set to every hour that GitHub starts hours late, so every few hours in practice. A change made any
+            other way, say a release from John&rsquo;s own computer, would only be seen at the next of those checks.{' '}
             {watcher === null ? (
               'Loading…'
             ) : watcher === 'none' ? (

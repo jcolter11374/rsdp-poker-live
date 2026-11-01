@@ -6,9 +6,9 @@ name: Site-down alert
 # on the issue and closes it. Read-only on the site; costs nothing (public
 # repos run Actions free). See docs/DEPLOY.md.
 #
-# Scheduled every 5 minutes, but GitHub starts scheduled jobs late when it is
-# busy: in practice it has run only every 3 to 7 hours. So this is a slow
-# backstop. The quick alert is an outside monitor (docs/DEPLOY.md, issue #180).
+# Scheduled every 5 minutes, but GitHub starts scheduled jobs late, by hours:
+# it has run only every 3 to 7 hours. So this is a slow backstop; a quick alert
+# needs an outside monitor (docs/DEPLOY.md, issue #180).
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -40,8 +40,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Up means the server answers and its database isn't failing (a slow database alone isn't news).
-          up() { curl -sf --max-time 15 "$SITE/api/health" | jq -e '.ok == true and .db != "error"' > /dev/null; }
+          # Up means the server answers and its database answers within a second ("ok"); a server from before
+          # the db field counts as up. A database stuck for all 7 tries (about 3 minutes) is news, not a slow moment.
+          up() { curl -sf --max-time 15 "$SITE/api/health" | jq -e '.ok == true and (.db == null or .db == "ok")' > /dev/null; }
           open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
           # A blip (a restart, one lost request) isn't news: try for about 3 minutes.
           for i in $(seq 1 7); do
