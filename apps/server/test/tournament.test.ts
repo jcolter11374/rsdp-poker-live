@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, standings, type TournamentSettings } from '@rsdp/tournament';
+import { defaultSettings, MAX_PAYOUT_RANGES, standings, type TournamentSettings } from '@rsdp/tournament';
 import { players, playUntil, setup } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
@@ -134,6 +134,28 @@ describe('tournaments on the server', () => {
     const next = env.manager.view(id)!.nextId;
     expect(next).toBeTruthy();
     expect((await env.manager.peek(next!))!.settings.tableRules).toEqual(rsdp);
+  });
+
+  it('tells the lobby when the next event of a series cannot be made from settings that no longer pass the checks', async () => {
+    const env = setup();
+    const startAt = env.clock.now() + 10 * MIN;
+    const at = new Date(startAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const schedule = { timeZone: 'UTC', startDate: `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`, time: `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`, repeat: { freq: 'daily' as const } };
+    const id = await env.manager.create('host', defaultSettings({ name: 'Series', start: { kind: 'scheduled', startAt, schedule } }));
+    // Saved before payout tables were capped: one range for each two entry counts, more than a table may have now.
+    const ranges = Array.from({ length: MAX_PAYOUT_RANGES + 1 }, (_, i) => ({ minEntries: 2 + 2 * i, maxEntries: 3 + 2 * i, percents: [100] }));
+    ranges[ranges.length - 1]!.maxEntries = 10_000;
+    (await env.manager.peek(id))!.settings.payouts = { structure: { name: 'Old', ranges }, money: { buyIn: 0, rebuy: 0, addOn: 0, added: 0 } };
+    expect(env.manager.view(id)!.nextError).toBeNull();
+    // Nobody comes, so the event is cancelled and the series moves on to its next one.
+    env.clock.advance(10 * MIN + 1000);
+    env.clock.advance(env.manager.view(id)!.state.settings.graceMinutes * MIN + 1000);
+    expect(env.manager.view(id)!.state.status).toBe('cancelled');
+    await new Promise((r) => setTimeout(r, 0));
+    const view = env.manager.view(id)!;
+    expect(view.nextId).toBeNull();
+    expect(view.nextError).toContain(`At most ${MAX_PAYOUT_RANGES} ranges`);
   });
 
   it("keeps a player's mood emoji when they are moved to another table", async () => {

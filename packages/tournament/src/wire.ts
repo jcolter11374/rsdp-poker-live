@@ -13,6 +13,8 @@ export interface TournamentView {
   serverNow: number;
   /** The next event in a series or the next Sit & Go, once the server has made it. */
   nextId?: string | null;
+  /** Why the server could not make that next event (its settings no longer pass the checks, say). */
+  nextError?: string | null;
 }
 
 export interface TournamentClientToServer {

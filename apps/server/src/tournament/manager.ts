@@ -88,6 +88,11 @@ export interface ManagerDeps {
 interface Live {
   state: TournamentState;
   nextId: string | null;
+  /**
+   * Why the next event of a series or Sit & Go could not be made, so the lobby can say so instead of the series
+   * quietly ending. Kept in memory only: a restart forgets it.
+   */
+  nextError: string | null;
   /** Runtimes by director table id. */
   tables: Map<TableId, TableRuntime>;
   timer: unknown;
@@ -274,7 +279,7 @@ export class TournamentManager {
     const live = this.live.get(id);
     if (!live) return null;
     const { spawnedFrom: _hidden, ...state } = viewer === undefined ? live.state : viewFor(live.state, viewer);
-    return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId };
+    return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId, nextError: live.nextError };
   }
 
   /**
@@ -509,7 +514,7 @@ export class TournamentManager {
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
+    const live: Live = { state, nextId, nextError: null, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {
         const saved = snapshots[i];
@@ -886,7 +891,12 @@ export class TournamentManager {
 
   /** The next event of a series, or a fresh Sit & Go. */
   private spawn(live: Live, settings: TournamentSettings) {
-    this.openNext(live, settings).catch((e) => this.deps.log(`tournament ${live.state.id}: creating the next one failed`, e));
+    this.openNext(live, settings).catch((e) => {
+      this.deps.log(`tournament ${live.state.id}: creating the next one failed`, e);
+      // Settings that were fine when this event was made can break a check added since (#266): say why it stopped.
+      live.nextError = e instanceof ActionError ? e.message : 'something went wrong on the server';
+      this.changed(live);
+    });
   }
 
   private async openNext(live: Live, settings: TournamentSettings) {
@@ -897,6 +907,7 @@ export class TournamentManager {
     if (await this.deps.store.create(state)) await this.adopt(state, null);
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);
     live.nextId = id;
+    live.nextError = null;
     this.changed(live);
   }
 }
