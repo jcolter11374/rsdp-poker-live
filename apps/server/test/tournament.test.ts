@@ -59,6 +59,30 @@ describe('tournaments on the server', () => {
     expect(env.moves.filter((m) => m.from !== '').length).toBeGreaterThan(0);
   }, 60_000);
 
+  it("a finished Sit & Go's last table shows the winner, with no countdown to a next hand", async () => {
+    // With fair dealing's lead time on too, as in production: the table must not wait for a next commitment either.
+    for (const fairLeadMs of [0, 2500]) {
+      const env = setup(undefined, { fairLeadMs });
+      const id = await env.manager.create('host', defaultSettings({ name: 'Turbo', startingStack: 300, start: { kind: 'sng', playersNeeded: 3, startDelaySeconds: 0, autoSpawn: false } }));
+      for (const p of players(3)) await env.manager.command(id, p.id, p.name, { type: 'register', playerId: p.id, displayName: p.name });
+      const state = () => env.manager.view(id)!.state;
+      env.clock.advance(1000);
+      expect(state().status).toBe('running');
+      playUntil(env, () => state().status === 'finished', { shove: 40 });
+      expect(state().status).toBe('finished');
+      expect(env.tables.size).toBe(1);
+      const last = [...env.tables.values()][0];
+      expect(last.state.nextHandAt).toBeNull();
+      // Nor does one come back once the director has handled the result and the table's clocks run on.
+      env.clock.advance(1000);
+      expect(last.state.nextHandAt).toBeNull();
+      env.clock.advance(MIN);
+      expect(last.state.nextHandAt).toBeNull();
+      expect(last.state.hand?.phase ?? 'complete').toBe('complete');
+      expect(env.errors).toEqual([]);
+    }
+  }, 30_000);
+
   it("gives every table the event's clock, time bank and rabbit hunt rules", async () => {
     const env = setup();
     const tableRules = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };

@@ -2064,7 +2064,8 @@ export class TableRuntime {
       this.revealHands();
     }
     const delay = hand.showdown ? s.settings.timing.showdownSeconds : s.settings.timing.nextHandDelaySeconds;
-    const auto = this.isTournament || s.settings.timing.autoStartNextHand;
+    // The director hears the result at once, so a hand that ended the event (or one ending after it was cancelled) is the last.
+    const auto = this.isTournament ? !this.tournament?.over?.() : s.settings.timing.autoStartNextHand;
     // An all-in runout is shown a street at a time (runoutMs), so the next hand waits for it too.
     s.nextHandAt = s.started && auto ? now + delay * 1000 + runoutMs(hand.events) : null;
   }
@@ -2476,10 +2477,10 @@ export class TableRuntime {
       }
       return true;
     }
-    // Nothing scheduled: a tournament table deals when its gate opens, a running cash
+    // Nothing scheduled: a tournament table deals when its gate opens (never once its event is over), a running cash
     // table when enough players are back. A failed attempt leaves things as they were.
     if (s.nextHandAt === null && (!hand || hand.phase === 'complete')) {
-      const auto = this.tournament || (s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand);
+      const auto = this.tournament ? !this.tournament.over?.() : s.started && s.settings.timing.autoStartNextHand && !s.stopAfterHand;
       if (auto && now < ready) {
         s.nextHandAt = ready;
         this.seedWait = ready > (s.fair?.committedAt ?? 0) + this.fairLeadMs;
