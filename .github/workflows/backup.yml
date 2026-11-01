@@ -28,6 +28,7 @@ jobs:
     # Only main's own scripts may hold the admin key.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       ready: ${{ steps.key.outputs.ready }}
     steps:
