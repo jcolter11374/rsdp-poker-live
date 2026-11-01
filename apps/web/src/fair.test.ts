@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
 vi.mock('./socket', () => ({ socket: mockSocket }));
-const { contributeSeed, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, liveSeedProblem, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -450,5 +450,55 @@ describe('sending my seed', () => {
     store.set('rsdp.fairSent', JSON.stringify({ T10: JSON.stringify({ seed: 'aa', at: 0, rejected: { after: 5 } }) }));
     contributeSeed(seated('T10'));
     expect(emitted).toHaveLength(1);
+  });
+});
+
+describe('seeds that nobody checks', () => {
+  it('catches my own seed listed more than once: each copy changes the deck', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    expect(seedProblem(C, listed('aa'), 'me', true, 10_000)).toBeNull();
+    expect(seedProblem(C, [...listed('aa'), ...listed('aa')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(aa, aa\).*one seed per player.*steer/);
+    expect(seedProblem(C, [1, 2, 3, 4, 5].flatMap(() => listed('aa')), 'me', true, 10_000)).toMatch(/^5 seeds/);
+    // Mine plus one the server chose after seeing all the others, in either order.
+    expect(seedProblem(C, [...listed('aa'), ...listed('ff')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(aa, ff\).*steer/);
+    expect(seedProblem(C, [...listed('ff'), ...listed('aa')], 'me', true, 10_000)).toMatch(/^2 seeds were listed under your name \(ff, aa\).*steer/);
+    expect(seedProblem(C, [{ playerId: 'other', seed: 'ff' }, ...listed('aa')], 'me', true, 10_000)).toBeNull();
+  });
+
+  it('is quiet about an honest list: one seed each, from people dealt in', () => {
+    const honest = [
+      { playerId: 'me', seed: 'aa' },
+      { playerId: 'p2', seed: 'bb' },
+    ];
+    expect(seedListProblem(honest, { bots: ['bot-1'], dealt: ['me', 'p2', 'bot-1', 'p3'] })).toBeNull();
+    expect(seedListProblem(honest, { bots: [] })).toBeNull();
+    expect(seedListProblem([], { bots: [], dealt: [] })).toBeNull();
+  });
+
+  it('catches a seed listed for a bot, for someone not dealt in, twice for one player, or one seed listed twice', () => {
+    const dealt = ['me', 'p2', 'bot-1'];
+    const bots = ['bot-1'];
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }], { bots, dealt })).toMatch(/\(ff\).*practice bot/);
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'ghost', seed: 'ff' }], { bots, dealt })).toMatch(/\(ff\).*wasn't dealt in/);
+    expect(seedListProblem([{ playerId: 'p2', seed: 'bb' }, { playerId: 'p2', seed: 'ff' }], { bots, dealt })).toMatch(/more than one seed.*same player/);
+    // My seed copied under another person's name: their browser would warn, but only if they look.
+    expect(seedListProblem([{ playerId: 'me', seed: 'aa' }, { playerId: 'p2', seed: 'aa' }], { bots, dealt })).toMatch(/same seed \(aa\) was listed twice/);
+  });
+
+  it('warns at the table about a seed listed for a bot, or one seed listed twice', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    const view = (clientSeeds: { playerId: string; seed: string }[]) =>
+      ({
+        id: 't1',
+        me: { playerId: 'me', seat: 0 },
+        seats: [{ seat: 0, playerId: 'me' }, { seat: 1, playerId: 'bot-1', bot: { ownerId: 'me', ownerName: 'Me', look: 0 } }, null],
+        hand: { names: { 0: 'Me', 1: 'Bot' }, fair: { commit: C, clientSeeds } },
+      }) as unknown as Parameters<typeof liveSeedProblem>[0];
+    store.set('rsdp.fairLive', JSON.stringify({ [C]: JSON.stringify({ at: 10_000, button: 0, seats: [0, 1], board: [], cards: {} }) }));
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }]))).toMatch(/\(ff\).*practice bot/);
+    expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }]))).toMatch(/same seed \(aa\)/);
   });
 });

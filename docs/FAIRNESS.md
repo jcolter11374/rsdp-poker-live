@@ -35,15 +35,21 @@ first, details after.
 - **Your browser keeps the server honest during play.** When a hand is dealt,
   everyone sees which seeds went into it. If your browser's seed was left out
   although it was sent in good time, a seed your browser never sent is
-  listed under your name, or the commitment for the next hand was swapped for
-  another without being dealt, the table shows a warning straight away. Your browser
+  listed under your name, more than one seed is listed under your name (even
+  copies of yours: each copy changes the deck), a seed is listed for a practice
+  bot (bots never send one), the same seed is listed twice, or the commitment
+  for the next hand was swapped for another without being dealt, the table
+  shows a warning straight away. Your browser
   also writes down what it saw during the hand: the button, who was dealt in,
   the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press
   **🔒 Check this hand**. Once the hand is revealed, your browser rebuilds the
   deck from the seeds and *deals the hand again* by the rules: hole cards one
   at a time clockwise from the left of the button, then the board, draws and
-  reshuffles. Every card dealt, shown or won with must match, the record must
+  reshuffles. Each seed listed must come from a different person the record
+  shows dealt in, never from a practice bot, with no seed listed twice: an
+  extra seed where nobody's browser would check it could steer the deck. Every card dealt, shown
+  or won with must match, the record must
   match the hand's history, and it must agree with what your browser wrote
   down at the table. **Download proof** saves a file
   that `node scripts/verify-hand.mjs` checks on its own, using only Node's

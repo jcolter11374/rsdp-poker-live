@@ -322,7 +322,13 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   if (swapped) return swapWarning(commit, swapped);
   const accepted = mySeedFor(commit);
   const sentSeed = sentFor(commit);
-  const under = listed.find((c) => c.playerId === myId)?.seed;
+  // Every seed listed under my name, not just the first. The table keeps one per player, even with two devices: a
+  // second one, even a copy of mine, changes the deck and could be picked after seeing the rest, so it can steer it.
+  const mine = listed.filter((c) => c.playerId === myId).map((c) => c.seed);
+  if (mine.length > 1) {
+    return `${mine.length} seeds were listed under your name (${mine.join(', ')}). The table keeps only one seed per player, even from two devices, so an extra one could have been picked to steer the deck`;
+  }
+  const under = mine[0];
   const rejected = sentSeed?.rejected;
   if (under && under !== accepted && under !== sentSeed?.seed && !madeHere(commit, under)) {
     return `a seed (${under}) was listed under your name that this browser didn't send. Unless you were also playing from another device, the deck may have been steered`;
@@ -347,5 +353,28 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
 export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
   if (!fair || view.me.seat === null) return null;
-  return seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
+  const mine = seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
+  // Who was dealt in isn't known for certain here (a player may have left the seat), only who is a bot.
+  const bots = view.seats.flatMap((s) => (s?.bot ? [s.playerId] : []));
+  return mine ?? seedListProblem(fair.clientSeeds, { bots });
+}
+
+/**
+ * What's wrong with a hand's list of seeds as a whole, whoever's they are, if anything. An honest server lists at most
+ * one seed for each person dealt in, none for a practice bot (bots never send one), and fresh random seeds never
+ * match. Anything else is an extra seed that nobody's browser checks, so it could have been picked to steer the deck.
+ * `dealt` is everyone dealt in, when known.
+ */
+export function seedListProblem(listed: { playerId: string; seed: string }[], who: { bots: string[]; dealt?: string[] }): string | null {
+  const ids = new Set<string>();
+  const seeds = new Set<string>();
+  for (const c of listed) {
+    if (who.bots.includes(c.playerId)) return `a seed (${c.seed}) was listed for a practice bot, but bots don't send seeds, so it could have been picked to steer the deck`;
+    if (who.dealt && !who.dealt.includes(c.playerId)) return `a seed (${c.seed}) was listed for someone who wasn't dealt in, so nobody checks it and it could have been picked to steer the deck`;
+    if (ids.has(c.playerId)) return `more than one seed was listed for the same player, but the table keeps only one each, so an extra one could have been picked to steer the deck`;
+    if (seeds.has(c.seed)) return `the same seed (${c.seed}) was listed twice, which fresh random seeds never do; a copy changes the deck, so it could have been added to steer it`;
+    ids.add(c.playerId);
+    seeds.add(c.seed);
+  }
+  return null;
 }

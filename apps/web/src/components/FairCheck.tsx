@@ -3,7 +3,7 @@ import { tableRef, verifyHand, type CardEvent } from '@rsdp/engine';
 import { digestOf, handInRecord, tableHand, type HandEntries } from '../audit';
 import type { HandRecordView } from '@rsdp/engine/wire';
 import { visibleEvents, type HandState } from '@rsdp/engine/core';
-import { liveRecordFor, mySeedFor, seedProblem, shownAs } from '../fair';
+import { liveRecordFor, mySeedFor, seedListProblem, seedProblem, shownAs } from '../fair';
 import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
@@ -42,6 +42,9 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
       const same = shown === fair.commit;
       extra.push({ label: 'It was dealt under the commitment shown at the table', ok: same, detail: same ? `${fair.commit.slice(0, 12)}…` : `the table showed hand #${hand.handNumber} under ${shown === 'none' ? 'no commitment' : `${shown.slice(0, 12)}…`}, but its record says ${fair.commit.slice(0, 12)}… (an honest server only does that if it crashed before saving that deal and dealt that hand number again)` });
     }
+    // Every seed listed must be its own person's, someone dealt in: an extra one, even a copy, changes the deck unchecked.
+    const listProblem = seedListProblem(fair.clientSeeds, { bots: hand.seats.filter((s) => s.bot).map((s) => s.playerId), dealt: hand.seats.map((s) => s.playerId) });
+    if (fair.clientSeeds.length) extra.push({ label: 'Each seed is from a different person who was dealt in', ok: !listProblem, detail: listProblem ?? `${fair.clientSeeds.length} ${fair.clientSeeds.length === 1 ? 'seed' : 'seeds'}, none from a bot` });
     const missing = hand.seats.filter((s) => !fair.clientSeeds.some((c) => c.playerId === s.playerId)).map((s) => s.name);
     if (!fair.serverSeed || !fair.events) return { check: null, extra, missing };
 
