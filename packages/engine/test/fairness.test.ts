@@ -1,4 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { freshDeck } from '../src/cards';
 import { engine, HOLDEM, type HandInput, type HandState } from '../src/core';
@@ -146,5 +150,39 @@ describe('verifyHand', () => {
     expect(verifyHand({ ...args(events), seats: [0, 1, 2] }).ok).toBe(true);
     expect(verifyHand({ ...args(events), clientSeeds: [] }).ok).toBe(false);
     expect(verifyHand({ ...args(events), commit: commitmentOf('aa'.repeat(32)) }).ok).toBe(false);
+  });
+
+  it('fails a hand dealt honestly from a deck with a seed listed twice, or more seeds than seats dealt in', () => {
+    // Every card matches, but each extra seed gives another deck to pick from, so nobody's seed vouches for this one.
+    const twice = ['0123456789abcdef', '0123456789abcdef'];
+    const events = engine.visibleEvents(playOut(fairHand(serverSeed, twice)), { seat: null, seeAll: true }) as CardEvent[];
+    const dup = verifyHand({ commit: commitmentOf(serverSeed), serverSeed, clientSeeds: twice, handSeed: handSeedOf(serverSeed, twice), button: 0, events });
+    expect(dup.ok).toBe(false);
+    expect(dup.checks.filter((c) => !c.ok).map((c) => c.detail)).toEqual([expect.stringMatching(/0123456789abcdef.*listed 2 times/)]);
+    const four = ['01'.repeat(8), '02'.repeat(8), '03'.repeat(8), '04'.repeat(8)];
+    const more = engine.visibleEvents(playOut(fairHand(serverSeed, four)), { seat: null, seeAll: true }) as CardEvent[];
+    const proof = { commit: commitmentOf(serverSeed), serverSeed, clientSeeds: four, handSeed: handSeedOf(serverSeed, four), button: 0, events: more };
+    expect(verifyHand({ ...proof, seats: [0, 1, 2] }).checks.filter((c) => !c.ok).map((c) => c.detail)).toEqual([expect.stringMatching(/4 seeds.*3 seats/)]);
+    // Without the seats dealt in, only copies can be told apart.
+    expect(verifyHand(proof).ok).toBe(true);
+
+    // The standalone checker (Node's own SHA-256, no app code) agrees.
+    const dir = mkdtempSync(path.join(tmpdir(), 'proof-'));
+    const run = (p: object) => {
+      const file = path.join(dir, `${Math.random()}.json`);
+      writeFileSync(file, JSON.stringify(p));
+      return spawnSync(process.execPath, [path.resolve(__dirname, '../../../scripts/verify-hand.mjs'), file], { encoding: 'utf8' });
+    };
+    try {
+      const copied = run({ commit: commitmentOf(serverSeed), serverSeed, clientSeeds: twice, handSeed: handSeedOf(serverSeed, twice), button: 0, seats: [0, 1, 2], events });
+      expect(copied.stdout).toMatch(/FAIL .*0123456789abcdef.*listed 2 times/);
+      expect(copied.status).toBe(1);
+      const extraSeed = run({ ...proof, seats: [0, 1, 2] });
+      expect(extraSeed.stdout).toMatch(/FAIL .*4 seeds.*3 seats/);
+      expect(extraSeed.status).toBe(1);
+      expect(run(proof).status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

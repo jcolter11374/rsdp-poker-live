@@ -104,6 +104,10 @@ export interface LiveRecord {
   board: string[];
   /** Face-up and shown cards by seat, my own hole cards included. */
   cards: Record<number, string[]>;
+  /** Who was dealt in, by seat, as far as this browser saw them still seated (older records have none). */
+  players?: Record<number, string>;
+  /** Which of them were practice bots (older records have none). */
+  bots?: string[];
 }
 
 export function liveRecordFor(commit: string): LiveRecord | null {
@@ -116,8 +120,15 @@ function recordLive(view: TableView) {
   if (!hand?.fair || view.spectator) return;
   const old = liveRecordFor(hand.fair.commit);
   const cards: Record<number, string[]> = { ...old?.cards };
+  // Who sat in each seat when dealt in, kept from first sight: a seat taken over later is no longer in the hand.
+  const players: Record<number, string> = { ...old?.players };
+  const bots = new Set(old?.bots);
   for (const seat of view.seats) {
     if (!seat?.inHand) continue;
+    if (!(seat.seat in players) && seat.seat in hand.names) {
+      players[seat.seat] = seat.playerId;
+      if (seat.bot) bots.add(seat.playerId);
+    }
     const seen = seat.cards.map((c) => c.card).filter((c) => c !== '??');
     // Cards only accumulate: a draw replaces some, a mucked hand turns them over.
     cards[seat.seat] = [...new Set([...(cards[seat.seat] ?? []), ...seen])];
@@ -128,6 +139,8 @@ function recordLive(view: TableView) {
     seats: Object.keys(hand.names).map(Number),
     board: [...new Set([...(old?.board ?? []), ...hand.boards.flat(2)])],
     cards,
+    players,
+    bots: [...bots],
   };
   save(LIVE, hand.fair.commit, JSON.stringify(record));
 }
@@ -354,9 +367,29 @@ export function liveSeedProblem(view: TableView): string | null {
   const fair = view.hand?.fair;
   if (!fair || view.me.seat === null) return null;
   const mine = seedProblem(fair.commit, fair.clientSeeds, view.me.playerId, view.me.seat in view.hand!.names, liveRecordFor(fair.commit)?.at ?? Date.now());
-  // Who was dealt in isn't known for certain here (a player may have left the seat), only who is a bot.
-  const bots = view.seats.flatMap((s) => (s?.bot ? [s.playerId] : []));
-  return mine ?? seedListProblem(fair.clientSeeds, { bots });
+  // Who was dealt in is known once this browser has seen every seat dealt in still taken (a player may leave mid-hand).
+  const live = liveRecordFor(fair.commit);
+  const seen = Object.keys(live?.players ?? {});
+  const dealt = seen.length === Object.keys(view.hand!.names).length ? Object.values(live!.players!) : undefined;
+  const bots = [...view.seats.flatMap((s) => (s?.bot ? [s.playerId] : [])), ...(live?.bots ?? [])];
+  return mine ?? seedListProblem(fair.clientSeeds, { bots, dealt });
+}
+
+/**
+ * seedListProblem for a hand's record, checking first that the record's list of who was dealt in, and which were
+ * bots, agrees with what this browser saw at the table, if it was there: otherwise the record could pass off a seed
+ * of the server's own as a person's who was never dealt in, or as a bot's it no longer marks as a bot.
+ */
+export function recordSeedProblem(listed: { playerId: string; seed: string }[], seats: { seat: number; playerId: string; bot?: unknown }[], live: LiveRecord | null): string | null {
+  if (live && [...live.seats].sort().join() !== seats.map((s) => s.seat).sort().join()) {
+    return "the record's seats dealt in differ from the ones your browser saw at the table, so its list of who should have seeds can't be trusted";
+  }
+  for (const [seat, id] of Object.entries(live?.players ?? {})) {
+    const there = seats.find((s) => s.seat === +seat);
+    if (there && there.playerId !== id) return `the record lists someone else in seat ${+seat + 1} than the player your browser saw dealt in there, so its list of who should have seeds can't be trusted`;
+  }
+  const bots = [...seats.filter((s) => s.bot).map((s) => s.playerId), ...(live?.bots ?? [])];
+  return seedListProblem(listed, { bots, dealt: seats.map((s) => s.playerId) });
 }
 
 /**
