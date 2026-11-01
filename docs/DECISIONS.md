@@ -1,0 +1,243 @@
+# Decisions
+
+The lasting decisions behind RSDP Poker Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
+
+How this file works:
+
+- **Who decided** says whether it was John's call or Claude's. Claude sessions make routine engineering and product calls themselves and report them. Those are marked "Claude", and John can overturn any of them.
+- Quotes of John are his own words, checked against his messages. Everything else is a summary.
+- Entries are never rewritten. When a decision changes, add a new entry that says which one it replaces, and mark the old one **Replaced by D*n***.
+- Private details stay out of this public file: friends' names, the group's spreadsheet, budgets.
+
+| # | Decision | Decided | By |
+| --- | --- | --- | --- |
+| [D01](#d01-scope-full-parity-every-paid-feature-free) | Scope: full parity, every paid feature free | 2026-10-25 | John |
+| [D02](#d02-the-groups-games-and-house-rules) | The group's games and house rules | 2026-10-25 | John |
+| [D03](#d03-priorities-cash-games-first) | Priorities: cash games first | 2026-10-25 | John |
+| [D04](#d04-who-decides-what) | Who decides what | 2026-10-25, 2026-11-01 | John |
+| [D05](#d05-branches-merges-and-releases) | Branches, merges and releases | 2026-10-25, 2026-10-26 | John, with Claude's conditions |
+| [D06](#d06-whats-new-and-the-changelog) | What's new and the changelog | 2026-10-26 | John |
+| [D07](#d07-never-test-against-the-live-site) | Never test against the live site | 2026-10-25 | John |
+| [D08](#d08-hosting-one-always-on-machine-on-flyio) | Hosting: one always-on machine on Fly.io | 2026-10-25 | Claude; cost rule John |
+| [D09](#d09-stack-and-storage) | Stack and storage | 2026-10-25 | Claude, accepted by John |
+| [D10](#d10-provably-fair-dealing-and-when-hands-are-revealed) | Provably fair dealing, and when hands are revealed | 2026-10-25, 2026-11-01 | John; design Claude |
+| [D11](#d11-making-it-harder-for-john-to-cheat) | Making it harder for John to cheat | 2026-10-26 | John picked; design Claude |
+| [D12](#d12-honest-trust-wording) | Honest trust wording | 2026-10-26, 2026-10-29 | John |
+| [D13](#d13-nightly-encrypted-backups) | Nightly encrypted backups | 2026-10-26 | John approved; design Claude |
+| [D14](#d14-no-live-huds-safeguards-for-spectators) | No live HUDs; safeguards for spectators | 2026-10-26 | John; details Claude |
+| [D15](#d15-cash-tables-in-dollars-and-cents) | Cash tables in dollars and cents | 2026-10-27 | John |
+| [D16](#d16-the-groups-tournament-defaults) | The group's tournament defaults | 2026-10-30 to 2026-11-01 | John |
+| [D17](#d17-tournament-rules-chosen-by-claude) | Tournament rules chosen by Claude | 2026-10-25 | Claude |
+| [D18](#d18-cash-table-simplifications-on-purpose) | Cash-table simplifications, on purpose | 2026-10-25, 2026-10-26 | Claude; nudge John |
+| [D19](#d19-accounts-privacy-and-keeping-records) | Accounts, privacy and keeping records | 2026-10-25 to 2026-10-27 | John and Claude |
+| [D20](#d20-group-results-proposed-not-built) | Group results (proposed, not built) | 2026-10-30 | John; plan Claude |
+| [D21](#d21-look-and-feel) | Look and feel | 2026-10-25 to 2026-10-29 | John |
+| [D22](#d22-how-work-is-tracked-and-checked) | How work is tracked and checked | 2026-11-01 | John asked; details Claude |
+
+---
+
+## D01. Scope: full parity, every paid feature free
+
+- **Decided:** 2026-10-25, by John.
+- **Decision:** "Clone" means full feature parity with PokerNow, not a small first version, with John's own additions later. Every feature PokerNow charges for (bomb pots, 7-2, double board, game rotation, Sit & Gos, the replayer and so on) is free for everyone: no payments and no tiers. The code, art, sounds and wording are all original, and the site never names PokerNow.
+- **Why:** getting the paid features to the whole group for free is one of John's main reasons for the project.
+- **Where:** README (free for everyone; original app), [ARCHITECTURE.md](ARCHITECTURE.md) ("No PokerNow code, art, sounds or wording"), `apps/web/src/about/about.test.ts`.
+- **Don't** scope a feature down without asking John.
+
+## D02. The group's games and house rules
+
+- **Decided:** 2026-10-25, by John.
+- **Decision:**
+  - Beyond PokerNow's games: Seven Card Stud, Razz, Stud Hi-Lo, 2-7 Triple Draw and Badugi, with rules help in the game.
+  - Scheduled tournaments start by themselves, with no click from the creator.
+  - Run it twice is for cash games only.
+  - The host's approval of rebuys is a setting the host can turn off. It is on by default at cash tables and off in tournaments.
+  - Buy-in amounts aren't enforced; the group agrees them among themselves.
+  - Where PokerNow differs from how the group plays, the group's way is the default and PokerNow's is an option.
+- **Why:** the group plays these games and is teaching them to friends. Starting tournaments by hand was John's biggest annoyance with PokerNow.
+- **Where:** README (games), `packages/tournament/README.md` (auto-start, rebuy approval), `packages/engine/src/settings/schema.ts` (run it twice off in tournaments; buy-ins not enforced by default).
+
+## D03. Priorities: cash games first
+
+- **Decided:** 2026-10-25, by John.
+- **Decision:** cash games must be rock solid first, because that's where friends will try the site and build trust. There's no rush for tournaments. Clubs and AI game analysis are off the roadmap for now. Audio and video chat stay, at the very end.
+- **Where:** `apps/web/src/roadmap/roadmap.json`.
+
+## D04. Who decides what
+
+- **Decided:** 2026-10-25, and 2026-11-01 for the record-keeping rule, by John.
+- **Decision:** Claude leads the day-to-day work. It makes engineering and routine product calls, starts work as needed, and posts short updates. It brings John only real product decisions: what the product is, or what it costs. On 2026-11-01 John asked for standard professional practice in tracking and documenting the work. GitHub is the record, and an AI session's memory is only a cache.
+- **Why:** John doesn't want to micromanage. Four wrong status reports on 31 Oct and 1 Nov came from facts kept only in an AI session's memory.
+- **Where:** [CONTRIBUTING.md](../CONTRIBUTING.md), [CLAUDE.md](../CLAUDE.md), D22.
+
+## D05. Branches, merges and releases
+
+- **Decided:** by John, in two steps:
+  - **2026-10-25, 21:12 UTC, on a choice card.** He picked "Yes, merge to develop": merge each fix into `develop` once CI is green and a review passes, and report afterwards. Merging into `main` still needed his OK then. (Minutes later he also wrote: "I'll leave all of this up to your discretion. Don't confuse my enthusiasm for impatience.")
+  - **2026-10-26, 05:13 UTC.** "Feel free to push things as they are done without asking me." From then on, finished work may go live without asking him each time.
+- **Decision:** feature branch → `develop` → `main`, and a merge into `main` deploys. A review pass means one we run ourselves, recorded on the pull request (D22).
+- **Claude's own conditions** on the standing OK, not John's words: test each release on a copy first, prefer quiet times, tell John after each release, and still ask about anything that costs money or changes the product.
+- **Open question:** on 2026-10-26 at 23:00 UTC John wrote "go ahead and push updates now. Don't worry about active tables". It's unclear whether that applies to every release or only to that one (PR #114 reads it as that one). It's been asked of John (#236). Until he answers, prefer quiet times.
+- **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CODE_TOUR.md](CODE_TOUR.md).
+
+## D06. What's new and the changelog
+
+- **Decided:** 2026-10-26, by John.
+- **Decision:** John: "Also minor bug fixes don't need to go into the what's new tracker. We could maybe have a changelog on the site for that." So What's new lists features players will notice, and /changelog lists every release with its small fixes. Releases bundle finished work when it's ready, with no fixed schedule (Claude's call).
+- **Where:** `apps/web/src/roadmap/whatsnew.json`, `changelog.json`, `ChangelogPage.tsx`. Release versions and tags: D22.
+
+## D07. Never test against the live site
+
+- **Decided:** 2026-10-25, by John, after test data reached the live site (the "Smoke Cup", PR #35).
+- **Decision:** never run bots, test tables or test games against the live site; test on a copy. Only read-only checks touch the live site, from GitHub Actions. Removing something from the live site needs John's OK. Practice bots are only ever seated by hand by a player or host: seats are never filled with bots automatically, and tournaments refuse bots.
+- **Where:** `e2e/smoke.mjs` (refuses the live address), `deploy.yml` (read-only checks), `apps/server/src/runtime/table.ts` (no bots in tournaments), [RUNBOOK.md](RUNBOOK.md#incident-log).
+
+## D08. Hosting: one always-on machine on Fly.io
+
+- **Decided:** 2026-10-25. Claude set it up; the cost rule is John's.
+- **Decision:** one always-on Fly.io machine (1 GB of memory) with a 1 GB data volume, never two copies. Fly bills John's account by usage. Anything that raises the cost needs John's OK first.
+- **Why:** all live game state runs in one process, and a scheduled tournament must start even when nobody has the site open. Why Fly rather than another host wasn't recorded.
+- **Where:** `fly.toml`, [DEPLOY.md](DEPLOY.md#flyio-production).
+
+## D09. Stack and storage
+
+- **Decided:** 2026-10-25. Claude proposed it and John accepted. The database upkeep (2026-10-26) is Claude's.
+- **Decision:**
+  - TypeScript throughout: pure engine and tournament packages; an Express and Socket.IO server that's in charge and holds tables in memory; a React website.
+  - Storage through Drizzle: Postgres when `DATABASE_URL` is set, otherwise embedded PGlite, which is what the live site runs.
+  - PGlite has no automatic clean-up, so the server vacuums it at start-up and every 5 minutes. Don't remove that.
+  - Idle cash tables are unloaded from memory after 45 minutes.
+- **Why:** pure packages are easy to test and can replay hands in the browser. Without the clean-up, the 1 GB volume fills after a few hundred hands. Why the live site uses PGlite rather than a managed Postgres wasn't recorded.
+- **Where:** [ARCHITECTURE.md](ARCHITECTURE.md), `apps/server/src/db/client.ts`.
+
+## D10. Provably fair dealing, and when hands are revealed
+
+- **Decided:** 2026-10-25 by John (the requirement and the reveal rule). The design is Claude's. The reveal rule was changed by John on 2026-11-01.
+- **Decision:** a fair, random deal anyone can check afterwards (rsdp-fair-v1). The server commits to a secret seed a hand ahead, seated players' browsers add their own seeds, and anyone can re-deal a revealed hand. Folded cards stay private while a game is on. A hand's seeds are revealed once the game has stayed stopped for 30 minutes, or 12 hours after the hand, whichever comes first. The 30 minutes were added by John on 2026-11-01; before that, stopping the game revealed at once.
+- **Why:** the deal must survive anyone's checking. The 30 minutes stop a quick Stop-then-Start from showing folded cards mid-session.
+- **Where:** [FAIRNESS.md](FAIRNESS.md), `apps/server/src/runtime/table.ts` ("John's call, 2026-11-01"), PR #170.
+- **Don't** weaken the browser checks, or reveal sooner, without asking John.
+
+## D11. Making it harder for John to cheat
+
+- **Decided:** 2026-10-26. John picked "the recommended package" from options Claude wrote up (PR #97). It cost nothing.
+- **Decision:**
+  - GitHub builds and signs every image, and Fly runs that exact image.
+  - A hash-chained public record of hands, ledgers and admin actions is copied to the `transparency` branch.
+  - A watcher checks the live machine and opens a public issue when something is wrong.
+  - Players can see all this on the /transparency page.
+  - Not chosen: card-protocol cryptography ("mental poker", judged impractical), a paid audit, and a friend as co-admin.
+- **Operating rules (Claude's):**
+  - Never deploy from a laptop.
+  - Add any new secret to the watcher's list, or any new setting to `fly.toml`, before it's set.
+- **Where:** [FAIRNESS.md](FAIRNESS.md#checking-john), `scripts/transparency/`, [DEPLOY.md](DEPLOY.md#adding-a-setting-or-secret).
+
+## D12. Honest trust wording
+
+- **Decided:** 2026-10-26 and 2026-10-29, by John.
+- **Decision:** be completely honest with players about trust. /fairness lists every way John could cheat. Our own review passes are never called "independent". They're "a separate review we ran ourselves, not an outside auditor". No overselling. The AI-made explainer video stays off /fairness (it oversold). A "you're trusting John" box leads /fairness, and /terms says free, non-commercial and as-is (John read and approved both, PR #141).
+- **Where:** [FAIRNESS.md](FAIRNESS.md), [TERMS.md](TERMS.md), README.
+- Any page, release note or doc must keep to this.
+
+## D13. Nightly encrypted backups
+
+- **Decided:** 2026-10-26. John approved, at no cost, and made the key pair himself. The design is Claude's.
+- **Decision:**
+  - GitHub Actions takes a backup every night, test-restores it on a real server, and locks it to John's public key.
+  - Only John holds the private key, and no AI session ever handles it.
+  - Backups are kept 90 days.
+  - A failure, or the site going down, opens an issue.
+- **Where:** [DEPLOY.md](DEPLOY.md#backups), `.github/workflows/backup.yml`, `uptime.yml`.
+
+## D14. No live HUDs; safeguards for spectators
+
+- **Decided:** 2026-10-26, by John. The exemptions and safeguard details are Claude's.
+- **Decision:**
+  - No tracking tools at running tables: hand downloads are locked while you're seated in a running game. Reviewing hands afterwards is fine.
+  - The in-table Stats tab stays. John's call; don't ask again.
+  - A host can let spectators see every card, but only between hands and only for later hands. Players must agree before they sit, and everyone sees a warning.
+  - Practice tables, and the host and co-hosts while they aren't playing, are exempt from the download lock.
+- **Where:** [FAIRNESS.md](FAIRNESS.md#huds-and-tracking-software), `apps/server/src/runtime/table.ts`, PRs #90, #168.
+
+## D15. Cash tables in dollars and cents
+
+- **Decided:** 2026-10-27, by John: "I think for cash we just don't have chips as an option. We treat it just like a casino and have chips for all the denomations of money."
+- **Decision:** cash tables always count in dollars and cents (one engine chip is one cent), with casino chips for each denomination. The default is .25/.50. Tournaments stay in plain chips. A table's unit never changes after it's created.
+- **Where:** `packages/engine/src/settings/money.ts`, PR #132.
+
+## D16. The group's tournament defaults
+
+- **Decided:** 2026-10-30 to 2026-11-01, by John.
+- **Decision:**
+  - New tournaments default to the group's own setup: No-Limit Hold'em, 63,000 chips, 28 levels of 8 minutes, no antes or breaks, and late registration through level 5 (from the group's own structure sheet, PR #163).
+  - The group's payout table is the default (PR #158), and the prize pool is shown.
+  - Table rules: 10 seconds to act, a 20-second time bank that refills every 30 hands, and no rabbit hunting. Straddles are never allowed in tournaments.
+  - Hosts can change the table rules until the first table opens (PR #172).
+- **Where:** `packages/tournament/src/structure.ts`, `saved.ts`, `payouts.ts`.
+
+## D17. Tournament rules chosen by Claude
+
+- **Decided:** 2026-10-25, by Claude. All reversible.
+- **Decision:**
+  - Auto-start seats players 60 seconds early, and waits up to 15 minutes when there are fewer than 2 entrants.
+  - Players busted in the same hand finish in order of their starting stacks, with ties during hand-for-hand.
+  - Bounties are shown per entry. A progressive knockout puts part of each bounty on the winner's head.
+  - Invite codes are single-use, or one shared code. Invite-only events stay off the home page.
+  - Season points: entrants minus place, plus one.
+  - Browser alerts are opt-in. Guests can host and register with a display name.
+  - One co-host model covers cash and tournaments.
+- **Where:** `packages/tournament/README.md` ("Rules chosen"), `packages/tournament/src/listing.ts`.
+
+## D18. Cash-table simplifications, on purpose
+
+- **Decided:** 2026-10-25 and 2026-10-26, by Claude. The betting nudge is John's.
+- **Decision:** these are simpler than PokerNow on purpose. Don't "fix" them without asking John.
+  - The Nit game's loser pays from their stack at the end of the round, with no money held aside. A shortfall goes on their buy-in.
+  - Hidden rake is cosmetic; the log still shows it.
+  - Losing hands are mucked by default, with a show-all option.
+  - Defaults: waitlist off, a freed seat held for 60 seconds, offline players' seats never released, shuffles only between hands, profanity filter off, rabbit hunting on in cash games.
+  - Unusual game and betting pairings get a gentle nudge but are never blocked (John, 2026-10-26).
+- **Why:** simpler code with outcomes the group accepts.
+- **Where:** `apps/web/src/rules/extras.ts` (the Nit rule as players are told it).
+
+## D19. Accounts, privacy and keeping records
+
+- **Decided:** 2026-10-25 to 2026-10-27. John chose Google sign-in, how records are kept, the analytics and the privacy policy. Claude chose guest play without accounts and the password reset without email.
+- **Decision:**
+  - Accounts are optional; guests can play and host.
+  - Sign in with Google uses only the basic profile, no email address.
+  - Password reset works without email, through a one-time code from the admin.
+  - Hands and ledgers are kept for good. Anyone can hide a table from their own profile. A host can delete only a table where no real game happened.
+  - Practice games are kept apart from real ones.
+  - No ads, no analytics services, no trackers and no third-party scripts. IP addresses are held in memory only, and cleared within about an hour.
+  - Any new stored data, cookie or outside service needs a [PRIVACY.md](PRIVACY.md) update.
+- **Where:** [ARCHITECTURE.md](ARCHITECTURE.md), [PRIVACY.md](PRIVACY.md).
+
+## D20. Group results (proposed, not built)
+
+- **Proposed:** 2026-10-30. John set the goal; the plan is Claude's.
+- **Proposal:** the group's own results spreadsheet stays the official record for now. Later, the site may help keep it up to date, with results visible only to signed-in members of the group. The details are still open and nothing is built. The default payout table (D16) is the only part that shipped.
+
+## D21. Look and feel
+
+- **Decided:** 2026-10-25 to 2026-10-29, by John, choosing from mock-ups.
+- **Decision:**
+  - A clean, flat felt look, with original art.
+  - Cards tucked into the nameplate.
+  - Lit felt, motion, big moments and the group's crest, with the spin toned down.
+  - Original sounds, and the turn clock as a smooth line.
+  - John sees before-and-after pictures before a change to the table's look goes live.
+
+## D22. How work is tracked and checked
+
+- **Decided:** 2026-11-01. John asked for standard practice (D04); the details below are Claude's and reversible.
+- **Decision:**
+  - Every piece of work is a GitHub issue, and every pull request names its issue.
+  - Each release gets a date-based version, a git tag and GitHub release notes (PR #175).
+  - Each review pass is posted as a comment on its pull request: what was checked, the findings, how each was resolved, and the commit reviewed.
+  - Library updates arrive as monthly Dependabot pull requests into `develop`. A weekly check keeps an issue open while high or critical security advisories exist.
+- **Not done, on purpose:**
+  - A paid staging server (it would roughly double the bill; releases are tested on a copy instead, see [DEPLOY.md](DEPLOY.md#before-a-release-testing-on-a-copy)).
+  - Required approvals on pull requests. Every PR comes from John's one account, and GitHub doesn't let an author approve their own PR.
+  - Strict commit formats, and an outside error-tracking service (it would send players' data to another company).
+- **Where:** [CONTRIBUTING.md](../CONTRIBUTING.md), [CLAUDE.md](../CLAUDE.md), `.github/dependabot.yml`.
