@@ -43,8 +43,9 @@ jobs:
       - name: Migrations match schema.ts
         timeout-minutes: 5
         run: |
-          # With no terminal, a question (was this column renamed?) ends drizzle-kit quietly, exit 0 and no file, so only
-          # its own "No schema changes" counts as a pass. Input from /dev/null and a timeout, so it can't wait for an answer.
+          # With no terminal, a question (was this column renamed?) stops drizzle-kit without a file, and older versions
+          # exited 0 then, so only its own "No schema changes" counts as a pass. Input from /dev/null and a timeout, so it
+          # can't wait for an answer.
           out=$(timeout 120 npm run db:generate < /dev/null 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
           if ! grep -q 'No schema changes' <<<"$out" || [ -n "$(git status --porcelain apps/server/drizzle)" ]; then
