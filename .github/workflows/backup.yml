@@ -7,7 +7,8 @@ name: Nightly backup
 # "Backups". Read-only on the site; costs nothing (public repos run Actions free).
 on:
   schedule:
-    # 09:41 UTC is about 5 am in New York, the quietest time for games. GitHub can start it late.
+    # Meant for 09:41 UTC (about 5 am in New York, the quietest time for games), but GitHub starts
+    # scheduled jobs late: so far between about 15:30 and 16:30 UTC. See docs/DEPLOY.md.
     - cron: '41 9 * * *'
   workflow_dispatch:
 

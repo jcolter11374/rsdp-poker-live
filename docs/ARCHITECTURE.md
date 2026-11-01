@@ -23,7 +23,7 @@ apps/web               React client. Event-driven store, table, panels.  (Workst
 - Cards are 2-character strings: rank `23456789TJQKA`, suit `cdhs` (e.g. `As`, `Td`).
 - The server is authoritative. Clients send intents and get back views filtered per viewer.
 - Hidden information never leaves the server unfiltered: every hole card goes through `visibleEvents`/views.
-- Randomness: the runtime shuffles with a CSPRNG and passes the full deck order into the hand. Tests inject a seeded RNG.
+- Randomness: each hand's deck comes from its fairness seeds (rsdp-fair-v1, see [FAIRNESS.md](FAIRNESS.md)): a server seed from the runtime's random source, committed one hand ahead, mixed with the seated players' browser seeds. The runtime passes the full deck order into the hand. Tests inject a seeded random source.
 - No PokerNow code, art, sounds or wording. Behaviour reference only.
 
 ## The hand engine (packages/engine/src/core)
@@ -43,7 +43,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - One runtime per table. It owns the seat state machine (requested, approved, active, away, busted, leaving), the between-hands pipeline, timers, and permissions.
 - Between hands, in this order: apply queued changes (settings, stack edits, rebuys, removals, approvals, moves), handle busts, check stop or pause, check the gate (`tableGate` for tournament tables), plan forced bets, shuffle, start the hand.
 - Settings are one typed, versioned schema (zod) shared with the web. Edits queue and apply at the next hand. Every change is logged as a diff with who made it.
-- Storage: Postgres via Drizzle; PGlite in development and tests. A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
+- Storage: Postgres via Drizzle when `DATABASE_URL` is set; otherwise embedded PGlite, which the live site runs on its Fly volume, and which development and most tests use. CI also runs the database tests against a real Postgres (`TEST_DATABASE_URL`). A durable job table backs every timer that must survive a restart (tournament auto-start, recurring events, waitlist offers).
 - Identity: a persistent guest id per browser (localStorage `rsdp.guestId`); guests need no account for anything, tournaments included. Optional username and password accounts (`apps/server/src/accounts.ts`, `/api/account/*`, pages `/signin` `/signup` `/reset` `/profile`):
   - Signing up turns the browser's guest player into the account's primary player, so nothing moves.
   - Signing in elsewhere sends a session token (localStorage `rsdp.session`, socket auth `session`, header `X-Session-Token`); that browser plays as the primary player. When the player ticks "this is my device" (on by default; untick on a friend's phone), its guest id is linked to the account (its tables and tournaments show in the profile history) and its notes and picture are copied over (`adoptGuest`). Signing in while signed in to another account is refused.
@@ -73,7 +73,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 
 ## Branches and ownership
 
-- `main`: releases only (John approves releases; he has given a standing OK for finished, reviewed and play-tested work). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
+- `main`: releases only (John has given a standing OK for finished work to go live without asking him each time; see [DECISIONS.md](DECISIONS.md#d05-branches-merges-and-releases)). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 - Ownership: W1 `packages/tournament`, `apps/server/src/tournament/*` and the tournament pages. W2 `packages/engine/src/modifiers/*` and the cash-table settings sections. W3 `packages/engine/src/variants/*`. W4 shared table components, styles and the records pages. Workstream 0 owns `core/`, the runtime, storage and identity.
 
 ## Changing contracts
