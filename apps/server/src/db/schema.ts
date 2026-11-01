@@ -479,7 +479,7 @@ export const suggestions = pgTable(
 /**
  * The public, hash-chained record (packages/engine/src/audit.ts): fingerprints
  * of hands, chip totals, admin actions and server starts. Append-only; the
- * hashes, copied to GitHub every hour, show any later edit.
+ * hashes, copied to GitHub every few hours, show any later edit.
  */
 export const auditLog = pgTable(
   'audit_log',

@@ -67,9 +67,10 @@ first, details after.
   someone using an odds calculator on another device at a table with people;
   we just never offer one there.
 - **Some of what John could do now leaves public traces.** Since 26 October
-  2026, GitHub builds and signs every release, checks every hour which build
-  the live site runs, and keeps a copy of a tamper-evident record of every
-  hand, chip total and admin action. See [Checking John](#checking-john) and
+  2026, GitHub builds and signs every release, checks which build the live
+  site runs (every few hours in practice, and since 1 November 2026 also
+  right after each release GitHub deploys), and keeps a copy of a
+  tamper-evident record of every hand, chip total and admin action. See [Checking John](#checking-john) and
   the [/transparency](/transparency) page.
 - **This doesn't make the developer impossible to cheat.** The next section
   lists, plainly, what John could still do as the person who runs the site.
@@ -95,11 +96,14 @@ when they deal at a home game.
   the proof file run through your own copy of `scripts/verify-hand.mjs`, would
   still pass. Since 26 October 2026 a normal release can be checked: GitHub
   builds it from the public code and signs a record of which commit it came
-  from, and GitHub's hourly watcher checks that the live machine runs exactly
+  from, and GitHub's watcher checks that the live machine runs exactly
   that image (see [Checking John](#checking-john)). It also checks the
   machine's start command, its environment variables against `fly.toml` and
   the names of its secrets, since a setting like `NODE_OPTIONS` could make the
-  same image run other code. That catches a quiet redeploy or settings change.
+  same image run other code. That catches a quiet redeploy or settings change
+  that is still in place when the watcher next looks, which can be hours
+  later; one undone before then shows only as restarts in Fly's list of
+  machine events, which keeps only recent events.
   It can't see the values of secrets, only a fingerprint of each, and it
   doesn't catch changes made from a shell on the running server,
   which John can open: he could change the code there, or read its memory,
@@ -134,19 +138,20 @@ when they deal at a home game.
   hand histories live in a database he controls, and he could edit them.
   Since 26 October 2026 every hand, every change to a player's buy-ins and
   cash-outs, and every admin action that changes something also goes into a public, hash-chained
-  record, and GitHub copies it every hour. Editing something already in the
+  record, and GitHub copies it every few hours. Editing something already in the
   record now shows: in "Check this hand", in the ledger's check against the
   record, in a warning from any browser that saw the record before, and in
   the GitHub copy. What it doesn't stop: a false entry written at the time
   (say, a changed server recording a wrong hand as it happens; you'd see the
-  hand play out differently), an edit in the hour before GitHub copies it
-  that no browser saw, and the leaderboard, which is worked out from hands
+  hand play out differently), an edit in the hours before GitHub next copies
+  it that no browser saw, and the leaderboard, which is worked out from hands
   and isn't checked separately. If amounts matter, keep your own tally too.
 - **Use admin powers, or a shell on the server.** The admin page can remove
   test tables and answer suggestions; each use now goes in the public record
   and on [/transparency](/transparency). Looking is not recorded: the admin
-  page can list tables and who is at them without leaving an entry. Every
-  night GitHub downloads a backup of the whole database with the admin key,
+  page can list tables and who is at them without leaving an entry. Once a
+  day (lately around midday in New York, since GitHub starts the job hours
+  after its 5 am slot) GitHub downloads a backup of the whole database with the admin key,
   locked with a key only John holds. It includes any hand being played at that
   moment, cards and all, so John could open it and look; each download goes in
   the public record, so you can see when one was taken. John can also open a shell on the
@@ -177,8 +182,9 @@ the repository (and pulling the `transparency` branch now and then).
   exact image. The site's footer shows the commit the server says it runs.
   `main` isn't locked against rewriting, so the watcher also checks that the
   commit an image was built from is still on `main`.
-- **The deploy watcher.** Every hour GitHub asks Fly which image the live
-  machine runs, its settings and secret names, and the starts and stops Fly
+- **The deploy watcher.** Right after each release GitHub deploys (since 1
+  November 2026), and on a schedule set to every hour, GitHub asks Fly which
+  image the live machine runs, its settings and secret names, and the starts and stops Fly
   reports, checks GitHub's signed record of that image, and writes the result
   to the
   [`transparency` branch](https://github.com/jcolter11374/rsdp-poker-live/tree/transparency/deploys)
@@ -190,10 +196,14 @@ the repository (and pulling the `transparency` branch now and then).
   build from a commit no longer on `main` opens an issue on GitHub, which
   notifies everyone watching the repository. A secret that changes is noted
   in the log (by a fingerprint keyed with a secret only GitHub has, so it
-  can't be used to guess the secret). If the watcher can't reach the site,
-  Fly or GitHub, it tries again the next hour, and opens an issue once a check
-  hasn't managed to run for six hours, since switching a check off would look
-  the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
+  can't be used to guess the secret). GitHub starts scheduled jobs late, by
+  hours: the schedule has run every 3 to 8 hours rather than every hour. So a
+  release made any other way than through GitHub, say from John's own
+  computer, is only seen at the next scheduled run. If the watcher can't
+  reach the site, Fly or GitHub, it tries again on its next run, and opens an
+  issue on its first run after a check has gone 12 hours without managing to
+  run (with GitHub's delays, up to about 20 hours), since switching a check
+  off would look the same. It skips the deploy check while a deploy is running. Restarts are logged too; one after each
   release is normal. Fly keeps only its recent events, so a burst of restarts
   between two checks may show only in part.
 - **The public record.** Every hand, every change to a player's buy-ins and
@@ -210,7 +220,7 @@ the repository (and pulling the `transparency` branch now and then).
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
   without names, and anyone can see when hands were played.
-- **GitHub's copy of the record.** Every hour the watcher reads the whole
+- **GitHub's copy of the record.** Each time the watcher runs, it reads the whole
   record again, checks every entry it ever copied is still there unchanged
   and that the chain is unbroken, and copies the new entries to the
   `transparency` branch. If an entry it already copied is changed or gone, it
@@ -226,7 +236,7 @@ the repository (and pulling the `transparency` branch now and then).
   as the hand finished). The ledger checks every buy-in and cash-out against
   the record, and says so if a player's totals were found changed when a
   closed table was opened again. Those two compare with the record as the
-  site shows it now; it's GitHub's hourly check of the whole record that shows
+  site shows it now; it's GitHub's regular check of the whole record that shows
   whether those entries were edited since they were copied. These checks are
   code the site sends you, so they are only as honest as that code; GitHub's
   copy is the one that doesn't depend on it.

@@ -137,6 +137,8 @@ export interface AppDeps {
   audit?: AuditLog;
   /** What this server says it was built from; production reads it from the environment. */
   build?: BuildInfo;
+  /** Asks the database something trivial, for /api/health's `db` field. Without it the field is left out. */
+  checkDb?: () => Promise<unknown>;
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
@@ -369,8 +371,12 @@ export function createApp(deps: AppDeps = {}) {
       .catch((e) => log('loading avatars failed', e));
   }
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, tables: tables.size, memoryMb: Math.round(process.memoryUsage().rss / 1_048_576) });
+  // `ok` and the 200 stay as they are whatever the database says: Fly's own health check reads them, and failing it
+  // takes the only machine out of service. The site-down alert reads `db` too (docs/DEPLOY.md, "Site-down alert").
+  const dbHealth = deps.checkDb ? databaseHealth(deps.checkDb, log) : null;
+  app.get('/api/health', async (_req, res) => {
+    const body = { ok: true, tables: tables.size, memoryMb: Math.round(process.memoryUsage().rss / 1_048_576) };
+    res.json(dbHealth ? { ...body, db: await dbHealth() } : body);
   });
   auditRoutes(app, audit, build, startedAt, log);
   const isAdmin = adminGate(deps.adminKey ?? process.env.ADMIN_KEY, () => clock.now());
@@ -1638,6 +1644,42 @@ export function createApp(deps: AppDeps = {}) {
       await new Promise<void>((resolve) => http.close(() => resolve()));
       await audit.flush();
     },
+  };
+}
+
+/** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
+export const DB_HEALTH_MS = 1_000;
+
+/**
+ * Whether the database answers: 'ok', 'slow' (no answer within DB_HEALTH_MS)
+ * or 'error'. A check still waiting is shared, so a stuck database doesn't
+ * pile up a query for every health check. Logs only when the answer changes.
+ */
+export function databaseHealth(check: () => Promise<unknown>, log: (message: string, err?: unknown) => void) {
+  let pending: Promise<'ok' | 'error'> | null = null;
+  let last: 'ok' | 'slow' | 'error' = 'ok';
+  return async (): Promise<'ok' | 'slow' | 'error'> => {
+    pending ??= check().then(
+      () => 'ok' as const,
+      (err: unknown) => {
+        if (last !== 'error') log('database health check failed', err);
+        return 'error' as const;
+      },
+    );
+    const mine = pending;
+    void mine.finally(() => {
+      if (pending === mine) pending = null;
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<'slow'>((resolve) => {
+      timer = setTimeout(() => resolve('slow'), DB_HEALTH_MS);
+    });
+    const now = await Promise.race([mine, slow]);
+    clearTimeout(timer);
+    if (now === 'slow' && last !== 'slow') log(`database health check: no answer within ${DB_HEALTH_MS} ms`);
+    if (now === 'ok' && last !== 'ok') log('database health check: answering again');
+    last = now;
+    return now;
   };
 }
 

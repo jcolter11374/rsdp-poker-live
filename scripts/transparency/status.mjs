@@ -1,15 +1,18 @@
 #!/usr/bin/env node
-// Remembers, on the transparency branch, when each hourly check last managed
-// to run. A check that can't reach the site, Fly or GitHub for one hour is a
-// hiccup; for STALE_HOURS in a row it is a problem, since switching a check
-// off (say, by breaking the site's record routes or removing the Fly token)
-// would look just like that. Exits 1, writing STALE.md, when a check is stale.
+// Remembers, on the transparency branch, when each of the watcher's checks
+// last managed to run. A check that can't reach the site, Fly or GitHub on one
+// run is a hiccup; for STALE_HOURS in a row it is a problem, since switching a
+// check off (say, by breaking the site's record routes or removing the Fly
+// token) would look just like that. Exits 1, writing STALE.md, when a check is
+// stale.
 //   node scripts/transparency/status.mjs <folder> <record exit code> <deploy exit code>
 
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const STALE_HOURS = 6;
+// The watcher is scheduled hourly, but GitHub starts it late: gaps of 3 to 8
+// hours are normal. Twelve hours leaves room for that without a false alarm.
+const STALE_HOURS = 12;
 const [dir, ...codes] = process.argv.slice(2);
 const names = { record: 'Copying the public record', deploy: 'Checking what the live machine runs' };
 const file = path.join(dir, 'status.json');
@@ -33,4 +36,4 @@ if (stale.length) {
   process.exit(1);
 }
 rmSync(path.join(dir, 'STALE.md'), { force: true });
-console.log('every check ran within the last few hours');
+console.log(`every check ran within the last ${STALE_HOURS} hours`);

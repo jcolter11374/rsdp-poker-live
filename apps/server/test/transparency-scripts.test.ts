@@ -38,7 +38,7 @@ afterAll(async () => {
   await closeDb(db);
 });
 
-describe('the hourly copy and the standalone checker', () => {
+describe("the watcher's copy and the standalone checker", () => {
   it('copies the record, carries on next time, and catches a rewritten record', { timeout: 30_000 }, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-copy-'));
     const audit = AuditLog.after(memoryAuditStore(), null, { log: () => {} });
@@ -161,6 +161,31 @@ esac
   it('tells a failed signature from a hiccup', { timeout: 60_000 }, async () => {
     expect((await check({ verify: 'Error: verifying with issuer: failed to verify certificate identity' })).code).toBe(1);
     expect((await check({ verify: 'Error: failed to fetch manifest: connection reset' })).code).toBe(2);
+  });
+});
+
+describe('the check that every check still runs', () => {
+  // GitHub starts the hourly schedule late, 3 to 8 hours apart in practice, so only a long silence is a problem.
+  const status = (hoursAgo: number, codes: [string, string]) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-status-'));
+    const at = new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+    writeFileSync(path.join(dir, 'status.json'), JSON.stringify({ record: { since: at, lastRan: at }, deploy: { since: at, lastRan: at } }));
+    return node('scripts/transparency/status.mjs', dir, ...codes).then((r) => ({ ...r, dir }));
+  };
+
+  it("doesn't raise an alarm over a gap GitHub's late schedule makes", async () => {
+    const r = await status(8, ['2', '2']);
+    expect(r.code).toBe(0);
+    expect(existsSync(path.join(r.dir, 'STALE.md'))).toBe(false);
+  });
+
+  it('raises one once a check has not run for 12 hours', async () => {
+    const r = await status(13, ['0', '2']);
+    expect(r.code).toBe(1);
+    // The record copy ran just now; the deploy check is the one that stopped.
+    const stale = readFileSync(path.join(r.dir, 'STALE.md'), 'utf8');
+    expect(stale).toContain('Checking what the live machine runs');
+    expect(stale).not.toContain('Copying the public record');
   });
 });
 

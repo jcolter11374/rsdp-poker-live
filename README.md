@@ -48,7 +48,7 @@ The server is authoritative: browsers send intents (`hand:act`, `seat:request`, 
 
 ## Tests and CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (including the hand fuzzers and the Postgres storage tests against a Postgres service), a production build, the browser smoke test against the Docker image, and a backup restore drill on every pull request and every push to `main` or `develop`. Merges to `main` deploy a GitHub-built, signed image to Fly.io; hourly and nightly jobs watch the live site and back it up (see [docs/CODE_TOUR.md](docs/CODE_TOUR.md#from-a-commit-to-the-live-site)).
+GitHub Actions (`.github/workflows/ci.yml`) runs the typecheck, all unit tests (including the hand fuzzers and the Postgres storage tests against a Postgres service), a production build, the browser smoke test against the Docker image, and a backup restore drill on every pull request and every push to `main` or `develop`. Merges to `main` deploy a GitHub-built, signed image to Fly.io; scheduled jobs watch the live site and back it up (see [docs/CODE_TOUR.md](docs/CODE_TOUR.md#from-a-commit-to-the-live-site)).
 
 ## Who made it
 
