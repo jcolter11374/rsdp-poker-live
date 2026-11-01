@@ -22,6 +22,8 @@ export function closingRefs(text: string | null | undefined, repo: string): numb
 export function issueRefs(text: string | null | undefined, repo: string): number[];
 export function onDevelopMarker(pr: number, sha: string): string;
 export function parseOnDevelopMarkers(text: string | null | undefined): { pr: number; sha: string }[];
+export function liveMarker(sha: string): string;
+export function parseLiveMarker(text: string | null | undefined): string | null;
 export function prProblems(input: {
   pr: { base: string; head: string; body: string; labels: string[] };
   repo: string;

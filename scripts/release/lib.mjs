@@ -84,6 +84,14 @@ export function parseOnDevelopMarkers(text) {
   return [...(text ?? '').matchAll(/<!-- on-develop pr=(\d+) sha=([0-9a-f]{7,40}) -->/g)].map((m) => ({ pr: Number(m[1]), sha: m[2] }));
 }
 
+/** The hidden note on the "live on the site" comment: the deployed commit. */
+export const liveMarker = (sha) => `<!-- live sha=${sha} -->`;
+
+/** The deployed commit from a "live" comment, or null. */
+export function parseLiveMarker(text) {
+  return /<!-- live sha=([0-9a-f]{7,40}) -->/.exec(text ?? '')?.[1] ?? null;
+}
+
 /**
  * What a pull request is missing before it can merge. `pr` is {base, head,
  * body, labels}; `logs` holds changelog.json's release lists and `features`
@@ -145,10 +153,25 @@ export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main
       problems.push(`"${r.id}" is already live, so its notes can't change: make it match main, and put new lines in the next release's entry${nextEntry} or start one at the top.`);
     }
   }
+  // The one-time move to versions: each live old-style id may become one version of the same day
+  // that names its `commit` and keeps the same notes. Nothing else live may be renamed or removed.
+  const content = (list, featureList, id) => {
+    const twin = featureList.find((r) => r.id === id);
+    return JSON.stringify([list.find((r) => r.id === id)?.fixes ?? null, twin ? { ...twin, id: null } : null]);
+  };
+  const movedTo = new Set();
   for (const r of pr.base === 'main' ? logs.main : logs.base) {
     if (!onMain.has(r.id) || prIds.has(r.id)) continue;
-    // The one-time move to versions: a live old-style id became a version of the same day that names its `commit`.
-    if (!isVersion(r.id) && logs.pr.some((x) => x.commit && isVersion(x.id) && dayOf(x.id) === dayOf(r.id))) continue;
+    if (!isVersion(r.id)) {
+      const was = content(logs.main, features.main, r.id);
+      const to = logs.pr.find(
+        (x) => x.commit && isVersion(x.id) && !onMain.has(x.id) && !movedTo.has(x.id) && dayOf(x.id) === r.date && content(logs.pr, features.pr, x.id) === was,
+      );
+      if (to) {
+        movedTo.add(to.id);
+        continue;
+      }
+    }
     problems.push(`"${r.id}" is already live, so it can't be renamed or removed. Put new lines in the next release's entry${nextEntry}, or start one at the top.`);
   }
 

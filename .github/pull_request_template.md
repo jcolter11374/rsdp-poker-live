@@ -11,6 +11,20 @@ A tiny change with no issue: add the "no issue needed" label instead.
 
 ## How it was tested
 
+## Review
+
+<!--
+Who reviewed it and what they found, and the commit (head SHA) they
+reviewed. Post the findings as a comment on this pull request too, so the
+review leaves a trace on GitHub. Say what was fixed and what wasn't, and why.
+-->
+
+## Left to do
+
+<!--
+Anything this leaves for later, each with its own issue (#123), or "None".
+-->
+
 ## Release notes
 
 <!--

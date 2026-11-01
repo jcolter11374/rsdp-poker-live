@@ -32,7 +32,9 @@ up, it gets an issue too.
 1. **Every piece of work is an issue, opened the moment it comes up.** A bug
    someone found, a feature John agreed to, a follow-up someone promised,
    something waiting on John: each gets an issue straight away, even a
-   small one.
+   small one. **The exception is anything private:** a security problem
+   or a privacy request is never a public issue. Report it privately (see
+   [SECURITY.md](.github/SECURITY.md)) or message John.
 2. **An issue's labels say where it stands** (see [Labels](#labels)). Change
    them when the state changes, in the same sitting.
 3. **Every pull request names its issue.** "Closes #123" when it finishes
@@ -57,6 +59,7 @@ been started.
 | --- | --- |
 | `bug` | Something on the site is broken or wrong |
 | `enhancement` | A new feature or a change to how something works |
+| `chore` | Upkeep players won't see: cleanup, tests, tooling, hosting tasks |
 | `documentation`, `security`, `dependencies`, `question` | What they say |
 | `status: in progress` | Someone is working on it right now (a session, a pull request). Take it off if the work stops. |
 | `status: on develop` | Done and merged into `develop`, not on the live site yet. Added and removed by the workflows. |
@@ -84,6 +87,9 @@ it: changing only the file makes a new, empty label.
    test against the real Docker image, a backup restore drill, and the PR
    check for the issue link and release notes. We also run a separate review
    pass with another AI session. That pass is ours, not an outside audit.
+   Its findings, and the commit it reviewed, go in a comment on the pull
+   request, so the review leaves a trace on GitHub. Anything left for later
+   gets its own issue, listed under "Left to do".
 4. **Merge into `develop`.** GitHub only closes issues for merges into the
    default branch (`main`), so a workflow labels each issue the pull request
    closes `status: on develop` and comments on it.

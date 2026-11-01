@@ -7,6 +7,7 @@
   { "name": "wontfix", "color": "ffffff", "description": "This will not be worked on" },
   { "name": "dependencies", "color": "0366d6", "description": "Updates a package or tool we depend on" },
   { "name": "security", "color": "b60205", "description": "A security problem, or hardening against one" },
+  { "name": "chore", "color": "c2e0c6", "description": "Upkeep players won't see: cleanup, tests, tooling, hosting tasks" },
 
   { "name": "status: in progress", "color": "fbca04", "description": "Someone is working on it right now" },
   { "name": "status: on develop", "color": "0e8a16", "description": "Done on develop, not on the live site yet; closes by itself when released" },

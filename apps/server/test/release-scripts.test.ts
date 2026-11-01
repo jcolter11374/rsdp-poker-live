@@ -13,7 +13,9 @@ import {
   dayOf,
   isVersion,
   issueRefs,
+  liveMarker,
   onDevelopMarker,
+  parseLiveMarker,
   parseOnDevelopMarkers,
   prProblems,
   renderChangelog,
@@ -52,6 +54,8 @@ describe('issue links in a pull request', () => {
     const note = `Merged into develop in #9.\n\n${onDevelopMarker(9, 'abc1234def')}`;
     expect(parseOnDevelopMarkers(note)).toEqual([{ pr: 9, sha: 'abc1234def' }]);
     expect(parseOnDevelopMarkers('no note')).toEqual([]);
+    expect(parseLiveMarker(`Live on the site since 2026-11-01 18:02 UTC.\n\n${liveMarker('abc1234def')}`)).toBe('abc1234def');
+    expect(parseLiveMarker('Live on the site since 2026-11-01 18:02 UTC.')).toBeNull();
   });
 });
 
@@ -171,6 +175,18 @@ describe('pull request checks', () => {
     expect(check({ base: 'main', head: 'develop' }, { main: shipped, base: shipped, pr: [entry('2026.11.04'), ...live] }, '2026-11-04')[0]).toMatch(/can't be renamed or removed/);
     const before = [entry('2026-11-01'), entry('2026-10-31-d')];
     expect(check({ body: 'Closes #4' }, { main: before, base: before, pr: live })).toEqual([]);
+    // The move is one to one: each live old id becomes one version that names its commit and keeps its notes.
+    const twoLive = [entry('2026-11-01-b', { date: '2026-11-01', fixes: ['b'] }), entry('2026-11-01'), entry('2026-10-31-d')];
+    const renamedBoth = [entry('2026.11.01.2', { fixes: ['b'] }), ...live];
+    expect(check({ body: 'Closes #4' }, { main: twoLive, base: twoLive, pr: renamedBoth })).toEqual([
+      '"2026-11-01-b" is already live, so it can\'t be renamed or removed. Put new lines in the next release\'s entry, or start one at the top.',
+    ]);
+    const both = [entry('2026.11.01.2', { fixes: ['b'], commit: 'b'.repeat(40) }), ...live];
+    expect(check({ body: 'Closes #4' }, { main: twoLive, base: twoLive, pr: both })).toEqual([]);
+    expect(check({ body: 'Closes #4' }, { main: twoLive, base: twoLive, pr: live })[0]).toMatch(/"2026-11-01-b" is already live/);
+    expect(check({ body: 'Closes #4' }, { main: before, base: before, pr: [entry('2026.11.01', { commit: 'a'.repeat(40), fixes: ['changed'] }), entry('2026-10-31-d')] })[0]).toMatch(
+      /"2026-11-01" is already live/,
+    );
   });
 
   it('doesn\'t block other work when develop\'s copy of a live entry has drifted, and lets it be put back', () => {

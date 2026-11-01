@@ -5,7 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting it. Plain words are fine; screenshots help a lot.
+        Thanks for reporting it. Plain words are fine.
+
+        **This page is public: anyone can read it.** Please don't paste links to
+        tables or tournaments (a table link works as an invite), other players'
+        names, or screenshots that show them. For anything private, or a
+        security problem, message John instead.
   - type: textarea
     id: what
     attributes:
@@ -33,10 +38,10 @@ body:
         - Account, profile or leaderboard
         - Another page
   - type: input
-    id: link
+    id: table
     attributes:
-      label: Link to the table or tournament
-      description: The address from your browser, if you have it.
+      label: Which table or tournament?
+      description: Its name and roughly when it started, not its link.
   - type: input
     id: when
     attributes:

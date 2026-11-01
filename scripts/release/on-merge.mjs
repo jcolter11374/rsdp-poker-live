@@ -21,8 +21,11 @@ if (!pr?.merged || (into !== 'develop' && into !== 'main')) {
 const done = [];
 for (const n of closingRefs(pr.body ?? '', repo())) {
   const issue = await gh('GET', `/repos/{repo}/issues/${n}`, null, { allow404: true });
-  // Into main, GitHub may already have closed the issue as part of the merge.
-  if (!issue || issue.pull_request || (into === 'develop' && issue.state !== 'open')) {
+  // Into main, GitHub closes the issue itself as part of the merge, within seconds of it. An issue
+  // closed before that (already live, or closed by hand) is left alone.
+  const closedByThisMerge =
+    into === 'main' && issue?.state === 'closed' && Date.parse(issue.closed_at) >= Date.parse(pr.merged_at) - 60_000;
+  if (!issue || issue.pull_request || (issue.state !== 'open' && !closedByThisMerge)) {
     console.log(`#${n}: not an open issue; skipped.`);
     continue;
   }
