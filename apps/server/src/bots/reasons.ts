@@ -36,6 +36,7 @@ export function botNote(seq: number, seat: SeatIndex, level: BotLevel, why: Move
   if (why.capped) note.capped = true;
   if (Number.isFinite(why.often)) note.often = toOdds(why.often!);
   if (Number.isFinite(why.thrown)) note.thrown = Math.max(0, Math.round(why.thrown!));
+  if (why.opened && rule === 'bring-in') note.opened = true;
   if (why.alt) note.alt = { thrown: Math.max(0, Math.round(why.alt.thrown)), share: toShare(why.alt.equity) };
   if (level === 'hard') {
     if (why.inPosition) note.last = true;

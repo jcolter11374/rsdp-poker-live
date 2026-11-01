@@ -474,7 +474,7 @@ describe('a tip only uses what that seat can see', () => {
 
 // ---------------------------------------------------------------- the bots' reasons
 
-const NOTE_KEYS = ['seq', 'seat', 'level', 'rule', 'share', 'split', 'vs', 'drawsLeft', 'cost', 'need', 'big', 'capped', 'often', 'thrown', 'alt', 'last', 'you', 'yourBets'];
+const NOTE_KEYS = ['seq', 'seat', 'level', 'rule', 'share', 'split', 'vs', 'drawsLeft', 'cost', 'need', 'big', 'capped', 'often', 'thrown', 'alt', 'last', 'you', 'yourBets', 'opened'];
 const NOTE_WORDS = [...NOTE_KEYS, ...BOT_NOTE_RULES, ...BOT_LEVELS, 'folds-often', 'calls-often'];
 
 describe('what a bot says about its move (botNote)', () => {
@@ -525,6 +525,26 @@ describe('what a bot says about its move (botNote)', () => {
     expect(botNote(1, 1, 'hard', { ...why, foldRate: 0.2 }, hand, 'p0').you).toBe('calls-often');
     expect(botNote(1, 1, 'hard', { ...why, foldRate: 0.35 }, hand, 'p0').you).toBeUndefined();
     expect(botNote(1, 1, 'normal', why, hand, 'p0').yourBets).toBeUndefined();
+  });
+
+  it('says a stud bring-in was its choice only when the player who had to bring in is all in', () => {
+    // Seat 1 (2d 7h, 3c up) has to bring in; seat 2 (8d 4s, Kh up) is next. Neither has anything to complete with.
+    const cards = ['2d', '8d', 'Kd', 'Ks', '7h', '4s', 'Qd', 'Qs', '3c', 'Kh', 'Ad', 'As'];
+    for (const level of BOT_LEVELS) {
+      const forced = dealt('stud', cards, 4);
+      expect(forced.toAct).toBe(1);
+      const owed = explainMove(forced, 1, seededRand(1), { level, players: READS }).why;
+      expect(owed.rule).toBe('bring-in');
+      expect(botNote(1, 1, level, owed, forced, 'p0').opened).toBeUndefined();
+      // Seat 1 is all in from the ante, so seat 2 opens and could fold.
+      const open = dealt('stud', cards, 4, [200, 1, 200, 200]);
+      expect(open.toAct).toBe(2);
+      const chose = explainMove(open, 2, seededRand(1), { level, players: READS }).why;
+      expect(chose.rule).toBe('bring-in');
+      expect(botNote(1, 2, level, chose, open, 'p0').opened).toBe(true);
+      // Only a bring-in says so: a completion is a choice anyway.
+      expect(botNote(1, 2, level, { ...chose, rule: 'complete' }, open, 'p0').opened).toBeUndefined();
+    }
   });
 
   it("doesn't count your bets once you have folded: Hard reads only the players still in", () => {
