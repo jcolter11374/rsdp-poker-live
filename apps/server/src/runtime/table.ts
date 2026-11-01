@@ -909,9 +909,7 @@ export class TableRuntime {
   /** Rake and the Nit game after a cash hand, once stacks are back on the seats. */
   private settleSideGames(hand: HandState) {
     const sg = this.sideGames();
-    const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
-    if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
-    this.logBounty(hand, 0);
+    this.feeAndBounty(hand);
 
     const round = sg.nit;
     if (!round || !this.nitStillOn()) return;
@@ -924,8 +922,16 @@ export class TableRuntime {
     if (round.holders.length === 1) this.nitPays(round.holders[0], 'is the last nit');
   }
 
+  /** A finished cash hand's house fee joins the fee total, and its 7-2 bounties go in the table log. */
+  private feeAndBounty(hand: { events: HandState['events']; seats: { seat: number; playerId: PlayerId }[] }) {
+    const sg = this.sideGames();
+    const rake = hand.events.reduce((n, e) => n + (e.t === 'transfer' && e.kind === 'rake' ? e.amount : 0), 0);
+    if (rake) sg.rakeTotal = (sg.rakeTotal ?? 0) + rake;
+    this.logBounty(hand, 0);
+  }
+
   /** A line in the table log for each 7-2 bounty paid, so the whole table sees it. */
-  private logBounty(hand: HandState, fromEvent: number) {
+  private logBounty(hand: { events: HandState['events']; seats: { seat: number; playerId: PlayerId }[] }, fromEvent: number) {
     const collected = new Map<number, number>();
     for (const e of hand.events.slice(fromEvent)) {
       if (e.t === 'transfer' && e.kind === 'bounty-72' && e.to !== 'house') collected.set(e.to, (collected.get(e.to) ?? 0) + e.amount);
@@ -2038,8 +2044,8 @@ export class TableRuntime {
    * finished before the server went down (a table is saved up to half a second after it changes; a hand at
    * once). Closes the hand with its saved result instead of playing it again (issue #224): every stack is
    * as the hand left it, then queued chips, leavers, busted players and the next deal go on as after any
-   * hand. The hand itself isn't kept to show again here (its history has it), and a Nit round isn't settled
-   * from it. False, changing nothing, when `past` is not the hand saved in progress. Call before resume().
+   * hand. Its house fee joins the fee total and its 7-2 bounties are logged, as after any hand. The hand
+   * itself isn't kept to show again here (its history has it), and a Nit round isn't settled from it. False, changing nothing, when `past` is not the hand saved in progress. Call before resume().
    */
   closeSavedHand(past: PastHand): boolean {
     const s = this.state;
@@ -2068,6 +2074,7 @@ export class TableRuntime {
     if (realGameHand(past.seats)) s.realGame = true;
     this.log(`Hand #${past.handNumber} had already ended when the server stopped, so it was closed with its saved result`);
     this.queuedChipsLand();
+    this.feeAndBounty(past);
     this.leaversGo();
     this.afterHand(this.clock.now(), s.settings.timing.nextHandDelaySeconds * 1000);
     return true;

@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tableRef } from '@rsdp/engine';
-import { variants } from '@rsdp/engine/core';
+import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp, memoryIdentity, memoryStore, type IdentityService, type TableStore } from '../src/app';
@@ -127,6 +127,37 @@ describe('a crash right after a cash hand ends (#224)', () => {
     back.resume();
     clock.advance(60_000);
     expect(back.state.handNumber).toBe(2);
+    back.dispose();
+  });
+
+  it('counts the closed hand\'s house fee, so the settle-up books still balance', () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.modifiers.rake = { ...(settings.modifiers.rake as object), enabled: true, percent: 10, noFlopNoDrop: false };
+    const rt = TableRuntime.create({ id: 'crash224-f', hostId: 'host', settings }, { clock, rng: seeded() });
+    for (const p of ['host', 'a']) rt.connect(p);
+    ['host', 'a'].forEach((p, seat) => rt.requestSeat(p, { seat, name: p.toUpperCase(), stack: 100 }));
+    rt.start('host');
+    const midHand = JSON.stringify(rt.state);
+    rt.act(toAct(rt), { type: 'raise', to: 20 });
+    for (let i = 0; i < 50 && rt.handInProgress; i++) {
+      const legal = engine.legalActions(rt.state.hand!, rt.state.hand!.toAct!)!;
+      rt.act(toAct(rt), legal.canCheck ? { type: 'check' } : { type: 'call' });
+    }
+    const fee = rt.state.sideGames?.rakeTotal ?? 0;
+    expect(fee).toBeGreaterThan(0);
+    const record = rt.state.history.at(-1)!;
+    rt.dispose();
+
+    const back = new TableRuntime(JSON.parse(midHand) as RuntimeState, { clock, rng: seeded(5) });
+    const before = back.state.sideGames?.rakeTotal ?? 0;
+    expect(back.closeSavedHand(pastHand(record))).toBe(true);
+    expect(back.state.sideGames?.rakeTotal ?? 0).toBe(before + fee);
+    // Buy-ins = stacks + cash-outs + fees, as the settle-up panel checks.
+    const chips = back.state.seats.reduce((n, x) => n + (x?.stack ?? 0), 0);
+    const ledger = Object.values(back.state.ledger);
+    expect(chips + ledger.reduce((n, r) => n + (r.cashOut ?? 0), 0) + back.state.sideGames!.rakeTotal!).toBe(ledger.reduce((n, r) => n + r.buyIn, 0));
     back.dispose();
   });
 });
