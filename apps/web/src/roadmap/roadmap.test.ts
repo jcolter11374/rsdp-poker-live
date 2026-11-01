@@ -27,15 +27,28 @@ describe('roadmap.json', () => {
     }
   });
 
+  // Dates from the files only, never today's, so the answer is the same on any day.
+  const newestDate = (list: { date: string }[]) => list.reduce((max, r) => (r.date > max ? r.date : max), '');
+  const howToFix =
+    'Update apps/web/src/roadmap/roadmap.json before releasing: move what shipped into "Live now", check "Coming in the next release" and "Later", and set lastUpdated.';
+
   it('was updated within a week of the newest release', () => {
-    // Dates from the files only, never today's, so the answer is the same on any day.
-    const newest = changelog.reduce((max, r) => (r.date > max ? r.date : max), '');
+    const newest = newestDate(changelog);
     const daysBehind = (Date.parse(newest) - Date.parse(data.lastUpdated)) / 86_400_000;
     expect(
       daysBehind,
-      `roadmap.json was last updated ${data.lastUpdated}, more than a week before the newest release in changelog.json (${newest}). ` +
-        'Update apps/web/src/roadmap/roadmap.json before releasing: move what shipped into "Live now", check "Coming in the next release" and "Later", and set lastUpdated.',
+      `roadmap.json was last updated ${data.lastUpdated}, more than a week before the newest release in changelog.json (${newest}). ${howToFix}`,
     ).toBeLessThanOrEqual(7);
+  });
+
+  it('was updated no earlier than the newest release on What\'s new', () => {
+    // A new feature belongs in "Live now", so its release updates the roadmap too (CONTRIBUTING.md).
+    // A week alone is too loose: #204 found the roadmap only 6 days old but over 20 releases behind.
+    const newest = newestDate(releases);
+    expect(
+      data.lastUpdated >= newest,
+      `roadmap.json was last updated ${data.lastUpdated}, before the newest release on What's new (${newest}). ${howToFix}`,
+    ).toBe(true);
   });
 });
 
