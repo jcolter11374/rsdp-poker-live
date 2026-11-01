@@ -4,6 +4,7 @@ import {
   plannedMinutes,
   presetStructure,
   validateStructure,
+  MAX_CHIPS,
   type AnteType,
   type LevelRow,
   type PresetName,
@@ -33,6 +34,8 @@ const PRESET_LABELS: Record<PresetName, string> = {
 };
 
 const num = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
+/** A typed blind or ante: the server refuses anything above MAX_CHIPS, so stop there. */
+const chipNum = (v: string) => Math.min(MAX_CHIPS, num(v));
 
 /** Edit blind levels and breaks. Cards on phones, a grid on wider screens. */
 export function StructureEditor({ rows, onChange, startingStack, expectedEntrants, maxRebuys, lockedThrough = -1, currentRow, showGames }: Props) {
@@ -143,11 +146,11 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
               <span className="tn-level-no">{levelNo}</span>
               <label className="tn-cell">
                 <span className="tn-cell-label">Small blind</span>
-                <input type="number" min={0} disabled={locked} value={r.sb} onChange={(e) => update(i, { sb: num(e.target.value) })} />
+                <input type="number" min={0} max={MAX_CHIPS} disabled={locked} value={r.sb} onChange={(e) => update(i, { sb: chipNum(e.target.value) })} />
               </label>
               <label className="tn-cell">
                 <span className="tn-cell-label">Big blind</span>
-                <input type="number" min={1} disabled={locked} value={r.bb} onChange={(e) => update(i, { bb: num(e.target.value) })} />
+                <input type="number" min={1} max={MAX_CHIPS} disabled={locked} value={r.bb} onChange={(e) => update(i, { bb: chipNum(e.target.value) })} />
               </label>
               <label className="tn-cell tn-ante">
                 <span className="tn-cell-label">Ante</span>
@@ -158,7 +161,7 @@ export function StructureEditor({ rows, onChange, startingStack, expectedEntrant
                     <option value="big-blind">BB</option>
                   </select>
                   {r.anteType !== 'none' && (
-                    <input type="number" min={1} disabled={locked} value={r.ante} onChange={(e) => setAnte(i, r, num(e.target.value), r.anteType)} aria-label="Ante" />
+                    <input type="number" min={1} max={MAX_CHIPS} disabled={locked} value={r.ante} onChange={(e) => setAnte(i, r, chipNum(e.target.value), r.anteType)} aria-label="Ante" />
                   )}
                 </span>
               </label>
