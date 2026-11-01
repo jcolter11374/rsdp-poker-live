@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { allHandsOfTable, allTableLog, appendTableLog, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
+import { allHandsOfTable, allTableLog, appendTableLog, hasTableLog, createTable, deleteTableForGood, getTable, loadSnapshot, saveHand, saveSnapshot } from './db';
 import { setDisplayName, whoIs } from './identity';
 import { RUNTIME_VERSION, type ChatMessage, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
 import { gameTitle } from '@rsdp/engine/variants';
@@ -67,6 +67,10 @@ export function dbStore(db: Db): TableStore {
       return rows.map(pastHandFromRow);
     },
     saveLines,
+    async keepEarlierLines(tableId, lines) {
+      if (!lines.length || (await hasTableLog(db, tableId))) return;
+      await saveLines(tableId, lines);
+    },
     async loadLines(tableId) {
       const rows = await allTableLog<Record<string, unknown>>(db, tableId);
       return splitLines(rows.map((r) => ({ kind: r.kind, entry: { at: r.at.getTime(), ...r.item } }) as TableLine));

@@ -114,6 +114,36 @@ describe('download full log', () => {
     expect(full.chat.map((c) => c.text)).toEqual(['line 0', 'line 1', 'new']);
   });
 
+  it('keeps the lines an older table had, once newer ones push them out of its snapshot', async () => {
+    const { tableId } = await busyTable(3, 2);
+    clock.advance(10_000);
+    await new Promise((r) => setTimeout(r, 200));
+    await stop();
+    // As if the table was saved before the server kept every line: only its snapshot has them.
+    await db.execute(sql`delete from table_log where table_id = ${tableId}`);
+    await start();
+    const host = client('full-log-host-0123456789');
+    await host.call('table:join', { tableId });
+    // Enough new lines that the old ones leave the table's snapshot (the third old call left a bomb pot on, so start by turning it off).
+    for (let i = 0; i < 300; i++) await host.call('host:bombPot', { value: i % 2 === 1 });
+    for (let i = 0; i < 200; i++) {
+      if (i % 8 === 0) clock.advance(11_000);
+      await host.call('chat:send', { text: `later ${i}` });
+    }
+    expect(host.view().chat.some((c) => c.text === 'line 0')).toBe(false);
+    const full = await host.call<FullLog>('table:fullLog');
+    expect(full.log.filter((l) => /bomb pot/.test(l.text))).toHaveLength(303);
+    expect(full.chat.map((c) => c.text)).toEqual(['line 0', 'line 1', ...Array.from({ length: 200 }, (_, i) => `later ${i}`)]);
+    // Kept once: loading the table again doesn't save them a second time.
+    await new Promise((r) => setTimeout(r, 200));
+    const rows = await tableLogRows(tableId);
+    await stop();
+    await start();
+    await client('full-log-host-0123456789').call('table:join', { tableId });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await tableLogRows(tableId)).toBe(rows);
+  });
+
   it('goes with the table when the host deletes it, as its hands do', async () => {
     const { host, tableId } = await busyTable(4, 3);
     await new Promise((r) => setTimeout(r, 100));

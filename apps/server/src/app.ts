@@ -64,6 +64,11 @@ export interface TableStore {
   loadHands(tableId: string): Promise<PastHand[]>;
   /** Keeps new log and chat lines for good, after the ones before them. */
   saveLines(tableId: string, lines: TableLine[]): Promise<void>;
+  /**
+   * Keeps the lines a table already had when it was loaded, unless some are saved for it already: a table
+   * saved before every line was kept has its latest ones only in its snapshot, and they would drop off from there.
+   */
+  keepEarlierLines(tableId: string, lines: TableLine[]): Promise<void>;
   /** Every log and chat line saved for a table, oldest first. */
   loadLines(tableId: string): Promise<{ log: TableLogEntry[]; chat: ChatMessage[] }>;
   /** Deletes a cash table and its hands for good; false when there was no such table. */
@@ -110,6 +115,9 @@ export function memoryStore(): TableStore {
     },
     async saveLines(tableId, added) {
       lines.set(tableId, [...(lines.get(tableId) ?? []), ...structuredClone(added)]);
+    },
+    async keepEarlierLines(tableId, earlier) {
+      if (!lines.get(tableId)?.length) lines.set(tableId, structuredClone(earlier));
     },
     async loadLines(tableId) {
       return splitLines(structuredClone(lines.get(tableId) ?? []));
@@ -753,7 +761,12 @@ export function createApp(deps: AppDeps = {}) {
       track(id, handSaves);
     };
     // Log and chat lines are saved in order too, the ones that come in while a save runs together in the next.
-    let lineSaves = created.get(id) ?? Promise.resolve();
+    // First the ones the table has now, if none are saved for it yet (a table saved before every line was kept).
+    const earlier = structuredClone(startingLines(rt.state));
+    let lineSaves = (created.get(id) ?? Promise.resolve()).then(() =>
+      store.keepEarlierLines(id, earlier).catch((e) => log(`saving the earlier log of table ${id} failed`, e)),
+    );
+    track(id, lineSaves.catch(() => {}));
     let waiting: TableLine[] = [];
     rt.onLine = (line) => {
       waiting.push(line);

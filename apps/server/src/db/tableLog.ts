@@ -14,6 +14,12 @@ export async function appendTableLog(db: Db, tableId: string, rows: TableLogRow[
   await db.insert(tableLog).values(rows.map((r) => ({ tableId, kind: r.kind, at: r.at, item: r.item })));
 }
 
+/** Whether any log or chat line is saved for a table. */
+export async function hasTableLog(db: Db, tableId: string): Promise<boolean> {
+  const rows = await db.select({ n: tableLog.n }).from(tableLog).where(eq(tableLog.tableId, tableId)).limit(1);
+  return rows.length > 0;
+}
+
 /** Every log and chat line of a table, oldest first, for downloads. */
 export async function allTableLog<T = unknown>(db: Db, tableId: string): Promise<TableLogRow<T>[]> {
   const rows = await db
