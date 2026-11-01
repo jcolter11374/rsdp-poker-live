@@ -63,6 +63,18 @@ async function playOut(players, maxSteps = 120) {
   throw new Error('the hand did not finish');
 }
 
+/**
+ * Stops a cash game and waits until it has stopped. If the next hand was dealt before the click, the stop
+ * waits for that hand to end, so it is played out (left alone, it would only end as everyone's clock ran down).
+ */
+async function stopGame(host, players) {
+  await host.click('button:has-text("Stop game")');
+  const stopped = host.locator('button:has-text("Start game")');
+  await stopped.or(host.locator('button:has-text("Stopping after this hand")')).waitFor();
+  if (!(await stopped.count())) await playOut(players);
+  await stopped.waitFor();
+}
+
 async function step(name, fn) {
   const started = Date.now();
   await fn();
@@ -146,8 +158,7 @@ try {
     await guest.click('.replayer button:has-text("Check this hand")');
     await guest.waitForSelector('.fair-check:has-text("Sealed")');
     await guest.click('.replayer button[aria-label="Close"]');
-    await host.click('button:has-text("Stop game")');
-    await host.waitForSelector('button:has-text("Start game")');
+    await stopGame(host, [host, guest]);
     await guest.waitForTimeout(500);
     await guest.locator('.hand-open').first().click();
     await guest.click('.replayer button:has-text("Check this hand")');
@@ -226,13 +237,13 @@ try {
     // ...and the big blind folds.
     await press(blind, /^Fold/);
     await host.waitForSelector('.pot.result');
-    // Stop before the next hand is dealt (a few seconds later): left running, the table would keep dealing
-    // and timing out after the run, and CI's backup drill reads the leaderboard twice and wants it unchanged.
-    await host.click('button:has-text("Stop game")');
-    await host.waitForSelector('button:has-text("Start game")');
+    // Read the log before stopping: if the next hand is dealt first, the stop plays it out and the log moves on.
     const log = await host.locator('.side').innerText();
     for (const words of [' bets ', ' raises to ', ' folds']) if (!log.includes(words)) throw new Error(`the hand log has no "${words.trim()}"`);
     await host.screenshot({ path: path.join(OUT, 'betting.png') });
+    // Stop the game: left running, the table would keep dealing and timing out after the run, and CI's backup
+    // drill reads the leaderboard twice and wants it unchanged.
+    await stopGame(host, [host, guest]);
   });
 
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {
@@ -288,6 +299,8 @@ try {
     await host.locator('.board-row').nth(1).waitFor();
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'bomb-pot.png') });
+    // Stopped like the other cash tables, so it isn't still dealing when CI's backup drill runs.
+    await stopGame(host, [host, guest]);
   });
 
   await step('tournament: create, register with names, start, everyone taken to the table', async () => {

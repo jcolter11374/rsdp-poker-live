@@ -30,11 +30,18 @@ export class FakeClock implements Clock {
   }
 }
 
-/** Seeded RNG so deals are repeatable. */
+/**
+ * Seeded RNG so deals are repeatable: mulberry32, a whole 0..n-1 from the top
+ * bits. (The old `a * 1103515245` lost its low bits past 2^53, so it came round
+ * every 10,466 draws and an even n always gave an even number.)
+ */
 export function seeded(seed = 7) {
-  let a = seed;
+  let a = seed >>> 0;
   return (n: number) => {
-    a = (a * 1103515245 + 12345) & 0x7fffffff;
-    return a % n;
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n);
   };
 }
