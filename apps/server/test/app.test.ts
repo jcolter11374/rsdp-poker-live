@@ -178,7 +178,7 @@ describe('socket server', () => {
     const first = await Promise.race([host, guest].map((c) => c.until((x) => x.legal !== null).then(() => c)));
     await first.call('hand:act', { type: 'fold' });
     await host.until((x) => x.history.length === 1);
-    await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow(/once the delay has passed/);
+    await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow(/that hand isn’t available/);
     // Chat stays live for everyone.
     await guest.call('chat:send', { text: 'gl' });
     await fan.until((x) => x.chat.some((m) => m.text === 'gl'));

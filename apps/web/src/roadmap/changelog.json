@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.01.6",
+      "date": "2026-11-01",
+      "fixes": [
+        "Fixed a security problem."
+      ]
+    },
+    {
       "id": "2026.11.01.5",
       "date": "2026-11-01",
       "fixes": [

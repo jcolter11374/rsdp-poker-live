@@ -169,9 +169,12 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow'>;
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow' | 'fair'>;
 
-/** The ledger, hand list and next-hand countdown run behind too, or they would give away how a hand ends. */
+/**
+ * The ledger, hand list, next-hand countdown and fair-dealing commits run behind too, or they would give away
+ * how (and when) a hand ends: a new commit shows up the moment the live hand finishes.
+ */
 export const delayedPart = (view: TableView): DelayedPart => ({
   seats: view.seats,
   hand: view.hand,
@@ -182,7 +185,13 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   upcoming: view.upcoming,
   paused: view.paused,
   serverNow: view.serverNow,
+  fair: view.fair,
 });
+
+/** What a spectator on a delay sees of the next hand's commit before anything is old enough to show. */
+const NO_FAIR: TableView['fair'] = { nextCommit: '', handCommit: null, openThrough: 0 };
+/** Spectators on a delay can't rabbit hunt: the button would show when the live hand ended (app.ts refuses it too). */
+const NO_RABBIT: TableView['rabbit'] = { available: false, cards: null };
 
 /**
  * A spectator's view with the table as it was `delayMs` ago: seats, cards,
@@ -196,7 +205,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
   if (!past) {
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [] };
+    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT };
   }
   // A paused snapshot's clocks stand still: they move on with the time shown, not by the delay.
   const move = past.paused ? live.serverNow - past.serverNow : delayMs;
@@ -219,6 +228,8 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     nextHandAt: later(past.nextHandAt),
     upcoming: past.upcoming,
     paused: past.paused,
+    fair: past.fair,
+    rabbit: NO_RABBIT,
   };
 }
 
