@@ -4,7 +4,7 @@ import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { createApp } from './app';
 import { AuditLog, dbAuditStore } from './audit';
-import { closeDb, createDb } from './db';
+import { closeDb, createDb, dbCause } from './db';
 import { restoreIfWaiting } from './db/restoreOnStart';
 import { dbNotes } from './notes';
 import { dbSetups } from './savedSetups';
@@ -45,15 +45,15 @@ function shutdown(code: number) {
   server
     .close()
     .then(() => closeDb(db))
-    .catch((e) => console.error('shutdown failed', e))
+    .catch((e) => console.error('shutdown failed', dbCause(e)))
     .finally(() => process.exit(code));
 }
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => shutdown(0));
 // One stray rejected promise must not end every game in progress.
-process.on('unhandledRejection', (e) => console.error('unhandled rejection', e));
+process.on('unhandledRejection', (e) => console.error('unhandled rejection', dbCause(e)));
 // Anything worse: save what we can and let the host restart us; tables and tournaments resume.
 process.on('uncaughtException', (e) => {
-  console.error('uncaught exception', e);
+  console.error('uncaught exception', dbCause(e));
   shutdown(1);
 });

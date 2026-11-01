@@ -218,4 +218,23 @@ describe('restoring the live site on start', { timeout: 30_000 }, () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("logs the database's reason when it refuses a row, not the rows themselves", async () => {
+    await resetTestDb(db);
+    await fill(db);
+    const { text } = await backupOf(db);
+    // A movement the ledger's check constraint refuses.
+    const bad = text.replace('"kind":"buy-in"', '"kind":"not-a-kind"');
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync(bad));
+      const logged: string[] = [];
+      await restoreIfWaiting(path.join(dir, 'pglite'), (m) => logged.push(m));
+      const failed = logged.find((m) => m.startsWith('restore failed'));
+      expect(failed).toMatch(/check constraint/);
+      expect(failed).not.toContain('not-a-kind');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

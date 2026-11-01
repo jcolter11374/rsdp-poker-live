@@ -18,6 +18,7 @@ import { createGunzip } from 'node:zlib';
 import type { Readable } from 'node:stream';
 import { sql } from 'drizzle-orm';
 import { queryRows, type Db } from './client';
+import { errorText } from './errors';
 
 export const BACKUP_FORMAT = 'rsdp';
 export const BACKUP_VERSION = 1;
@@ -130,8 +131,8 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
   return db.transaction(async (tx) => {
     // Rows go in table by table, but players and accounts point at each other, so check
     // foreign keys and run triggers (the append-only guards only refuse edits) as a replica does.
-    await tx.execute(sql.raw('set local session_replication_role = replica')).catch((e: Error) => {
-      throw new BackupError(`Restoring needs a database role that may skip foreign key checks (a superuser, as on PGlite or your own Postgres): ${e.message}`);
+    await tx.execute(sql.raw('set local session_replication_role = replica')).catch((e: unknown) => {
+      throw new BackupError(`Restoring needs a database role that may skip foreign key checks (a superuser, as on PGlite or your own Postgres): ${errorText(e)}`);
     });
     const tables = new Set(await tableNames(tx));
     let header: BackupHeader | null = null;

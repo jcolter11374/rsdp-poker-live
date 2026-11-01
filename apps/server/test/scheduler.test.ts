@@ -268,6 +268,18 @@ describe('Scheduler', () => {
     expect(await getJob(db, id)).toMatchObject({ status: 'failed', attempts: 5, lastError: 'still broken 5', lockedUntil: null });
   });
 
+  it("keeps the database's reason when a job fails on a query, not the query's values", async () => {
+    const s = makeScheduler(async () => {
+      await db.execute(sql`insert into players (id, display_name) values (${'secret-ish value'}, null)`);
+    });
+    await s.start();
+    const id = await s.schedule('ping', clock.t, { n: 1 });
+    await clock.advance(0, s);
+    const { lastError } = (await getJob(db, id))!;
+    expect(lastError).toMatch(/null value/);
+    expect(lastError).not.toContain('secret-ish value');
+  });
+
   it('uses doubling backoff by default, capped at five minutes', () => {
     expect([1, 2, 3, 4, 5].map(defaultBackoffMs)).toEqual([1000, 2000, 4000, 8000, 16000]);
     expect(defaultBackoffMs(20)).toBe(5 * 60_000);
