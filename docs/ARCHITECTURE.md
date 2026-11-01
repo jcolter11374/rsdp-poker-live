@@ -73,7 +73,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 
 ## Branches and ownership
 
-- `main`: releases only, merged with John's approval. `develop`: integration; every workstream PR targets it and needs green CI.
+- `main`: releases only (John approves releases; he has given a standing OK for finished, reviewed and play-tested work). `develop`: integration; every workstream PR targets it and needs green CI. Every PR names the GitHub issue it works on, and every release adds one versioned changelog entry: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 - Ownership: W1 `packages/tournament`, `apps/server/src/tournament/*` and the tournament pages. W2 `packages/engine/src/modifiers/*` and the cash-table settings sections. W3 `packages/engine/src/variants/*`. W4 shared table components, styles and the records pages. Workstream 0 owns `core/`, the runtime, storage and identity.
 
 ## Changing contracts

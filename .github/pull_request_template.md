@@ -1,0 +1,35 @@
+Closes #
+
+<!--
+Name the issue this works on, so merging it updates the issue:
+  "Closes #123" when this finishes it (it closes once the change is live),
+  "Part of #123" when it does only some of it.
+A tiny change with no issue: add the "no issue needed" label instead.
+-->
+
+## What changed
+
+## How it was tested
+
+## Review
+
+<!--
+Who reviewed it and what they found, and the commit (head SHA) they
+reviewed. Post the findings as a comment on this pull request too, so the
+review leaves a trace on GitHub. Say what was fixed and what wasn't, and why.
+-->
+
+## Left to do
+
+<!--
+Anything this leaves for later, each with its own issue (#123), or "None".
+-->
+
+## Release notes
+
+<!--
+User-facing changes add a line to the waiting entry at the top of
+apps/web/src/roadmap/changelog.json (and whatsnew.json for new features),
+then run `npm run changelog`. See CONTRIBUTING.md.
+Write "None" if nothing changes for players.
+-->

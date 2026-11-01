@@ -1,0 +1,27 @@
+name: Labels
+
+# Makes the issue labels match .github/labels.json (creates and updates,
+# never deletes). Runs when that file changes on main or develop.
+on:
+  push:
+    branches: [main, develop]
+    paths: ['.github/labels.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    name: Sync labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: node scripts/release/labels.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
