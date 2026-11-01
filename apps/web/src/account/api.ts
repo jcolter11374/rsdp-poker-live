@@ -43,6 +43,8 @@ export class AccountError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Where to sort it out, when the server gives one: the table or tournament that stops a sign-in. */
+    readonly href?: string,
   ) {
     super(message);
   }
@@ -56,9 +58,14 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: object, e
   const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) }).catch(() => {
     throw new AccountError('Could not reach the server. Try again.', 0);
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string } & T;
-  if (!res.ok) throw new AccountError(data.error ?? 'Something went wrong. Try again.', res.status);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; href?: unknown } & T;
+  if (!res.ok) throw new AccountError(data.error ?? 'Something went wrong. Try again.', res.status, safeHref(data.href));
   return data;
+}
+
+/** A table or tournament address on this site (/t/… or /tn/…), or undefined. */
+function safeHref(href: unknown): string | undefined {
+  return typeof href === 'string' && /^\/(t|tn)\/[\w-]+$/.test(href) ? href : undefined;
 }
 
 /** Reloads into `to`, so every page connects again as the new player. */

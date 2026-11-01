@@ -140,6 +140,34 @@ describe('saved setups', () => {
     ]);
   });
 
+  it('a table preset numbered on the way onto the account carries its new name inside', async () => {
+    const { phone } = await signedIn();
+    const long = '🂡'.repeat(30);
+    const settings = defaultTableSettings('cash');
+    const other = (name: string) => exportPreset({ ...settings, table: { ...settings.table, maxSeats: 6 } }, name);
+    await phone.call('setups:save', { kind: 'table', name: 'Friday', json: preset('Friday') });
+    await phone.call('setups:save', { kind: 'table', name: long, json: preset(long) });
+    const r = await phone.call<{ added: number }>('setups:import', {
+      kind: 'table',
+      setups: [
+        { name: 'Friday', json: other('Friday') },
+        { name: long, json: other(long) },
+      ],
+    });
+    expect(r.added).toBe(2);
+    const { setups } = await phone.call<{ setups: SavedSetup[] }>('setups:list', { kind: 'table' });
+    for (const s of setups) expect(JSON.parse(s.json).name).toBe(s.name);
+    expect(setups.map((s) => s.name).sort()).toEqual(['Friday', 'Friday (2)', long, `${'🂡'.repeat(28)} (2)`].sort());
+  });
+
+  it('a structure a browser kept under a name now too long is brought over with the name shortened, not left behind', async () => {
+    const { phone } = await signedIn();
+    const r = await phone.call<{ added: number; kept: string[] }>('setups:import', { kind: 'tournament', setups: [{ name: '🂡'.repeat(40), json: structure() }] });
+    expect(r).toMatchObject({ added: 1, kept: ['🂡'.repeat(40)] });
+    const { setups } = await phone.call<{ setups: SavedSetup[] }>('setups:list', { kind: 'tournament' });
+    expect(setups.map((s) => s.name)).toEqual(['🂡'.repeat(30)]);
+  });
+
   it(`keeps up to ${SETUPS_PER_KIND} of each kind`, async () => {
     const { phone } = await signedIn();
     const many = Array.from({ length: SETUPS_PER_KIND }, (_, i) => ({ name: `S${i}`, json: structure() }));

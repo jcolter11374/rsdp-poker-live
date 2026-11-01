@@ -502,6 +502,9 @@ describe('bot reasons', () => {
     expect(say({ rule: 'steal', level: 'hard', share: 0.3 }, 'Chip')).toBe('Chip (Hard) completed to steal the antes: few players were left, and they fold a lot.');
     expect(say({ rule: 'bring-in' }, 'Ace', { gameId: 'stud' })).toBe('Ace brought it in: lowest card showing and nothing worth completing.');
     expect(say({ rule: 'bring-in' }, 'Ace', { gameId: 'razz' })).toBe('Ace brought it in: highest card showing and nothing worth completing.');
+    // The player who opens because the card that had to bring in is all in from the ante wasn't forced to.
+    expect(say({ rule: 'bring-in', opened: true }, 'Ace', { gameId: 'stud' })).toBe('Ace brought it in: the player who had to bring in was all in, so it started the betting, with nothing worth completing.');
+    expect(say({ rule: 'bring-in', opened: true }, 'Ace', { gameId: 'razz' })).toBe('Ace brought it in: the player who had to bring in was all in, so it started the betting, with nothing worth completing.');
     expect(say({ rule: 'complete', share: 0.35, vs: 4 })).toBe('Ace completed: a strong start, about 35% to win against 4 others.');
     expect(say({ rule: 'draw', share: 0.3, thrown: 2, alt: { thrown: 1, share: 0.25 } })).toBe('Ace drew 2: drawing 2 came out at about 30%, drawing 1 at about 25%.');
     expect(say({ rule: 'pat', share: 0.75 })).toBe('Ace stood pat: about 75% to win as it is.');

@@ -47,7 +47,7 @@ public, so don't put anything private in one, just ask him to get in touch).
 | Google's id for you (a long number) | Google, if you sign in with Google | Only the site. Google also shares your name, used once to make your starting username and table name. No email, no contacts, nothing else. |
 | Signed-in sessions (30 days) and one-time password reset codes | Made when you sign in or John gives you a code | Only the site, stored as fingerprints |
 | Hands: who was dealt in, the cards, every action, the board, who won | The game | Players at that table see what poker rules allow them to see. Shown and mucked cards follow the table's settings. |
-| Table chat (the last 200 messages of each table) and the table log | You and the game | Everyone at that table, and spectators if the host allows them |
+| Table chat and the table log (joins, rebuys, seat moves, host actions) | You and the game | Everyone at that table, and spectators if the host allows them |
 | Tournament lobby chat and log | You and the tournament | Everyone who opens that tournament |
 | Each table's ledger: buy-ins, rebuys, cash-outs | The game | Everyone at that table. Totals from real games also feed the public leaderboard and your profit graph. |
 | Private notes and colour tags you keep on other players | You | Only you (and John, who can read the database) |
@@ -159,9 +159,12 @@ backup also shows up on [Checking John](/transparency).
 
 - Hands, ledgers and table results: for as long as the site runs, so the
   history, leaderboard and hand search keep working.
-- Table chat: the last 200 messages of each table, for as long as the site
-  runs (older ones drop off). Tournament lobby chat: for as long as the site
-  runs.
+- Table chat and the table log: for as long as the site runs, like the
+  table's hands, so the table's full log download has all of it. They go
+  when the table is deleted. Tables used to keep only their latest 200 chat
+  messages and 300 log lines, so lines that had already dropped off before
+  this changed are gone.
+- Tournament lobby chat: for as long as the site runs.
 - Practice tables you made and only you and bots played at: until you delete
   them from your profile.
 - Signed-in sessions: 30 days. Password reset codes: until used or expired.
@@ -190,8 +193,9 @@ authority (in the UK, the ICO).
   That removes your username, password, Google link, sessions, browser
   secrets, name, picture, notes, saved setups, hidden tables, practice graph
   reset and shared hand links straight away. Hands you already
-  played stay in other players' history and ledgers under the name you used
-  at the time, because they are part of their games too. If you want your
+  played, and your messages in table chat, stay in other players' history,
+  ledgers and table logs under the name you used at the time, because they
+  are part of their games too. If you want your
   name taken out of those as well, ask John: names aren't part of the
   public record's fingerprints, so he can replace yours with "Deleted
   player" without breaking it. Copies in backups

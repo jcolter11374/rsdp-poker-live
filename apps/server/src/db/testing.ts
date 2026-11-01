@@ -22,6 +22,7 @@ export async function resetTestDb(db: Db): Promise<void> {
     'hidden_tables',
     'practice_resets',
     'hands',
+    'table_log',
     'chip_movements',
     'seat_sessions',
     'settings_changes',

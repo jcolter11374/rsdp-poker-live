@@ -114,7 +114,7 @@ export function tableView(
     realGame: !!s.realGame,
     powers: rt.powersOf(playerId),
     coHosts: (s.coHosts ?? []).map((c) => ({ ...c, powers: [...c.powers] })),
-    me: { playerId, seat: mySeat?.seat ?? null },
+    me: { playerId, seat: mySeat?.seat ?? null, canSitIn: rt.canSitIn(playerId) },
     settings,
     pendingSettings: s.pendingSettings,
     started: s.started,

@@ -113,6 +113,8 @@ export interface MoveWhy {
   capped?: boolean;
   /** The chance of the coin flip that picked this play (a bluff, a raise it makes some of the time). */
   often?: number;
+  /** Stud: it starts the betting because the player who had to bring in is all in from the ante, so it could fold. */
+  opened?: boolean;
   /** Hard: acts last for the rest of the hand... */
   inPosition?: boolean;
   /** ...is on the last betting round... */
@@ -187,6 +189,8 @@ export function explainMove(hand: HandState, seat: SeatIndex, rand: Rand, ctx: B
   if (level === 'easy') action = decideEasy(hand, seat, legal, equity, opponents, dice, why);
   else if (level === 'hard') action = decideHard(hand, seat, legal, equity, ctx.players ?? {}, dice, why);
   else action = decide(hand, seat, legal, equity, opponents, dice, why);
+  // Only the card that has to bring in can't fold: anyone else bringing in chose to.
+  if (legal.canBringIn && legal.canFold) why.opened = true;
   // The flip that picked the play, if one did: a raise some of the time is the raise band, the rest go by their own name.
   const picked = rolls.find((r) => r.hit && r.label === (why.rule === 'raise' ? 'raise-band' : why.rule));
   if (picked) why.often = picked.p;

@@ -161,6 +161,44 @@ describe('a move for a turn that has passed', () => {
     expect(shown.seats[ann.view().me.seat!]!.cards.every((c) => c.card !== '??')).toBe(true);
   });
 
+  it('ignores a run it twice vote meant for an earlier hand, so it never counts in a later vote', async () => {
+    const { ann, ben } = await headsUp('rit', { play: { runItTwice: 'ask' }, seating: { requireApproval: false, rebuyRequiresApproval: false } });
+    const players = [ann, ben];
+    /** Both shove: the hand stops at the run it twice vote. */
+    const allIn = async (handNumber: number) => {
+      for (let i = 0; i < 60; i++) {
+        const views = players.map((c) => c.view());
+        if (views.every((v) => v.hand?.handNumber === handNumber && v.canVoteRunItTwice)) return;
+        const mover = players.find((c) => c.view().hand?.handNumber === handNumber && c.view().legal);
+        if (!mover) {
+          await pause(20);
+          continue;
+        }
+        const legal = mover.view().legal!;
+        await mover.call('hand:act', legal.canRaise ? { type: legal.raiseKind, to: legal.maxTo } : { type: 'call' });
+      }
+      throw new Error('never all in');
+    };
+    await allIn(1);
+    // Ben's yes for hand 1 is held up on a slow connection; Ann's no settles hand 1 without it.
+    await ann.call('hand:runItTwice', { yes: false, handNumber: 1 });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    for (const c of players) if (mySeat(await c.until((v) => v.hand?.phase === 'complete')).stack === 0) await c.call('seat:rebuy', { amount: 10_000 });
+    await ann.call('host:deal');
+    await allIn(2);
+    // The held-up yes arrives during hand 2's vote: ignored, and Ben still has his vote to make.
+    await ben.call('hand:runItTwice', { yes: true, handNumber: 1 });
+    const still = ben.view();
+    expect(still.canVoteRunItTwice).toBe(true);
+    expect(still.hand!.runItTwice.votes[still.me.seat!]).toBeNull();
+    expect(still.hand!.events.some((e) => e.t === 'rit-vote')).toBe(false);
+    // Meant for this hand, or sent without a hand (a page from before), a vote counts.
+    await ann.call('hand:runItTwice', { yes: true });
+    await ben.call('hand:runItTwice', { yes: true, handNumber: 2 });
+    const done = await ben.until((v) => v.hand?.handNumber === 2 && v.hand.phase === 'complete');
+    expect(done.hand!.runItTwice.times).toBe(2);
+  });
+
   it('refuses a time bank tap that arrives on a later turn', async () => {
     const { ann, ben } = await headsUp('bank', { timing: { decisionSeconds: 30, timeBankSeconds: 30, autoStartNextHand: false } });
     const sb = ann.view().legal ? ann : ben;

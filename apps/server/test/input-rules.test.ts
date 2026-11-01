@@ -7,7 +7,7 @@ import { closeDb, type Db } from '../src/db/client';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { createAccount, IdentityError, resolveToken, setDisplayName, setPassword } from '../src/identity';
 import { TableRuntime } from '../src/runtime/table';
-import { cleanSetup } from '../src/savedSetups';
+import { cleanSetup, freeName } from '../src/savedSetups';
 import { FakeClock, seeded } from './fake-clock';
 
 /**
@@ -92,6 +92,28 @@ describe('saved table presets', () => {
     expect(save('Friday', json({ version: 2 }))).toBe('SettingsError: Invalid preset:\n- version: 2 is newer than this build supports (1)');
     expect(save('Friday', '{}')).toBe('SettingsError: Invalid preset:\n- format: must be "rsdp-table-preset"');
     expect(save('Bell\u0007', json({}))).toBe('ActionError: names cannot contain control characters');
+  });
+
+  it('counts a name the way the preset inside does, an emoji as two, so a name that passes is never refused as a preset', () => {
+    expect(JSON.parse(cleanSetup('table', { name: '🂡'.repeat(30), json: json({}) }, 0).json).name).toBe('🂡'.repeat(30));
+    expect(save('🂡'.repeat(31), json({}))).toBe('ActionError: names can be up to 60 characters');
+    expect(save('🂡'.repeat(60), json({}))).toBe('ActionError: names can be up to 60 characters');
+  });
+
+  it('numbers a taken name within the limit, without splitting an emoji', () => {
+    const name = '🂡'.repeat(30);
+    const free = freeName(name, new Set([name]));
+    expect(free).toBe(`${'🂡'.repeat(28)} (2)`);
+    expect(JSON.parse(exportPreset(defaultSettings('cash'), free)).name).toBe(free);
+    expect(freeName(`${'x'.repeat(59)}🂡`, new Set([`${'x'.repeat(59)}🂡`]))).toBe(`${'x'.repeat(56)} (2)`);
+  });
+
+  it('numbers a taken name without cutting a joined emoji (a family, a flag) apart', () => {
+    const family = '👨\u200d👩\u200d👧';
+    const name = `${'x'.repeat(50)}${family}`;
+    expect(freeName(name, new Set([name]))).toBe(`${'x'.repeat(50)} (2)`);
+    const flags = '🇳🇱'.repeat(15);
+    expect(freeName(flags, new Set([flags]))).toBe(`${'🇳🇱'.repeat(14)} (2)`);
   });
 });
 

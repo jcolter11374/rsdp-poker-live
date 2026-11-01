@@ -120,6 +120,9 @@ export interface TableLogEntry {
   text: string;
 }
 
+/** A new line of the table's log or chat, as handed to TableRuntime.onLine. */
+export type TableLine = { kind: 'log'; entry: TableLogEntry } | { kind: 'chat'; entry: ChatMessage };
+
 export interface SettingsLogEntry {
   at: number;
   by: PlayerId;

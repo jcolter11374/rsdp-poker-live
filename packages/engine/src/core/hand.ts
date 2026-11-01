@@ -495,12 +495,13 @@ function applyAction(state: HandState, s: HandSeat, action: Action, auto: boolea
 }
 
 /**
- * What the engine does for a player who is away or out of time: check, post a stud bring-in, or fold. The seat that
- * opens instead of a low card all in from the ante may fold, but brings in here like the low card, as it always has.
+ * What the engine does for a player who is away or out of time: check, post a stud bring-in that is owed, or fold.
+ * Only the low card owes the bring-in (it can't fold); the seat that opens instead of a low card all in from the ante
+ * owes nothing, so it folds.
  */
 function autoAction(legal: LegalActions): Action {
   if (legal.canCheck) return { type: 'check' };
-  if (legal.canBringIn) return { type: 'bring-in' };
+  if (legal.canBringIn && !legal.canFold) return { type: 'bring-in' };
   return { type: 'fold' };
 }
 

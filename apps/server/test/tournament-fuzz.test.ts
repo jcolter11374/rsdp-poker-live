@@ -153,13 +153,14 @@ async function fuzz(seed: number, opts: { lag: boolean; hfh: boolean }) {
   return { env, checks };
 }
 
-// SEEDS=32 npm test runs more of them.
+// SEEDS=32 npm test runs more of them; FIRST_SEED=7 SEEDS=1 replays seed 7 alone.
+const FIRST_SEED = Number(process.env.FIRST_SEED ?? 1);
 const SEEDS = Number(process.env.SEEDS ?? 4);
 
 describe('tournament fuzz', () => {
   for (const lag of [false, true]) {
     for (const hfh of [true, false]) {
-      for (let seed = 1; seed <= SEEDS; seed++) {
+      for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
         it(`seed ${seed}${lag ? ', late event loop' : ''}${hfh ? ', hand-for-hand' : ''}`, async () => {
           const { env, checks } = await fuzz(seed, { lag, hfh });
           expect(env.errors).toEqual([]);

@@ -470,6 +470,26 @@ describe('chips and leaving', () => {
     expect(rt.state.hand!.phase).not.toBe('complete');
   });
 
+  it("tells a sitting-out player with no chips that they can't sit back in, by the rule sitting in uses", () => {
+    const { rt } = table();
+    seatPlayers(rt, 3);
+    rt.sitOut('a', true);
+    rt.setStack('host', 'a', 0);
+    expect(tableView(rt, 'a', 0).me.canSitIn).toBe(false);
+    expect(() => rt.sitOut('a', false)).toThrow(/rebuy before sitting back in/);
+    rt.setStack('host', 'a', 50);
+    expect(tableView(rt, 'a', 0).me.canSitIn).toBe(true);
+    // During a hand a stack edit waits for the end, and the chips the hand started with still count.
+    rt.sitOut('a', false);
+    rt.start('host');
+    rt.sitOut('a', true);
+    rt.setStack('host', 'a', 0);
+    expect(tableView(rt, 'a', 0).me.canSitIn).toBe(true);
+    // Someone not seated has no seat to sit back in to.
+    rt.connect('e');
+    expect(tableView(rt, 'e', 0).me.canSitIn).toBe(false);
+  });
+
   it('standing up mid-hand folds, leaves after the hand and records the cash-out', () => {
     const { rt, clock } = table();
     seatPlayers(rt, 3);

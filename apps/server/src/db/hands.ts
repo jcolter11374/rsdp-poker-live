@@ -120,6 +120,19 @@ export async function listHandsByTable<Header = unknown, Results = unknown>(
   return { hands: page, nextBefore: rows.length > limit ? page[page.length - 1].number : null };
 }
 
+/** One hand of a table by its number, with its events; null when there is none. */
+export async function handOfTable<Header = unknown, Event = unknown, Results = unknown>(
+  db: Db,
+  tableId: string,
+  number: number,
+): Promise<HandRecord<Header, Event, Results> | null> {
+  const [row] = await db
+    .select()
+    .from(hands)
+    .where(and(eq(hands.tableId, tableId), eq(hands.number, number)));
+  return row ? (row as HandRecord<Header, Event, Results>) : null;
+}
+
 /** Every hand of a table with its events, oldest first, for downloads. */
 export async function allHandsOfTable<Header = unknown, Event = unknown, Results = unknown>(
   db: Db,
