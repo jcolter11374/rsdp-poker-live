@@ -1,6 +1,6 @@
-// Browser smoke test: a cash table plays a hand, a practice hand against bots
-// gives a coach tip, and a tournament seats its players and deals. Runs against
-// a server that serves the built web app.
+// Browser smoke test: a cash table plays a hand, another bets, raises and folds,
+// a practice hand against bots gives a coach tip, and a tournament seats its
+// players and deals. Runs against a server that serves the built web app.
 //
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
@@ -173,6 +173,62 @@ try {
     const log = host.waitForEvent('download');
     await host.click('button:has-text("Download full log")');
     if (!(await log).suggestedFilename().endsWith('-log.txt')) throw new Error('no full log');
+  });
+
+  await step('cash table: bet with a preset, raise from the bet box, fold', async () => {
+    const host = await open('betting host');
+    const guest = await open('betting guest');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Fay');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Gus');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    await host.click('button:has-text("Start game")');
+
+    const move = (p, label) => p.locator('.action-bar.my-turn .buttons button', { hasText: label });
+    // A tap within half a second of your last move is taken as a double tap and ignored, so wait a little longer.
+    const press = async (p, label) => {
+      await move(p, label).waitFor();
+      await p.waitForTimeout(600);
+      await move(p, label).click();
+    };
+    // Heads up the button acts first before the flop and the big blind first after it.
+    const button = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
+    const blind = button === host ? guest : host;
+    await press(button, /^Call/);
+    await press(blind, /^Check/);
+
+    // On the flop the big blind bets the pot from the presets...
+    await move(blind, /^Bet /).waitFor();
+    const smallest = await move(blind, /^Bet /).innerText();
+    await blind.locator('.action-bar.my-turn .presets button', { hasText: /^Pot$/ }).click();
+    const potBet = await move(blind, /^Bet /).innerText();
+    if (potBet === smallest) throw new Error(`the Pot preset left the bet at "${smallest}"`);
+    await press(blind, /^Bet /);
+
+    // ...the button raises to twice the smallest raise, typed in the bet box...
+    const box = button.locator('.action-bar.my-turn input[aria-label="Amount"]');
+    await box.waitFor();
+    const to = String(2 * Number(await box.getAttribute('min')));
+    await box.fill(to);
+    const raise = (await move(button, /^Raise to/).innerText()).split('\n')[0];
+    if (!raise.includes(to)) throw new Error(`typed ${to} in the bet box but the button says "${raise}"`);
+    await press(button, /^Raise to/);
+
+    // ...and the big blind folds.
+    await press(blind, /^Fold/);
+    await host.waitForSelector('.pot.result');
+    const log = await host.locator('.side').innerText();
+    for (const words of [' bets ', ' raises to ', ' folds']) if (!log.includes(words)) throw new Error(`the hand log has no "${words.trim()}"`);
+    await host.screenshot({ path: path.join(OUT, 'betting.png') });
   });
 
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {
