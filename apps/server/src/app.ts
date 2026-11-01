@@ -71,6 +71,8 @@ export interface TableStore {
   keepEarlierLines(tableId: string, lines: TableLine[]): Promise<void>;
   /** Every log and chat line saved for a table, oldest first. */
   loadLines(tableId: string): Promise<{ log: TableLogEntry[]; chat: ChatMessage[] }>;
+  /** One finished hand saved for a table, by its number; null when there is none. */
+  loadHand(tableId: string, handNumber: number): Promise<PastHand | null>;
   /** Deletes a cash table and its hands for good; false when there was no such table. */
   deleteTable(tableId: string): Promise<boolean>;
 }
@@ -121,6 +123,9 @@ export function memoryStore(): TableStore {
     },
     async loadLines(tableId) {
       return splitLines(structuredClone(lines.get(tableId) ?? []));
+    },
+    async loadHand(tableId, handNumber) {
+      return hands.get(tableId)?.find((h) => h.handNumber === handNumber) ?? null;
     },
     async deleteTable(tableId) {
       hands.delete(tableId);
@@ -1000,15 +1005,20 @@ export function createApp(deps: AppDeps = {}) {
     if (await tournaments.loadTableOwner(id)) return tables.get(id) ?? null;
     const saved = await store.loadTable(id);
     if (!saved || saved.settings.table.mode === 'tournament') return null;
+    // A hand is saved as soon as it ends, the table up to SAVE_DEBOUNCE_MS later: after a crash the table may still
+    // be playing a hand already saved as finished. That hand is closed with its saved result, not played again.
+    const handLive = !!saved.hand && saved.hand.phase !== 'complete';
+    const ended = handLive ? await store.loadHand(id, saved.handNumber) : null;
     // Tables saved before the runtime kept count: look through their hands once.
     if (saved.realGame === undefined) {
-      const past = await store.loadHands(id);
-      saved.realGame = past.some((h) => realGameHand(h.seats)) || saved.history.some((h) => realGameHand(h.hand.seats));
+      saved.realGame = (await store.loadHands(id)).some((h) => realGameHand(h.seats)) || saved.history.some((h) => realGameHand(h.hand.seats));
     }
     // Another join may have loaded it (or it was deleted) while we waited.
     if (deleted.has(id)) return null;
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs }));
+    const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
+    if (ended && runtime.closeSavedHand(ended)) log(`table ${id}: hand ${ended.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
+    const rt = attach(runtime);
     rt.resume();
     return rt;
   }
