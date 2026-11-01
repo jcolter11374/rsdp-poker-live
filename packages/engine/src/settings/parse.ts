@@ -21,7 +21,12 @@ export class SettingsError extends Error {
   }
 }
 
-/** Flattens zod issues to one entry per path, splitting unknown-key issues so each key gets its own path. */
+/**
+ * Flattens zod issues to one entry per path, splitting unknown-key issues so
+ * each key gets its own path. A value of the wrong type gets only that
+ * message: zod still checks the length of one that has a length, so a list
+ * given for a name would also be told "must not be blank".
+ */
 export function issuesFromZod(error: z.ZodError): SettingsIssue[] {
   const byPath = new Map<string, string[]>();
   const add = (path: string, message: string) => {
@@ -29,9 +34,11 @@ export function issuesFromZod(error: z.ZodError): SettingsIssue[] {
     if (!messages.includes(message)) messages.push(message);
     byPath.set(path, messages);
   };
+  const wrongType = new Set(error.issues.filter((i) => i.code === 'invalid_type').map((i) => formatPath(i.path)));
   for (const issue of error.issues) {
     const path = formatPath(issue.path);
-    if (issue.code === z.ZodIssueCode.unrecognized_keys) {
+    if (issue.code !== 'invalid_type' && wrongType.has(path)) continue;
+    if (issue.code === 'unrecognized_keys') {
       for (const key of issue.keys) add(joinPath(path, key), 'unknown field');
     } else {
       add(path || '(root)', issue.message);
@@ -46,7 +53,7 @@ export function issuesFromZod(error: z.ZodError): SettingsIssue[] {
  * field. Registered modifier sections that are absent get their defaults.
  */
 export function parseSettings(input: unknown): TableSettings {
-  const result = TableSettingsSchema.safeParse(input, { errorMap: settingsErrorMap });
+  const result = TableSettingsSchema.safeParse(input, { error: settingsErrorMap });
   if (!result.success) throw new SettingsError(issuesFromZod(result.error));
   return result.data;
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pots } from '../core/hand';
 import type { HandState, SeatIndex } from '../core/types';
 import { registerModifierSchema } from '../settings/modifiers';
+import { wholeNumber } from '../settings/schema';
 
 /**
  * The Nit game: players opt in, and once enough have, a round starts. Every
@@ -16,9 +17,9 @@ export const NitSchema = z
   .object({
     enabled: z.boolean(),
     /** What the last holder pays each other participant, in big blinds at the round's start (1-100). */
-    prizeBigBlinds: z.number().int().min(1).max(100),
+    prizeBigBlinds: wholeNumber({ min: 1, max: 100 }),
     /** Opted-in players dealt into a hand before a round starts (2-10). */
-    minPlayers: z.number().int().min(2).max(10),
+    minPlayers: wholeNumber({ min: 2, max: 10 }),
   })
   .strict();
 

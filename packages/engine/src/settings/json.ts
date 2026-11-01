@@ -52,6 +52,6 @@ export function joinPath(base: string, key: string | number): string {
   return base ? `${base}.${key}` : key;
 }
 
-export function formatPath(path: readonly (string | number)[]): string {
-  return path.reduce<string>((acc, key) => joinPath(acc, key), '');
+export function formatPath(path: readonly PropertyKey[]): string {
+  return path.reduce<string>((acc, key) => joinPath(acc, typeof key === 'symbol' ? String(key) : key), '');
 }
