@@ -11,7 +11,7 @@
         { "title": "Game extras, all free", "detail": "Run it twice, straddles, bomb pots, the 7-2 bounty, double board, game rotation, rabbit hunting, the time bank and the Nit game, each with its own How to play guide." },
         { "title": "Cash games in dollars and cents", "detail": "Type the blinds as money (it starts at .25/.50), and stacks, bets, the pot and the ledger all show dollars, with casino chips on the felt. Tournaments still use chips." },
         { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, co-hosts who can run the game while you play, spectators with a delay, chat settings and saved table presets. If the host lets spectators see every card, everyone is told, and you agree to it before you sit down." },
-        { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, phones dropping out, double taps, buttons stuck on busy after a dropped connection, and server updates in the middle of a hand. Stud bring-ins, limit caps and short all-ins follow the usual rules." },
+        { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, phones dropping out, double taps, buttons stuck on busy after a dropped connection, and server updates in the middle of a hand. A tap that arrives after its turn is over, say on a slow connection, is refused instead of being played on a later street. Stud bring-ins, limit caps and short all-ins follow the usual rules." },
         { "title": "Tournaments that start on their own", "detail": "Schedule one and it starts at the set time, no host click needed. Sit & Gos, recurring events, late registration, rebuys, add-ons, hand-for-hand and custom payouts." },
         { "title": "Tournament formats", "detail": "Bounty and progressive knockout events, invite codes, check-in, and season leaderboards that add up points across nights." },
         { "title": "Tournaments the RSDP way", "detail": "New tournaments start on the group's own blinds (63,000 chips, 28 eight-minute levels, no antes, late registration through level 5) and pay out the way our results sheet does, with a $20 buy-in to start. RSDP sits next to Turbo, Standard and Deep stack as a starter, and you can save your own setups." },
@@ -27,6 +27,8 @@
         { "title": "No HUDs at the table", "detail": "While you're seated in a running game, hand downloads are switched off so HUD software can't use them. They come back when you leave your seat or the game stops, and the Fairness page says what this can and can't stop." },
         { "title": "Fair dealing you can check", "detail": "Every deck is sealed before the deal and mixed with a seed from each player's browser, and your browser warns you if a sealed deck is swapped without being dealt. Press \"Check this hand\" in the replayer to verify any hand, and read how it works on the Fairness page." },
         { "title": "Checking John", "detail": "Every hand, buy-in, cash-out and admin action goes into a public record, each entry locked to the one before, and GitHub keeps copies. GitHub builds each release from the public code and checks, after each release and every few hours, that the live site runs that build. The Checking John page shows what it found and what these checks can't catch." },
+        { "title": "A friendly error page", "detail": "If something breaks, you get a page with a Reload button instead of a blank screen. The site notes the error, but not who you are, so it can be fixed." },
+        { "title": "Safety work behind the scenes", "detail": "Security updates to two of the libraries the site is built on, and a practice run of each update on test data before it goes live." },
         { "title": "Optional accounts", "detail": "Sign in with a username and password, or with Google, so your name, picture, notes and history follow you to every device. Guests can still play without one." },
         { "title": "About, Privacy, Terms and Credits", "detail": "About is a quick introduction for new friends. Privacy says what the site keeps about you and how to delete it, Terms of use says the site is free and comes as it is, and Credits lists the free software it's built on. The site's own code is open source too." },
         { "title": "Roadmap, suggestions and What's new", "detail": "This page: send your ideas and follow them in the suggestion log. What's new lists what each release added, and the Changelog lists the small fixes." }
@@ -37,9 +39,9 @@
       "title": "Coming in the next release",
       "blurb": "Done, or being finished now.",
       "items": [
-        { "title": "Late moves turned away", "detail": "A move that arrives after its turn is over, say on a slow connection, is refused instead of being played on a later street." },
-        { "title": "A friendly error page", "detail": "If something breaks, you get a page with a Reload button instead of a blank screen. The site notes the error, but not who you are, so it can be fixed." },
-        { "title": "Safety work behind the scenes", "detail": "Security updates to two of the libraries the site is built on, and a practice run of each update on test data before it goes live." }
+        { "title": "The whole table log", "detail": "\"Download full log\" includes every chat line and table event since the table started, not just the latest ones." },
+        { "title": "Clearer guides and settings", "detail": "The time bank and rabbit hunt guides follow each tournament's own rules, and the settings dialog stops at what the site accepts." },
+        { "title": "More fixes", "detail": "Fixes found in testing: Stud bring-ins for away players, a finished tournament's last table, and saved setups with long names." }
       ]
     },
     {
