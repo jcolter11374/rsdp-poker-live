@@ -257,6 +257,8 @@ function allHands(view: TableView): Promise<HandRecordView[]> {
   if (pending) return pending.catch(() => undefined).then(() => allHands(view));
   const job = (async () => {
     let hands = handCache.get(view.id);
+    // Hands a stopped game has since opened (openThrough moved) come again in full, seeds and every card.
+    if (hands?.some((h) => h.fair && !h.fair.serverSeed && h.handNumber <= view.fair.openThrough)) hands = undefined;
     if (!hands) hands = (await call<{ hands: HandRecordView[] }>('table:export')).hands;
     const last = hands.at(-1)?.handNumber;
     const have = new Set(hands.filter((h) => h.handNumber !== last).map((h) => h.handNumber));
@@ -280,7 +282,7 @@ function useAllHands(view: TableView, active: boolean) {
   const [tries, setTries] = useState(0);
   const latest = view.history.at(-1)?.handNumber ?? 0;
   const dealing = view.hand?.handNumber ?? 0;
-  // Stopping the game reveals its hands for checking (docs/FAIRNESS.md), so that fetches them again too.
+  // Hands open for checking half an hour after the game stops (docs/FAIRNESS.md): openThrough moves then, so that fetches them again too.
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
@@ -290,7 +292,7 @@ function useAllHands(view: TableView, active: boolean) {
     return () => {
       live = false;
     };
-  }, [active, latest, dealing, tries, view.started]);
+  }, [active, latest, dealing, tries, view.started, view.fair.openThrough]);
   return { hands, error, retry: () => setTries((t) => t + 1), setHands };
 }
 

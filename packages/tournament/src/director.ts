@@ -56,6 +56,7 @@ import {
   type TableRules,
   type TableState,
   type TournamentSettings,
+  type EliminationGroup,
   type TournamentState,
 } from './types';
 
@@ -657,6 +658,45 @@ function unseat(c: Ctx, e: Entry) {
   }
 }
 
+/** Players who lost their last chip (not leavers); groups saved before they were marked are told by their members. */
+const bustGroup = (s: TournamentState, g: EliminationGroup) => !!g.busted || (g.busted === undefined && g.members.every((m) => entry(s, m.entryId).status === 'busted'));
+
+/** When a group went out, which is the order groups place in (see EliminationGroup.bustAt). */
+const outAt = (g: EliminationGroup) => g.bustAt ?? g.at;
+
+/**
+ * A busted player whose rebuy offer ended goes out with the hand that busted them: into that hand's group (so
+ * starting stacks still order them, and equal ones tie), or a new group where that hand falls among the others.
+ */
+function joinBustGroup(s: TournamentState, e: Entry, m: EliminationGroup['members'][number], now: number) {
+  const bust = e.bust!;
+  // The same hand: a member busted at this table at this moment (also finds groups saved before groups were marked),
+  // or in hand-for-hand, the same round at any table. Never a group of players who left.
+  const sameHand = (g: EliminationGroup) =>
+    bustGroup(s, g) &&
+    ((bust.hfhRound !== undefined && g.hfhRound === bust.hfhRound) ||
+      g.members.some((o) => o.tableId === bust.tableId && entry(s, o.entryId).bust?.at === bust.at));
+  const group = s.eliminations.find(sameHand);
+  if (group) {
+    group.members.push(m);
+    if (now > group.at) {
+      group.bustAt ??= group.at;
+      group.at = now;
+    }
+    return;
+  }
+  const fresh: EliminationGroup = { members: [m], at: now, busted: true, ...(now > bust.at ? { bustAt: bust.at } : {}), ...(bust.hfhRound !== undefined ? { hfhRound: bust.hfhRound } : {}) };
+  // After every group that went out by then (a quit in the same hand ranks below), before any that went out later.
+  // In hand-for-hand, after the round's leavers too, wherever their hand ended.
+  let i = s.eliminations.findIndex((g) => outAt(g) > bust.at);
+  if (bust.hfhRound !== undefined) {
+    const last = s.eliminations.map((g) => g.hfhRound).lastIndexOf(bust.hfhRound);
+    if (last >= 0 && (i < 0 || last >= i)) i = last + 1;
+  }
+  if (i < 0 || i >= s.eliminations.length) s.eliminations.push(fresh);
+  else s.eliminations.splice(i, 0, fresh);
+}
+
 /**
  * Knocks out a set of entries together. The emitted place is provisional:
  * later re-entries or hand-for-hand ties can change it; standings() is final.
@@ -664,11 +704,24 @@ function unseat(c: Ctx, e: Entry) {
 function eliminate(c: Ctx, members: Entry[], reason: 'busted' | 'quit' | 'removed', hfhRound?: number) {
   if (!members.length) return;
   const s = c.s;
-  const groupMembers = members.map((e) => ({ entryId: e.id, startStack: e.bust?.startStack ?? e.stack, tableId: e.bust?.tableId ?? e.tableId }));
-  // Hand-for-hand busts in the same round share one group, so they tie across tables.
-  const existing = hfhRound !== undefined ? s.eliminations.find((g) => g.hfhRound === hfhRound) : undefined;
-  if (existing) existing.members.push(...groupMembers);
-  else s.eliminations.push({ members: groupMembers, at: c.now, ...(hfhRound !== undefined ? { hfhRound } : {}) });
+  const member = (e: Entry) => ({ entryId: e.id, startStack: e.bust?.startStack ?? e.stack, tableId: e.bust?.tableId ?? e.tableId });
+  // Busted players who were offered a rebuy went out in the hand that busted them, however long the offer took.
+  const late = members.filter((e) => e.status === 'rebuy-offer' && e.bust);
+  const now = members.filter((e) => !late.includes(e));
+  if (now.length) {
+    // Hand-for-hand busts in the same round share one group, so they tie across tables. Players who leave in that
+    // round have their own group, below the round's busts, as leavers are below the busts of their hand.
+    const round = hfhRound !== undefined ? s.eliminations.filter((g) => g.hfhRound === hfhRound) : [];
+    const existing = round.find((g) => bustGroup(s, g) === (reason === 'busted'));
+    if (existing) existing.members.push(...now.map(member));
+    else {
+      const group: EliminationGroup = { members: now.map(member), at: c.now, ...(reason === 'busted' ? { busted: true as const } : {}), ...(hfhRound !== undefined ? { hfhRound } : {}) };
+      const busts = reason === 'busted' ? -1 : s.eliminations.findIndex((g) => round.includes(g) && bustGroup(s, g));
+      if (busts < 0) s.eliminations.push(group);
+      else s.eliminations.splice(busts, 0, group);
+    }
+  }
+  for (const e of late) joinBustGroup(s, e, member(e), c.now);
   const seats = members.map((e) => ({ tableId: e.tableId, seat: e.seat }));
   // Leaving with a bounty nobody won: it stays the player's own, as it does for whoever is left at the end.
   if (reason !== 'busted') {
@@ -1269,7 +1322,7 @@ function handResult(c: Ctx, r: HandResult) {
   const busted = players.filter((e) => e.status === 'seated' && e.stack <= 0 && !e.leaveRequested);
   const out: Entry[] = [];
   for (const e of busted) {
-    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [] };
+    e.bust = { at: c.now, startStack: r.startStacks[e.playerId] ?? 0, tableId: t.id, by: r.knockedOutBy?.[e.playerId] ?? [], ...(hfhRound !== undefined ? { hfhRound } : {}) };
     payBounty(c, e);
     if (canRebuy(s, e)) {
       e.status = 'rebuy-offer';

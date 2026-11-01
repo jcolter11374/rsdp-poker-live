@@ -126,6 +126,8 @@ export interface AppDeps {
   rng?: Rng;
   /** See RuntimeDeps.fairLeadMs; production passes FAIR_LEAD_MS. */
   fairLeadMs?: number;
+  /** See RuntimeDeps.fairStopRevealMs; production leaves it out (FAIR_STOP_REVEAL_MS). */
+  fairStopRevealMs?: number;
   /** A cash table nobody has had open for this long is saved and let go from memory (0 keeps every table loaded). */
   idleUnloadMs?: number;
   /** Built web client to serve (production). */
@@ -429,7 +431,8 @@ export function createApp(deps: AppDeps = {}) {
     hooks: accountHooks,
     onAdmin: (action) => audit.admin(action),
   });
-  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log });
+  // A loaded table's own fairness state, which may be ahead of its last save (a game started again before its stopped hands opened).
+  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log, liveFair: (id) => (tables.has(id) ? (tables.get(id)!.state.fair ?? null) : undefined) });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
@@ -921,7 +924,7 @@ export function createApp(deps: AppDeps = {}) {
     // Another join may have loaded it (or it was deleted) while we waited.
     if (deleted.has(id)) return null;
     if (tables.has(id)) return tables.get(id)!;
-    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs }));
+    const rt = attach(new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs }));
     rt.resume();
     return rt;
   }
@@ -1053,7 +1056,7 @@ export function createApp(deps: AppDeps = {}) {
           // Tables made here are cash tables, played for dollars and cents; tournaments make their own.
           const settings = newCashSettings(mergePatches(patch, { table: { mode: 'cash' } }));
           if (!tableCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tables; try again in a few minutes');
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
             try {

@@ -132,11 +132,20 @@ interface Row {
 /** Table names, money format, size, felt and seat names, from each table's saved state. */
 type Snap = Partial<RuntimeState> & { settings?: RuntimeState['settings'] };
 
-export function handSearchRoutes(app: express.Express, db: Db | null, opts: { shared: SharedHandStore; now: () => number; log: (message: string, err?: unknown) => void }) {
+export function handSearchRoutes(
+  app: express.Express,
+  db: Db | null,
+  opts: { shared: SharedHandStore; now: () => number; log: (message: string, err?: unknown) => void; liveFair?: (tableId: string) => RuntimeState['fair'] | null | undefined },
+) {
   const { shared, now, log } = opts;
   const searches = limiter(SEARCHES_PER_MINUTE, 60_000, now);
   const shares = limiter(SHARES_PER_MINUTE, 60_000, now);
   const json = express.json({ limit: '2kb' });
+
+  const liveFairOf = (snap: Snap | undefined, tableId: string): Snap | undefined => {
+    const fair = opts.liveFair?.(tableId);
+    return fair === undefined ? snap : { ...snap, fair: fair ?? undefined };
+  };
 
   async function me(req: express.Request, db: Db) {
     const who = await whoIs(db, req.get('x-guest-token') ?? '', req.get('x-session-token'), { now: new Date(now()) });
@@ -220,7 +229,8 @@ export function handSearchRoutes(app: express.Express, db: Db | null, opts: { sh
           felt: snap?.settings?.table.felt ?? null,
           myId: mine,
           pot: potOf(past),
-          hand: savedHandView(snap, past, mine, { now: now() }),
+          // Reveals follow the running table when it is loaded: its save can lag behind a game started again.
+          hand: savedHandView(liveFairOf(snap, row.tableId), past, mine, { now: now() }),
         };
       });
       // The next page carries on after the last hand read (a search that stopped at SCAN_MAX too).

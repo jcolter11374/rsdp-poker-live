@@ -102,7 +102,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
       {!check ? (
         <p>
           🔒 <b>Sealed.</b> The deck was locked in before the deal. It can be checked{' '}
-          {fair.revealsAt ? <>when the host stops the game, or {when(fair.revealsAt)}</> : 'once the host stops the game'}, so folded hands stay private while you play.
+          {fair.revealsAt ? <>half an hour after the host stops the game, or {when(fair.revealsAt)} at the latest</> : 'half an hour after the host stops the game'}, so folded hands stay private while you play.
         </p>
       ) : ok ? (
         <p className="up">

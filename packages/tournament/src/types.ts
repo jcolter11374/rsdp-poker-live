@@ -148,7 +148,8 @@ export interface Entry {
   /** A host stack edit waiting for the current hand to end, and who made it. */
   pendingStack?: number;
   pendingStackBy?: PlayerId;
-  bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[] };
+  /** The hand that took their last chip (or when they left), and the hand-for-hand round it was in. */
+  bust?: { at: number; startStack: number; tableId: TableId | null; by: PlayerId[]; hfhRound?: number };
   /** Bounty tournaments: money (cents) on this entry's head now. */
   bounty?: number;
   /** Bounty money (cents) this entry has collected. */
@@ -190,7 +191,15 @@ export interface PendingRequest {
 export interface EliminationGroup {
   /** Entries knocked out together, with what decides their order. */
   members: { entryId: EntryId; startStack: number; tableId: TableId | null }[];
+  /** When the last of them was knocked out (a rebuy offer can end well after the hand). */
   at: number;
+  /**
+   * When they went out at the table, where that was before `at`: the hand that busted players who were then offered
+   * a rebuy and didn't take it. Groups are kept in this order (bustAt, else at), so they place by when they busted.
+   */
+  bustAt?: number;
+  /** Players who lost their last chip in one hand (not leavers): a busted player whose rebuy offer ends later joins it. */
+  busted?: true;
   /** Set for hand-for-hand busts. */
   hfhRound?: number;
 }
