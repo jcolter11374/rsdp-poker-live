@@ -35,7 +35,15 @@ async function open(label, viewport = { width: 1280, height: 860 }) {
     errors.push(`${label}: blocked a request to ${url.origin}`);
     return route.abort();
   });
-  const p = await ctx.newPage();
+  return watch(await ctx.newPage(), label);
+}
+
+/** Another tab for the same browser (the same signed-in player), watched like the first. */
+async function openTab(page, label) {
+  return watch(await page.context().newPage(), label);
+}
+
+function watch(p, label) {
   p.setDefaultTimeout(15_000);
   p.on('console', (m) => m.type() === 'error' && errors.push(`${label}: ${m.text()}`));
   p.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
@@ -319,6 +327,23 @@ try {
     for (const name of names) if (!log.includes(name)) throw new Error(`${name} was not in the first hand`);
     if (log.includes('(auto)')) throw new Error('a player was acted for automatically in the first hand');
     await host.screenshot({ path: path.join(OUT, 'tournament.png') });
+
+    // The host ends it early the way the Host tab asks (pause, let the hand in progress finish, end), so its
+    // table isn't still dealing when CI's backup drill runs. The players stay at the table to finish that hand.
+    const lobby = await openTab(host, 'tournament host lobby');
+    await lobby.goto(`${BASE}/tn/${id}`);
+    await lobby.getByRole('tab', { name: /^Host/ }).click();
+    await lobby.getByRole('button', { name: 'Pause', exact: true }).click();
+    await lobby.locator('.tn-status-paused').waitFor();
+    const finished = lobby.locator('.tn-status-finished');
+    for (let tries = 0; !(await finished.count()); tries++) {
+      if (tries === 10) throw new Error('the tournament did not end');
+      // A hand dealt before the pause is still being played: play it out first.
+      if (!(await host.locator('.pot.result').count())) await playOut(players);
+      // The director may not have heard the hand end yet, and then refuses: try again.
+      await lobby.getByRole('button', { name: 'End and rank by chips' }).click();
+      await finished.waitFor({ timeout: 2000 }).catch(() => {});
+    }
   });
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
