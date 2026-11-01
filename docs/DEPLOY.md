@@ -24,7 +24,7 @@ The whole site is one container: the game server plus the built web app, built f
 
 The schema migrates itself at startup. Concurrent starts are serialised with an advisory lock.
 
-- **Health check:** `GET /api/health` returns `{"ok":true,...}`.
+- **Health check:** `GET /api/health` returns `{"ok":true,...,"db":"ok"}` (see [Site-down alert](#site-down-alert) for `db`).
 - **Shutdown:** on `SIGTERM` the server saves every table and tournament and then exits, within 10 seconds. Give the host's stop timeout at least that long.
 
 ## Restarts and deploys
@@ -37,7 +37,7 @@ A deploy restarts the process:
 
 ## Backups
 
-The live site is backed up every night, off Fly, by GitHub Actions (`.github/workflows/backup.yml`, about 09:41 UTC):
+The live site is backed up once a day, off Fly, by GitHub Actions (`.github/workflows/backup.yml`). It is scheduled for 09:41 UTC (about 5 am in New York, the quietest time for games), but GitHub starts scheduled jobs hours late: the first runs started between about 15:30 and 16:30 UTC, around midday in New York.
 
 1. It reads the site's leaderboard and newest public record entry, then downloads the whole database from `GET /api/admin/backup` (needs the `X-Admin-Key` header; one at a time, and a server shutting down stops it first). The server reads every table in one transaction, so the copy is one moment in time; on PGlite, table saves wait for it (about a second per 25 MB). Each download goes in the public record as an admin action the moment it starts (so one stopped part-way shows too), because a copy holds any hand being played at that moment.
 2. **Restore drill:** it restores the copy into a fresh PGlite folder (`apps/server/src/restore.ts`), starts a real server on it (`scripts/backup/drill.sh`), and checks that the restored server gives the same all-time leaderboard and has the site's newest public record entry with the same hash. CI runs the same drill on every pull request, after the browser smoke test.
@@ -74,7 +74,9 @@ If the volume is gone, deploy first so a new one exists. Restoring takes the sit
 
 ## Site-down alert
 
-`.github/workflows/uptime.yml` asks `/api/health` every 5 minutes (GitHub sometimes runs it later). If the site doesn't answer for about 3 minutes and no deploy is running, it opens the issue "The site is down", mentioning John so GitHub emails him, and closes it when the site answers again. GitHub turns off scheduled workflows in a public repo after 60 days without a commit; re-enable them under Actions if that happens.
+`.github/workflows/uptime.yml` asks `/api/health` whether the site is up and its database answers within a second. If not for about 3 minutes, and no deploy is running, it opens the issue "The site is down", mentioning John so GitHub emails him, and closes it when the site is fine again. It is scheduled every 5 minutes, but GitHub starts scheduled jobs late when it is busy: since 26 October 2026 it has run only every 3 to 7 hours. So it is a slow backstop, and an outage overnight or at a tournament's automatic start could go unnoticed for hours. GitHub also turns off scheduled workflows in a public repo after 60 days without a commit; re-enable them under Actions if that happens.
+
+**A quick alert needs an outside monitor** in John's own name (issue #180): a free monitor such as UptimeRobot, type Keyword, URL `https://rsdp-poker-live.fly.dev/api/health`, keyword `"ok":true`, every 5 minutes, alerting John's email and phone. That keyword only tells whether the server answers. `/api/health` always answers `ok: true` with status 200 while the server runs (Fly's own health check relies on that), plus `db`: `"ok"`, `"slow"` (no answer within a second) or `"error"`. Only the GitHub check reads `db`, counting anything but `"ok"` as down; a monitor on the keyword `"db":"ok"` would catch a stuck database too, but could also alert on a single slow moment.
 
 ## Local check of the production image
 

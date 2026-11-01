@@ -254,9 +254,9 @@ The same production image the live site runs can be built with Docker; see
 | Every pull request is also checked for a linked issue, and a release into `main` for exactly one new changelog entry with a version. When a pull request is merged into `develop`, the issues it closes are labelled `status: on develop`. | [`pr-checks.yml`](../.github/workflows/pr-checks.yml), [`issue-status.yml`](../.github/workflows/issue-status.yml), [`scripts/release/`](../scripts/release) |
 | When those pass on `main`, GitHub builds the image, signs a record of which commit it came from, and tells Fly.io to run exactly that image. | [`deploy.yml`](../.github/workflows/deploy.yml) |
 | After each deploy, the commit is tagged with the release's version (`v2026.11.01`), a GitHub release is published with its notes, and the issues it put live are closed. | [`release.yml`](../.github/workflows/release.yml), [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
-| Every hour, a GitHub job checks which image the live site really runs, and copies the public record to the `transparency` branch. Anything wrong opens a public issue. | [`transparency.yml`](../.github/workflows/transparency.yml), [`scripts/transparency/`](../scripts/transparency) |
-| Every night, a GitHub job takes an encrypted backup and test-restores it. | [`backup.yml`](../.github/workflows/backup.yml), [DEPLOY.md](DEPLOY.md#backups) |
-| Every 5 minutes, a GitHub job checks the site is up. | [`uptime.yml`](../.github/workflows/uptime.yml) |
+| After every successful deploy, and on a schedule set to every hour (GitHub starts it hours late, so every few hours in practice), a GitHub job checks which image the live site really runs, and copies the public record to the `transparency` branch. Anything wrong opens a public issue. | [`transparency.yml`](../.github/workflows/transparency.yml), [`scripts/transparency/`](../scripts/transparency) |
+| Once a day (scheduled for 09:41 UTC; GitHub starts it hours late), a GitHub job takes an encrypted backup and test-restores it. | [`backup.yml`](../.github/workflows/backup.yml), [DEPLOY.md](DEPLOY.md#backups) |
+| A GitHub job scheduled every 5 minutes checks the site and its database are up. GitHub starts it hours late, so it is a slow backstop; a quick alert needs an outside monitor (see [DEPLOY.md](DEPLOY.md#site-down-alert)). | [`uptime.yml`](../.github/workflows/uptime.yml) |
 
 The live site is a single small machine on Fly.io. It must stay a single
 copy, because the live tables exist in that one process's memory; see
