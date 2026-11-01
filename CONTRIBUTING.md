@@ -34,7 +34,7 @@ up, it gets an issue too.
    something waiting on John: each gets an issue straight away, even a
    small one. **The exception is anything private:** a security problem
    or a privacy request is never a public issue. Tell John privately
-   instead.
+   instead ([security policy](.github/SECURITY.md)).
 2. **An issue's labels say where it stands** (see [Labels](#labels)). Change
    them when the state changes, in the same sitting.
 3. **Every pull request names its issue.** "Closes #123" when it finishes

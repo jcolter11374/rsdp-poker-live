@@ -12,6 +12,9 @@ Live at https://rsdp-poker-live.fly.dev. Play money only.
 | Check that the cards are dealt fairly, and see what the operator could still do | [docs/FAIRNESS.md](docs/FAIRNESS.md) (the same text as the site's `/fairness` page) |
 | Know the exact rules each part of the code follows | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Host it, back it up or restore it | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Fix it when something goes wrong (site down, bad release, leaked key) | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Know why things are the way they are, and who decided | [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Report a security problem | [.github/SECURITY.md](.github/SECURITY.md) (privately, please) |
 | See known bugs, what is being worked on, and what is waiting on whom | [Issues](https://github.com/jcolter11374/rsdp-poker-live/issues), and [CONTRIBUTING.md](CONTRIBUTING.md) for how we track and ship work |
 | See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
 
