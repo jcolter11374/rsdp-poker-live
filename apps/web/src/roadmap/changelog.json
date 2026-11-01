@@ -1,11 +1,17 @@
 {
   "releases": [
     {
+      "id": "2026.11.01.4",
+      "date": "2026-11-01",
+      "fixes": [
+        "The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so."
+      ]
+    },
+    {
       "id": "2026.11.01.3",
       "date": "2026-11-01",
       "fixes": [
-        "Checking John and Fair dealing: the pages now say plainly that GitHub's checks run right after each release GitHub deploys and otherwise every few hours, not every hour as they claimed (GitHub starts its scheduled jobs hours late). Checking John no longer wrongly says the checks have stopped whenever the last one is over three hours old. The privacy page now says the backup runs once a day, not every night.",
-        "The site's own code is now open source under the MIT license, so anyone may use, copy or change it. The Credits page says so."
+        "Checking John and Fair dealing: the pages now say plainly that GitHub's checks run right after each release GitHub deploys and otherwise every few hours, not every hour as they claimed (GitHub starts its scheduled jobs hours late). Checking John no longer wrongly says the checks have stopped whenever the last one is over three hours old. The privacy page now says the backup runs once a day, not every night."
       ]
     },
     {
