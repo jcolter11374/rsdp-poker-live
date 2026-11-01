@@ -125,7 +125,8 @@ for how it works.
   a short note for those logs: the error and where in the site's code it
   happened, the kind of page (such as "a table", never its link) and which
   version of the site it was running. The server logs it without your IP
-  address, your browser or who you are.
+  address or who you are. The error's own text can show which kind of browser
+  it came from (for example Chrome or Safari), but nothing more about it.
 - **GitHub** holds the code, the regular copy of the public record and the
   daily backups (below).
 - **Google**, only if you choose to sign in with Google. Google's own privacy

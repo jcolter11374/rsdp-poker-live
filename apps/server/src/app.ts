@@ -1660,7 +1660,6 @@ export function createApp(deps: AppDeps = {}) {
   };
 }
 
-/** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
 /**
  * The error handler behind every route. A request the client got wrong (a body too big or not JSON, which
  * express.json and express.static mark with a 4xx status and `expose`) is answered with that status and a
@@ -1680,6 +1679,7 @@ export function requestFailed(log: (message: string, err?: unknown) => void): ex
   };
 }
 
+/** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
 export const DB_HEALTH_MS = 1_000;
 
 /**
