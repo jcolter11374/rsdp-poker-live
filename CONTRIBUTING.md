@@ -67,7 +67,10 @@ been started.
 | `no issue needed` | On a pull request only: it skips the linked-issue check |
 
 The labels are defined in [`.github/labels.json`](.github/labels.json). Edit
-that file to add or change one; a workflow applies it.
+that file to add a label or change its colour or description; a workflow
+applies it. To rename one, rename it on GitHub first (Issues → Labels →
+Edit) so its issues keep it, then change the file and any links that name
+it: changing only the file makes a new, empty label.
 
 ## The life of a change
 
@@ -84,18 +87,25 @@ that file to add or change one; a workflow applies it.
 4. **Merge into `develop`.** GitHub only closes issues for merges into the
    default branch (`main`), so a workflow labels each issue the pull request
    closes `status: on develop` and comments on it.
-5. **Release.** A pull request from `develop` into `main`, with the
-   release's changelog entry already on `develop`. We play-test the release
-   on a copy of the site first, never on the live one. Merging it runs the
-   checks again and then deploys. After the deploy, the Release workflow
-   tags the commit (`v2026.11.01`), publishes a GitHub release with its
-   notes and the issues it closed, and closes those issues with a comment
-   saying when they went live.
+5. **Release.** On release day, make sure the waiting changelog entry's
+   version is today's (see [Releases](#releases)), then open a pull request
+   from `develop` into `main`. We play-test the release on a copy of the
+   site first, never on the live one. Merging it runs the checks again and
+   then deploys. After the deploy, the Release workflow tags the commit
+   (`v2026.11.01`), publishes a GitHub release with its notes and the
+   issues it closed, and closes those issues with a comment saying when
+   they went live.
 
 A fix that has to go straight into `main` follows the same rules: its pull
 request says "Closes #123" (GitHub closes the issue when it merges) and adds
-the changelog entry. Merge `main` back into `develop` afterwards so the two
-don't drift.
+its own changelog entry with today's version. Merge `main` back into
+`develop` afterwards so the two don't drift, keeping the fix's entry exactly
+as it is on `main`.
+
+GitHub also closes an issue by itself when "Closes #123" reaches `main` in a
+release pull request's description or in a commit message. That's fine: the
+Release workflow still lists it in the release notes and comments when it
+went live.
 
 ## Releases
 
@@ -107,14 +117,21 @@ From those come the site's Changelog and What's new pages, CHANGELOG.md
 (`npm run changelog` writes it; a test fails if it's out of date) and the
 notes on each GitHub release.
 
-- **Version.** A release's id is its version: the date, as `2026.11.01`,
-  and `2026.11.01.2`, `2026.11.01.3` for later releases that day (calendar
-  versioning). Its git tag is `v` plus the version. Releases from before
-  1 November 2026 keep their old ids (`2026-10-31-d`) and have no tags.
+- **Version.** A release's id is its version: the day it goes live, as
+  `2026.11.01`, and `2026.11.01.2`, `2026.11.01.3` for later releases that
+  day (calendar versioning). Its git tag is `v` plus the version. Releases
+  from before 1 November 2026 keep their old ids (`2026-10-31-d`) and have
+  no tags.
 - **One entry per release.** If the top entry in changelog.json isn't on
-  `main` yet, it belongs to the next release: add your lines to it. If every
+  `main` yet, it is the next release's: add your lines to it. If every
   entry is already on `main`, start a new one at the top with today's
-  version. The PR check enforces both.
+  version. Never change an entry that is already on `main`; it's live.
+- **On release day,** if the waiting entry's version isn't today's, rename
+  it to today's version (and its date, and its twin in whatsnew.json if it
+  has one), run `npm run changelog`, and merge that into `develop` before
+  opening the release. The release's version must also be newer than every
+  release already live. The PR check enforces all of this and says what to
+  rename it to.
 - **Plain English.** The notes are for the players. Say what changed for
   them; no pull request numbers or code names.
 - **What goes where.** What's new is for new features and changes people

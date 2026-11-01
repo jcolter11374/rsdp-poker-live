@@ -14,8 +14,9 @@ release on 1 November 2026 and `2026.11.01.2` the second that day. Each version 
 tag (`v2026.11.01`) and a [GitHub release](https://github.com/jcolter11374/rsdp-poker-live/releases) that also lists the issues it
 closed. Releases before 1 November 2026 weren't tagged, so they are listed by date.
 
-Work that is merged but not live yet is on the issues labelled
-[status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
+On `main`, every entry here is live. On `develop`, the top entry may be the next release,
+still being filled in: its tag and GitHub release only exist once it goes live. Work that is
+merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
 ## [2026.11.01.2] - 2026-11-01
 

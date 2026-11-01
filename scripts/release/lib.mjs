@@ -5,8 +5,8 @@
 // apps/server/test/release-scripts.test.ts check them.
 
 /**
- * A release's version is its date, plus `.2`, `.3`, … for later releases on
- * the same day (calendar versioning). It is also the release's id in
+ * A release's version is the day it goes live, plus `.2`, `.3`, … for later
+ * releases on the same day (calendar versioning). It is also the release's id in
  * changelog.json and whatsnew.json, and its git tag is `v` + the version.
  * Releases from before 1 November 2026 keep their old ids (2026-10-31-d)
  * and have no tag.
@@ -86,10 +86,12 @@ export function parseOnDevelopMarkers(text) {
 
 /**
  * What a pull request is missing before it can merge. `pr` is {base, head,
- * body, labels}; `logs` holds changelog.json's release lists as they are in
- * the PR, on its base branch and on main. Returns plain-English problems.
+ * body, labels}; `logs` holds changelog.json's release lists and `features`
+ * whatsnew.json's (optional), each as they are in the PR, on its base branch
+ * and on main; `today` is the UTC date, YYYY-MM-DD. Returns plain-English
+ * problems, each saying what to do.
  */
-export function prProblems({ pr, repo, logs }) {
+export function prProblems({ pr, repo, logs, features = { pr: [], base: [], main: [] }, today }) {
   const problems = [];
   const isRelease = pr.base === 'main' && pr.head === 'develop';
   if (!isRelease && !pr.labels.includes('no issue needed') && issueRefs(pr.body, repo).length === 0) {
@@ -101,27 +103,73 @@ export function prProblems({ pr, repo, logs }) {
   const ids = (list) => new Set(list.map((r) => r.id));
   const onMain = ids(logs.main);
   const onBase = ids(logs.base);
+  const used = [...new Set([...logs.pr, ...logs.base, ...logs.main].map((r) => r.id))];
+  for (const id of new Set(logs.pr.map((r) => r.id))) {
+    if (logs.pr.filter((r) => r.id === id).length > 1) problems.push(`The changelog has two entries called "${id}"; ids must be unique.`);
+  }
   // An entry with a `commit` records a release that is already live (one from before tags existed).
   const pending = logs.pr.filter((r) => !onMain.has(r.id) && !r.commit);
   const added = logs.pr.filter((r) => !onBase.has(r.id) && !r.commit);
-  for (const r of added) {
-    if (!isVersion(r.id)) problems.push(`The new changelog entry "${r.id}" needs a version as its id, like ${versionFor(r.date)}: see CONTRIBUTING.md.`);
+  // Entries new to the base branch that are live already (merging main back into develop brings these).
+  const addedPending = added.filter((r) => !onMain.has(r.id));
+  const waiting = pending.filter((r) => !addedPending.includes(r));
+  for (const r of addedPending) {
+    if (isVersion(r.id)) continue;
+    problems.push(
+      pr.base !== 'main' && waiting.length
+        ? `"${r.id}" shouldn't be a new changelog entry: add its lines to ${waiting[0].id}, the next release's entry.`
+        : `The new changelog entry "${r.id}" needs a version as its id, like ${versionFor(r.date, used)}: see CONTRIBUTING.md.`,
+    );
   }
+
+  // A release that is live already keeps its notes: new lines go in the next release's entry.
+  const notes = (list, featureList, id) =>
+    JSON.stringify([list.find((r) => r.id === id)?.fixes ?? null, featureList.find((r) => r.id === id) ?? null]);
+  const [refLog, refFeatures] = pr.base === 'main' ? [logs.main, features.main] : [logs.base, features.base];
+  for (const r of logs.pr) {
+    if (!onMain.has(r.id) || !refLog.some((x) => x.id === r.id)) continue;
+    if (notes(logs.pr, features.pr, r.id) !== notes(refLog, refFeatures, r.id)) {
+      problems.push(
+        `"${r.id}" is already live, so its notes can't change. Put the new lines in the next release's entry` +
+          `${waiting[0] ? ` (${waiting[0].id})` : ''}, or start one at the top.`,
+      );
+    }
+  }
+
   if (pr.base === 'main') {
     if (pending.length === 0) {
       problems.push('A release needs release notes: add an entry at the top of apps/web/src/roadmap/changelog.json (see CONTRIBUTING.md).');
     } else if (pending.length > 1) {
       problems.push(`One release, one changelog entry: ${pending.map((r) => r.id).join(', ')} would all ship together. Put their lines into one entry.`);
+    } else if (isVersion(pending[0].id)) {
+      // The version is the day the release goes live, and newer than every release before it.
+      const p = pending[0];
+      const live = [...logs.main, ...logs.pr.filter((r) => r.commit)].map((r) => r.id).filter(isVersion);
+      const newest = [...live].sort(compareReleaseIds)[0];
+      const rename = today ? versionFor(today, used.filter((id) => id !== p.id)) : null;
+      const how = rename ? ` Rename it to ${rename} (and its date to ${today}, in whatsnew.json too), then run npm run changelog.` : '';
+      if (newest && compareReleaseIds(p.id, newest) >= 0) {
+        problems.push(`This release's version ${p.id} isn't newer than ${newest}, which is already live.${how}`);
+      } else if (today && daysBefore(dayOf(p.id), today) > 1) {
+        problems.push(`This release's version ${p.id} is from ${dayOf(p.id)}, but a version is the day the release goes live.${how}`);
+      }
     }
-  } else if (added.length > 1 || (added.length > 0 && pending.length > added.length)) {
-    const waiting = pending.filter((r) => !added.includes(r));
-    problems.push(
-      waiting.length
-        ? `The next release already has a changelog entry, ${waiting[0].id}. Add your lines to it instead of starting a new one.`
-        : 'Add one changelog entry at most; put all of its lines into it.',
-    );
+  } else if (addedPending.length > 1 || (addedPending.length > 0 && waiting.length > 0)) {
+    if (!problems.some((x) => x.includes('the next release\'s entry.'))) {
+      problems.push(
+        waiting.length
+          ? `The next release already has a changelog entry, ${waiting[0].id}. Add your lines to it instead of starting a new one.`
+          : 'Add one changelog entry at most; put all of its lines into it.',
+      );
+    }
   }
   return problems;
+}
+
+/** Whole days from `a` to `b` (both YYYY-MM-DD); 0 when either is missing. */
+function daysBefore(a, b) {
+  if (!a || !b) return 0;
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
 /** A version for a new release on `date` (YYYY-MM-DD), given the versions already used. */
@@ -181,8 +229,9 @@ export function renderChangelog({ changelog, whatsnew }) {
     `tag (\`v2026.11.01\`) and a [GitHub release](${GITHUB}/releases) that also lists the issues it`,
     'closed. Releases before 1 November 2026 weren\'t tagged, so they are listed by date.',
     '',
-    'Work that is merged but not live yet is on the issues labelled',
-    `[status: on develop](${GITHUB}/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).`,
+    'On `main`, every entry here is live. On `develop`, the top entry may be the next release,',
+    'still being filled in: its tag and GitHub release only exist once it goes live. Work that is',
+    `merged but not live yet is also on the issues labelled [status: on develop](${GITHUB}/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).`,
     '',
   ];
   const links = [];

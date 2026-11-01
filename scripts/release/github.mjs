@@ -31,13 +31,18 @@ export async function gh(method, path, body, { allow404 = false } = {}) {
 /** Every item of a list endpoint, following pages. `key` picks the array out of an object reply. */
 export async function ghAll(path, key) {
   const out = [];
-  for (let page = 1; ; page++) {
+  let first = null;
+  for (let page = 1; page <= 100; page++) {
     const sep = path.includes('?') ? '&' : '?';
     const reply = await gh('GET', `${path}${sep}per_page=100&page=${page}`);
     const items = key ? reply[key] : reply;
+    // An endpoint that ignores paging sends the same page again: stop rather than loop.
+    if (!items.length || (page > 1 && JSON.stringify(items[0]) === first)) return out;
+    first = JSON.stringify(items[0]);
     out.push(...items);
     if (items.length < 100) return out;
   }
+  throw new Error(`${path}: more than 100 pages`);
 }
 
 /** Writes Markdown to the job's summary page, when there is one. */

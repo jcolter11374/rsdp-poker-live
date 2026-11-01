@@ -26,6 +26,9 @@ export function prProblems(input: {
   pr: { base: string; head: string; body: string; labels: string[] };
   repo: string;
   logs: { pr: ChangelogEntry[]; base: ChangelogEntry[]; main: ChangelogEntry[] };
+  features?: { pr: WhatsNewEntry[]; base: WhatsNewEntry[]; main: WhatsNewEntry[] };
+  /** The UTC date, YYYY-MM-DD; without it a release's version date isn't checked. */
+  today?: string;
 }): string[];
 export function versionFor(date: string, used?: string[]): string;
 export function renderChangelog(input: { changelog: ChangelogEntry[]; whatsnew: WhatsNewEntry[] }): string;

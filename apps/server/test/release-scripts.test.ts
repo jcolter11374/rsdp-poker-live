@@ -75,11 +75,13 @@ describe('release versions', () => {
 describe('pull request checks', () => {
   const entry = (id: string, more: Partial<ChangelogEntry> = {}): ChangelogEntry => ({ id, date: dayOf(id) ?? '2026-11-01', fixes: ['x'], ...more });
   const live = [entry('2026.11.01', { commit: 'a'.repeat(40) }), entry('2026-10-31-d')];
-  const check = (pr: { base?: string; head?: string; body?: string; labels?: string[] }, logs: { pr: ChangelogEntry[]; base?: ChangelogEntry[]; main?: ChangelogEntry[] }) =>
+  type Logs = { pr: ChangelogEntry[]; base?: ChangelogEntry[]; main?: ChangelogEntry[] };
+  const check = (pr: { base?: string; head?: string; body?: string; labels?: string[] }, logs: Logs, today?: string) =>
     prProblems({
       pr: { base: 'develop', head: 'claude/x', body: '', labels: [], ...pr },
       repo: REPO,
       logs: { base: live, main: live, ...logs },
+      today,
     });
 
   it('wants a pull request into develop to name its issue, unless it is labelled "no issue needed"', () => {
@@ -89,32 +91,72 @@ describe('pull request checks', () => {
     expect(check({ body: 'Tidy up' }, { pr: live })[0]).toMatch(/Closes #123/);
   });
 
-  it('lets one changelog entry wait on develop, with a version as its id', () => {
+  it('lets one changelog entry wait on develop, with a free version as its id', () => {
     expect(check({ body: 'Closes #4' }, { pr: [entry('2026.11.01.2'), ...live] })).toEqual([]);
-    expect(check({ body: 'Closes #4' }, { pr: [entry('2026-11-01-b'), ...live] })[0]).toMatch(/needs a version.*2026\.11\.01/);
+    expect(check({ body: 'Closes #4' }, { pr: [entry('2026-11-01-b'), ...live] })).toEqual([
+      'The new changelog entry "2026-11-01-b" needs a version as its id, like 2026.11.01.2: see CONTRIBUTING.md.',
+    ]);
     const pending = [entry('2026.11.01.2'), ...live];
-    expect(check({ body: 'Closes #4' }, { base: pending, pr: [entry('2026.11.01.3'), ...pending] })[0]).toMatch(/already has a changelog entry, 2026\.11\.01\.2/);
+    expect(check({ body: 'Closes #4' }, { base: pending, pr: [entry('2026.11.01.3'), ...pending] })).toEqual([
+      'The next release already has a changelog entry, 2026.11.01.2. Add your lines to it instead of starting a new one.',
+    ]);
+    expect(check({ body: 'Closes #4' }, { base: pending, pr: [entry('2026-11-01-b'), ...pending] })).toEqual([
+      '"2026-11-01-b" shouldn\'t be a new changelog entry: add its lines to 2026.11.01.2, the next release\'s entry.',
+    ]);
     expect(check({ body: 'Closes #4' }, { pr: [entry('2026.11.02'), entry('2026.11.01.2'), ...live] })[0]).toMatch(/at most/);
+    expect(check({ body: 'Closes #4' }, { pr: [entry('2026.11.01.2'), entry('2026.11.01.2'), ...live] })[0]).toMatch(/two entries called "2026\.11\.01\.2"/);
+  });
+
+  it('lets a pull request add lines to the waiting entry, but not to one that is already live', () => {
+    const waiting = [entry('2026.11.02'), ...live];
+    expect(check({ body: 'Closes #4' }, { base: waiting, pr: [entry('2026.11.02', { fixes: ['x', 'y'] }), ...live] })).toEqual([]);
+    // 2026.11.02 shipped while this pull request was open.
+    expect(check({ body: 'Closes #4' }, { base: waiting, main: waiting, pr: [entry('2026.11.02', { fixes: ['x', 'y'] }), ...live] })[0]).toMatch(
+      /"2026\.11\.02" is already live/,
+    );
+    expect(check({ base: 'main', head: 'develop' }, { main: waiting, pr: [entry('2026.11.03'), entry('2026.11.02', { fixes: ['changed'] }), ...live] }, '2026-11-03')[0]).toMatch(
+      /"2026\.11\.02" is already live/,
+    );
+  });
+
+  it('lets main be merged back into develop after a fix went straight to main', () => {
+    const fixes = [entry('2026.11.03.2'), entry('2026.11.03'), ...live];
+    expect(check({ head: 'main', body: 'Part of #9' }, { main: fixes, pr: fixes })).toEqual([]);
+    const waiting = [entry('2026.11.02'), ...live];
+    expect(check({ head: 'main', body: 'Part of #9' }, { base: waiting, main: fixes, pr: [entry('2026.11.03.2'), entry('2026.11.03'), entry('2026.11.02'), ...live] })).toEqual([]);
   });
 
   it('wants a release into main to carry exactly one new entry, and needs no issue of its own', () => {
     const release = { base: 'main', head: 'develop', body: 'Release' };
-    expect(check(release, { pr: [entry('2026.11.01.2'), ...live] })).toEqual([]);
+    expect(check(release, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-01')).toEqual([]);
     expect(check(release, { pr: live })[0]).toMatch(/needs release notes/);
     expect(check(release, { pr: [entry('2026.11.02'), entry('2026.11.01.2'), ...live] })[0]).toMatch(/One release, one changelog entry/);
+  });
+
+  it('wants a release\'s version to be the day it goes live, and newer than every release already live', () => {
+    const release = { base: 'main', head: 'develop' };
+    expect(check(release, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-02')).toEqual([]);
+    expect(check(release, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-04')).toEqual([
+      "This release's version 2026.11.01.2 is from 2026-11-01, but a version is the day the release goes live. Rename it to 2026.11.04 (and its date to 2026-11-04, in whatsnew.json too), then run npm run changelog.",
+    ]);
+    const hotfix = [entry('2026.11.03'), ...live];
+    expect(check(release, { main: hotfix, pr: [entry('2026.11.03'), entry('2026.11.02'), ...live] }, '2026-11-03')).toEqual([
+      "This release's version 2026.11.02 isn't newer than 2026.11.03, which is already live. Rename it to 2026.11.03.2 (and its date to 2026-11-03, in whatsnew.json too), then run npm run changelog.",
+    ]);
   });
 
   it('treats a fix straight into main as a release that also names its issue', () => {
     const problems = check({ base: 'main', head: 'claude/hotfix', body: 'Quick fix' }, { pr: live });
     expect(problems).toHaveLength(2);
-    expect(check({ base: 'main', head: 'claude/hotfix', body: 'Fixes #9' }, { pr: [entry('2026.11.01.2'), ...live] })).toEqual([]);
+    expect(check({ base: 'main', head: 'claude/hotfix', body: 'Fixes #9' }, { pr: [entry('2026.11.01.2'), ...live] }, '2026-11-01')).toEqual([]);
   });
 
   it('never counts the entry for a release that is already live as waiting', () => {
     const renamed = [entry('2026.11.01', { commit: 'a'.repeat(40) }), entry('2026-10-31-d')];
     const oldMain = [entry('2026-11-01'), entry('2026-10-31-d')];
     expect(check({ body: 'Closes #1' }, { base: oldMain, main: oldMain, pr: renamed })).toEqual([]);
-    expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01.2'), ...renamed] })).toEqual([]);
+    expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01.2'), ...renamed] }, '2026-11-01')).toEqual([]);
+    expect(check({ base: 'main', head: 'develop' }, { base: oldMain, main: oldMain, pr: [entry('2026.11.01'), ...renamed.slice(1)] }, '2026-11-01')).toEqual([]);
   });
 });
 
