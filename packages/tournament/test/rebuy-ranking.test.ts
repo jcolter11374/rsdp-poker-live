@@ -214,5 +214,27 @@ describe('places after a rebuy offer', () => {
     sim.at(T0 + 15_000);
     expect(sim.places()).toMatchObject({ [small]: 4, [big]: 3 });
   });
+
+  it('hand-for-hand: a leaver at another table whose hand ended later still places below a player whose offer runs out', () => {
+    const sim = new Sim(fivePaidFour);
+    for (let i = 0; i < 5; i++) sim.do({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
+    sim.do({ type: 'startNow', by: 'host' });
+    expect(sim.state.handForHand.active).toBe(true);
+    const three = sim.state.tables.find((x) => sim.players(x.id).length === 3)!.id;
+    const two = sim.state.tables.find((x) => sim.players(x.id).length === 2)!.id;
+    const [w3, , leaver] = sim.players(three);
+    const [w2, x] = sim.players(two);
+    sim.do({ type: 'handStarted', tableId: three, handNumber: 1 });
+    sim.do({ type: 'quit', playerId: leaver });
+    sim.hand(two, w2, [x]);
+    expect(sim.entry(x).status).toBe('rebuy-offer');
+    sim.now += 1_000;
+    const start = Object.fromEntries(sim.players(three).map((p) => [p, 1000]));
+    sim.do({ type: 'handResult', result: { tableId: three, handNumber: 1, startStacks: start, endStacks: start, knockedOutBy: {} } });
+    expect(sim.entry(leaver).status).toBe('quit');
+    sim.at(T0 + 16_000);
+    expect(sim.entry(x).status).toBe('busted');
+    expect({ x: sim.places()[x], leaver: sim.places()[leaver], w3: sim.places()[w3] }).toMatchObject({ x: 4, leaver: 5 });
+  });
 });
 

@@ -687,8 +687,13 @@ function joinBustGroup(s: TournamentState, e: Entry, m: EliminationGroup['member
   }
   const fresh: EliminationGroup = { members: [m], at: now, busted: true, ...(now > bust.at ? { bustAt: bust.at } : {}), ...(bust.hfhRound !== undefined ? { hfhRound: bust.hfhRound } : {}) };
   // After every group that went out by then (a quit in the same hand ranks below), before any that went out later.
-  const i = s.eliminations.findIndex((g) => outAt(g) > bust.at);
-  if (i < 0) s.eliminations.push(fresh);
+  // In hand-for-hand, after the round's leavers too, wherever their hand ended.
+  let i = s.eliminations.findIndex((g) => outAt(g) > bust.at);
+  if (bust.hfhRound !== undefined) {
+    const last = s.eliminations.map((g) => g.hfhRound).lastIndexOf(bust.hfhRound);
+    if (last >= 0 && (i < 0 || last >= i)) i = last + 1;
+  }
+  if (i < 0 || i >= s.eliminations.length) s.eliminations.push(fresh);
   else s.eliminations.splice(i, 0, fresh);
 }
 
