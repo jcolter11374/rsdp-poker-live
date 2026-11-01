@@ -54,7 +54,8 @@ packages/engine      The poker rules. No I/O. Used by the server AND the browser
 packages/tournament  The tournament director: levels, seating, payouts. No I/O.
 apps/server          The game server: tables, tournaments, accounts, database.
 apps/web             The website: lobby, table, tournament pages, replayer.
-e2e/                 A browser "smoke test" that plays real hands through the UI.
+e2e/                 A browser "smoke test" that plays real hands through the UI, and
+                     e2e/playtest/, scripts that play a release through for screenshots.
 scripts/             Stand-alone checkers (hands, the public record), backups, deploy helpers,
                      and scripts/release/ (issue links, versions, release notes).
 .github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
@@ -246,7 +247,9 @@ npm run smoke        # browser test; see below
 The smoke test drives a real browser, so install one first with
 `npx playwright install chromium`. It needs the built website served by the
 game server: run `npm run build && npm start` in one terminal, then
-`BASE_URL=http://localhost:3001 npm run smoke` in another.
+`BASE_URL=http://localhost:3001 npm run smoke` in another. The play-test
+scripts for a release run the same way; see
+[e2e/playtest/README.md](../e2e/playtest/README.md).
 
 To run some of the tests, go into a package and name a file or folder, for
 example `cd packages/engine && npx vitest run test/core` or
@@ -265,6 +268,7 @@ The same production image the live site runs can be built with Docker; see
 | Every piece of work starts as a GitHub issue. Work happens on branches whose pull requests name their issue ("Closes #123") and are merged into `develop`; releases then go from `develop` to `main`. A fix that can't wait goes straight into `main` the same way. | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | Every pull request, and every push to `main` or `develop`, runs the checks: typecheck, all tests (including fuzz tests that deal up to 3,000 random hands across every game through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, and a backup restore drill. | [`ci.yml`](../.github/workflows/ci.yml) |
 | Every pull request is also checked for a linked issue, and a release into `main` for exactly one new changelog entry with a version. When a pull request is merged into `develop`, the issues it closes are labelled `status: on develop`. | [`pr-checks.yml`](../.github/workflows/pr-checks.yml), [`issue-status.yml`](../.github/workflows/issue-status.yml), [`scripts/release/`](../scripts/release) |
+| A pull request into `main` (a release) also rehearses the upgrade: `main`'s image makes data, the new image starts on it and must give the same leaderboard and public record and read back every saved table and tournament, and `main`'s image must do the same on the upgraded data (a rollback). | [`upgrade.yml`](../.github/workflows/upgrade.yml), [`scripts/upgrade/`](../scripts/upgrade) |
 | When those pass on `main`, GitHub builds the image, signs a record of which commit it came from, and tells Fly.io to run exactly that image. | [`deploy.yml`](../.github/workflows/deploy.yml) |
 | After each deploy, the commit is tagged with the release's version (`v2026.11.01`), a GitHub release is published with its notes, and the issues it put live are closed. | [`release.yml`](../.github/workflows/release.yml), [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
 | After every successful deploy, and on a schedule set to every hour (GitHub starts it hours late, so every few hours in practice), a GitHub job checks which image the live site really runs, and copies the public record to the `transparency` branch. Anything wrong opens a public issue. | [`transparency.yml`](../.github/workflows/transparency.yml), [`scripts/transparency/`](../scripts/transparency) |
