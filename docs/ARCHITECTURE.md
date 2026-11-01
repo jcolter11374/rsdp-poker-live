@@ -82,7 +82,7 @@ Contracts: [`core/types.ts`](../packages/engine/src/core/types.ts) and [`core/ap
 - Never edit a migration that has shipped: a database that ran it never runs it again, so the edit would reach only new databases. Write a new migration.
 - Each journal entry's `"when"` must be newer than every earlier entry's. Drizzle runs only the entries newer than the last one a database applied, and skips the others with no error, so a migration stamped older would never run in production (fresh test databases still run it). `db:generate` stamps the time it runs; never pick a number by hand. If develop gained a migration while yours waited, delete yours (the .sql file, its snapshot and its journal entry) and run `db:generate` again on top.
 - A migration that rewrites existing rows (not just adds) also needs a step in `restoreBackup` (`db/backup.ts`), which loads older backups straight into the newest tables.
-- Table and tournament state are JSON snapshots inside rows, so changing their shape needs no migration, but saved snapshots must stay readable: see the comment on `RUNTIME_VERSION` (`apps/server/src/runtime/types.ts`).
+- Table and tournament state are JSON snapshots inside rows, so changing their shape needs no migration, but saved snapshots must stay readable: see the comments on `RUNTIME_VERSION` (`apps/server/src/runtime/types.ts`) and `STATE_VERSION` (`packages/tournament/src/types.ts`).
 
 ## Branches and ownership
 
