@@ -82,7 +82,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       ? `${games.length > 1 ? `${tightest.name}, one of the games in the rotation,` : tightest.name} seats at most ${seatLimit} players and ${seated} are sitting down. ${seated - seatLimit} ${seated - seatLimit === 1 ? 'player needs' : 'players need'} to leave the table (or remove ${seated - seatLimit === 1 ? 'a bot' : 'some bots'}) before you can switch.`
       : `${seated} players are sitting down, so the table needs at least ${seated} seats.`
     : !tournament && moving.length
-      ? `The table goes down to ${newSeats} seats. ${moving.length === 1 ? 'The player' : 'Players'} in seat${moving.length === 1 ? '' : 's'} ${moving.join(' and ').replace(/ and (?=.* and )/g, ', ')} will move to ${moving.length === 1 ? 'a free seat' : 'free seats'}${handLive ? ' when this hand ends' : ''}, and the button is drawn again.`
+      ? `The table goes down to ${newSeats} seats. ${moving.length === 1 ? 'The player' : 'Players'} in seat${moving.length === 1 ? '' : 's'} ${moving.join(' and ').replace(/ and (?=.* and )/g, ', ')} will move to ${moving.length === 1 ? 'a free seat' : 'free seats'}${handLive ? ' when this hand ends' : ''}.`
       : '';
 
   const pickGame = (gameId: string) => {

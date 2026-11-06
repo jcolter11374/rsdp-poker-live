@@ -76,10 +76,9 @@ describe('cash table edge cases', () => {
       rt.updateSettings('host', toTripleDraw);
       expect(rt.state.settings.game.gameId).toBe('td27');
       expect(rt.state.seats).toHaveLength(6);
-      expect(rt.seatOf(inSeven)!.seat).toBe(1);
-      expect(rt.seatOf(inEight)!.seat).toBe(2);
+      expect(rt.seatOf(inSeven)!.seat).toBe(2);
+      expect(rt.seatOf(inEight)!.seat).toBe(3);
       expect(rt.state.seats.filter(Boolean)).toHaveLength(5);
-      expect(rt.state.positions).toBeNull();
       expect(chipsAddUp(rt)).toBe(true);
       rt.start('host');
       expect(rt.state.hand?.input.game.id).toBe('td27');
@@ -95,7 +94,7 @@ describe('cash table edge cases', () => {
       expect(rt.state.seats).toHaveLength(10);
       // Seats 3 and 4 are the only ones the smaller table keeps free, and seat 9 needs one of them.
       rt.requestSeat('c', { seat: 2, name: 'C', stack: 100 });
-      expect(() => rt.requestSeat('d', { seat: 3, name: 'D', stack: 100 })).toThrow(/kept for the players moving/);
+      expect(() => rt.requestSeat('d', { seat: 3, name: 'D', stack: 100 })).toThrow('the table is going down to 4 seats after this hand, and that seat is kept for a player moving into it');
       expect(() => rt.addBot('host')).toThrow(/every seat is taken/);
       while (rt.state.hand?.phase !== 'complete') rt.act(toAct(rt), { type: 'fold' });
       clock.advance(10_000);
@@ -122,6 +121,33 @@ describe('cash table edge cases', () => {
       rt.updateSettings('host', { game: { rotation }, table: { maxSeats: 6 } });
       expect(rt.state.seats).toHaveLength(6);
       expect(rt.state.seats.every(Boolean)).toBe(true);
+    });
+
+    it('the blinds carry on from where they were', () => {
+      const { rt, clock } = table();
+      rt.moveSeat('host', 'b', 9);
+      rt.start('host');
+      while (rt.state.hand?.phase !== 'complete') rt.act(toAct(rt), { type: 'fold' });
+      // b, in seat 10, had the big blind: it moves with them.
+      expect(rt.state.positions).toEqual({ button: 0, smallBlind: 1, bigBlind: 9 });
+      rt.updateSettings('host', { table: { maxSeats: 3 } });
+      expect(rt.seatOf('b')!.seat).toBe(2);
+      expect(rt.state.positions).toEqual({ button: 0, smallBlind: 1, bigBlind: 2 });
+      clock.advance(10_000);
+      // The button moves on to the next seat, as after any hand.
+      expect(rt.state.positions?.button).toBe(1);
+    });
+
+    it("a seat someone asked for isn't given to a player moving when another is free", () => {
+      const { rt } = table();
+      rt.connect('c');
+      rt.updateSettings('host', { seating: { requireApproval: true } });
+      rt.moveSeat('host', 'b', 9);
+      rt.requestSeat('c', { seat: 3, name: 'C', stack: 100 });
+      rt.start('host');
+      rt.updateSettings('host', { table: { maxSeats: 4 } });
+      rt.approve('host', rt.state.requests[0].id);
+      expect(rt.seatOf('c')!.seat).toBe(3);
     });
 
     it('lowering the seat count by hand works the same way', () => {

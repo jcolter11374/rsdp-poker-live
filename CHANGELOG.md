@@ -22,7 +22,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ### Fixed and changed
 
-- Hosts: switching to a game with fewer seats (2-7 Triple Draw and Badugi seat 6, the stud games 8) no longer fails with "seat 8 is taken". If everyone fits, players in the seats that go move into free seats, and the button is drawn again so nobody loses a blind. If not everyone fits, Table settings says how many players need to leave first. Lowering the seat count by hand works the same way.
+- Hosts: switching to a game with fewer seats (2-7 Triple Draw and Badugi seat 6, the stud games 8) no longer fails with "seat 8 is taken". If everyone fits, players in the seats that go move into free seats and the blinds carry on as normal. If not everyone fits, Table settings says how many players need to leave first. Lowering the seat count by hand works the same way.
 
 ## [2026.11.06.2] - 2026-11-06
 
