@@ -7,7 +7,7 @@ it. It is written from what the code actually does, and the code is public on
 GitHub, so anyone can check it. It is not legal advice, and nobody here is a
 lawyer.
 
-Last updated: 5 November 2026. Every change to this page is in its
+Last updated: 6 November 2026. Every change to this page is in its
 [history on GitHub](https://github.com/jcolter11374/rsdp-poker-live/commits/main/docs/PRIVACY.md).
 
 ## Who is responsible
@@ -54,6 +54,7 @@ public, so don't put anything private in one, just ask him to get in touch).
 | Hands: who was dealt in, the cards, every action, the board, who won | The game | Players at that table see what poker rules allow them to see. Shown and mucked cards follow the table's settings. |
 | Table chat and the table log (joins, rebuys, seat moves, host actions) | You and the game | Everyone at that table, and spectators if the host allows them. At a tournament table, also the tournament's host, co-hosts and players, who can download every table's chat and log once the tournament is over. John can read any table's chat from the admin page (with the admin key), open or closed, and each such read is shown publicly on [/transparency](/transparency). |
 | Tournament lobby chat and log | You and the tournament | Everyone who opens that tournament |
+| Whether the host turned a tournament's lobby chat off, and whom they muted in it | The tournament's host, or a co-host they let manage chat | Whether chat is off: everyone who opens that tournament. Who is muted: the host and those co-hosts; a muted player sees only that they are muted. |
 | Each table's ledger: buy-ins, rebuys, cash-outs | The game | Everyone at that table. Totals from real games also feed the public leaderboard and your profit graph. |
 | Private notes and colour tags you keep on other players | You | Only you (and John, who can read the database) |
 | Saved table presets and tournament structures | You, when signed in. Guests keep theirs in their own browser. | Only you |
@@ -106,7 +107,8 @@ for how it works.
 
 - The site keeps a few things in your browser's local storage: your guest id
   and secret, your signed-in session, your table name, settings such as
-  sound, volume and alerts, players you muted, tips you've dismissed, guest
+  sound, volume and alerts, players you muted or hid in chat (at tables and in
+  tournament lobbies), tips you've dismissed, guest
   presets, tournaments you made, and what your
   browser saw during hands (so it can check the dealing later). Clearing the
   site's data in your browser removes them, and makes you a new guest.
@@ -188,7 +190,11 @@ backup also shows up on [Checking John](/transparency).
   when the table is deleted. Tables used to keep only their latest 200 chat
   messages and 300 log lines, so lines that had already dropped off before
   this changed are gone.
-- Tournament lobby chat: for as long as the site runs.
+- Tournament lobby chat: for as long as the site runs. A message the host (or
+  a co-host they let manage chat) deletes is removed from the site straight
+  away, for everyone; copies in backups disappear as the backups expire,
+  within 90 days. The host's chat switch and mutes are kept with the
+  tournament.
 - The server's error lines: 30 days.
 - Practice tables you made and only you and bots played at: until you delete
   them from your profile.
@@ -229,7 +235,7 @@ authority (in the UK, the ICO).
 - **As a guest:** clear the site's data in your browser to start fresh. To
   have anything removed from the server, ask John.
 - **Anything else** (a chat message, a name in an old hand or tournament, a suggestion): ask
-  John. He'll tell you honestly what can be removed and what can't.
+  John. A tournament's host can also delete a message from its lobby chat. He'll tell you honestly what can be removed and what can't.
 - **What can't be deleted:** the public record. It is built so that nothing
   in it can be changed or removed, which is the point of it. It holds no
   names, cards or table links: your entries there are fingerprints and

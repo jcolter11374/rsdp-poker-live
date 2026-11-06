@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import type { Db } from './client';
 import { tournamentLog } from './schema';
 
@@ -23,4 +23,9 @@ export async function recentTournamentLog<T = unknown>(db: Db, tournamentId: str
     .orderBy(desc(tournamentLog.n))
     .limit(limit);
   return (rows as TournamentLogRow<T>[]).reverse();
+}
+
+/** Deletes one lobby item for good (a chat message the host deleted). */
+export async function deleteTournamentLogItem(db: Db, tournamentId: string, itemId: string): Promise<void> {
+  await db.delete(tournamentLog).where(and(eq(tournamentLog.tournamentId, tournamentId), eq(tournamentLog.itemId, itemId)));
 }

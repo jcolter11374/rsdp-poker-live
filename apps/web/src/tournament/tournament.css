@@ -208,6 +208,11 @@
 .tn-chat-form { display: flex; gap: 8px; flex-wrap: wrap; }
 .tn-chat-form input { flex: 1 1 160px; width: auto; }
 .tn-chat-form button { min-height: 40px; }
+/* Small text buttons beside a message and under the list: hide, mute, delete, unhide. */
+.tn-chat-tools button { background: none; border: none; padding: 0 0 0 8px; min-height: 0; color: var(--muted); font: inherit; font-size: 0.75rem; text-decoration: underline; cursor: pointer; }
+p.tn-chat-tools { margin: 0; font-size: 0.8rem; }
+p.tn-chat-tools button { font-size: 0.8rem; padding-left: 4px; }
+.tn-chat-note { margin: 0; font-weight: 600; }
 .tn-activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
 .tn-activity li { font-size: 0.95rem; }
 .tn-activity .muted { display: inline; margin-right: 6px; font-variant-numeric: tabular-nums; }

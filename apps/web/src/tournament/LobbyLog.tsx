@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { LOBBY_CHAT_MAX, type LobbyItem } from '@rsdp/tournament';
+import { chatModerationRefusal, LOBBY_CHAT_MAX, namesIn, type LobbyItem, type TournamentState } from '@rsdp/tournament';
 import { savedName } from '../socket';
+import { setChatMuted, useChatMutes } from '../chatMutes';
 import { tournamentClient, type Session } from './client';
 import { logText } from './logText';
 
@@ -13,14 +14,33 @@ export function useLobbyLog(id: string): LobbyItem[] {
 
 const time = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem[]; session: Session | null }) {
-  const chat = items.filter((x): x is Extract<LobbyItem, { kind: 'chat' }> => x.kind === 'chat');
+type ChatItem = Extract<LobbyItem, { kind: 'chat' }>;
+const isChat = (x: LobbyItem): x is ChatItem => x.kind === 'chat';
+
+/**
+ * The lobby chat. Anyone can hide someone's messages just for themselves (the same list as at the tables). The host,
+ * and co-hosts with the players power, can also mute someone for everyone, delete a message, or turn the chat off.
+ */
+export function LobbyChat({ id, items, session, state }: { id: string; items: LobbyItem[]; session: Session | null; state: TournamentState }) {
+  const me = session?.playerId;
+  const hidden = useChatMutes();
+  const all = items.filter(isChat);
+  const chat = all.filter((m) => m.playerId === me || !hidden.includes(m.playerId));
   const [text, setText] = useState('');
   const [name, setName] = useState(() => session?.displayName || savedName());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const list = useRef<HTMLOListElement>(null);
   const needsName = !!session && !session.displayName;
+  const off = !!state.lobbyChat?.off;
+  const mutedByHost = !!me && !!state.lobbyChat?.muted?.includes(me);
+  // The server checks all of this again; these only decide which buttons to show.
+  const moderator = !!me && chatModerationRefusal(state, me) === null;
+  const mayModerate = (playerId: string) => !!me && chatModerationRefusal(state, me, playerId) === null;
+  const muted = (moderator && state.lobbyChat?.muted) || [];
+  const nameOf = (playerId: string) => [...all].reverse().find((m) => m.playerId === playerId)?.name ?? namesIn(state)(playerId);
+  // Only people from this lobby: the list is kept for every table and lobby.
+  const hiddenHere = hidden.filter((p) => p !== me && all.some((m) => m.playerId === p));
 
   // Stay at the newest message unless the reader has scrolled up (judged before the new one lands).
   const atBottom = useRef(true);
@@ -32,6 +52,12 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
   useEffect(() => {
     if (list.current) list.current.scrollTop = list.current.scrollHeight;
   }, []);
+
+  const report = (err: unknown) => {
+    const m = (err as Error).message;
+    setError(m.charAt(0).toUpperCase() + m.slice(1));
+  };
+  const act = (p: Promise<void>) => p.then(() => setError(''), report);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,17 +72,43 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
       await tournamentClient().chat(id, text);
       setText('');
     } catch (err) {
-      const m = (err as Error).message;
-      setError(m.charAt(0).toUpperCase() + m.slice(1));
+      report(err);
     } finally {
       setBusy(false);
     }
   };
 
+  /** Beside a message: hide its writer (just for me) and, for the host, mute them or delete it for everyone. */
+  const tools = (m: ChatItem) => {
+    const theirs = m.playerId !== me;
+    const mod = mayModerate(m.playerId);
+    if (!theirs && !mod) return null;
+    const isMuted = !!state.lobbyChat?.muted?.includes(m.playerId);
+    return (
+      <span className="tn-chat-tools">
+        {theirs && (
+          <button type="button" title={`Hide ${m.name}'s messages from you`} onClick={() => confirm(`Hide ${m.name}'s messages? Only you stop seeing them.`) && setChatMuted(m.playerId, true)}>
+            Hide
+          </button>
+        )}
+        {theirs && mod && (
+          <button type="button" title={isMuted ? `Let ${m.name} chat here again` : `Stop ${m.name} chatting here`} onClick={() => act(tournamentClient().chatMute(id, m.playerId, !isMuted))}>
+            {isMuted ? 'Unmute' : 'Mute'}
+          </button>
+        )}
+        {mod && (
+          <button type="button" title="Delete this message for everyone" onClick={() => confirm('Delete this message for everyone?') && act(tournamentClient().chatDelete(id, m.id))}>
+            Delete
+          </button>
+        )}
+      </span>
+    );
+  };
+
   return (
     <div className="tn-chat">
       {chat.length === 0 ? (
-        <p className="muted">No messages yet. Say hello, or talk about the structure before the start.</p>
+        !off && <p className="muted">No messages yet. Say hello, or talk about the structure before the start.</p>
       ) : (
         <ol
           className="tn-chat-list"
@@ -67,22 +119,53 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
           }}
         >
           {chat.map((m) => (
-            <li key={m.id} className={m.playerId === session?.playerId ? 'mine' : ''}>
+            <li key={m.id} className={m.playerId === me ? 'mine' : ''}>
               <span className="tn-chat-meta">
                 <b>{m.name}</b> <span className="muted">{time(m.at)}</span>
+                {tools(m)}
               </span>
               <span className="tn-chat-text">{m.text}</span>
             </li>
           ))}
         </ol>
       )}
-      <form className="tn-chat-form" onSubmit={send}>
-        {needsName && <input value={name} maxLength={20} placeholder="Your name" aria-label="Your name" onChange={(e) => setName(e.target.value)} />}
-        <input value={text} maxLength={LOBBY_CHAT_MAX} placeholder="Message the lobby" aria-label="Message" onChange={(e) => setText(e.target.value)} />
-        <button className="primary" disabled={busy || !text.trim()}>
-          Send
-        </button>
-      </form>
+      {off ? <p className="tn-chat-note">The host turned chat off.</p> : mutedByHost && <p className="tn-chat-note">The host has muted you in this chat.</p>}
+      {hiddenHere.length > 0 && (
+        <p className="tn-chat-tools muted">
+          Hidden for you:{' '}
+          {hiddenHere.map((p) => (
+            <button key={p} type="button" title="Show their messages again" onClick={() => setChatMuted(p, false)}>
+              {nameOf(p)} ✕
+            </button>
+          ))}
+        </p>
+      )}
+      {muted.length > 0 && (
+        <p className="tn-chat-tools muted">
+          Muted for everyone:{' '}
+          {muted.map((p) => (
+            <button key={p} type="button" title="Let them chat here again" onClick={() => act(tournamentClient().chatMute(id, p, false))}>
+              {nameOf(p)} ✕
+            </button>
+          ))}
+        </p>
+      )}
+      {!off && !mutedByHost && (
+        <form className="tn-chat-form" onSubmit={send}>
+          {needsName && <input value={name} maxLength={20} placeholder="Your name" aria-label="Your name" onChange={(e) => setName(e.target.value)} />}
+          <input value={text} maxLength={LOBBY_CHAT_MAX} placeholder="Message the lobby" aria-label="Message" onChange={(e) => setText(e.target.value)} />
+          <button className="primary" disabled={busy || !text.trim()}>
+            Send
+          </button>
+        </form>
+      )}
+      {moderator && (
+        <p>
+          <button type="button" onClick={() => act(tournamentClient().chatOff(id, !off))}>
+            {off ? 'Turn chat back on' : 'Turn chat off'}
+          </button>
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
     </div>
   );
@@ -106,13 +189,17 @@ export function Activity({ items }: { items: LobbyItem[] }) {
   );
 }
 
-/** Chat messages from others since this page opened that arrived while the chat tab was closed. `skew` is server minus local time. */
+/**
+ * Chat messages from others since this page opened that arrived while the chat tab was closed, leaving out anyone this
+ * browser hid. `skew` is server minus local time.
+ */
 export function useUnreadChat(items: LobbyItem[], open: boolean, me: string | undefined, skew: number): number {
+  const hidden = useChatMutes();
   const [readUntil, setReadUntil] = useState(() => Date.now());
   const newest = items.reduce((t, x) => (x.kind === 'chat' ? Math.max(t, x.at) : t), 0);
   useEffect(() => {
     if (open) setReadUntil((t) => Math.max(t, newest - skew, Date.now()));
   }, [open, newest, skew]);
   if (open) return 0;
-  return items.filter((x) => x.kind === 'chat' && x.playerId !== me && x.at - skew > readUntil).length;
+  return items.filter((x) => x.kind === 'chat' && x.playerId !== me && !hidden.includes(x.playerId) && x.at - skew > readUntil).length;
 }

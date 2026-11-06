@@ -9,7 +9,7 @@ import type { Rng } from '@rsdp/engine';
 import { ActionError, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
-import { isArchived, isTournamentStaff, LOBBY_CHAT_MAX, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
+import { chatModerationRefusal, isArchived, isTournamentStaff, LOBBY_CHAT_MAX, lobbyChatRefusal, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
 import { botIdsOf, systemClock, type ChatMessage, type Clock, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
@@ -1810,11 +1810,44 @@ export function createApp(deps: AppDeps = {}) {
           if (!text) return;
           // Only from a tab with the lobby (or its table strip) open.
           if (!socket.data.tournaments.has(id)) throw new ActionError('open the tournament first');
+          // The host may have turned the chat off, or muted this player.
+          const live = await tournaments.get(id);
+          if (!live) throw new ActionError('tournament not found');
+          const refused = lobbyChatRefusal(live.state, me);
+          if (refused) throw new ActionError(refused);
           const now = clock.now();
           // Per player, so more tabs don't mean more messages.
           if (now - (lastLobbyChat.get(me) ?? 0) < LOBBY_CHAT_GAP_MS) throw new ActionError('slow down a little');
           lastLobbyChat.set(me, now);
           addToLobby(id, [{ at: now, kind: 'chat', playerId: me, name, text }]);
+        },
+        log,
+      ),
+    );
+    on('tournament:chatMute', (input, ack) =>
+      guarded(ack, () => tournaments.muteInChat(String(input?.id ?? ''), me, String(input?.playerId ?? ''), !!input?.value), log),
+    );
+    on('tournament:chatOff', (input, ack) => guarded(ack, () => tournaments.setChatOff(String(input?.id ?? ''), me, !!input?.off), log));
+    on('tournament:chatDelete', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const id = String(input?.id ?? '');
+          const itemId = String(input?.itemId ?? '');
+          const live = await tournaments.get(id);
+          if (!live) throw new ActionError('tournament not found');
+          const item = (await lobby.items(id)).find((x) => x.id === itemId);
+          if (item?.kind !== 'chat') throw new ActionError('that message is already gone');
+          const refused = chatModerationRefusal(live.state, me, item.playerId);
+          if (refused) throw new ActionError(refused);
+          try {
+            await lobby.removeChat(id, itemId);
+          } catch (e) {
+            log(`deleting a lobby chat message of ${id} failed`, e);
+            throw new ActionError('the message could not be deleted; try again');
+          }
+          // Gone for good: every tab with the lobby open drops it now, and a reload never gets it back.
+          for (const s of tournamentWatchers.get(id) ?? []) s.emit('tournament:chatDeleted', { id, itemId });
         },
         log,
       ),

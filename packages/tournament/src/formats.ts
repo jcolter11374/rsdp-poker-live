@@ -4,6 +4,7 @@
 
 import { hasPower } from '@rsdp/engine/roles';
 import { MAX_PRIZE_AMOUNT } from './payouts';
+import { CHAT_POWER } from './roles';
 import { nextRandom } from './seating';
 import type { Entry, InviteCode, PlayerId, TournamentSettings, TournamentState } from './types';
 
@@ -113,11 +114,14 @@ export function usableCode(s: TournamentState, code: string): InviteCode | null 
   return c.usedBy.length + waiting < c.maxUses ? c : null;
 }
 
-/** The state a viewer is sent: only the host sees the codes. */
+/** The state a viewer is sent: only the host sees the codes, and who is muted in the lobby chat. */
 export function viewFor(s: TournamentState, viewer: PlayerId): TournamentState {
+  // Those who can unmute people see everyone muted in the lobby chat; anyone else, only whether they are.
+  const muted = s.lobbyChat?.muted;
+  const shown = muted && !hasPower(s, viewer, CHAT_POWER) ? { ...s, lobbyChat: { ...s.lobbyChat, muted: muted.filter((p) => p === viewer) } } : s;
   // The host and co-hosts who approve entries see the invite codes.
-  if (hasPower(s, viewer, 'approve')) return s;
-  const { invites: _hidden, ...rest } = s;
+  if (hasPower(s, viewer, 'approve')) return shown;
+  const { invites: _hidden, ...rest } = shown;
   return { ...rest, requests: s.requests.map(({ code: _code, ...r }) => r) };
 }
 

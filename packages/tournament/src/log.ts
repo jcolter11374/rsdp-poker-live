@@ -41,6 +41,16 @@ export type LobbyItem =
 /** Longest lobby chat message. */
 export const LOBBY_CHAT_MAX = 300;
 
+/** Most people the host can have muted in one lobby chat at once. */
+export const LOBBY_CHAT_MUTES_MAX = 100;
+
+/** Why this player can't send to the lobby chat now, or null when they can. */
+export function lobbyChatRefusal(s: TournamentState, playerId: PlayerId): string | null {
+  if (s.lobbyChat?.off) return 'the host has turned chat off';
+  if (s.lobbyChat?.muted?.includes(playerId)) return 'the host has muted you in this chat';
+  return null;
+}
+
 /** A player's name in any of these states (an unregistered player is only in the one before). */
 export function namesIn(...states: (TournamentState | null | undefined)[]) {
   return (playerId: PlayerId) => {

@@ -5,6 +5,7 @@ import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from
 import {
   apply,
   autoArchive,
+  chatModerationRefusal,
   codeFromWords,
   createTournament,
   isStaffCommand,
@@ -14,6 +15,7 @@ import {
   DirectorError,
   isArchived,
   isLive,
+  LOBBY_CHAT_MUTES_MAX,
   levelFor,
   listedPublicly,
   nextOccurrence,
@@ -307,6 +309,34 @@ export class TournamentManager {
     this.dispatch(live, (s, now) => apply(s, command, now));
   }
 
+  /**
+   * The host, or a co-host with the power, mutes or unmutes someone in the lobby chat. Like the chat itself, this
+   * works before, during and after the event, so it is kept apart from the director's commands.
+   */
+  async muteInChat(id: string, me: PlayerId, playerId: PlayerId, value: boolean) {
+    const live = await this.chatLive(id);
+    // Player ids are short; anything else is not someone who could have chatted.
+    if (!playerId || playerId.length > 64) throw new ActionError('pick a player');
+    if (playerId === me) throw new ActionError("you can't mute yourself");
+    const refused = chatModerationRefusal(live.state, me, playerId);
+    if (refused) throw new ActionError(refused);
+    const muted = live.state.lobbyChat?.muted ?? [];
+    if (muted.includes(playerId) === value) return;
+    if (value && muted.length >= LOBBY_CHAT_MUTES_MAX) throw new ActionError(`at most ${LOBBY_CHAT_MUTES_MAX} people can be muted; unmute someone first`);
+    live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, muted: value ? [...muted, playerId] : muted.filter((p) => p !== playerId) } };
+    this.changed(live);
+  }
+
+  /** The host, or a co-host with the power, turns the lobby chat off (nobody can send) or back on. */
+  async setChatOff(id: string, me: PlayerId, off: boolean) {
+    const live = await this.chatLive(id);
+    const refused = chatModerationRefusal(live.state, me);
+    if (refused) throw new ActionError(refused);
+    if (!!live.state.lobbyChat?.off === off) return;
+    live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, off } };
+    this.changed(live);
+  }
+
   /** Operator cleanup: every event this server holds, so test events can be picked out by name and players. */
   adminList() {
     return [...this.live.values()].map(({ state: s }) => ({
@@ -399,6 +429,14 @@ export class TournamentManager {
   }
 
   // ---------------------------------------------------------------- internals
+
+  /** A tournament whose lobby chat rules are about to change. */
+  private async chatLive(id: string) {
+    const live = await this.get(id);
+    if (!live) throw new ActionError('tournament not found');
+    if (this.closed) throw new ActionError('the server is restarting');
+    return live;
+  }
 
   private fromBrowser(live: Live, me: PlayerId, myName: string, cmd: Command): Command {
     if (!cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string') throw new ActionError('unknown command');

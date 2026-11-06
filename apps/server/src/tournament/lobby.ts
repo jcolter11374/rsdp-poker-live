@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { appendTournamentLog, recentTournamentLog, type Db } from '../db';
+import { appendTournamentLog, deleteTournamentLogItem, recentTournamentLog, type Db } from '../db';
 import type { LobbyItem } from '@rsdp/tournament';
 
 /** Where lobby chat and the public event log are kept. */
@@ -7,6 +7,8 @@ export interface LobbyStore {
   append(tournamentId: string, items: LobbyItem[]): Promise<void>;
   /** The latest `limit` items, oldest first. */
   recent(tournamentId: string, limit: number): Promise<LobbyItem[]>;
+  /** Deletes one item for good. */
+  remove(tournamentId: string, itemId: string): Promise<void>;
 }
 
 /** Items a lobby keeps and sends: enough for a long tournament's story without making each subscribe heavy. */
@@ -23,6 +25,9 @@ export function memoryLobbyStore(): LobbyStore {
     async recent(id, limit) {
       return structuredClone((rows.get(id) ?? []).slice(-limit));
     },
+    async remove(id, itemId) {
+      rows.set(id, (rows.get(id) ?? []).filter((x) => x.id !== itemId));
+    },
   };
 }
 
@@ -37,6 +42,9 @@ export function dbLobbyStore(db: Db): LobbyStore {
     },
     async recent(id, limit) {
       return (await recentTournamentLog<Omit<LobbyItem, 'id' | 'at'>>(db, id, limit)).map((r) => ({ ...r.item, id: r.itemId, at: r.at.getTime() }) as LobbyItem);
+    },
+    async remove(id, itemId) {
+      await deleteTournamentLogItem(db, id, itemId);
     },
   };
 }
@@ -97,6 +105,25 @@ export class LobbyLog {
     this.saving.set(tournamentId, saved);
     await next;
     return items;
+  }
+
+  /**
+   * Deletes a chat message for good: from storage first (after the save that wrote it), then from the list in memory,
+   * so a message that could not be deleted stays where everyone sees it. Rejects when storage refuses.
+   */
+  async removeChat(tournamentId: string, itemId: string): Promise<void> {
+    const removed = Promise.resolve(this.saving.get(tournamentId)).then(() => this.store.remove(tournamentId, itemId));
+    // Later saves queue behind it, and trim() keeps the lobby in memory meanwhile, so it is never read back half done.
+    const queued = removed
+      .catch(() => {})
+      .finally(() => {
+        if (this.saving.get(tournamentId) === queued) this.saving.delete(tournamentId);
+      });
+    this.saving.set(tournamentId, queued);
+    await removed;
+    const next = this.items(tournamentId).then((list) => list.filter((x) => x.id !== itemId));
+    this.cache.set(tournamentId, next);
+    await next;
   }
 
   /** Keeps the most recently used lobbies in memory; the rest load again from storage when needed. */
