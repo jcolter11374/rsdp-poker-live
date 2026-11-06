@@ -56,14 +56,18 @@ up, it gets an issue too.
 
 A piece of work is done only when **everything the person asked for is
 finished and checked on the live site**. Part of it shipped, with the rest
-in a new issue, is not done.
+in a new issue, is not done. Merged but not released yet is "on develop",
+not done: say that plainly. Docs and tests have nothing to see on the
+site, so check them where they show (on GitHub).
 
-Before a session (or anyone) says "done" to John or closes its thread:
+Before a session (or anyone) says "done" to John or stops work on it:
 
 1. **Check the original ask, not just your change.** Read the request
-   again and try each part of it on the live site the way John would use
+   again and look at each part of it on the live site the way John would see
    it: every game, screen size or setting it covers, not only the ones the
-   change touched. Read-only checks on the live site are fine (D24).
+   change touched. Only look, never play: no games, bots, tables or
+   sign-ups there (D07, D24). What can't be seen just by looking (a hand
+   being played, say) is tested on a local copy, and the message says so.
 2. **Every follow-up issue has an owner.** If you opened an issue for part
    of the ask, it must either have someone actively working on it now
    (`status: in progress`, assigned, with a session or pull request behind
@@ -304,7 +308,8 @@ the issue lists, every time, in this order:
 5. Waiting on others.
 
 Link every issue so John can check it himself. "Done" means its issue is
-closed with proof and the [definition of done](#definition-of-done) is met. Before asking John for anything, search the issues
+closed with proof and the [definition of done](#definition-of-done) is
+met. Before asking John for anything, search the issues
 (open and closed) to see whether he has already given it.
 
 ## What we don't use, and why
