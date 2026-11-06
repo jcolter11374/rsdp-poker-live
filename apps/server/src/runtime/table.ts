@@ -33,7 +33,7 @@ import {
   type TableSettings,
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
-import { gameTitle } from '@rsdp/engine/variants';
+import { gameTitle, skipsMixedGameAnte } from '@rsdp/engine/variants';
 import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip, type TurnKey } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
@@ -2426,6 +2426,8 @@ export class TableRuntime {
       stakes.bigBlind = level.bigBlind;
       stakes.ante = level.ante;
     }
+    // In a mix with stud, only the stud games ante; the blind games play on the blinds alone.
+    if (rotation.enabled && rotation.steps.length && skipsMixedGameAnte(gameId, rotation.steps.map((st) => st.gameId))) stakes.ante = 0;
     return { game, betting, stakes: fillStakes(stakes, game) };
   }
 

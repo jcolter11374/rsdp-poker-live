@@ -303,3 +303,11 @@ How this file works:
 - **Not done, on purpose:** a GitHub workflow that downloads chat: the repository is public, and a workflow's files can be downloaded by others. Whether the game-night recap (D26) should use chat is a separate call for that work; if it does, its key, what it reads and the public record entry need their own decision.
 - **Replaces** D26's "No chat: whether the operator may read table chat is John's call (issue #300)" as far as the operator goes; the recap itself still reads no chat until a change says otherwise.
 - **Where:** `apps/server/src/app.ts` (`/api/admin/chat/:id`), `apps/web/src/roadmap/AdminPage.tsx`, [FAIRNESS.md](FAIRNESS.md), [PRIVACY.md](PRIVACY.md), `apps/web/src/fairness/TransparencyPage.tsx`.
+
+## D28. In a mix with stud, only the stud games ante
+
+- **Decided:** 2026-11-06, while adding HORSE and 8-Game (issue #335). John asked for the mixes; this detail is Claude's and reversible.
+- **Decision:** a cash table has one set of stakes for every game in its rotation. When the rotation includes a stud game (Seven Card Stud, Razz, Stud Hi-Lo), the ante setting is the stud ante: hold'em, Omaha and draw hands in that rotation post no ante (of either kind). A rotation with no stud game keeps its antes in every game, as before. The Limit games bet the Limit small and big bets, which a new HORSE or 8-Game table sets to the big blind and twice it.
+- **Why:** that is how HORSE and 8-Game are played in card rooms and online. Without it, a hold'em orbit in HORSE would ante as well as post blinds.
+- **Not done, on purpose:** separate stakes for each game in a rotation (for example different blinds for 8-Game's No-Limit and Pot-Limit rounds). One set of stakes keeps the Stakes tab simple; the Mixed games guide says so.
+- **Where:** `packages/engine/src/variants/mixes.ts` (`MIXED_GAMES`, `skipsMixedGameAnte`), `handSetup` in `apps/server/src/runtime/table.ts`.

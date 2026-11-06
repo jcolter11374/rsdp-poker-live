@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.06.3",
+      "date": "2026-11-06",
+      "fixes": [
+        "Mixed games with stud in them: only the stud games ante now, as in a card room. Hold'em, Omaha and draw hands in the same rotation are played on the blinds alone. A rotation without stud games keeps its antes as before."
+      ]
+    },
+    {
       "id": "2026.11.06.2",
       "date": "2026-11-06",
       "fixes": [
