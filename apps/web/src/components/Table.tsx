@@ -61,7 +61,9 @@ function useRoom(ref: RefObject<HTMLElement>, on: boolean) {
     const measure = () => {
       const css = getComputedStyle(el);
       const w = parent.clientWidth;
-      const h = Math.round(el.offsetHeight + parseFloat(css.marginTop) + parseFloat(css.marginBottom));
+      // The exact height, not offsetHeight: that one is rounded while the margins (which grow with the table) are not, so
+      // the sum moved by a pixel each time the scale changed, which changed the scale back: the table twitched (#350).
+      const h = Math.round(el.getBoundingClientRect().height + parseFloat(css.marginTop) + parseFloat(css.marginBottom));
       setRoom((r) => (r.w === w && r.h === h ? r : { w, h }));
     };
     measure();
@@ -284,7 +286,6 @@ export function Table({
   const kTall = Math.min(1.9, room.h / 560, room.w / 1180);
   const kShort = wide ? Math.min(1.25, room.h / 470, room.w / 1180) : 0;
   const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort) * 100) / 100;
-  // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
   const short = kShort > kTall && k > 1;
   const grown = k > 1;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
