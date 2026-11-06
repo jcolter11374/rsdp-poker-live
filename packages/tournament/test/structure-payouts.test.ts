@@ -256,7 +256,7 @@ describe('payouts with re-entries', () => {
       // What the create form sends: the preset trimmed to this event's max entrants.
       payouts: { structure: payoutPreset('rsdp', maxEntrants), money: { buyIn: 2000 } },
     });
-    let s = createTournament({ id: 'T', hostId: 'host', settings, now: T0, seed: 1 });
+    let s = createTournament({ id: 'T', hostId: 'host', settings, now: T0, seed: '01'.repeat(32) });
     const run = (c: Command) => (s = apply(s, c, T0).state);
     for (let i = 0; i < players; i++) run({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
     run({ type: 'startNow', by: 'host' });

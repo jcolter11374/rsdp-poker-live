@@ -5,7 +5,7 @@ const T0 = Date.parse('2026-10-30T00:00:00Z');
 
 describe('the public lobby log', () => {
   it('names players instead of showing their ids, including one who just unregistered', () => {
-    let s: TournamentState = createTournament({ id: 'L', hostId: 'host', settings: defaultSettings(), now: T0, seed: 1 });
+    let s: TournamentState = createTournament({ id: 'L', hostId: 'host', settings: defaultSettings(), now: T0, seed: '01'.repeat(32) });
     s = apply(s, { type: 'register', playerId: 'p1', displayName: 'Ana' }, T0).state;
     const before = s;
     const r = apply(s, { type: 'unregister', playerId: 'p1' }, T0);

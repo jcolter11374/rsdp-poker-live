@@ -23,7 +23,7 @@ apps/web               React client. Event-driven store, table, panels.  (Workst
 - Cards are 2-character strings: rank `23456789TJQKA`, suit `cdhs` (e.g. `As`, `Td`).
 - The server is authoritative. Clients send intents and get back views filtered per viewer.
 - Hidden information never leaves the server unfiltered: every hole card goes through `visibleEvents`/views.
-- Randomness: each hand's deck comes from its fairness seeds (rsdp-fair-v1, see [FAIRNESS.md](FAIRNESS.md)): a server seed from the runtime's random source, committed one hand ahead, mixed with the seated players' browser seeds. The runtime passes the full deck order into the hand. Tests inject a seeded random source.
+- Randomness: each hand's deck comes from its fairness seeds (rsdp-fair-v1, see [FAIRNESS.md](FAIRNESS.md)): a server seed from the runtime's random source, committed one hand ahead, mixed with the seated players' browser seeds. The runtime passes the full deck order into the hand. Tournament seat draws (rsdp-seats-v1, `seatRng` in `packages/tournament/src/seating.ts`) read a SHA-256 counter-mode stream from a secret 32-byte seed the manager makes for each tournament with `crypto.randomBytes` (`TournamentState.seatRng`: the seed and how many 32-bit words have been read, so a later draw carries on from there). `view()` never sends it, and nothing publishes it. A state saved before 2026-11-06 has only the old mulberry32 `rng`; `adopt` gives it a fresh seed if its seats are still to draw (`needsSeatSeed`, `withSeatSeed`), and the director keeps mulberry32 for any state that never got one. Tests inject a seeded random source.
 - No PokerNow code, art, sounds or wording. Behaviour reference only.
 
 ## The hand engine (packages/engine/src/core)
