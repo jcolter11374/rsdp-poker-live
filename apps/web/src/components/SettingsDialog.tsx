@@ -96,16 +96,19 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
     setDraft((d) => {
       const stud = mix.steps.some((st) => getVariant(st.gameId).forcedBets === 'ante-bring-in');
       const first = mix.steps[0];
+      // The Limit games bet the big blind and twice it, as on a new table, so older Limit amounts don't linger.
+      const smallBet = Math.max(1, d.stakes.bigBlind);
+      const stakes = { ...d.stakes, smallBet, bigBet: smallBet * 2 };
       return {
         ...d,
         game: { gameId: first.gameId, betting: first.betting, rotation: { enabled: true, steps: mix.steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) } },
         table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
         stakes: {
-          ...d.stakes,
+          ...stakes,
           // A stud table has no small blind; the hold'em and Omaha rounds need one.
           ...(d.stakes.smallBlind === 0 && d.stakes.bigBlind > 1 ? { smallBlind: Math.floor(d.stakes.bigBlind / 2) } : {}),
-          ...(stud && d.stakes.ante === 0 ? { ante: defaultStudAnte(d.stakes), anteType: 'per-player' as const } : {}),
-          ...(stud && d.stakes.bringIn === 0 ? { bringIn: studBringIn(d.stakes.smallBet || d.stakes.bigBlind, d.stakes.centsMode) } : {}),
+          // The ante is the stud ante: everyone posts it in the stud games.
+          ...(stud ? { ante: d.stakes.ante || defaultStudAnte(stakes), anteType: 'per-player' as const, bringIn: studBringIn(smallBet, d.stakes.centsMode) } : {}),
         },
       };
     });
