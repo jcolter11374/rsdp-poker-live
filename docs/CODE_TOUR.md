@@ -318,7 +318,7 @@ don't.
 | **director** | The tournament logic in `packages/tournament`. |
 | **commit / commitment** | A fingerprint of a secret, published before the secret is used, so it can't be swapped later. |
 | **server seed, client seed, hand seed** | The server's secret for a hand, each browser's contribution, and the two combined into the deck. |
-| **public record / audit log** | The append-only hash chain of hands, chip movements and admin actions. |
+| **public record / audit log** | The append-only hash chain of hands, chip totals and admin actions. |
 | **snapshot** | A table's whole state saved as JSON, so a restart resumes it. |
 | **PGlite** | Postgres compiled to run inside the Node process, used when no separate database is set up. |
 | **host / co-host / staff** | The table's creator, and people they gave some host powers. |

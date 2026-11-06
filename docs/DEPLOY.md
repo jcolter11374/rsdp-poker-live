@@ -79,7 +79,7 @@ The live site is backed up once a day, off Fly, by GitHub Actions (`.github/work
 
 Fly's own daily volume snapshots carry on as a second copy (same company, same region).
 
-**Format:** gzipped JSON lines: a header (format version, time, number of migrations, tables), one line per row (`row_to_json`, so jsonb, timestamps and big numbers come back exactly), and an end line with each table's row count, which is how a restore knows the copy wasn't cut short. A backup restores into a fresh database of the same or a newer schema, PGlite or Postgres.
+**Format:** gzipped JSON lines: a header (format version, time, number of migrations, tables), one line per row (`row_to_json`, so jsonb, timestamps and big numbers come back exactly), and an end line with each table's row count, which is how a restore knows the copy wasn't cut short. A backup restores into a fresh database of the same or a newer schema, PGlite or Postgres. Tables a newer schema has dropped (the unused chip ledger, `chip_movements` and `seat_sessions`, which older backups list) are made again for the restore and dropped again if the backup had no rows for them (`RETIRED` in `apps/server/src/db/backup.ts`).
 
 **Restoring:**
 

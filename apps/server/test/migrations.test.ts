@@ -16,7 +16,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -28,15 +28,12 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
 import pg from 'pg';
 import { closeDb, createDb, MIGRATIONS_DIR, pgliteFor, queryRows, type Db } from '../src/db/client';
+import { dbCause, StorageError } from '../src/db/errors';
 import * as schema from '../src/db/schema';
+import { deleteTableForGood } from '../src/db/tables';
 import { createTestDb } from '../src/db/testing';
-import { fill } from './backup-fixture';
+import { databaseBefore, fill, fillLedger, journal, migrationsUpTo } from './backup-fixture';
 
-interface Journal {
-  entries: { idx: number; when: number; tag: string }[];
-}
-
-const journal = JSON.parse(readFileSync(path.join(MIGRATIONS_DIR, 'meta/_journal.json'), 'utf8')) as Journal;
 const { entries } = journal;
 
 describe('migration journal', () => {
@@ -68,14 +65,6 @@ describe('migration journal', () => {
   });
 });
 
-/** A copy of the migrations folder whose journal stops after the first `count` entries (the migrator reads only those). */
-function migrationsUpTo(count: number): string {
-  const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-migrations-'));
-  cpSync(MIGRATIONS_DIR, dir, { recursive: true });
-  writeFileSync(path.join(dir, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: entries.slice(0, count) }));
-  return dir;
-}
-
 const ident = (name: string) => {
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`unexpected name ${name}`);
   return `"${name}"`;
@@ -94,14 +83,17 @@ async function columnsOf(db: Db): Promise<Record<string, string[]>> {
 
 /**
  * Copies every row of `from` into the tables `to` has, and only the columns it has, as a backup restore does.
- * The rows come from the backup test's fixture, so they keep up with the schema as it grows.
+ * The rows come from the backup test's fixture, so they keep up with the schema as it grows. A table `from` no
+ * longer has (a later migration dropped it) stays empty.
  */
 async function copyRows(from: Db, to: Db) {
   const columns = await columnsOf(to);
+  const current = await columnsOf(from);
   await to.transaction(async (tx) => {
     // Players and accounts point at each other: skip the foreign key checks while the rows go in.
     await tx.execute(sql.raw('set local session_replication_role = replica'));
     for (const [table, cols] of Object.entries(columns)) {
+      if (!current[table]) continue;
       const rows = await queryRows<{ j: string }>(from, sql.raw(`select row_to_json(x)::text as j from ${ident(table)} x`));
       if (!rows.length) continue;
       const kept = Object.keys(JSON.parse(rows[0].j)).filter((c) => cols.includes(c));
@@ -173,12 +165,19 @@ async function upgrade(driver: Driver, filled: Db) {
       await old.close();
     }
     // The fixture puts a row in every table; an empty one here would prove nothing about that table.
-    for (const [table, rows] of Object.entries(before)) expect(rows.length, `add a row to ${table} in fill() (backup-fixture.ts)`).toBeGreaterThan(0);
+    const current = await columnsOf(filled);
+    for (const [table, rows] of Object.entries(before)) {
+      if (current[table]) expect(rows.length, `add a row to ${table} in fill() (backup-fixture.ts)`).toBeGreaterThan(0);
+    }
 
     const db = await driver.openNew();
     try {
       expect(await migrationsRecorded(db)).toEqual(expectedRecords);
-      expect(await rowsOf(db, columns)).toEqual(before);
+      // Every row is still there: a migration drops a table only when it has none.
+      const kept = await columnsOf(db);
+      for (const [table, rows] of Object.entries(before)) if (!kept[table]) expect(rows, `${table} was dropped with rows in it`).toEqual([]);
+      const keptOnly = <T>(byTable: Record<string, T>) => Object.fromEntries(Object.entries(byTable).filter(([t]) => kept[t]));
+      expect(await rowsOf(db, keptOnly(columns))).toEqual(keptOnly(before));
       expect(await shapeOf(db)).toEqual(await shapeOf(filled));
     } finally {
       await closeDb(db);
@@ -252,6 +251,104 @@ describe('upgrading a database with data in it', { timeout: 60_000 }, () => {
       }
       await admin.query(`drop database if exists ${name} with (force)`);
       await admin.end();
+    }
+  });
+});
+
+describe('dropping the unused chip ledger tables (0017)', { timeout: 60_000 }, () => {
+  const TAG = '0017_drop_unused_ledger';
+  const ledgerTables = async (db: Db) =>
+    (
+      await queryRows<{ t: string }>(
+        db,
+        sql`select table_name as t from information_schema.tables where table_schema = 'public' and table_name in ('chip_movements', 'seat_sessions') order by 1`,
+      )
+    ).map((r) => r.t);
+  const appendOnlyFunction = async (db: Db) => (await queryRows(db, sql`select 1 from pg_proc where proname = 'chip_movements_append_only'`)).length > 0;
+  const runAgain = async (db: Db) => {
+    for (const statement of readFileSync(path.join(MIGRATIONS_DIR, `${TAG}.sql`), 'utf8').split('--> statement-breakpoint')) await db.execute(sql.raw(statement));
+  };
+
+  it('drops them when they are empty, and is safe to run twice', async () => {
+    const old = await databaseBefore(TAG);
+    try {
+      await fill(old.db);
+      expect(await ledgerTables(old.db)).toEqual(['chip_movements', 'seat_sessions']);
+      await old.upgrade();
+      expect(await ledgerTables(old.db)).toEqual([]);
+      expect(await appendOnlyFunction(old.db)).toBe(false);
+      await runAgain(old.db);
+      expect(await ledgerTables(old.db)).toEqual([]);
+    } finally {
+      await old.close();
+    }
+  });
+
+  it('keeps one with rows, and the server starts and works on it', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-ledger-'));
+    const dataDir = path.join(dir, 'pglite');
+    try {
+      const old = await databaseBefore(TAG, dataDir);
+      let before: Record<string, string[]>;
+      try {
+        await fill(old.db);
+        await fillLedger(old.db);
+        await old.db.execute(sql`insert into tables (id, owner_player_id, settings) values ('t2', 'p1', '{}')`);
+        before = await rowsOf(old.db, await columnsOf(old.db));
+      } finally {
+        await old.close();
+      }
+
+      const db = await createDb({ pgliteDir: dataDir, ignoreEnv: true });
+      try {
+        expect(await migrationsRecorded(db)).toEqual(expectedRecords);
+        expect(await ledgerTables(db)).toEqual(['chip_movements', 'seat_sessions']);
+        expect(await rowsOf(db, await columnsOf(db))).toEqual(before);
+        expect(await appendOnlyFunction(db)).toBe(true);
+        await expect(
+          db.execute(sql`update chip_movements set amount = 1`).catch((e) => {
+            throw dbCause(e);
+          }),
+        ).rejects.toThrow(/append-only/);
+        await runAgain(db);
+        expect(await ledgerTables(db)).toEqual(['chip_movements', 'seat_sessions']);
+
+        // The ledger rows still point at t1, so deleting it is refused and nothing goes. Other tables delete as usual.
+        await expect(deleteTableForGood(db, 't1')).rejects.toThrow(StorageError);
+        expect(await queryRows(db, sql`select id from tables where id = 't1'`)).toHaveLength(1);
+        expect(await queryRows(db, sql`select id from hands where table_id = 't1'`)).toHaveLength(1);
+        expect(await deleteTableForGood(db, 't2')).toBe(true);
+      } finally {
+        await closeDb(db);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps seat_sessions while chip_movements, which points at it, stays', async () => {
+    const onlySeats = await databaseBefore(TAG);
+    try {
+      await fill(onlySeats.db);
+      await onlySeats.db.execute(sql`insert into seat_sessions (id, table_id, player_id, seat) values ('ss1', 't1', 'p2', 3)`);
+      await onlySeats.upgrade();
+      expect(await ledgerTables(onlySeats.db)).toEqual(['seat_sessions']);
+      expect(await appendOnlyFunction(onlySeats.db)).toBe(false);
+    } finally {
+      await onlySeats.close();
+    }
+
+    const onlyMovements = await databaseBefore(TAG);
+    try {
+      await fill(onlyMovements.db);
+      await onlyMovements.db.execute(
+        sql`insert into chip_movements (id, table_id, player_id, kind, amount, stack_before, stack_after) values ('m1', 't1', 'p2', 'buy-in', 200, 0, 200)`,
+      );
+      await onlyMovements.upgrade();
+      expect(await ledgerTables(onlyMovements.db)).toEqual(['chip_movements', 'seat_sessions']);
+      expect(await appendOnlyFunction(onlyMovements.db)).toBe(true);
+    } finally {
+      await onlyMovements.close();
     }
   });
 });
