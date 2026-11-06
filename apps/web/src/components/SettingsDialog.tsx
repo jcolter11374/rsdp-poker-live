@@ -102,6 +102,8 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
         table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
         stakes: {
           ...d.stakes,
+          // A stud table has no small blind; the hold'em and Omaha rounds need one.
+          ...(d.stakes.smallBlind === 0 && d.stakes.bigBlind > 1 ? { smallBlind: Math.floor(d.stakes.bigBlind / 2) } : {}),
           ...(stud && d.stakes.ante === 0 ? { ante: defaultStudAnte(d.stakes), anteType: 'per-player' as const } : {}),
           ...(stud && d.stakes.bringIn === 0 ? { bringIn: studBringIn(d.stakes.smallBet || d.stakes.bigBlind, d.stakes.centsMode) } : {}),
         },
