@@ -742,43 +742,90 @@ describe('host settings', () => {
     }
   });
 
-  it('an orbit whose first seat empties and then goes with a smaller table carries on from the next player', () => {
-    let tried = 0;
-    for (let seed = 1; seed <= 16; seed++) {
-      const clock = new FakeClock();
-      const settings = defaultSettings('cash');
-      settings.table.maxSeats = 9;
-      settings.seating.requireApproval = false;
-      settings.game.rotation = {
-        enabled: true,
-        steps: [
-          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
-          { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'orbits' },
-        ],
-      };
-      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
-      const ids = ['host', 'a', 'b', 'c', 'd', 'e'];
-      ids.forEach((id, i) => {
-        rt.connect(id);
-        rt.requestSeat(id, { seat: [0, 1, 2, 6, 7, 8][i], name: id.toUpperCase(), stack: 1000 });
-      });
-      rt.start('host');
-      const firstButton = hand(rt).input.button;
-      // Only a first button in a seat the smaller table drops.
-      if (firstButton < 5) continue;
-      tried++;
-      const leaver = rt.state.seats[firstButton]!.playerId;
-      const dealt = playRotation(rt, clock, 18, (next) => {
-        // The player the orbit began with leaves after hand 1; after hand 2 the host makes the table 5 seats.
-        if (next === 2) rt.stand(leaver);
-        if (next === 3) rt.updateSettings('host', { table: { maxSeats: 5 } });
-      });
-      expect(rt.state.seats).toHaveLength(5);
-      // Hold'em's orbit ends when the button reaches the player after the empty seat: the same 6 hands as with no
-      // smaller table. Then 5 players, 5 hands a game.
-      expect({ seed, steps: stepLengths(dealt) }).toEqual({ seed, steps: [6, 5, 5] });
+  describe('a smaller table when the seat an orbit began at has emptied', () => {
+    const steps = (orbits: number) => [
+      { gameId: 'nlhe', betting: 'no-limit' as const, length: orbits, unit: 'orbits' as const },
+      { gameId: 'plo4', betting: 'pot-limit' as const, length: orbits, unit: 'orbits' as const },
+    ];
+    /**
+     * For every seed whose first button is `firstButton`: seats players, plays `count` hands with `between` run after
+     * each (given the next hand's number and the table), and returns each tried seed's step lengths.
+     */
+    function run(seats: number[], firstButton: (b: number) => boolean, orbits: number, count: number, between: (next: number, rt: TableRuntime, firstPlayer: string) => void) {
+      const out: { seed: number; steps: number[] }[] = [];
+      for (let seed = 1; seed <= 40 && out.length < 4; seed++) {
+        const clock = new FakeClock();
+        const settings = defaultSettings('cash');
+        settings.table.maxSeats = 9;
+        settings.seating.requireApproval = false;
+        settings.game.rotation = { enabled: true, steps: steps(orbits) };
+        const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+        seats.forEach((seat, i) => {
+          const id = i === 0 ? 'host' : `p${seat}`;
+          rt.connect(id);
+          rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 1000 });
+        });
+        rt.start('host');
+        const b = hand(rt).input.button;
+        if (!firstButton(b)) continue;
+        const firstPlayer = rt.state.seats[b]!.playerId;
+        const dealt = playRotation(rt, clock, count, (next) => between(next, rt, firstPlayer));
+        out.push({ seed, steps: stepLengths(dealt) });
+      }
+      expect(out.length).toBeGreaterThanOrEqual(2);
+      return out;
     }
-    expect(tried).toBeGreaterThanOrEqual(2);
+    const smaller = (rt: TableRuntime) => rt.updateSettings('host', { table: { maxSeats: 5 } });
+
+    it('a dropped empty seat: the orbit carries on from the next player round from it', () => {
+      // Players at 0, 1, 2, 6, 7, 8; the first button's player (6, 7 or 8) leaves after hand 1, and the table
+      // becomes 5 seats after hand 2. Hold'em gets the 6 hands it gets with no smaller table; then 5 a game.
+      const out = run([0, 1, 2, 6, 7, 8], (b) => b >= 5, 1, 18, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        if (next === 3) smaller(rt);
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it('a kept empty seat a mover sits down in: the orbit still carries on from the next player', () => {
+      // Players at 0, 1, 2, 4, 6, 7, first button seat 4. Its player leaves; then 6 and 7 move into 3 and 4.
+      // Without following the next player, the newcomer to seat 4 would end Hold'em after 2 hands.
+      const out = run([0, 1, 2, 4, 6, 7], (b) => b === 4, 1, 18, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        if (next === 3) smaller(rt);
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it('the button on the dropped empty seat: the blinds are drawn afresh and the orbit starts again, never cut short', () => {
+      // The first button's player leaves and the table becomes 5 seats before hand 2, so the button's seat goes.
+      const out = run([0, 1, 2, 6, 7, 8], (b) => b >= 5, 1, 18, (next, rt, first) => {
+        if (next === 2) {
+          rt.stand(first);
+          smaller(rt);
+        }
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it("a dead button between the empty seat and the next player has already passed the orbit's start: counted once", () => {
+      // Two orbits a game. Players at 0, 1, 2, 3, 4, 7, first button seat 7, whose player leaves after hand 1.
+      // Seat 0's player leaves after the hand with the button on seat 4, so the next button is dead on seat 0,
+      // which passes seat 7 and counts the first orbit. Then the table becomes 5 seats.
+      let shrunk = 0;
+      const out = run([0, 1, 2, 3, 4, 7], (b) => b === 7, 2, 24, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        const h = rt.state.hand!.input;
+        if (h.button === 4 && rt.seatOf('host')) rt.stand('host');
+        if (h.buttonDead && h.button === 0 && rt.state.seats.length === 9) {
+          smaller(rt);
+          shrunk++;
+        }
+      });
+      expect(shrunk).toBe(out.length);
+      // Hold'em: hands with buttons 7, 0, 1, 2, 3, 4, 0 (dead), then 1, 2, 3, 4: eleven, as with no smaller table.
+      for (const r of out) expect(r.steps[0]).toBe(11);
+    });
   });
 
   it('making the table smaller with everyone in the seats that go keeps the orbit the right length', () => {

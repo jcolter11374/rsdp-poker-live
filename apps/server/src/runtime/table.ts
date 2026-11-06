@@ -1261,14 +1261,18 @@ export class TableRuntime {
     this.trackSeeAll();
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
-      // The seat where the current game's orbit began goes with its player (moveIntoKeptSeats). If that seat goes
-      // with nobody in it, the orbit ends when the button reaches the next player round from it, so the orbit
-      // follows that player instead of starting again.
+      // The seat where the current game's orbit began goes with its player (moveIntoKeptSeats), so the orbit keeps
+      // its length. An empty one stands for the next player round from it (the button reaches the seat as it
+      // reaches them), so it follows that player: otherwise a mover sitting down there would end the orbit early.
+      // If the button is on an empty seat in between, it has just gone past the start, so the orbit counts from there.
       const r = s.rotation;
-      if (r.anchor !== null && r.anchor >= seats && !s.seats[r.anchor]) {
+      if (r.anchor !== null && !s.seats[r.anchor]) {
         const n = s.seats.length;
-        const next = Array.from({ length: n - 1 }, (_, i) => (r.anchor! + 1 + i) % n).find((i) => s.seats[i]);
-        r.anchor = next ?? null;
+        const round = Array.from({ length: n }, (_, i) => (r.anchor! + i) % n);
+        const to = round.findIndex((i) => s.seats[i]);
+        const passed = round.slice(0, to < 0 ? n : to);
+        const button = s.positions?.button ?? null;
+        r.anchor = button !== null && passed.includes(button) ? button : to < 0 ? null : round[to];
       }
       this.moveIntoKeptSeats(seats);
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
@@ -1278,8 +1282,9 @@ export class TableRuntime {
       // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
       const p = s.positions;
       if (p && [p.button, p.smallBlind, p.bigBlind].some((x) => x !== null && x >= seats)) s.positions = null;
-      // Only if nobody is left to follow does the orbit start again from the next button.
-      if (r.anchor !== null && r.anchor >= seats) r.anchor = null;
+      // With nobody to follow, or the blinds drawn afresh (which can't carry on an orbit), the orbit starts again
+      // from the next button.
+      if (r.anchor !== null && (r.anchor >= seats || !s.positions)) r.anchor = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
