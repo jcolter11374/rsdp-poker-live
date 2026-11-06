@@ -2266,6 +2266,9 @@ export class TableRuntime {
     if (this.rotationStepDone(plan.button)) {
       setup = this.handSetup();
       plan = planFor(setup);
+      // The new game can put the button somewhere else (after stud, the blinds pick up where they left off),
+      // so the new step's orbit starts at the button this hand is really dealt with.
+      s.rotation.anchor = plan.button;
       if (plan.dealtIn.length < 2) return false;
     }
     const sideGames = this.sideGames();

@@ -453,6 +453,24 @@ describe('host settings', () => {
     });
   }
 
+  it('HORSE by orbits gives every game a full orbit, also going from stud back to the blind games', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 };
+      s.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) };
+    });
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    const games: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      games.push(hand(rt).input.game.id);
+      checkDown(rt);
+      clock.advance(10_000);
+    }
+    const cycle = ['nlhe', 'plo8', 'razz', 'stud', 'stud8'].flatMap((g) => [g, g, g]);
+    expect(games).toEqual([...cycle, ...cycle]);
+  });
+
   it('a rotation without stud keeps its antes in every game', () => {
     const { rt, clock } = table((s) => {
       s.stakes = { ...s.stakes, ante: 1, anteType: 'per-player' };
