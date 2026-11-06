@@ -1352,7 +1352,9 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           if (next.start.startAt !== s.startAt) s.graceUntil = null;
           s.startAt = next.start.startAt;
         }
-        emit(c, { type: 'settingsUpdated' });
+        // Named for the activity log, which leaves out a save that changed nothing.
+        const changed = (Object.keys(changes) as (keyof TournamentSettings)[]).filter((k) => JSON.stringify(changes[k]) !== JSON.stringify(was[k]));
+        emit(c, { type: 'settingsUpdated', changed });
         break;
       }
       case 'end': {
