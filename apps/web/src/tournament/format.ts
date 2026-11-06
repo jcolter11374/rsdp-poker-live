@@ -51,7 +51,7 @@ export const money = (cents: number) =>
   (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: cents % 100 ? 2 : 0 });
 
 export function blinds(l: { sb: number; bb: number; ante: number; anteType: string }): string {
-  const ante = l.anteType === 'none' ? '' : l.anteType === 'big-blind' ? ` · BB ante ${chips(l.ante)}` : ` · ante ${chips(l.ante)}`;
+  const ante = l.anteType === 'none' || l.ante === 0 ? '' : l.anteType === 'big-blind' ? ` · BB ante ${chips(l.ante)}` : ` · ante ${chips(l.ante)}`;
   return `${chips(l.sb)} / ${chips(l.bb)}${ante}`;
 }
 

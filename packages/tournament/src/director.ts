@@ -557,7 +557,8 @@ export function levelFor(s: TournamentState, _tableId: TableId): LevelStakes {
     sb: level.sb,
     bb: level.bb,
     // In a mix with stud, only the stud games ante (D29).
-    ante: skipsAnte(gameId, games) ? 0 : level.ante,
+    // Once the rotation has stopped, one game is left and keeps its antes.
+    ante: skipsAnte(gameId, stopRotationAtLevel && levelNumber >= stopRotationAtLevel ? [gameId] : games) ? 0 : level.ante,
     anteType: level.anteType,
     smallBet,
     bigBet: level.limit?.bigBet ?? smallBet * 2,

@@ -256,6 +256,16 @@ describe('clock, breaks and pause', () => {
     expect(levelFor(plain.state, plain.state.tables[0].id)).not.toHaveProperty('betting');
   });
 
+  it('a mix with stud keeps its antes once the rotation stops on a blind game', () => {
+    const anteLevels: StructureRow[] = [1, 2, 3].map((n) => ({ kind: 'level', sb: 50 * n, bb: 100 * n, ante: 10 * n, anteType: 'per-player', minutes: 10 }));
+    const sim = new Sim({ structure: anteLevels, games: ['stud', 'nlhe'], stopRotationAtLevel: 2 });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.at(T0 + 21 * MIN);
+    expect(levelFor(sim.state, t)).toMatchObject({ levelNumber: 3, gameId: 'nlhe', ante: 30 });
+  });
+
   it('refuses betting that does not line up with the games', () => {
     const base = defaultSettings({ games: ['nlhe', 'stud'] });
     expect(validateSettings({ ...base, gameBetting: ['fixed-limit'] })).toContain('Give one betting choice for each game');
