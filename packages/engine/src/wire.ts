@@ -398,7 +398,8 @@ export interface ClientToServer {
    * Dealer's choice: pick the next game, by its place on the menu (settings.game.dealersChoice.games).
    * `handNumber`: the hand I picked during or after, so a pick that arrives once the table has moved on is refused.
    */
-  'hand:chooseGame': (input: { index: number; handNumber?: number }, ack: Ack) => void;
+  /** `gameId` and `betting` are the game the chooser tapped: a pick is refused if the menu changed under it. */
+  'hand:chooseGame': (input: { index: number; handNumber?: number; gameId?: string; betting?: BettingKind }, ack: Ack) => void;
   /** `handNumber`: the hand I pressed it after, so a show that arrives once the next hand is dealt is refused, not played on that hand. */
   'hand:show': (input: { cards: number[]; handNumber?: number }, ack: Ack) => void;
   /** Add my time bank to my clock now, on the turn I pressed it on (a page from before turn keys sends the ack alone). */

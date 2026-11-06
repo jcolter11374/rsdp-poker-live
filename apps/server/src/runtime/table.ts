@@ -554,9 +554,14 @@ export class TableRuntime {
     return [...ids].filter((id) => !this.seatOf(id)).length;
   }
 
-  /** Dealer's choice counts these when checking a game fits: everyone sitting down, and everyone a seat is held for. */
+  /**
+   * Dealer's choice counts these when checking a game fits: everyone sitting down, and anyone offered a seat from
+   * the waitlist. A seat request isn't counted, since only the host sees it; like the waitlist, it waits while a
+   * smaller game is on (seatRoom counts it).
+   */
   private tableCount(): number {
-    return this.state.seats.filter(Boolean).length + this.heldSeats();
+    const offered = new Set(this.offers().map((o) => o.playerId));
+    return this.state.seats.filter(Boolean).length + [...offered].filter((id) => !this.seatOf(id)).length;
   }
 
   /**
@@ -583,11 +588,15 @@ export class TableRuntime {
     return this.isOnline(seat.playerId) || this.offlineFor(seat) <= this.state.settings.seating.offlineGraceSeconds * 1000;
   }
 
-  /** Dealer's choice: the chooser picks the next game from the menu (`forHand`: the hand number they saw). */
-  chooseGame(playerId: PlayerId, input: { index: number; handNumber?: number }) {
+  /**
+   * Dealer's choice: the chooser picks the next game from the menu. `handNumber` is the hand they saw, and
+   * `gameId`/`betting` the game they tapped, so a pick sent just before the hand or the menu changed is refused.
+   */
+  chooseGame(playerId: PlayerId, input: { index: number; handNumber?: number; gameId?: string; betting?: BettingKind }) {
     if (this.isTournament) throw new ActionError("tournaments don't play Dealer's choice");
     if (input.handNumber !== undefined && input.handNumber !== this.state.handNumber) throw new ActionError('that pick was for an earlier hand');
-    const why = this.choice.pick(playerId, input.index);
+    const asked = input.gameId !== undefined && input.betting !== undefined ? { gameId: input.gameId, betting: input.betting } : undefined;
+    const why = this.choice.pick(playerId, input.index, asked);
     if (why) throw new ActionError(why);
     this.sync();
   }
@@ -868,6 +877,8 @@ export class TableRuntime {
       this.revealHands();
     }
     this.state.nextHandAt = null;
+    // Dealer's choice: the chooser's time doesn't run out while the game is stopped; Start gives a fresh clock.
+    this.choice.hold();
     this.log(`${this.nameOf(by)} stopped the game`);
     this.sync();
   }
@@ -2354,8 +2365,13 @@ export class TableRuntime {
     s.nextHandAt = null;
     this.applyPendingSettings();
     if (s.paused) return false;
+    // Dealer's choice: no pick clock runs out while no hand can be dealt.
+    const none = () => {
+      if (!this.isTournament) this.choice.hold();
+      return false;
+    };
     // Tournament tables also wait for their director (start time, breaks, hand-for-hand).
-    if (!s.started) return false;
+    if (!s.started) return none();
     if (this.tournament && this.tournament.gate(now) !== 'deal') return false;
 
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
@@ -2379,10 +2395,10 @@ export class TableRuntime {
       if (offline(x) && !s.settings.seating.dealToAway && this.offlineFor(x) > s.settings.seating.offlineGraceSeconds * 1000) return false;
       return true;
     });
-    if (candidates.length < 2) return false;
+    if (candidates.length < 2) return none();
     // Bots don't play on by themselves at a cash table: someone has to be there.
     const here = (x: SeatState) => !this.isBot(x.playerId) && !(offline(x) && this.offlineFor(x) > s.settings.seating.offlineGraceSeconds * 1000);
-    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return false;
+    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return none();
     // Nobody has played yet (or a game is restarting): deal everyone in free.
     if (candidates.filter((x) => !x.isNew).length < 2) for (const x of candidates) x.isNew = false;
 
@@ -2414,7 +2430,7 @@ export class TableRuntime {
       });
     let setup = this.handSetup();
     let plan = planFor(setup);
-    if (plan.dealtIn.length < 2) return false;
+    if (plan.dealtIn.length < 2) return none();
     // Dealer's choice: the table waits for the next game to be picked, or a new pick starts with this hand.
     if (!this.isTournament) {
       const gate = this.choice.gate(candidates, plan.dealtIn.length);
@@ -2422,7 +2438,7 @@ export class TableRuntime {
       if (gate === 'changed') {
         setup = this.handSetup();
         plan = planFor(setup);
-        if (plan.dealtIn.length < 2) return false;
+        if (plan.dealtIn.length < 2) return none();
       }
     }
     // Mixed games: the step may end with this hand's button (orbits), which changes the game.

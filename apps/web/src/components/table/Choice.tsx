@@ -73,7 +73,7 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
   const pick = (index: number) => {
     setBusy(true);
     setError('');
-    call('hand:chooseGame', { index, ...(view.hand ? { handNumber: view.hand.handNumber } : {}) })
+    call('hand:chooseGame', { index, gameId: menu[index].gameId, betting: menu[index].betting, ...(view.hand ? { handNumber: view.hand.handNumber } : {}) })
       .then(onClose)
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false));

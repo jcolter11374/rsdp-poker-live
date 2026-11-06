@@ -158,7 +158,7 @@ export const EXTRAS: ExtraGuide[] = [
       'Then the chooser gets a Pick the next game panel with every game on the menu, each with its How to play guide, and a countdown (20 seconds unless the host changed it). Everyone else sees who is picking.',
       'A pick lasts one orbit: as many hands as players were dealt into its first hand. If players leave, it ends sooner. The host can set a number of hands instead.',
       'If the chooser runs out of time, the game being played carries on for another orbit. At a new table, the first game on the menu that fits is dealt.',
-      'A game that seats fewer players than are at the table is greyed out. While a smaller game is being played, the empty seats are closed until it ends, so nobody can sit down, ask for a seat or add a bot there.',
+      'A game that seats fewer players than are at the table is greyed out. While a smaller game is being played, the empty seats are closed until it ends, so nobody can sit down, ask for a seat or add a bot there. Newcomers can join the waitlist instead.',
       'Anyone sitting out, away or offline is skipped, and picks next time round. The same game can be picked again.',
       'Practice bots pick at random from the games that fit, so you get to try them all.',
       'The stakes stay the same for every game. With a stud game on the menu, only the stud games ante; the others play on the blinds. The Limit games bet the Limit small and big bets.',

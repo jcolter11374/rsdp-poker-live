@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
-import { ActionError, type PlayerId } from '@rsdp/engine/core';
+import { ActionError, type BettingKind, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
 import { isArchived, isTournamentStaff, LOBBY_CHAT_MAX, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
@@ -1442,7 +1442,18 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:act', (action, ack) => guarded(ack, () => current().act(me, sanitizeAction(action), turnOf(action)), log));
     on('hand:draw', (input, ack) => guarded(ack, () => current().draw(me, toIndexes(input?.discard), turnOf(input)), log));
     on('hand:runItTwice', (input, ack) => guarded(ack, () => current().voteRunItTwice(me, !!input?.yes, { handNumber: turnOf(input).handNumber }), log));
-    on('hand:chooseGame', (input, ack) => guarded(ack, () => current().chooseGame(me, { index: Number(input?.index), handNumber: turnOf(input).handNumber }), log));
+    on('hand:chooseGame', (input, ack) =>
+      guarded(
+        ack,
+        () =>
+          current().chooseGame(me, {
+            index: Number(input?.index),
+            handNumber: turnOf(input).handNumber,
+            ...(typeof input?.gameId === 'string' && typeof input?.betting === 'string' ? { gameId: input.gameId, betting: input.betting as BettingKind } : {}),
+          }),
+        log,
+      ),
+    );
     on('hand:show', (input, ack) => guarded(ack, () => current().show(me, toIndexes(input?.cards), { handNumber: turnOf(input).handNumber }), log));
     on('hand:timeBank', (...args) => {
       // The ack comes last; a page from before turn keys sends nothing before it.

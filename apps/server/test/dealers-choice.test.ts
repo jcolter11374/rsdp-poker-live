@@ -185,15 +185,31 @@ describe("Dealer's choice", () => {
     expect(rt.state.seats[7]?.playerId).toBe('g');
   });
 
-  it('counts a seat held for someone as taken when checking a game fits', () => {
+  it('counts a seat offered from the waitlist as taken when checking a game fits', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 7;
+      s.seating.waitlist = true;
+    });
+    seat(rt, 7);
+    rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+    rt.stand('f');
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['h']);
+    rt.start('host');
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(7);
+    expect(() => pick(rt, 'badugi')).toThrow(/7 are sitting down/);
+  });
+
+  it("doesn't count a seat request, which only the host sees, but it waits while a smaller game is on", () => {
     const { rt, clock } = table();
     seat(rt, 6);
     rt.updateSettings('host', { seating: { requireApproval: true } });
     rt.requestSeat('g', { seat: 7, name: 'G', stack: 1000 });
-    expect(rt.state.requests).toHaveLength(1);
     rt.start('host');
-    expect(tableView(rt, 'host', clock.now()).choice!.count).toBe(7);
-    expect(() => pick(rt, 'badugi')).toThrow(/7 are sitting down/);
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(6);
+    pick(rt, 'badugi');
+    expect(hand(rt).input.game.id).toBe('badugi');
+    expect(() => rt.approve('host', rt.state.requests[0].id)).toThrow(/closed until the next game/);
+    expect(rt.state.requests).toHaveLength(1);
   });
 
   it('skips a chooser who sits out, and gives the next player a fresh clock', () => {
@@ -376,5 +392,115 @@ describe("Dealer's choice", () => {
     const shown = behind(now, before, 5_000);
     expect(shown.choice!.current).toBeNull();
     expect(shown.choice!.deadline).toBe(before.choice!.deadline! + 5_000);
+  });
+});
+
+// From the review pass on PR #366: the clock and the gate when the table can't deal, or players leave mid-orbit.
+describe("Dealer's choice: the pick clock when the table can't deal", () => {
+  const others = (rt: TableRuntime, ids: string[]) => ids.filter((x) => x !== chooser(rt).playerId);
+
+  it('stops the clock when the host stops the game, and gives a fresh one when it starts again', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    const first = chooser(rt);
+    rt.stop('host');
+    // The fake clock throws if a timer keeps firing.
+    clock.advance(30_000);
+    expect(rt.state.choice!.deadline).toBeNull();
+    rt.start('host');
+    expect(live(rt)).toBe(false);
+    expect(chooser(rt).playerId).toBe(first.playerId);
+    expect(rt.state.choice!.deadline).toBe(clock.now() + 20_000);
+  });
+
+  it('stops the clock while too few players can be dealt in, or everyone has gone', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    for (const id of others(rt, ['host', 'a', 'b'])) rt.sitOut(id, true);
+    clock.advance(30_000);
+    expect(live(rt)).toBe(false);
+    expect(rt.state.choice!.deadline).toBeNull();
+
+    const gone = table();
+    seat(gone.rt, 3);
+    gone.rt.start('host');
+    for (const id of ['host', 'a', 'b']) gone.rt.stand(id);
+    gone.clock.advance(30_000);
+    expect(live(gone.rt)).toBe(false);
+  });
+
+  it('lets the chooser pick when a player leaves before the last hand of an orbit', () => {
+    const { rt, clock } = table();
+    seat(rt, 4);
+    rt.start('host');
+    pick(rt, 'nlhe');
+    for (let i = 0; i < 3; i++) {
+      checkDown(rt);
+      if (i < 2) clock.advance(10_000);
+    }
+    expect(rt.state.choice).toMatchObject({ hands: 3, length: 4 });
+    const next = chooser(rt);
+    rt.stand(others(rt, ['host', 'a', 'b', 'c'])[0]);
+    clock.advance(10_000);
+    // Three are left, so the orbit was three hands: the table waits for the pick, and the chooser can make it.
+    expect(live(rt)).toBe(false);
+    expect(tableView(rt, next.playerId, clock.now()).choice).toMatchObject({ open: true, chip: next.seat });
+    pick(rt, 'razz');
+    expect(hand(rt).input.game.id).toBe('razz');
+  });
+
+  it('a bot holding the chip picks when a player leaves before the last hand of an orbit', () => {
+    const { rt, clock } = table();
+    seat(rt, 1);
+    for (const at of [1, 2, 3]) rt.addBot('host', { seat: at });
+    rt.start('host');
+    if (rt.isBot(chooser(rt).playerId)) clock.advance(BOT_PICK_MS);
+    else pick(rt, 'nlhe');
+    for (let i = 0; i < 3; i++) {
+      checkDown(rt);
+      if (i < 2) clock.advance(10_000);
+    }
+    const next = chooser(rt);
+    const victim = rt.state.seats.find((x) => x && rt.isBot(x.playerId) && x.playerId !== next.playerId)!;
+    rt.removeBot('host', victim.playerId);
+    clock.advance(10_000);
+    if (rt.isBot(next.playerId)) expect(rt.state.choice!.current!.how).toBe('bot');
+    else pick(rt, 'razz');
+    expect(live(rt)).toBe(true);
+  });
+
+  it('deals as soon as play resumes when the pick came in while the game was paused', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    clock.advance(2_000);
+    rt.pause('host', true);
+    pick(rt, 'razz');
+    clock.advance(5_000);
+    rt.pause('host', false);
+    expect(live(rt)).toBe(true);
+    expect(hand(rt).input.game.id).toBe('razz');
+  });
+
+  it('stops waiting when the host turns Dealer\'s choice off during the pick clock', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    clock.advance(1_000);
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: false } } });
+    expect(live(rt)).toBe(true);
+    expect(rt.state.choice).toBeUndefined();
+  });
+
+  it('refuses a pick if the menu changed while it was on its way', () => {
+    const { rt } = table();
+    seat(rt, 3);
+    rt.start('host');
+    const who = chooser(rt).playerId;
+    expect(() => rt.chooseGame(who, { index: 0, gameId: 'razz', betting: 'fixed-limit' })).toThrow(/changed the menu/);
+    rt.chooseGame(who, { index: 1, gameId: 'razz', betting: 'fixed-limit' });
+    expect(hand(rt).input.game.id).toBe('razz');
   });
 });

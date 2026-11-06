@@ -152,12 +152,11 @@ export class DealersChoice {
   }
 
   /** The current pick has had all its hands. A pick that hasn't dealt yet hasn't. */
-  private pickDone(dealtIn: number | null): boolean {
+  private pickDone(): boolean {
     const c = this.s.choice;
     if (!c || !c.current) return true;
     if (c.hands === 0) return false;
-    const length = dealtIn === null || this.menu?.hands ? c.length : Math.min(c.length, dealtIn);
-    return c.hands >= length;
+    return c.hands >= c.length;
   }
 
   /**
@@ -167,7 +166,7 @@ export class DealersChoice {
   pickOpen(): boolean {
     const c = this.s.choice;
     if (!this.menu || !c || c.next) return false;
-    return this.pickDone(null);
+    return this.pickDone();
   }
 
   /**
@@ -184,7 +183,12 @@ export class DealersChoice {
     }
     const now = this.host.now();
     const c = this.ensure(candidates);
-    if (!this.pickDone(dealtIn)) return 'go';
+    // Players have gone since the orbit began: it is as long as the hand about to be dealt (pickOpen agrees from now).
+    if (c.current && c.hands > 0 && !menu.hands && dealtIn < c.length) {
+      c.length = dealtIn;
+      if (c.hands >= c.length && !c.next) this.openPick();
+    }
+    if (!this.pickDone()) return 'go';
     if (c.next) {
       this.start(c.next);
       return 'changed';
@@ -262,7 +266,7 @@ export class DealersChoice {
   }
 
   /** The chooser picks menu entry `index` (a person, or a bot through tick). */
-  pick(playerId: PlayerId, index: number): string | null {
+  pick(playerId: PlayerId, index: number, asked?: { gameId: string; betting: BettingKind }): string | null {
     const menu = this.menu;
     if (!menu) return "this table isn't playing Dealer's choice";
     if (!this.pickOpen()) return "it isn't time to pick the next game yet";
@@ -270,6 +274,8 @@ export class DealersChoice {
     if (!chooser || chooser.playerId !== playerId) return "it isn't your pick";
     if (!Number.isInteger(index) || index < 0 || index >= menu.games.length) return 'no such game on the menu';
     const g = menu.games[index];
+    // The host changed the menu while the click was on its way: never deal a game the chooser didn't tap.
+    if (asked && !same(g, asked)) return 'the host has just changed the menu: pick again';
     if (!this.fits(g.gameId)) return `${gameTitle(g.gameId, g.betting)} seats at most ${seatsOf(g.gameId)} players, and ${this.host.tableCount()} are sitting down`;
     const c = this.s.choice!;
     const cur = this.keepable();
@@ -295,8 +301,14 @@ export class DealersChoice {
   tick(): boolean {
     const menu = this.menu;
     const c = this.s.choice;
-    if (!menu || !c || !this.pickOpen()) return false;
     const now = this.host.now();
+    // Turned off while the table waited for a pick: stop waiting (the next deal forgets the chip).
+    if (!menu && c && c.deadline !== null) {
+      this.hold();
+      if (this.s.nextHandAt !== null) this.s.nextHandAt = now;
+      return true;
+    }
+    if (!menu || !c || !this.pickOpen()) return false;
     const chooser = this.chooser();
     if (c.deadline !== null && chooser && c.clockFor !== chooser.playerId) {
       this.startClock(chooser);
@@ -319,15 +331,31 @@ export class DealersChoice {
     if (now < c.botAt) return false;
     const fitting = menu.games.flatMap((g, i) => (this.fits(g.gameId) ? [i] : []));
     const index = fitting.length ? fitting[this.host.rng(fitting.length)] : this.defaultIndex();
-    return this.pick(chooser.playerId, index) === null;
+    // Nothing it can pick (no game fits): it tries again in a moment, and the clock deals the default meanwhile.
+    if (this.pick(chooser.playerId, index) !== null) c.botAt = now + BOT_PICK_MS;
+    return true;
   }
 
-  /** When something here next needs doing (a bot's pick or the clock running out), for the table's timers. */
+  /**
+   * When a bot holding the chip picks, for the table's timers. The clock running out needs no timer here: the table
+   * waits with its next hand due at the deadline, and the deal deals the default.
+   */
   due(): number | null {
     const c = this.s.choice;
-    if (!this.menu || !c) return null;
-    const times = [c.botAt, c.deadline].filter((t): t is number => t !== null);
-    return times.length ? Math.min(...times) : null;
+    if (!this.menu || !c || c.botAt === null || !this.pickOpen()) return null;
+    return c.botAt;
+  }
+
+  /**
+   * The next hand can't be dealt (the game stopped, too few players): the clock stops, so nobody's time runs out
+   * while nothing can be dealt. The chooser can still pick, and gets a fresh clock when the table can deal again.
+   */
+  hold() {
+    const c = this.s.choice;
+    if (!c) return;
+    c.deadline = null;
+    c.clockFor = null;
+    c.botAt = null;
   }
 
   /**
@@ -354,7 +382,7 @@ export class DealersChoice {
     const menu = this.menu;
     if (!menu) return null;
     const c = this.s.choice;
-    if (c && !this.pickDone(null)) return this.currentGame();
+    if (c && !this.pickDone()) return this.currentGame();
     if (c?.next) return c.next;
     return menu.games[this.defaultIndex()];
   }
@@ -390,7 +418,12 @@ export class DealersChoice {
   /** Resumed: the chooser gets the time that was left. */
   resume(left: number | null | undefined) {
     const c = this.s.choice;
-    if (!c || c.deadline === null || left == null) return;
+    if (!c || left == null) return;
+    // The table was waiting and the pick came in while paused: no need to wait out the clock.
+    if (c.deadline === null) {
+      this.s.nextHandAt = this.host.now();
+      return;
+    }
     c.deadline = this.host.now() + left;
     if (c.botAt !== null) c.botAt = Math.min(c.botAt, c.deadline);
     this.s.nextHandAt = c.deadline;

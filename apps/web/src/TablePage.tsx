@@ -139,9 +139,14 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Dealer's choice: my "Pick the next game" panel. It opens by itself when the table starts waiting for my pick.
   const [picker, setPicker] = useState(false);
   const pickDue = !!view && myPickDue(view);
+  const mayPick = !!view && canPickNow(view);
   useEffect(() => {
     if (pickDue) setPicker(true);
   }, [pickDue]);
+  // Once my turn to pick is over (picked, missed or passed on), the panel doesn't come back by itself next time.
+  useEffect(() => {
+    if (!mayPick) setPicker(false);
+  }, [mayPick]);
   const [sheet, setSheet] = useState<'menu' | 'chat' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
