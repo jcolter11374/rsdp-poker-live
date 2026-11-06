@@ -18,7 +18,7 @@ Everything underneath the poker is other people's work, used under their open-so
 | [Socket.IO](https://socket.io/) | The live line between your browser and the table, so a bet shows up for everyone at once. | MIT |
 | [React](https://react.dev/) | Draws the pages and the table in your browser and keeps them up to date. | MIT |
 | [Vite](https://vite.dev/) | Bundles the browser code into the small files your browser downloads. | MIT |
-| [PGlite](https://pglite.dev/) | The database that stores tables, hands and accounts. It is [PostgreSQL](https://www.postgresql.org/) packed to run inside the server. | Apache 2.0 (PostgreSQL License for PostgreSQL itself) |
+| [PGlite](https://pglite.dev/) | The database that stores tables, hands and accounts. It is [PostgreSQL](https://www.postgresql.org/) packed to run inside the server. Two versions ship for now, while the site's data moves from the older one to the newer one. | Apache 2.0 (PostgreSQL License for PostgreSQL itself) |
 | [node-postgres](https://node-postgres.com/) | Talks to a regular PostgreSQL server, for setups that use one instead of PGlite. | MIT |
 | [Drizzle ORM](https://orm.drizzle.team/) | Helps the server read and write the database. | Apache 2.0 |
 | [Zod](https://zod.dev/) | Checks that table settings and other things sent to the server are well formed before it acts on them. | MIT |

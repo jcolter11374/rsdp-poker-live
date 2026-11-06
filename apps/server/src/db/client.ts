@@ -1,7 +1,8 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { PGlite as LegacyPGlite } from 'pglite-0.2';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
@@ -42,6 +43,45 @@ export interface CreateDbOptions {
 const VACUUM_EVERY_MS = 5 * 60_000;
 
 const closers = new WeakMap<object, () => Promise<void>>();
+
+/**
+ * Postgres can't open another major version's data files, and PGlite 0.5 runs
+ * Postgres 18 where 0.2 ran Postgres 16. The live site's folder is in Postgres
+ * 16's format until it is moved (#367), so both versions ship for now.
+ */
+export const PGLITE_POSTGRES = 18;
+/** What the older PGlite (0.2, installed as `pglite-0.2`) runs. */
+export const LEGACY_PGLITE_POSTGRES = 16;
+
+/** The Postgres major version of a PGlite folder's files (its PG_VERSION), or null when the folder is new. */
+export function pgliteFolderVersion(dataDir: string): number | null {
+  let text: string;
+  try {
+    text = readFileSync(path.join(dataDir, 'PG_VERSION'), 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+  const version = Number(text.trim());
+  if (!Number.isInteger(version) || version <= 0) throw new Error(`${dataDir}/PG_VERSION should be a Postgres version, not ${JSON.stringify(text.trim())}`);
+  return version;
+}
+
+/**
+ * The PGlite that reads a folder, or makes a new in-memory database (tests
+ * that build a database by hand use it too, so theirs match createDb's). For
+ * now (step 1 of #367) only a Postgres 18 folder opens with PGlite 0.5; new
+ * folders, in-memory databases and Postgres 16 folders open with 0.2, as they
+ * always have. So the live site runs as before, and a release that has moved
+ * its folder to Postgres 18 can still be rolled back to this one.
+ */
+export function pgliteFor(dataDir?: string): PGlite {
+  const version = dataDir ? pgliteFolderVersion(dataDir) : null;
+  if (version === PGLITE_POSTGRES) return new PGlite(dataDir);
+  // The two versions answer queries the same way; only the files they read differ.
+  if (version === null || version === LEGACY_PGLITE_POSTGRES) return new LegacyPGlite(dataDir) as unknown as PGlite;
+  throw new Error(`${dataDir} holds Postgres ${version} files; this server reads Postgres ${LEGACY_PGLITE_POSTGRES} and ${PGLITE_POSTGRES}. Restore a backup into a new folder instead (docs/DEPLOY.md, "Backups").`);
+}
 
 /**
  * Opens the database and applies pending migrations before returning, so
@@ -101,7 +141,7 @@ async function openPostgres(url: string): Promise<Db> {
 async function openPglite(dataDir: string | undefined, vacuumEveryMs: number): Promise<Db> {
   // PGlite creates only the last folder of the path.
   if (dataDir) mkdirSync(path.dirname(path.resolve(dataDir)), { recursive: true });
-  const client = new PGlite(dataDir);
+  const client = pgliteFor(dataDir);
   const db = drizzlePglite(client, { schema });
   try {
     await migratePglite(db, { migrationsFolder: MIGRATIONS_DIR });
