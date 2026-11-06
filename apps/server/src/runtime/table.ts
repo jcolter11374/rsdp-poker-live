@@ -1261,6 +1261,15 @@ export class TableRuntime {
     this.trackSeeAll();
     const seats = s.settings.table.maxSeats;
     if (seats !== s.seats.length) {
+      // The seat where the current game's orbit began goes with its player (moveIntoKeptSeats). If that seat goes
+      // with nobody in it, the orbit ends when the button reaches the next player round from it, so the orbit
+      // follows that player instead of starting again.
+      const r = s.rotation;
+      if (r.anchor !== null && r.anchor >= seats && !s.seats[r.anchor]) {
+        const n = s.seats.length;
+        const next = Array.from({ length: n - 1 }, (_, i) => (r.anchor! + 1 + i) % n).find((i) => s.seats[i]);
+        r.anchor = next ?? null;
+      }
       this.moveIntoKeptSeats(seats);
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
@@ -1269,8 +1278,8 @@ export class TableRuntime {
       // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
       const p = s.positions;
       if (p && [p.button, p.smallBlind, p.bigBlind].some((x) => x !== null && x >= seats)) s.positions = null;
-      // An orbit that began at a seat that is gone (nobody moved from it) starts again from the next button.
-      if (s.rotation.anchor !== null && (s.rotation.anchor >= seats || !s.positions)) s.rotation.anchor = null;
+      // Only if nobody is left to follow does the orbit start again from the next button.
+      if (r.anchor !== null && r.anchor >= seats) r.anchor = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
@@ -2929,12 +2938,19 @@ export function cashHandStakes(settings: TableSettings, levelIndex: number, game
   const level = sched.enabled ? sched.levels[levelIndex] : undefined;
   if (level) {
     Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
-    const ratio = base.bigBlind > 0 ? level.bigBlind / base.bigBlind : null;
-    // 0 means "work it out" (fillStakes): it stays 0, and so does everything without a ratio.
-    const scale = (n: number) => (ratio !== null && n > 0 ? Math.max(1, Math.round(n * ratio)) : 0);
-    stakes.smallBet = scale(base.smallBet);
-    stakes.bigBet = scale(base.bigBet);
-    stakes.bringIn = scale(base.bringIn);
+    // The Limit bets and the bring-in keep their size to the big blind (D31). A table with no big blind of its own
+    // bets the level's, as a tournament does (fillStakes works them out from 0). With no big blind at the level
+    // (a stud schedule that only raises the antes) there is nothing to go by, so the Stakes tab's amounts stay.
+    if (base.bigBlind > 0 && level.bigBlind > 0) {
+      const ratio = level.bigBlind / base.bigBlind;
+      // 0 means "work it out" (fillStakes), so it stays 0.
+      const scale = (n: number) => (n > 0 ? Math.max(1, Math.round(n * ratio)) : 0);
+      stakes.smallBet = scale(base.smallBet);
+      stakes.bigBet = scale(base.bigBet);
+      stakes.bringIn = scale(base.bringIn);
+    } else if (level.bigBlind > 0) {
+      Object.assign(stakes, { smallBet: 0, bigBet: 0, bringIn: 0 });
+    }
   }
   const rotation = settings.game.rotation;
   if (rotation.enabled && rotation.steps.length && skipsMixedGameAnte(game.id, rotation.steps.map((st) => st.gameId))) stakes.ante = 0;

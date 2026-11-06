@@ -485,11 +485,39 @@ describe('host settings', () => {
       s.table.maxSeats = 8;
       s.game = { ...s.game, gameId: 'stud', betting: 'fixed-limit' };
       s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: 0, ante: 5, anteType: 'per-player', bringIn: 10, smallBet: 20, bigBet: 40 };
-      s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[0, 30, 5]]) };
+      s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[0, 60, 5]]) };
     });
     seatPlayers(rt, 3, 1000);
     rt.start('host');
-    expect(bets(rt)).toEqual({ smallBlind: 0, bigBlind: 30, smallBet: 30, bigBet: 60, bringIn: 10, ante: 5 });
+    // The bring-in is a third of the small bet, as in a tournament, not the table's 10.
+    expect(bets(rt)).toEqual({ smallBlind: 0, bigBlind: 60, smallBet: 60, bigBet: 120, bringIn: 20, ante: 5 });
+  });
+
+  it('a stud schedule with no big blinds (only the antes rise) keeps the Stakes tab bets and bring-in', () => {
+    const run = (tableBigBlind: number) => {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 8;
+        s.game = { ...s.game, gameId: 'stud', betting: 'fixed-limit' };
+        s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: tableBigBlind, ante: 5, anteType: 'per-player', bringIn: 10, smallBet: 20, bigBet: 40 };
+        // What turning the schedule on and pressing Add level builds from that Stakes tab when its big blind is 0.
+        s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[0, 0, 5], [0, 0, 10]]) };
+      });
+      seatPlayers(rt, 3, 1000);
+      rt.start('host');
+      const seen = [];
+      for (let i = 0; i < 2; i++) {
+        seen.push(bets(rt));
+        checkDown(rt);
+        clock.advance(10_000);
+      }
+      return seen;
+    };
+    for (const bb of [0, 20]) {
+      expect(run(bb)).toEqual([
+        { smallBlind: 0, bigBlind: 0, smallBet: 20, bigBet: 40, bringIn: 10, ante: 5 },
+        { smallBlind: 0, bigBlind: 0, smallBet: 20, bigBet: 40, bringIn: 10, ante: 10 },
+      ]);
+    }
   });
 
   it('a Limit table without a blind schedule bets the Stakes tab amounts', () => {
@@ -712,6 +740,45 @@ describe('host settings', () => {
         expect(dealt.every((d) => d.game === (d.step === 0 ? 'nlhe' : 'plo4'))).toBe(true);
       }
     }
+  });
+
+  it('an orbit whose first seat empties and then goes with a smaller table carries on from the next player', () => {
+    let tried = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const clock = new FakeClock();
+      const settings = defaultSettings('cash');
+      settings.table.maxSeats = 9;
+      settings.seating.requireApproval = false;
+      settings.game.rotation = {
+        enabled: true,
+        steps: [
+          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
+          { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'orbits' },
+        ],
+      };
+      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+      const ids = ['host', 'a', 'b', 'c', 'd', 'e'];
+      ids.forEach((id, i) => {
+        rt.connect(id);
+        rt.requestSeat(id, { seat: [0, 1, 2, 6, 7, 8][i], name: id.toUpperCase(), stack: 1000 });
+      });
+      rt.start('host');
+      const firstButton = hand(rt).input.button;
+      // Only a first button in a seat the smaller table drops.
+      if (firstButton < 5) continue;
+      tried++;
+      const leaver = rt.state.seats[firstButton]!.playerId;
+      const dealt = playRotation(rt, clock, 18, (next) => {
+        // The player the orbit began with leaves after hand 1; after hand 2 the host makes the table 5 seats.
+        if (next === 2) rt.stand(leaver);
+        if (next === 3) rt.updateSettings('host', { table: { maxSeats: 5 } });
+      });
+      expect(rt.state.seats).toHaveLength(5);
+      // Hold'em's orbit ends when the button reaches the player after the empty seat: the same 6 hands as with no
+      // smaller table. Then 5 players, 5 hands a game.
+      expect({ seed, steps: stepLengths(dealt) }).toEqual({ seed, steps: [6, 5, 5] });
+    }
+    expect(tried).toBeGreaterThanOrEqual(2);
   });
 
   it('making the table smaller with everyone in the seats that go keeps the orbit the right length', () => {
