@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.06.6",
+      "date": "2026-11-06",
+      "fixes": [
+        "New How we compare page: this site side by side with the one many of us played on before, feature by feature, including where it's still ahead. It's linked from About and the bottom of every page."
+      ]
+    },
+    {
       "id": "2026.11.06.5",
       "date": "2026-11-06",
       "fixes": [

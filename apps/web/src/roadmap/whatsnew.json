@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026.11.06.6",
+      "date": "2026-11-06",
+      "title": "How we compare",
+      "items": [
+        { "title": "How we compare", "detail": "Played somewhere else before? The new How we compare page puts this site side by side with the site many of us used before, feature by feature: what's free here, what's only here, and where the other site is still ahead. Find it on the About page or at the bottom of any page." }
+      ]
+    },
+    {
       "id": "2026.11.06.4",
       "date": "2026-11-06",
       "title": "HORSE and 8-Game tournaments",

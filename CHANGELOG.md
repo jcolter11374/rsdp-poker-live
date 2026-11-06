@@ -18,6 +18,18 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.06.6] - 2026-11-06
+
+_How we compare_
+
+### New
+
+- **How we compare.** Played somewhere else before? The new How we compare page puts this site side by side with the site many of us used before, feature by feature: what's free here, what's only here, and where the other site is still ahead. Find it on the About page or at the bottom of any page.
+
+### Fixed and changed
+
+- New How we compare page: this site side by side with the one many of us played on before, feature by feature, including where it's still ahead. It's linked from About and the bottom of every page.
+
 ## [2026.11.06.5] - 2026-11-06
 
 ### Fixed and changed
@@ -653,6 +665,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.06.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.6
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4
 [2026.11.06.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.3

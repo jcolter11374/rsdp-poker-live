@@ -89,6 +89,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <a href="/about">About</a>
+      <a href="/compare">How we compare</a>
       <a href="/rules">How to play</a>
       <a href="/hands">Search your hands</a>
       <a href="/roadmap">Roadmap</a>

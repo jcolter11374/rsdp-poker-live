@@ -24,3 +24,4 @@
   .about-hero { padding-top: 20px; }
   .about-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.about-more p + p { margin-top: 8px; }
