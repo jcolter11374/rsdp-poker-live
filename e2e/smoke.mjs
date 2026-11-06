@@ -421,6 +421,10 @@ try {
     await host.click('button:has-text("Start game")');
     await host.waitForSelector('.seat .hole .playing-card');
     if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
+    // A fresh visit, so the tip's 20 seconds start now and it is still up when the first sweep ends.
+    await host.reload();
+    await host.waitForSelector('.seat .hole .playing-card');
+    if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
     await host.locator('.tip-toast').waitFor();
     await host.evaluate(() => {
       const seen = (window.__tableSizes = new Set());
@@ -433,9 +437,12 @@ try {
     });
     const sweep = async () => {
       const sizes = [];
-      for (let h = 760; h <= 880; h += 8) {
+      for (let h = 760; h <= 880; h += 12) {
+        // A change of width, so the bar under the table lets go of a taller size it held from an earlier height (Dock.tsx).
+        await host.setViewportSize({ width: 2299, height: h });
+        await host.waitForTimeout(100);
         await host.setViewportSize({ width: 2300, height: h });
-        await host.waitForTimeout(150);
+        await host.waitForTimeout(250);
         await host.evaluate(() => window.__tableSizes.clear());
         await host.waitForTimeout(250);
         const seen = await host.evaluate(() => [...window.__tableSizes]);
@@ -445,10 +452,11 @@ try {
       return sizes;
     };
     const withTip = await sweep();
+    if (!(await host.locator('.tip-toast').count())) throw new Error('the keyboard tip went before the sweep with it was done');
     await host.click('.tip-toast button:has-text("Got it")');
     const withoutTip = await sweep();
     withTip.forEach((s, i) => {
-      if (s !== withoutTip[i]) throw new Error(`at 2300x${760 + 8 * i} the keyboard tip changed the table's size: ${s} with it, ${withoutTip[i]} without`);
+      if (s !== withoutTip[i]) throw new Error(`at 2300x${760 + 12 * i} the keyboard tip changed the table's size: ${s} with it, ${withoutTip[i]} without`);
     });
     await host.setViewportSize({ width: 2300, height: 800 });
     await host.click('.drawer-button');

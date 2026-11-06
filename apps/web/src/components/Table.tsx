@@ -286,6 +286,7 @@ export function Table({
   const kTall = Math.min(1.9, room.h / 560, room.w / 1180);
   const kShort = wide ? Math.min(1.25, room.h / 470, room.w / 1180) : 0;
   const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort) * 100) / 100;
+  // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
   const short = kShort > kTall && k > 1;
   const grown = k > 1;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room

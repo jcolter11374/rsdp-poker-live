@@ -792,7 +792,7 @@ kbd {
 .tip-toast {
   position: absolute;
   left: 12px;
-  bottom: 12px;
+  bottom: 8px;
   z-index: 9;
   max-width: min(340px, calc(100vw - 32px));
   display: flex;
