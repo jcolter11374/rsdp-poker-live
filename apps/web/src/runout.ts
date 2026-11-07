@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HIDDEN_CARD, RUNOUT_SETTLE_MS, runoutSteps, runoutWaits, type HandEvent } from '@rsdp/engine/core';
+import { HIDDEN_CARD, RUNOUT_SETTLE_MS, runoutMs, runoutSteps, runoutWaits, type HandEvent } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { gameTitle, getVariant } from '@rsdp/engine/variants';
 import { choiceOf, comingMenu, leavingMenu, missedPickIndex } from './components/settings/dealersChoice';
@@ -33,26 +33,31 @@ export interface Frozen {
   sameHand?: boolean;
   /** The waitlist's seat offers before the result: a newer one waits for it (see holdBack). */
   offers?: TableView['offers'];
-  /** Dealer's choice: the host's change waiting for the next hand before the result (#459). */
-  pendingSettings?: TableView['pendingSettings'];
   /**
-   * Dealer's choice: the most people the live table has counted since the runout began, now (`count`) and once a
-   * waiting change applies (`coming`). Newcomers show at once and stay until the result (see heldChoice).
+   * Dealer's choice: the people counted, now and once the host's waiting change applies, in the newest view the
+   * server sent before it had dealt the runout out itself (see heldChoice). Undefined until there is one.
    */
-  peak?: Peak;
+  shownBefore?: Counts;
 }
 
-interface Peak {
+interface Counts {
   count: number;
   coming: number;
 }
 
-/** `peak` raised to the counts in `choice`; the same object when they don't raise it. */
-function raise(peak: Peak | undefined, choice: TableView['choice'] | undefined): Peak | undefined {
-  if (!choice) return peak;
-  const count = Math.max(peak?.count ?? 0, choice.count);
-  const coming = Math.max(peak?.coming ?? 0, choice.comingCount ?? choice.count);
-  return peak && peak.count === count && peak.coming === coming ? peak : { count, coming };
+/**
+ * Dealer's choice: the counts in `view`, when the server sent it before its own time for dealing the runout out
+ * (revealUntil on the server) was over. Until then the server's counts are the same whether or not anyone busted
+ * (#448): the runout's players are still counted, and their seats taken. Later views can already show the result,
+ * while this browser is still dealing it out. Null for those, and for views from a delayed spectator's past.
+ */
+function countsBeforeServerShown(view: TableView | null): Counts | null {
+  const hand = view?.hand;
+  const choice = view?.choice;
+  if (!hand || !choice) return null;
+  const ended = view.history.find((h) => h.handNumber === hand.handNumber)?.endedAt;
+  if (ended === undefined || view.serverNow >= ended + runoutMs(hand.events)) return null;
+  return { count: choice.count, coming: choice.comingCount ?? choice.count };
 }
 
 /**
@@ -64,7 +69,7 @@ function raise(peak: Peak | undefined, choice: TableView['choice'] | undefined):
 export function useRunoutReveal(live: TableView | null): TableView | null {
   const [reveal, setReveal] = useState<Reveal | null>(null);
   // Kept apart from `reveal`, so a newer count doesn't restart the street being dealt.
-  const [peak, setPeak] = useState<Peak | undefined>(undefined);
+  const [shownBefore, setShownBefore] = useState<Counts | undefined>(undefined);
   /** Steps shown so far; the count past the last is the settle beat. */
   const [shown, setShown] = useState(0);
   // Checked while rendering (not in an effect), so the finished board never flashes up first.
@@ -95,14 +100,13 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
           choice: before.choice,
           sameHand: prior.handNumber === hand.handNumber,
           offers: before.offers,
-          pendingSettings: before.pendingSettings,
         },
       });
       setShown(0);
-      setPeak(raise(undefined, live.choice));
+      setShownBefore(countsBeforeServerShown(live) ?? undefined);
     } else if (reveal && reveal.handNumber === hand?.handNumber) {
-      const raised = raise(peak, live?.choice);
-      if (raised !== peak) setPeak(raised);
+      const counts = countsBeforeServerShown(live);
+      if (counts && (counts.count !== shownBefore?.count || counts.coming !== shownBefore?.coming)) setShownBefore(counts);
     }
   }
 
@@ -115,8 +119,8 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
   }, [reveal, shown]);
 
   return useMemo(
-    () => (live && reveal && live.hand?.handNumber === reveal.handNumber ? holdBack(live, peak ? { ...reveal.before, peak } : reveal.before, shown) : live),
-    [live, reveal, shown, peak],
+    () => (live && reveal && live.hand?.handNumber === reveal.handNumber ? holdBack(live, shownBefore ? { ...reveal.before, shownBefore } : reveal.before, shown) : live),
+    [live, reveal, shown, shownBefore],
   );
 }
 
@@ -203,15 +207,15 @@ export function heldChoice(view: TableView, before: Frozen): TableView['choice']
   const movedOn = one && was.chip !== null && !was.next && (was.deadline !== null || !samePick(live.current, was.current));
   const chip = movedOn ? nextPicker(was.chip!, before, dealt) : was.chip;
   const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
-  // Players leaving show only with the result. Newcomers show at once, and stay until it shows (peak): a seat a bust
-  // opens could otherwise take someone off the count early. The same goes for the count once the host's waiting
-  // change applies (#459). That change may have applied since, as it was going to (the host saved again once the
-  // hand was over): the table is then counted as it was going to be. Not when the host undid it.
-  const pending = before.pendingSettings;
-  const asWaiting = !!pending?.table?.maxSeats && view.settings.table.maxSeats === pending.table.maxSeats && view.settings.seating.waitlist;
-  const applied = !view.pendingSettings && was.comingCount !== undefined && asWaiting;
-  const coming = Math.max(was.comingCount ?? was.count, before.peak?.coming ?? 0);
-  const count = Math.max(was.count, live.count, before.peak?.count ?? 0, applied ? coming : 0);
+  // Players leaving show only with the result. Newcomers show at once. Once the server has dealt the runout out
+  // itself, it can give a busted player's seat to someone waiting before this browser has: the counts it sent just
+  // before that (shownBefore) stay until the result shows here. The same goes for the count once the host's waiting
+  // change applies (#459), which follows the server until then. The change may have applied since (the host saved
+  // again once the hand was over): if the table is now bigger, it is counted as it was going to be, up to its seats.
+  const sent = before.shownBefore;
+  const coming = sent ? sent.coming : (was.comingCount ?? was.count);
+  const applied = !view.pendingSettings && was.comingCount !== undefined && view.settings.table.maxSeats > before.seats.length && view.settings.seating.waitlist;
+  const count = Math.max(was.count, live.count, sent?.count ?? 0, applied ? Math.min(coming, view.settings.table.maxSeats) : 0);
   const then = Math.max(coming, live.comingCount ?? live.count);
   // A pick that has come in since, for a chooser in the all-in, can only be someone picking in their place (or a
   // missed pick): it waits for the result, and so does the limit it sets. For a chooser not in it, a pick shows only

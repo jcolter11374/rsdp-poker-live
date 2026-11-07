@@ -255,19 +255,23 @@ describe('holdBack', () => {
       // As it really happens: the seat the busted bot left goes at once to someone waiting, so the count stays at seven
       // and only the count once the change applies drops, to eight. The fallback still waits for the result.
       const razz = { gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' };
-      const nine = { ...frozen, pendingSettings: bigger.pendingSettings, choice: { ...frozen.choice, comingCount: 9 } };
+      // Eight seats before the result, as the settings say.
+      const nine = { ...frozen, seats: [...frozen.seats, ...Array(8 - frozen.seats.length).fill(null)], choice: { ...frozen.choice, comingCount: 9 } };
       const refilled = { ...bigger, choice: { ...live.choice!, count: 7, comingCount: 8, fallback: razz } } as unknown as TableView;
       expect(holdBack(refilled, nine, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
-      // Someone joined the waitlist during the runout, so nine were coming; then the busted bot's seat went to someone
-      // waiting. The nine stay until the result.
-      const joined = { ...frozen, pendingSettings: bigger.pendingSettings, choice: { ...frozen.choice, comingCount: 8 }, peak: { count: 7, coming: 9 } };
+      // Someone joined the waitlist during the runout, so the server counted nine coming until it had dealt the runout
+      // out; then the busted bot's seat went to someone waiting. The nine stay until the result.
+      const joined = { ...nine, choice: { ...frozen.choice, comingCount: 8 }, shownBefore: { count: 7, coming: 9 } };
       expect(holdBack(refilled, joined, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
-      expect(holdBack(refilled, { ...joined, peak: undefined }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
+      expect(holdBack(refilled, { ...joined, shownBefore: undefined }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
       // The host saves again once the hand is over, so the change applies before the result shows: the table is held
       // at the nine it was going to have, not the eight it has.
       const nineSeats = parseSettings({ ...table, table: { ...table.table, maxSeats: 9 }, seating: { ...table.seating, waitlist: true }, game: { ...table.game, dealersChoice: { enabled: true, games: [menu[1], menu[2], plo4], hands: 0, pickSeconds: 20 } } });
       const applied = { ...live, settings: nineSeats, pendingSettings: null, choice: { ...live.choice!, count: 8, fallback: razz } } as unknown as TableView;
       expect(holdBack(applied, nine, 0).choice).toMatchObject({ count: 9, fallback: { gameId: 'plo4' } });
+      // The same when the host saves ten seats instead: the nine coming are counted, not the eight left by a bust.
+      const tenSeats = parseSettings({ ...nineSeats, table: { ...nineSeats.table, maxSeats: 10 } });
+      expect(holdBack({ ...applied, settings: tenSeats } as TableView, nine, 0).choice).toMatchObject({ count: 9, fallback: { gameId: 'plo4' } });
       // Or the host undoes it, back to eight seats and this menu: the seven are counted as they are, and Hold'em, which
       // seats them, is kept.
       const nlhe = { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" };
