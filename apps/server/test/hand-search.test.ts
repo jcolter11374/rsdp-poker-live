@@ -266,6 +266,85 @@ describe('hand search for someone who just left a table with a delay (#435)', ()
   });
 });
 
+describe('hand search for someone who just left a table with a delay, with the 7-2 bounty turned up on its own (#435)', () => {
+  it('has the 7-2 shown and its bounty paid at once, as the table ended the hand, but not a card shown after', { timeout: 30_000 }, async () => {
+    const clock = new FakeClock();
+    clock.t = Date.now();
+    const own = createApp({ clock, identity: dbIdentity(db), store: dbStore(db), shared: dbSharedHands(db), accounts: db, log: () => {} });
+    await new Promise<void>((resolve) => own.http.listen(0, resolve));
+    const at = `http://localhost:${(own.http.address() as AddressInfo).port}`;
+    const mine: Client[] = [];
+    try {
+      const tokens = ['hs-pia-secret-0123456789', 'hs-qin-secret-0123456789', 'hs-rae-secret-0123456789', 'hs-sol-secret-0123456789'];
+      const cs = tokens.map((t) => socketClient(at, t, mine));
+      const [host] = cs;
+      const { tableId } = await host.call<{ tableId: string }>('table:create', {
+        settings: {
+          table: { name: '7-2 on a delay' },
+          seating: { requireApproval: false },
+          spectators: { allowed: true, delaySeconds: 15 },
+          timing: { decisionSeconds: 0, autoStartNextHand: false },
+          modifiers: { 'bounty-72': { enabled: true, amount: 15, autoShow: true } },
+        },
+      });
+      for (const c of cs) await c.call('table:join', { tableId });
+      for (const [i, c] of cs.entries()) await c.call('seat:request', { seat: i, name: ['Pia', 'Qin', 'Rae', 'Sol'][i], stack: 100 });
+      await host.until((v) => v.seats.filter(Boolean).length === 4);
+      await host.call('host:start');
+      await host.until((v) => !!v.hand && v.hand.phase !== 'complete');
+      // The first to act is given 7-2 (the deck is shuffled; this overwrites the dealt cards).
+      const live = own.tables.get(tableId)!.state.hand!;
+      const first = live.toAct!;
+      live.seats.find((x) => x.seat === first)!.cards = [
+        { card: '7c', up: false },
+        { card: '2d', up: false },
+      ];
+      // The button posted no blind, so folding costs them only the bounty.
+      const payer = live.input.button;
+      expect(payer).not.toBe(first);
+      const other = [0, 1, 2, 3].find((i) => i !== payer && i !== first)!;
+      clock.advance(20_000);
+      await cs[first].call('hand:act', { type: 'raise', to: 20 });
+      for (let i = 0; i < 10; i++) {
+        const v = await host.until((h) => !!h.hand);
+        if (v.hand!.phase === 'complete') break;
+        const mover = cs.find((c) => c.view()?.legal);
+        if (mover) await mover.call('hand:act', { type: 'fold' }).catch(() => {});
+        await pause(50);
+      }
+      await host.until((v) => v.hand?.phase === 'complete');
+      // The payer stands up as it ends: they now watch 15 s behind, their view still in the hand.
+      (cs[payer].socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+      await host.until((v) => !v.seats[payer]);
+      await pause(300);
+      type Event = { t: string; kind?: string; seat?: number };
+      type Hand = { handId: string; tableId: string; hand: { events: Event[] } };
+      const find = async (query = '') => {
+        const res = await fetch(`${at}/api/hands/search?${query}`, { headers: { 'x-guest-token': tokens[payer] } });
+        return ((await res.json()) as { hands: Hand[] }).hands.find((h) => h.tableId === tableId);
+      };
+      const found = (await find())!;
+      // The table ended it with the 7-2 turned up and the bounty paid: so does their search, and it counts as a loss.
+      expect(found.hand.events.some((e) => e.t === 'show' && e.seat === first)).toBe(true);
+      expect(found.hand.events.some((e) => e.t === 'transfer' && e.kind === 'bounty-72')).toBe(true);
+      expect((await find('result=lost'))?.handId).toBe(found.handId);
+      const share = await fetch(`${at}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': tokens[payer] }, body: JSON.stringify({ handId: found.handId }) });
+      const link = (await (await fetch(`${at}/api/shared/${((await share.json()) as { id: string }).id}`)).json()) as { hand: { events: Event[] } };
+      expect(link.hand.events.map((e) => e.t)).toEqual(found.hand.events.map((e) => e.t));
+      // A card a player still seated shows now: only once their view has it.
+      await cs[other].call('hand:show', { cards: [0], handNumber: 1 });
+      await pause(300);
+      expect((await find())!.hand.events.some((e) => e.t === 'show' && e.seat === other)).toBe(false);
+      clock.advance(20_000);
+      await pause(300);
+      expect((await find())!.hand.events.some((e) => e.t === 'show' && e.seat === other)).toBe(true);
+    } finally {
+      for (const c of mine) c.close();
+      await own.close();
+    }
+  });
+});
+
 describe('hand search by game and betting', () => {
   it("keeps Limit and No-Limit Hold'em apart, and counts an older hand with no betting saved as No-Limit", { timeout: 40_000 }, async () => {
     const FAY = 'hs-fay-secret-0123456789';

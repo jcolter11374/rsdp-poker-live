@@ -175,8 +175,12 @@ export interface RuntimeDeps {
 export interface ShownTable {
   /** Who sits in each seat in the view they are shown (as many seats as that view has). */
   seats: (PlayerId | null)[];
-  /** The table time that view shows. */
+  /** The table time of the seats shown: before any moment is old enough to show, the time of the oldest kept. */
   at: number;
+  /** The seat their view shows held for them from the waitlist, if any (#452). */
+  offer?: number;
+  /** Seats their view shows held from the waitlist for someone else. */
+  held?: number[];
   /** How far behind the table that view runs, in ms. */
   behindMs: number;
   /**
@@ -217,7 +221,10 @@ export class TableRuntime {
   shownTo: (playerId: PlayerId) => ShownTable | null = (playerId) => {
     const delayMs = this.settings.spectators.delaySeconds * 1000;
     if (delayMs <= 0 || this.seatOf(playerId) || this.isStaff(playerId)) return null;
-    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now(), behindMs: delayMs, showsNowInMs: delayMs };
+    const offers = this.state.offers ?? [];
+    const offer = offers.find((o) => o.playerId === playerId)?.seat;
+    const held = offers.filter((o) => o.playerId !== playerId).map((o) => o.seat);
+    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now(), behindMs: delayMs, showsNowInMs: delayMs, held, ...(offer === undefined ? {} : { offer }) };
   };
 
   private readonly clock: Clock;
@@ -505,10 +512,14 @@ export class TableRuntime {
     let { seat } = input;
     const { stack } = input;
     // A spectator on a delay is answered from the seats they are shown. Someone holding a seat offered from the
-    // waitlist takes that seat, as below, once their view has it free: before, the offer would tell them it came free.
+    // waitlist takes that seat, as below, once their view shows them that offer and they ask for it: before, the offer
+    // would tell them it came free. An offer their view still shows after the live table let it go (a smaller table,
+    // the seat given to someone else) is answered from the seats shown, so its Take it doesn't seat them in the seat
+    // the live table offers now, or tell them it has gone.
     const offer = this.state.offers?.find((o) => o.playerId === playerId);
     const view = this.shownTo(playerId);
-    const shown = offer && view && offer.seat < view.seats.length && !view.seats[offer.seat] && !this.takenSince(offer.seat, view.at) ? null : view;
+    const live = offer && view && seat === offer.seat && view.offer === offer.seat && offer.seat < view.seats.length && !view.seats[offer.seat] && !this.takenSince(offer.seat, view.at);
+    const shown = live ? null : view;
     if (shown) seat = this.shownSeat(playerId, seat, stack, shown);
     else {
       if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -563,10 +574,13 @@ export class TableRuntime {
     if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
       if (!shown.seats.some((x) => !x)) throw new ActionError('every seat is taken');
       // Only a seat free both live and in their view: one they can see is free, that the live table can give.
-      const open = this.openSeats(playerId).filter((i) => free(i) && !this.takenSince(i, shown.at));
+      const open = this.openSeats(playerId).filter((i) => free(i) && !shown.held?.includes(i) && !this.takenSince(i, shown.at));
       if (!open.length) throw new ActionError(SEAT_CLOSED);
       seat = open[this.rng(open.length)];
     } else if (!free(seat)) throw new ActionError('that seat is taken');
+    // Held in their view for someone else from the waitlist: closed, as when it is held live, though the live table
+    // may have offered it to them since (the one it was held for has turned it down).
+    if (shown.held?.includes(seat)) throw new ActionError(SEAT_CLOSED);
     // Someone has sat there live since the moment they are shown, though it may be free again: it stays closed until
     // their view gets there, or a yes now would tell them that player has gone.
     if (seat >= this.state.seats.length || this.takenSince(seat, shown.at)) throw new ActionError(SEAT_CLOSED);

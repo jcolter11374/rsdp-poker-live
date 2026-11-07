@@ -322,9 +322,11 @@ node scripts/verify-audit.mjs --copy copy --proof hand-12-proof.json
 ```
 
 It uses Node's own SHA-256 and nothing from the app. Like the browser, it
-says a hand is still waiting, rather than different, when the record has it as
-it was before a card shown after it ended and no later hand of that table is in
-yet: run it again 10 minutes later. To be told when a check
+never calls a hand passed while the record has it as it was before a card
+shown after it ended and no later hand of that table is in yet: it says that
+check is still waiting and ends with exit code 2. Run it again 10 minutes
+later. If it is still waiting more than 10 minutes after the card was shown,
+the record is wrong. To be told when a check
 fails, press **Watch** on the repository's GitHub page (custom: Issues).
 
 What these checks can't do:

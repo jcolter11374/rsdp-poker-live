@@ -65,6 +65,14 @@ export class SpectatorFeed {
     return this.moments[0] ?? null;
   }
 
+  /**
+   * How many events hand `handNumber` had in the first moment kept that was taken once it had ended: its end as the
+   * table finished it, a 7-2 shown on its own included, but no card someone chose to show after that.
+   */
+  endOf(handNumber: number): number | undefined {
+    return this.moments.find((m) => m.lastHand?.handNumber === handNumber)?.lastHand?.events;
+  }
+
   /** Every moment taken has been shown by `now`. */
   caughtUp(now: number): boolean {
     const last = this.moments.at(-1);

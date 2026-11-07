@@ -137,9 +137,13 @@ describe('the standalone checker with a downloaded hand (D38)', () => {
   it('says a card shown after the hand is still to go in, while it can honestly be waiting', { timeout: 30_000 }, async () => {
     const waiting = await site([{ hand: 3, digest: digest(ended) }]);
     expect(waiting.out).toMatch(/before a card shown after it ended/);
-    expect(waiting.code).toBe(0);
+    // Never a pass: it ends saying a check is still waiting, with its own exit code.
+    expect(waiting.out).not.toMatch(/All checks passed/);
+    expect(waiting.out).toMatch(/Nothing wrong found yet, but 1 check\(s\) are still waiting/);
+    expect(waiting.code).toBe(2);
     const passed = await site([{ hand: 3, digest: digest(ended) }, { hand: 3, digest: digest(shown) }]);
     expect(passed.out).toMatch(/hand 3 is in the record as entry 2, exactly as in this file/);
+    expect(passed.out).toMatch(/All checks passed/);
     expect(passed.code).toBe(0);
   });
 

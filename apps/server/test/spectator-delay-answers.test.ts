@@ -156,6 +156,7 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     expect(rt.seatOf('watcher')).toBeNull();
     // Their view reaches the seat coming free (and the offer): it is theirs.
     shown.seats[3] = null;
+    shown.offer = 3;
     expect(ask(rt, 3)).toBe('accepted');
     expect(rt.seatOf('watcher')?.seat).toBe(3);
   });
@@ -195,8 +196,66 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     expect(ask(rt, 4)).toBe(CLOSED);
     expect(rt.seatOf('watcher')).toBeNull();
     shown.at = clock.now();
+    shown.offer = 4;
     expect(ask(rt, 4)).toBe('accepted');
     expect(rt.seatOf('watcher')?.seat).toBe(4);
+  });
+
+  /**
+   * Seats 3 and 6 of six are free between hands: D, first on the waitlist, is offered seat 3 and the watcher seat 6.
+   * Their view stays there while, live, the host makes the table smaller (seat 6 and its offer go, the watcher stays
+   * waiting) and D leaves the waitlist, so seat 3 is offered to the watcher.
+   */
+  function staleOffer(start: boolean) {
+    const { rt, clock } = table(
+      (s) => {
+        s.table.maxSeats = 6;
+        s.seating.waitlist = true;
+      },
+      { players: ['host', 'a', 'b', 'c'], start: false },
+    );
+    // B and C move along one seat, so seats 3 (index 2) and 6 (index 5) are the free ones.
+    for (const p of ['c', 'b']) {
+      const at = rt.seatOf(p)!.seat;
+      rt.stand(p);
+      rt.requestSeat(p, { seat: at + 1, name: p.toUpperCase(), stack: 10_000, consent: true });
+    }
+    if (start) rt.start('host');
+    rt.joinWaitlist('d', { name: 'D', stack: 10_000 });
+    rt.joinWaitlist('watcher', { name: 'Watcher', stack: 10_000 });
+    expect(rt.state.offers?.map((o) => [o.playerId, o.seat])).toEqual([
+      ['d', 2],
+      ['watcher', 5],
+    ]);
+    const shown = { ...freezeView(rt, clock), offer: 5, held: [2] };
+    rt.shownTo = (id) => (rt.seatOf(id) || rt.isStaff(id) ? null : shown);
+    clock.advance(1_000);
+    rt.updateSettings('host', { table: { maxSeats: 5 } });
+    rt.leaveWaitlist('d');
+    expect(rt.state.offers?.map((o) => [o.playerId, o.seat])).toEqual([['watcher', 2]]);
+    return { rt, clock, shown };
+  }
+
+  it('hears "closed" for Take it on an offer their view shows that the live table has let go, between hands', () => {
+    const { rt, shown } = staleOffer(false);
+    // Not "no such seat": that would tell them the smaller table has taken effect.
+    expect(ask(rt, 5)).toBe(CLOSED);
+    expect(rt.seatOf('watcher')).toBeNull();
+    // Their view reaches the seat offered now: Take it on that one seats them there.
+    shown.offer = 2;
+    shown.held = [];
+    expect(ask(rt, 2)).toBe('accepted');
+    expect(rt.seatOf('watcher')?.seat).toBe(2);
+  });
+
+  it('is not seated in the seat the live table offers now by Take it on the one their view still shows, mid-hand', () => {
+    const { rt } = staleOffer(true);
+    expect(rt.state.hand).not.toBeNull();
+    expect(ask(rt, 5)).toBe(CLOSED);
+    expect(rt.seatOf('watcher')).toBeNull();
+    // Nor by asking for the seat it is offered now, which their view shows held for D.
+    expect(ask(rt, 2)).toBe(CLOSED);
+    expect(rt.seatOf('watcher')).toBeNull();
   });
 
   it('tells a player who has just left live, and is still shown in their seat, what they heard before it', () => {

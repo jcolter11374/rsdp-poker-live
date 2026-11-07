@@ -24,6 +24,8 @@ if (args.includes('--help')) {
 }
 
 const problems = [];
+// Checks that can't pass or fail yet: a card shown after a hand, still to go in the record.
+const waiting = [];
 const ok = (text) => console.log(`✓ ${text}`);
 const bad = (text) => (problems.push(text), console.log(`✗ ${text}`));
 
@@ -59,11 +61,21 @@ if (proofFile) {
     const later = live.some((e) => e.kind === 'hand' && e.data.table === proof.record.table && Number(e.data.hand) > proof.record.handNumber);
     if (!saved.length) bad(`hand ${proof.record.handNumber} is not in the record`);
     else if (match) ok(`hand ${proof.record.handNumber} is in the record as entry ${match.seq}, exactly as in this file`);
-    else if (!later && before.includes(newest.data.digest))
-      console.log(`… hand ${proof.record.handNumber}: entry ${newest.seq} has it as it was before a card shown after it ended. That card goes in the record up to 10 minutes after it was shown: run this again then.`);
+    else if (!later && before.includes(newest.data.digest)) {
+      // Not a pass: it waits, and if it is still waiting more than 10 minutes after the card was shown, the record is wrong.
+      waiting.push(proof.record.handNumber);
+      console.log(`… hand ${proof.record.handNumber}: entry ${newest.seq} has it as it was before a card shown after it ended. That card goes in the record up to 10 minutes after it was shown: run this again then. If it still isn't there more than 10 minutes after the card was shown, the record is wrong.`);
+    }
     else bad(`hand ${proof.record.handNumber} in the record is not the hand in this file (entry ${newest.seq})`);
   }
 }
 
-console.log(problems.length ? `\n${problems.length} problem(s) found.` : '\nAll checks passed.');
-process.exit(problems.length ? 1 : 0);
+console.log(
+  problems.length
+    ? `\n${problems.length} problem(s) found.`
+    : waiting.length
+      ? `\nNothing wrong found yet, but ${waiting.length} check(s) are still waiting: run this again in 10 minutes.`
+      : '\nAll checks passed.',
+);
+// 2: nothing wrong yet, but not everything could be checked.
+process.exit(problems.length ? 1 : waiting.length ? 2 : 0);

@@ -603,7 +603,7 @@ export function createApp(deps: AppDeps = {}) {
       const player = past.seats.find((x) => ids.includes(x.playerId))?.playerId;
       const shown = player ? shownTo(rt, player, clock.now()) : null;
       if (!shown) return undefined;
-      const upTo = eventsShown(shown, past);
+      const upTo = eventsShown(shown, past, feeds.get(tableId));
       const cut = upTo === undefined || upTo >= past.events.length ? past : { ...past, events: past.events.slice(0, upTo) };
       return { past: cut, view: (playerId, hideMine) => handRecordView(rt, cut, playerId, { hideMine, asOf: shown.at }) };
     },
@@ -1106,8 +1106,12 @@ export function createApp(deps: AppDeps = {}) {
    * before the end): all of it up to its end, but no card shown after that until their view gets there. Hand search
    * lists such hands, where the table's own lists wait for them (#435).
    */
-  function eventsShown(shown: { moment: Moment | null; oldest: Moment | null; at: number }, past: PastHand): number | undefined {
+  function eventsShown(shown: { moment: Moment | null; oldest: Moment | null; at: number }, past: PastHand, feed?: SpectatorFeed): number | undefined {
     if (past.endedAt > shown.at) {
+      // As the table ended it, with a 7-2 it turned up on its own and the bounty that paid; without a moment from
+      // then (the server restarted since), at the hand's own end.
+      const atEnd = feed?.endOf(past.handNumber);
+      if (atEnd !== undefined) return atEnd;
       const end = past.events.findIndex((e) => e.t === 'hand-end');
       return end < 0 ? undefined : end + 1;
     }
@@ -1135,6 +1139,7 @@ export function createApp(deps: AppDeps = {}) {
       audience: people,
       isStaff: (p) => rt.isStaff(p),
       neverPlayed: rt.neverPlayedHere(s.data.playerId),
+      waitingSince: rt.state.waitlist?.find((w) => w.playerId === s.data.playerId)?.at,
     });
     return { view, delayed: true };
   }
@@ -1221,9 +1226,14 @@ export function createApp(deps: AppDeps = {}) {
       const now = clock.now();
       const shown = shownTo(rt, playerId, now);
       if (!shown) return liveShownTo(playerId);
-      const part = (shown.moment ?? shown.oldest)?.part;
-      if (!part) return liveShownTo(playerId);
-      return { seats: part.seats.map((x) => x?.playerId ?? null), at: shown.at, behindMs: shown.behindMs, showsNowInMs: spectatorsSeeAt(rt, now) - now };
+      const of = shown.moment ?? shown.oldest;
+      if (!of) return liveShownTo(playerId);
+      const { part } = of;
+      // The seats are the moment's, so a seat counts as taken since if someone sat in it after that moment: before
+      // any is old enough, the oldest's, not the time the delay reaches back to.
+      const offer = part.offers.find((o) => o.playerId === playerId)?.seat;
+      const held = part.offers.filter((o) => o.playerId !== playerId).map((o) => o.seat);
+      return { seats: part.seats.map((x) => x?.playerId ?? null), at: of.at, behindMs: shown.behindMs, showsNowInMs: spectatorsSeeAt(rt, now) - now, held, ...(offer === undefined ? {} : { offer }) };
     };
     // Log and chat lines are saved in order too, the ones that come in while a save runs together in the next.
     // First the ones the table has now, if none are saved for it yet (a table saved before every line was kept).

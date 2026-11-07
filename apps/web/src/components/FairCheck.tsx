@@ -22,12 +22,13 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
   // which try the record held was fetched on.
   const [again, setAgain] = useState(0);
   const [fetchedOn, setFetchedOn] = useState(-1);
-  // Another hand, or this one with another card shown since: its record is looked up afresh, with every try.
+  // Another hand, or this one with another card shown since: its record is looked up afresh, with every try. For a card
+  // shown since, the record found before stands while it is looked up, so the hand waits on it rather than passing.
   const checking = `${tableId}:${hand.handNumber}:${digest}`;
   const [checked, setChecked] = useState(checking);
   if (checked !== checking) {
+    if (!checked.startsWith(`${tableId}:${hand.handNumber}:`)) setRecord(null);
     setChecked(checking);
-    setRecord(null);
     setAgain(0);
     setFetchedOn(-1);
   }
@@ -48,11 +49,12 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     };
   }, [tableId, digest, hand.handNumber, again]);
   const waiting = !!record && record !== 'failed' && !!handInRecord(hand, record).pending;
+  // Until a record fetched on the last try is in: a try whose fetch failed is made again, so it never stops waiting.
   useEffect(() => {
-    if (!waiting || again >= TRIES) return;
+    if (!waiting || fetchedOn >= TRIES) return;
     const t = setTimeout(() => setAgain((n) => n + 1), 60_000);
     return () => clearTimeout(t);
-  }, [waiting, again]);
+  }, [waiting, again, fetchedOn]);
   const report = useMemo(() => {
     if (!fair) return null;
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;

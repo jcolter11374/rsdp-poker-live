@@ -361,6 +361,30 @@ describe('the rest of the view (what the read-through of #435 found)', () => {
     expect(behind(watcherNow(rt, clock), shown, DELAY).offers).toEqual([]);
   });
 
+  it('shows no offer I turned down, once I join the waitlist again, and my new place at the end', () => {
+    const { rt, clock } = table((x) => {
+      x.table.maxSeats = 4;
+      x.seating.waitlist = true;
+    });
+    rt.joinWaitlist('watcher', { name: 'W', stack: 500 });
+    rt.joinWaitlist('fan', { name: 'F', stack: 500 });
+    rt.stand('c', { afterHand: true });
+    checkDown(rt);
+    const shown = snap(rt, clock);
+    expect(shown.offers.map((o) => o.playerId)).toEqual(['watcher']);
+    // I turn the seat down (it goes to F), and a second later join the waitlist again.
+    clock.advance(1_000);
+    rt.declineOffer('watcher');
+    clock.advance(1_000);
+    rt.joinWaitlist('watcher', { name: 'W', stack: 500 });
+    const since = rt.state.waitlist!.find((w) => w.playerId === 'watcher')!.at;
+    const view = behind(watcherNow(rt, clock), shown, DELAY, null, { waitingSince: since });
+    expect(view.offers.filter((o) => o.playerId === 'watcher')).toEqual([]);
+    expect(view.waitlist.map((w) => w.playerId)).toEqual(['fan', 'watcher']);
+    // Still waiting since before the moment shown: the offer as it was stays.
+    expect(behind(watcherNow(rt, clock), shown, DELAY, null, { waitingSince: shown.serverNow }).offers.map((o) => o.playerId)).toEqual(['watcher']);
+  });
+
   it('shows my own place on the waitlist the moment I join it', () => {
     const { rt, clock } = table((x) => {
       x.table.maxSeats = 4;

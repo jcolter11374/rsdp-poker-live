@@ -249,6 +249,34 @@ describe('a spectator on a delay on the waitlist, after the host lengthens the d
   }, 30_000);
 });
 
+describe('a spectator asking for a seat just after the host turns a delay on', () => {
+  it('may take a seat left before the delay went on, which their view shows free', async () => {
+    const ann = client('gap-on-ann-0123456789');
+    const ben = client('gap-on-ben-0123456789');
+    const cal = client('gap-on-cal-0123456789');
+    const fan = client('gap-on-fan-0123456789');
+    const { tableId } = await ann.call<{ tableId: string }>('table:create', {
+      settings: { seating: { requireApproval: false }, spectators: { allowed: true, delaySeconds: 0 }, timing: { decisionSeconds: 0, autoStartNextHand: false } },
+    });
+    for (const c of [ann, ben, cal, fan]) await c.call('table:join', { tableId });
+    await ann.call('seat:request', { seat: 0, name: 'Ann', stack: 10_000 });
+    await ben.call('seat:request', { seat: 1, name: 'Ben', stack: 10_000 });
+    await cal.call('seat:request', { seat: 2, name: 'Cal', stack: 10_000 });
+    await fan.until((v) => v.seats.filter(Boolean).length === 3);
+    (cal.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+    await fan.until((v) => !v.seats[2]);
+    clock.advance(10_000);
+    await ann.call('host:settings', { patch: { spectators: { delaySeconds: 60 } } });
+    await settle();
+    clock.advance(5_000);
+    await settle();
+    // Nobody has sat there since the moment their view shows, so a yes tells them nothing.
+    expect(fan.view().seats[2]).toBeNull();
+    await fan.call('seat:request', { seat: 2, name: 'Fan', stack: 10_000 });
+    await ann.until((v) => v.seats[2]?.name === 'Fan');
+  });
+});
+
 describe('gestures, seen by a spectator on a delay', () => {
   it('only between players their view has seated, so one at a player who just sat down tells them nothing', async () => {
     const { ann, ben, fan } = await table('gesture', 30);

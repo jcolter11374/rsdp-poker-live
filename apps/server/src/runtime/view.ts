@@ -289,6 +289,8 @@ export interface BehindOptions {
   isStaff?: (playerId: PlayerId) => boolean;
   /** The viewer has never played here, so downloads stay closed to them while the game runs (recordsLocked). */
   neverPlayed?: boolean;
+  /** When the viewer joined the waitlist they are on now, live: an offer from before they last joined isn't theirs. */
+  waitingSince?: number;
 }
 
 /**
@@ -306,7 +308,9 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   // My own place on the waitlist and my own offer are mine to act on, so they follow what I do: joining shows at once.
   // But a seat offered to me only shows once my view has the seat free (#452).
   const mineWaiting = live.waitlist.find((w) => w.playerId === me);
-  const waitlist = part.waitlist.filter((w) => w.playerId !== me || mineWaiting);
+  // Joined again since the moment shown (after turning a seat down, or letting it run out): my place then is gone.
+  const rejoined = !!mineWaiting && opts.waitingSince !== undefined && opts.waitingSince > part.serverNow;
+  const waitlist = part.waitlist.filter((w) => w.playerId !== me || (mineWaiting && !rejoined));
   if (mineWaiting && !waitlist.some((w) => w.playerId === me)) waitlist.push(mineWaiting);
   const mineOffered = live.offers.find((o) => o.playerId === me);
   // Other people's offers as they were, their clocks moved on with the rest of the view.
@@ -316,7 +320,8 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   if (partMine && mineOffered?.seat === partMine.seat) offers.push(mineOffered);
   // Let go live while I'm still waiting (a smaller table or a smaller Dealer's choice game, someone moved into the
   // seat): it shows as it was until the view gets there, or its going would tell me what the live table just did.
-  else if (partMine && mineWaiting) offers.push(partMine);
+  // Not one I turned down or let run out and then joined the waitlist again since: that was my own doing.
+  else if (partMine && mineWaiting && !rejoined) offers.push(partMine);
   return {
     paused: part.paused,
     bombPotNext: part.bombPotNext,
