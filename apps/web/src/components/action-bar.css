@@ -5,7 +5,11 @@
   opacity: 0.6;
 }
 .action-bar .sending-note { text-align: center; }
-/* An all-in armed with A: the button the next A or Enter presses is ringed, and a line above the buttons says so. */
+/* An all-in armed with A: the button the next A or Enter presses is ringed, and the bar's top line, where the hand's
+   strength goes, says so. It is kept to that line's height, clear of the Tip and Time bank buttons at its ends. */
 .action-bar .buttons button.armed { outline: 3px solid var(--accent-2); outline-offset: 2px; }
-.action-bar .armed-note { text-align: center; margin: 2px 0; }
+.action-bar .armed-note { text-align: center; font-size: 0.85rem; line-height: 1.3; }
 .action-bar .armed-note b { color: var(--accent-2); }
+.action-bar .armed-note kbd { padding: 0 4px; line-height: 1.2; }
+.bar-head .armed-note { max-width: calc(100% - 270px); }
+.portrait .bar-head .armed-note { max-width: none; min-width: 0; }

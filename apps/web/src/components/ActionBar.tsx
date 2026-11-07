@@ -43,6 +43,18 @@ function mostIn(hand: HandView, legal: LegalActions, me: SeatView): MostIn | nul
   return null;
 }
 
+/**
+ * What an armed A sends, in words. When the most allowed stops short of every chip (the pot-limit most, or bets
+ * trimmed to what others can call), it says so rather than calling it all in.
+ */
+function mostWords(m: MostIn, hand: HandView, legal: LegalActions, me: SeatView, fmt: Fmt): string {
+  if (m.kind === 'call') return `Call ${fmt(m.to)}, all in`;
+  if (m.allIn) return `All in ${fmt(m.to)}`;
+  const toCall = hand.currentBet - me.bet;
+  const potMost = hand.betting === 'pot-limit' && m.to >= hand.currentBet + hand.potTotal + toCall;
+  return `${legal.raiseKind === 'bet' ? 'Bet' : 'Raise to'} ${fmt(m.to)}, ${potMost ? 'the pot-limit most' : 'the most others can call'}, not all in`;
+}
+
 export function ActionBar({
   view,
   fmt: chipFmt,
@@ -385,6 +397,13 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
+  // An armed all-in says what the next A or Enter sends on the bar's top line, standing in for the hand's strength, so
+  // the bar (and the table above it) doesn't move when A is pressed.
+  const armedNote = armed && most && hand && legal && me && (
+    <div className="armed-note" role="status">
+      <b>{mostWords(most, hand, legal, me, fmt)}:</b> press <kbd>A</kbd> again or <kbd>Enter</kbd> to send, <kbd>Esc</kbd> to cancel
+    </div>
+  );
   // On your turn (betting or drawing) the tip and the time bank sit on the bar's top line, so the bar is no taller for them.
   const canBank = !view.paused && !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
   const head =
@@ -396,7 +415,7 @@ export function ActionBar({
             <Key k="T" />
           </button>
         )}
-        {hint}
+        {armedNote || hint}
         {canBank && (
           <button className="time-bank" onClick={startBank}>
             Time bank +{me.timeBank}s
@@ -404,7 +423,7 @@ export function ActionBar({
         )}
       </div>
     ) : (
-      hint
+      armedNote || hint
     );
   // The sizing block's height, so a tip in its place takes just as much room and nothing below it moves.
   const sizingBox = useRef<HTMLDivElement>(null);
@@ -574,24 +593,11 @@ export function ActionBar({
   const raiseType = legal.raiseKind;
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
-  // What an armed A sends, in words. When the most allowed stops short of every chip (pot limit, or bets trimmed to
-  // what someone can call), it says so rather than calling it all in.
-  const mostWords = (m: MostIn) => {
-    if (m.kind === 'call') return `Call ${fmt(m.to)}, all in`;
-    if (m.allIn) return `All in ${fmt(m.to)}`;
-    const capped = hand.betting === 'pot-limit' && m.to >= hand.currentBet + hand.potTotal + toCall ? 'pot limit allows' : 'anyone else can call';
-    return `${raiseType === 'bet' ? 'Bet' : 'Raise to'} ${fmt(m.to)}, the most ${capped}. That's not all in`;
-  };
-  const armedNote = armed && most && (
-    <div className="armed-note" role="status">
-      <b>{mostWords(most)}.</b> Press <kbd>A</kbd> again or <kbd>Enter</kbd> to send it, <kbd>Esc</kbd> to cancel.
-    </div>
-  );
 
   return (
     <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
       {head}
-      {armedNote || errorLine}
+      {errorLine}
       {!sized && tipSlot(null)}
       {sized && (tipPanel(true) || (
         <div className="sizing" ref={sizingBox}>

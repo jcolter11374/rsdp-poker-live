@@ -778,10 +778,27 @@ describe('all in with A (#307)', () => {
     expect(box().value).toBe('1000');
     expect(labels('.buttons')).toEqual(['Fold', 'Call 100', 'All in 1000']);
     expect(armedButtons()).toEqual(['All in 1000']);
-    expect(note()).toBe('All in 1000. Press A again or Enter to send it, Esc to cancel.');
+    expect(note()).toBe('All in 1000: press A again or Enter to send, Esc to cancel');
     await press('a');
     expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
     expect(note()).toBeNull();
+  });
+
+  it("says so on the bar's top line, in place of the hand's strength, so the bar grows no taller", async () => {
+    const view = facingBet(100);
+    view.turn = { seat: 0, startedAt: 0, deadline: 60_000, usingBank: false };
+    renderBar(view);
+    const bar = document.querySelector('.action-bar')!;
+    const lines = () => Array.from(bar.children, (c) => c.className);
+    const before = lines();
+    expect(document.querySelector('.bar-head .strength')?.textContent).toBe('Ace high');
+    await press('a');
+    expect(lines()).toEqual(before);
+    expect(document.querySelector('.bar-head .armed-note')?.textContent).toContain('All in 1000:');
+    expect(document.querySelector('.bar-head .strength')).toBeNull();
+    expect(screen.getByRole('button', { name: /Time bank/ })).toBeTruthy();
+    await press('Escape');
+    expect(document.querySelector('.bar-head .strength')?.textContent).toBe('Ace high');
   });
 
   it('bets every chip when nobody has bet', async () => {
@@ -950,7 +967,7 @@ describe('all in with A (#307)', () => {
     renderBar(view);
     await press('a');
     expect(box().value).toBe('600');
-    expect(note()).toBe("Raise to 600, the most pot limit allows. That's not all in. Press A again or Enter to send it, Esc to cancel.");
+    expect(note()).toBe('Raise to 600, the pot-limit most, not all in: press A again or Enter to send, Esc to cancel');
     await press('Enter');
     expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 600 })]);
   });
@@ -960,15 +977,15 @@ describe('all in with A (#307)', () => {
     view.hand!.betting = 'pot-limit';
     renderBar(view);
     await press('a');
-    expect(note()).toContain('All in 450.');
+    expect(note()).toContain('All in 450:');
   });
 
-  it('when bets are trimmed to what others can call, says it is the most anyone can call, not all in', async () => {
+  it('when bets are trimmed to what others can call, says it is the most they can call, not all in', async () => {
     const view = checkedToMe();
     view.legal = { ...view.legal!, maxTo: 400 };
     renderBar(view);
     await press('a');
-    expect(note()).toContain("Bet 400, the most anyone else can call. That's not all in.");
+    expect(note()).toContain('Bet 400, the most others can call, not all in:');
     await press('a');
     expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 400 })]);
   });
@@ -977,7 +994,7 @@ describe('all in with A (#307)', () => {
     renderBar(facingBet(100), { bigBlind: 20 });
     await press('a');
     expect((screen.getByRole('spinbutton', { name: 'Amount in big blinds' }) as HTMLInputElement).value).toBe('50');
-    expect(note()).toContain('All in 50 BB.');
+    expect(note()).toContain('All in 50 BB:');
     await press('a');
     expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
   });
@@ -995,7 +1012,7 @@ describe('all in with A (#307)', () => {
     await press('a');
     expect(moves()).toEqual([]);
     expect(armedButtons()).toEqual(['Call 150 (all in)']);
-    expect(note()).toBe('Call 150, all in. Press A again or Enter to send it, Esc to cancel.');
+    expect(note()).toBe('Call 150, all in: press A again or Enter to send, Esc to cancel');
     await press('a');
     expect(moves()).toEqual([expect.objectContaining({ type: 'call' })]);
   });
@@ -1103,7 +1120,7 @@ describe('all in with A (#307)', () => {
       view.legal = { ...view.legal!, maxTo: 200 };
       renderBar(view);
       await press('a');
-      expect(note()).toContain('Bet 200, the most pot limit allows.');
+      expect(note()).toContain('Bet 200, the pot-limit most, not all in:');
       await press('a');
       expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 200 })]);
     });
