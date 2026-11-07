@@ -114,6 +114,24 @@ const plateBox = (r: DOMRect, from: DOMRect = r): Box => {
   return { left: from.left, right: from.right, top: middle - PLATE_HALF_HEIGHT, bottom: middle + PLATE_HALF_HEIGHT };
 };
 
+/**
+ * Phone nameplates held at the widest each has been since `key` last changed (a new hand, a new window width, or someone
+ * sitting down or leaving). A nameplate gets wider and narrower during a hand as lines such as "Call 0.50" come and go;
+ * cards placed beside it would otherwise follow it back and forth. A nameplate is centred on its seat, so it's the
+ * half-width that's held, around wherever the seat is now. Returns a function from a seat and its measured nameplate to
+ * the box to count.
+ */
+function useHeldPlates(key: string): (seat: number, box: Box) => Box {
+  const held = useRef({ key, halves: new Map<number, number>() });
+  return (seat, box) => {
+    if (held.current.key !== key) held.current = { key, halves: new Map() };
+    const middle = (box.left + box.right) / 2;
+    const half = Math.max(held.current.halves.get(seat) ?? 0, (box.right - box.left) / 2);
+    held.current.halves.set(seat, half);
+    return { ...box, left: middle - half, right: middle + half };
+  };
+}
+
 /** Your own hand on a phone: a smaller size when it has to fit (`cw`, `overlap`), and how far it moves aside (`shift`). */
 interface MyHandFit extends HandFit {
   shift: number;
@@ -126,8 +144,9 @@ interface MyHandFit extends HandFit {
  * smaller. Null when they fit as they are. Desktop seats tuck the cards into the nameplate, so
  * they're left alone.
  */
-function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): MyHandFit | null {
+function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: string): MyHandFit | null {
   const [fit, setFit] = useState<MyHandFit | null>(null);
+  const hold = useHeldPlates(plateKey);
   // Seats glide to new places when someone sits down or leaves; measure again once they've arrived.
   const [, setGlides] = useState(0);
   useEffect(() => {
@@ -146,13 +165,15 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): MyHandFit |
     if (el && compact && plate && cards >= 2) {
       const sideways = window.matchMedia('(max-height: 500px)').matches;
       const natural = PHONE_HAND[sideways ? 'sideways' : 'upright'][cards <= 3 ? 'few' : cards === 4 ? 'four' : 'more'];
-      const others = [...el.querySelectorAll<HTMLElement>('.seat:not(.me) .nameplate')].map((p) => plateBox(p.getBoundingClientRect()));
+      const others = [...el.querySelectorAll<HTMLElement>('.seat:not(.me)[data-seat] .nameplate')].map((p) =>
+        hold(Number(p.closest<HTMLElement>('.seat')!.dataset.seat), plateBox(p.getBoundingClientRect())),
+      );
       if (sideways) {
         // On its side the cards hang off the seat's left edge, which can be wider than its nameplate.
         const size = cards >= 4 ? fitHand(cards, handRoom(plateBox(plate.getBoundingClientRect(), me!.getBoundingClientRect()), others, natural.cw * 1.4), natural) : null;
         next = size && { ...size, shift: 0 };
       } else {
-        const mine = plateBox(plate.getBoundingClientRect());
+        const mine = hold(Number(me!.dataset.seat), plateBox(plate.getBoundingClientRect()));
         const span = handSpan(mine, others, natural.cw * 1.4, { left: 0, right: document.documentElement.clientWidth });
         const size = fitHand(cards, span.right - span.left, natural);
         const f = size ?? natural;
@@ -202,8 +223,9 @@ interface RowSpot {
  * their side of the line halfway between their nameplates. Seats gliding to new places are measured
  * again when they arrive, through useHandFit's re-render.
  */
-function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean): Record<number, RowSpot> {
+function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean, plateKey: string): Record<number, RowSpot> {
   const [spots, setSpots] = useState<Record<number, RowSpot>>({});
+  const hold = useHeldPlates(plateKey);
   useLayoutEffect(() => {
     const el = felt.current;
     const next: Record<number, RowSpot> = {};
@@ -212,7 +234,7 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean): Record<num
       const seats = [...el.querySelectorAll<HTMLElement>('.seat[data-seat]')].map((s) => ({
         seat: Number(s.dataset.seat),
         me: s.classList.contains('me'),
-        plate: plateBox(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect()),
+        plate: hold(Number(s.dataset.seat), plateBox(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect())),
         cards: s.querySelectorAll('.hole:not(.mucked) .playing-card').length,
       }));
       // The row's bottom edge sits 3px down the nameplate (styles.css: bottom: calc(100% - 3px)), counted from a plain plate's top.
@@ -356,8 +378,10 @@ export function Table({
   const prefs = usePrefs();
   const size = useSize(felt);
   const reach = useSeatReach(felt);
-  const handFit = useHandFit(felt, compact);
-  const rowSpots = useRowSpots(felt, compact);
+  // Cards on a phone are placed by the nameplates around them, each held at its widest through a hand (useHeldPlates).
+  const plateKey = `${view.hand?.handNumber ?? 0}|${size.w}|${view.seats.map((s) => (s ? 1 : 0)).join('')}`;
+  const handFit = useHandFit(felt, compact, plateKey);
+  const rowSpots = useRowSpots(felt, compact, plateKey);
   const room = useRoom(felt, fill && !compact);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
