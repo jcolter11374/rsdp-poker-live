@@ -1,17 +1,20 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
 import { getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, mixedGameMaxPlayers, mixedGameOf, MIXED_GAMES, VARIANT_LIST, type MixedGame } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
-import { BETTING_NAME, fromInput, studBringIn, toInput } from '../format';
+import { BETTING_NAME, defaultStudAnte, fromInput, studBringIn, toInput } from '../format';
 import { Modal } from './SeatDialog';
 import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
-import { canAddGame, canAddLevel, nextBlindLevel } from './settings/lists';
+import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
+import { DealersChoiceFields } from './settings/DealersChoiceFields';
+import { choiceOf, DEFAULT_MENU, MENU_STAKES, menuSeats, repeatsOf, stakesForMenu } from './settings/dealersChoice';
+import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
 const TABS: { id: Tab; label: string }[] = [
@@ -43,12 +46,6 @@ function diff(prev: unknown, next: unknown): unknown {
 
 const maxSeatsFor = (gameIds: string[]) => Math.min(...gameIds.map((id) => getVariant(id).maxPlayers));
 
-/** A stud ante of about a quarter of the small bet (1 at 1/2 limit, the same as a new table), never below one chip; in nickels in dollars (0.10 at .50/1). */
-export const defaultStudAnte = (stakes: TableSettings['stakes']) => {
-  const quarter = (stakes.smallBet || stakes.bigBlind) / 4;
-  return stakes.centsMode && quarter >= 5 ? Math.floor(quarter / 5) * 5 : Math.max(1, Math.round(quarter));
-};
-
 export function SettingsDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
   const [draft, setDraft] = useState<TableSettings>(() => structuredClone(view.settings));
   const [tab, setTab] = useState<Tab>('game');
@@ -70,8 +67,11 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
     });
 
   const rot = draft.game.rotation;
+  const choice = choiceOf(draft);
+  const mode: 'one' | 'rotate' | 'choice' = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
   const games = draft.game.rotation.enabled && draft.game.rotation.steps.length ? draft.game.rotation.steps.map((s) => s.gameId) : [draft.game.gameId];
-  const seatLimit = maxSeatsFor(games);
+  // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D33).
+  const seatLimit = mode === 'choice' ? menuSeats(choice.games) : maxSeatsFor(games);
 
   // A game with fewer seats than the table: say up front who has to leave, or who moves seats.
   const tightest = games.map((id) => getVariant(id)).reduce((a, b) => (b.maxPlayers < a.maxPlayers ? b : a));
@@ -80,7 +80,9 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   const moving = view.seats.flatMap((x, i) => (x && i >= newSeats ? [i + 1] : []));
   const seatNote = tooMany
     ? seated > seatLimit
-      ? `${games.length > 1 ? `${tightest.name}, one of the games in the rotation,` : tightest.name} seats at most ${seatLimit} players and ${seated} are sitting down. ${seated - seatLimit} ${seated - seatLimit === 1 ? 'player needs' : 'players need'} to leave the table (or remove ${seated - seatLimit === 1 ? 'a bot' : 'some bots'}) before you can switch.`
+      ? mode === 'choice'
+        ? `No game on the menu seats ${seated}: the biggest seats at most ${seatLimit}. ${seated - seatLimit} ${seated - seatLimit === 1 ? 'player needs' : 'players need'} to leave the table (or remove ${seated - seatLimit === 1 ? 'a bot' : 'some bots'}), or add a bigger game.`
+        : `${games.length > 1 ? `${tightest.name}, one of the games in the rotation,` : tightest.name} seats at most ${seatLimit} players and ${seated} are sitting down. ${seated - seatLimit} ${seated - seatLimit === 1 ? 'player needs' : 'players need'} to leave the table (or remove ${seated - seatLimit === 1 ? 'a bot' : 'some bots'}) before you can switch.`
       : `${seated} players are sitting down, so the table needs at least ${seated} seats.`
     : !tournament && moving.length
       ? `The table goes down to ${newSeats} seats. ${moving.length === 1 ? 'The player' : 'Players'} in seat${moving.length === 1 ? '' : 's'} ${moving.join(' and ').replace(/ and (?=.* and )/g, ', ')} will move to ${moving.length === 1 ? 'a free seat' : 'free seats'}${handLive ? ' when this hand ends' : ''}.`
@@ -114,7 +116,13 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       const stakes = { ...d.stakes, smallBet, bigBet: smallBet * 2 };
       return {
         ...d,
-        game: { gameId: first.gameId, betting: first.betting, rotation: { enabled: true, steps: mix.steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) } },
+        game: {
+          ...d.game,
+          gameId: first.gameId,
+          betting: first.betting,
+          rotation: { enabled: true, steps: mix.steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) },
+          ...(d.game.dealersChoice ? { dealersChoice: { ...d.game.dealersChoice, enabled: false } } : {}),
+        },
         table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
         stakes: {
           ...stakes,
@@ -126,11 +134,58 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       };
     });
   const currentMix = rot.enabled ? mixedGameOf(rot.steps) : null;
+  const menuBad = mode === 'choice' && (choice.games.length < 2 || repeatsOf(choice.games).length > 0);
+
+  const setChoice = (patch: Partial<DealersChoiceSettings>) => setDraft((d) => ({ ...d, game: { ...d.game, dealersChoice: { ...choiceOf(d), ...patch } } }));
+  /** A new menu, and the stakes its games need (Limit bets, a stud ante), as for HORSE. */
+  const setMenu = (menu: ChoiceGame[]) =>
+    setDraft((d) => ({
+      ...d,
+      game: { ...d.game, dealersChoice: { ...choiceOf(d), games: menu } },
+      stakes: stakesForMenu(d.stakes, menu, choiceOf(d).games),
+    }));
+  // The stakes before and after switching to Dealer's choice in this dialog set them up for its menu, so switching
+  // back before saving undoes that (each field the host hasn't changed since).
+  const choiceStakes = useRef<{ before: TableSettings['stakes']; after: TableSettings['stakes'] } | null>(null);
+  const setMode = (next: 'one' | 'rotate' | 'choice') => {
+    const d = draft;
+    const dc = choiceOf(d);
+    const rotation = { ...d.game.rotation, enabled: next === 'rotate' };
+    if (next === 'rotate' && !rotation.steps.length) rotation.steps = [{ gameId: d.game.gameId, betting: d.game.betting, length: 1, unit: 'orbits' }];
+    // A new menu starts with the 8-Game games, and the stakes they need.
+    const menu = next === 'choice' && dc.games.length < 2 ? DEFAULT_MENU : dc.games;
+    let stakes = d.stakes;
+    if (next === 'choice' && !dc.enabled) {
+      // The games dealt now: a stud ante the table already has (a HORSE rotation, a stud game) is kept.
+      const dealing = d.game.rotation.enabled && d.game.rotation.steps.length ? d.game.rotation.steps : [d.game];
+      stakes = stakesForMenu(d.stakes, menu, dealing);
+      choiceStakes.current = { before: d.stakes, after: stakes };
+    } else if (next !== 'choice' && dc.enabled && choiceStakes.current) {
+      const { before, after } = choiceStakes.current;
+      stakes = { ...d.stakes };
+      for (const k of MENU_STAKES) if (d.stakes[k] === after[k]) (stakes as Record<string, unknown>)[k] = before[k];
+      choiceStakes.current = null;
+    }
+    setDraft({ ...d, game: { ...d.game, rotation, dealersChoice: { ...dc, enabled: next === 'choice', games: menu } }, stakes });
+  };
 
   const save = () => {
-    const fixed = { ...draft, table: { ...draft.table, maxSeats: Math.min(draft.table.maxSeats, seatLimit) } };
+    const dc = draft.game.dealersChoice;
+    const fixed = {
+      ...draft,
+      table: { ...draft.table, maxSeats: Math.min(draft.table.maxSeats, seatLimit) },
+      // Saved straight from the pick time field, before it lost focus: the lowest it can be.
+      game: dc ? { ...draft.game, dealersChoice: { ...dc, pickSeconds: Math.max(SETTINGS_LIMITS.pickSeconds.min, dc.pickSeconds) } } : draft.game,
+    };
     const patch = diff(view.settings, fixed) as SettingsPatch | undefined;
     if (!patch) return onClose();
+    // How the game is chosen: a change queued earlier in this hand isn't shown here (the dialog starts from the table as
+    // it is now), so send both switches, and the queue ends up with the mode shown.
+    const g = patch.game as { rotation?: object; dealersChoice?: object } | undefined;
+    if (g && (g.rotation || g.dealersChoice)) {
+      g.rotation = { ...g.rotation, enabled: fixed.game.rotation.enabled };
+      if (fixed.game.dealersChoice) g.dealersChoice = { ...g.dealersChoice, enabled: fixed.game.dealersChoice.enabled };
+    }
     setBusy(true);
     call('host:settings', { patch })
       .then(onClose)
@@ -174,6 +229,14 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             </Field>
             {!tournament && (
               <>
+                <Field label="How the game is chosen">
+                  <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+                    <option value="one">One game</option>
+                    <option value="rotate">Rotate games in order (mixed games)</option>
+                    <option value="choice">Dealer&apos;s choice</option>
+                  </select>
+                </Field>
+                {mode === 'one' && (
                 <div className="row">
                   <Field label="Game">
                     <select value={draft.game.gameId} onChange={(e) => pickGame(e.target.value)}>
@@ -194,14 +257,12 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </select>
                   </Field>
                 </div>
-                {!rot.enabled && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={(betting) => set('game', { betting })} />}
-                {numberField('Seats', Math.min(draft.table.maxSeats, seatLimit), (v) => set('table', { maxSeats: v }), Math.max(2, seated), seatLimit, `Up to ${seatLimit} for ${games.length > 1 ? 'these games' : 'this game'}.`)}
-                {seatNote && !tooMany && <p className="hint">{seatNote}</p>}
-                {toggle('Rotate games (mixed games)', rot.enabled, (enabled) =>
-                  set('game', {
-                    rotation: { ...rot, enabled, steps: rot.steps.length ? rot.steps : [{ gameId: draft.game.gameId, betting: draft.game.betting, length: 1, unit: 'orbits' }] },
-                  }),
                 )}
+                {mode === 'one' && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={(betting) => set('game', { betting })} />}
+                {numberField('Seats', Math.min(draft.table.maxSeats, seatLimit), (v) => set('table', { maxSeats: v }), Math.max(2, seated), seatLimit, mode === 'choice' ? `Up to ${seatLimit}, for the biggest game on the menu.` : `Up to ${seatLimit} for ${games.length > 1 ? 'these games' : 'this game'}.`)}
+                {seatNote && !tooMany && <p className="hint">{seatNote}</p>}
+                {mode === 'choice' && <DealersChoiceFields choice={choice} seated={seated} onChange={setChoice} setMenu={setMenu} />}
+                {mode !== 'choice' && (
                 <div className="mixed-game-picks" role="group" aria-label="Standard mixed games">
                   <span className="muted">Or play a standard mix:</span>
                   {MIXED_GAMES.map((mix) => {
@@ -222,6 +283,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     );
                   })}
                 </div>
+                )}
                 {currentMix && (
                   <p className="muted">
                     {currentMix.name}: {currentMix.summary} One orbit each; change the lengths below. Only the stud games ante; the others play on the blinds, and
@@ -350,6 +412,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </div>
                   );
                 })}
+                {scheduleBetsNote(draft.game) && <p className="muted">{scheduleBetsNote(draft.game)}</p>}
                 <button
                   type="button"
                   disabled={!canAddLevel(sched.levels)}
@@ -491,7 +554,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
         <button type="button" onClick={onClose}>
           Cancel
         </button>
-        <button className="primary" disabled={busy || tooMany} onClick={save}>
+        <button className="primary" disabled={busy || tooMany || menuBad} onClick={save}>
           Save
         </button>
       </div>

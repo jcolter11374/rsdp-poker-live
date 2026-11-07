@@ -30,7 +30,7 @@ class Sim {
       hostId: 'host',
       settings: defaultSettings({ startingStack: 1000, lateRegistration: { enabled: false, throughLevel: null }, ...overrides }),
       now: this.now,
-      seed: 7,
+      seed: '07'.repeat(32),
     });
   }
   do(cmd: Command) {

@@ -194,6 +194,14 @@ when they deal at a home game.
   the public record, so you can see when one was taken. John can also open a shell on the
   server through Fly, the hosting company. That isn't recorded anywhere
   players can see, and from there everything in this list is possible.
+- **Pick tournament seats.** Each tournament's seats are drawn from a secret
+  seed the server makes for it with its cryptographically secure generator.
+  The seed stays on the server and is never published, so nobody can re-run
+  a seat draw the way you can check a hand. A changed server could seat
+  players wherever it liked and nothing on this page would show it. The seed
+  is also in the database, so John could read it before the draw and work out
+  where people will sit. The draw only decides seats; it never touches the
+  cards.
 - **Show your cards to a spectator without the warnings.** A host can let
   spectators see every hole card, and the site makes sure everyone is told
   (see the next section). Those warnings are code too: a changed server could
@@ -323,6 +331,9 @@ silent.
   rake.
 - **Host actions on players are logged too**: changing a stack, moving or
   removing a player, muting someone in chat.
+- **At a Dealer's choice table the host sets the menu, never the pick.** Only
+  the player holding the Pick chip can choose, and every pick (or missed pick)
+  is in the table log.
 
 **Spectators seeing every card is the one way a host can open hands up.** It
 is meant for coaching or streaming. While it's on, someone watching could pass
@@ -499,7 +510,8 @@ Limits, stated plainly:
 | Draw-game reshuffle | Used a non-cryptographic xorshift generator from a 31-bit seed, with a tiny modulo bias. Only about 2 billion possible reshuffles. | **Fixed**: now SHA-256 from the hand's 256-bit seed, unbiased. Hands in progress during the upgrade finish the old way. |
 | Run it twice, double board, bomb pots, rabbit hunt, stud | All deal the next cards of the one pre-shuffled deck. Rabbit cards are the real next cards, shown only after the hand to whoever asks. | OK |
 | Button draw, seat shuffle, bomb-pot timing | Use the CSPRNG. | OK |
-| Tournament seat draw | A fast non-cryptographic generator (mulberry32) from a secret 32-bit CSPRNG seed that stays on the server. Seats only, never cards. | Acceptable; could move to the seeded scheme later. |
+| Dealer's choice (added 2026-11-06, D33) | Who picks follows a fixed rule: a Pick chip that moves one seat to the left after each pick, starting with a player drawn with the CSPRNG at a new table. A missed pick follows a fixed rule too (the current game carries on, or the first game on the menu that fits). Practice bots pick at random from the games that fit, with the CSPRNG. The game never touches the deck: each hand's deck comes from its seeds alone, whatever game is dealt. | OK |
+| Tournament seat draw | A fast non-cryptographic generator (mulberry32) from a secret 32-bit CSPRNG seed that stays on the server. Seats only, never cards. | **Fixed**: each new tournament gets its own secret 256-bit seed from the server's CSPRNG. The seat draw is a Fisher-Yates shuffle driven by SHA-256 of that seed in counter mode, with rejection sampling so there's no rounding bias (`seatRng` in packages/tournament/src/seating.ts); the tournament saves its place in that stream, so any later draw carries on from it. A tournament made before the change whose seats weren't drawn yet gets a fresh seed when the server loads it. Seats that change after the draw (late registration, re-entry, balancing, breaking a table) follow fixed rules with nothing random. The seed is never published, so players can't re-run a seat draw the way they can check a hand. |
 | All-in equity | Computed in the browser from cards already visible; its seeded sampling only affects the displayed percentages. | OK |
 | Coach tips | Worked out on the server only for the one person dealt into a hand where everyone else is a practice bot, at a cash table where people have never played each other, never in tournaments, from a copy of the hand holding only what that person can see: no deck, no other hole cards, no muck, no seeds (`seenBy()` in apps/server/src/bots/strategy.ts). Sent only to them and never saved. Tests swap every card they can't see and check the tip doesn't change. | OK |
 | `Math.random` | Only in the sound effects. | OK |
@@ -513,7 +525,7 @@ Limits, stated plainly:
 
 [`npx tsx scripts/fairness/stats.ts 2000000`](../scripts/fairness/stats.ts) shuffles two million decks with the
 seeded scheme that deals every hand now, and two million with the direct
-CSPRNG shuffle (what dealt hands before this change, and still shuffles seats),
+CSPRNG shuffle (what dealt hands before this change, and still shuffles seats at cash tables),
 and compares them with the exact theory. A p-value is the chance of seeing a deviation that large from a
 perfect shuffle; values spread evenly between 0 and 1 are what a fair shuffle
 produces, and only values below 0.0001 would be a red flag.

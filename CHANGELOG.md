@@ -18,6 +18,37 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.2] - 2026-11-07
+
+_Dealer's choice_
+
+### New
+
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
+
+### Fixed and changed
+
+- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+
+## [2026.11.07] - 2026-11-07
+
+### Fixed and changed
+
+- Stud games with a big-blind ante (tournaments with stud levels, cash stud tables, and the stud games of HORSE and 8-Game): everyone now antes about an eighth of it (300 becomes 40 each, 0.50 becomes 0.06), instead of every player putting in the full amount. In tournaments the lobby clock and the structure table show the ante each level really deals, and the structure editor says how it works.
+- Mixed games: a bomb pot dealt during a stud game no longer cuts the rest of that stud game short. It takes the place of one hand of the orbit, as it does in hold'em.
+- Mixed games: making the table smaller in the middle of a game keeps that game's orbit going with the players who move to new seats, instead of counting by the old seat numbers, which could end the game early or make it run long.
+- Mixed games: if a hand can't be dealt just as the game changes, the next game is no longer skipped when play carries on.
+- Cash tables: a table no longer gets stuck when the blind rules would deal a hand to just one player (for example a new player in the small blind and a returning player on the button, with only three at the table). Everyone is dealt in free instead, as at the start of a game.
+- Cash games with "Raise the blinds on a schedule": the Limit bets and the stud bring-in now rise with the blinds, instead of staying at the starting amounts. A level with no big blind (a stud schedule that only raises the antes) keeps them as they are.
+- HORSE and 8-Game tables: before the first hand the top bar no longer shows an ante for a game that posts none (Limit Hold'em in HORSE, 2-7 Triple Draw in 8-Game).
+- Hand search: Limit and No-Limit Hold'em are now separate choices in the Game list, and so is any other game you've played with more than one kind of betting.
+- Hosts: a saved preset with more seats than one of its games deals (2-7 Triple Draw and Badugi deal at most 6) now starts a table with seats that fit, instead of a table that stops when it reaches that game.
+- Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
+- Tournament seats are now drawn with a stronger random generator, the same kind used to shuffle the cards, from a secret seed each tournament gets of its own.
+- Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.
+- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last public record entries and closing the database. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
+- Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.
+
 ## [2026.11.06.5] - 2026-11-06
 
 ### Fixed and changed
@@ -653,6 +684,8 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
+[2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4
 [2026.11.06.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.3

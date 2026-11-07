@@ -87,6 +87,30 @@ describe('backups', { timeout: 30_000 }, () => {
     }
   });
 
+  it('keeps every counter where it had got to through a restore and a backup of the restored copy (#376)', async () => {
+    await resetTestDb(db);
+    await fill(db);
+    await db.execute(sql`delete from suggestions where id = 2`);
+    const first = await backupOf(db);
+    const copy = await createTestDb();
+    const again = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(first.text));
+      // Nothing has been added since the restore, so every counter is where the restore left it.
+      const second = await backupOf(copy);
+      const ends = [first, second].map(({ text }) => JSON.parse(text.trimEnd().split('\n').at(-1)!).sequences);
+      expect(ends[1]).toEqual(ends[0]);
+      expect(ends[0]['suggestions.id']).toBe(2);
+
+      await restoreBackup(again, linesOf(second.text));
+      await again.execute(sql`insert into suggestions (name, title) values ('Al', 'Badugi')`);
+      expect((await queryRows<{ id: number }>(again, sql`select max(id)::int as id from suggestions`))[0].id).toBe(3);
+    } finally {
+      await closeDb(copy);
+      await closeDb(again);
+    }
+  });
+
   it('refuses to restore over data', async () => {
     await resetTestDb(db);
     await fill(db);

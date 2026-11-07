@@ -76,11 +76,10 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
   const hand = view.hand!;
   const steps = runoutSteps(hand.events);
   const owed = steps.slice(shown).flat();
-  const runsStarted = new Set(steps.slice(0, shown).flat().flatMap((e) => (e.t === 'board' ? [e.run] : [])));
   const boards = hand.boards.map((run, r) =>
     run.map((cards, b) => {
-      // A second run stays off the felt until its first card, so it reads as a new board.
-      if (r > 0 && !runsStarted.has(r)) return [];
+      // Every card a run still owes waits for its own step. A second run starts with the cards both runs share,
+      // on the felt as soon as the board splits, so its first step deals only its own next card (#372).
       const n = owed.reduce((n, e) => n + (e.t === 'board' && e.run === r && e.board === b ? e.cards.length : 0), 0);
       return cards.slice(0, cards.length - n);
     }),
@@ -253,4 +252,19 @@ export function departures(before: TableView | null, view: TableView | null, kep
     out = { handNumber: hand.handNumber, seats: new Map(out?.seats ?? []).set(d.seat, gone), fading: out?.fading ?? false };
   }
   return out;
+}
+
+/**
+ * How many of a run's first cards on a board it shares with the first run: the cards dealt before the hand was run
+ * twice. The second run shows them from the moment the board splits, carried down from the first run's board rather
+ * than dealt again; only its own cards are dealt (#372). Cards are unique in the deck, so the shared cards are
+ * exactly the two boards' common start.
+ */
+export function sharedWithFirstRun(runs: readonly (readonly (readonly string[])[])[], run: number, board: number): number {
+  if (run === 0) return 0;
+  const first = runs[0]?.[board] ?? [];
+  const cards = runs[run]?.[board] ?? [];
+  let n = 0;
+  while (n < cards.length && n < first.length && cards[n] === first[n]) n++;
+  return n;
 }

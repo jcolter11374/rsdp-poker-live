@@ -387,6 +387,25 @@ describe('host settings', () => {
     expect(() => rt.updateSettings('host', { stakes: { smallBlind: 5, bigBlind: 2 } })).toThrow(/stakes.smallBlind/);
   });
 
+  it('checks settings on their own, as a new table needs: known games, no game with fewer seats than the table, a bomb pot game with a flop', () => {
+    const s = defaultSettings('cash');
+    const step = (gameId: string, betting: 'no-limit' | 'fixed-limit') => ({ gameId, betting, length: 1, unit: 'orbits' as const });
+    const mixed = (maxSeats: number, enabled = true): TableSettings => ({
+      ...s,
+      table: { ...s.table, maxSeats },
+      game: { ...s.game, rotation: { enabled, steps: [step('nlhe', 'no-limit'), step('badugi', 'fixed-limit')] } },
+    });
+    expect(() => TableRuntime.checkGameSettings(mixed(10))).toThrow(/^Badugi seats at most 6$/);
+    expect(() => TableRuntime.checkGameSettings(mixed(6))).not.toThrow();
+    // A rotation that is off deals only the table's game.
+    expect(() => TableRuntime.checkGameSettings(mixed(10, false))).not.toThrow();
+    expect(() => TableRuntime.checkGameSettings({ ...s, game: { ...s.game, gameId: 'nope' } })).toThrow(/^unknown game nope$/);
+    const bomb = (gameId: string): TableSettings => ({ ...s, modifiers: { ...s.modifiers, 'bomb-pot': { enabled: true, chancePercent: 10, everyHands: 0, bigBlinds: 5, gameId, betting: 'pot-limit' } } });
+    expect(() => TableRuntime.checkGameSettings(bomb('plo4'))).not.toThrow();
+    expect(() => TableRuntime.checkGameSettings(bomb('stud'))).toThrow(/^bomb pots need a game with a flop, not /);
+    expect(() => TableRuntime.checkGameSettings(bomb('nope'))).toThrow(/^unknown bomb pot game nope$/);
+  });
+
   it('a blind schedule moves up by hands', () => {
     const { rt, clock } = table((s) => {
       s.blindSchedule = {
@@ -407,6 +426,144 @@ describe('host settings', () => {
       clock.advance(10_000);
     }
     expect(bbs).toEqual([2, 2, 4, 4]);
+  });
+
+  /** Levels of one hand each, the last one lasting. */
+  const oneHandLevels = (levels: [sb: number, bb: number, ante: number][]) =>
+    levels.map(([smallBlind, bigBlind, ante], i) => ({ smallBlind, bigBlind, ante, minutes: 10, hands: i === levels.length - 1 ? 100 : 1 }));
+  const bets = (rt: TableRuntime) => {
+    const { smallBlind, bigBlind, smallBet, bigBet, bringIn, ante } = hand(rt).input.stakes;
+    return { smallBlind, bigBlind, smallBet, bigBet, bringIn, ante };
+  };
+
+  it('a blind schedule raises the Limit bets with the blinds, keeping their size to the big blind', () => {
+    const { rt, clock } = table((s) => {
+      s.game = { ...s.game, gameId: 'nlhe', betting: 'fixed-limit' };
+      s.stakes = { ...s.stakes, smallBlind: 25, bigBlind: 50, smallBet: 50, bigBet: 100, centsMode: true };
+      s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[25, 50, 0], [100, 200, 0], [400, 800, 0]]) };
+    });
+    seatPlayers(rt, 3, 100_000);
+    rt.start('host');
+    const seen = [];
+    for (let i = 0; i < 3; i++) {
+      seen.push(bets(rt));
+      checkDown(rt);
+      clock.advance(10_000);
+    }
+    expect(seen).toEqual([
+      // Level 1 is the Stakes tab, so nothing changes there.
+      { smallBlind: 25, bigBlind: 50, smallBet: 50, bigBet: 100, bringIn: 0, ante: 0 },
+      { smallBlind: 100, bigBlind: 200, smallBet: 200, bigBet: 400, bringIn: 0, ante: 0 },
+      { smallBlind: 400, bigBlind: 800, smallBet: 800, bigBet: 1600, bringIn: 0, ante: 0 },
+    ]);
+  });
+
+  it('HORSE on a blind schedule: the Limit bets and the bring-in rise, and only the stud games ante', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, smallBlind: 25, bigBlind: 50, ante: 10, anteType: 'per-player', bringIn: 15, smallBet: 50, bigBet: 100, centsMode: true };
+      s.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'hands' as const })) };
+      s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[25, 50, 10], [100, 200, 40]]) };
+    });
+    seatPlayers(rt, 3, 100_000);
+    rt.start('host');
+    const seen: Record<string, ReturnType<typeof bets>> = {};
+    for (let i = 0; i < 6; i++) {
+      // The first hand is level 1; the next five are level 2, one of each game.
+      if (i > 0) seen[hand(rt).input.game.id] = bets(rt);
+      checkDown(rt);
+      clock.advance(10_000);
+    }
+    // The bring-in was 15 at 25/50; the blind games carry it unused.
+    const blindGame = { smallBlind: 100, bigBlind: 200, smallBet: 200, bigBet: 400, bringIn: 60, ante: 0 };
+    const studGame = { ...blindGame, ante: 40 };
+    expect(seen).toEqual({ nlhe: blindGame, plo8: blindGame, razz: studGame, stud: studGame, stud8: studGame });
+  });
+
+  it('on a blind schedule a table with no big blind bets the level\'s big blind and twice it, as tournaments do', () => {
+    const { rt } = table((s) => {
+      s.table.maxSeats = 8;
+      s.game = { ...s.game, gameId: 'stud', betting: 'fixed-limit' };
+      s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: 0, ante: 5, anteType: 'per-player', bringIn: 10, smallBet: 20, bigBet: 40 };
+      s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[0, 60, 5]]) };
+    });
+    seatPlayers(rt, 3, 1000);
+    rt.start('host');
+    // The bring-in is a third of the small bet, as in a tournament, not the table's 10.
+    expect(bets(rt)).toEqual({ smallBlind: 0, bigBlind: 60, smallBet: 60, bigBet: 120, bringIn: 20, ante: 5 });
+  });
+
+  it('a stud schedule with no big blinds (only the antes rise) keeps the Stakes tab bets and bring-in', () => {
+    const run = (tableBigBlind: number) => {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 8;
+        s.game = { ...s.game, gameId: 'stud', betting: 'fixed-limit' };
+        s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: tableBigBlind, ante: 5, anteType: 'per-player', bringIn: 10, smallBet: 20, bigBet: 40 };
+        // What turning the schedule on and pressing Add level builds from that Stakes tab when its big blind is 0.
+        s.blindSchedule = { enabled: true, countdown: 'hands', levels: oneHandLevels([[0, 0, 5], [0, 0, 10]]) };
+      });
+      seatPlayers(rt, 3, 1000);
+      rt.start('host');
+      const seen = [];
+      for (let i = 0; i < 2; i++) {
+        seen.push(bets(rt));
+        checkDown(rt);
+        clock.advance(10_000);
+      }
+      return seen;
+    };
+    for (const bb of [0, 20]) {
+      expect(run(bb)).toEqual([
+        { smallBlind: 0, bigBlind: 0, smallBet: 20, bigBet: 40, bringIn: 10, ante: 5 },
+        { smallBlind: 0, bigBlind: 0, smallBet: 20, bigBet: 40, bringIn: 10, ante: 10 },
+      ]);
+    }
+  });
+
+  it('a Limit table without a blind schedule bets the Stakes tab amounts', () => {
+    const { rt } = table((s) => {
+      s.game = { ...s.game, gameId: 'nlhe', betting: 'fixed-limit' };
+      s.stakes = { ...s.stakes, smallBlind: 25, bigBlind: 50, smallBet: 75, bigBet: 150, centsMode: true };
+      // A schedule that is switched off changes nothing.
+      s.blindSchedule = { enabled: false, countdown: 'hands', levels: oneHandLevels([[100, 200, 0]]) };
+    });
+    seatPlayers(rt, 3, 100_000);
+    rt.start('host');
+    expect(bets(rt)).toEqual({ smallBlind: 25, bigBlind: 50, smallBet: 75, bigBet: 150, bringIn: 0, ante: 0 });
+  });
+
+  it('a big-blind ante at a stud table is a small ante for everyone, and the blind games of a mix skip it', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, smallBlind: 25, bigBlind: 50, ante: 50, anteType: 'big-blind', bringIn: 15, smallBet: 50, bigBet: 100, centsMode: true };
+      s.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'hands' as const })) };
+    });
+    seatPlayers(rt, 3, 100_000);
+    rt.start('host');
+    const antes: Record<string, [string, number][]> = {};
+    for (let i = 0; i < 5; i++) {
+      const h = hand(rt);
+      antes[h.input.game.id] = h.events.flatMap((e) => (e.t === 'post' && e.kind.endsWith('ante') ? [[e.kind, e.amount] as [string, number]] : []));
+      checkDown(rt);
+      clock.advance(10_000);
+    }
+    // A 50-cent big-blind ante: 6 cents each in stud (about an eighth), nothing in hold'em and Omaha (D29).
+    const each: [string, number][] = [['ante', 6], ['ante', 6], ['ante', 6]];
+    expect(antes).toEqual({ nlhe: [], plo8: [], razz: each, stud: each, stud8: each });
+  });
+
+  it("before a HORSE table's first hand, the next hand shown is the one dealt: no ante in Hold'em", () => {
+    const { rt } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, smallBlind: 1, bigBlind: 2, ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 };
+      s.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) };
+    });
+    seatPlayers(rt, 3, 1000);
+    const upcoming = tableView(rt, 'host', 0).upcoming!;
+    expect(upcoming).toMatchObject({ gameId: 'nlhe', betting: 'fixed-limit', stakes: { ante: 0, smallBet: 2, bigBet: 4 } });
+    rt.start('host');
+    const dealt = hand(rt).input;
+    expect({ gameId: upcoming.gameId, betting: upcoming.betting, stakes: upcoming.stakes }).toEqual({ gameId: dealt.game.id, betting: dealt.betting, stakes: dealt.stakes });
   });
 
   it('game rotation switches games every N hands', () => {
@@ -527,6 +684,284 @@ describe('host settings', () => {
       clock.advance(10_000);
     }
     expect(antes).toEqual([1, 1]);
+  });
+
+  /** Plays `count` hands, noting each one's rotation step, game, button and whether it was a bomb pot. */
+  function playRotation(rt: TableRuntime, clock: FakeClock, count: number, before: (handNo: number) => void = () => {}) {
+    const dealt: { step: number; game: string; button: number; bomb: boolean }[] = [];
+    for (let i = 0; i < count; i++) {
+      const h = hand(rt);
+      dealt.push({ step: rt.state.rotation.step, game: h.input.game.id, button: h.input.button, bomb: h.input.options.bombPot });
+      checkDown(rt);
+      before(i + 2);
+      clock.advance(10_000);
+    }
+    return dealt;
+  }
+  /** How many hands in a row each rotation step lasted, leaving out the unfinished last one. */
+  const stepLengths = (dealt: { step: number }[]) => {
+    const runs: number[] = [];
+    dealt.forEach((d, i) => (i > 0 && d.step === dealt[i - 1].step ? runs[runs.length - 1]++ : runs.push(1)));
+    return runs.slice(0, -1);
+  };
+
+  it('a bomb pot during a stud orbit takes one hand of the orbit, so the stud game still gets its orbits', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 };
+      s.modifiers['bomb-pot'] = { ...(s.modifiers['bomb-pot'] as object), gameId: 'nlhe', betting: 'no-limit' };
+      s.game.rotation = {
+        enabled: true,
+        steps: [
+          { gameId: 'stud', betting: 'fixed-limit', length: 2, unit: 'orbits' },
+          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
+        ],
+      };
+    });
+    seatPlayers(rt, 4, 1000);
+    rt.start('host');
+    // The bomb pot lands on the first hand of the second stud orbit.
+    const dealt = playRotation(rt, clock, 14, (next) => next === 5 && rt.requestBombPot('host', true));
+    expect(dealt.map((d) => (d.bomb ? 'bomb' : d.game))).toEqual([...Array(4).fill('stud'), 'bomb', ...Array(3).fill('stud'), ...Array(4).fill('nlhe'), 'stud', 'stud']);
+    // The bomb pot is dealt from the button the stud orbit counted, so that seat isn't skipped or doubled.
+    expect(dealt[4].button).toBe(dealt[0].button);
+    expect(stepLengths(dealt)).toEqual([8, 4]);
+    expect(total(rt)).toBe(4000);
+  });
+
+  it('HORSE by orbits with regular bomb pots gives every game its full orbit, and never a stud game without stud hands', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.stakes = { ...s.stakes, ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 };
+      s.modifiers['bomb-pot'] = { ...(s.modifiers['bomb-pot'] as object), enabled: true, chancePercent: 0, everyHands: 4, gameId: 'nlhe', betting: 'no-limit' };
+      s.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) };
+    });
+    seatPlayers(rt, 3, 5000);
+    rt.start('host');
+    const dealt = playRotation(rt, clock, 46);
+    expect(dealt.some((d) => d.bomb && ['razz', 'stud', 'stud8'].includes(MIXED_GAMES[0].steps[d.step].gameId))).toBe(true);
+    expect(stepLengths(dealt)).toEqual(Array(15).fill(3));
+    for (let step = 0; step < 5; step++) {
+      const game = MIXED_GAMES[0].steps[step].gameId;
+      const runs = dealt.filter((d) => d.step === step);
+      expect(runs.filter((d) => !d.bomb).every((d) => d.game === game)).toBe(true);
+    }
+    expect(total(rt)).toBe(15000);
+  });
+
+  it("making the table smaller mid-game keeps every game's orbit the right length", () => {
+    // Every button draw and every hand of the first orbit to shrink after.
+    for (let seed = 1; seed <= 8; seed++) {
+      for (let shrinkAfter = 1; shrinkAfter <= 5; shrinkAfter++) {
+        const clock = new FakeClock();
+        const settings = defaultSettings('cash');
+        settings.table.maxSeats = 9;
+        settings.seating.requireApproval = false;
+        settings.game.rotation = {
+          enabled: true,
+          steps: [
+            { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
+            { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'orbits' },
+          ],
+        };
+        const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+        ['host', 'a', 'b', 'c', 'd'].forEach((id, i) => {
+          rt.connect(id);
+          rt.requestSeat(id, { seat: [0, 1, 6, 7, 8][i], name: id.toUpperCase(), stack: 1000 });
+        });
+        rt.start('host');
+        const dealt = playRotation(rt, clock, 22, (next) => next === shrinkAfter + 1 && rt.updateSettings('host', { table: { maxSeats: 5 } }));
+        expect(rt.state.seats).toHaveLength(5);
+        expect({ seed, shrinkAfter, steps: stepLengths(dealt) }).toEqual({ seed, shrinkAfter, steps: [5, 5, 5, 5] });
+        expect(dealt.every((d) => d.game === (d.step === 0 ? 'nlhe' : 'plo4'))).toBe(true);
+      }
+    }
+  });
+
+  describe('a smaller table when the seat an orbit began at has emptied', () => {
+    const steps = (orbits: number) => [
+      { gameId: 'nlhe', betting: 'no-limit' as const, length: orbits, unit: 'orbits' as const },
+      { gameId: 'plo4', betting: 'pot-limit' as const, length: orbits, unit: 'orbits' as const },
+    ];
+    /**
+     * For every seed whose first button is `firstButton`: seats players, plays `count` hands with `between` run after
+     * each (given the next hand's number and the table), and returns each tried seed's step lengths.
+     */
+    function run(seats: number[], firstButton: (b: number) => boolean, orbits: number, count: number, between: (next: number, rt: TableRuntime, firstPlayer: string) => void) {
+      const out: { seed: number; steps: number[] }[] = [];
+      for (let seed = 1; seed <= 40 && out.length < 4; seed++) {
+        const clock = new FakeClock();
+        const settings = defaultSettings('cash');
+        settings.table.maxSeats = 9;
+        settings.seating.requireApproval = false;
+        settings.game.rotation = { enabled: true, steps: steps(orbits) };
+        const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+        seats.forEach((seat, i) => {
+          const id = i === 0 ? 'host' : `p${seat}`;
+          rt.connect(id);
+          rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 1000 });
+        });
+        rt.start('host');
+        const b = hand(rt).input.button;
+        if (!firstButton(b)) continue;
+        const firstPlayer = rt.state.seats[b]!.playerId;
+        const dealt = playRotation(rt, clock, count, (next) => between(next, rt, firstPlayer));
+        out.push({ seed, steps: stepLengths(dealt) });
+      }
+      expect(out.length).toBeGreaterThanOrEqual(2);
+      return out;
+    }
+    const smaller = (rt: TableRuntime) => rt.updateSettings('host', { table: { maxSeats: 5 } });
+
+    it('a dropped empty seat: the orbit carries on from the next player round from it', () => {
+      // Players at 0, 1, 2, 6, 7, 8; the first button's player (6, 7 or 8) leaves after hand 1, and the table
+      // becomes 5 seats after hand 2. Hold'em gets the 6 hands it gets with no smaller table; then 5 a game.
+      const out = run([0, 1, 2, 6, 7, 8], (b) => b >= 5, 1, 18, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        if (next === 3) smaller(rt);
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it('a kept empty seat a mover sits down in: the orbit still carries on from the next player', () => {
+      // Players at 0, 1, 2, 4, 6, 7, first button seat 4. Its player leaves; then 6 and 7 move into 3 and 4.
+      // Without following the next player, the newcomer to seat 4 would end Hold'em after 2 hands.
+      const out = run([0, 1, 2, 4, 6, 7], (b) => b === 4, 1, 18, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        if (next === 3) smaller(rt);
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it('the button on the dropped empty seat: the blinds are drawn afresh and the orbit starts again, never cut short', () => {
+      // The first button's player leaves and the table becomes 5 seats before hand 2, so the button's seat goes.
+      const out = run([0, 1, 2, 6, 7, 8], (b) => b >= 5, 1, 18, (next, rt, first) => {
+        if (next === 2) {
+          rt.stand(first);
+          smaller(rt);
+        }
+      });
+      for (const r of out) expect(r).toEqual({ seed: r.seed, steps: [6, 5, 5] });
+    });
+
+    it("a dead button between the empty seat and the next player has already passed the orbit's start: counted once", () => {
+      // Two orbits a game. Players at 0, 1, 2, 3, 4, 7, first button seat 7, whose player leaves after hand 1.
+      // Seat 0's player leaves after the hand with the button on seat 4, so the next button is dead on seat 0,
+      // which passes seat 7 and counts the first orbit. Then the table becomes 5 seats.
+      let shrunk = 0;
+      const out = run([0, 1, 2, 3, 4, 7], (b) => b === 7, 2, 24, (next, rt, first) => {
+        if (next === 2) rt.stand(first);
+        const h = rt.state.hand!.input;
+        if (h.button === 4 && rt.seatOf('host')) rt.stand('host');
+        if (h.buttonDead && h.button === 0 && rt.state.seats.length === 9) {
+          smaller(rt);
+          shrunk++;
+        }
+      });
+      expect(shrunk).toBe(out.length);
+      // Hold'em: hands with buttons 7, 0, 1, 2, 3, 4, 0 (dead), then 1, 2, 3, 4: eleven, as with no smaller table.
+      for (const r of out) expect(r.steps[0]).toBe(11);
+    });
+  });
+
+  it('making the table smaller with everyone in the seats that go keeps the orbit the right length', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 9;
+      s.seating.requireApproval = false;
+      s.game.rotation = {
+        enabled: true,
+        steps: [
+          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
+          { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'orbits' },
+        ],
+      };
+    });
+    ['host', 'a', 'b', 'c'].forEach((id, i) => rt.requestSeat(id, { seat: 5 + i, name: id.toUpperCase(), stack: 1000 }));
+    rt.start('host');
+    const dealt = playRotation(rt, clock, 17, (next) => next === 3 && rt.updateSettings('host', { table: { maxSeats: 4 } }));
+    expect(rt.state.seats).toHaveLength(4);
+    expect(stepLengths(dealt)).toEqual([4, 4, 4, 4]);
+  });
+
+  it("a game change that can't be dealt leaves the rotation where it was, so the next game isn't skipped", () => {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    settings.table.maxSeats = 10;
+    settings.seating.requireApproval = false;
+    settings.timing.autoStartNextHand = false;
+    settings.game.rotation = {
+      enabled: true,
+      steps: [
+        { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'hands' },
+        { gameId: 'badugi', betting: 'fixed-limit', length: 1, unit: 'hands' },
+      ],
+    };
+    // Made directly, as an old preset could (new tables are checked when they're made).
+    const rt = TableRuntime.create({ id: 't1', hostId: 'p0', settings }, { clock, rng: seeded() });
+    const ids = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+    ids.forEach((id, seat) => {
+      rt.connect(id);
+      rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 1000 });
+    });
+    rt.start('p0');
+    expect(hand(rt).input.game.id).toBe('nlhe');
+    checkDown(rt);
+    rt.dealNext('p0');
+    // Badugi deals at most 6: the table stops, and the rotation still waits to switch.
+    expect(rt.state.handNumber).toBe(1);
+    expect(rt.state.started).toBe(false);
+    expect(rt.state.rotation).toMatchObject({ step: 0, hands: 1 });
+    const log = rt.state.log.map((l) => l.text);
+    expect(log.some((t) => /Couldn't deal: Badugi deals at most 6/.test(t))).toBe(true);
+    expect(log.some((t) => /Switching to Badugi/.test(t))).toBe(false);
+    // Once a player leaves, the next hand is Badugi, not skipped.
+    rt.stand('p6');
+    rt.start('p0');
+    expect(hand(rt).input.game.id).toBe('badugi');
+    expect(rt.state.log.some((l) => /Switching to Badugi/.test(l.text))).toBe(true);
+  });
+
+  it('the next-hand preview names the game the rotation moves on to', () => {
+    const { rt, clock } = table((s) => {
+      s.timing.autoStartNextHand = false;
+      s.game.rotation = {
+        enabled: true,
+        steps: [
+          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'orbits' },
+          { gameId: 'plo4', betting: 'pot-limit', length: 2, unit: 'hands' },
+        ],
+      };
+    });
+    seatPlayers(rt, 3);
+    expect(tableView(rt, 'a', clock.now()).upcoming?.gameId).toBe('nlhe');
+    rt.start('host');
+    for (let i = 0; i < 6; i++) {
+      checkDown(rt);
+      const preview = tableView(rt, 'a', clock.now()).upcoming;
+      rt.dealNext('host');
+      expect({ hand: i + 2, game: preview?.gameId }).toEqual({ hand: i + 2, game: hand(rt).input.game.id });
+    }
+  });
+});
+
+describe('a hand the usual rules would deal to only one player', () => {
+  it('deals everyone in free instead of waiting for the button to pass', () => {
+    const { rt } = table((s) => (s.timing.autoStartNextHand = false));
+    seatPlayers(rt, 3);
+    rt.start('host');
+    checkDown(rt);
+    // Next hand the button is seat 0, the small blind seat 1 and the big blind seat 2. The button owes a missed big
+    // blind and the small blind is new: both would wait for the button to pass, which it can't with one player.
+    rt.state.positions = { button: 2, smallBlind: 0, bigBlind: 1 };
+    Object.assign(rt.state.seats[0]!, { missedBigBlind: true });
+    Object.assign(rt.state.seats[1]!, { isNew: true });
+    rt.dealNext('host');
+    expect(rt.state.handNumber).toBe(2);
+    const h = hand(rt);
+    expect(h.input.seats.map((x) => x.seat)).toEqual([0, 1, 2]);
+    expect(h.input.button).toBe(0);
+    expect(h.input.posts.map((p) => p.kind).sort()).toEqual(['big-blind', 'small-blind']);
+    expect(rt.state.seats.slice(0, 3).map((x) => ({ isNew: x!.isNew, missed: x!.missedBigBlind }))).toEqual(Array(3).fill({ isNew: false, missed: false }));
   });
 });
 

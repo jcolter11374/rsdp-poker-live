@@ -92,6 +92,18 @@ describe('tournament lobby chat and log', () => {
     expect(text(await got)).toEqual(['Ana: good luck all', 'registered']);
   });
 
+  it('logs which settings the host changed, and not a save that changed nothing', async () => {
+    const client = await start();
+    const host = client('lobby-host3-secret-00000');
+    const { id } = await host.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Switches' }) });
+    await host.call('tournament:subscribe', { id });
+    const late = server!.tournaments.view(id)!.state.settings.lateRegistration;
+    await host.call('tournament:command', { id, command: { type: 'updateSettings', settings: { lateRegistration: late } } });
+    await host.call('tournament:command', { id, command: { type: 'updateSettings', settings: { lateRegistration: { ...late, enabled: !late.enabled } } } });
+    const items = await host.until((x) => x.length > 0);
+    expect(items.map((x) => (x.kind === 'event' ? x.event : x))).toEqual([{ type: 'settingsUpdated', changed: ['lateRegistration'] }]);
+  });
+
   it('needs a name to chat', async () => {
     const client = await start();
     const host = client('lobby-host2-secret-00000');

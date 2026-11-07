@@ -18,7 +18,7 @@ Everything underneath the poker is other people's work, used under their open-so
 | [Socket.IO](https://socket.io/) | The live line between your browser and the table, so a bet shows up for everyone at once. | MIT |
 | [React](https://react.dev/) | Draws the pages and the table in your browser and keeps them up to date. | MIT |
 | [Vite](https://vite.dev/) | Bundles the browser code into the small files your browser downloads. | MIT |
-| [PGlite](https://pglite.dev/) | The database that stores tables, hands and accounts. It is [PostgreSQL](https://www.postgresql.org/) packed to run inside the server. | Apache 2.0 (PostgreSQL License for PostgreSQL itself) |
+| [PGlite](https://pglite.dev/) | The database that stores tables, hands and accounts. It is [PostgreSQL](https://www.postgresql.org/) packed to run inside the server. Two versions ship for now, while the site's data moves from the older one to the newer one. | Apache 2.0 (PostgreSQL License for PostgreSQL itself) |
 | [node-postgres](https://node-postgres.com/) | Talks to a regular PostgreSQL server, for setups that use one instead of PGlite. | MIT |
 | [Drizzle ORM](https://orm.drizzle.team/) | Helps the server read and write the database. | Apache 2.0 |
 | [Zod](https://zod.dev/) | Checks that table settings and other things sent to the server are well formed before it acts on them. | MIT |
@@ -29,11 +29,11 @@ Everything underneath the poker is other people's work, used under their open-so
 
 The two fonts come through [Fontsource](https://fontsource.org/), which packages free fonts for websites.
 
-Each of these uses smaller packages of its own, and those use others: about a hundred and ten packages in all. The full list, with each one's version and license, is at the bottom of the [credits page](https://rsdp-poker-live.fly.dev/credits) on the site.
+Each of these uses smaller packages of its own, and those use others: more than a hundred packages in all. The full list, with each one's version and license, is at the bottom of the [credits page](https://rsdp-poker-live.fly.dev/credits) on the site.
 
 ## Tools that build and test it
 
-These don't run with the game (Vite adds one tiny helper to what your browser downloads, so it's in the list below too), but the site couldn't be made without them: [Vitest](https://vitest.dev/) runs more than a thousand automatic tests, [Playwright](https://playwright.dev/) drives real browsers through whole games, [Rollup](https://rollupjs.org/) and esbuild do the bundling inside Vite, and [pokersolver](https://github.com/goldfire/pokersolver) is a second, independent hand ranker the tests check our own against. [GitHub](https://github.com/) holds the code and runs the checks, and [Fly.io](https://fly.io/) hosts the server, on [Debian](https://www.debian.org/) Linux.
+These don't run with the game, but the site couldn't be made without them: [Vitest](https://vitest.dev/) runs more than a thousand automatic tests, [Playwright](https://playwright.dev/) drives real browsers through whole games, [Rolldown](https://rolldown.rs/) and [Oxc](https://oxc.rs/) do the bundling inside Vite, and [pokersolver](https://github.com/goldfire/pokersolver) is a second, independent hand ranker the tests check our own against. [GitHub](https://github.com/) holds the code and runs the checks, and [Fly.io](https://fly.io/) hosts the server, on [Debian](https://www.debian.org/) Linux. Vite and Rolldown do add a few tiny helpers to what your browser downloads, some of them copied from [Babel](https://babeljs.io/), so those three are in the list below too. The Babel version listed there is the one we install for its license; the copy Oxc uses is from a slightly older Babel.
 
 ## The licenses
 

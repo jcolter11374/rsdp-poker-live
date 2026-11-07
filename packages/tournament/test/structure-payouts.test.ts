@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { studAnteForBigBlindAnte } from '@rsdp/engine/variants';
 import {
   apply,
   chipChop,
@@ -58,6 +59,14 @@ describe('structures', () => {
     const rows = presetStructure('turbo', { startingStack: 5000, anteType: 'big-blind' });
     const l = rows.filter((r): r is LevelRow => r.kind === 'level' && r.anteType !== 'none');
     expect(l.every((x) => x.ante === x.bb && x.anteType === 'big-blind')).toBe(true);
+  });
+
+  it('in stud a big-blind ante becomes the same ante the per-player presets give', () => {
+    for (const startingStack of [1000, 5000, 63_000, 1_000_000]) {
+      const each = presetStructure('turbo', { startingStack, anteType: 'per-player' }).filter((r): r is LevelRow => r.kind === 'level' && r.anteType !== 'none');
+      const bb = presetStructure('turbo', { startingStack, anteType: 'big-blind' }).filter((r): r is LevelRow => r.kind === 'level' && r.anteType !== 'none');
+      expect(bb.map((x) => studAnteForBigBlindAnte(x.ante))).toEqual(each.map((x) => x.ante));
+    }
   });
 
   it('marks rebuy levels and the add-on break', () => {
@@ -256,7 +265,7 @@ describe('payouts with re-entries', () => {
       // What the create form sends: the preset trimmed to this event's max entrants.
       payouts: { structure: payoutPreset('rsdp', maxEntrants), money: { buyIn: 2000 } },
     });
-    let s = createTournament({ id: 'T', hostId: 'host', settings, now: T0, seed: 1 });
+    let s = createTournament({ id: 'T', hostId: 'host', settings, now: T0, seed: '01'.repeat(32) });
     const run = (c: Command) => (s = apply(s, c, T0).state);
     for (let i = 0; i < players; i++) run({ type: 'register', playerId: `p${i}`, displayName: `P${i}` });
     run({ type: 'startNow', by: 'host' });

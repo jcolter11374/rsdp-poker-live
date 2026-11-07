@@ -1,6 +1,6 @@
 import type { TableSettings } from '@rsdp/engine/settings';
 import { bombPotSchema, bounty72Schema, doubleBoardSchema, nitSchema, rakeSchema } from '@rsdp/engine/modifiers';
-import { getVariant } from '@rsdp/engine/variants';
+import { getVariant, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
 import { RSDP_TABLE_RULES } from '@rsdp/tournament';
 import type { CardList } from './guides';
 
@@ -123,7 +123,7 @@ export const EXTRAS: ExtraGuide[] = [
       "8-Game plays 2-7 Triple Draw, Limit Hold'em, Omaha Hi-Lo, Razz, Seven Card Stud, Stud Hi-Lo, No-Limit Hold'em and Pot-Limit Omaha.",
       'Each game lasts one orbit to start with: once the button has gone all the way round, the next game starts. The table log says when the game changes, and the table shows the game being played.',
       "The blind games (hold'em, Omaha and Triple Draw) use the table's blinds. The stud games have no blinds: everyone antes, and the lowest up card (the highest in Razz) brings in.",
-      'Only the stud games ante. The ante you set is the stud ante; the blind games are played without it.',
+      `Only the stud games ante. The ante you set is the stud ante; the blind games are played without it. Stud has no big blind, so a big-blind ante is paid there by everyone, at about an eighth of it each (300 becomes ${studAnteForBigBlindAnte(300)}).`,
       'In the Limit games every bet and raise is a fixed size: the small bet on the early rounds and the big bet, twice as much, on the later ones.',
       'Seats are capped by the smallest game: 8 for HORSE (stud deals up to seven cards each) and 6 for 8-Game (Triple Draw needs cards to draw from).',
     ],
@@ -140,11 +140,48 @@ export const EXTRAS: ExtraGuide[] = [
       'Start a cash game: pick HORSE or 8-Game under Mixed games in the Game list.',
       "Host a tournament: tap HORSE or 8-Game next to Mixed under Game. The game changes every level; each level's blinds, and its ante for the stud games, come from the structure.",
       'At a table: Table settings > Game, then tap HORSE or 8-Game. You can then change how long each game lasts, drop games or add others.',
-      'Table settings > Stakes sets the blinds, the Limit small and big bets, the stud ante and the bring-in.',
+      'Table settings > Stakes sets the blinds, the Limit small and big bets, the stud ante and the bring-in. With "Raise the blinds on a schedule", the Limit bets and the bring-in rise with the blinds, keeping their size to the big blind.',
     ],
     elsewhere: [
       'Card rooms often switch games every orbit or every 8 hands online; change the lengths to match the game you know.',
       'Some games play the No-Limit and Pot-Limit rounds of 8-Game at different blinds. Here every game shares the same blinds.',
+    ],
+  },
+  {
+    id: 'dealers-choice',
+    name: "Dealer's choice",
+    cashOnly: true,
+    idea: 'Players take turns choosing the game. Whoever has the Pick chip chooses the next game from a menu the host sets up, and the table plays it for one orbit. Then the chip moves one seat to the left.',
+    steps: [
+      'The Pick chip is separate from the dealer button. It shows as a gold PICK tag on the nameplate of whoever chooses next.',
+      'When the last hand of a pick is dealt, the next chooser can pick straight away: tap Pick next game at the top. The table only waits if they haven\'t picked when that hand ends.',
+      'Then the chooser gets a Pick the next game panel with every game on the menu, each with its How to play guide, and a countdown (20 seconds unless the host changed it). Everyone else sees who is picking.',
+      'A pick lasts one orbit: as many hands as players were dealt into its first hand. If players leave, it ends sooner. The host can set a number of hands instead.',
+      'If the chooser runs out of time, the game being played carries on for another orbit. At a new table, the first game on the menu that fits is dealt.',
+      'A game that seats fewer players than are at the table is greyed out. While a smaller game is being played, the empty seats are closed until it ends, so nobody can sit down, ask for a seat or add a bot there. Newcomers can join the waitlist instead.',
+      'Anyone sitting out, away or offline is skipped, and picks next time round. The same game can be picked again.',
+      'Practice bots pick at random from the games that fit, so you get to try them all.',
+      'The stakes stay the same for every game. With a stud game on the menu, only the stud games ante; the others play on the blinds. The Limit games bet the Limit small and big bets.',
+    ],
+    examples: [
+      {
+        title: 'Six friends, the 8-Game menu',
+        lines: [
+          'Sam has the Pick chip and picks Razz, so the next six hands are Razz. The top bar says whose pick it is and how many hands are left.',
+          "During the sixth hand of Razz, the player on Sam's left taps Pick next game and chooses Pot-Limit Omaha, so the next hand is Omaha straight away.",
+        ],
+      },
+    ],
+    settings: [
+      "Start a cash game: pick Dealer's choice under Mixed games in the Game list. The menu starts with the 8-Game games.",
+      "At a table: Table settings > Game, then How the game is chosen > Dealer's choice. Fill the menu in one tap (the 8-Game games, the HORSE games, Hold'em and Omaha, or every game), or pick each game and its betting.",
+      'There too: how long each pick lasts (one orbit, or a number of hands) and the time to pick (10 to 60 seconds).',
+      'Changes to the menu apply from the next pick; a pick already made stands.',
+      'Cash tables only, for now.',
+    ],
+    elsewhere: [
+      'Card rooms run Dealer\'s Choice events the same way, with a separate button that marks who picks and one orbit per pick. In many home games the dealer picks every hand instead.',
+      'Some rooms have dozens of games on the list, or ban picking the same game twice in a row. Here the host sets the menu, and repeats are allowed.',
     ],
   },
   {
@@ -524,7 +561,8 @@ export function extraFor(id: string, settings?: TableSettings): ExtraGuide | nul
 export function extrasOn(settings: TableSettings): string[] {
   const cash = settings.table.mode === 'cash';
   const rot = settings.game.rotation;
-  const specs = (rot.enabled && rot.steps.length ? rot.steps.map((s) => s.gameId) : [settings.game.gameId]).flatMap((id) => {
+  const menu = cash && settings.game.dealersChoice?.enabled ? settings.game.dealersChoice.games.map((g) => g.gameId) : [];
+  const specs = (menu.length ? menu : rot.enabled && rot.steps.length ? rot.steps.map((s) => s.gameId) : [settings.game.gameId]).flatMap((id) => {
     try {
       return [getVariant(id)];
     } catch {
@@ -536,6 +574,7 @@ export function extrasOn(settings: TableSettings): string[] {
   const holdem = specs.some((g) => g.family === 'flop' && g.streets.reduce((n, st) => n + st.dealDown + st.dealUp, 0) === 2);
   const on: Record<string, boolean> = {
     'mixed-games': rot.enabled && rot.steps.length > 1,
+    'dealers-choice': cash && !!settings.game.dealersChoice?.enabled,
     'nit-game': cash && nitSchema.get(settings).enabled,
     'seven-deuce': cash && holdem && bounty72Schema.get(settings).enabled,
     'bomb-pots': cash && bombPotSchema.get(settings).enabled,

@@ -44,7 +44,7 @@ class Sim {
       hostId: 'host',
       settings: defaultSettings({ structure: levels, startingStack: 1000, lateRegistration: { enabled: false, throughLevel: null }, ...overrides }),
       now: this.now,
-      seed: 42,
+      seed: '42'.repeat(32),
     });
   }
   do(cmd: Command) {
@@ -152,7 +152,7 @@ describe('scheduled auto-start', () => {
   });
 
   it('rejects a start time in the past', () => {
-    expect(() => createTournament({ id: 'x', hostId: 'h', settings: defaultSettings({ start: { kind: 'scheduled', startAt: T0 - 1 } }), now: T0, seed: 1 })).toThrow(
+    expect(() => createTournament({ id: 'x', hostId: 'h', settings: defaultSettings({ start: { kind: 'scheduled', startAt: T0 - 1 } }), now: T0, seed: '01'.repeat(32) })).toThrow(
       DirectorError,
     );
   });
@@ -254,6 +254,46 @@ describe('clock, breaks and pause', () => {
     plain.register(2);
     plain.do({ type: 'startNow', by: 'host' });
     expect(levelFor(plain.state, plain.state.tables[0].id)).not.toHaveProperty('betting');
+  });
+
+  it('a big-blind ante is a small ante for everyone on the stud levels, on the clock as at the tables', async () => {
+    const { summarize } = await import('../src');
+    const bbAnte: StructureRow[] = [1, 2, 3, 4, 5, 6].map((n) => ({ kind: 'level', sb: 50 * n, bb: 100 * n, ante: 100 * n, anteType: 'big-blind', minutes: 10 }));
+    const horse = MIXED_GAMES.find((m) => m.id === 'horse')!;
+    const sim = new Sim({ structure: bbAnte, games: horse.steps.map((st) => st.gameId), gameBetting: horse.steps.map((st) => st.betting) });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    const seen = [];
+    const nextShown = [];
+    for (let level = 0; level < 6; level++) {
+      sim.at(T0 + level * 10 * MIN + MIN);
+      const l = levelFor(sim.state, t);
+      const c = summarize(sim.state, sim.now).clock!;
+      seen.push([l.gameId, l.ante, l.anteType]);
+      // The lobby clock shows the ante that is dealt, this level and the next.
+      expect([c.level.ante, c.level.anteType]).toEqual([l.ante, l.anteType]);
+      nextShown.push(c.nextLevel?.ante ?? null);
+    }
+    expect(nextShown).toEqual([0, 40, 50, 60, 0, null]);
+    expect(seen).toEqual([
+      ['nlhe', 0, 'big-blind'],
+      ['plo8', 0, 'big-blind'],
+      ['razz', 40, 'per-player'],
+      ['stud', 50, 'per-player'],
+      ['stud8', 60, 'per-player'],
+      ['nlhe', 0, 'big-blind'],
+    ]);
+    expect(sim.of('levelUp').find((e) => e.levelNumber === 3)).toMatchObject({ gameId: 'razz', ante: 40, anteType: 'per-player' });
+    // A single stud game converts the same way; hold'em on its own keeps its big-blind ante.
+    const razz = new Sim({ structure: bbAnte, games: ['razz'] });
+    razz.register(2);
+    razz.do({ type: 'startNow', by: 'host' });
+    expect(levelFor(razz.state, razz.state.tables[0].id)).toMatchObject({ ante: 10, anteType: 'per-player' });
+    const holdem = new Sim({ structure: bbAnte });
+    holdem.register(2);
+    holdem.do({ type: 'startNow', by: 'host' });
+    expect(levelFor(holdem.state, holdem.state.tables[0].id)).toMatchObject({ ante: 100, anteType: 'big-blind' });
   });
 
   it('a mix with stud keeps its antes once the rotation stops on a blind game', () => {

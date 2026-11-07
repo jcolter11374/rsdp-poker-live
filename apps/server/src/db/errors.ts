@@ -28,14 +28,24 @@ export function errorText(err: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** True for Postgres unique_violation, whichever driver raised it (drivers may wrap the error in `cause`). */
-export function isUniqueViolation(err: unknown): boolean {
+/** True when the error, or one it wraps, has this Postgres error code (drivers may wrap the error in `cause`). */
+function hasCode(err: unknown, code: string): boolean {
   let e = err;
   for (let depth = 0; depth < 5 && e && typeof e === 'object'; depth++) {
-    if ((e as { code?: unknown }).code === '23505') return true;
+    if ((e as { code?: unknown }).code === code) return true;
     e = (e as { cause?: unknown }).cause;
   }
   return false;
+}
+
+/** True for Postgres unique_violation, whichever driver raised it. */
+export function isUniqueViolation(err: unknown): boolean {
+  return hasCode(err, '23505');
+}
+
+/** True for Postgres foreign_key_violation, whichever driver raised it. */
+export function isForeignKeyViolation(err: unknown): boolean {
+  return hasCode(err, '23503');
 }
 
 /** Throws unless n is a whole number of chips that JavaScript represents exactly. */

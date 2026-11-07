@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { HandEvent } from '@rsdp/engine/core';
+import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
-import { departures, heldCards, holdBack, withShown, type Frozen } from './runout';
+import { start } from '../../../packages/engine/test/core/harness';
+import { departures, heldCards, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -139,5 +140,89 @@ describe('a player knocked out (#308)', () => {
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
     expect(heldCards(finished().hand)).toEqual([]);
+  });
+});
+
+/** A finished engine hand as the table gets it, for holdBack. */
+function engineView(s: HandState): TableView {
+  const seats = s.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, stack: x.stack, won: 0, handName: null, cards: [], allIn: false, inHand: true, folded: false, sittingOut: false, sitOutReason: null, leaving: false, waiting: false }));
+  return {
+    hand: { handNumber: 1, phase: 'complete', showdown: true, boards: s.runs, pots: [], potTotal: 0, awards: [], events: s.events },
+    seats,
+    ledger: [],
+    log: [],
+    history: [],
+    me: { playerId: 'p0', seat: 0 },
+    nit: null,
+    canShow: [],
+    nextHandAt: null,
+    rabbit: { available: false, cards: null },
+  } as unknown as TableView;
+}
+
+/** Heads up, run twice: check and call to the street with `boardCards` cards out, then all in and called. */
+function allInWith(boardCards: number, options: Parameters<typeof start>[0]['options'] = {}): HandState {
+  const s = start({ stacks: [100, 100], options: { runItTwice: 'always', ...options } });
+  const out = () => s.runs[0][0].length;
+  while (out() < boardCards) {
+    const legal = engine.legalActions(s, s.toAct!)!;
+    engine.act(s, s.toAct!, legal.canCheck ? { type: 'check' } : { type: 'call' });
+  }
+  engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.maxTo });
+  engine.act(s, s.toAct!, { type: 'call' });
+  expect(s.phase).toBe('complete');
+  expect(s.runs).toHaveLength(2);
+  return s;
+}
+
+const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null });
+
+describe('run it twice, street by street (#372)', () => {
+  for (const boards of [1, 2] as const) {
+    for (const [street, cards] of [['before the flop', 0], ['on the flop', 3], ['on the turn', 4]] as const) {
+      it(`deals each run's own cards one street at a time, all in ${street}${boards > 1 ? ', on two boards' : ''}`, () => {
+        const s = allInWith(cards, { boards });
+        const view = engineView(s);
+        // Hold'em runs out on the board alone (stud's steps also deal to the seats).
+        const steps = runoutSteps(s.events).map((step) => step.filter((e) => e.t === 'board'));
+        expect(steps.flat()).toHaveLength(runoutSteps(s.events).flat().length);
+        const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
+        // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
+        const shared = s.runs[0].map((board) => board.slice(0, cards));
+        expect(boardsAt(0)).toEqual([shared, shared]);
+        expect(shared.map((_, b) => sharedWithFirstRun(boardsAt(0), 1, b))).toEqual(shared.map(() => cards));
+        // Each step then adds exactly that step's cards, to its own run and board, and nothing anywhere else:
+        // one street of one run, on every board of that run.
+        for (let k = 0; k < steps.length; k++) {
+          const was = boardsAt(k);
+          const now = boardsAt(k + 1);
+          for (let r = 0; r < now.length; r++) {
+            for (let b = 0; b < now[r].length; b++) {
+              const dealt = steps[k].filter((e) => e.run === r && e.board === b).flatMap((e) => e.cards);
+              expect(now[r][b]).toEqual([...was[r][b], ...dealt]);
+            }
+          }
+          expect(new Set(steps[k].map((e) => e.run)).size).toBe(1);
+          expect(steps[k].map((e) => e.board)).toEqual(s.runs[0].map((_, b) => b));
+          for (const e of steps[k]) expect(e.cards).toHaveLength(cards === 0 && k % 3 === 0 ? 3 : 1);
+        }
+        expect(boardsAt(steps.length)).toEqual(s.runs);
+      });
+    }
+  }
+});
+
+describe('sharedWithFirstRun', () => {
+  it("counts the second run's cards carried down from the first, which the table doesn't deal again", () => {
+    const flop = allInWith(3).runs;
+    expect(sharedWithFirstRun(flop, 0, 0)).toBe(0);
+    expect(sharedWithFirstRun(flop, 1, 0)).toBe(3);
+    expect(sharedWithFirstRun(allInWith(4).runs, 1, 0)).toBe(4);
+    // All in before the flop: the runs share nothing, so the second run's flop is dealt like the first's.
+    expect(sharedWithFirstRun(allInWith(0).runs, 1, 0)).toBe(0);
+    // Partway through the runout, and a run or board that isn't there.
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [['Ah', 'Kd', '2c']]], 1, 0)).toBe(3);
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [[]]], 1, 0)).toBe(0);
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']]], 1, 0)).toBe(0);
   });
 });
