@@ -16,7 +16,7 @@ const T0 = Date.parse('2026-11-01T12:00:00Z');
 const RSDP = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
 
 const create = (overrides: Partial<TournamentSettings> = {}) =>
-  createTournament({ id: 'T', hostId: 'host', settings: defaultSettings({ name: 'Wed', start: { kind: 'manual' }, startingStack: 1000, ...overrides }), now: T0, seed: '01'.repeat(32) });
+  createTournament({ id: 'T', hostId: 'host', settings: defaultSettings({ name: 'Wed', start: { kind: 'manual' }, startingStack: 1000, ...overrides }), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
 const run = (s: TournamentState, command: Command) => apply(s, command, T0).state;
 const setRules = (s: TournamentState, tableRules: unknown) => run(s, { type: 'updateSettings', by: 'host', settings: { tableRules } as Partial<TournamentSettings> });
 

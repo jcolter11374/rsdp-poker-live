@@ -1,11 +1,21 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.4",
+      "date": "2026-11-07",
+      "title": "Lobby chat moderation and a recap of the night",
+      "items": [
+        { "title": "Moderate a tournament's lobby chat", "detail": "Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. A muted player, or everyone while the chat is off, is told why they can't send. Mute and Delete ask first, and on a phone the buttons sit under each message, big enough to tap. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too." },
+        { "title": "Copy a recap of the night", "detail": "At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself." }
+      ]
+    },
+    {
       "id": "2026.11.07.3",
       "date": "2026-11-07",
       "title": "Hands left in each game",
       "items": [
-        { "title": "See how many hands are left in each game", "detail": "At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: \"3 more hands, then Razz\", then \"Last hand, then Razz\" (on a phone, \"Razz after 3 more\", then \"Razz next hand\"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game (\"Razz next, in 3:20\").", "suggestedBy": "John" }
+        { "title": "See how many hands are left in each game", "detail": "At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: \"3 more hands, then Razz\", then \"Last hand, then Razz\" (on a phone, \"Razz after 3 more\", then \"Razz next hand\"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game (\"Razz next, in 3:20\").", "suggestedBy": "John" },
+        { "title": "The site has a shorter name", "detail": "The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name is new: the site looks the same and the web address hasn't changed. If you saved the site to your phone's home screen, it may keep the old name until you add it again.", "suggestedBy": "John" }
       ]
     },
     {

@@ -587,6 +587,12 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .settle { display: flex; flex-direction: column; gap: 6px; }
 .transfer { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
 .transfer .amount { float: right; color: var(--accent-2); font-weight: 700; }
+/* Copy recap: the text as it will be pasted, then the Copy button. */
+.recap { gap: 8px; }
+.recap textarea { font: inherit; font-size: 0.9rem; line-height: 1.4; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; resize: vertical; }
+.recap textarea:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.recap .hint, .recap .muted { margin: 0; }
+.recap .muted button { padding: 2px 8px; font-size: 0.8rem; }
 
 /* ---- replayer */
 .replayer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 30; display: grid; place-items: center; padding: 12px; }

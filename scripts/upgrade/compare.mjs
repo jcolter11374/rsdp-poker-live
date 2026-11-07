@@ -30,6 +30,10 @@
 // - At the tables of a tournament still under way: more hands and more
 //   players (it keeps dealing, and can move players between tables); and that
 //   tournament's page, which shows how far it has got.
+// - The site's own name at the end of a page title: "RSDP Poker Live!" became
+//   "RSDP Live!" (D35), so a page titled "Smoke Cup · RSDP Poker Live!" before
+//   matches "Smoke Cup · RSDP Live!" after. A page that lost its tournament's
+//   name still fails.
 // - Anything neither script reads, such as the build commit (/api/version).
 // A release that changes any of these on purpose fails here: check the
 // differences printed are the intended ones, and say so in the release pull request.
@@ -106,12 +110,15 @@ if (before.tables) {
   report('Saved tables', changes, `all ${read.length} read back the same${unread ? ` (${unread} the server before couldn't read either)` : ''}`);
 }
 
+// A page title under the site's old name, as the same page titles it now (D35).
+const siteName = (title) => (typeof title === 'string' ? title.replace(/RSDP Poker Live!$/, 'RSDP Live!') : title);
+
 if (before.tournaments) {
   const changes = [];
   const now = new Map((after.tournaments ?? []).map((t) => [t.id, t]));
   for (const was of before.tournaments) {
     const is = now.get(was.id);
-    if (!is || is.title !== was.title) changes.push(`${was.id}: its page showed "${was.title}", now ${is ? `"${is.title}"` : 'nothing'}`);
+    if (!is || siteName(is.title) !== siteName(was.title)) changes.push(`${was.id}: its page showed "${was.title}", now ${is ? `"${is.title}"` : 'nothing'}`);
     else if (ENDED.has(was.status) && is.description !== was.description) changes.push(`${was.title} (${was.status}): its page said "${was.description}", now "${is.description}"`);
   }
   report('Saved tournaments', changes, `all ${before.tournaments.length} read back`);

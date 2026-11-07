@@ -1,4 +1,4 @@
-# Deploying RSDP Poker Live!
+# Deploying RSDP Live!
 
 The whole site is one container: the game server plus the built web app, built from the `Dockerfile` at the repo root. On every pull request, CI builds an image from that Dockerfile and runs the browser smoke test against it. The deploy builds its own image from the same commit (see [Fly.io](#flyio-production)).
 
@@ -37,7 +37,7 @@ On the live site, the plain settings live in `fly.toml` under `[env]`. The secre
 | Secret | Used by | What it is |
 | --- | --- | --- |
 | `FLY_API_TOKEN` | `deploy.yml`, `fly-setup.yml`, `transparency.yml` | A Fly API token for the app (see [Fly.io](#flyio-production)). The watcher also uses it as its fingerprint key (`WATCH_KEY`), so a new token changes every published secret fingerprint once. The public record then says the app's secrets changed, which is expected. |
-| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
+| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup), `replace-name.yml` (takes a deleted player's name out of old records, run by hand: [RUNBOOK.md](RUNBOOK.md#someone-asks-for-their-name-to-be-taken-out)) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
 | `REPORT_KEY` | `deploy.yml` (copies it to Fly) | The read-only recap key above. The same value goes in the Claude project's cloud environment as `RSDP_REPORT_KEY`, where the scheduled recap reads it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `deploy.yml` (copies them to Fly) | The Google sign-in client, from the Google Cloud console. |
 
@@ -79,7 +79,7 @@ The live site is backed up once a day, off Fly, by GitHub Actions (`.github/work
 
 Fly's own daily volume snapshots carry on as a second copy (same company, same region).
 
-**Format:** gzipped JSON lines: a header (format version, time, number of migrations, tables), one line per row (`row_to_json`, so jsonb, timestamps and big numbers come back exactly), and an end line with each table's row count, which is how a restore knows the copy wasn't cut short. A backup restores into a fresh database of the same or a newer schema, PGlite or Postgres.
+**Format:** gzipped JSON lines: a header (format version, time, number of migrations, tables), one line per row (`row_to_json`, so jsonb, timestamps and big numbers come back exactly), and an end line with each table's row count, which is how a restore knows the copy wasn't cut short. A backup restores into a fresh database of the same or a newer schema, PGlite or Postgres. Tables a newer schema has dropped (the unused chip ledger, `chip_movements` and `seat_sessions`, which older backups list) are made again for the restore and dropped again if the backup had no rows for them (`RETIRED` in `apps/server/src/db/backup.ts`).
 
 **Restoring:**
 

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { appendTournamentLog, recentTournamentLog, type Db } from '../db';
+import { appendTournamentLog, deleteTournamentLogItem, findTournamentLogItem, recentTournamentLog, type Db, type TournamentLogRow } from '../db';
 import type { LobbyItem } from '@rsdp/tournament';
 
 /** Where lobby chat and the public event log are kept. */
@@ -7,6 +7,10 @@ export interface LobbyStore {
   append(tournamentId: string, items: LobbyItem[]): Promise<void>;
   /** The latest `limit` items, oldest first. */
   recent(tournamentId: string, limit: number): Promise<LobbyItem[]>;
+  /** One item by its id, however old, or null. */
+  find(tournamentId: string, itemId: string): Promise<LobbyItem | null>;
+  /** Deletes one item for good. */
+  remove(tournamentId: string, itemId: string): Promise<void>;
 }
 
 /** Items a lobby keeps and sends: enough for a long tournament's story without making each subscribe heavy. */
@@ -23,8 +27,17 @@ export function memoryLobbyStore(): LobbyStore {
     async recent(id, limit) {
       return structuredClone((rows.get(id) ?? []).slice(-limit));
     },
+    async find(id, itemId) {
+      return structuredClone((rows.get(id) ?? []).find((x) => x.id === itemId) ?? null);
+    },
+    async remove(id, itemId) {
+      rows.set(id, (rows.get(id) ?? []).filter((x) => x.id !== itemId));
+    },
   };
 }
+
+type Stored = Omit<LobbyItem, 'id' | 'at'>;
+const fromRow = (r: TournamentLogRow<Stored>) => ({ ...r.item, id: r.itemId, at: r.at.getTime() }) as LobbyItem;
 
 export function dbLobbyStore(db: Db): LobbyStore {
   return {
@@ -36,7 +49,14 @@ export function dbLobbyStore(db: Db): LobbyStore {
       );
     },
     async recent(id, limit) {
-      return (await recentTournamentLog<Omit<LobbyItem, 'id' | 'at'>>(db, id, limit)).map((r) => ({ ...r.item, id: r.itemId, at: r.at.getTime() }) as LobbyItem);
+      return (await recentTournamentLog<Stored>(db, id, limit)).map(fromRow);
+    },
+    async find(id, itemId) {
+      const row = await findTournamentLogItem<Stored>(db, id, itemId);
+      return row && fromRow(row);
+    },
+    async remove(id, itemId) {
+      await deleteTournamentLogItem(db, id, itemId);
     },
   };
 }
@@ -97,6 +117,46 @@ export class LobbyLog {
     this.saving.set(tournamentId, saved);
     await next;
     return items;
+  }
+
+  /**
+   * One item: from the list in memory, or else from storage, which also holds those too old for the list (a browser
+   * that has had the lobby open a long while still shows them). Null when it is not there at all.
+   */
+  async find(tournamentId: string, itemId: string): Promise<LobbyItem | null> {
+    const recent = (await this.items(tournamentId)).find((x) => x.id === itemId);
+    if (recent) return recent;
+    // After the saves and deletions under way, so storage agrees with the list in memory.
+    await this.saving.get(tournamentId);
+    return this.store.find(tournamentId, itemId);
+  }
+
+  /**
+   * Deletes a chat message for good: from storage first (after the save that wrote it), then from the list in memory,
+   * so a message that could not be deleted stays where everyone sees it. Rejects when storage refuses.
+   */
+  async removeChat(tournamentId: string, itemId: string): Promise<void> {
+    const removed = Promise.resolve(this.saving.get(tournamentId)).then(() => this.store.remove(tournamentId, itemId));
+    // Later saves queue behind it, and trim() keeps the lobby in memory meanwhile, so it is never read back half done.
+    const queued = removed
+      .catch(() => {})
+      .finally(() => {
+        if (this.saving.get(tournamentId) === queued) this.saving.delete(tournamentId);
+      });
+    this.saving.set(tournamentId, queued);
+    await removed;
+    const next = this.items(tournamentId).then((list) => list.filter((x) => x.id !== itemId));
+    this.cache.set(tournamentId, next);
+    await next;
+  }
+
+  /**
+   * Changes the items of a lobby held in memory the way they were just changed in storage (a player's name replaced):
+   * an item is never saved again once added (only deleted, by removeChat), so this is only what browsers are sent from now on.
+   */
+  async rewrite(tournamentId: string, change: (item: LobbyItem) => void) {
+    const list = this.cache.get(tournamentId);
+    if (list) for (const item of await list) change(item);
   }
 
   /** Keeps the most recently used lobbies in memory; the rest load again from storage when needed. */

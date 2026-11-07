@@ -1,6 +1,6 @@
 # Terms of use
 
-RSDP Poker Live! is a free, non-commercial site that John runs as a hobby for
+RSDP Live! is a free, non-commercial site that John runs as a hobby for
 his group of friends. By using it you agree to these terms. They are written
 in plain English first, with the standard legal wording after. Nobody here is
 a lawyer, and this page is not legal advice.

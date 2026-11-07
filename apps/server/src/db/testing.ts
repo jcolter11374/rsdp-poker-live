@@ -10,7 +10,7 @@ export function createTestDb(): Promise<Db> {
   return createDb({ ignoreEnv: true });
 }
 
-/** Empties every table (TRUNCATE bypasses the ledger's append-only trigger, which guards rows, not tables). */
+/** Empties every table (TRUNCATE bypasses the public record's append-only trigger, which guards rows, not tables). */
 export async function resetTestDb(db: Db): Promise<void> {
   const names = [
     'audit_log',
@@ -25,8 +25,6 @@ export async function resetTestDb(db: Db): Promise<void> {
     'practice_resets',
     'hands',
     'table_log',
-    'chip_movements',
-    'seat_sessions',
     'settings_changes',
     'table_snapshots',
     'tables',
