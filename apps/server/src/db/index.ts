@@ -2,7 +2,6 @@ export { closeDb, createDb, MIGRATIONS_DIR, queryRows, type CreateDbOptions, typ
 export { dbCause, errorText, isUniqueViolation, StorageError, type StorageErrorCode } from './errors';
 export { newHandId, newId, newTableId } from './ids';
 export * from './hands';
-export * from './ledger';
 export * from './avatars';
 export * from './notes';
 export * from './savedSetups';

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LOBBY_CHAT_MAX, type LobbyItem } from '@rsdp/tournament';
 import { savedName } from '../socket';
 import { tournamentClient, type Session } from './client';
-import { logText } from './logText';
+import { activityLines } from './logText';
 
 /** A followed tournament's lobby chat and activity, kept up to date. */
 export function useLobbyLog(id: string): LobbyItem[] {
@@ -90,10 +90,7 @@ export function LobbyChat({ id, items, session }: { id: string; items: LobbyItem
 
 /** Everything that happened, newest first: registrations, levels, breaks, rebuys, knockouts. */
 export function Activity({ items }: { items: LobbyItem[] }) {
-  const events = items
-    .flatMap((x) => (x.kind === 'event' ? [{ id: x.id, at: x.at, text: logText(x.event) }] : []))
-    .filter((x) => x.text)
-    .reverse();
+  const events = activityLines(items);
   if (!events.length) return <p className="muted">Nothing has happened yet. Registrations, levels, breaks and knockouts show up here.</p>;
   return (
     <ol className="tn-activity">

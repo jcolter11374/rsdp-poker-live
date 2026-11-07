@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { HandEvent } from '@rsdp/engine/core';
+import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
-import { departures, holdBack, withShown, type Frozen } from './runout';
+import { start } from '../../../packages/engine/test/core/harness';
+import { departures, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -45,7 +46,7 @@ function finished(): TableView {
 
 /** The table just before the runout. */
 const before_ = (): Frozen => before();
-const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null });
+const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null, rotation: null });
 
 describe('holdBack', () => {
   it('shows no runout cards before the first step, and keeps the result back', () => {
@@ -70,6 +71,46 @@ describe('holdBack', () => {
     expect(all.hand!.events.map((e) => e.seq)).toEqual([0, 1, 1.5, 1.7, 2, 3, 4, 5, 6, 7, 8]);
   });
 
+  describe("Dealer's choice", () => {
+    const choice = (chip: number | null, open: boolean, extra = {}) =>
+      ({ chip, current: null, handsLeft: 0, next: null, open, deadline: null, count: 2, cap: null, closed: false, defaultIndex: 0, canKeep: false, ...extra }) as NonNullable<TableView['choice']>;
+    const razz = { gameId: 'razz', betting: 'fixed-limit', by: 'Bot', how: 'picked' };
+
+    it("keeps the PICK tag and the pick as they were while the chooser's all-in is dealt out, and holds their pick back", () => {
+      // Seat 0, the chooser, is in the all-in. The server has the result: the chip has passed over them and a bot
+      // picked in their place, while a newcomer filled the table.
+      const after = { ...finished(), choice: choice(1, false, { next: razz, count: 3, closed: true }) } as TableView;
+      const frozen = { ...before(), choice: choice(0, true), sameHand: true };
+      for (let shown = 0; shown <= runoutSteps(after.hand!.events).length; shown++) {
+        expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, false, { count: 3, closed: true }));
+      }
+    });
+
+    it("lets a chooser who isn't in the all-in carry on picking, and shows their pick, with the tag held where it was", () => {
+      // Three seats: the chooser in seat 2 folded before the all-in.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(2, true) } as TableView;
+      expect(holdBack(live, { ...before(), choice: choice(2, true), sameHand: true }, 0).choice).toEqual(choice(2, true));
+      // They pick: the pick shows, and the tag waits for the result (it passes over anyone who busted).
+      const picked = { ...live, choice: choice(0, false, { next: { ...razz, by: 'C' } }) } as TableView;
+      expect(holdBack(picked, { ...before(), choice: choice(2, true), sameHand: true }, 0).choice).toEqual(choice(2, false, { next: { ...razz, by: 'C' } }));
+      // A table without Dealer's choice, or nobody who can pick: nothing to hold.
+      expect(heldChoice({ ...live, choice: undefined } as TableView, before())).toBeUndefined();
+      expect(heldChoice(live, { ...before(), choice: choice(null, false) })).toEqual(choice(null, true));
+    });
+
+    it('shows the new pick of a hand dealt and run out in one update, with the tag where the pick left it', () => {
+      const nlhe = { gameId: 'nlhe', betting: 'no-limit', by: 'A', how: 'picked' };
+      // Before: the last hand of the old pick, with Razz picked next and the chip passed to seat 1.
+      const was = choice(1, false, { current: nlhe, next: razz, handsLeft: 0 });
+      // The bomb pot all in from the start was Razz's first hand; seat 1 busted, so the server's chip has moved on.
+      const live = { ...finished(), choice: choice(0, false, { current: razz, handsLeft: 1 }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: razz, handsLeft: 1 }));
+    });
+  });
+
   it('keeps players at the table who bust or leave when the hand ends', () => {
     const done = finished();
     const busted = { ...done.seats[0]!, stack: 0, won: 0, sittingOut: true, sitOutReason: 'busted' as const };
@@ -77,6 +118,23 @@ describe('holdBack', () => {
     expect(v.me.seat).toBe(0);
     expect(v.seats[0]).toMatchObject({ playerId: 'a', sittingOut: false, sitOutReason: null, stack: 0, allIn: true });
     expect(v.seats[1]).toMatchObject({ playerId: 'b', stack: 20 });
+  });
+
+  it("keeps a game rotation's count as it was: one player fewer in the orbit would tell who busted", () => {
+    const razz = (handsLeft: number) => ({ gameId: 'razz', betting: 'fixed-limit' as const, gameName: 'Razz', dealt: 2, handsLeft, next: { gameId: 'stud', betting: 'fixed-limit' as const, gameName: 'Seven Card Stud' } });
+    const done = { ...finished(), rotation: razz(1) };
+    const v = holdBack(done, { ...before(), rotation: razz(2) }, 0);
+    expect(v.rotation?.handsLeft).toBe(2);
+  });
+
+  it('names the games without a count for a hand dealt and run out in one update', () => {
+    const game = (gameId: string, gameName: string, dealt: number, handsLeft: number | null, next: string, nextName: string) => ({ gameId, betting: 'fixed-limit' as const, gameName, dealt, handsLeft, next: { gameId: next, betting: 'fixed-limit' as const, gameName: nextName } });
+    // Before: the last hand of Stud Hi-Lo. The bomb pot all in from the start was Limit Hold'em's first hand.
+    const was = game('stud8', 'Stud Hi-Lo', 7, 0, 'lhe', "Limit Hold'em");
+    const live = { ...finished(), rotation: game('lhe', "Limit Hold'em", 1, 3, 'plo8', 'Limit Omaha Hi-Lo') };
+    expect(holdBack(live, { ...before(), rotation: was, sameHand: false }, 0).rotation).toEqual({ ...live.rotation, handsLeft: null });
+    // The same hand seen dealing first keeps the count from then.
+    expect(holdBack(live, { ...before(), rotation: { ...live.rotation, handsLeft: 4 }, sameHand: true }, 0).rotation?.handsLeft).toBe(4);
   });
 });
 
@@ -107,7 +165,7 @@ describe('a player knocked out (#308)', () => {
       { card: 'Kd', up: false },
     ]);
     // Their cards during the runout, too.
-    const v = holdBack(after, { logCut: 0, seats: knockout().before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null }, 0);
+    const v = holdBack(after, { logCut: 0, seats: knockout().before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null }, 0);
     expect(v.seats[1]!.cards.map((c) => c.card)).toEqual(['Kc', 'Kd']);
   });
 
@@ -131,10 +189,92 @@ describe('a player knocked out (#308)', () => {
 
   it('puts a face-down card on the board while the last card of one run waits', () => {
     const { before, after } = knockout();
-    const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null };
+    const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null };
     expect(holdBack(after, frozen, 1).hand!.comingNext).toBeUndefined();
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
+  });
+});
+
+/** A finished engine hand as the table gets it, for holdBack. */
+function engineView(s: HandState): TableView {
+  const seats = s.seats.map((x) => ({ seat: x.seat, playerId: x.playerId, stack: x.stack, won: 0, handName: null, cards: [], allIn: false, inHand: true, folded: false, sittingOut: false, sitOutReason: null, leaving: false, waiting: false }));
+  return {
+    hand: { handNumber: 1, phase: 'complete', showdown: true, boards: s.runs, pots: [], potTotal: 0, awards: [], events: s.events },
+    seats,
+    ledger: [],
+    log: [],
+    history: [],
+    me: { playerId: 'p0', seat: 0 },
+    nit: null,
+    canShow: [],
+    nextHandAt: null,
+    rabbit: { available: false, cards: null },
+  } as unknown as TableView;
+}
+
+/** Heads up, run twice: check and call to the street with `boardCards` cards out, then all in and called. */
+function allInWith(boardCards: number, options: Parameters<typeof start>[0]['options'] = {}): HandState {
+  const s = start({ stacks: [100, 100], options: { runItTwice: 'always', ...options } });
+  const out = () => s.runs[0][0].length;
+  while (out() < boardCards) {
+    const legal = engine.legalActions(s, s.toAct!)!;
+    engine.act(s, s.toAct!, legal.canCheck ? { type: 'check' } : { type: 'call' });
+  }
+  engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.maxTo });
+  engine.act(s, s.toAct!, { type: 'call' });
+  expect(s.phase).toBe('complete');
+  expect(s.runs).toHaveLength(2);
+  return s;
+}
+
+const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null, rotation: null });
+
+describe('run it twice, street by street (#372)', () => {
+  for (const boards of [1, 2] as const) {
+    for (const [street, cards] of [['before the flop', 0], ['on the flop', 3], ['on the turn', 4]] as const) {
+      it(`deals each run's own cards one street at a time, all in ${street}${boards > 1 ? ', on two boards' : ''}`, () => {
+        const s = allInWith(cards, { boards });
+        const view = engineView(s);
+        const steps = runoutSteps(s.events);
+        const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
+        // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
+        const shared = s.runs[0].map((board) => board.slice(0, cards));
+        expect(boardsAt(0)).toEqual([shared, shared]);
+        expect(shared.map((_, b) => sharedWithFirstRun(boardsAt(0), 1, b))).toEqual(shared.map(() => cards));
+        // Each step then adds exactly that step's cards, to its own run and board, and nothing anywhere else:
+        // one street of one run, on every board of that run.
+        for (let k = 0; k < steps.length; k++) {
+          const was = boardsAt(k);
+          const now = boardsAt(k + 1);
+          for (let r = 0; r < now.length; r++) {
+            for (let b = 0; b < now[r].length; b++) {
+              const dealt = steps[k].filter((e) => e.run === r && e.board === b).flatMap((e) => e.cards);
+              expect(now[r][b]).toEqual([...was[r][b], ...dealt]);
+            }
+          }
+          expect(new Set(steps[k].map((e) => e.run)).size).toBe(1);
+          expect(steps[k].map((e) => e.board)).toEqual(s.runs[0].map((_, b) => b));
+          for (const e of steps[k]) expect(e.cards).toHaveLength(cards === 0 && k % 3 === 0 ? 3 : 1);
+        }
+        expect(boardsAt(steps.length)).toEqual(s.runs);
+      });
+    }
+  }
+});
+
+describe('sharedWithFirstRun', () => {
+  it("counts the second run's cards carried down from the first, which the table doesn't deal again", () => {
+    const flop = allInWith(3).runs;
+    expect(sharedWithFirstRun(flop, 0, 0)).toBe(0);
+    expect(sharedWithFirstRun(flop, 1, 0)).toBe(3);
+    expect(sharedWithFirstRun(allInWith(4).runs, 1, 0)).toBe(4);
+    // All in before the flop: the runs share nothing, so the second run's flop is dealt like the first's.
+    expect(sharedWithFirstRun(allInWith(0).runs, 1, 0)).toBe(0);
+    // Partway through the runout, and a run or board that isn't there.
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [['Ah', 'Kd', '2c']]], 1, 0)).toBe(3);
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [[]]], 1, 0)).toBe(0);
+    expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']]], 1, 0)).toBe(0);
   });
 });

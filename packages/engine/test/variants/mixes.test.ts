@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bettingAdvice, gameTitle, getMixedGame, mixedGameMaxPlayers, mixedGameOf, MIXED_GAMES, skipsMixedGameAnte } from '../../src/variants';
+import { anteForGame, bettingAdvice, bringInFor, gameTitle, getMixedGame, mixedGameMaxPlayers, mixedGameOf, MIXED_GAMES, skipsMixedGameAnte, studAnteForBigBlindAnte } from '../../src/variants';
 
 const titles = (id: string) => getMixedGame(id)!.steps.map((s) => gameTitle(s.gameId, s.betting));
 
@@ -39,5 +39,42 @@ describe('mixed games', () => {
     expect(skipsMixedGameAnte('td27', ['td27', 'razz'])).toBe(true);
     expect(skipsMixedGameAnte('stud', ['nlhe', 'stud'])).toBe(false);
     expect(skipsMixedGameAnte('nlhe', ['nlhe', 'plo4'])).toBe(false);
+  });
+
+  it('a big-blind ante becomes an ante of about an eighth for each stud player, on a nice amount', () => {
+    const amounts = [1, 2, 8, 50, 300, 400, 1000, 25000];
+    expect(amounts.map(studAnteForBigBlindAnte)).toEqual([1, 1, 1, 6, 40, 50, 100, 3000]);
+    for (const a of [...amounts, 3, 7, 15, 99, 150, 2500, 1_000_000_000_000]) {
+      const each = studAnteForBigBlindAnte(a);
+      expect(Number.isInteger(each), `${a}`).toBe(true);
+      expect(each, `${a}`).toBeGreaterThanOrEqual(1);
+      expect(each, `${a}`).toBeLessThanOrEqual(a);
+    }
+    expect(studAnteForBigBlindAnte(0)).toBe(0);
+  });
+
+  it('a worked-out bring-in is a third of the small bet, rounded down to a round amount (#398)', () => {
+    // The RSDP tournament's big blinds, which are the stud levels' small bets.
+    const smallBets = [200, 300, 400, 500, 600, 800, 1000, 1200, 1600, 2000, 2400, 3000, 4000, 5000, 6000, 8000, 10000, 12000, 16000, 20000, 24000];
+    expect(smallBets.map(bringInFor)).toEqual([60, 100, 100, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000]);
+    for (const bet of smallBets) {
+      // Between a quarter and a third of the small bet, as card rooms bring in.
+      expect(bringInFor(bet), `${bet}`).toBeGreaterThanOrEqual(bet / 4);
+      expect(bringInFor(bet), `${bet}`).toBeLessThanOrEqual(bet / 3);
+    }
+    for (const bet of [1, 2, 3, 7, 15, 99, 150, 2500, 33_333, 1_000_000_000_000]) {
+      const b = bringInFor(bet);
+      expect(Number.isInteger(b), `${bet}`).toBe(true);
+      expect(b, `${bet}`).toBeGreaterThanOrEqual(1);
+      expect(b, `${bet}`).toBeLessThanOrEqual(Math.max(1, bet / 3));
+    }
+    expect([0, 1, 2, 3, 6, 50, 100].map(bringInFor)).toEqual([1, 1, 1, 1, 2, 15, 30]);
+  });
+
+  it("only the stud games turn a big-blind ante into everyone's ante", () => {
+    for (const id of ['stud', 'razz', 'stud8']) expect(anteForGame(id, 300, 'big-blind')).toEqual({ ante: 40, anteType: 'per-player' });
+    for (const id of ['nlhe', 'plo4', 'plo8', 'td27', 'badugi', 'not-a-game']) expect(anteForGame(id, 300, 'big-blind')).toEqual({ ante: 300, anteType: 'big-blind' });
+    expect(anteForGame('razz', 25, 'per-player')).toEqual({ ante: 25, anteType: 'per-player' });
+    expect(anteForGame('razz', 0, 'none')).toEqual({ ante: 0, anteType: 'none' });
   });
 });

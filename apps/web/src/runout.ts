@@ -14,7 +14,9 @@ interface Reveal {
 /**
  * What the server changes as soon as the hand is over, kept as it was until
  * the result shows: the log (who won), seats (busted players sit out, leavers
- * go, tournaments knock players out) and the ledger.
+ * go, tournaments knock players out), the ledger, a game rotation's count
+ * (one player fewer is one hand fewer in an orbit) and Dealer's choice (a
+ * busted chooser's PICK tag moves on).
  */
 export interface Frozen {
   /** The newest log line before the runout. */
@@ -23,6 +25,10 @@ export interface Frozen {
   ledger: TableView['ledger'];
   me: TableView['me'];
   nit: TableView['nit'];
+  rotation: TableView['rotation'];
+  choice?: TableView['choice'];
+  /** Whether `choice` is from this hand (false when the hand was dealt and run out in one update). */
+  sameHand?: boolean;
 }
 
 /**
@@ -53,7 +59,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
-        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit },
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, rotation: before.rotation, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
       });
       setShown(0);
     }
@@ -75,11 +81,10 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
   const hand = view.hand!;
   const steps = runoutSteps(hand.events);
   const hidden = new Set(steps.slice(shown).flat().map((e) => e.seq));
-  const runsStarted = new Set(steps.slice(0, shown).flat().map((e) => e.run));
   const boards = hand.boards.map((run, r) =>
     run.map((cards, b) => {
-      // A second run stays off the felt until its first card, so it reads as a new board.
-      if (r > 0 && !runsStarted.has(r)) return [];
+      // Every card a run still owes waits for its own step. A second run starts with the cards both runs share,
+      // on the felt as soon as the board splits, so its first step deals only its own next card (#372).
       const owed = steps
         .slice(shown)
         .flat()
@@ -104,12 +109,45 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
     nit: before.nit,
+    rotation: heldRotation(view, before),
+    choice: heldChoice(view, before),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
     nextHandAt: null,
     rabbit: { available: false, cards: null },
   };
+}
+
+/**
+ * A game rotation's count during the reveal (#373), as it was before the result: one player fewer in the orbit is
+ * one hand fewer, so the live count would tell who busted. A hand dealt and run out in one update has no count of its
+ * own from before the result (the one before is the last hand's), so until the result the bar names the game and the
+ * next one without a count. Neither depends on how the hand went.
+ */
+export function heldRotation(view: TableView, before: Frozen): TableView['rotation'] {
+  if (before.sameHand !== false) return before.rotation;
+  return view.rotation ? { ...view.rotation, handsLeft: null } : before.rotation;
+}
+
+/**
+ * Dealer's choice during the reveal. The PICK tag stays where it was: once the server has the result it passes over
+ * anyone who busted, so moving it would give the result away. A chooser in the all-in picks once the cards are out:
+ * a busted chooser would be refused, and a pick in their place shows who busted, so their pick waits for the result
+ * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual.
+ */
+export function heldChoice(view: TableView, before: Frozen): TableView['choice'] {
+  const live = view.choice;
+  const was = before.choice;
+  if (!live || !was) return live;
+  const chip = was.chip;
+  const events = view.hand?.events ?? [];
+  const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
+  const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
+  if (!inHand) return { ...live, chip };
+  // The rest of the pick as it was too, but who can sit down as it is now.
+  const held = before.sameHand === false ? { ...live, chip } : { ...was, count: live.count, cap: live.cap, closed: live.closed };
+  return { ...held, open: false };
 }
 
 /** Seats as they stand with everything in the middle and nothing paid out yet. */
@@ -235,4 +273,19 @@ export function departures(before: TableView | null, view: TableView | null, kep
     out = { handNumber: hand.handNumber, seats: new Map(out?.seats ?? []).set(d.seat, gone), fading: out?.fading ?? false };
   }
   return out;
+}
+
+/**
+ * How many of a run's first cards on a board it shares with the first run: the cards dealt before the hand was run
+ * twice. The second run shows them from the moment the board splits, carried down from the first run's board rather
+ * than dealt again; only its own cards are dealt (#372). Cards are unique in the deck, so the shared cards are
+ * exactly the two boards' common start.
+ */
+export function sharedWithFirstRun(runs: readonly (readonly (readonly string[])[])[], run: number, board: number): number {
+  if (run === 0) return 0;
+  const first = runs[0]?.[board] ?? [];
+  const cards = runs[run]?.[board] ?? [];
+  let n = 0;
+  while (n < cards.length && n < first.length && cards[n] === first[n]) n++;
+  return n;
 }

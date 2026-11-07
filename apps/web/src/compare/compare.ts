@@ -11,7 +11,7 @@ export type Row = { feature: string; us: Cell; free: Cell; plus: Cell };
 export type Group = { title: string; rows: Row[] };
 
 /** When both columns were last checked: ours against the live site, PokerNow's against its public pages. */
-export const CHECKED = '6 November 2026';
+export const CHECKED = '7 November 2026';
 export const POKERNOW_PLANS = 'https://www.pokernow.com/subscription/plus';
 
 export const MARKS: Record<Mark, { symbol: string; label: string }> = {
@@ -38,7 +38,7 @@ export const GROUPS: Group[] = [
       { feature: "Stud, Razz, Stud Hi-Lo, 2-7 Triple Draw, Badugi", us: y('A guide for each'), free: n(), plus: n() },
       { feature: 'Game rotation (mixed games)', us: y('Any of our games'), free: c('NOW Coins'), plus: y("Hold'em and Omaha games") },
       { feature: 'HORSE and 8-Game in one tap', us: y('Cash games and tournaments'), free: n(), plus: n() },
-      { feature: "Dealer's choice", us: s('On our roadmap'), free: n(), plus: n() },
+      { feature: "Dealer's choice", us: y('Players take turns picking the game'), free: n(), plus: n() },
     ],
   },
   {

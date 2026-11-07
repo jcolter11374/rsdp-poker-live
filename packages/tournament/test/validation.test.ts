@@ -34,7 +34,7 @@ const levels: StructureRow[] = [
 const settings = (overrides: Record<string, unknown> = {}) =>
   ({ ...defaultSettings({ structure: levels, startingStack: 1000 }), ...overrides }) as TournamentSettings;
 
-const create = (overrides: Record<string, unknown> = {}) => createTournament({ id: 'T', hostId: 'host', settings: settings(overrides), now: T0, seed: 1 });
+const create = (overrides: Record<string, unknown> = {}) => createTournament({ id: 'T', hostId: 'host', settings: settings(overrides), now: T0, seed: '01'.repeat(32) });
 
 const update = (state: TournamentState, changes: Record<string, unknown>) =>
   apply(state, { type: 'updateSettings', by: 'host', settings: changes as Partial<TournamentSettings> }, T0).state;
@@ -214,7 +214,7 @@ describe('late registration, re-entry, rotation and switches', () => {
     { reEntry: { enabled: true, throughLevel: null, max: null, approval: 'no' } },
     { allowQuit: 'yes' },
     { registrationApproval: 1 },
-  ])('refuses %o', (overrides) => {
+  ])('refuses %j', (overrides) => {
     expect(refusal(() => create(overrides))).not.toBeNull();
   });
 

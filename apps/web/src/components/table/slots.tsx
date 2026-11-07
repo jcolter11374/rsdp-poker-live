@@ -4,12 +4,13 @@ import { NoteBadge } from './Notes';
 import { GestureLayer, SeatPersona } from './Persona';
 import { EquityTag } from './Equity';
 import { ChatBubbles } from './Chat';
+import { GameBanner } from './GameBanner';
 import './extras.css';
 
 /*
  * Mount points on the table for features that live in their own components
  * (double board, bomb pot and 7-2 badges, rabbit hunt, nit marker, notes,
- * pictures, moods and gestures, chat bubbles, all-in equity).
+ * pictures, moods and gestures, chat bubbles, all-in equity, the Pick chip on phones, the new-game banner).
  * Add a line here rather than editing Table.tsx.
  */
 
@@ -23,7 +24,8 @@ export function SeatExtras({ view, seat }: { view: TableView; seat: SeatView }) 
         </span>
       )}
       {seat.playerId !== view.me.playerId && <NoteBadge seat={seat} />}
-      <SeatPersona seat={seat} />
+      {/* Dealer's choice: phones have no room for the PICK tag beside the name, so the picture wears it. */}
+      <SeatPersona seat={seat} badge={view.choice?.chip === seat.seat ? <span className="pick-badge">Pick</span> : null} />
       {seat.inHand && !seat.folded && <EquityTag view={view} seat={seat} />}
     </>
   );
@@ -40,6 +42,7 @@ export function FeltExtras({ view, seatPoint, railPoint }: { view: TableView; se
     <>
       <GestureLayer view={view} seatPoint={seatPoint} railPoint={railPoint} />
       <ChatBubbles view={view} seatPoint={seatPoint} width={railPoint.x * 2} height={railPoint.y} />
+      <GameBanner view={view} />
     </>
   );
 }

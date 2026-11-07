@@ -19,6 +19,12 @@ export function bbFormat(bigBlind: number): Fmt {
   };
 }
 
+/** A stud ante of about a quarter of the small bet (1 at 1/2 limit, the same as a new table), never below one chip; in nickels in dollars (0.10 at .50/1). */
+export function defaultStudAnte(stakes: Pick<Stakes, 'smallBet' | 'bigBlind'> & { centsMode: boolean }): number {
+  const quarter = (stakes.smallBet || stakes.bigBlind) / 4;
+  return stakes.centsMode && quarter >= 5 ? Math.floor(quarter / 5) * 5 : Math.max(1, Math.round(quarter));
+}
+
 /** A stud bring-in of about a third of the small bet; in dollars, to the nearest nickel (0.15 at .50/1) rather than 0.16. */
 export function studBringIn(smallBet: number, centsMode: boolean): number {
   const third = smallBet / 3;
@@ -148,7 +154,7 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         const before = boardCount.get(key) ?? 0;
         const total = before + e.cards.length;
         boardCount.set(key, total);
-        // A whole board at once (a second run, or a bomb pot runout) is just "Board".
+        // Anything else (stud's one shared card when the deck runs short) is just "Board".
         const label = before === 0 && total === 3 ? 'Flop' : e.cards.length === 1 && total === 4 ? 'Turn' : e.cards.length === 1 && total === 5 ? 'River' : 'Board';
         const where = (runs > 1 ? ` (run ${e.run + 1})` : '') + (e.board > 0 ? ` (board ${e.board + 1})` : '');
         lines.push(`${label}${where}: ${cardsText(e.cards)}`);
@@ -191,6 +197,8 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         break;
       case 'run-it':
         runs = e.times;
+        // The second run starts with the cards out so far, so its next card is named as the first run's would be (#372).
+        if (e.times === 2) for (const [key, n] of [...boardCount]) if (key.startsWith('0:')) boardCount.set(`1:${key.slice(2)}`, n);
         lines.push(e.times === 2 ? 'Running it twice' : 'Running it once');
         break;
       case 'show':

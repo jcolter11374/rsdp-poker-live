@@ -3,7 +3,7 @@ import { engine, planForcedBets, settle, variants, type HandInput, type HandStat
 import { bounty72Schema, nitClears, nitSchema, rakeFor, rakeSchema } from '@rsdp/engine/modifiers';
 import { defaultSettings, SETTINGS_LIMITS } from '@rsdp/engine/settings';
 import { RSDP_TABLE_RULES } from '@rsdp/tournament';
-import { MIXED_GAMES, registerAllVariants } from '@rsdp/engine/variants';
+import { MIXED_GAMES, registerAllVariants, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
 import { studBringIn } from '../format';
 import { describe, expect, it } from 'vitest';
 import { BOMB_EX, BOUNTY_EX, DOUBLE_EX, EXTRAS, NIT_EX, RAKE_EX, RIT_EX, STRADDLE_EX, TIME_EX, extraFor, extrasOn } from './extras';
@@ -91,6 +91,13 @@ describe('side game guides', () => {
     expect(extraFor('mixed-games')!.examples[0].lines[1]).toContain('bring-in is $0.15');
   });
 
+  it('the Mixed games guide says what a big-blind ante is in stud, and that a blind schedule raises the Limit bets', () => {
+    const g = extraFor('mixed-games')!;
+    expect(studAnteForBigBlindAnte(300)).toBe(40);
+    expect(g.steps.join('\n')).toContain('a big-blind ante is paid there by everyone, at about an eighth of it each (300 becomes 40)');
+    expect(g.settings.join('\n')).toContain('the Limit bets and the bring-in rise with the blinds');
+  });
+
   it('list the side games switched on at a table', () => {
     const cash = defaultSettings('cash');
     // A new cash table: run it twice by vote, straddles, rabbit hunting and a time bank are on.
@@ -107,6 +114,12 @@ describe('side game guides', () => {
     const horse = defaultSettings('cash');
     horse.game.rotation = { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) };
     expect(extrasOn(horse)[0]).toBe('mixed-games');
+    const choice = defaultSettings('cash');
+    choice.game.dealersChoice = { enabled: true, games: MIXED_GAMES[1].steps.map((st) => ({ gameId: st.gameId, betting: st.betting })), hands: 0, pickSeconds: 20 };
+    expect(extrasOn(choice)[0]).toBe('dealers-choice');
+    // The menu's blind games still allow straddles.
+    expect(extrasOn(choice)).toContain('straddles');
+    expect(extrasOn(cash)).not.toContain('dealers-choice');
     expect(extrasOn(stud)).not.toContain('seven-deuce');
     const tourney = defaultSettings('tournament');
     expect(extrasOn(tourney)).toEqual(['rabbit-hunt', 'time-bank', 'showdown']);

@@ -220,6 +220,14 @@ export interface EliminationGroup {
   hfhRound?: number;
 }
 
+/** The seat-draw generator's saved state (rsdp-seats-v1). */
+export interface SeatRngState {
+  /** 32 bytes from a cryptographically secure generator, as 64 lowercase hex characters. Secret. */
+  seed: string;
+  /** How many 32-bit words of the seed's stream have been read, so the next draw carries on after them. */
+  at: number;
+}
+
 export interface TournamentState {
   version: typeof STATE_VERSION;
   id: string;
@@ -261,7 +269,19 @@ export interface TournamentState {
   eliminations: EliminationGroup[];
   handForHand: { active: boolean; round: number };
   counters: { entry: number; table: number; request: number };
-  /** mulberry32 state for seating draws. */
+  /**
+   * Where seat draws get their randomness (rsdp-seats-v1, `seatRng` in seating.ts): a secret seed and how far
+   * into its stream the draws have read. It never goes to browsers. Missing in tournaments saved before
+   * rsdp-seats-v1, which drew from `rng`; the server gives one whose seats aren't drawn yet a fresh seed when it
+   * loads it (`needsSeatSeed`).
+   */
+  seatRng?: SeatRngState;
+  /**
+   * The mulberry32 state that drew seats before rsdp-seats-v1. Only a state without `seatRng` still reads it.
+   * A new tournament keeps a secret, nonzero value here derived from its seed (`legacyRngFor`), so a server
+   * rolled back to before rsdp-seats-v1, which draws from this alone, still draws from a secret seed. Browsers
+   * are sent 0.
+   */
   rng: number;
   /** Invite codes the host has made. Only the host is sent these. */
   invites?: InviteCode[];
@@ -380,7 +400,8 @@ export type DirectorEvent =
   | { type: 'paused' }
   | { type: 'resumed' }
   | { type: 'structureEdited' }
-  | { type: 'settingsUpdated' }
+  /** The host changed settings: `changed` names the ones whose value differs (empty when a save changed nothing). */
+  | { type: 'settingsUpdated'; changed: (keyof TournamentSettings)[] }
   | { type: 'finished'; standings: Standing[] }
   | { type: 'cancelled'; reason: 'not-enough-players' | 'host' }
   /** A recurring series: the server should create the next occurrence at this time with the same settings. */
