@@ -284,8 +284,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .seat.me .playing-card.small .rank { left: calc(var(--cw) * 0.1); font-size: calc(var(--cw) * 0.54); }
 .seat.me .playing-card.small .suit { top: calc(var(--cw) * 0.64); width: calc(var(--cw) * 0.3); height: calc(var(--cw) * 0.3); }
 .seat.me .hole:is(.n4, .n5, .n6, .n7) .playing-card.small .pip { display: none; }
-/* Your stud row over the nameplate overlaps its cards from the third one on (#447): no pip to be cut off. */
-.seat.me.long-hand .playing-card.small .pip { display: none; }
+/* On a computer, your stud row over the nameplate overlaps its cards from the third one on (#447): no pip to be cut off. */
+.felt:not(.compact) .seat.me.long-hand .playing-card.small .pip { display: none; }
 .playing-card.suit-h, .playing-card.suit-d { color: #d8352b; }
 .playing-card.back {
   background: var(--back-a, #d84a3e);
@@ -767,7 +767,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .playing-card .suit { top: calc(var(--cw) * 0.66); width: calc(var(--cw) * 0.34); height: calc(var(--cw) * 0.34); }
 .playing-card { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); }
 
-/* Phones: bigger cards for everyone, your own the biggest. */
+/* Phones: bigger cards for everyone, your own the biggest. Table.tsx places them by these sizes (PHONE_ROW and
+   PHONE_HAND), so keep the two in step. */
 .felt.compact .playing-card.small { --cw: 30px; }
 .felt.compact .seat .hole { height: 42px; }
 .felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -10px; }
@@ -844,7 +845,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0; }
 .felt:not(.compact) .nameplate:is(:hover, :focus-within) .note-badge { opacity: 1; }
 @media (hover: none) { .felt:not(.compact) .nameplate .note-badge:not(.has-note) { opacity: 0.55; } }
-/* Phones on their side: a short table, so smaller cards keep your hand clear of the board. */
+/* Phones on their side: a short table, so smaller cards keep your hand clear of the board. (Also in Table.tsx's
+   PHONE_ROW and PHONE_HAND.) */
 @media (max-height: 500px) {
   .felt.compact .seat.me .playing-card { --cw: 40px; }
   .felt.compact .seat.me .hole:is(.n5, .n6, .n7) .playing-card { --cw: 34px; }
@@ -1040,10 +1042,21 @@ dl.shortcuts dd { margin: 0; }
 
 /* Send feedback (FeedbackDialog.tsx) */
 .feedback-form textarea { font: inherit; resize: vertical; }
-/* Phones: a hand of four or more cards too wide for the gap between your neighbours is bunched up and made
-   smaller to fit, so it doesn't cover their nameplates (#304). Table.tsx works out the size. Last, to win over the rules above. */
+/* Phones: your hand moves aside into the room between your neighbours, and when it's still too wide it is bunched up and
+   made smaller to fit, so it doesn't cover their nameplates (#304, #318). Table.tsx works out by how much. Last, to win
+   over the rules above. */
 .felt.compact.hand-fit .seat.me .hole .playing-card { --cw: var(--fit-cw); }
 .felt.compact.hand-fit .seat.me .hole .playing-card + .playing-card { margin-left: var(--fit-overlap); }
+/* The overlap above is net of the gap between cards. Standing up, the hand also moves aside into the room there is. */
+.felt.compact.hand-fit .seat.me .hole { gap: 0; }
+@media not all and (max-height: 500px) { .felt.compact.hand-fit .seat.me .hole { translate: calc(-50% + var(--fit-shift, 0px)) 0; } }
+/* Phones: another player's cards sit centred over their nameplate, moved aside, or bunched up when there isn't room, so
+   they don't cover the next player's nameplate or cards (#318), and smaller only when even that isn't enough. Table.tsx works
+   out by how much; this replaces the edge rules. */
+.felt.compact .seat:not(.me) .hole { left: 50%; right: auto; translate: calc(-50% + var(--row-shift, 0px)) 0; }
+.felt.compact .seat:not(.me) .hole.bunched { height: auto; }
+.felt.compact .seat:not(.me) .hole.bunched .playing-card { --cw: var(--row-cw); }
+.felt.compact .seat:not(.me) .hole.bunched .playing-card + .playing-card { margin-left: var(--row-margin); }
 
 /* ---- big windows (#317): the table grows into the room. --k is its scale (Table.tsx), --sk the seats' (k, or less when a
    full table needs it). Below k = 1 none of this applies, except in the wide layout, which keeps it down to k = 0.72 (#385). */
