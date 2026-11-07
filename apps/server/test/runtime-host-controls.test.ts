@@ -342,6 +342,22 @@ describe('waitlist', () => {
     expect([...outcomes].sort()).toEqual([false, true]);
   });
 
+  it('still counts a player in a dropped seat as moving during the runout, bust or not', () => {
+    // Six seats, going down to five after this hand. A bot in the all-in sits in the sixth seat, so it would move: seat
+    // 5 is kept for it whether or not it busted, Eve is offered seat 3, and Dee can't take seat 5.
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const t = afterRunout(seed, 6, () => {}, () => {}, { bots: [1, 5], during: (rt) => rt.updateSettings('host', { table: { maxSeats: 5 } }) });
+      if (!t) continue;
+      const { rt, busted } = t;
+      rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 2]]);
+      expect(() => rt.requestSeat('d', { seat: 4, name: 'Dee', stack: 100 })).toThrow(/kept for a player moving into it/);
+      outcomes.add(busted.includes(5));
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
   it('counts each player in the runout once, wherever they sit now, and stops holding seats once a new hand is dealt', () => {
     const seated = (rt: TableRuntime) => (rt as unknown as { seatedCount(): number }).seatedCount();
     let ran = 0;
