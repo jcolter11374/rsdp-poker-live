@@ -41,6 +41,15 @@ describe('Table settings: How the game is chosen', () => {
     expect(sentPatch()?.stakes).toBeUndefined();
   });
 
+  it("keeps a Dealer's choice menu that is there when the host turns it off", () => {
+    const settings = defaultSettings('cash');
+    settings.game.dealersChoice = { enabled: true, games: [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 };
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    fireEvent.change(mode(), { target: { value: 'one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentPatch()?.game).toMatchObject({ dealersChoice: { enabled: false } });
+  });
+
   it("switching to Dealer's choice sends the rotation switch too, so a mix queued earlier in the hand can't clash", () => {
     render(<SettingsDialog view={viewOf(defaultSettings('cash'))} onClose={() => {}} />);
     fireEvent.change(mode(), { target: { value: 'choice' } });
