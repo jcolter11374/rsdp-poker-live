@@ -4,6 +4,7 @@
       "id": "2026.11.07.4",
       "date": "2026-11-07",
       "fixes": [
+        "Table settings: switching a HORSE or 8-Game table, or a Dealer's choice table with stud games, to one game without stud now takes the stud ante off (and any blind-schedule level antes with it), so Hold'em hands no longer have an ante as well as the blinds. The same goes for changing a stud table's game to one without stud. Trying another way of choosing the game and coming back leaves the table's own ante, Limit bets and bring-in as they were, and stakes you type stay as you typed them however often you switch afterwards.",
         "Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over."
       ]
     },
