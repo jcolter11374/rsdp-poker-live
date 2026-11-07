@@ -255,8 +255,9 @@ try {
     // ...and the big blind folds.
     await press(blind, /^Fold/);
     await host.waitForSelector('.pot.result');
-    // Read the log before stopping: if the next hand is dealt first, the stop plays it out and the log moves on.
-    const log = await host.locator('.side').innerText();
+    // Read the log before stopping: if the next hand is dealt first, the stop plays it out and the log moves on. Only
+    // the log: the keyboard tip heads the side column for its first 20 s, and its own text says " folds".
+    const log = await host.locator('.side-panel').innerText();
     for (const words of [' bets ', ' raises to ', ' folds']) if (!log.includes(words)) throw new Error(`the hand log has no "${words.trim()}"`);
     await host.screenshot({ path: path.join(OUT, 'betting.png') });
     // Stop the game: left running, the table would keep dealing and timing out after the run, and CI's backup
