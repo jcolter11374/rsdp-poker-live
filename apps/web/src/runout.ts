@@ -156,6 +156,19 @@ export function withShown(cards: SeatView['cards'], events: readonly HandEvent[]
   return cards.map((c) => (c.card === HIDDEN_CARD && !c.up && shown.length ? { ...c, card: shown.shift()! } : c));
 }
 
+/**
+ * The table as it is shown (an all-in runout dealt a street at a time, a player knocked out kept in their seat), and
+ * whether a runout is still being dealt. Only that holds back what waits for the result (following a move to another
+ * table, the tournament strip, a reload into a new build). A knocked-out player kept in their seat is only for show:
+ * at a table that breaks after that hand no next deal ever comes to clear it, and the players moved off it must still
+ * go to their new seats.
+ */
+export function useShownTable(live: TableView | null): { view: TableView | null; runningOut: boolean } {
+  const revealed = useRunoutReveal(live);
+  const view = useDepartures(revealed);
+  return { view, runningOut: revealed !== live };
+}
+
 /** Who went out in the hand being shown, kept in their seats until the next deal. */
 interface Departures {
   handNumber: number;

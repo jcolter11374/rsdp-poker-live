@@ -32,7 +32,7 @@ import { LookDialog } from './components/LookDialog';
 import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
-import { useDepartures, useRunoutReveal } from './runout';
+import { useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
@@ -122,8 +122,8 @@ const KEYS_TIP_MS = 20_000;
 export function TablePage({ tableId }: { tableId: string }) {
   const [live, setView] = useState<TableView | null>(null);
   // An all-in runout is dealt a street at a time; everything below sees the table as it is shown. A player knocked
-  // out stays in their seat until the next deal.
-  const view = useDepartures(useRunoutReveal(live));
+  // out stays in their seat until the next deal. `runningOut`: a runout is still being dealt.
+  const { view, runningOut } = useShownTable(live);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
@@ -143,10 +143,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
-  const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
   const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
-  const busy = view !== live || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
+  const busy = runningOut || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
   const busyNow = useRef(busy);
   busyNow.current = busy;
   useEffect(() => holdReloadWhile(() => busyNow.current), []);
@@ -580,7 +580,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} />}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
