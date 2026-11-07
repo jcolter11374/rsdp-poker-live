@@ -58,8 +58,9 @@ yet tried it with a real screen reader; see "Known and left".
   inside, and hands focus back to the button that opened it, or to the menu
   button when it was opened from the phone's menu. A dialog that opens by
   itself under another (Dealer's choice's "Pick the next game" while
-  Keyboard shortcuts is open) leaves focus in the one on top, and gets it
-  when that one closes.
+  Keyboard shortcuts, a phone's chat sheet or a hand replay is open) leaves
+  focus and Escape with the one on top, and gets focus when that one
+  closes.
 - **Boxes that scroll** (code and tables on the fairness, privacy and terms
   pages on a phone, and the table's log) couldn't be scrolled from the
   keyboard. Tab now stops on them while they scroll, so the arrow keys work.

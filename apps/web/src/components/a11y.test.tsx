@@ -182,6 +182,44 @@ describe('dialogs and the keyboard', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("leaves focus and Escape with a phone's sheet when the picker opens later in the page but under it", () => {
+    // The chat sheet comes before the picker in the page, but sheets are drawn over dialogs.
+    function Page({ pick }: { pick: boolean }) {
+      const [chat, setChat] = useState(true);
+      const [picking, setPicking] = useState(true);
+      return (
+        <>
+          {chat && (
+            <Sheet title="Chat" onClose={() => setChat(false)}>
+              <input aria-label="Chat message" />
+              <button>Send</button>
+            </Sheet>
+          )}
+          {pick && picking && (
+            <Modal title="Pick the next game" onClose={() => setPicking(false)}>
+              <button>Razz</button>
+            </Modal>
+          )}
+        </>
+      );
+    }
+    const { rerender } = render(<Page pick={false} />);
+    const box = screen.getByLabelText('Chat message');
+    box.focus();
+    // The table starts waiting for my pick while I'm typing: the phone keyboard stays up.
+    rerender(<Page pick />);
+    expect(document.activeElement).toBe(box);
+    tab();
+    expect(document.activeElement).toBe(screen.getByText('Send'));
+    // Escape closes the sheet I can see, not the picker under it, which then takes focus.
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Chat' })).toBeNull();
+    const picker = screen.getByRole('dialog', { name: 'Pick the next game' });
+    expect(document.activeElement).toBe(picker);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it("treats the replayer's \"can't be replayed\" box as a dialog too", () => {
     // React reports the error it caught; the replayer shows its fallback instead.
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});

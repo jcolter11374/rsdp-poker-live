@@ -7,8 +7,27 @@ export function tabStops(root: HTMLElement): HTMLElement[] {
   );
 }
 
-/** The dialog on top: the last one open in the page, leaving out `closing`. Only it takes and keeps focus. */
-const topDialog = (closing?: HTMLElement) => [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')].filter((d) => d !== closing).at(-1) ?? null;
+/**
+ * The layer each kind of dialog draws on (styles.css): the replayer over a phone's sheet over a dialog. A dialog that
+ * comes later in the page can still be drawn under one that came earlier, as Dealer's choice's picker is under the chat
+ * sheet or a replay opened from the side panel.
+ */
+const LAYERS: [string, number][] = [
+  ['.replayer-backdrop', 30],
+  ['.sheet-backdrop', 20],
+  ['.modal-backdrop', 10],
+];
+const layerOf = (d: HTMLElement) => LAYERS.find(([sel]) => d.closest(sel))?.[1] ?? 0;
+
+/**
+ * The dialog on top, leaving out `closing`: the one on the highest layer, and of those the last one open in the page.
+ * Only it takes and keeps focus.
+ */
+const topDialog = (closing?: HTMLElement) =>
+  [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')].filter((d) => d !== closing).reduce<HTMLElement | null>((top, d) => (top && layerOf(top) > layerOf(d) ? top : d), null);
+
+/** Whether `dialog` is the one on top, which alone answers Escape. */
+export const isOnTop = (dialog: HTMLElement | null) => !!dialog && topDialog() === dialog;
 
 /**
  * Where each open dialog gives focus back to, first choice first: what opened it; when that was inside another
@@ -31,8 +50,8 @@ function openerChain(): HTMLElement[] {
  * closes. Something inside that already took focus (an autoFocus box) keeps it; otherwise the dialog box itself takes
  * it, so a screen reader starts reading at its title. The dialog element needs tabIndex={-1} and aria-modal.
  *
- * A dialog that opens by itself under another (Dealer's choice's picker, under Keyboard shortcuts) leaves focus in the
- * one on top, and gets it once that one closes, rather than the page behind both.
+ * A dialog that opens by itself under another (Dealer's choice's picker, under Keyboard shortcuts, a phone's chat sheet
+ * or a replay) leaves focus in the one on top, and gets it once that one closes, rather than the page behind both.
  */
 export function useDialogFocus(ref: RefObject<HTMLElement>) {
   // Read while rendering, before an autoFocus inside the dialog moves focus away from the opener, and while a dialog

@@ -5,18 +5,16 @@ import { fromInput, toInput, type Fmt } from '../format';
 import { delayText } from '@rsdp/engine/settings';
 import { BotLevelControl, botOwnerLabel, lastBotLevel, LevelPicker, rememberBotLevel } from './table/BotLevels';
 import { markCardsWatchedSeen } from './table/Seating';
-import { useDialogFocus } from './dialogFocus';
+import { isOnTop, useDialogFocus } from './dialogFocus';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const backdrop = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   useDialogFocus(box);
-  // Escape closes the topmost dialog only.
+  // Escape closes the dialog on top only: not one under another dialog, a phone's sheet or a replay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      const all = document.querySelectorAll('.modal-backdrop');
-      if (all[all.length - 1] !== backdrop.current) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || !isOnTop(box.current)) return;
       // Marks the key as used, so a sheet or another dialog underneath stays open.
       e.preventDefault();
       onClose();
