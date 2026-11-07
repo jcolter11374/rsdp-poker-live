@@ -535,9 +535,10 @@ try {
     await host.setViewportSize({ width: 2300, height: 824 });
     await host.locator('.tn-corner:has-text("Level 1")').waitFor();
     if (await host.locator('.tn-strip').count()) throw new Error('the tournament strip still takes room above the table on a wide window');
-    // A rebuy offer or an add-on goes under the table there, in a spot that takes no room while nothing is asked.
-    const asks = await host.locator('.dock-notes.tournament-asks').evaluate((el) => getComputedStyle(el).display);
-    if (asks !== 'none') throw new Error(`the empty spot for tournament asks under the table takes room (display: ${asks})`);
+    // A rebuy offer or an add-on goes under the table there, in a spot that takes no room while nothing is asked. (On
+    // your turn the spot is hidden anyway, so this looks at it off turn: the next hand waits for the showdown.)
+    const asks = await host.locator('.dock-notes.tournament-asks:not(.your-turn)').evaluate((el) => `${el.childElementCount} inside, display ${getComputedStyle(el).display}`);
+    if (asks !== '0 inside, display none') throw new Error(`the empty spot for tournament asks under the table takes room (${asks})`);
     await sampleTableSizes(host);
     for (const h of [824, 800]) {
       const sizes = await tableSizesAt(host, 2300, h);
