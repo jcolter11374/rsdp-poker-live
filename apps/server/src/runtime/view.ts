@@ -284,8 +284,9 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number) {
  * they count down in step with the live server clock. Chat, the log and
  * everything else stay live.
  *
- * `past` is null when nothing is that old yet, which shows the seats with no hand. That happens after a restart, or
- * once the host stops spectators seeing every card or raises the delay. The table's state then comes from `oldest`,
+ * `past` is null when nothing is that old yet, which shows the seats with no hand. That happens for the first part of
+ * the delay at a new table or once a delay is turned on, after a restart, and once the host stops spectators seeing
+ * every card or raises the delay. The table's state then comes from `oldest`,
  * the oldest snapshot kept, if there is one: it will be shown next, so nothing jumps back when it is.
  */
 export function behind(live: TableView, past: DelayedPart | null, delayMs: number, oldest: DelayedPart | null = null): TableView {

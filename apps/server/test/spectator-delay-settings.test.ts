@@ -3,7 +3,8 @@ import { engine, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { TableRuntime } from '../src/runtime/table';
-import { behind, delayedPart, tableView } from '../src/runtime/view';
+import type { TableView } from '@rsdp/engine/wire';
+import { behind, delayedPart, tableView, type DelayedPart } from '../src/runtime/view';
 import { FakeClock, seeded } from './fake-clock';
 
 /*
@@ -40,6 +41,20 @@ function checkDown(rt: TableRuntime) {
     rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
   }
 }
+
+/** The table state that runs behind with the hand, but isn't the hand itself. */
+const stateOf = (v: TableView) => ({
+  paused: v.paused,
+  started: v.started,
+  stopAfterHand: v.stopAfterHand,
+  bombPotNext: v.bombPotNext,
+  rakeTotal: v.rakeTotal,
+  nit: v.nit,
+  settings: v.settings,
+  pendingSettings: v.pendingSettings,
+  level: v.level,
+  seeAll: v.spectator?.seeAll,
+});
 
 /** What the spectator was shown `DELAY` ago, and what they are shown now the live table has dealt its next hand. */
 function acrossTheDeal(rt: TableRuntime, clock: FakeClock, during: () => void) {
@@ -135,9 +150,28 @@ describe('spectators on a delay (#432)', () => {
     expect(waiting.level?.handsLeft).toBe(past.level?.handsLeft);
     // Once that snapshot is old enough, it shows the same.
     const shown = behind(live, past, DELAY);
-    expect(shown.settings).toEqual(waiting.settings);
-    expect(shown.pendingSettings).toEqual(waiting.pendingSettings);
-    expect(shown.level).toEqual(waiting.level);
+    expect(stateOf(shown)).toEqual(stateOf(waiting));
+  });
+
+  it('with nothing old enough to show yet, see all the table state that runs behind as the oldest snapshot has it', () => {
+    const { rt, clock } = table();
+    const live = tableView(rt, 'watcher', clock.now());
+    const kept = delayedPart(live);
+    // Each part different from the live table's, so a part taken live would show.
+    const oldest: DelayedPart = {
+      ...kept,
+      paused: !live.paused,
+      started: !live.started,
+      stopAfterHand: !live.stopAfterHand,
+      bombPotNext: !live.bombPotNext,
+      rakeTotal: (live.rakeTotal ?? 0) + 123,
+      nit: { prize: 7, participants: 3, holders: 1 },
+      pendingSettings: { stakes: { bigBlind: 50 } },
+      spectator: kept.spectator && { ...kept.spectator, seeAll: !live.spectator!.seeAll },
+    };
+    const waiting = behind(live, null, DELAY, oldest);
+    expect(stateOf(waiting)).toEqual(stateOf({ ...oldest, settings: live.settings } as TableView));
+    expect(stateOf(waiting)).not.toEqual(stateOf(live));
   });
 
   it('see "every card face up" start with the hand it starts with', () => {
@@ -156,5 +190,9 @@ describe('spectators on a delay (#432)', () => {
     expect(shown.spectator?.seeAll).toBe(false);
     // Whether watching is blocked stays as it is now.
     expect(shown.spectator?.blocked).toBe(live.spectator?.blocked);
+    // It starts once the hand it starts with shows.
+    const next = behind(live, delayedPart(live), DELAY);
+    expect(next.hand?.handNumber).toBe(2);
+    expect(next.spectator?.seeAll).toBe(true);
   });
 });
