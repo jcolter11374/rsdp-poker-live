@@ -340,6 +340,27 @@ describe('the rest of the view (what the read-through of #435 found)', () => {
     expect(behind(liveF, later, DELAY).offers.map((o) => o.playerId)).toEqual(['watcher']);
   });
 
+  it('keeps showing my offer as it was when the live table lets it go, while I am still waiting', () => {
+    const { rt, clock } = table((x) => {
+      x.table.maxSeats = 4;
+      x.seating.waitlist = true;
+    });
+    rt.joinWaitlist('watcher', { name: 'W', stack: 500 });
+    rt.stand('c', { afterHand: true });
+    checkDown(rt);
+    const shown = snap(rt, clock);
+    expect(shown.offers.map((o) => o.playerId)).toEqual(['watcher']);
+    // Live, the host makes the table smaller between hands: the seat goes, and the offer with it, but W stays waiting.
+    rt.updateSettings('host', { table: { maxSeats: 3 } });
+    const live = watcherNow(rt, clock);
+    expect(live.offers).toEqual([]);
+    expect(live.waitlist.map((w) => w.playerId)).toEqual(['watcher']);
+    expect(behind(live, shown, DELAY).offers).toEqual(shown.offers);
+    // Leaving the waitlist myself takes it away at once.
+    rt.leaveWaitlist('watcher');
+    expect(behind(watcherNow(rt, clock), shown, DELAY).offers).toEqual([]);
+  });
+
   it('shows my own place on the waitlist the moment I join it', () => {
     const { rt, clock } = table((x) => {
       x.table.maxSeats = 4;

@@ -312,7 +312,11 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   // Other people's offers as they were, their clocks moved on with the rest of the view.
   const offers = part.offers.filter((o) => o.playerId !== me).map((o) => ({ ...o, expiresAt: o.expiresAt + delayMs }));
   // Mine runs out on the live clock: a seat offered to someone on a delay waits the delay longer (#452).
-  if (mineOffered && part.offers.some((o) => o.playerId === me && o.seat === mineOffered.seat)) offers.push(mineOffered);
+  const partMine = part.offers.find((o) => o.playerId === me);
+  if (partMine && mineOffered?.seat === partMine.seat) offers.push(mineOffered);
+  // Let go live while I'm still waiting (a smaller table or a smaller Dealer's choice game, someone moved into the
+  // seat): it shows as it was until the view gets there, or its going would tell me what the live table just did.
+  else if (partMine && mineWaiting) offers.push(partMine);
   return {
     paused: part.paused,
     bombPotNext: part.bombPotNext,

@@ -46,6 +46,7 @@ import {
   type HandRecord,
   type PastHand,
   type RuntimeState,
+  type SeatOffer,
   type SeatRequest,
   type SideGameState,
   type SeatState,
@@ -517,7 +518,9 @@ export class TableRuntime {
         if (!open.length) throw new ActionError('every seat is taken');
         seat = open[this.rng(open.length)];
       }
-      this.checkSeatLive(playerId, seat);
+      // Someone who needs the host's OK taking their waitlist offer only asks for the seat. Dealer's choice didn't count
+      // the offer (tableCount), so the request waits while a smaller game is on, and the host's approval checks the room.
+      this.checkSeatLive(playerId, seat, !(offered && this.needsApproval(playerId)));
       this.checkBuyIn(playerId, stack);
     }
     // A new request replaces your earlier one (which never holds a seat against you).
@@ -535,11 +538,11 @@ export class TableRuntime {
   }
 
   /** A seat against the live table: empty, nobody else waiting on it, not dropped or kept by a smaller table, room to sit. */
-  private checkSeatLive(playerId: PlayerId, seat: number) {
+  private checkSeatLive(playerId: PlayerId, seat: number, room = true) {
     if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, seat);
     this.checkSeatKept(seat, playerId);
-    this.checkRoom(playerId);
+    if (room) this.checkRoom(playerId);
   }
 
   /**
@@ -665,7 +668,9 @@ export class TableRuntime {
   private checkSeatKept(seat: number, newcomer: PlayerId | null) {
     const limit = this.seatLimit();
     if (seat >= limit) throw new ActionError(`the table is going down to ${limit} seats after this hand; pick seat ${limit} or lower`);
-    if (newcomer !== null && this.movers() > 0 && !this.openSeats(newcomer).includes(seat)) {
+    // Tested on the kept seats themselves: openSeats is empty while a smaller Dealer's choice game has no room, which
+    // checkRoom reports (or, for someone taking a waitlist offer as a seat request, lets wait).
+    if (newcomer !== null && this.movers() > 0 && this.moverSeats(limit, this.movers()).includes(seat)) {
       const open = this.openSeats(newcomer);
       throw new ActionError(
         `the table is going down to ${limit} seats after this hand, and that seat is kept for a player moving into it${open.length ? `; seat ${open.map((i) => i + 1).join(', ')} is free` : ''}`,
@@ -694,37 +699,62 @@ export class TableRuntime {
   private heldSeats(except: PlayerId | null = null): number {
     const ids = new Set([...this.offers().map((o) => o.playerId), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.playerId)]);
     if (except !== null) ids.delete(except);
-    return [...ids].filter((id) => !this.seatOf(id)).length;
+    const gone = this.goneInRunout();
+    return [...ids].filter((id) => !this.seatOf(id) && !gone.has(id)).length;
   }
 
   /**
    * Dealer's choice counts these when checking a game fits: everyone sitting down, and anyone offered a seat from
-   * the waitlist. A seat request isn't counted, since only the host sees it; like the waitlist, it waits while a
-   * smaller game is on (seatRoom counts it).
+   * the waitlist (counted offers). A seat request isn't counted, since only the host sees it; like the waitlist, it
+   * waits while a smaller game is on (seatRoom counts it). Nor is an offer to someone who still needs the host's OK:
+   * taking it only asks for the seat, so it counts as the request it becomes (#453). Otherwise a spectator the host
+   * hasn't let sit could keep a smaller game off the menu by joining the waitlist.
    */
   private tableCount(): number {
-    const offered = new Set(this.offers().map((o) => o.playerId));
-    return this.seatedCount() + [...offered].filter((id) => !this.seatOf(id)).length;
+    return this.seatedCount() + this.countedOffers(null);
+  }
+
+  /** The players offered a seat from the waitlist whom tableCount counts, not counting `except`. */
+  private countedOffers(except: PlayerId | null): number {
+    const ids = new Set(this.offers().map((o) => o.playerId));
+    if (except !== null) ids.delete(except);
+    const gone = this.goneInRunout();
+    return [...ids].filter((id) => !this.seatOf(id) && !gone.has(id) && !this.needsApproval(id)).length;
+  }
+
+  /** Someone who can only ask for a seat: the table needs the host's OK and they can't give it themselves. */
+  private needsApproval(playerId: PlayerId): boolean {
+    return this.settings.seating.requireApproval && !this.can(playerId, 'approve');
   }
 
   /** Everyone sitting down, and anyone who busted or left in an all-in runout browsers are still dealing out. */
   private seatedCount(): number {
+    return this.state.seats.filter(Boolean).length + this.goneInRunout().size;
+  }
+
+  /**
+   * The players in the last hand who busted or left, while browsers still deal out its all-in runout and show them
+   * seated. Counted as sitting down until then (seatedCount), and only that way: an offer or a seat request one of
+   * them makes meanwhile doesn't count them again.
+   */
+  private goneInRunout(): Set<PlayerId> {
     const last = this.state.history.at(-1);
-    const gone = last && this.revealSeats().size ? last.hand.seats.filter((hs) => !this.seatOf(hs.playerId)).length : 0;
-    return this.state.seats.filter(Boolean).length + gone;
+    if (!last || !this.revealSeats().size) return new Set();
+    return new Set(last.hand.seats.map((hs) => hs.playerId).filter((id) => !this.seatOf(id)));
   }
 
   /**
    * Dealer's choice: how many more people may sit (or be promised a seat) while a smaller game is picked or played,
    * not counting `playerId`'s own held seat. Someone taking a seat held for them (a waitlist offer, or a seat request
-   * the host approves) counts only the other waitlist offers, as the check that the game fits did (tableCount): seat
-   * requests wait, so they can't take the room the game was picked with. Null when there is no limit.
+   * the host approves) counts only the other counted waitlist offers, as the check that the game fits did
+   * (tableCount): seat requests, and offers to people who still need the host's OK, wait, so they can't take the room
+   * the game was picked with. Null when there is no limit.
    */
   private seatRoom(playerId: PlayerId | null): number | null {
     const cap = this.isTournament ? null : this.choice.seatCap();
     if (!cap) return null;
     const holds = playerId !== null && (this.offers().some((o) => o.playerId === playerId) || this.state.requests.some((r) => r.kind === 'seat' && r.playerId === playerId));
-    const others = holds ? new Set(this.offers().map((o) => o.playerId).filter((id) => id !== playerId && !this.seatOf(id))).size : this.heldSeats(playerId);
+    const others = holds ? this.countedOffers(playerId) : this.heldSeats(playerId);
     return cap.cap - this.seatedCount() - others;
   }
 
@@ -3344,7 +3374,10 @@ export class TableRuntime {
     // offered one stays on the waitlist for the next seat.
     const limit = this.seatLimit();
     const kept = new Set(this.moverSeats(limit, this.movers()));
-    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    const offered = this.offers();
+    s.offers = offered.filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    this.letGoOffersOverCap();
+    this.letGoOffersBehind(offered);
     // While browsers still deal out the last hand's all-in runout, the seats of the players in it aren't offered
     // (openSeats leaves them out, see revealSeats); upkeep runs again when the runout has had time to show (upkeepDue).
     const open = this.openSeats();
@@ -3362,6 +3395,40 @@ export class TableRuntime {
       this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS + laterMs });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
+  }
+
+  /**
+   * Dealer's choice: a game is only picked when everyone counted fits (tableCount), and seats and approvals keep it
+   * that way. An offer can still start to count after the pick: the host turns approval off, or gives its holder the
+   * approve power (#453). Counted offers the smaller game has no room for are let go, the latest in the queue first,
+   * and their holders stay on the waitlist for the next seat, rather than being refused until the offer lapses.
+   */
+  private letGoOffersOverCap() {
+    const cap = this.choice.seatCap();
+    if (!cap) return;
+    const room = cap.cap - this.seatedCount();
+    const place = new Map(this.queue().map((w, i) => [w.playerId, i]));
+    const gone = this.goneInRunout();
+    const counted = this.offers()
+      .filter((o) => !this.seatOf(o.playerId) && !gone.has(o.playerId) && !this.needsApproval(o.playerId))
+      .sort((a, b) => (place.get(a.playerId) ?? Infinity) - (place.get(b.playerId) ?? Infinity));
+    if (counted.length <= room) return;
+    const over = new Set(counted.slice(Math.max(0, room)));
+    this.state.offers = this.offers().filter((o) => !over.has(o));
+  }
+
+  /**
+   * Someone whose offer was just let go (`before` is the offers until then) stays on the waitlist for the next seat,
+   * so the offers of everyone behind them in the queue are let go too, and upkeep offers the seats again in queue
+   * order. Otherwise someone behind could take a seat first: with their own offer, or, at a Dealer's choice table, as
+   * a request from an offer that doesn't count, which holds the room an earlier waiter would be offered (#453).
+   */
+  private letGoOffersBehind(before: SeatOffer[]) {
+    const place = new Map(this.queue().map((w, i) => [w.playerId, i]));
+    const kept = new Set(this.offers());
+    const first = Math.min(...before.filter((o) => !kept.has(o) && place.has(o.playerId)).map((o) => place.get(o.playerId)!));
+    if (first === Infinity) return;
+    this.state.offers = this.offers().filter((o) => (place.get(o.playerId) ?? -1) < first);
   }
 
   /** When the last hand's all-in runout, if it had one, has been dealt out in the browsers (0 when it hadn't). */
