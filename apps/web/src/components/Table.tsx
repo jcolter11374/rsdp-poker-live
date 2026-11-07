@@ -7,7 +7,7 @@ import { besideBet, clearSideBands, fitHand, fitMiddle, fromVars, handRoom, inFr
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
-import { dealtSizes } from '../handSizes';
+import { dealtSizes, splitsPot } from '../handSizes';
 import { dealableGames } from '../tableGames';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
@@ -228,19 +228,38 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
     }
   }
   if (!items.length) return 1;
+  // Seats and the button glide to a new spot (when the table is first measured, on opening or reloading it, or when the
+  // seats are spaced again), and a hand's fit is only ever made smaller. So each is measured where it is headed, not where
+  // it is on the way: halfway in from the first guess at the table's size, they'd make the middle shrink for the hand (#462).
+  const zoom = felt.offsetWidth ? felt.getBoundingClientRect().width / felt.offsetWidth : 1;
   const seats: Box[] = [];
   felt.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.empty)').forEach((seat) => {
+    const to = headedFor(seat, zoom);
     const plate = seat.querySelector('.nameplate');
-    if (plate) seats.push(plate.getBoundingClientRect());
+    if (plate) seats.push(to(plate.getBoundingClientRect()));
     // The cards' own spots, and where they are once dealt or turned over (a winning card lifted). Cards on their way to
     // or from the muck are left out, as for the seats' reach.
     const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
     if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
-      seats.push(hole.getBoundingClientRect());
-      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(card.getBoundingClientRect());
+      seats.push(to(hole.getBoundingClientRect()));
+      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(to(card.getBoundingClientRect()));
     }
   });
-  return fitMiddle(items, seats, felt.querySelector('.dealer')?.getBoundingClientRect() ?? null, centre);
+  const dealer = felt.querySelector<HTMLElement>('.dealer');
+  return fitMiddle(items, seats, dealer ? headedFor(dealer, zoom)(dealer.getBoundingClientRect()) : null, centre);
+}
+
+/** Moves a box inside a seat (or the button) by what that seat has left to glide: its spot is set in its style, and while
+ * its left and top are moving there, the drawn ones lag behind. */
+function headedFor(el: HTMLElement, zoom: number): (b: Box) => Box {
+  const now = getComputedStyle(el);
+  const gap = (to: string, at: string) => {
+    const d = (parseFloat(to) - parseFloat(at)) * zoom;
+    return Number.isFinite(d) ? d : 0;
+  };
+  const x = gap(el.style.left, now.left);
+  const y = gap(el.style.top, now.top);
+  return (b) => ({ left: b.left + x, right: b.right + x, top: b.top + y, bottom: b.bottom + y });
 }
 
 /** The smallest box holding both. */
@@ -259,10 +278,15 @@ interface SeatBoxes {
   empty?: Extent;
 }
 
-/** The lines a nameplate can gain in the middle of a hand: the last action, and the clock's last seconds or the time bank. */
-const LINES_GAINED: readonly [string, string][] = [
+/**
+ * The lines a nameplate can gain during a hand: the last action, and one status line. That's the clock's last seconds or
+ * the time bank, or once the hand is over the hand a player shows, which can widen the nameplate. The widest hand's name
+ * stands for all of them (#427): of every name a hand can have, this one is the widest in the table's font (measured).
+ * A game that splits the pot names both halves.
+ */
+const linesGained = (hiLo: boolean): readonly [string, string][] => [
   ['last-action a-call', 'Call'],
-  ['status low-text', '0:10'],
+  ['status', hiLo ? 'Full House, Queens full of Sevens · Eight-Seven low' : 'Full House, Queens full of Sevens'],
 ];
 
 /**
@@ -272,7 +296,8 @@ const LINES_GAINED: readonly [string, string][] = [
  * are dealt, a line appears or a stud hand grows. It runs only when the game's shape, the seat size or the seating
  * changes: a full stud table makes about 60 copies, a few milliseconds.
  */
-function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: readonly number[]): Map<HTMLElement, Reach> {
+function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: readonly number[], hiLo: boolean): Map<HTMLElement, Reach> {
+  const gained = linesGained(hiLo);
   // Up to four cards tuck into the nameplate, each size a little differently. A longer hand is a row over the nameplate,
   // and the longest row reaches furthest, so it alone stands for the others. Lined up with either end of the seat (as at
   // the table's left and right ends), it reaches at least as far as when centred.
@@ -282,7 +307,7 @@ function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: rea
   for (const seatEl of seats)
     for (const n of shapes)
       for (const edge of n > 4 && !seatEl.classList.contains('me') ? ['edge-left', 'edge-right'] : [null])
-        for (const lines of [0, LINES_GAINED.length]) {
+        for (const lines of [0, gained.length]) {
           const copy = seatEl.cloneNode(true) as HTMLElement;
           copy.removeAttribute('data-seat');
           copy.setAttribute('aria-hidden', 'true');
@@ -306,7 +331,7 @@ function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: rea
           );
           // Lines that come and go (and an Away pill: an away player isn't dealt in) give way to the ones a hand brings.
           plate.querySelectorAll(':scope > :is(.last-action, .status, .pill)').forEach((line) => line.remove());
-          for (const [className, text] of LINES_GAINED.slice(0, lines)) {
+          for (const [className, text] of gained.slice(0, lines)) {
             const line = document.createElement('div');
             line.className = className;
             line.textContent = text;
@@ -328,7 +353,7 @@ function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: rea
  * between hands, and spacing by the biggest keeps the seats still then. Within a key they only grow, so the seats can't
  * flip back and forth.
  */
-function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, sizes: readonly number[], seating: string, me: number | null, on: boolean): SeatBoxes {
+function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, sizes: readonly number[], hiLo: boolean, seating: string, me: number | null, on: boolean): SeatBoxes {
   const [boxes, setBoxes] = useState<SeatBoxes>({ key: '' });
   const probed = useRef('');
   useLayoutEffect(() => {
@@ -340,7 +365,7 @@ function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, sizes: readonly
     if (fresh || probed.current !== probe) {
       probed.current = probe;
       const players = [...el.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.departed)')];
-      for (const [seatEl, r] of dealtReach(el, players, sizes)) {
+      for (const [seatEl, r] of dealtReach(el, players, sizes, hiLo)) {
         if (Number(seatEl.dataset.seat) === me) mine = grow(mine, r);
         else others = grow(others, r);
       }
@@ -494,15 +519,23 @@ export function Table({
   // felt keeps them smaller too, so seats at the top and bottom leave the board (two boards, the result) room between them.
   const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + empties * 130));
   // On a big window the whole table grows with it (#317): k is the table's scale, from the room the felt has. Below k = 1
-  // (laptops, and the replayer) the sizes above stay as they were.
+  // (laptops, and the replayer) the sizes above stay as they were, except in the wide layout (below).
   // A short, very wide window (an ultrawide screen, or a big one with tall browser bars) has the width but not the height:
   // there the wide layout packs the table tighter from top to bottom, so it still grows a little instead of shrinking (#347).
   const kTall = Math.min(1.9, room.h / 560, room.w / 1180);
   const kShort = wide ? Math.min(1.25, room.h / 470, room.w / 1180) : 0;
-  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort) * 100) / 100;
+  // A window just too short for k = 1 keeps that packed table, a little smaller, down to the smallest seats' size (0.72),
+  // rather than dropping to the laptop layout and its smallest seats: a few pixels of height (a tournament's strip, a
+  // banner over the table) took a 2300x824 window from full-size seats and cards to the smallest (#385).
+  const packed = wide && fill && !compact && !!room.w;
+  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort, packed ? 0.72 : 0) * 100) / 100;
+  const grown = k > 1 || packed;
+  // The wide layout's bigger cards (styles.css), except on a window so short (under about 620px, or a little taller with
+  // a row above the table) that the table is held at that smallest size in less room than it needs: there your own big
+  // cards would cover the board, so the seats keep their usual cards.
+  const bigCards = grown && wide && Math.max(kTall, kShort) >= 0.72;
   // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
-  const short = kShort > kTall && k > 1;
-  const grown = k > 1;
+  const short = kShort > kTall && grown;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
@@ -512,7 +545,9 @@ export function Table({
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
   const dealtKey = [...new Set([...dealableGames(games ?? [], players), gameId].filter(Boolean))].sort().join(',');
   const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
-  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi'].includes(g));
+  // The stud games tuck their cards in the same way on third and fourth street, before the row goes over the nameplate:
+  // counted with them, so a side seat's three or four cards don't run off the window's edge (#385).
+  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi', 'stud', 'razz', 'stud8'].includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
   const longGame = wide && dealt.some((g) => ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(g));
@@ -533,17 +568,23 @@ export function Table({
   // Before a tournament table's first hand the view has no game yet (its settings say Hold'em whatever the event plays),
   // so there's nothing to size for until the deal, unless the page knows the tournament's games.
   const sizes = useMemo(() => dealtSizes(dealt), [dealt]);
+  // Hi-lo games name two hands at a showdown ("… · Eight-Six low"), a longer line to make room for (#427).
+  const hiLo = useMemo(() => dealt.some((g) => splitsPot(g)), [dealt]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
   // The hand sizes, the seats' scale, then the layout (the placement below leaves the scale out of its key).
-  const boxKey = (of: readonly number[]) => `${of.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`;
-  const sizedKey = boxKey(sizes);
-  const sized = useSeatBoxes(felt, sizedKey, sizes, seating, view.me.seat, !compact);
+  const boxKey = (of: readonly number[], split: boolean) => `${of.join('-')}|${seatScale}|${split ? 'hi-lo' : ''}|${bigCards ? 'big-cards' : ''}|${short ? 'short' : ''}`;
+  const sizedKey = boxKey(sizes, hiLo);
+  const sized = useSeatBoxes(felt, sizedKey, sizes, hiLo, seating, view.me.seat, !compact);
   // A table too full to give every game's hands their room at once is spaced for the game on now instead, as before #409:
   // its seats move when the game changes, but nobody's nameplate covers another's.
   const nowSizes = useMemo(() => dealtSizes(gameId ? [gameId] : []), [gameId]);
-  const mixed = nowSizes.join('-') !== sizes.join('-');
-  const nowKey = boxKey(nowSizes);
-  const sizedNow = useSeatBoxes(felt, nowKey, nowSizes, seating, view.me.seat, !compact && mixed);
+  const nowHiLo = useMemo(() => splitsPot(gameId), [gameId]);
+  const nowKey = boxKey(nowSizes, nowHiLo);
+  // Games with the same hand sizes can still differ in their boxes: one hi-lo, one not (Omaha 5 and Omaha 5 hi-lo).
+  const mixed = nowKey !== sizedKey;
+  // What the table deals, for the fallback's mark below.
+  const allGames = `${sizes.join('-')}${hiLo ? ' hi-lo' : ''}`;
+  const sizedNow = useSeatBoxes(felt, nowKey, nowSizes, nowHiLo, seating, view.me.seat, !compact && mixed);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
   const emptyHalf = compact ? 34 : 58;
@@ -573,7 +614,7 @@ export function Table({
     // The seats' scale isn't part of it: a small change to the felt's size can step the scale too, and kept seats still
     // have to fit the boxes at the new scale (placeSeats checks).
     // `fallback` marks the spacing for the game on now that a mixed table falls back to (below), with the games' hand
-    // sizes, so it's never taken for a spacing made before the table dealt those games.
+    // sizes and whether any is hi-lo, so it's never taken for a spacing made before the table dealt those games.
     const place = (b: SeatBoxes, clearing: number, current: string, fallback = '') => {
       // A tournament table draws no empty seats, so they have no box and take no room.
       const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? (showEmpty ? b.empty : undefined) : seat === mine ? b.me : b.others);
@@ -592,7 +633,7 @@ export function Table({
     try {
       // A mixed table spaced for the game on now (below) stays that way while its seats are kept: trying every game's
       // boxes first would swap it between the two spacings whenever a few pixels tipped those in or out of fitting.
-      const stay = mixed ? place(sizedNow, clearNow, nowKey, sizes.join('-')) : null;
+      const stay = mixed ? place(sizedNow, clearNow, nowKey, allGames) : null;
       let done = stay?.kept && stay.fine ? stay : place(sized, clear, sizedKey);
       if (mixed && !done.fine) done = stay!;
       at = done.at;
@@ -607,7 +648,7 @@ export function Table({
       placed.current = null;
     }
     return at;
-  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, sizes, sizedKey, nowKey, showEmpty]);
+  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, allGames, sizedKey, nowKey, showEmpty]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
@@ -618,8 +659,9 @@ export function Table({
   const boardCard = compact
     ? null
     : grown
-      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it.
-        Math.round(Math.max(short ? 44 : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
+      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it,
+        // and a little more on a window too short for the big cards, so your own cards stay off it.
+        Math.round(Math.max(short ? (bigCards ? 44 : 38) : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
       : Math.round(Math.max(60, Math.min(88, w * 0.062, h * 0.17)));
   // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
   const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
@@ -785,7 +827,7 @@ export function Table({
   return (
     <div
       ref={felt}
-      className={['felt', compact && 'compact', grown && 'grown', grown && wide && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
+      className={['felt', compact && 'compact', grown && 'grown', bigCards && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(grown ? { '--k': k, '--sk': seatScale, '--side-margin': `${sideMargin}px`, '--top-margin': `${topMargin}px` } : {}), ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}), ...(handFit ? { '--fit-cw': `${handFit.cw}px`, '--fit-overlap': `${-handFit.overlap}px` } : {}) } as CSSProperties}
     >
       <FeltEmblem />

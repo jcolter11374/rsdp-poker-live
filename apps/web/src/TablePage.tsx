@@ -197,6 +197,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
   const [noticeRoom, setNoticeRoom] = useState(true);
+  // In the wide layout, the spot under the table where a tournament's rebuy offer, add-on or other ask goes (TableStrip).
+  const [tournamentAsks, setTournamentAsks] = useState<HTMLDivElement | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
@@ -665,8 +667,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
   // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
   // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
-  // the table's size (#350).
-  const tipInCorner = wide && !drawer;
+  // the table's size (#350). At a tournament table that corner holds the tournament's clock (#385), so the tip heads the
+  // drawer's column there, as it did before #399.
+  const tipInCorner = wide && !drawer && !view.tournamentId;
   const keysTipBox = keysTip && !dialog && (
     <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
       <span>
@@ -706,8 +709,9 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </a>
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
-            At a tournament the strip under the bar names the event, so the bar just says which table. The table's name
-            is the page's heading for screen readers, which jump between headings; it looks as it always has. */}
+            At a tournament the strip under the bar names the event (in the wide layout, the box in the bottom-right
+            corner: #385), so the bar just says which table. The table's name is the page's heading for screen readers,
+            which jump between headings; it looks as it always has. */}
         {view.tournamentId || view.rotation ? (
           <h1 className="sr-only">{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</h1>
         ) : null}
@@ -828,7 +832,11 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <main className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} />}
+          {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
+              with the other notes about you, so the table keeps its height (#385). */}
+          {view.tournamentId && (
+            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+          )}
           {readyTable && (
             <div className="banner attention" role="status">
               Your tournament table is ready.{' '}
@@ -881,6 +889,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             tips={!!view.tips && prefs.tips}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
+            {/* TableStrip's asks, while there is one (empty, it takes no room: .dock-notes:empty). */}
+            {wide && view.tournamentId && <div className={`dock-notes tournament-asks${yourTurn ? ' your-turn' : ''}`} ref={setTournamentAsks} />}
             <ActionBar
               view={view}
               fmt={fmt}

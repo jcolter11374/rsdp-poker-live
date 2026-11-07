@@ -31,6 +31,8 @@ export interface Frozen {
   choice?: TableView['choice'];
   /** Whether `choice` is from this hand (false when the hand was dealt and run out in one update). */
   sameHand?: boolean;
+  /** The waitlist's seat offers before the result: a newer one waits for it (see holdBack). */
+  offers?: TableView['offers'];
 }
 
 /**
@@ -69,7 +71,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
-        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, rotation: before.rotation, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, rotation: before.rotation, choice: before.choice, sameHand: prior.handNumber === hand.handNumber, offers: before.offers },
       };
       step = 0;
       setReveal(current);
@@ -136,8 +138,10 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     nit: before.nit,
     rotation: heldRotation(view, before),
     choice: heldChoice(view, before),
-    // A seat offered from the waitlist that someone in it had before the result: they busted or left, so it waits too.
-    ...(view.offers ? { offers: view.offers.filter((o) => !before.seats[o.seat]) } : {}),
+    // A seat offered from the waitlist since the result waits for it too (#437). It can be the seat of someone who busted
+    // or left, or a seat a smaller Dealer's choice game had closed that a bust opens up; an offer that was already there
+    // stays, unless it was let go meanwhile.
+    ...(view.offers ? { offers: view.offers.filter((o) => (before.offers ?? []).some((b) => b.seat === o.seat && b.playerId === o.playerId)) } : {}),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
