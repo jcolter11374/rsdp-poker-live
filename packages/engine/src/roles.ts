@@ -11,7 +11,7 @@ export const HOST_POWER_LABELS: Record<HostPower, string> = {
   approve: 'Approve seats, entries and rebuys',
   chips: 'Change stacks',
   run: 'Start, pause and end',
-  players: 'Move and remove players',
+  players: 'Move and remove players, and manage chat',
   settings: 'Change settings and levels',
 };
 

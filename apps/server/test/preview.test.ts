@@ -25,6 +25,7 @@ describe('link previews', () => {
       settings: defaultSettings({ name: 'Thursday <Deep>', start: { kind: 'scheduled', startAt: T0, schedule: { timeZone: 'America/Los_Angeles', startDate: '2026-10-29', time: '19:30' } } }),
       now: T0 - 86_400_000,
       seed: '01'.repeat(32),
+      legacyRng: 7,
     });
     const p = tournamentPreview(s, T0 - 86_400_000);
     expect(p.title).toBe('Thursday <Deep> · RSDP Live!');

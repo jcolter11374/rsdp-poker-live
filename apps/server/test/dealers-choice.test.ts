@@ -926,6 +926,315 @@ describe("Dealer's choice: the host can't move the pick (second review)", () => 
 });
 
 
+describe("Dealer's choice: the first hand's button and a holder who is moved (third review, #421)", () => {
+  /** A new 4-player table: Start draws the first chooser, then the host pauses or stops before the first hand. */
+  function fresh(n: number, hold: 'pause' | 'stop') {
+    const { rt, clock } = table(() => {}, seeded(n));
+    seat(rt, 4);
+    rt.start('host');
+    if (hold === 'pause') rt.pause('host', true);
+    else rt.stop('host');
+    return { rt, clock, first: chooser(rt) };
+  }
+  const go = (rt: TableRuntime, clock: FakeClock, hold: 'pause' | 'stop') => {
+    if (hold === 'pause') rt.pause('host', false);
+    else rt.start('host');
+    clock.advance(RESUME_MIN_MS + 10_000);
+  };
+
+  it('passes the first button on when the first chooser picks and then leaves, so whoever sits in their seat never gets it', () => {
+    let checked = 0;
+    for (const hold of ['pause', 'stop'] as const) {
+      for (let n = 1; n <= 8; n++) {
+        const { rt, clock, first } = fresh(n, hold);
+        if (first.playerId === 'host') continue;
+        pick(rt, 'nlhe');
+        rt.stand(first.playerId);
+        // The next player round from their seat has it now (the same rule as for the Pick chip).
+        const len = rt.state.seats.length;
+        const next = Array.from({ length: len }, (_, i) => rt.state.seats[(first.seat + 1 + i) % len]).find((x) => x)!;
+        // A newcomer sits down in that seat.
+        rt.requestSeat('h', { seat: first.seat, name: 'H', stack: 1000 });
+        go(rt, clock, hold);
+        expect(live(rt)).toBe(true);
+        expect(hand(rt).input.button).toBe(next.seat);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(8);
+  });
+
+  it('gives the first button to a player who makes the first pick in place of the first chooser while the table is paused', () => {
+    let checked = 0;
+    for (const hold of ['pause', 'stop'] as const) {
+      for (let n = 1; n <= 8; n++) {
+        const { rt, clock, first } = fresh(n, hold);
+        rt.sitOut(first.playerId, true);
+        const standIn = chooser(rt);
+        expect(standIn.playerId).not.toBe(first.playerId);
+        pick(rt, 'nlhe');
+        rt.sitOut(first.playerId, false);
+        go(rt, clock, hold);
+        expect(live(rt)).toBe(true);
+        expect(hand(rt).input.button).toBe(standIn.seat);
+        checked++;
+      }
+    }
+    expect(checked).toBe(16);
+  });
+
+  it('gives the first button with the chip to the stand-in when a host move would put the PICK tag on someone else', () => {
+    let checked = 0;
+    for (let n = 1; n <= 24; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('host', { seat: 0, name: 'HOST', stack: 1000 });
+      rt.requestSeat('a', { seat: 3, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.requestSeat('c', { seat: 7, name: 'C', stack: 1000 });
+      rt.start('host');
+      rt.pause('host', true);
+      const first = chooser(rt);
+      rt.sitOut(first.playerId, true);
+      const standIn = chooser(rt);
+      // The host moves someone else into the gap between them, which would put the PICK tag on them.
+      const len = rt.state.seats.length;
+      const gap = Array.from({ length: (standIn.seat - first.seat + len) % len - 1 }, (_, i) => (first.seat + 1 + i) % len).find((i) => !rt.state.seats[i]);
+      const mover = rt.state.seats.find((x) => x && ![first.playerId, standIn.playerId, 'host'].includes(x.playerId));
+      if (gap === undefined || !mover) continue;
+      rt.moveSeat('host', mover.playerId, gap);
+      // So the chip, and the first button with it, went to the stand-in for good.
+      expect(chooser(rt).playerId).toBe(standIn.playerId);
+      rt.sitOut(first.playerId, false);
+      expect(chooser(rt).playerId).toBe(standIn.playerId);
+      pick(rt, 'nlhe');
+      rt.pause('host', false);
+      clock.advance(RESUME_MIN_MS + 10_000);
+      expect(hand(rt).input.button).toBe(standIn.seat);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  /** The first seat round from `from` (not counting it) with someone in it who will be dealt in. */
+  const nextIn = (rt: TableRuntime, from: number) => {
+    const len = rt.state.seats.length;
+    return Array.from({ length: len }, (_, i) => rt.state.seats[(from + 1 + i) % len]).find((x) => x && !x.sittingOut)!;
+  };
+
+  it('gives the first button to the next player dealt in when the first picker sits out or leaves, not a random one (fourth review)', () => {
+    let checked = 0;
+    for (const hold of ['pause', 'stop'] as const) {
+      for (let n = 1; n <= 8; n++) {
+        // The first picker sits out before the first hand.
+        const a = fresh(n, hold);
+        pick(a.rt, 'nlhe');
+        a.rt.sitOut(a.first.playerId, true);
+        go(a.rt, a.clock, hold);
+        expect(live(a.rt)).toBe(true);
+        expect(hand(a.rt).input.button).toBe(nextIn(a.rt, a.first.seat).seat);
+        // The player after them sits out, then the first picker leaves: the button passes them by too.
+        const b = fresh(n, hold);
+        if (b.first.playerId === 'host') continue;
+        pick(b.rt, 'nlhe');
+        const after = nextIn(b.rt, b.first.seat);
+        if (after.playerId === 'host') continue;
+        b.rt.sitOut(after.playerId, true);
+        b.rt.stand(b.first.playerId);
+        go(b.rt, b.clock, hold);
+        expect(live(b.rt)).toBe(true);
+        expect(hand(b.rt).input.button).toBe(nextIn(b.rt, b.first.seat).seat);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(4);
+  });
+
+  it('puts the first button on the first picker when they pick a stud game (fourth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      seat(rt, 4);
+      rt.start('host');
+      const first = chooser(rt);
+      pick(rt, 'razz');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.game.id).toBe('razz');
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it('starts afresh when everyone leaves a new table before its first hand, so the first picker still gets the first button (fourth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      expect(rt.state.choice).toBeDefined();
+      rt.stand('a');
+      rt.stand('b');
+      expect(rt.state.choice).toBeUndefined();
+      rt.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      rt.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      rt.requestSeat('e', { seat: 7, name: 'E', stack: 1000 });
+      // A new first chooser at once, with a whole clock: the table doesn't wait out the old one (fifth review).
+      clock.advance(1);
+      const first = chooser(rt);
+      expect(rt.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+      expect(tableView(rt, first.playerId, clock.now()).choice!.open).toBe(true);
+      pick(rt, 'nlhe');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it('starts afresh when everyone leaves a new table while it is paused, with a fresh clock once the host resumes (fifth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      clock.advance(5_000);
+      rt.pause('host', true);
+      pick(rt, 'razz');
+      rt.stand('a');
+      rt.stand('b');
+      expect(rt.state.choice).toBeUndefined();
+      rt.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      rt.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      rt.pause('host', false);
+      clock.advance(1);
+      // The leavers' pick is gone with them, and the new first chooser picks straight away, with a whole clock.
+      expect(live(rt)).toBe(false);
+      const first = chooser(rt);
+      expect(rt.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+      pick(rt, 'nlhe');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.game.id).toBe('nlhe');
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it('gives the chip of a table everyone has left to the first player who sits down, wherever they sit (fifth review)', () => {
+    let checked = 0;
+    for (let n = 1; n <= 8; n++) {
+      for (const order of [['a', 'b', 'c'], ['c', 'b', 'a'], ['b', 'a', 'c']]) {
+        const { rt, clock } = table(() => {}, seeded(n));
+        rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+        rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+        rt.requestSeat('c', { seat: 7, name: 'C', stack: 1000 });
+        rt.start('host');
+        pick(rt, 'nlhe');
+        clock.advance(10_000);
+        checkDown(rt);
+        clock.advance(1);
+        for (const id of order) rt.stand(id);
+        expect(rt.state.seats.some(Boolean)).toBe(false);
+        const left = rt.state.choice!.chip;
+        // D sits down first, away from it; E then sits in the seat it was left on, and a bot next to it.
+        const away = (left + 4) % 9;
+        rt.requestSeat('d', { seat: away, name: 'D', stack: 1000 });
+        expect(chooser(rt).playerId).toBe('d');
+        rt.requestSeat('e', { seat: left, name: 'E', stack: 1000 });
+        expect(chooser(rt).playerId).toBe('d');
+        rt.addBot('host', { seat: (left + 1) % 9 });
+        expect(chooser(rt).playerId).toBe('d');
+        checked++;
+      }
+    }
+    expect(checked).toBe(24);
+  });
+
+  it("moves a first button left on an empty seat by older code to the next player, so a newcomer there doesn't get it (fourth review)", () => {
+    let checked = 0;
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock, first } = fresh(n, 'pause');
+      if (first.playerId === 'host') continue;
+      pick(rt, 'nlhe');
+      rt.stand(first.playerId);
+      // What a snapshot from before #421 holds: the button still on the leaver's seat.
+      rt.state.choice!.firstButton = first.seat;
+      const saved = JSON.parse(JSON.stringify(rt.state));
+      rt.dispose();
+      const back = new TableRuntime(saved, { clock, rng: seeded(n) });
+      back.resume();
+      for (const p of PEOPLE) back.connect(p);
+      const next = nextIn(back, first.seat);
+      expect(back.state.choice!.firstButton).toBe(next.seat);
+      back.requestSeat('h', { seat: first.seat, name: 'H', stack: 1000 });
+      back.pause('host', false);
+      clock.advance(RESUME_MIN_MS + 10_000);
+      expect(live(back)).toBe(true);
+      expect(hand(back).input.button).toBe(next.seat);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(2);
+  });
+
+  it('starts afresh at once when it restores a paused new table everyone left, saved by older code with its pick clock (fifth review)', () => {
+    for (let n = 1; n <= 4; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      clock.advance(5_000);
+      rt.pause('host', true);
+      const kept = { choice: JSON.parse(JSON.stringify(rt.state.choice)), pausedLeft: { ...rt.state.pausedLeft! }, nextHandAt: rt.state.nextHandAt };
+      expect(kept.pausedLeft.pick).toBe(15_000);
+      rt.stand('a');
+      rt.stand('b');
+      // What older code saved: the choice, its first button on an empty seat, and the paused clocks, all kept.
+      Object.assign(rt.state, kept);
+      const saved = JSON.parse(JSON.stringify(rt.state));
+      rt.dispose();
+      const back = new TableRuntime(saved, { clock, rng: seeded(n) });
+      back.resume();
+      for (const p of PEOPLE) back.connect(p);
+      expect(back.state.choice).toBeUndefined();
+      back.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      back.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      back.pause('host', false);
+      clock.advance(1);
+      expect(back.choice.chooser()).toBeTruthy();
+      expect(back.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+    }
+  });
+
+  it('keeps the chip with a holder who is sitting out when the host moves them, so whoever sits in their old seat never takes it', () => {
+    let checked = 0;
+    for (let n = 1; n <= 12; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('host', { seat: 0, name: 'HOST', stack: 1000 });
+      rt.requestSeat('a', { seat: 3, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 6, name: 'B', stack: 1000 });
+      rt.requestSeat('c', { seat: 8, name: 'C', stack: 1000 });
+      rt.start('host');
+      pick(rt, 'nlhe');
+      checkDown(rt);
+      clock.advance(1);
+      const holder = chooser(rt);
+      if (holder.playerId === 'host') continue;
+      rt.sitOut(holder.playerId, true);
+      const standIn = chooser(rt);
+      // Move the holder one seat on, which leaves the tag on the stand-in, if that seat is free and short of them.
+      const len = rt.state.seats.length;
+      const to = (holder.seat + 1) % len;
+      if (rt.state.seats[to] || to === standIn.seat) continue;
+      const old = holder.seat;
+      rt.moveSeat('host', holder.playerId, to);
+      expect(chooser(rt).playerId).toBe(standIn.playerId);
+      // A newcomer sits in the holder's old seat: the stand-in still picks for now, and the holder once back in.
+      rt.requestSeat('h', { seat: old, name: 'H', stack: 1000 });
+      expect(chooser(rt).playerId).toBe(standIn.playerId);
+      rt.sitOut(holder.playerId, false);
+      expect(chooser(rt).playerId).toBe(holder.playerId);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
 // #423: the host switches a Dealer's choice table to one game, or to a rotation, during the last hand of a pick. The
 // change waits for the next hand, so nobody may pick a game that would never be dealt.
 describe("Dealer's choice: a switch to another game that waits for the next hand (#423)", () => {

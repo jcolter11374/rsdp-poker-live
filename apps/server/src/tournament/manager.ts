@@ -5,6 +5,7 @@ import { applyAtNextHand, defaultSettings, parseSettings, SETTINGS_LIMITS } from
 import {
   apply,
   autoArchive,
+  chatModerationRefusal,
   codeFromWords,
   createTournament,
   isStaffCommand,
@@ -14,6 +15,7 @@ import {
   DirectorError,
   isArchived,
   isLive,
+  LOBBY_CHAT_MUTES_MAX,
   levelFor,
   listedPublicly,
   needsSeatSeed,
@@ -42,6 +44,7 @@ import {
   aliveEntries,
 } from '@rsdp/tournament';
 import { cleanName as cleanDisplayName } from '../names';
+import type { LoadGate } from '../replaceName';
 import { handReport, TableRuntime } from '../runtime/table';
 import type { Clock, HandRecord, RuntimeState, TournamentHooks } from '../runtime/types';
 
@@ -85,6 +88,8 @@ export interface ManagerDeps {
   rng?: Rng;
   /** Passed on to the tables (RuntimeDeps.fairLeadMs). */
   fairLeadMs?: number;
+  /** Makes a tournament read from storage while a player's name was being replaced read again (replaceName.ts). */
+  gate?: LoadGate;
 }
 
 interface Live {
@@ -221,7 +226,7 @@ export class TournamentManager {
       const state = this.newState(newTournamentId(), hostId, settings);
       // A taken id is never saved over: another one is drawn.
       if (!(await this.deps.store.create(state))) continue;
-      await this.adopt(state, null);
+      await this.adopt(state, null, { made: true });
       return state.id;
     }
     throw new Error('no free tournament id');
@@ -233,9 +238,25 @@ export class TournamentManager {
     if (live) return live;
     // An event let go of a moment ago is read back only once its last save is in.
     await this.evicting.get(id);
+    const mark = this.deps.gate?.mark();
     const saved = await this.deps.store.load(id);
     if (!saved) return null;
-    return this.live.get(id) ?? this.adopt(saved.state, saved.nextId);
+    return this.live.get(id) ?? this.adopt(saved.state, saved.nextId, { mark });
+  }
+
+  /** The state of every tournament held in memory (a name being replaced must not be written back over). */
+  held(): TournamentState[] {
+    return [...this.live.values()].map((l) => l.state);
+  }
+
+  /** Whether the final save of an event let go of is still under way: it would write over a name being replaced. */
+  get saving(): boolean {
+    return this.evicting.size > 0;
+  }
+
+  /** Resolves once the final saves of the events let go of so far are in. */
+  async settled() {
+    await Promise.allSettled([...this.evicting.values()]);
   }
 
   /** Still to come or under way, and not archived (every such event is in memory). */
@@ -307,6 +328,36 @@ export class TournamentManager {
     if (this.closed) throw new ActionError('the server is restarting');
     const command = this.fromBrowser(live, me, myName, raw);
     this.dispatch(live, (s, now) => apply(s, command, now));
+  }
+
+  /**
+   * The host, or a co-host with the power, mutes or unmutes someone in the lobby chat. Like the chat itself, this
+   * works before, during and after the event, so it is kept apart from the director's commands.
+   */
+  async muteInChat(id: string, me: PlayerId, playerId: PlayerId, value: boolean) {
+    const live = await this.chatLive(id);
+    // Player ids are short; anything else is not someone who could have chatted.
+    if (!playerId || playerId.length > 64) throw new ActionError('pick a player');
+    if (playerId === me && value) throw new ActionError("you can't mute yourself");
+    // Only the host is above everyone's mutes; a co-host the host muted stays muted until the host says otherwise.
+    if (playerId === me && me !== live.state.hostId) throw new ActionError('only the host can unmute you');
+    const refused = chatModerationRefusal(live.state, me, playerId);
+    if (refused) throw new ActionError(refused);
+    const muted = live.state.lobbyChat?.muted ?? [];
+    if (muted.includes(playerId) === value) return;
+    if (value && muted.length >= LOBBY_CHAT_MUTES_MAX) throw new ActionError(`at most ${LOBBY_CHAT_MUTES_MAX} people can be muted; unmute someone first`);
+    live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, muted: value ? [...muted, playerId] : muted.filter((p) => p !== playerId) } };
+    this.changed(live);
+  }
+
+  /** The host, or a co-host with the power, turns the lobby chat off (nobody can send) or back on. */
+  async setChatOff(id: string, me: PlayerId, off: boolean) {
+    const live = await this.chatLive(id);
+    const refused = chatModerationRefusal(live.state, me);
+    if (refused) throw new ActionError(refused);
+    if (!!live.state.lobbyChat?.off === off) return;
+    live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, off } };
+    this.changed(live);
   }
 
   /** Operator cleanup: every event this server holds, so test events can be picked out by name and players. */
@@ -402,6 +453,14 @@ export class TournamentManager {
 
   // ---------------------------------------------------------------- internals
 
+  /** A tournament whose lobby chat rules are about to change. */
+  private async chatLive(id: string) {
+    const live = await this.get(id);
+    if (!live) throw new ActionError('tournament not found');
+    if (this.closed) throw new ActionError('the server is restarting');
+    return live;
+  }
+
   private fromBrowser(live: Live, me: PlayerId, myName: string, cmd: Command): Command {
     if (!cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string') throw new ActionError('unknown command');
     if (TABLE_COMMANDS.has(cmd.type)) throw new ActionError('unknown command');
@@ -441,7 +500,8 @@ export class TournamentManager {
 
   private newState(id: string, hostId: PlayerId, settings: TournamentSettings, follows: TournamentSettings | null = null) {
     const seed = this.newSeatSeed();
-    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, follows }));
+    const legacyRng = this.newLegacyRng();
+    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, legacyRng, follows }));
   }
 
   /**
@@ -452,6 +512,18 @@ export class TournamentManager {
     const rng = this.deps.rng;
     const bytes = rng ? Uint8Array.from({ length: 32 }, () => rng(256)) : randomBytes(32);
     return Buffer.from(bytes).toString('hex');
+  }
+
+  /**
+   * A secret state for the old seat-draw generator, made apart from the seed (see `CreateInput.legacyRng`): 4 bytes
+   * from crypto.randomBytes, or from the test rng, never 0.
+   */
+  private newLegacyRng(): number {
+    const rng = this.deps.rng;
+    for (;;) {
+      const n = rng ? rng(0x100000000) : randomBytes(4).readUInt32BE(0);
+      if (n !== 0) return n;
+    }
   }
 
   private guard<T>(fn: () => T): T {
@@ -516,16 +588,29 @@ export class TournamentManager {
     }, wait);
   }
 
-  /** Takes a tournament into memory: its tables come back from their snapshots. */
-  private async adopt(state: TournamentState, nextId: string | null): Promise<Live> {
+  /**
+   * Takes a tournament into memory: its tables come back from their snapshots. `made` is true when this server
+   * has just made the state, so its seat seed has never left the server. `mark`: the gate's mark taken before
+   * `state` was read, when it was read from storage.
+   */
+  private async adopt(state: TournamentState, nextId: string | null, opts: { made?: boolean; mark?: number } = {}): Promise<Live> {
     // Every snapshot loads before anything is mounted, so a failed load leaves nothing half-built to be found later.
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    // Saved before seat draws used a 32-byte seed, with its seats still to draw: it draws from a fresh secure seed
-    // rather than the old 32-bit one. Nobody ever saw the old seed, so nothing anyone saw changes.
-    const reseeded = needsSeatSeed(state);
-    if (reseeded) state = withSeatSeed(state, this.newSeatSeed());
+    // A name replaced since it was read: read it again, or its first save would put the name back.
+    const gate = this.deps.gate;
+    if (gate && opts.mark !== undefined && gate.stale(opts.mark)) {
+      await gate.settled();
+      const again = await this.get(state.id);
+      if (!again) throw new ActionError('tournament not found');
+      return again;
+    }
+    // Seats still to draw: a fresh seed every time it loads from storage (see needsSeatSeed). That upgrades one
+    // saved before rsdp-seats-v1, and retires a seed that a server from before then sent to browsers after a
+    // rollback. One this server has just made keeps the seed it was made with.
+    const reseeded = !opts.made && needsSeatSeed(state);
+    if (reseeded) state = withSeatSeed(state, this.newSeatSeed(), this.newLegacyRng());
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {
@@ -860,9 +945,13 @@ export class TournamentManager {
         // A replayed edit is already in the table's snapshot, which may be a hand further on.
         if (e.applied && !live.replay) this.table(live, e.tableId)?.tournamentSetStack(e.playerId, e.stack);
         break;
-      case 'hostChanged':
+      case 'hostChanged': {
         for (const rt of live.tables.values()) rt.state.hostId = e.hostId;
+        // Nobody acts on the host's chat but the host, so a player muted in the lobby is unmuted on taking it over.
+        const muted = live.state.lobbyChat?.muted;
+        if (muted?.includes(e.hostId)) live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, muted: muted.filter((p) => p !== e.hostId) } };
         break;
+      }
       case 'tableBroken': {
         const rt = this.table(live, e.tableId);
         if (rt) {
@@ -928,7 +1017,7 @@ export class TournamentManager {
     // A series keeps a rebuy or add-on count saved before the per-player cap (#281).
     const state = { ...this.newState(id, live.state.hostId, settings, live.state.settings), spawnedFrom: live.state.id };
     // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
-    if (await this.deps.store.create(state)) await this.adopt(state, null);
+    if (await this.deps.store.create(state)) await this.adopt(state, null, { made: true });
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);
     live.nextId = id;
     if (live.state.nextError !== undefined) {
