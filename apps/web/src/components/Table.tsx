@@ -107,6 +107,8 @@ const PHONE_HAND = {
  * that would move cards about each time someone acts, so it isn't.
  */
 const PLATE_HALF_HEIGHT = 25;
+/** Cards on a phone don't follow a nameplate's width by this many pixels or fewer (see useHandFit). */
+const JIGGLE = 2;
 const plateBox = (r: DOMRect, from: DOMRect = r): Box => {
   const middle = (r.top + r.bottom) / 2;
   return { left: from.left, right: from.right, top: middle - PLATE_HALF_HEIGHT, bottom: middle + PLATE_HALF_HEIGHT };
@@ -162,7 +164,10 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): MyHandFit |
         next = size || shift ? { ...f, shift } : null;
       }
     }
-    if (next?.cw !== fit?.cw || next?.overlap !== fit?.overlap || next?.shift !== fit?.shift) setFit(next);
+    // A nameplate gets a little wider or narrower as its stack or the line under it changes. Following that by a pixel or
+    // two would only make the cards jiggle, so a move that small is left out.
+    const sized = (f: MyHandFit | null) => (f ? `${f.cw}/${f.overlap}` : '');
+    if (sized(next) !== sized(fit) || Math.abs((next?.shift ?? 0) - (fit?.shift ?? 0)) > JIGGLE) setFit(next);
   });
   return fit;
 }
@@ -176,6 +181,9 @@ const PHONE_ROW = {
   upright: { cw: 30, height: 42, steps: [32, 22, 19], minCw: 24 },
   sideways: { cw: 24, height: 34, steps: [26, 16, 13], minCw: 20 },
 };
+
+/** How much further than placeRow's 4px another player's cards may reach into the empty bottom of a nameplate they're drawn over. */
+const PADDING_UNDER_STACK = 6;
 
 /** Where another player's cards go on a phone: moved aside by `shift` pixels, and bunched up when `margin` is set. */
 interface RowSpot {
@@ -213,7 +221,10 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean): Record<num
       const rows = seats.filter((s) => !s.me && s.cards > 0);
       for (const r of rows) {
         const at = band(r.plate);
-        const blocks: Box[] = seats.filter((s) => s !== r).map((s) => s.plate);
+        // A seat drawn later covers an earlier one. So these cards may reach a little further into the bottom of an earlier
+        // seat's nameplate above them (10px in all): nothing is written there (the stack ends 12px above its bottom), and
+        // the cards keep their size instead of bunching up. A nameplate drawn over the cards would hide their rank and suit.
+        const blocks: Box[] = seats.filter((s) => s !== r).map((s) => (s.seat < r.seat ? { ...s.plate, bottom: s.plate.bottom - PADDING_UNDER_STACK } : s.plate));
         if (mine?.width) blocks.push(mine);
         for (const o of rows) {
           const ob = band(o.plate);
@@ -229,9 +240,12 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean): Record<num
         if (place) next[r.seat] = { shift: place.shift, ...(place.step < step || place.cw < size.cw ? { margin: place.step - place.cw - 2, cw: place.cw } : {}) };
       }
     }
-    const same = (a: Record<number, RowSpot>, b: Record<number, RowSpot>) =>
-      Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[+k]?.shift === v.shift && b[+k]?.margin === v.margin && b[+k]?.cw === v.cw);
-    if (!same(next, spots)) setSpots(next);
+    // As for your own hand, a row that would move by only a pixel or two stays where it is.
+    const near = (a: RowSpot | undefined, b: RowSpot) => !!a && a.margin === b.margin && a.cw === b.cw && Math.abs(a.shift - b.shift) <= JIGGLE;
+    const kept: Record<number, RowSpot> = {};
+    for (const [k, v] of Object.entries(next)) kept[+k] = near(spots[+k], v) ? spots[+k] : v;
+    const same = Object.keys(kept).length === Object.keys(spots).length && Object.entries(kept).every(([k, v]) => spots[+k] === v);
+    if (!same) setSpots(kept);
   });
   return spots;
 }
