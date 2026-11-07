@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.3] - 2026-11-07
+
+### Fixed and changed
+
+- Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (the Pick next game button at a Dealer's choice table, Paused, or a tournament level's clock). When the line doesn't fit, the table's name is shortened with "…" first; point at the line to see all of it.
+
 ## [2026.11.07.2] - 2026-11-07
 
 _Dealer's choice_
@@ -686,6 +692,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5

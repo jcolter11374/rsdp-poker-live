@@ -424,6 +424,15 @@ export function TablePage({ tableId }: { tableId: string }) {
   const levelText = level
     ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
     : null;
+  // The top bar's line. At a tournament the strip under the bar names the event, so the bar just says which table.
+  const barName = view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name;
+  const pickLine = view.choice?.current ? choiceText(view) : null;
+  const bombPot = !!view.hand?.bombPot && view.hand.phase !== 'complete';
+  const barLine = [barName, game && `${game.label} ${game.stakes}`.trim(), pickLine, levelText, bombPot && 'Bomb pot', view.paused && 'Paused']
+    .filter(Boolean)
+    .join(' · ');
+  /** What goes before a part of the line: a dot, or on a desktop just a space for the first part (its dot is the name's). */
+  const dot = (first: boolean) => (first && !portrait ? ' ' : ' · ');
   // Straddles need blinds, so stud tables never offer them.
   const nextFamily = view.hand?.family ?? (view.upcoming ? gameFamily(view.upcoming.gameId) : 'flop');
   const straddleOn = cash && view.settings.play.straddle !== 'off' && nextFamily !== 'stud';
@@ -549,23 +558,41 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           )}
         </a>
-        <span className="stakes">
-          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
-          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
-          {game && (
-            <>
-              {portrait ? <br /> : ' · '}
-              {game.label} {game.stakes}
-            </>
-          )}
-          {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
-          {levelText && <> · {levelText}</>}
-          {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-          {view.paused && <b className="paused"> · Paused</b>}
+        {/* On a desktop the line never wraps, so nothing that comes and goes in the bar (the Pick button, Paused, a
+            level's clock) changes its height and moves the table (#408). When it doesn't fit, the table's name gives
+            way first; the whole line is in the tooltip. */}
+        <span className="stakes" title={barLine}>
+          {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
+          <span className="stakes-name">
+            <b>{barName}</b>
+            {!portrait && barLine !== barName && ' ·'}
+          </span>
+          <span className="stakes-more">
+            {game && (
+              <>
+                {portrait ? <br /> : ' '}
+                {[game.label, game.stakes].filter(Boolean).join(' ')}
+              </>
+            )}
+            {pickLine && (
+              <>
+                {dot(!game)}
+                {pickLine}
+              </>
+            )}
+            {levelText && (
+              <>
+                {dot(!game && !pickLine)}
+                {levelText}
+              </>
+            )}
+            {bombPot && <b>{dot(!game && !pickLine && !levelText)}Bomb pot</b>}
+            {view.paused && <b className="paused">{dot(!game && !pickLine && !levelText && !bombPot)}Paused</b>}
+          </span>
         </span>
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
-            {portrait ? 'Pick' : 'Pick next game'}
+            Pick<span className="pick-more"> next game</span>
           </button>
         )}
         {bigBlind > 0 && (
