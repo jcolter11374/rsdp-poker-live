@@ -187,6 +187,22 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
 const settled = (card: Element) => !card.getAnimations?.().some((a) => a instanceof CSSAnimation && a.playState === 'running');
 
 /**
+ * Where an element will be once it has grown in (a winner's line pops in from 40% and overshoots a little): its box,
+ * less a scale and a move in its own `transform` about its centre. `zoom` is how much what holds it is drawn scaled.
+ */
+function grownIn(el: Element, zoom: number): Box {
+  const r = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const m = !style.transform || style.transform === 'none' || typeof DOMMatrixReadOnly === 'undefined' ? null : new DOMMatrixReadOnly(style.transform);
+  if (!m || !m.is2D || m.b || m.c || m.a <= 0 || m.d <= 0 || style.scale !== 'none' || style.translate !== 'none') return r;
+  const x = (r.left + r.right) / 2 - m.e * zoom;
+  const y = (r.top + r.bottom) / 2 - m.f * zoom;
+  const w = r.width / m.a / 2;
+  const h = r.height / m.d / 2;
+  return { left: x - w, right: x + w, top: y - h, bottom: y + h };
+}
+
+/**
  * The scale the middle of the table (`stack`, drawn scaled about its centre) needs so it covers no player's nameplate or
  * cards (#417): see fitMiddle.
  */
@@ -201,7 +217,7 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
   for (const child of stack.children) {
     for (const part of child.classList.contains('results') ? [...child.children] : [child]) {
       if (part.classList.contains('unseen')) continue;
-      let b: Box = part.getBoundingClientRect();
+      let b = grownIn(part, now);
       if (!b.right && !b.bottom) continue;
       for (const card of part.querySelectorAll('.playing-card')) {
         if (!settled(card)) continue;
@@ -578,12 +594,19 @@ export function Table({
   // the board and the results come, so it doesn't grow and shrink back and forth. Phones: see #380.
   const stack = useRef<HTMLDivElement>(null);
   const [boardFit, setBoardFit] = useState(1);
-  const fitHeld = useRef({ key: '', fit: 1 });
+  const fitHeld = useRef({ key: '', fit: 1, failed: false });
   const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
   useLayoutEffect(() => {
-    let fit = compact || !felt.current || !stack.current ? 1 : boardScale(felt.current, stack.current);
+    let fit = 1;
+    try {
+      if (!compact && felt.current && stack.current) fit = boardScale(felt.current, stack.current);
+    } catch (error) {
+      // As for the seats: a slip here mustn't take the table down. The middle keeps its full size, as before #417.
+      if (!fitHeld.current.failed) reportError(error, 'error');
+      fitHeld.current.failed = true;
+    }
     if (fitHeld.current.key === fitKey) fit = Math.min(fit, fitHeld.current.fit);
-    fitHeld.current = { key: fitKey, fit };
+    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed };
     setBoardFit((f) => (f === fit ? f : fit));
   });
   const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
@@ -654,7 +677,7 @@ export function Table({
     const f = el.getBoundingClientRect();
     const r = pot.getBoundingClientRect();
     potSpot.current = { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
-  }, [view, w, h]);
+  }, [view, w, h, boardFit]);
   const potPoint = (): Point => potSpot.current ?? boardMiddle;
   const geometry = useRef({ betPoint, seatPoint, center, potPoint });
   geometry.current = { betPoint, seatPoint, center: boardMiddle, potPoint };

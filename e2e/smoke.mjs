@@ -660,7 +660,9 @@ try {
     await move(other, /^Call/).waitFor();
     await other.waitForTimeout(600);
     await move(other, /^Call/).click();
-    await host.locator('.board-row').nth(1).waitFor();
+    // An all in before the flop is run out a card at a time, both runs about 20 seconds; the second run's row comes
+    // with its first card, about 14 seconds in.
+    await host.locator('.board-row').nth(1).waitFor({ timeout: 30000 });
     await host.locator('.pot.result').first().waitFor({ timeout: 30000 });
     // "Next hand in" follows unless a player is out of chips.
     await host.locator('.board .next-hand').waitFor({ timeout: 5000 }).catch(() => {});

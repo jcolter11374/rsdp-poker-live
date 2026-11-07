@@ -430,12 +430,13 @@ export const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.right, b.r
 
 /**
  * How small the middle of the table must be drawn so it covers no player's nameplate or cards (#417). `items` are what
- * it holds, at full size, drawn scaled about `centre`; `line` marks the winners' lines and what comes next, which should
- * stay clear of the dealer `button` too where they can. The cards alone never shrink for the button, so the board keeps
- * its size from hand to hand wherever the button is. The answer is the largest scale from 1 down to `least`, in `step`s,
- * that covers nothing, or where none does, the one that covers the least.
+ * it holds, at full size, drawn scaled about `centre`. The answer is the largest scale from 1 down to `least`, in `step`s,
+ * that covers nothing, or where none does, the one that covers the least. Where the middle is drawn smaller for a seat
+ * anyway, it may go up to `spare` steps smaller still so that the items marked `line` (the winners' lines and what
+ * comes next) clear the dealer `button` too. The button alone never makes it smaller, so a hand that fits keeps the
+ * full size wherever the button is.
  */
-export function fitMiddle(items: readonly (Box & { line?: boolean })[], seats: readonly Box[], button: Box | null, centre: Point, { gap = 4, least = 0.6, step = 0.02 } = {}): number {
+export function fitMiddle(items: readonly (Box & { line?: boolean })[], seats: readonly Box[], button: Box | null, centre: Point, { gap = 4, least = 0.6, step = 0.02, spare = 2 } = {}): number {
   const covered = (k: number, withButton: boolean) => {
     let area = 0;
     for (const it of items) {
@@ -447,7 +448,8 @@ export function fitMiddle(items: readonly (Box & { line?: boolean })[], seats: r
   };
   const scales: number[] = [];
   for (let i = 0; 1 - i * step >= least - 1e-9; i++) scales.push(Math.round((1 - i * step) * 100) / 100);
-  const clear = scales.find((k) => covered(k, true) < 1) ?? scales.find((k) => covered(k, false) < 1);
-  if (clear !== undefined) return clear;
+  const fits = scales.findIndex((k) => covered(k, false) < 1);
+  if (fits === 0) return 1;
+  if (fits > 0) return scales.slice(fits, fits + spare + 1).find((k) => covered(k, true) < 1) ?? scales[fits];
   return scales.reduce((best, k) => (covered(k, false) < covered(best, false) - 1 ? k : best), 1);
 }

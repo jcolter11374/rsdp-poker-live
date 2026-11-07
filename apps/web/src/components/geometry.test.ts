@@ -340,15 +340,23 @@ describe('fitMiddle', () => {
     expect(200 + 50 * k + 4).toBeLessThanOrEqual(240);
   });
 
-  it('moves the winners\' lines off the dealer button, but never shrinks the cards alone for it', () => {
+  it('never draws the middle smaller for the dealer button alone', () => {
     const button = { left: 490, right: 516, top: 236, bottom: 262 };
-    expect(fitMiddle([board, line], [], button, centre)).toBeLessThan(1);
-    const onCards = { left: 490, right: 516, top: 150, bottom: 176 };
-    expect(fitMiddle([board, line], [], onCards, centre)).toBe(1);
+    expect(fitMiddle([board, line], [], button, centre)).toBe(1);
   });
 
-  it('lets the button stay on a line rather than give up a seat', () => {
-    // No size clears the button (the line is on it even at 0.6); the seat alone needs 0.92.
+  it('where a seat makes it smaller anyway, goes a little further to move the lines off the button', () => {
+    // The seat needs 0.92 (the line's bottom, 200 + 50k, and the 4px gap reach no lower than 250). A button whose top is
+    // at 248 needs two steps more, 0.88; one at 246 would need 0.84, too far, so the seat's 0.92 stands.
+    const seat = { left: 450, right: 550, top: 250, bottom: 300 };
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 248, bottom: 274 }, centre)).toBe(0.88);
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 246, bottom: 272 }, centre)).toBe(0.92);
+    // On the cards, the button never matters.
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 150, bottom: 176 }, centre)).toBe(0.92);
+  });
+
+  it('lets the button stay on a line rather than give up much size for it', () => {
+    // No size near 0.92 (what the seat needs) clears the button, so the seat's size stands.
     const button = { left: 480, right: 520, top: 205, bottom: 245 };
     const seat = { left: 450, right: 550, top: 250, bottom: 300 };
     expect(fitMiddle([board, line], [seat], button, centre)).toBe(0.92);
