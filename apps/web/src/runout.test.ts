@@ -3,7 +3,7 @@ import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engin
 import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { departures, finishedOnScreen, heldCards, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
+import { departures, finishedOnScreen, heldCards, heldChoice, holdBack, myPlace, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -423,6 +423,30 @@ function allInWith(boardCards: number, options: Parameters<typeof start>[0]['opt
 }
 
 const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null, rotation: null });
+
+describe("the viewer's place, kept after a knockout (#445)", () => {
+  // Player b, knocked out in hand 9, is looking at the table: their seat is kept, marked out.
+  const { after } = knockout();
+  const out = (departed: 'out' | 'fading', nextHandAt: number | null) =>
+    ({ ...after, me: { playerId: 'b', seat: null }, nextHandAt, seats: [after.seats[0], { ...after.seats[0]!, seat: 1, playerId: 'b', stack: 0, departed }, after.seats[2]] }) as unknown as TableView;
+
+  it('is your seat while you have one', () => {
+    expect(myPlace(after)).toBe(0);
+  });
+  it('is the seat kept for you after a knockout, until the next deal, fading included', () => {
+    expect(myPlace(out('out', 9000))).toBe(1);
+    expect(myPlace(out('out', null))).toBe(1);
+    // It fades a moment before the deal: the table changes with the deal, not before it.
+    expect(myPlace(out('fading', 9000))).toBe(1);
+  });
+  it('lets go once the kept seat fades with no deal coming, as at a table that broke', () => {
+    expect(myPlace(out('fading', null))).toBeNull();
+  });
+  it("is nothing for someone only watching, and doesn't count someone else's kept seat", () => {
+    expect(myPlace({ ...out('out', 9000), me: { playerId: 'z', seat: null } } as unknown as TableView)).toBeNull();
+    expect(myPlace({ ...out('out', 9000), mode: 'cash' } as unknown as TableView)).toBeNull();
+  });
+});
 
 describe('run it twice, street by street (#372)', () => {
   for (const boards of [1, 2] as const) {
