@@ -37,7 +37,7 @@ import {
 } from './formats';
 import { MAX_PRIZE_AMOUNT, placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
-import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
+import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
 import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type AnteType, type LevelRow, type StructureRow } from './structure';
 import { cleanText, hasUnstorableText, isId } from './text';
 import {
@@ -219,6 +219,12 @@ function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSett
   return out;
 }
 
+/** JSON with every object's keys in sorted order, so a setting sent back with its keys in another order compares equal. */
+const sortedJson = (v: unknown) => JSON.stringify(v, (_k, x: unknown) => (isObject(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+
+/** Whether two values of one setting hold the same thing. Lists keep their order: in a list, order matters. */
+const sameSetting = (a: unknown, b: unknown) => sortedJson(a) === sortedJson(b);
+
 /** Most rebuys, and most add-ons, one player may take in one event. */
 export const MAX_BUYS_PER_PLAYER = 100;
 
@@ -307,13 +313,18 @@ export interface CreateInput {
   hostId: PlayerId;
   settings: TournamentSettings;
   now: number;
-  /** Any 32-bit integer; the server should pick it with a CSPRNG. */
-  seed: number;
+  /**
+   * The secret seed for seat draws: 32 bytes as 64 lowercase hex characters. The server makes it with a
+   * cryptographically secure generator (crypto.randomBytes), fresh for every tournament.
+   */
+  seed: string;
   /** The event this one follows in a series: rebuy and add-on counts it was allowed to keep carry over. */
   follows?: TournamentSettings | null;
 }
 
 export function createTournament({ id, hostId, settings: raw, now, seed, follows }: CreateInput): TournamentState {
+  // A server bug, not something the host can fix, so not a DirectorError.
+  if (!isSeatSeed(seed)) throw new Error('A tournament needs a seat-draw seed of 64 hex characters');
   const settings = cleanSettings(raw) as TournamentSettings;
   const errors = validateSettings(settings, follows);
   if (settings.start?.kind === 'scheduled' && settings.start.startAt <= now) errors.push('The start time has already passed');
@@ -338,9 +349,34 @@ export function createTournament({ id, hostId, settings: raw, now, seed, follows
     eliminations: [],
     handForHand: { active: false, round: 0 },
     counters: { entry: 0, table: 0, request: 0 },
-    rng: seed >>> 0,
+    seatRng: { seed, at: 0 },
+    // Unused while seatRng is here, but secret, so a rolled-back server that draws from it alone can't be predicted.
+    rng: legacyRngFor(seed),
   };
 }
+
+/**
+ * A tournament saved before seat draws moved to rsdp-seats-v1 (no `seatRng`)
+ * whose seats are still to be drawn. The server gives it a fresh seed from a
+ * secure generator when it loads it (`withSeatSeed`), so its draw is as strong
+ * as a new tournament's. Its old seed was never shown to anyone, so nothing
+ * anyone saw changes.
+ */
+export const needsSeatSeed = (s: TournamentState) => !s.seatRng && s.status === 'registering' && s.tables.length === 0;
+
+/** The state with a fresh seat-draw seed (64 hex characters from a secure generator), read from the start. */
+export function withSeatSeed(s: TournamentState, seed: string): TournamentState {
+  if (!isSeatSeed(seed)) throw new Error('A seat-draw seed is 64 hex characters');
+  return { ...s, seatRng: { seed, at: 0 } };
+}
+
+/**
+ * The generator seat draws (and codes the director makes itself) read from,
+ * carrying on from where the last one stopped. It moves the state's position
+ * on as it reads, so call it on the director's own copy. A state saved before
+ * rsdp-seats-v1 that never got a seed keeps mulberry32 (`legacySeatRng`).
+ */
+const drawRng = (s: TournamentState) => (s.seatRng ? seatRng(s.seatRng) : legacySeatRng(s));
 
 // ---------------------------------------------------------------------------
 // Queries
@@ -711,8 +747,7 @@ function seatAll(c: Ctx) {
     for (const e of s.entries.filter((x) => x.status === 'registered' && x.checkedInAt === undefined)) dropEntry(c, e, 'not-checked-in');
   }
   const waiting = s.entries.filter((e) => e.status === 'registered');
-  const [draw, rng] = drawSeats(waiting.map((e) => e.id), s.settings.seatsPerTable, s.rng);
-  s.rng = rng;
+  const draw = drawSeats(waiting.map((e) => e.id), s.settings.seatsPerTable, drawRng(s));
   const created: { tableId: TableId; seats: SeatInfo[] }[] = [];
   for (const seats of draw) {
     const t = newTable(c);
@@ -1202,7 +1237,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         if (cmd.codes) {
           codes = cmd.codes.map(normalizeCode);
           if (codes.length !== count || !codes.every(isCodeFormat) || new Set([...taken, ...codes]).size !== taken.size + count) fail('Those codes are not usable');
-        } else [codes, s.rng] = drawCodes(s.rng, count, taken);
+        } else codes = drawCodes(drawRng(s), count, taken);
         for (const code of codes) invites.push({ code, maxUses, createdAt: now, cancelled: false, usedBy: [] });
         emit(c, { type: 'invitesCreated', codes });
         break;
@@ -1356,7 +1391,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         // Compared cleaned, as settings saved before nested fields were cleaned may still hold extra ones.
         const was = cleanSettings(s.settings);
         for (const k of locked) {
-          if (k in changes && JSON.stringify(changes[k]) !== JSON.stringify(was[k]))
+          if (k in changes && !sameSetting(changes[k], was[k]))
             fail(k === 'structure' ? 'Use editStructure to change levels' : k === 'season' ? 'The season is set when the tournament is created' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next, s.settings);
@@ -1368,7 +1403,9 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           if (next.start.startAt !== s.startAt) s.graceUntil = null;
           s.startAt = next.start.startAt;
         }
-        emit(c, { type: 'settingsUpdated' });
+        // Named for the activity log, which leaves out a save that changed nothing.
+        const changed = (Object.keys(changes) as (keyof TournamentSettings)[]).filter((k) => !sameSetting(changes[k], was[k]));
+        emit(c, { type: 'settingsUpdated', changed });
         break;
       }
       case 'end': {
