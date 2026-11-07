@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "id": "2026.11.06.6",
-      "date": "2026-11-06",
+      "id": "2026.11.07",
+      "date": "2026-11-07",
       "fixes": [
         "Stud games with a big-blind ante (tournaments with stud levels, cash stud tables, and the stud games of HORSE and 8-Game): everyone now antes about an eighth of it (300 becomes 40 each, 0.50 becomes 0.06), instead of every player putting in the full amount. In tournaments the lobby clock and the structure table show the ante each level really deals, and the structure editor says how it works.",
         "Mixed games: a bomb pot dealt during a stud game no longer cuts the rest of that stud game short. It takes the place of one hand of the orbit, as it does in hold'em.",
