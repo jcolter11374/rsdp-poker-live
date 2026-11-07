@@ -68,7 +68,7 @@ export function FeltEmblem() {
       </defs>
       <text className="emblem-ring" fontSize="15" letterSpacing="5">
         <textPath href="#emblem-top" startOffset="50%" textAnchor="middle">
-          RSDP POKER
+          RSDP
         </textPath>
       </text>
       <text className="emblem-ring" fontSize="15" letterSpacing="5">

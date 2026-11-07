@@ -6,7 +6,7 @@ import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
-import { usePortrait, useWide } from './layout';
+import { useMinWidth, usePortrait, useWide } from './layout';
 import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
@@ -34,6 +34,8 @@ import { Dock } from './components/table/Dock';
 import { useDepartures, useRunoutReveal } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
+import { TournamentGameLine } from './tournament/TableGame';
+import { CashGameLine } from './components/table/GameLine';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
@@ -158,6 +160,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
+  // Below these the top bar's count of hands left, or time to the next game, takes its short wording, and then the
+  // game its short name, so neither is cut (#373).
+  const narrowBar = !useMinWidth(1280);
+  const tightBar = !useMinWidth(1100);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
   const [noticeRoom, setNoticeRoom] = useState(true);
@@ -339,7 +345,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   useLayoutEffect(() => {
     const page = pageRef.current;
     const bar = page?.querySelector<HTMLElement>('.topbar');
-    if (!wide || !page || !bar) return;
+    // Every layout: "Connection lost" floats just under the bar too (#388).
+    if (!page || !bar) return;
     const measure = () => page.style.setProperty('--topbar-h', `${bar.offsetHeight}px`);
     measure();
     const ro = new ResizeObserver(measure);
@@ -352,7 +359,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     return (
       <main className="home">
         <h1 className="logo">
-          RSDP Poker <span>Live!</span>
+          RSDP <span>Live!</span>
         </h1>
         <p className="error">{error === 'deleted' ? 'This table was deleted.' : error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
         {tournament && (
@@ -424,8 +431,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const levelText = level
     ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
     : null;
-  // The top bar's line. At a tournament the strip under the bar names the event, so the bar just says which table.
-  const barName = view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name;
+  // The top bar's line at a cash table that plays one game or Dealer's choice (rotating and tournament tables have their own).
+  const barName = view.name;
   const pickLine = view.choice?.current ? choiceText(view) : null;
   const bombPot = !!view.hand?.bombPot && view.hand.phase !== 'complete';
   const barLine = [barName, game && `${game.label} ${game.stakes}`.trim(), pickLine, levelText, bombPot && 'Bomb pot', view.paused && 'Paused']
@@ -543,6 +550,66 @@ export function TablePage({ tableId }: { tableId: string }) {
   // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
   // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
   const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
+  // Notes about you, the host's waiting requests and the host stopping the game go under the table with your buttons
+  // rather than above the felt, where they took its height: every seat moved when one came or went, often mid-hand
+  // (#388). The area under the table holds its height (Dock), so a note that fits in the room it already holds moves
+  // nothing. One note fits at a no-limit table for a seated player; a fixed-limit table on a laptop (whose room is kept
+  // for a shorter bar), several notes at once, or someone watching without a seat can still need more, once: the area
+  // then keeps that height. On your turn they give way to the betting buttons, which that room is kept for (except where
+  // the window is too narrow for the side column: see .dock-notes in styles.css); the host still sees the count in
+  // Host controls, on Host & log or on the menu.
+  const yourTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+  const dockNotes = [
+    noticeUnder && view.hand && (
+      <div className="banner" key="stopped">
+        {startNotice!.text}
+      </div>
+    ),
+    view.stopAfterHand && (
+      <div className="banner" key="stop">
+        The host is stopping the game after this hand.
+      </div>
+    ),
+    pending > 0 && (
+      <div className={`banner attention${portrait || wide ? ' clickable' : ''}`} key="requests" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
+        {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
+      </div>
+    ),
+    ...myBotRequests.map((r) => (
+      <div className="banner" key={r.id}>
+        Your bot {r.name} is waiting for the host to let it sit…{' '}
+        <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
+      </div>
+    )),
+    rebuyRequest && (
+      <div className="banner" key="rebuy">
+        Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…
+      </div>
+    ),
+    mySeat?.sittingOut && (
+      <div className="banner" key="away">
+        {mySeat.sitOutReason === 'busted'
+          ? "You're out of chips."
+          : mySeat.sitOutReason === 'timeouts'
+            ? 'You were marked away after running out of time.'
+            : mySeat.sitOutReason === 'host'
+              ? 'The host sat you out.'
+              : "You're sitting out."}
+        {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
+        {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
+          <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
+            Add chips
+          </button>
+        ) : canSitIn ? (
+          <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
+            I'm back
+          </button>
+        ) : (
+          mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
+        )}
+      </div>
+    ),
+  ].filter(Boolean);
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -554,42 +621,50 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           ) : (
             <>
-              RSDP Poker <span>Live!</span>
+              RSDP <span>Live!</span>
             </>
           )}
         </a>
-        {/* On a desktop the line never wraps, so nothing that comes and goes in the bar (the Pick button, Paused, a
-            level's clock) changes its height and moves the table (#408). When it doesn't fit, the table's name gives
-            way first; the whole line is in the tooltip. */}
-        <span className="stakes" title={barLine}>
-          {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
-          <span className="stakes-name">
-            <b>{barName}</b>
-            {!portrait && barLine !== barName && ' ·'}
+        {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
+            At a tournament the strip under the bar names the event, so the bar just says which table. */}
+        {view.tournamentId ? (
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
+        ) : view.rotation ? (
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
+        ) : (
+          /* On a desktop the line never wraps, so nothing that comes and goes in the bar (the Pick button, Paused, a
+             level's clock) changes its height and moves the table (#408). When it doesn't fit, the table's name gives
+             way first; the whole line is in the tooltip. */
+          <span className="stakes" title={barLine}>
+            {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
+            <span className="stakes-name">
+              <b>{barName}</b>
+              {!portrait && barLine !== barName && ' ·'}
+            </span>
+            <span className="stakes-more">
+              {game && (
+                <>
+                  {portrait ? <br /> : ' '}
+                  {[game.label, game.stakes].filter(Boolean).join(' ')}
+                </>
+              )}
+              {pickLine && (
+                <>
+                  {dot(!game)}
+                  {pickLine}
+                </>
+              )}
+              {levelText && (
+                <>
+                  {dot(!game && !pickLine)}
+                  {levelText}
+                </>
+              )}
+              {bombPot && <b>{dot(!game && !pickLine && !levelText)}Bomb pot</b>}
+              {view.paused && <b className="paused">{dot(!game && !pickLine && !levelText && !bombPot)}Paused</b>}
+            </span>
           </span>
-          <span className="stakes-more">
-            {game && (
-              <>
-                {portrait ? <br /> : ' '}
-                {[game.label, game.stakes].filter(Boolean).join(' ')}
-              </>
-            )}
-            {pickLine && (
-              <>
-                {dot(!game)}
-                {pickLine}
-              </>
-            )}
-            {levelText && (
-              <>
-                {dot(!game && !pickLine)}
-                {levelText}
-              </>
-            )}
-            {bombPot && <b>{dot(!game && !pickLine && !levelText)}Bomb pot</b>}
-            {view.paused && <b className="paused">{dot(!game && !pickLine && !levelText && !bombPot)}Paused</b>}
-          </span>
-        </span>
+        )}
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
             Pick<span className="pick-more"> next game</span>
@@ -681,50 +756,14 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
-          {pending > 0 && (
-            <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
-              {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
-            </div>
-          )}
           {seatRequest && (
             <div className="banner">
               Waiting for the host to let you sit…{' '}
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
-          {myBotRequests.map((r) => (
-            <div className="banner" key={r.id}>
-              Your bot {r.name} is waiting for the host to let it sit…{' '}
-              <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
-            </div>
-          ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
           {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
-          {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
-          {mySeat?.sittingOut && (
-            <div className="banner">
-              {mySeat.sitOutReason === 'busted'
-                ? "You're out of chips."
-                : mySeat.sitOutReason === 'timeouts'
-                  ? 'You were marked away after running out of time.'
-                  : mySeat.sitOutReason === 'host'
-                    ? 'The host sat you out.'
-                    : "You're sitting out."}
-              {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
-              {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
-                <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
-                  Add chips
-                </button>
-              ) : canSitIn ? (
-                <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
-                  I'm back
-                </button>
-              ) : (
-                mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
-              )}
-            </div>
-          )}
           {seatErrorLine}
           <Table
             view={view}
@@ -769,11 +808,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
-            {noticeUnder && view.hand && (
-              <div className="dock-notes">
-                <div className="banner">{startNotice!.text}</div>
-              </div>
-            )}
+            {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
             <ActionBar
               view={view}
               fmt={fmt}
