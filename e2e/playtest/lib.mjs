@@ -60,8 +60,9 @@ export async function shot(p, name, caption) {
  */
 export function bot(p, style = 'call') {
   const b = { p, style, stop: false, rit: true };
-  (async () => {
-    while (!b.stop) {
+  // Settles once the bot has stopped: stopBots waits for it before the browsers close.
+  b.done = (async () => {
+    while (!b.stop && !p.isClosed()) {
       try {
         const bar = p.locator('.action-bar.my-turn');
         if (await bar.count()) {
@@ -105,10 +106,21 @@ export function bot(p, style = 'call') {
           if (await approve.count()) await approve.first().click({ timeout: 2000 });
         }
       } catch {}
-      await p.waitForTimeout(300);
+      // A page closed while the bot waits (the run is ending) stops the bot instead of failing the run (#400).
+      try {
+        await p.waitForTimeout(300);
+      } catch {
+        break;
+      }
     }
   })();
   return b;
+}
+
+/** Stops the bots and waits for each to finish its last click, so the browsers can close cleanly. */
+export async function stopBots(bots) {
+  for (const b of bots) b.stop = true;
+  await Promise.all(bots.map((b) => b.done));
 }
 
 export async function handOver(p, timeout = 90_000) {

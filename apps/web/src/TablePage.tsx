@@ -398,11 +398,32 @@ export function TablePage({ tableId }: { tableId: string }) {
       : null;
   const level = view.level;
   const levelText = level
-    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
+    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} ${level.handsLeft === 1 ? 'hand' : 'hands'}` : ''}`
     : null;
   // Straddles need blinds, so stud tables never offer them.
   const nextFamily = view.hand?.family ?? (view.upcoming ? gameFamily(view.upcoming.gameId) : 'flop');
   const straddleOn = cash && view.settings.play.straddle !== 'off' && nextFamily !== 'stud';
+
+  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
+  // from the chat, where the action bar keeps clear; beside the side column it heads that column. Either way it stays
+  // out of the felt's layout, so it coming and going can't change the table's size (#350).
+  const keysTipBox = keysTip && !dialog && (
+    <div className={wide ? 'tip-toast corner' : 'tip-toast'} role="status">
+      <span>
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
+      </span>
+      <button
+        onClick={() => {
+          dismissKeysTip();
+          setDialog({ kind: 'keys' });
+        }}
+      >
+        All shortcuts
+      </button>
+      <button onClick={() => dismissKeysTip()}>Got it</button>
+    </div>
+  );
 
   const volumeButton = (
     <button
@@ -668,28 +689,6 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
           />
-          {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
-              stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
-              whole table twitch on big screens (#350). */}
-          <div className="tip-anchor">
-            {keysTip && !dialog && (
-              <div className="tip-toast" role="status">
-                <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
-                  {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
-                </span>
-                <button
-                  onClick={() => {
-                    dismissKeysTip();
-                    setDialog({ kind: 'keys' });
-                  }}
-                >
-                  All shortcuts
-                </button>
-                <button onClick={() => dismissKeysTip()}>Got it</button>
-              </div>
-            )}
-          </div>
           <Dock
             reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
@@ -717,6 +716,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </section>
         {!portrait && (
           <aside id="records-panel" className={wide ? `side drawer${drawer ? ' open' : ''}` : 'side'}>
+            {!wide && keysTipBox}
             {hostPanel}
             <PartBoundary name="side panel">
               <SidePanel view={view} fmt={fmt} />
@@ -735,6 +735,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
+        {wide && keysTipBox}
       </div>
 
       {portrait && sheet === 'menu' && (

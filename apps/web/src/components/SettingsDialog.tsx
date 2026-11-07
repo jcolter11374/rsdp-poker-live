@@ -300,7 +300,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               </Field>
             </div>
             <div className="row">
-              {chipsField('Stud bring-in', draft.stakes.bringIn, (v) => set('stakes', { bringIn: v }), '0 = a third of the small bet')}
+              {chipsField('Stud bring-in', draft.stakes.bringIn, (v) => set('stakes', { bringIn: v }), '0 = about a third of the small bet')}
             </div>
             <div className="row">
               {chipsField('Limit small bet', draft.stakes.smallBet, (v) => set('stakes', { smallBet: v }), '0 = the big blind')}

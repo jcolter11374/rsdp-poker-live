@@ -29,6 +29,29 @@ export function studAnteForBigBlindAnte(amount: number): number {
   return Math.min(amount, nearestNiceAnte(amount / 8));
 }
 
+/** Round amounts for a bring-in: 1, 1.5, 2, 2.5, 3, 4, 5, 6 and 8 times a power of ten (the tournament blinds' steps). */
+const BRING_IN_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8];
+
+/**
+ * The stud bring-in worked out for a small bet of `smallBet`: a third of it,
+ * rounded down to a round amount (1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a
+ * power of ten), never below 1. Card rooms bring in for about a quarter to a
+ * third of the small bet in chips that are in play, so 2,000 brings in 600
+ * and 4,000 brings in 1,000 rather than 666 and 1,333 (#398).
+ */
+export function bringInFor(smallBet: number): number {
+  const third = smallBet / 3;
+  if (!Number.isFinite(third) || third < 1) return 1;
+  let best = 1;
+  for (let exp = 0; 10 ** exp <= third; exp++) {
+    for (const m of BRING_IN_STEPS) {
+      const x = m * 10 ** exp;
+      if (Number.isInteger(x) && x <= third) best = x;
+    }
+  }
+  return best;
+}
+
 /**
  * The ante a hand of `gameId` posts for an ante setting. In the stud games a
  * big-blind ante becomes everyone's smaller ante (studAnteForBigBlindAnte);

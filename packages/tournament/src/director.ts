@@ -17,7 +17,7 @@
 import { handOver, RoleError, withCoHost, withoutCoHost } from '@rsdp/engine/roles';
 import type { BettingKind } from '@rsdp/engine/core';
 import { BETTING_KINDS } from '@rsdp/engine/settings';
-import { anteForGame, skipsMixedGameAnte } from '@rsdp/engine/variants';
+import { anteForGame, bringInFor, skipsMixedGameAnte } from '@rsdp/engine/variants';
 import {
   checkInActive,
   checkInGroupOf,
@@ -614,7 +614,8 @@ export function levelFor(s: TournamentState, _tableId: TableId): LevelStakes {
     anteType,
     smallBet,
     bigBet: level.limit?.bigBet ?? smallBet * 2,
-    bringIn: level.limit?.bringIn ?? Math.max(1, Math.floor(smallBet / 3)),
+    // About a third of the small bet, in a round amount: 2,000 brings in 600, not 666 (#398).
+    bringIn: level.limit?.bringIn ?? bringInFor(smallBet),
   };
 }
 
