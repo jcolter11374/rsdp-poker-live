@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.2",
+      "date": "2026-11-07",
+      "fixes": [
+        "Phones: another player's cards no longer cover the next player's name and chips, most of all at full Omaha tables in the top corners. Their cards now move aside into the free room, or bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you."
+      ]
+    },
+    {
       "id": "2026.11.07",
       "date": "2026-11-07",
       "fixes": [

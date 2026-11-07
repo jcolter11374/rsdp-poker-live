@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.2] - 2026-11-07
+
+### Fixed and changed
+
+- Phones: another player's cards no longer cover the next player's name and chips, most of all at full Omaha tables in the top corners. Their cards now move aside into the free room, or bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you.
+
 ## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
@@ -672,6 +678,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4

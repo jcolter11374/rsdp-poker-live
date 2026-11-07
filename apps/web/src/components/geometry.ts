@@ -217,6 +217,44 @@ export function handSpan(mine: Box, others: readonly Box[], cardHeight: number, 
   };
 }
 
+/**
+ * On a phone standing up, the part of your hand's `span` (from handSpan) that also keeps clear of other players'
+ * rows of cards level with it (#318). Each row in `rows` is where it would go without your cards, with the
+ * middle of its player's nameplate (`from`): a row counts on its player's side, even one that has moved
+ * over your nameplate. A row is level with your cards when it reaches more than 4px into their height, as
+ * placeRow counts it. Your cards hang down to 8px into your nameplate (styles.css), `cardHeight` tall.
+ */
+export function clearOfRows(
+  mine: Box,
+  rows: readonly { box: Box; from: number }[],
+  cardHeight: number,
+  span: { left: number; right: number },
+  margin = 6,
+): { left: number; right: number } {
+  const bottom = mine.top + 8;
+  const level = rows.filter(({ box }) => box.bottom > bottom - cardHeight + 4 && box.top < bottom - 4);
+  const cx = (mine.left + mine.right) / 2;
+  return {
+    left: Math.max(span.left, ...level.filter((r) => r.from < cx).map((r) => r.box.right + margin)),
+    right: Math.min(span.right, ...level.filter((r) => r.from >= cx).map((r) => r.box.left - margin)),
+  };
+}
+
+/**
+ * Where your hand's left edge goes on a phone standing up, `w` wide: centred over your nameplate (at `cx`),
+ * moved only as far as it must into `span`, the room clear of nameplates. When it can, it also keeps inside
+ * `clear` (from clearOfRows), so the rows beside it keep their usual look. When it can't, it sits where it
+ * leaves the rows on either side equally short of that, still inside `span`; when there's a row on only
+ * one side, that's as far from it as `span` allows. A hand wider than `span` sits in the middle of it.
+ */
+export function placeHand(cx: number, w: number, span: { left: number; right: number }, clear: { left: number; right: number } = span): number {
+  if (w > span.right - span.left) return (span.left + span.right - w) / 2;
+  const left = Math.max(span.left, clear.left);
+  const right = Math.min(span.right, clear.right);
+  if (w <= right - left) return Math.min(Math.max(cx - w / 2, left), right - w);
+  return Math.min(Math.max((left + right - w) / 2, span.left), span.right - w);
+}
+
 /** A card width and how much each card covers the one before it, in pixels. */
 export interface HandFit {
   cw: number;

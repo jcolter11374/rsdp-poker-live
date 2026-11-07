@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideBet, clearSideBands, fitHand, handRoom, handSpan, inFront, placeRow, seatFractions, stadiumPoint } from './geometry';
+import { besideBet, clearOfRows, clearSideBands, fitHand, handRoom, handSpan, inFront, placeHand, placeRow, seatFractions, stadiumPoint } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -168,6 +168,50 @@ describe('handRoom, handSpan and fitHand (#304: your cards covering a neighbour 
     // At least 45% of each card still shows, enough for its rank and suit.
     expect(smaller.cw - smaller.overlap).toBeGreaterThanOrEqual(Math.floor(smaller.cw * 0.45));
     expect(fitHand(4, 20, natural)!.cw).toBe(30);
+  });
+});
+
+describe('clearOfRows and placeHand (#318: your cards making room for the rows beside them)', () => {
+  const box = (left: number, right: number, top: number, bottom: number) => ({ left, right, top, bottom });
+  // Your nameplate in the middle of a 390px phone; your cards hang to 8px into it, 84px tall (454 to 538).
+  const mine = box(155, 235, 530, 578);
+  const span = { left: 3, right: 387 };
+
+  it('keeps clear of the rows level with your cards, each on its player\'s side', () => {
+    // Bea's row (her nameplate's middle at 103) has moved right, past the middle of yours: it still counts on her side.
+    const bea = { box: box(100, 199, 460, 502), from: 103 };
+    const hal = { box: box(240, 330, 460, 502), from: 290 };
+    expect(clearOfRows(mine, [bea, hal], 84, span)).toEqual({ left: 199 + 6, right: 240 - 6 });
+  });
+  it('ignores rows above your cards, or reaching only a sliver into them', () => {
+    const above = { box: box(20, 100, 380, 422), from: 60 };
+    const sliver = { box: box(20, 150, 415, 457), from: 85 };
+    expect(clearOfRows(mine, [above, sliver], 84, span)).toEqual(span);
+    expect(clearOfRows(mine, [{ ...sliver, box: box(20, 150, 415, 459) }], 84, span)).toEqual({ left: 156, right: 387 });
+  });
+  it('never reaches past the room clear of nameplates', () => {
+    expect(clearOfRows(mine, [{ box: box(0, 2, 460, 502), from: 1 }], 84, { left: 50, right: 300 })).toEqual({ left: 50, right: 300 });
+  });
+
+  it('leaves a hand centred over your nameplate when it fits', () => {
+    expect(placeHand(195, 100, span)).toBe(145);
+    expect(placeHand(195, 100, span, { left: 120, right: 387 })).toBe(145);
+  });
+  it('moves it only as far as it must, clear of nameplates and then of rows', () => {
+    expect(placeHand(187, 174, { left: 151, right: 372 })).toBe(151);
+    expect(placeHand(195, 100, span, { left: 160, right: 387 })).toBe(160);
+  });
+  it('with no room to keep clear of a row on one side, goes as far from it as it can', () => {
+    // A 375px phone with nobody on your right: Bea's row would need your cards to start at 205.
+    expect(placeHand(187, 174, { left: 151, right: 372 }, { left: 205, right: 372 })).toBe(198);
+  });
+  it('with rows on both sides, leaves them equally short', () => {
+    expect(placeHand(200, 174, { left: 150, right: 340 }, { left: 160, right: 330 })).toBe(158);
+    // Even when the rows would cross over each other: halfway between them, still in the room.
+    expect(placeHand(200, 100, { left: 150, right: 340 }, { left: 320, right: 180 })).toBe(200);
+  });
+  it('puts a hand wider than its room in the middle of it', () => {
+    expect(placeHand(195, 200, { left: 100, right: 250 })).toBe(75);
   });
 });
 

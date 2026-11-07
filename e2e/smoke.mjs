@@ -516,12 +516,13 @@ try {
           const hole = s.querySelector('.hole:not(.mucked)');
           if (s.classList.contains('me') || !hole?.querySelector('.playing-card')) continue;
           const row = box(hole);
-          const name = s.querySelector('.name')?.textContent;
+          // innerText leaves out the host's tag, which phones hide.
+          const name = s.querySelector('.name')?.innerText;
           if (row.left < 0 || row.right > innerWidth) found.push(`${name}'s cards go off the screen`);
           for (const o of seats) {
             if (o === s) continue;
             for (const part of o.querySelectorAll('.nameplate .name, .nameplate .stack'))
-              if (hit(row, box(part))) found.push(`${name}'s cards cover ${o.querySelector('.name')?.textContent}'s ${part.classList.contains('name') ? 'name' : 'stack'}`);
+              if (hit(row, box(part))) found.push(`${name}'s cards cover ${o.querySelector('.name')?.innerText}'s ${part.classList.contains('name') ? 'name' : 'stack'}`);
           }
         }
         return found;
