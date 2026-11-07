@@ -93,6 +93,33 @@ async function stopGame(host, players) {
   await stopped.waitFor();
 }
 
+/**
+ * Starts noting, every animation frame, the felt's size and place, the seats' scale and every player's seat spot: each
+ * distinct combination is one layout. `layoutsSeen` stops and returns them, so one entry means nothing moved.
+ */
+const sampleLayouts = (p) =>
+  p.evaluate(() => {
+    const seen = (window.__layouts = new Set());
+    const sample = () => {
+      const felt = document.querySelector('.felt');
+      if (felt) {
+        const r = felt.getBoundingClientRect();
+        // The players' seats. (Empty seats' markers can still shift a pixel or two when the first stacks change, which is
+        // the seat spacing's business, not this check's.)
+        const seats = [...felt.querySelectorAll('.seat[data-seat]')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
+        seen.add(`felt ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.top)}, seats ${felt.style.getPropertyValue('--seat-scale')}: ${seats}`);
+      }
+      if (window.__layouts === seen) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+const layoutsSeen = (p) =>
+  p.evaluate(() => {
+    const s = [...window.__layouts];
+    window.__layouts = null;
+    return s;
+  });
+
 async function step(name, fn) {
   const started = Date.now();
   await fn();
@@ -297,22 +324,6 @@ try {
     }
     // The request banner has just gone, and seats glide to new spots in 0.4s.
     await host.waitForTimeout(900);
-    const sampleLayouts = (p) =>
-      p.evaluate(() => {
-        const seen = (window.__layouts = new Set());
-        const sample = () => {
-          const felt = document.querySelector('.felt');
-          if (felt) {
-            const r = felt.getBoundingClientRect();
-            // The players' seats. (Empty seats' markers can still shift a pixel or two when the first stacks change, which is
-            // the seat spacing's business, not this check's.)
-            const seats = [...felt.querySelectorAll('.seat[data-seat]')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
-            seen.add(`felt ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.top)}, seats ${felt.style.getPropertyValue('--seat-scale')}: ${seats}`);
-          }
-          if (window.__layouts === seen) requestAnimationFrame(sample);
-        };
-        requestAnimationFrame(sample);
-      });
     await Promise.all([sampleLayouts(host), sampleLayouts(guest)]);
     await host.click('button:has-text("Start game")');
     for (const p of [host, guest]) await p.waitForSelector('.seat .hole .playing-card');
@@ -321,11 +332,7 @@ try {
       [host, 'the host at 1280x800'],
       [guest, 'a player at 2300x824'],
     ]) {
-      const seen = await p.evaluate(() => {
-        const s = [...window.__layouts];
-        window.__layouts = null;
-        return s;
-      });
+      const seen = await layoutsSeen(p);
       if (seen.length !== 1) throw new Error(`for ${who}, the table moved when the game started:\n  ${seen.join('\n  ')}`);
       if (await p.locator('.felt .board-notice').count()) throw new Error(`for ${who}, the middle of the table still says to start the game`);
     }
@@ -336,6 +343,76 @@ try {
     await host.locator('.felt .board-notice', { hasText: 'The game is stopped' }).waitFor();
     await guest.locator('.felt .board-notice', { hasText: 'Waiting for the host to start it again' }).waitFor();
     for (const p of [host, guest]) if (await p.locator('.felt .dealer').count()) throw new Error('the dealer button is still on the table after the game stopped');
+  });
+
+  await step('cash table: the seats stay put when a note comes or goes mid-hand', async () => {
+    // A seat request for the host, sitting out, and "the host is stopping the game after this hand" were banners above the
+    // table. Each took height from the felt, so every seat moved and changed size when one came or went, usually in the
+    // middle of a hand (#388). They sit under the table now, in room that area already holds, and give way to the betting
+    // buttons on your turn. A host on a laptop and a player on a wide, short screen, sampled every frame from the deal
+    // while a newcomer asks to sit and cancels, the player sits out and comes back, and the host stops after the hand.
+    const host = await open('notes host', { width: 1280, height: 800 });
+    const guest = await open('notes guest', { width: 2300, height: 824 });
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Kim');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Ned');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    await host.click('button:has-text("Start game")');
+    for (const p of [host, guest]) await p.waitForSelector('.seat .hole .playing-card');
+    // The first cards are still flying in.
+    await host.waitForTimeout(1000);
+    await Promise.all([sampleLayouts(host), sampleLayouts(guest)]);
+    // On your turn the notes give way to the betting buttons; nobody acts in this step, so whose turn it is holds.
+    const myTurn = async (p) => (await p.locator('.action-bar.my-turn').count()) > 0;
+    // (A banner above the table counts here too, so that if one came back, the layout check below is what says so.)
+    const note = (p, text) => p.locator('.dock .dock-notes, .felt-area > .banner', { hasText: text }).first();
+
+    // A newcomer asks to sit, then thinks better of it.
+    const newcomer = await open('notes newcomer', { width: 390, height: 664 });
+    await newcomer.goto(host.url());
+    await newcomer.locator('.seat.empty button').first().click();
+    await newcomer.fill('.modal input[required]', 'Oz');
+    await newcomer.click('button:has-text("Ask to sit")');
+    await host.locator('.request').waitFor();
+    if (!(await myTurn(host))) await note(host, '1 request is waiting for you').waitFor();
+    await newcomer.click('.felt-area > .banner button:has-text("Cancel")');
+    await host.locator('.request').waitFor({ state: 'detached' });
+    await note(host, 'request').waitFor({ state: 'detached' });
+
+    // Whoever isn't on turn sits out (staying in this hand), then comes back. (Sitting out on your own turn times the turn
+    // out at once: a fold, which would end the hand heads-up.)
+    const waiting = (await myTurn(guest)) ? host : guest;
+    await waiting.click('header button:has-text("Sit out")');
+    await note(waiting, "You're sitting out").waitFor();
+    await waiting.click(`header button:has-text("I'm back")`);
+    await note(waiting, 'sitting out').waitFor({ state: 'detached' });
+
+    // The host stops the game after this hand: everyone is told.
+    await host.click('button:has-text("Stop game")');
+    for (const p of [host, guest]) if (!(await myTurn(p))) await note(p, 'The host is stopping the game after this hand').waitFor();
+    // Seats glide for 0.4s, so a move would have shown by now.
+    await host.waitForTimeout(600);
+    for (const [p, who] of [
+      [host, 'the host at 1280x800'],
+      [guest, 'a player at 2300x824'],
+    ]) {
+      const seen = await layoutsSeen(p);
+      if (seen.length !== 1) throw new Error(`for ${who}, the table moved when a note came or went:\n  ${seen.join('\n  ')}`);
+      if (await p.locator('.felt-area > .banner').count()) throw new Error(`for ${who}, a banner above the table: ${await p.locator('.felt-area > .banner').first().innerText()}`);
+    }
+    await waiting.screenshot({ path: path.join(OUT, 'mid-hand-notes.png') });
+    // Finish the hand, so the game stops.
+    await playOut([host, guest]);
+    await host.locator('button:has-text("Start game")').waitFor();
   });
 
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {

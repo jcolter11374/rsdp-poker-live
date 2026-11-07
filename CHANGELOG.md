@@ -20,8 +20,15 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ## [2026.11.07.3] - 2026-11-07
 
+_Hands left in each game_
+
+### New
+
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
+
 ### Fixed and changed
 
+- Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
 - Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
 - Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
 - Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.

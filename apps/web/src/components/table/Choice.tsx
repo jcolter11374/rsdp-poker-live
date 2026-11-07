@@ -15,8 +15,11 @@ import { choiceOf } from '../settings/dealersChoice';
 /** Seconds left on a clock, or null. */
 const secondsTo = (deadline: number | null | undefined, now: number) => (deadline == null ? null : Math.max(0, Math.ceil((deadline - now) / 1000)));
 
-/** I hold the Pick chip and may pick now. */
-export const canPickNow = (view: TableView) => !!view.choice?.open && view.choice.chip !== null && view.choice.chip === view.me.seat;
+/**
+ * I hold the Pick chip and may pick now. Not while a game rotation is coming instead: the host has switched the table
+ * to one from the next hand (the two can't both be on), and a pick then would never be dealt.
+ */
+export const canPickNow = (view: TableView) => !!view.choice?.open && view.choice.chip !== null && view.choice.chip === view.me.seat && !view.rotation;
 
 /** The table is waiting for my pick (its clock is running), so it calls me like a turn to act. */
 export const myPickDue = (view: TableView) => canPickNow(view) && view.choice!.deadline !== null && !view.paused;
