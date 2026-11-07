@@ -42,7 +42,7 @@ self.addEventListener('push', (event) => {
   } catch {
     // Not one of ours: it still has to show something, or the browser shows its own note.
   }
-  const title = text(alert.title, 100) || 'RSDP Poker Live!';
+  const title = text(alert.title, 100) || 'RSDP Live!';
   const tag = text(alert.tag, 200) || undefined;
   const replaces = text(alert.replaces, 200);
   event.waitUntil(

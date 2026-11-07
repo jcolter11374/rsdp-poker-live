@@ -96,7 +96,7 @@ describe('a push', () => {
     const w = worker();
     await w.push({ title: 5, body: { cards: 'As Kd' } });
     await w.push('not json');
-    for (const a of w.alerts) expect(a).toMatchObject({ title: 'RSDP Poker Live!', options: { body: '', data: { url: '/' } } });
+    for (const a of w.alerts) expect(a).toMatchObject({ title: 'RSDP Live!', options: { body: '', data: { url: '/' } } });
     for (const url of ['https://evil.example/x', '//evil.example/x', '/\\evil.example/x', 'javascript:alert(1)']) {
       await w.push({ title: 'Your turn', url, tag: `x:${url}` });
       expect(w.alerts.at(-1)!.options.data).toEqual({ url: '/' });

@@ -1,6 +1,6 @@
 # Accessibility
 
-How well RSDP Poker Live! works for people who use a screen reader, a
+How well RSDP Live! works for people who use a screen reader, a
 keyboard instead of a mouse or touch, larger text or zoom, or who need
 stronger colour contrast: what was checked, what was fixed, and what is
 known and left. The aim is WCAG 2.2 at level AA, the usual standard for
