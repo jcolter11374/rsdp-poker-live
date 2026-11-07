@@ -91,11 +91,12 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
         }
         await tx.execute(sql.raw('close backup_rows'));
       }
-      // Where each counter had got to: ids of rows deleted before the backup must not be handed out again.
+      // Where each counter had got to: ids of rows deleted before the backup must not be handed out again. A counter
+      // that hasn't handed out last_value yet (as a restore leaves it, or a new one) has got to the id before it.
       const sequences: Record<string, number> = {};
       for (const { t, c, seq } of await counters(tx)) {
-        const [row] = await queryRows<{ n: string | number | null }>(tx, sql.raw(`select case when is_called then last_value end as n from ${seq}`));
-        if (row?.n != null) sequences[`${t}.${c}`] = Number(row.n);
+        const [row] = await queryRows<{ n: string | number | null }>(tx, sql.raw(`select case when is_called then last_value else last_value - 1 end as n from ${seq}`));
+        if (row?.n != null && Number(row.n) > 0) sequences[`${t}.${c}`] = Number(row.n);
       }
       await write(JSON.stringify({ end: true, rows, sequences }) + '\n');
       return { at: header.at, migrations: header.migrations, rows };
