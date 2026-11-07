@@ -222,6 +222,7 @@ export class TableRuntime {
       canPick: (seat) => this.canPick(seat),
       tableCount: () => this.tableCount(),
       seatRoom: () => this.seatRoom(null),
+      comingCount: (next) => this.comingCount(next),
       log: (text) => this.log(text),
     });
     // Dealer's choice: a snapshot from before #421 can have the first hand's button on the empty seat of a first chooser
@@ -598,6 +599,26 @@ export class TableRuntime {
   private tableCount(): number {
     const offered = new Set(this.offers().map((o) => o.playerId));
     return this.state.seats.filter(Boolean).length + [...offered].filter((id) => !this.seatOf(id)).length;
+  }
+
+  /**
+   * Dealer's choice: tableCount once the host's change waiting for the next hand (`next`) applies, as the table will
+   * be when a missed pick is dealt (#459). The deal applies the change before the pick clock starts, and upkeep then
+   * offers the seats a bigger table opens to the waitlist: one for each online player waiting without an offer, while
+   * there are free seats nobody holds and the game being played has room. (The waitlist itself is switched at once,
+   * never with the next hand; a smaller table has already let go of offers in the seats it drops.)
+   */
+  private comingCount(next: TableSettings): number {
+    const s = this.state;
+    const count = this.tableCount();
+    if (!next.seating.waitlist || next.table.maxSeats <= s.seats.length) return count;
+    const held = new Set([...this.offers().map((o) => o.seat), ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!)]);
+    let open = 0;
+    for (let i = 0; i < next.table.maxSeats; i++) if (!s.seats[i] && !held.has(i)) open++;
+    const offered = new Set(this.offers().map((o) => o.playerId));
+    const waiting = this.queue().filter((w) => !offered.has(w.playerId) && this.isOnline(w.playerId)).length;
+    const room = this.seatRoom(null);
+    return count + Math.max(0, Math.min(open, waiting, room ?? Infinity));
   }
 
   /**

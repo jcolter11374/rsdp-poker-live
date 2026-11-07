@@ -1561,3 +1561,72 @@ describe("Dealer's choice: a game taken off the menu that waits for the next han
     expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ current: null, next: null, open: true });
   });
 });
+
+// #459: the host's change during a hand makes the table bigger, with people on the waitlist. The deal applies it before
+// the pick clock starts, and the new seats are offered from the waitlist at once, so a missed pick is dealt for the
+// table as it is then: "If time runs out" must count them all along.
+describe("Dealer's choice: a waiting change that adds seats while people wait for one (#459)", () => {
+  /** Six at a six-seat table with the waitlist on, `waiting` on it, in the last hand of a Pot-Limit Omaha pick. */
+  function lastHand(waiting: string[]) {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 6;
+      s.seating.waitlist = true;
+    });
+    seat(rt, 6);
+    for (const id of waiting) rt.joinWaitlist(id, { name: id.toUpperCase(), stack: 1000 });
+    rt.start('host');
+    pick(rt, 'plo4');
+    for (let i = 0; i < 20 && tableView(rt, 'a', clock.now()).choice!.handsLeft !== 0; i++) {
+      checkDown(rt);
+      clock.advance(10_000);
+    }
+    expect(live(rt)).toBe(true);
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ open: true, handsLeft: 0, current: { gameId: 'plo4' } });
+    return { rt, clock };
+  }
+  const BIGGER = { table: { maxSeats: 9 }, game: { dealersChoice: { games: [MENU[2], MENU[0]] } } };
+
+  for (const sw of [
+    { name: 'two people waiting', waiting: ['f', 'g'], count: 8, dealt: 'nlhe', title: "No-Limit Hold'em" },
+    { name: 'nobody waiting', waiting: [], count: 6, dealt: 'badugi', title: 'Badugi' },
+  ]) {
+    it(`names the game a missed pick deals once the new seats are offered, with ${sw.name}`, () => {
+      const { rt, clock } = lastHand(sw.waiting);
+      rt.updateSettings('host', BIGGER);
+      expect(rt.state.pendingSettings).not.toBeNull();
+      // Badugi seats six, as many as are sitting down now; with the seats offered from the waitlist it doesn't fit.
+      const during = tableView(rt, 'a', clock.now()).choice!;
+      expect(during).toMatchObject({ open: true, count: 6, fallback: { gameId: sw.dealt, gameName: sw.title } });
+      expect(during.comingCount).toBe(sw.count === 6 ? undefined : sw.count);
+      const who = chooser(rt);
+      checkDown(rt);
+      expect(live(rt)).toBe(false);
+      const after = tableView(rt, 'a', clock.now());
+      expect(after.choice!.fallback).toMatchObject({ gameId: sw.dealt });
+      expect(after.upcoming).toMatchObject({ gameId: sw.dealt });
+      // The change applies and the table waits for the pick: the seats are offered, and the panel still says the same.
+      clock.advance(10_000);
+      expect(live(rt)).toBe(false);
+      expect(rt.state.offers!.map((o) => o.playerId).sort()).toEqual(sw.waiting);
+      const waiting = tableView(rt, 'a', clock.now()).choice!;
+      expect(waiting).toMatchObject({ count: sw.count, fallback: { gameId: sw.dealt } });
+      expect(waiting.comingCount).toBeUndefined();
+      clock.advance(25_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+      expect(rt.state.log.some((l) => l.text === `${who.name} didn't pick in time, so ${sw.title} is dealt`)).toBe(true);
+    });
+  }
+
+  it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
+    const { rt, clock } = lastHand(['f', 'g']);
+    rt.disconnect('f');
+    rt.disconnect('g');
+    rt.updateSettings('host', BIGGER);
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(rt.state.offers).toEqual([]);
+    clock.advance(25_000);
+    expect(hand(rt).input.game.id).toBe('badugi');
+  });
+});

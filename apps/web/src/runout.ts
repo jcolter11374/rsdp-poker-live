@@ -210,7 +210,9 @@ function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, wa
   const defaultIndex = missedPickIndex(menu, cur, count, leaving);
   const canKeep = menu.some((g) => g.gameId === cur.gameId && g.betting === cur.betting && getVariant(g.gameId).maxPlayers >= count && !leaving(g));
   const coming = comingMenu(view.settings, pending);
-  const g = coming ? coming[missedPickIndex(coming, cur, count)] : menu[defaultIndex];
+  // Counted as the table will be once the change applies (#459), held like the count.
+  const then = Math.max(was.comingCount ?? was.count, live.comingCount ?? live.count);
+  const g = coming ? coming[missedPickIndex(coming, cur, then)] : menu[defaultIndex];
   return { defaultIndex, canKeep, ...(g ? { fallback: { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting) } } : {}) };
 }
 

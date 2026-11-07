@@ -244,6 +244,14 @@ describe('holdBack', () => {
       // that seats seven, not the current menu's (#444).
       const addedInFront = { ...live, pendingSettings: { game: { dealersChoice: { games: [{ gameId: 'stud', betting: 'fixed-limit' }, menu[1], menu[2]] } } } } as unknown as TableView;
       expect(holdBack(addedInFront, frozen, 0).choice).toMatchObject({ defaultIndex: 2, canKeep: false, fallback: { gameId: 'stud', gameName: 'Seven Card Stud' } });
+      // The waiting change also makes the table bigger, with people on the waitlist: they are offered the new seats
+      // before a missed pick is dealt, so the held fallback counts them as the server did before the result: nine then,
+      // eight now that a bot has left (#459). Only Pot-Limit Omaha seats nine.
+      const plo4 = { gameId: 'plo4', betting: 'pot-limit' } as const;
+      const bigger = { ...live, pendingSettings: { table: { maxSeats: 9 }, game: { dealersChoice: { games: [menu[1], menu[2], plo4] } } }, choice: { ...live.choice!, comingCount: 8 } } as unknown as TableView;
+      expect(holdBack(bigger, { ...frozen, choice: { ...frozen.choice, comingCount: 9 } }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4', gameName: 'Pot-Limit Omaha' } });
+      // With nobody waiting, Razz seats the seven.
+      expect(holdBack({ ...bigger, choice: live.choice } as TableView, frozen, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
       // A change that ends Dealer's choice takes no game off: the result shows no next pick.
       const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
       expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true, fallback: { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" } }));

@@ -315,6 +315,11 @@ export interface ChoiceView {
   deadline: number | null;
   /** People counted when checking a game fits: everyone sitting down, and anyone a seat is held for. */
   count: number;
+  /**
+   * `count` once the host's change waiting for the next hand applies, when it differs: a bigger table offers its new
+   * seats to the waitlist before a missed pick is dealt (#459). `fallback` is worked out with it.
+   */
+  comingCount?: number;
   /** While a smaller game is picked or played, the table seats at most this many (null: no limit). */
   cap: number | null;
   /** Every seat it can deal is taken or held (counting seat requests), so the empty seats are closed. */

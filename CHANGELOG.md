@@ -33,6 +33,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
 - Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
 - Dealer's choice: when the host changes the menu during a hand, the pick panel's "If time runs out" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.
+- Dealer's choice: when the host adds seats during a hand while people are on the waitlist, "If time runs out" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.
 
 ## [2026.11.07.5] - 2026-11-07
 
