@@ -186,32 +186,52 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
 /** Whether a card is where it will stay: not being dealt, carried down or turned over. A winning card's short lift counts. */
 const settled = (card: Element) => !card.getAnimations?.().some((a) => a instanceof CSSAnimation && a.playState === 'running');
 
-/**
- * A card's box where its lift (a winning card rising, a `translate` transition) will leave it, not where it is on the
- * way. The class that lifts it comes in the same render as the result, so measured as it is, the first reading sees it
- * still at rest and the next one, a moment later, lifted: the middle's fit, and whether the winners' lines are stacked,
- * would change just after they appear (#474).
- */
-function liftedTo(card: HTMLElement): Box {
-  const r = card.getBoundingClientRect();
+/** A `translate` value ('0px -6px', '0px', 'none') as x and y in px. */
+function translateOf(v: string): Point {
+  const [x, y] = v === 'none' ? [] : v.trim().split(/\s+/).map(parseFloat);
+  return { x: x || 0, y: y || 0 };
+}
+
+/** A card's `translate` now, and where a running transition of it (a winning card's lift) will leave it. */
+function translates(card: HTMLElement): { now: Point; end: Point } {
+  const now = translateOf(getComputedStyle(card).translate);
   const lift =
     typeof CSSTransition === 'undefined'
       ? undefined
       : card.getAnimations?.().find((a): a is CSSTransition => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
   const frames = lift?.effect && 'getKeyframes' in lift.effect ? (lift.effect as KeyframeEffect).getKeyframes() : [];
   const end = frames[frames.length - 1]?.translate;
-  if (typeof end !== 'string') return r;
-  const xy = (v: string) => {
-    const [x, y] = v === 'none' ? [] : v.trim().split(/\s+/).map(parseFloat);
-    return { x: x || 0, y: y || 0 };
-  };
-  const to = xy(end);
-  const at = xy(getComputedStyle(card).translate);
-  // In screen pixels: what holds the card may be drawn scaled (the seat, the felt).
-  const k = card.offsetHeight ? r.height / card.offsetHeight : 1;
-  const dx = (to.x - at.x) * k;
-  const dy = (to.y - at.y) * k;
-  return { left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy };
+  return { now, end: typeof end === 'string' ? translateOf(end) : now };
+}
+
+/**
+ * Where a card will rest, not where it is on the way (#474). The middle's fit is measured as a hand's result appears,
+ * and the layout then chosen for the winners' lines is kept while they show, so what's still moving at that moment
+ * must count where it ends up:
+ * - a winning card's lift (a `translate` transition) starts in the same render as the result: measured as it is, the
+ *   first reading would see it still at rest;
+ * - the cards turned over at the showdown are new elements, turning over (a CSS animation) for up to a second, and a
+ *   winning one is lifted from the start: they're placed at their own spot in the row, moved by that lift.
+ */
+function restingBox(card: HTMLElement): Box | null {
+  const { now, end } = translates(card);
+  if (settled(card)) {
+    const r = card.getBoundingClientRect();
+    // In screen pixels: what holds the card may be drawn scaled (the seat, the felt).
+    const k = card.offsetHeight ? r.height / card.offsetHeight : 1;
+    const dx = (end.x - now.x) * k;
+    const dy = (end.y - now.y) * k;
+    return { left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy };
+  }
+  // Its spot in what holds it (offsets leave out its own transform, where the animation has it now).
+  const holder = card.offsetParent;
+  if (!(holder instanceof HTMLElement) || !holder.offsetWidth || !holder.offsetHeight) return null;
+  const h = holder.getBoundingClientRect();
+  const kx = h.width / holder.offsetWidth;
+  const ky = h.height / holder.offsetHeight;
+  const left = h.left + (holder.clientLeft + card.offsetLeft + end.x) * kx;
+  const top = h.top + (holder.clientTop + card.offsetTop + end.y) * ky;
+  return { left, top, right: left + card.offsetWidth * kx, bottom: top + card.offsetHeight * ky };
 }
 
 /**
@@ -273,8 +293,8 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
       let b = grownIn(part, now);
       if (!b.right && !b.bottom) continue;
       for (const card of part.querySelectorAll<HTMLElement>('.playing-card')) {
-        if (!settled(card)) continue;
-        const r = liftedTo(card);
+        const r = restingBox(card);
+        if (!r) continue;
         b = { left: Math.min(b.left, r.left), right: Math.max(b.right, r.right), top: Math.min(b.top, r.top), bottom: Math.max(b.bottom, r.bottom) };
       }
       items.push({ ...full(b), line: !part.matches('.board-row, .pots') });
@@ -295,7 +315,10 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
     const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
     if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
       seats.push(to(hole.getBoundingClientRect()));
-      for (const card of hole.querySelectorAll<HTMLElement>('.playing-card')) if (settled(card)) seats.push(to(liftedTo(card)));
+      for (const card of hole.querySelectorAll<HTMLElement>('.playing-card')) {
+        const r = restingBox(card);
+        if (r) seats.push(to(r));
+      }
     }
   });
   const dealer = felt.querySelector<HTMLElement>('.dealer');
