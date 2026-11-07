@@ -246,6 +246,31 @@ describe('clock, breaks and pause', () => {
     expect(sim.of('levelUp').find((e) => e.levelNumber === 2)).toMatchObject({ gameId: 'plo8', betting: 'fixed-limit', ante: 0 });
   });
 
+  it('stud levels bring in for about a third of the small bet, in a round amount (#398)', () => {
+    const levels: StructureRow[] = [
+      { kind: 'level', sb: 1000, bb: 2000, ante: 0, anteType: 'none', minutes: 10 },
+      { kind: 'level', sb: 2000, bb: 4000, ante: 0, anteType: 'none', minutes: 10 },
+      { kind: 'level', sb: 2000, bb: 4000, ante: 0, anteType: 'none', minutes: 10, limit: { smallBet: 4000, bigBet: 8000, bringIn: 1333 } },
+    ];
+    const sim = new Sim({ structure: levels, games: ['razz'] });
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    const seen = [];
+    for (let level = 0; level < 3; level++) {
+      sim.at(T0 + level * 10 * MIN + MIN);
+      const l = levelFor(sim.state, t);
+      seen.push([l.smallBet, l.bigBet, l.bringIn]);
+    }
+    // 2,000/4,000 brings in 600 rather than 666, and 4,000/8,000 brings in 1,000 rather than 1,333. A bring-in the
+    // structure sets itself is kept.
+    expect(seen).toEqual([
+      [2000, 4000, 600],
+      [4000, 8000, 1000],
+      [4000, 8000, 1333],
+    ]);
+  });
+
   it('8-Game deals Hold\'em both Limit and No-Limit; a game left to its usual betting says nothing', () => {
     const eight = MIXED_GAMES.find((m) => m.id === '8-game')!;
     const sim = new Sim({ games: eight.steps.map((st) => st.gameId), gameBetting: eight.steps.map((st) => st.betting), seatsPerTable: 6 });

@@ -33,7 +33,7 @@ import {
   type TableSettings,
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
-import { gameTitle, skipsMixedGameAnte, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
+import { bringInFor, gameTitle, skipsMixedGameAnte, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
 import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip, type TurnKey } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
@@ -3114,7 +3114,8 @@ export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
   const out = { ...stakes };
   if (out.smallBet <= 0) out.smallBet = Math.max(1, out.bigBlind);
   if (out.bigBet <= 0) out.bigBet = out.smallBet * 2;
-  if (game.family === 'stud' && out.bringIn <= 0) out.bringIn = Math.max(1, Math.floor(out.smallBet / 3));
+  // About a third of the small bet, in a round amount, as in tournaments (#398).
+  if (game.family === 'stud' && out.bringIn <= 0) out.bringIn = bringInFor(out.smallBet);
   // Stud has no big blind: a big-blind ante is paid by everyone there, at about an eighth of it.
   if (game.forcedBets === 'ante-bring-in' && out.anteType === 'big-blind') Object.assign(out, { ante: studAnteForBigBlindAnte(out.ante), anteType: 'per-player' });
   return out;

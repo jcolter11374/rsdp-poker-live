@@ -35,6 +35,7 @@ _Dealer's choice, lobby chat moderation and a recap of the night_
 - The Hands and Stats tabs no longer show a hand's result while its all-in runout is still being dealt on the table, if you open them for the first time just then.
 - If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
 - The Checking John page now shows each time John takes a name out of old records, without the name itself.
+- Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
 
 ## [2026.11.07] - 2026-11-07
 

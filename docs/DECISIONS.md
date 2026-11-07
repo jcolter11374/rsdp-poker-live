@@ -45,7 +45,8 @@ How this file works:
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
 | [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
-| [D36](#d36-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
+| [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
+| [D37](#d37-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
 
 ---
 
@@ -400,7 +401,14 @@ How this file works:
 - **Replaces** the quiet-time condition in D05 and the "release at a quiet time" in D25's full path. Nothing else in them changes.
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CONTRIBUTING.md](../CONTRIBUTING.md#full-or-light-how-much-checking-a-change-needs), [CLAUDE.md](../CLAUDE.md), [CODE_TOUR.md](CODE_TOUR.md).
 
-## D36. The cash game recap
+## D36. A worked-out stud bring-in is a round amount
+
+- **Decided:** 2026-11-07, by Claude, fixing the odd tournament bring-ins found in the play-test of release 2026.11.07 (issue #398). Reversible.
+- **Decision:** when the site works out a stud bring-in itself (every tournament level that doesn't set its own, and a cash table whose bring-in is left at 0), it is a third of the small bet rounded down to a round amount: 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten, the steps the tournament blinds use, and never less than 1. With Limit bets of 2,000/4,000 the bring-in is 600 (not 666), at 4,000/8,000 it is 1,000 (not 1,333), and at 1,000/2,000 it is 300. On the usual tournament levels that is between a quarter and a third of the small bet. A bring-in someone set themselves (a structure's own, or the Stakes tab's) is kept as it is, and the bring-in a new cash table fills in for the host (a third of the small bet, to the nearest nickel) doesn't change.
+- **Why:** card rooms bring in for about a quarter to a third of the small bet, in chips that are in play; 666 is an amount no dealer would ask for. Rounding down keeps it at most a third, the size the Stakes tab has always described. A fixed quarter would also give round amounts at the usual levels, but at Limit bets of 1,000/2,000 it would be 250 rather than 300, smaller than the third players already know from the cash tables.
+- **Where:** `bringInFor` in `packages/engine/src/variants/antes.ts`, used by `levelFor` in `packages/tournament/src/director.ts` and `fillStakes` in `apps/server/src/runtime/table.ts`.
+
+## D37. The cash game recap
 
 - **Decided:** 2026-11-07, while building issue #329. The details are Claude's; the roadmap had promised "a short recap ready to paste into the WhatsApp group" without saying what goes in it.
 - **Decision:** the ledger's Copy recap button gives a few plain lines about the whole table, as the ledger and Settle up do: the date of the night played, the games, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot.
