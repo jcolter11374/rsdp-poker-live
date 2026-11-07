@@ -122,7 +122,7 @@ paths on 5 November 2026; the details below are Claude's
 | The checks on GitHub (CI) | Must pass | Must pass |
 | Review | A separate review pass with another AI session | A short review pass with another AI session |
 | Play-test on a copy of the site | Yes, before the release | No |
-| When it goes live | At a quiet time | As soon as it's ready |
+| When it goes live | As soon as its play-test passes | As soon as it's ready |
 
 **Full** if the change touches any of these, however little:
 
@@ -189,8 +189,9 @@ session and is posted on the pull request like any review (step 3 of
 
 **A release takes the path of its riskiest change.** If everything waiting
 on `develop` is light, the release can go out as soon as it's ready, with no
-play-test and no wait for a quiet time. If anything waiting is full, the
-whole release is full. A release pull request's head is `develop`, so
+play-test. If anything waiting is full, the whole release is full. Either
+way it isn't held for a quiet time: it goes out once its checks are done,
+with tables open or not (John, [D34](docs/DECISIONS.md#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time)). A release pull request's head is `develop`, so
 anything merged there later joins it: just before merging a light release,
 check every pull request merged into `develop` since the last release. If
 any is full or doesn't say, the release is full.
@@ -226,9 +227,10 @@ Decide that before it's merged into `develop`, and make its branch from
 5. **Release.** On release day, make sure the waiting changelog entry's
    version is today's (see [Releases](#releases)), then open a pull request
    from `develop` into `main`. If the release holds any full change, we
-   play-test it on a copy of the site first, never on the live one, and
-   merge it at a quiet time ([DEPLOY.md](docs/DEPLOY.md#releasing)). A
-   release of only light changes skips both. Merging it runs the checks
+   play-test it on a copy of the site first, never on the live one
+   ([DEPLOY.md](docs/DEPLOY.md#releasing)). A release of only light changes
+   skips that. Either way, merge it as soon as it's ready: don't wait for a
+   quiet time (D34). Merging it runs the checks
    again and then deploys. After the deploy, the Release workflow tags the
    commit (`v2026.11.01`), publishes a GitHub release with its notes and
    the issues it closed, and closes those issues with a comment saying when
@@ -242,7 +244,7 @@ the fix takes the next one (`2026.11.01.2`); the PR check says which.
 Merge `main` back into `develop` afterwards so the two don't drift, keeping
 the fix's entry exactly as it is on `main`.
 
-Two kinds of full change don't wait for a play-test or a quiet time: a
+Two kinds of full change don't wait for a play-test: a
 security fix ([RUNBOOK.md](docs/RUNBOOK.md#someone-reports-a-security-problem))
 and the revert of a bad release
 ([RUNBOOK.md](docs/RUNBOOK.md#a-bad-release)). Each still needs CI and a
