@@ -886,7 +886,10 @@ export function createApp(deps: AppDeps = {}) {
     });
   }
 
-  /** The turn each loaded table last showed, so each turn is looked at once: table id → `<player>:<hand>:<events>`. */
+  /**
+   * The turn each loaded table last showed, so each turn is looked at once: table id → `turnToAct`'s key,
+   * `<player>:<hand>:<events>` for a move and `pick:<player>:<hand it follows>` for a Dealer's choice pick.
+   */
   const turnSeen = new Map<string, string>();
   /** Until when phone alerts wait for tabs to reconnect (RESTART_QUIET_MS; set by resume). */
   let quietUntil = -Infinity;

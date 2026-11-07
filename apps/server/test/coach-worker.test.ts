@@ -129,7 +129,7 @@ async function longestStall(during: () => Promise<unknown>): Promise<number> {
 describe("the coach's own thread", () => {
   it('works out the same tip as the table would itself, every time it is asked', async () => {
     // TUNING deals far more draws than the site does: on a busy machine one tip could pass the coach's own time limits,
-    // which this doesn't test.
+    // which this doesn't test. The test as a whole gets as long (vitest's own limit is 20 s).
     const pool = coachWorker({ tuning: TUNING, runMs: 60_000, waitMs: 60_000 });
     try {
       const td = dealt('td27', 3, 2);
@@ -149,7 +149,7 @@ describe("the coach's own thread", () => {
     } finally {
       await pool.close();
     }
-  });
+  }, 60_000);
 
   it('keeps every table on time while a burst of tips is worked out', async () => {
     // Worked out here, one slow tip holds this thread, and every table on it, for its whole length.
@@ -219,7 +219,7 @@ describe("the coach's own thread", () => {
       other.dispose();
       await pool.close();
     }
-  });
+  }, 60_000);
 
   it('tells the tips past a full line that the coach is busy, and answers the rest', async () => {
     const logged: string[] = [];
