@@ -31,6 +31,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - HORSE and 8-Game tables: before the first hand the top bar no longer shows an ante for a game that posts none (Limit Hold'em in HORSE, 2-7 Triple Draw in 8-Game).
 - Hand search: Limit and No-Limit Hold'em are now separate choices in the Game list, and so is any other game you've played with more than one kind of betting.
 - Hosts: a saved preset with more seats than one of its games deals (2-7 Triple Draw and Badugi deal at most 6) now starts a table with seats that fit, instead of a table that stops when it reaches that game.
+- Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
 
 ## [2026.11.06.5] - 2026-11-06
 
