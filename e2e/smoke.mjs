@@ -195,6 +195,123 @@ const layoutsSeen = (p) =>
     return s;
   });
 
+/**
+ * Starts noting, every animation frame, each player's nameplate, row of cards and the lines in the nameplate. It keeps
+ * the hand's last frame before the result shows, and every frame of the result's first 2.5 s; `resultSeen` waits for
+ * those and returns them.
+ */
+const watchResult = (p) =>
+  p.evaluate(() => {
+    const seen = (window.__result = { before: null, after: [], done: false });
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    };
+    const sample = (now) => {
+      if (window.__result !== seen) return;
+      const seats = {};
+      for (const s of document.querySelectorAll('.felt .seat[data-seat]')) {
+        const plate = s.querySelector('.nameplate');
+        const hole = s.querySelector('.hole:not(.mucked)');
+        seats[s.dataset.seat] = {
+          // innerText leaves out the host's tag, which phones hide.
+          name: s.querySelector('.name').innerText,
+          me: s.classList.contains('me'),
+          plate: box(plate),
+          cards: hole?.querySelector('.playing-card') ? box(hole) : null,
+          stack: plate.querySelector('.stack')?.textContent,
+          lines: [...plate.querySelectorAll('.last-action:not(.kept)')].map((l) => l.textContent),
+          status: [...plate.querySelectorAll('.status')].map((l) => l.textContent),
+        };
+      }
+      const frame = { at: now, seats };
+      if (seen.after.length || document.querySelector('.felt .pot.result')) seen.after.push(frame);
+      else seen.before = frame;
+      if (seen.after.length && now - seen.after[0].at >= 2500) seen.done = true;
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+const resultSeen = async (p) => {
+  await p.waitForFunction(() => window.__result.done, null, { timeout: 60_000 });
+  const seen = await p.evaluate(() => {
+    const s = window.__result;
+    window.__result = null;
+    return s;
+  });
+  if (!seen.before) throw new Error('the result was already showing when the watch began');
+  return seen;
+};
+
+/** A hand's name, as the table writes it ("Two Pair, Kings and Fours", "Ace high", "Eight-Six low"). */
+const HAND_NAME = /Pair|of a Kind|Straight|Flush|Full House|\bhigh\b|\blow\b|[Bb]adugi/;
+
+/**
+ * What changed when the result showed (`resultSeen`), from the last frame before it to each frame after: a nameplate
+ * that changed size or moved by more than 0.5px, another player's row of cards that moved by more than 1px, your own
+ * cards if they moved at all, and a hand's name written in a nameplate. Each is said once, at its worst.
+ * A chip count that changes as the result shows (the last call going in, "49.50" to "49", or a winner's chips counting
+ * up through the cents) can change its nameplate's width, as it can at any time in a hand. Only that is let through:
+ * the nameplate's height and place, and every row of cards beside it, still have to hold. ("ALL IN" or "Knocked out"
+ * isn't a count: an all-in player's nameplate keeps its width.)
+ */
+function changedAtResult({ before, after }) {
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const size = (b) => `${r1(b.w)}x${r1(b.h)}`;
+  const apart = (...pairs) => Math.max(...pairs.map(([a, b]) => Math.abs(a - b)));
+  // How far a box's middle went, and how far its furthest-moving edge went.
+  const middle = (a, b) => apart([a.x + a.w / 2, b.x + b.w / 2], [a.y + a.h / 2, b.y + b.h / 2]);
+  const edges = (a, b) => apart([a.x, b.x], [a.y, b.y], [a.x + a.w, b.x + b.w], [a.y + a.h, b.y + b.h]);
+  const worst = new Map();
+  const note = (key, by, text) => {
+    if (!worst.has(key) || by > worst.get(key).by) worst.set(key, { by, text });
+  };
+  for (const frame of after) {
+    for (const [seat, now] of Object.entries(frame.seats)) {
+      const was = before.seats[seat];
+      if (!was) continue;
+      const who = now.me ? 'your' : `${now.name}'s`;
+      const counted = now.stack !== was.stack && [now.stack, was.stack].every((t) => /^[\d.,]+$/.test(t));
+      const grew = Math.max(counted ? 0 : apart([now.plate.w, was.plate.w]), apart([now.plate.h, was.plate.h]));
+      if (grew > 0.5) note(`${seat} size`, grew, `${who} nameplate went from ${size(was.plate)} to ${size(now.plate)}`);
+      const moved = middle(now.plate, was.plate);
+      if (moved > 0.5) note(`${seat} place`, moved, `${who} nameplate moved ${r1(moved)}px`);
+      if (now.cards && was.cards) {
+        const by = edges(now.cards, was.cards);
+        if (by > (now.me ? 0.1 : 1)) note(`${seat} cards`, by, `${now.me ? 'your own' : who} cards moved ${r1(by)}px`);
+      }
+      for (const line of now.status) if (HAND_NAME.test(line)) note(`${seat} status`, 0, `${who} nameplate says "${line}"`);
+    }
+  }
+  return [...worst.values()].map((w) => w.text);
+}
+
+/**
+ * Every other player who showed a losing hand has its name on a tab, and every tab is on the screen with nothing over
+ * it: what is on top at its middle is the tab itself.
+ */
+const tabsUnseen = (p) =>
+  p.evaluate(() => {
+    const found = [];
+    const name = (el) => el?.closest('.seat')?.querySelector('.name')?.innerText;
+    // A loser's hand that was shown has no card face down.
+    for (const s of document.querySelectorAll('.felt .seat.has-cards:not(.me, .winner, .folded)')) {
+      const shown = !s.querySelector('.hole .playing-card.back');
+      if (shown && !s.querySelector('.shown-tab')?.textContent) found.push(`${name(s)} showed and lost, and no tab names the hand`);
+    }
+    for (const tab of document.querySelectorAll('.felt .shown-tab')) {
+      const r = tab.getBoundingClientRect();
+      const what = `${name(tab)}'s tab "${tab.textContent}"`;
+      if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) found.push(`${what} goes off the screen`);
+      // Taps go through the tab to the nameplate: it takes them only while this asks what is on top at its middle.
+      tab.style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      tab.style.pointerEvents = '';
+      if (!tab.contains(top)) found.push(`${what} is under ${name(top) ? `${name(top)}'s ` : ''}${top?.className || top?.tagName || 'nothing'}`);
+    }
+    return found;
+  });
+
 async function step(name, fn) {
   const started = Date.now();
   await fn();
@@ -880,6 +997,161 @@ try {
     // Host controls are behind the drawer button in this layout.
     await host.click('.drawer-button');
     await stopGame(host, [host, guest]);
+  });
+
+  await step('phone: nameplates keep their size when the result shows', async () => {
+    // At the result a phone nameplate gained a line with the hand's name, grew into the next one, had both lines cut
+    // short, and the cards beside it moved (#455). Now a losing hand's name goes on a tab over the nameplate, and each
+    // nameplate keeps, unseen, the lines it showed last: the server clears everyone's last move when the river's betting
+    // ends, so a nameplate that said "Bet" would shrink. A full 9-seat Omaha table where every hand is shown, played to a
+    // showdown with a bet and calls on the river, seen by a player on a 390x844 phone: from the last frame before the
+    // result to 2.5 s after it, no nameplate changes size (a chip count changing aside: see changedAtResult) or moves, no
+    // row of cards moves, no nameplate names a hand, and every losing hand is named on a tab that is on the screen with
+    // nothing over it.
+    const host = await open('result host');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Ada');
+    await host.selectOption('label:has-text("Game") select', 'plo4');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await host.click('button:has-text("Table settings")');
+    await host.click('.tabs button:has-text("Game")');
+    await host.locator('.modal label:has-text("Seats") input').fill('9');
+    await host.click('.tabs button:has-text("Rules")');
+    await host.locator('label.toggle:has-text("Show every hand at showdown") input').check();
+    await host.click('.modal button:has-text("Save")');
+    await host.locator('.modal').waitFor({ state: 'detached' });
+    // Ben is the one on a phone: seats fill in order, so he has a neighbour on each side.
+    const guests = [];
+    for (const name of ['Ben', 'Cleo', 'Dot', 'Ed', 'Flo', 'Gil', 'Hu', 'Ina']) {
+      const guest = await open(`result guest ${name}`, name === 'Ben' ? { width: 390, height: 844 } : undefined);
+      await guest.goto(host.url());
+      await guest.locator('.seat.empty button').first().click();
+      await guest.fill('.modal input[required]', name);
+      await guest.click('button:has-text("Ask to sit")');
+      await host.click('.request button:has-text("Approve")');
+      await guest.waitForSelector('.seat.me');
+      guests.push(guest);
+    }
+    const phone = guests[0];
+    const players = [host, ...guests];
+    await host.click('button:has-text("Start game")');
+    await phone.waitForSelector('.seat.me .hole .playing-card');
+    await watchResult(phone);
+    // Everyone checks or calls to the river. There the first to act bets the least they can and everyone calls, so up to
+    // the result the nameplates say "Bet" and "Call".
+    for (const end = Date.now() + 60_000; !(await phone.locator('.pot.result').count()); ) {
+      if (Date.now() > end) throw new Error('the hand did not reach a showdown in 60 s');
+      let acted = false;
+      for (const p of players) {
+        const bar = p.locator('.action-bar.my-turn').first();
+        const buttons = bar.locator('.buttons button');
+        const texts = await buttons.allInnerTexts();
+        if (!texts.length) continue;
+        // The bar names the street as "<hand>:<street>": 3 is the river.
+        const street = await bar.getAttribute('data-street', { timeout: 1000 }).catch(() => null);
+        let pick = street?.endsWith(':3') ? texts.findIndex((t) => /^Bet /.test(t)) : -1;
+        if (pick < 0) pick = texts.findIndex((t) => /^(Check|Call)/.test(t));
+        if (pick >= 0) {
+          await buttons.nth(pick).click({ timeout: 2000 }).catch(() => {});
+          acted = true;
+          await p.waitForTimeout(200);
+        }
+      }
+      if (!acted) await phone.waitForTimeout(250);
+    }
+    const seen = await resultSeen(phone);
+    // The bet and calls were on the nameplates up to the result (the last call goes in with the result).
+    const lines = Object.values(seen.before.seats).flatMap((s) => s.lines);
+    if (!lines.includes('Bet') || !lines.includes('Call'))
+      throw new Error(`just before the result the nameplates said ${lines.join(', ') || 'nothing'}, not a bet and calls`);
+    const problems = [...changedAtResult(seen), ...(await tabsUnseen(phone))];
+    await phone.screenshot({ path: path.join(OUT, 'phone-result.png') });
+    if (problems.length) throw new Error(`at 390x844, when the result showed: ${problems.join('; ')}`);
+    await stopGame(host, players);
+  });
+
+  await step("phone: a knocked-out player's nameplate says so where the chips were, and keeps its size", async () => {
+    // A player knocked out of a tournament stays in their seat through the result. On a phone their nameplate gained
+    // "Knocked out" and the hand's name on lines of their own, grew into the next one and had both cut short (#455). Now
+    // "Knocked out" takes the chip count's place and the hand's name goes on a tab. Two players go all in and the third,
+    // on a 390x844 phone, folds and watches: from the last frame before the result to 2.5 s after it, nothing changes
+    // size or moves (as in the step before), and the player who went out reads "Knocked out" where the chips were.
+    const host = await open('knockout host');
+    await host.goto(`${BASE}/tn/new`);
+    await host.getByRole('radio', { name: 'When I start it' }).click();
+    await host.locator('label:has-text("Name") input').first().fill('Knockout Cup');
+    await host.getByRole('button', { name: 'Create tournament' }).click();
+    await host.waitForURL(/\/tn\/[0-9a-f]+$/);
+    const id = host.url().split('/').pop();
+    const phone = await open('knockout phone', { width: 390, height: 844 });
+    const players = [phone, host, await open('knockout player')];
+    const names = ['Kit', 'Lev', 'Mae'];
+    for (const [i, p] of players.entries()) {
+      if (p !== host) await p.goto(`${BASE}/tn/${id}`);
+      await p.locator('.tn-name input').fill(names[i]);
+      await p.getByRole('button', { name: /^Register/ }).click();
+      await p.getByText("You're registered.").waitFor();
+    }
+    await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
+    for (const p of players) await p.waitForURL(new RegExp(`/t/${id}-t1$`), { waitUntil: 'commit' });
+
+    // The two others go all in; Kit folds. Everyone starts with the same chips, so one of them goes out, unless they
+    // split the pot: then the next hand goes the same way.
+    let out = null;
+    for (let hands = 0; !out; hands++) {
+      if (hands === 6) throw new Error('nobody was knocked out in six hands with two players all in');
+      // (A split pot has a result line for each player.)
+      await phone.locator('.pot.result').first().waitFor({ state: 'detached', timeout: 30_000 });
+      await phone.waitForSelector('.seat.me .hole .playing-card');
+      await watchResult(phone);
+      for (const end = Date.now() + 60_000; !(await phone.locator('.pot.result').count()); ) {
+        if (Date.now() > end) throw new Error('the all-in hand did not finish in 60 s');
+        let acted = false;
+        for (const p of players) {
+          const bar = p.locator('.action-bar.my-turn').first();
+          if (!(await bar.count())) continue;
+          const press = (where, text) => bar.locator(where, { hasText: text }).click({ timeout: 2000 }).catch(() => {});
+          if (p === phone) await press('.buttons button', /^Fold/);
+          // The first of the two to act goes all in, and the other calls.
+          else if (await p.locator('.felt .seat.all-in').count()) await press('.buttons button', /^Call/);
+          else {
+            await press('.presets button', /^All in$/);
+            await press('.buttons button.primary', /^All in/);
+          }
+          acted = true;
+          await p.waitForTimeout(200);
+        }
+        if (!acted) await phone.waitForTimeout(250);
+      }
+      const seen = await resultSeen(phone);
+      out = (await phone.locator('.felt .seat.departed').count()) ? seen : null;
+    }
+    const gone = phone.locator('.felt .seat.departed');
+    const problems = changedAtResult(out);
+    const [who, stack] = [await gone.locator('.name').innerText(), await gone.locator('.stack').innerText()];
+    if (stack !== 'Knocked out') problems.push(`${who}'s nameplate reads "${stack}" where the chips were, not "Knocked out"`);
+    problems.push(...(await tabsUnseen(phone)));
+    await phone.screenshot({ path: path.join(OUT, 'phone-knocked-out.png') });
+    if (problems.length) throw new Error(`at 390x844, when the result showed: ${problems.join('; ')}`);
+
+    // Ended early as in the tournament step, so its table isn't still dealing when CI's backup drill runs.
+    const lobby = await openTab(host, 'knockout host lobby');
+    await lobby.goto(`${BASE}/tn/${id}`);
+    await lobby.getByRole('tab', { name: /^Host/ }).click();
+    await lobby.getByRole('button', { name: 'Pause', exact: true }).click();
+    await lobby.locator('.tn-status-paused').waitFor();
+    const finished = lobby.locator('.tn-status-finished');
+    for (let tries = 0; !(await finished.count()); tries++) {
+      if (tries === 10) throw new Error('the tournament did not end');
+      // Kit, still at the table, is first: playOut stops when Kit's page shows the hand's result.
+      if (!(await phone.locator('.pot.result').count())) await playOut(players);
+      await lobby.getByRole('button', { name: 'End and rank by chips' }).click();
+      await finished.waitFor({ timeout: 2000 }).catch(() => {});
+    }
   });
 
   await step('Omaha on a laptop: no nameplate covers another, and the seats hold still', async () => {
