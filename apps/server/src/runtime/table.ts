@@ -195,6 +195,8 @@ export class TableRuntime {
   private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null, reveal: null, pick: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
+  /** A change saved between hands is waiting for an all-in runout to be dealt out, and applies then (updateSettings). */
+  private settingsAfterRunout = false;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
   private seedWait = false;
   /**
@@ -455,6 +457,7 @@ export class TableRuntime {
     const { stack } = input;
     if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    this.checkNotLeavingRunout(playerId);
     const offered = this.offers().find((o) => o.playerId === playerId);
     if (offered) seat = offered.seat;
     else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
@@ -767,7 +770,8 @@ export class TableRuntime {
     if (count <= 0) return [];
     const held = new Set([...this.offers().map((o) => o.seat), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!)]);
     // The seat of a player in an all-in runout still being dealt out isn't free yet, bust or not (#437), except to
-    // players actually moving now, who must not be left without a seat.
+    // players actually moving now, who must not be left without a seat. (A smaller table waits for the runout to be
+    // dealt out (#463), so that is only a safety net.)
     const reveal = moving ? new Set<number>() : this.revealSeats();
     const free = this.state.seats.slice(0, limit).flatMap((x, i) => (x || reveal.has(i) ? [] : [i])).reverse();
     return [...free.filter((i) => !held.has(i)), ...free.filter((i) => held.has(i))].slice(0, count);
@@ -791,12 +795,22 @@ export class TableRuntime {
     if (this.state.offers?.some((o) => o.playerId === playerId)) this.state.offers = this.state.offers.filter((o) => o.playerId !== playerId);
   }
 
+  /**
+   * Someone who left in an all-in runout browsers are still dealing out sits down again, or queues, once it has been
+   * dealt out: the buy-in they could come back with depends on the result (#463). At a cash table only someone who
+   * chose to leave (or was removed) is gone then; a busted bot stays seated until the result shows (holdBustedBot).
+   */
+  private checkNotLeavingRunout(playerId: PlayerId) {
+    if (this.goneInRunout().has(playerId)) throw new ActionError('the hand you left is still being dealt out: sit down again once it has');
+  }
+
   /** Join a cash table's waitlist, with the buy-in to sit with when a seat comes up. */
   joinWaitlist(playerId: PlayerId, input: { name: string; stack: number }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
     if (!this.settings.seating.waitlist) throw new ActionError('this table has no waitlist');
     const name = cleanName(input.name);
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    this.checkNotLeavingRunout(playerId);
     if (this.queue().some((w) => w.playerId === playerId)) throw new ActionError("you're already on the waitlist");
     if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
     // Queued even when a seat is free: upkeep offers it straight away (a seat someone had in an all-in runout once the
@@ -837,8 +851,9 @@ export class TableRuntime {
       stack: r.amount,
       sittingOut: false,
       sitOutReason: null,
-      // Before anyone has played there is nothing to post for.
-      isNew: this.activePlayers().length >= 2 && this.state.handNumber > 0,
+      // Before anyone has played there is nothing to post for. (During an all-in runout, whether two players kept chips
+      // isn't known yet: enoughToDeal.)
+      isNew: this.enoughToDeal() && this.state.handNumber > 0,
       missedSmallBlind: false,
       missedBigBlind: false,
       waitForBigBlind: false,
@@ -907,27 +922,46 @@ export class TableRuntime {
     // afresh: the next deal draws a new first chooser, with a fresh clock as soon as two are seated.
     const c = this.state.choice;
     if (c && c.firstButton !== null && !this.state.seats.some(Boolean)) this.freshChoice();
-    else if (c && (c.chip === seat.seat || c.firstButton === seat.seat)) {
-      const next = this.seatedFrom(seat.seat);
-      if (c.firstButton === seat.seat) c.firstButton = next?.seat ?? null;
-      if (c.chip === seat.seat && next) c.chip = next.seat;
-    }
+    else this.giveUpChip(seat.seat);
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
     this.log(`${seat.name} left the table with ${this.money(stack)}`);
     this.forgetBot(seat.playerId);
   }
 
-  /** Has chips to sit back in with: some in front of them, or some on the way after this hand. The view shows the seat bar's I'm back by this. */
+  /** Dealer's choice: someone leaving seat `from` gives up the Pick chip, and at a new table the first hand's button, to the next player round from it (D33). */
+  private giveUpChip(from: number) {
+    const c = this.state.choice;
+    if (!c || (c.chip !== from && c.firstButton !== from)) return;
+    const found = this.seatedFrom((from + 1) % this.state.seats.length);
+    const next = found && found.seat !== from ? found : null;
+    if (c.firstButton === from) c.firstButton = next?.seat ?? null;
+    if (c.chip === from && next) c.chip = next.seat;
+  }
+
+  /**
+   * Has chips to sit back in with: some in front of them, or some on the way after this hand. The view shows the seat
+   * bar's I'm back by this. While browsers deal out an all-in runout the player was in, they show the chips the player
+   * had, so this answers yes until the result shows (#463).
+   */
   canSitIn(playerId: PlayerId): boolean {
     const seat = this.seatOf(playerId);
-    return !!seat && (seat.stack + seat.pendingChips > 0 || seat.pendingStack !== null);
+    return !!seat && (this.hasChips(seat) || this.inRunout(playerId));
+  }
+
+  private hasChips(seat: SeatState): boolean {
+    return seat.stack + seat.pendingChips > 0 || seat.pendingStack !== null;
   }
 
   sitOut(playerId: PlayerId, value: boolean) {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('you are not seated');
-    if (!value && !this.canSitIn(playerId)) throw new ActionError('rebuy before sitting back in');
+    if (!value && !this.hasChips(seat)) {
+      // I'm back from a player who busted in an all-in runout still being dealt out does nothing, without an error, so
+      // it answers as it would if they hadn't: the result then shows them out of chips (#463).
+      if (this.inRunout(playerId)) return this.sync();
+      throw new ActionError('rebuy before sitting back in');
+    }
     seat.sittingOut = value;
     seat.sitOutReason = value ? 'player' : null;
     if (!value) seat.timeouts = 0;
@@ -951,7 +985,7 @@ export class TableRuntime {
     if (!this.settings.seating.allowRebuys) throw new ActionError('rebuys are off at this table');
     if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_CHIPS) throw new ActionError('the amount must be a positive whole number');
     const { maxBuyIn } = this.settings.seating;
-    if (maxBuyIn > 0 && seat.stack + seat.pendingChips + amount > maxBuyIn) throw new ActionError(`you can have at most ${this.money(maxBuyIn)} in front of you`);
+    if (maxBuyIn > 0 && this.chipsCounted(seat) + amount > maxBuyIn) throw new ActionError(`you can have at most ${this.money(maxBuyIn)} in front of you`);
     if (this.settings.seating.rebuyRequiresApproval && !this.can(playerId, 'approve')) {
       this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'rebuy'));
       this.state.requests.push({ id: randomUUID().slice(0, 8), kind: 'rebuy', playerId, name: seat.name, seat: seat.seat, amount, at: this.clock.now() });
@@ -962,12 +996,23 @@ export class TableRuntime {
     this.sync();
   }
 
+  /**
+   * The chips Add chips counts toward the most a player may have: their stack and any queued. While browsers deal out
+   * an all-in runout the player was in, the ones from before the result (heldStack), so the answer doesn't tell them
+   * whether they won (#463).
+   */
+  private chipsCounted(seat: SeatState): number {
+    if (seat.heldStack !== undefined && this.inRunout(seat.playerId)) return seat.heldStack;
+    return seat.stack + seat.pendingChips;
+  }
+
   /** Adds chips now between hands, or queues them for the next hand. */
   private addChips(playerId: PlayerId, amount: number, why: 'rebuy' | 'host') {
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
     const row = this.state.ledger[playerId];
     if (row) row.buyIn += amount;
+    if (seat.heldStack !== undefined) seat.heldStack += amount;
     if (this.inHand(playerId)) seat.pendingChips += amount;
     else {
       seat.stack += amount;
@@ -1026,13 +1071,13 @@ export class TableRuntime {
   start(by: PlayerId) {
     this.requirePower(by, 'run');
     if (this.isTournament) throw new ActionError('the tournament starts this table');
-    if (this.activePlayers().length < 2) throw new ActionError('need at least two players with chips');
+    if (!this.enoughToDeal()) throw new ActionError('need at least two players with chips');
     this.state.started = true;
     this.state.stopAfterHand = false;
     this.state.paused = false;
     this.state.pausedLeft = null;
     this.fairResumed();
-    if (!this.state.hand || this.state.hand.phase === 'complete') this.state.nextHandAt = this.clock.now();
+    if (!this.state.hand || this.state.hand.phase === 'complete') this.state.nextHandAt = this.dealFrom();
     this.log('The host started the game');
     this.sync();
   }
@@ -1184,7 +1229,7 @@ export class TableRuntime {
     if (this.handLive()) throw new ActionError('a hand is still being played');
     this.state.started = true;
     this.fairResumed();
-    this.state.nextHandAt = this.clock.now();
+    this.state.nextHandAt = this.dealFrom();
     this.sync();
   }
 
@@ -1411,9 +1456,15 @@ export class TableRuntime {
     if (!spectatorsSeeCards(s.settings) && spectatorsSeeCards(target) && this.handLive()) {
       throw new ActionError('spectators can only be shown every hole card between hands; try again when this hand ends');
     }
+    // While browsers deal out an all-in runout, they show the hand as still being played (holdBack in runout.ts). So a
+    // change saved then waits until it has been dealt out, and applies then as one saved between hands applies at once:
+    // applied now, a smaller table or game could move someone into a busted player's seat, or turning on automatic
+    // deals could deal the next hand early, depending on the result (#463).
+    const runout = !this.handLive() && this.revealSeats().size > 0;
+    const waits = this.handLive() || runout;
     // Against what was already on its way, so a change queued earlier in the hand isn't announced again.
     const before = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings : s.settings;
-    for (const n of settingsNotices(before, target, this.nameOf(by), this.handLive())) {
+    for (const n of settingsNotices(before, target, this.nameOf(by), waits)) {
       this.log(n.text);
       if (n.loud) this.dealerSays(n.text);
     }
@@ -1428,7 +1479,8 @@ export class TableRuntime {
     }
     if (s.settingsLog.length > LOG_LIMIT) s.settingsLog.splice(0, s.settingsLog.length - LOG_LIMIT);
     // Between hands, queued changes can take effect straight away.
-    if (!this.handLive()) this.applyPendingSettings();
+    if (!waits) this.applyPendingSettings();
+    else if (runout && s.pendingSettings) this.settingsAfterRunout = true;
     // Turning the Nit game off ends any round now, mid-hand or not.
     this.nitStillOn();
     this.sync();
@@ -1440,7 +1492,8 @@ export class TableRuntime {
     if (next.table.mode !== cur.table.mode) throw new ActionError('a table cannot switch between cash and tournament');
     // Every amount here, the ledger and everyone's records are in the table's unit, so it stays the one the table was made with.
     if (next.stakes.centsMode !== cur.stakes.centsMode) throw new ActionError(cur.stakes.centsMode ? 'cash games are played in dollars and cents' : 'this table plays in chips; start a new table to play in dollars and cents');
-    const seated = this.state.seats.filter(Boolean).length;
+    // Counting anyone who left in an all-in runout browsers are still dealing out, as they show them (#463).
+    const seated = this.seatedCount();
     // Dealer's choice keeps the table's seats: games that seat fewer are greyed out in the picker (D33). No game on
     // the menu may seat fewer than are sitting down.
     const menu = choiceMenu(next);
@@ -1742,7 +1795,8 @@ export class TableRuntime {
   shuffleSeats(by: PlayerId) {
     this.requirePower(by, 'players');
     if (this.isTournament) throw new ActionError('the tournament seats players');
-    if (this.handLive()) throw new ActionError('shuffle between hands');
+    // Browsers still show the hand being played while they deal out an all-in runout, so it waits for that too (#463).
+    if (this.handLive() || this.revealSeats().size) throw new ActionError('shuffle between hands');
     const s = this.state;
     const taken = s.seats.flatMap((x, i) => (x ? [i] : []));
     if (taken.length < 2) throw new ActionError('need at least two players to shuffle');
@@ -1770,6 +1824,8 @@ export class TableRuntime {
     this.requirePower(by, 'players');
     this.notTheHost(by, playerId);
     if (this.isTournament) throw new ActionError('the tournament seats players');
+    // Someone in an all-in runout browsers still deal out is still in the hand there, with the chips they had (#463).
+    if (this.inRunout(playerId)) throw new ActionError('move them once this hand is over');
     const seat = this.seatOf(playerId);
     if (!seat) throw new ActionError('that player is not seated');
     if (!Number.isInteger(to) || to < 0 || to >= this.state.seats.length) throw new ActionError('no such seat');
@@ -1783,7 +1839,7 @@ export class TableRuntime {
     this.state.seats[from] = null;
     seat.seat = to;
     // A new place at the table: like someone sitting down, they post or wait for the big blind.
-    if (this.activePlayers().length >= 2 && this.state.handNumber > 0) seat.isNew = true;
+    if (this.enoughToDeal() && this.state.handNumber > 0) seat.isNew = true;
     seat.missedBigBlind = false;
     seat.missedSmallBlind = false;
     this.state.seats[to] = seat;
@@ -1843,6 +1899,13 @@ export class TableRuntime {
     this.hostTimer = this.clock.setTimeout(() => {
       this.hostTimer = null;
       if (this.state.hostId !== host || this.isOnline(host)) return;
+      // Who takes over depends on who is sitting out, a busted player included: during an all-in runout browsers are
+      // still dealing out, that waits until it has been shown (#463).
+      const shown = this.revealSeats().size ? this.revealUntil() - this.clock.now() : 0;
+      if (shown > 0) {
+        this.watchHost(shown);
+        return;
+      }
       const seats = this.state.seats;
       const from = this.seatOf(host)?.seat ?? -1;
       const order = seats.map((_, i) => seats[(from + 1 + i + seats.length) % seats.length]);
@@ -2533,9 +2596,14 @@ export class TableRuntime {
     s.turn = null;
     s.ritDeadline = null;
 
+    // While browsers deal out an all-in runout, Add chips counts what it counted during the hand (heldStack).
+    const runout = !this.isTournament && runoutMs(hand.events) > 0;
+    for (const seat of s.seats) if (seat) delete seat.heldStack;
     for (const hs of hand.seats) {
       const seat = s.seats[hs.seat];
-      if (seat && seat.playerId === hs.playerId) seat.stack = hs.stack;
+      if (!seat || seat.playerId !== hs.playerId) continue;
+      if (runout) seat.heldStack = seat.stack + seat.pendingChips;
+      seat.stack = hs.stack;
     }
 
     this.queuedChipsLand();
@@ -2628,7 +2696,8 @@ export class TableRuntime {
         if (this.isTournament) s.seats[seat.seat] = null;
         else this.removeSeat(seat);
       } else if (seat.stack === 0 && !this.isTournament) {
-        if (this.isBot(seat.playerId)) this.botBusted(seat);
+        if (this.isBot(seat.playerId) && !this.settings.seating.allowRebuys && this.revealSeats().has(seat.seat)) this.holdBustedBot(seat);
+        else if (this.isBot(seat.playerId)) this.botBusted(seat);
         else {
           seat.sittingOut = true;
           seat.sitOutReason = 'busted';
@@ -2689,7 +2758,10 @@ export class TableRuntime {
     const s = this.state;
     const now = this.clock.now();
     s.nextHandAt = null;
-    this.applyPendingSettings();
+    // A deal while an all-in runout is still being dealt out (Start and Deal next hand wait for it, see dealFrom) leaves
+    // a waiting change for the hand after: if no hand could be dealt, it would have moved players into seats the runout
+    // still shows taken (#463).
+    if (!this.revealSeats().size) this.applyPendingSettings();
     if (s.paused) return false;
     // Dealer's choice: no pick clock runs out while no hand can be dealt.
     const none = () => {
@@ -3276,6 +3348,12 @@ export class TableRuntime {
     if (this.isTournament) return;
     const s = this.state;
     const now = this.clock.now();
+    // Once an all-in runout has been dealt out: bots that busted in it leave, and a change saved during it applies.
+    this.letGoRunoutBots();
+    if (this.settingsAfterRunout && !this.revealSeats().size) {
+      this.settingsAfterRunout = false;
+      if (!this.handLive()) this.applyPendingSettings();
+    }
     const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
     if (releaseMs > 0 && !s.paused) {
       for (const seat of s.seats) {
@@ -3377,6 +3455,57 @@ export class TableRuntime {
     // Over once it has had time to show, or once a newer hand is dealt (browsers drop the runout for it).
     if (!last || last.handNumber !== this.state.handNumber || this.revealUntil() <= this.clock.now()) return new Set();
     return new Set(last.hand.seats.map((hs) => hs.seat));
+  }
+
+  /**
+   * Dealt into the last hand, while browsers still deal out its all-in runout (revealSeats). They show the player as
+   * still in the hand, with the chips they had, so the host's controls and the player's own answer as they would during
+   * the hand (#463).
+   */
+  private inRunout(playerId: PlayerId): boolean {
+    const last = this.state.history.at(-1);
+    return this.revealSeats().size > 0 && !!last?.hand.seats.some((hs) => hs.playerId === playerId);
+  }
+
+  /**
+   * Enough players to deal to, as far as anyone may know yet. While browsers deal out the last hand's all-in runout
+   * they show everyone in it still playing, and there were at least two; the deal after it finds out who can play.
+   */
+  private enoughToDeal(): boolean {
+    return this.revealSeats().size > 0 || this.activePlayers().length >= 2;
+  }
+
+  /**
+   * When a deal asked for now (Start, Deal next hand) may come: at once, or during an all-in runout browsers are
+   * still dealing out, when the next hand would have come after it (finishHand). Dealing then would cut the runout
+   * short, and only if two players kept chips, which would give the result away (#463).
+   */
+  private dealFrom(): number {
+    const now = this.clock.now();
+    const last = this.state.history.at(-1);
+    if (!last || !this.revealSeats().size) return now;
+    const t = this.state.settings.timing;
+    return Math.max(now, last.endedAt + runoutMs(last.hand.events) + (last.hand.showdown ? t.showdownSeconds : t.nextHandDelaySeconds) * 1000);
+  }
+
+  /**
+   * A bot that busted in an all-in runout at a table without rebuys stays in its seat, sitting out like a person who
+   * busted, until browsers have dealt the runout out: leaving at once would give the result away to anyone who uses the
+   * host's controls on it, adds a bot or throws it a gesture (#463). It still gives up the Pick chip now, as leaving
+   * would (removeSeat), so the same player picks next.
+   */
+  private holdBustedBot(seat: SeatState) {
+    seat.sittingOut = true;
+    seat.sitOutReason = 'busted';
+    this.giveUpChip(seat.seat);
+  }
+
+  /** Bots held in their seats through an all-in runout (holdBustedBot) leave once it has been dealt out (or buy back in, if rebuys were turned on meanwhile). */
+  private letGoRunoutBots() {
+    if (this.handLive() || this.revealSeats().size) return;
+    for (const seat of this.state.seats) {
+      if (seat && this.isBot(seat.playerId) && seat.sitOutReason === 'busted' && seat.stack === 0 && !seat.pendingChips && seat.pendingStack === null) this.botBusted(seat);
+    }
   }
 
   /** When upkeep next has something to do: an offer running out, an offline seat to release, or a runout shown. */

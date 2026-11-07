@@ -34,10 +34,10 @@ afterAll(async () => {
 
 const TOO_LATE = /arrived too late: the turn it was for is over/;
 
-/** Two players heads-up, the first hand dealt. Without a clock unless the settings give one. */
-async function headsUp(name: string, settings: object = {}) {
-  const ann = client(`late-${name}-ann-0123456789`);
-  const ben = client(`late-${name}-ben-0123456789`);
+/** Two players heads-up, the first hand dealt. Without a clock unless the settings give one. `at` makes the browsers (another server's). */
+async function headsUp(name: string, settings: object = {}, at: (token: string) => Player = client) {
+  const ann = at(`late-${name}-ann-0123456789`);
+  const ben = at(`late-${name}-ben-0123456789`);
   const { tableId } = await ann.call<{ tableId: string }>('table:create', {
     settings: { seating: { requireApproval: false }, timing: { decisionSeconds: 0, autoStartNextHand: false }, ...settings },
   });
@@ -162,7 +162,23 @@ describe('a move for a turn that has passed', () => {
   });
 
   it('ignores a run it twice vote meant for an earlier hand, so it never counts in a later vote', async () => {
-    const { ann, ben } = await headsUp('rit', { play: { runItTwice: 'ask' }, seating: { requireApproval: false, rebuyRequiresApproval: false } });
+    // A server of its own on a clock the test moves, so the next hand comes once hand 1's runout has been dealt out
+    // without waiting for it in real time (Deal next hand waits for it, #463).
+    const clock = new FakeClock();
+    const own = createApp({ clock, log: () => {} });
+    await new Promise<void>((resolve) => own.http.listen(0, resolve));
+    const ownUrl = `http://localhost:${(own.http.address() as AddressInfo).port}`;
+    const mine: Client[] = [];
+    try {
+      await ritVotes(clock, (token) => socketClient(ownUrl, token, mine));
+    } finally {
+      for (const c of mine) c.close();
+      await own.close();
+    }
+  });
+
+  async function ritVotes(clock: FakeClock, at: (token: string) => Player) {
+    const { ann, ben } = await headsUp('rit', { play: { runItTwice: 'ask' }, seating: { requireApproval: false, rebuyRequiresApproval: false } }, at);
     const players = [ann, ben];
     /** Both shove: the hand stops at the run it twice vote. */
     const allIn = async (handNumber: number) => {
@@ -185,6 +201,10 @@ describe('a move for a turn that has passed', () => {
     await ann.until((v) => v.hand?.phase === 'complete');
     for (const c of players) if (mySeat(await c.until((v) => v.hand?.phase === 'complete')).stack === 0) await c.call('seat:rebuy', { amount: 10_000 });
     await ann.call('host:deal');
+    for (let i = 0; i < 60 && ann.view().hand?.handNumber !== 2; i++) {
+      clock.advance(1000);
+      await pause(20);
+    }
     await allIn(2);
     // The held-up yes arrives during hand 2's vote: ignored, and Ben still has his vote to make.
     await ben.call('hand:runItTwice', { yes: true, handNumber: 1 });
@@ -197,7 +217,7 @@ describe('a move for a turn that has passed', () => {
     await ben.call('hand:runItTwice', { yes: true, handNumber: 2 });
     const done = await ben.until((v) => v.hand?.handNumber === 2 && v.hand.phase === 'complete');
     expect(done.hand!.runItTwice.times).toBe(2);
-  });
+  }
 
   it('refuses a time bank tap that arrives on a later turn', async () => {
     const { ann, ben } = await headsUp('bank', { timing: { decisionSeconds: 30, timeBankSeconds: 30, autoStartNextHand: false } });
