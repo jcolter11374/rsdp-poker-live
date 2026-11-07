@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.7] - 2026-11-07
+
+### Fixed and changed
+
+- Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room. When a waitlist offer has to be let go (the table gets smaller, or a smaller game has no room for it), its holder keeps their place: the seats are offered again in queue order, so nobody behind them sits first.
+
 ## [2026.11.07.6] - 2026-11-07
 
 _Bigger tournament tables on wide screens_
@@ -37,6 +43,7 @@ _Bigger tournament tables on wide screens_
 - Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
 - The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. At a tournament table, where the tournament clock has that corner, it stays at the top of the Log panel. A narrower window doesn't show it; the action buttons still show their keys.
 - One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
+- Laptops and other smaller windows: at a busy table, the seats no longer shift when a hand ends and the players' hands are named under their names ("Full House, Queens full of Sevens"). The seats are spaced for the longest hand name from the deal, and in hi-lo games for both halves.
 - Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
 - Dealer's choice: when the host changes the menu during a hand, the pick panel's "If time runs out" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.
 - Waitlist: pressing Join the waitlist while an all-in is being dealt out no longer tells you whether someone busted. You're added to the waitlist either way, and a seat that comes free is offered once the cards are out. At a table that seats newcomers at random, a seat offered from the waitlist is a random one too. And if the host makes the table smaller during a hand and the seat you were offered is needed for a player moving in, you stay on the waitlist for the next seat instead of losing your place.
@@ -44,7 +51,6 @@ _Bigger tournament tables on wide screens_
 - Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
 - Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
 - Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
-- Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room.
 
 ## [2026.11.07.5] - 2026-11-07
 
@@ -754,6 +760,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
 [2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
