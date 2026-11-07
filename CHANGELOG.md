@@ -24,6 +24,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 - Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.
 - On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
+- Seven Card Stud, Razz and Stud Hi-Lo on a computer: at a full table, a player's cards no longer cover the next player's name on fourth street, and the seats at the ends of the table no longer run off the edge of the window. Where the seats still can't fit apart, they are drawn a little smaller.
 
 ## [2026.11.07.5] - 2026-11-07
 
