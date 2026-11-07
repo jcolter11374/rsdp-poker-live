@@ -141,8 +141,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
-  // Below this the top bar's count of hands left, or time to the next game, takes its short wording (#373).
+  // Below these the top bar's count of hands left, or time to the next game, takes its short wording, and then the
+  // game its short name, so neither is cut (#373).
   const narrowBar = !useMinWidth(1280);
+  const tightBar = !useMinWidth(1100);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
@@ -506,9 +508,9 @@ export function TablePage({ tableId }: { tableId: string }) {
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
             At a tournament the strip under the bar names the event, so the bar just says which table. */}
         {view.tournamentId ? (
-          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} holding={view !== live} />
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
         ) : view.rotation ? (
-          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} levelText={levelText} />
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
         ) : (
           <span className="stakes">
             <b>{view.name}</b>

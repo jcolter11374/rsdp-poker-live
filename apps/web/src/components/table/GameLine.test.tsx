@@ -86,9 +86,11 @@ describe('the game line', () => {
     ]);
   });
 
-  it('on a narrow computer window: the short count', () => {
+  it('on a narrow computer window: the short count, and narrower still the short game name too', () => {
     const { container } = render(<GameLine portrait={false} narrow game={game} chip={chip} more={["John's table"]} />);
     expect(container.querySelector('.game-chip')!.textContent).toBe('Stud after 3 more');
+    const tight = render(<GameLine portrait={false} narrow tight game={{ full: 'Limit Omaha Hi-Lo', short: 'LO8' }} chip={chip} more={["John's table"]} />);
+    expect(tight.container.querySelector('.game-now')!.textContent).toBe('LO8');
   });
 
   it('on a phone: the game and the table, then the count and the stakes', () => {

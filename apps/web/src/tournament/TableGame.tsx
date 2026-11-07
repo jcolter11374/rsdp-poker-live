@@ -12,7 +12,7 @@ import { useHeld, useNow, useTournament } from './hooks';
  * dealt here (`holding`) it keeps the tournament as it was, as the strip under it does: an event that ends with this
  * hand would otherwise lose its level and countdown before the cards show who won.
  */
-export function TournamentGameLine({ view, fmt, portrait, narrow, holding }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; holding: boolean }) {
+export function TournamentGameLine({ view, fmt, portrait, narrow, tight, holding }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; tight: boolean; holding: boolean }) {
   const { state: latest, skew } = useTournament(view.tournamentId!);
   const state = useHeld(latest, holding);
   // The strip's clock ticks every 500ms too, on the same timer, so the two countdowns turn over together.
@@ -33,6 +33,7 @@ export function TournamentGameLine({ view, fmt, portrait, narrow, holding }: { v
     <GameLine
       portrait={portrait}
       narrow={narrow}
+      tight={tight}
       game={game ? gameName(game.gameId, game.betting) : null}
       chip={next ? { full: nextGameText(next, 'full'), short: nextGameText(next, 'short') } : null}
       // On a break the stakes are still the last hand's, so the bar says Break rather than the coming level's number.

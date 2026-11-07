@@ -18,6 +18,7 @@ import './gameline.css';
 export function GameLine({
   portrait,
   narrow = false,
+  tight = false,
   game,
   chip,
   more,
@@ -26,6 +27,8 @@ export function GameLine({
   portrait: boolean;
   /** A computer window too narrow for the count's long wording (a laptop, a tablet on its side): the short one. */
   narrow?: boolean;
+  /** Narrower still (a tablet on its side): the game's short name too, so neither it nor the count is cut. */
+  tight?: boolean;
   game: GameName | null;
   /** How long this game has left and what comes next: "3 more hands, then Stud". */
   chip: GameName | null;
@@ -55,7 +58,7 @@ export function GameLine({
   }
   return (
     <span className="stakes game-line">
-      {game && <b className="game-now">{game.full}</b>}
+      {game && <b className="game-now">{tight ? game.short : game.full}</b>}
       {flags}
       {chip && <span className="game-chip">{narrow ? chip.short : chip.full}</span>}
       {parts.length > 0 && <span className="game-more">{parts.join(' · ')}</span>}
@@ -114,7 +117,7 @@ export function rotationChip(view: Pick<TableView, 'rotation' | 'hand' | 'upcomi
 }
 
 /** The top bar at a cash table with a game rotation (#373). */
-export function CashGameLine({ view, fmt, portrait, narrow, levelText }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; levelText: string | null }) {
+export function CashGameLine({ view, fmt, portrait, narrow, tight, levelText }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; tight: boolean; levelText: string | null }) {
   const shown = view.hand
     ? { gameId: view.hand.gameId, betting: view.hand.betting, family: view.hand.family, stakes: view.hand.stakes }
     : view.upcoming
@@ -130,6 +133,7 @@ export function CashGameLine({ view, fmt, portrait, narrow, levelText }: { view:
     <GameLine
       portrait={portrait}
       narrow={narrow}
+      tight={tight}
       game={shown ? gameName(shown.gameId, shown.betting) : null}
       chip={rotationChip(view)}
       more={[shown ? stakesLabel(shown.stakes, shown.family, shown.betting, fmt) : '', levelText ?? '', view.name]}
