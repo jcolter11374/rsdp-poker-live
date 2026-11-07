@@ -254,6 +254,72 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step("cash table: the seats stay put when the game starts", async () => {
+    // Before the first hand, a banner above the table said to press Start game. It took height from the felt, so when it
+    // went the felt grew and every seat slid to a new spot while the first cards came (#383). The middle of the table says
+    // it now. On a laptop (the host, with the side column) and a wide, short screen (a player), from before the host
+    // presses Start game until the cards are out, the felt keeps its size and no seat moves or changes size.
+    const host = await open('start host', { width: 1280, height: 800 });
+    const guest = await open('start guest', { width: 2300, height: 824 });
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Lou');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Mo');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    for (const [p, says] of [
+      [host, 'press Start game'],
+      [guest, 'Waiting for the host to start the game'],
+    ]) {
+      await p.locator('.felt .board-notice', { hasText: says }).waitFor();
+      if (await p.locator('.felt-area > .banner').count()) throw new Error(`a banner above the table: ${await p.locator('.felt-area > .banner').first().innerText()}`);
+    }
+    // The request banner has just gone, and seats glide to new spots in 0.4s.
+    await host.waitForTimeout(900);
+    const watch = (p) =>
+      p.evaluate(() => {
+        const seen = (window.__layouts = new Set());
+        const sample = () => {
+          const felt = document.querySelector('.felt');
+          if (felt) {
+            const r = felt.getBoundingClientRect();
+            const seats = [...felt.querySelectorAll('.seat')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
+            seen.add(`felt ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.top)}, seats ${felt.style.getPropertyValue('--seat-scale')}: ${seats}`);
+          }
+          if (window.__layouts === seen) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+    await Promise.all([watch(host), watch(guest)]);
+    await host.click('button:has-text("Start game")');
+    for (const p of [host, guest]) await p.waitForSelector('.seat .hole .playing-card');
+    await host.waitForTimeout(1000);
+    for (const [p, who] of [
+      [host, 'the host at 1280x800'],
+      [guest, 'a player at 2300x824'],
+    ]) {
+      const seen = await p.evaluate(() => {
+        const s = [...window.__layouts];
+        window.__layouts = null;
+        return s;
+      });
+      if (seen.length !== 1) throw new Error(`for ${who}, the table moved when the game started:\n  ${seen.join('\n  ')}`);
+      if (await p.locator('.felt .board-notice').count()) throw new Error(`for ${who}, the middle of the table still says to start the game`);
+    }
+    await host.screenshot({ path: path.join(OUT, 'started.png') });
+    await stopGame(host, [host, guest]);
+    // Stopped, the middle of the table says so, and the seats are where they were.
+    await host.locator('.felt .board-notice', { hasText: 'The game is stopped' }).waitFor();
+    await guest.locator('.felt .board-notice', { hasText: 'Waiting for the host to start it again' }).waitFor();
+  });
+
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {
     const p = await open('practice');
     await p.goto(BASE);

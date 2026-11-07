@@ -484,6 +484,26 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The panel starts open for a host whose game hasn't started, so Start game is in view; after that it's the player's pick.
   const drawer = wide && (drawerPick ?? (!!hostPanel && !view.started));
   const openDrawer = () => setDrawer(true);
+  // Before a cash game starts (or after the host stops it), the middle of the table says what happens next. It used to be
+  // a banner above the table, which took height from the felt: when it went away at the start, the felt grew and every
+  // seat slid to a new spot while the first cards were dealt (#383). The middle is empty until a hand is dealt.
+  const canRun = view.powers.includes('run');
+  const startNotice =
+    cash && !view.started
+      ? {
+          text:
+            view.history.length > 0
+              ? canRun
+                ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
+                : 'The game is stopped. Waiting for the host to start it again.'
+              : canRun
+                ? portrait
+                  ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
+                  : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
+                : 'Waiting for the host to start the game.',
+          onClick: wide && canRun ? openDrawer : undefined,
+        }
+      : null;
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -598,19 +618,6 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {cash && !view.started && (
-            <div className="banner" onClick={wide && view.powers.includes('run') ? openDrawer : undefined}>
-              {view.history.length > 0
-                ? view.powers.includes('run')
-                  ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
-                  : 'The game is stopped. Waiting for the host to start it again.'
-                : view.powers.includes('run')
-                  ? portrait
-                    ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
-                    : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
-                  : 'Waiting for the host to start the game.'}
-            </div>
-          )}
           {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
           {pending > 0 && (
             <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
@@ -667,6 +674,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
+            notice={startNotice}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
               stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the

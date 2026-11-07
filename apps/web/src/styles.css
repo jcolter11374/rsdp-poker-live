@@ -653,6 +653,25 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .board .pots { order: -1; }
 .board .next-hand { order: 1; }
 .next-hand { font-weight: 600; letter-spacing: 0.02em; }
+/* Before a cash game starts, or after the host stops it, the middle of the table says what happens next: it takes no room
+   from the felt, so the seats stay put when the game starts (#383). Under the game's name. */
+.board .board-notice { order: 1; }
+.board-notice {
+  max-width: min(600px, 86%);
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.95rem;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
+}
+.felt.grown .board-notice { max-width: min(760px, 70%); font-size: calc(0.95rem * min(var(--k), 1.25)); }
+.felt.compact .board-notice { max-width: 86%; padding: 6px 12px; font-size: 0.8rem; line-height: 1.3; }
+/* The host's, in the wide layout: it opens Host & log, where Start game is. */
+.board-notice.clickable { pointer-events: auto; cursor: pointer; }
+.board-notice.clickable:hover { background: rgba(0, 0, 0, 0.45); color: #fff; }
 .board .pots { flex-direction: column; align-items: center; gap: 2px; }
 .pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .pot.total { padding: 0; font-size: 0.8rem; }

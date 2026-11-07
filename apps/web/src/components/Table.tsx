@@ -220,6 +220,7 @@ export function Table({
   discard,
   fill = false,
   wide = false,
+  notice = null,
 }: {
   view: TableView;
   /** Server clock minus ours. */
@@ -236,6 +237,11 @@ export function Table({
   fill?: boolean;
   /** The wide desktop layout (no side column): cards grow a little more than the nameplates. */
   wide?: boolean;
+  /**
+   * What happens next, in the middle of the table, before a cash game starts or after it stops (#383). There it takes
+   * no room from the felt, so the seats don't move when it goes. With `onClick` it opens what it points to.
+   */
+  notice?: { text: string; onClick?: () => void } | null;
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
@@ -527,6 +533,11 @@ export function Table({
         )}
         {view.paused && <div className="next-hand">Paused</div>}
         {!hand && view.upcoming && <div className="next-hand muted">{view.upcoming.gameName}</div>}
+        {notice && (
+          <div className={`board-notice${notice.onClick ? ' clickable' : ''}`} role="status" onClick={notice.onClick}>
+            {notice.text}
+          </div>
+        )}
         <BoardExtras view={view} />
       </div>
 
