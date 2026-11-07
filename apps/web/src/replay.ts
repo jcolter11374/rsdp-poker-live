@@ -1,4 +1,4 @@
-import type { Award, HandEvent } from '@rsdp/engine/core';
+import { runoutSteps, type Award, type HandEvent } from '@rsdp/engine/core';
 import { getVariant } from '@rsdp/engine/variants';
 import type { BotNote, HandRecordView, HandView, SeatView, SharedHandView, TableView, WireCard } from '@rsdp/engine/wire';
 import { defaultSettings } from '@rsdp/engine/settings';
@@ -358,6 +358,9 @@ export function frameView(
     };
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);
+  const played = hand.events.slice(0, frame.upTo);
+  // Partway through an all-in runout, its last card so far was dealt like the rest; only its very last turns over (#412).
+  const runoutToCome = played.some((e) => e.t === 'run-it') && runoutSteps(played).length < runoutSteps(hand.events).length;
   const settings = defaultSettings('cash');
   if (felt) settings.table.felt = felt;
   return {
@@ -430,8 +433,9 @@ export function frameView(
       showdown: frame.done,
       awards: frame.done ? frame.awards : [],
       // Played so far, so the table can tell what has happened (the equity waits for the hands to be shown).
-      events: hand.events.slice(0, frame.upTo),
+      events: played,
       bombPot: !!start?.bombPot,
+      ...(runoutToCome ? { runoutToCome } : {}),
     },
   } satisfies TableView;
 }
