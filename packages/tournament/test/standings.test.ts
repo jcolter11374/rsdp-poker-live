@@ -24,6 +24,7 @@ describe('standings after a re-entry', () => {
       }),
       now: T0,
       seed: '42'.repeat(32),
+      legacyRng: 7,
     });
     const run = (cmd: Command) => (s = apply(s, cmd, T0).state);
     for (const p of ['p0', 'p1', 'p2']) run({ type: 'register', playerId: p, displayName: p.toUpperCase() });

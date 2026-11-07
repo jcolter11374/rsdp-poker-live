@@ -807,10 +807,15 @@ export function createApp(deps: AppDeps = {}) {
     );
     // Shutting down cuts the download: a client that has stopped reading would otherwise hold it open for good.
     stopBackup = () => void res.destroy();
-    backup = writeBackup(db, (line) => {
-      if (stopped) throw new Error('the download was closed');
-      if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
-    })
+    backup = writeBackup(
+      db,
+      (line) => {
+        if (stopped) throw new Error('the download was closed');
+        if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
+      },
+      new Date(),
+      () => stopped,
+    )
       .then(() => gzip.end())
       .catch((e) => {
         log('backup failed', e);
@@ -996,7 +1001,7 @@ export function createApp(deps: AppDeps = {}) {
     let i = -1;
     while (i + 1 < feed.length && feed[i + 1].at <= now - delayMs) i++;
     if (i > 0) feed.splice(0, i);
-    return behind(live, i >= 0 ? feed[0].part : null, delayMs);
+    return behind(live, i >= 0 ? feed[0].part : null, delayMs, feed[0]?.part ?? null);
   }
 
   /** Everyone with a table open, once each, by the name they go by. */

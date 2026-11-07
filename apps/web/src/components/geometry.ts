@@ -263,6 +263,30 @@ export function spreadByBoxes(
  */
 export const EMPTY_SEATS_MAY_TOUCH = 6;
 
+/** No seat's box covers another's at `fractions`, but two empty seats may touch (EMPTY_SEATS_MAY_TOUCH). */
+export function seatsFine(fractions: readonly number[], taken: readonly boolean[], w: number, h: number, box: (seat: number) => Extent | undefined): boolean {
+  return seatsApart(fractions, w, h, box, (a, b) => (!taken[a] && !taken[b] ? -EMPTY_SEATS_MAY_TOUCH : 0));
+}
+
+/**
+ * How much the felt's width or height may change, from the size the seats were placed at, before they're placed afresh
+ * (#410): FELT_SLACK of it, or FELT_SLACK_PX on a small felt. The dock and the top bar change height by a few pixels in
+ * the middle of a hand: the most #410 measured was 17px, on a felt about 400px tall, and a laptop's felt can be nearer
+ * 300px.
+ */
+export const FELT_SLACK = 0.05;
+export const FELT_SLACK_PX = 20;
+
+/**
+ * Whether seats placed earlier (`was`, from placements keyed `key`) stay where they are at a w×h felt: the same
+ * placement key, and a felt within the slack (above) of the size they were placed at. They still have to fit (see
+ * placeSeats).
+ */
+export function keepPlaced<T extends { key: string; w: number; h: number }>(was: T | null, key: string, w: number, h: number): was is T {
+  const near = (now: number, then: number) => Math.abs(now - then) <= Math.max(then * FELT_SLACK, FELT_SLACK_PX);
+  return !!was && was.key === key && w > 0 && near(w, was.w) && near(h, was.h);
+}
+
 /**
  * Where each seat sits round a w×h desktop table. The spacing of `seatFractions` is kept wherever no box covers another,
  * so tables that look right stay as they are. Otherwise seats are spaced by their boxes (`spreadByBoxes`): with `gap`
@@ -291,8 +315,7 @@ export function placeSeats(
   const boxes = taken.map((_, seat) => box(seat));
   if (boxes.some((b) => !b)) return even;
   const sized = (seat: number) => boxes[seat]!;
-  const fine = (fractions: readonly number[]) =>
-    seatsApart(fractions, w, h, sized, (a, b) => (!taken[a] && !taken[b] ? -EMPTY_SEATS_MAY_TOUCH : 0));
+  const fine = (fractions: readonly number[]) => seatsFine(fractions, taken, w, h, sized);
   if (keep?.length === taken.length && fine(keep)) return keep;
   if (fine(even)) return even;
   for (const g of gap > 0 ? [gap, 0] : [0]) {

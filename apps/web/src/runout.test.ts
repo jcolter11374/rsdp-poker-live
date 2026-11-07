@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
+import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
 import { departures, finishedOnScreen, heldCards, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
@@ -46,6 +47,8 @@ function finished(): TableView {
 
 /** The table just before the runout. */
 const before_ = (): Frozen => before();
+/** With C sitting in seat 2 as well. */
+const withC = <T extends { seats: TableView['seats'] }>(f: T): T => ({ ...f, seats: [...f.seats.slice(0, 2), { ...f.seats[1]!, seat: 2, playerId: 'c', name: 'C', stack: 50 }] });
 const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null, rotation: null });
 
 describe('holdBack', () => {
@@ -78,12 +81,37 @@ describe('holdBack', () => {
 
     it("keeps the PICK tag and the pick as they were while the chooser's all-in is dealt out, and holds their pick back", () => {
       // Seat 0, the chooser, is in the all-in. The server has the result: the chip has passed over them and a bot
-      // picked in their place, while a newcomer filled the table.
-      const after = { ...finished(), choice: choice(1, false, { next: razz, count: 3, closed: true }) } as TableView;
+      // picked a smaller game in their place, which closed the empty seats, while a newcomer sat down.
+      const after = { ...finished(), choice: choice(1, false, { next: razz, count: 3, cap: 3, closed: true }) } as TableView;
       const frozen = { ...before(), choice: choice(0, true), sameHand: true };
       for (let shown = 0; shown <= runoutSteps(after.hand!.events).length; shown++) {
-        expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, false, { count: 3, closed: true }));
+        // The newcomer counts; the seats stay as they were until the result, since the pick shows the chooser busted.
+        expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, false, { count: 3 }));
       }
+      // With no pick, a newcomer taking the last seat closes the others at once.
+      const filled = { ...finished(), choice: choice(0, false, { count: 3, cap: 3, closed: true }) } as TableView;
+      expect(holdBack(filled, frozen, 0).choice).toEqual(choice(0, false, { count: 3, cap: 3, closed: true }));
+    });
+
+    it('keeps the seat count and closed seats while a busted bot leaves, so an open picker sees nothing early', () => {
+      // Seat 2, the chooser, folded. A bot in the all-in busts and goes when the hand ends: the server's count drops
+      // and a seat opens under a smaller game's limit.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(2, true, { count: 2, cap: 3, closed: false }) } as TableView;
+      const frozen = { ...before(), choice: choice(2, true, { count: 3, cap: 3, closed: true }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { count: 3, cap: 3, closed: true }));
+    });
+
+    it("closes the panel for someone who sits down in a folded chooser's seat during the runout", () => {
+      // Seat 2 folded with the chip and stood up; the chip passed to seat 0, and a newcomer sat in seat 2.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(0, true) } as TableView;
+      // The tag stays put until the result, but nobody in seat 2 can pick now.
+      expect(holdBack(live, { ...before(), choice: choice(2, true), sameHand: true }, 0).choice).toEqual(choice(2, false));
     });
 
     it("lets a chooser who isn't in the all-in carry on picking, and shows their pick, with the tag held where it was", () => {
@@ -91,14 +119,15 @@ describe('holdBack', () => {
       const base = finished();
       const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
       events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
-      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(2, true) } as TableView;
-      expect(holdBack(live, { ...before(), choice: choice(2, true), sameHand: true }, 0).choice).toEqual(choice(2, true));
+      const live = { ...withC(base), hand: { ...base.hand!, events }, choice: choice(2, true) } as TableView;
+      const frozen = { ...withC(before()), choice: choice(2, true), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true));
       // They pick: the pick shows, and the tag waits for the result (it passes over anyone who busted).
-      const picked = { ...live, choice: choice(0, false, { next: { ...razz, by: 'C' } }) } as TableView;
-      expect(holdBack(picked, { ...before(), choice: choice(2, true), sameHand: true }, 0).choice).toEqual(choice(2, false, { next: { ...razz, by: 'C' } }));
-      // A table without Dealer's choice, or nobody who can pick: nothing to hold.
+      const picked = { ...live, choice: choice(0, false, { next: { ...razz, by: 'C', seat: 2 } }) } as TableView;
+      expect(holdBack(picked, frozen, 0).choice).toEqual(choice(2, false, { next: { ...razz, by: 'C', seat: 2 } }));
+      // A table without Dealer's choice: nothing to hold. Nobody who could pick before: the tag shows with the result.
       expect(heldChoice({ ...live, choice: undefined } as TableView, before())).toBeUndefined();
-      expect(heldChoice(live, { ...before(), choice: choice(null, false) })).toEqual(choice(null, true));
+      expect(heldChoice(live, { ...before(), choice: choice(null, false) })).toEqual(choice(null, false));
     });
 
     it('shows the new pick of a hand dealt and run out in one update, with the tag where the pick left it', () => {
@@ -109,6 +138,119 @@ describe('holdBack', () => {
       const live = { ...finished(), choice: choice(0, false, { current: razz, handsLeft: 1 }) } as TableView;
       expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: razz, handsLeft: 1 }));
     });
+
+    it('moves the tag on from a chooser whose pick was missed in the same deal as a hand run out in one update', () => {
+      const nlhe = { gameId: 'nlhe', betting: 'no-limit', by: 'A', how: 'picked' };
+      // Before: the table waits for seat 0's pick. The clock ran out, the chip passed to seat 1, and the bomb pot
+      // dealt next was all in from the start. Seat 1 busted, so the server's chip came back to seat 0.
+      const was = choice(0, true, { current: nlhe, handsLeft: 0, deadline: 5 });
+      const kept = { ...nlhe, by: null, how: 'kept' };
+      const live = { ...finished(), choice: choice(0, false, { current: kept, handsLeft: 1, cap: 10 }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1, cap: 10 }));
+      // A bot picking in place of seat 1 while it's dealt out is held back too, with the limit Razz would set.
+      const picked = { ...live, choice: choice(0, false, { current: kept, handsLeft: 1, next: razz, cap: 3, closed: true }) } as TableView;
+      expect(holdBack(picked, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1, cap: 10 }));
+      // Missed again, with the same game carrying on again: the pick looks the same, but the tag still moved on.
+      const again = choice(0, true, { current: kept, handsLeft: 0, deadline: 5, cap: 10 });
+      expect(holdBack(live, { ...before(), choice: again, sameHand: false }, 0).choice?.chip).toBe(1);
+    });
+
+    // Fourth review: the seat limit and closed seats during the reveal.
+    const badugi = { gameId: 'badugi', betting: 'fixed-limit', by: 'A', how: 'picked' };
+    const nlheB = { gameId: 'nlhe', betting: 'no-limit', by: 'B', how: 'picked' };
+
+    it('keeps the seats closed in a hand dealt and run out in one update while busted bots leave', () => {
+      // Badugi seats 6: six seated, so the empty seats are closed. The chooser, seat 0, is in the all-in bomb pot;
+      // three bots in it bust and leave as the hand ends.
+      const was = choice(0, false, { current: badugi, handsLeft: 3, count: 6, cap: 6, closed: true });
+      const live = { ...finished(), choice: choice(0, false, { current: badugi, handsLeft: 2, count: 3, cap: 6, closed: false }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(0, false, { current: badugi, handsLeft: 2, count: 6, cap: 6, closed: true }));
+    });
+
+    it("keeps the seat limit of the game being dealt when a stand-in picks for a busted chooser in a hand run out in one update", () => {
+      // During Badugi, A picked No-Limit Hold'em and the chip passed to seat 1. The hold'em hand (one hand a pick) was a
+      // bomb pot run out at once, and seat 1 busted: a bot picked Razz in their place.
+      const was = choice(1, false, { current: badugi, next: nlheB, handsLeft: 0, count: 6, cap: 6, closed: true });
+      const live = { ...finished(), choice: choice(0, false, { current: nlheB, next: razz, handsLeft: 0, count: 6, cap: 8, closed: false }) } as TableView;
+      // Before the result the table was open for hold'em's 10 seats: so it stays, with the bot's pick held back.
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: nlheB, handsLeft: 0, count: 6, cap: 10, closed: false }));
+    });
+
+    it("keeps seats a newcomer closed during the runout closed when a stand-in's pick comes in", () => {
+      // Badugi with five seated: a newcomer takes the sixth seat during the runout, which closes the rest. Then a bot
+      // picks in place of the busted chooser.
+      const was = choice(0, false, { current: badugi, handsLeft: 0, count: 5, cap: 6, closed: false });
+      const live = { ...finished(), choice: choice(1, false, { current: badugi, next: razz, handsLeft: 0, count: 6, cap: 6, closed: true }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: true }, 0).choice).toEqual(choice(0, false, { current: badugi, handsLeft: 0, count: 6, cap: 6, closed: true }));
+    });
+
+    // Fifth review.
+    it('keeps seats a seat request closed in a hand dealt and run out in one update while busted bots leave', () => {
+      // Badugi seats 6: five seated and a seat request waiting close the empty seats. The chooser, seat 0, is in the
+      // bomb pot run out at once; three bots in it bust and leave, which the server's view shows as seats open again.
+      const was = choice(0, false, { current: badugi, handsLeft: 3, count: 5, cap: 6, closed: true });
+      const live = { ...finished(), choice: choice(0, false, { current: badugi, handsLeft: 2, count: 2, cap: 6, closed: false }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(0, false, { current: badugi, handsLeft: 2, count: 5, cap: 6, closed: true }));
+    });
+
+    it('holds back a pick made in place of a folded chooser who leaves during the runout, and the limit it sets', () => {
+      // Seat 2, C, folded with the panel open and then stood up. The server passed the chip over seat 0, who busted,
+      // and a bot picked Badugi in their place, which closes the seats for six.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const bot = { gameId: 'badugi', betting: 'fixed-limit', by: 'Ace', seat: 3, how: 'bot' };
+      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(1, false, { current: nlheB, next: bot, count: 6, cap: 6, closed: true }) } as TableView;
+      const frozen = { ...withC(before()), choice: choice(2, true, { current: nlheB, count: 6, cap: 10 }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, false, { current: nlheB, count: 6, cap: 10 }));
+      // C, still in their seat, picking it themselves shows, as any pick by a chooser who isn't in the all-in.
+      const own = { ...withC(live), choice: { ...live.choice!, next: { ...bot, by: 'C', seat: 2, how: 'picked' } } } as TableView;
+      expect(holdBack(own, frozen, 0).choice).toMatchObject({ chip: 2, next: { by: 'C' }, cap: 6, closed: true, open: false });
+      // C sat out instead, and another player who also goes by "C" picked in their place: it waits (names aren't unique).
+      const namesake = { ...withC(live), choice: { ...live.choice!, next: { ...bot, by: 'C', seat: 3, how: 'picked' } } } as TableView;
+      expect(holdBack(namesake, frozen, 0).choice).toEqual(choice(2, false, { current: nlheB, count: 6, cap: 10 }));
+    });
+
+    it("shows a folded chooser the fallback game for the count before the result", () => {
+      // Seat 2 folded with the panel open. Hold'em is no longer on the menu, which starts Badugi (6), Razz (8). Seven
+      // were seated; a bot in the all-in busts and leaves, so the server's fallback turns to Badugi.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const settings = { game: { dealersChoice: { enabled: true, games: [{ gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 } } };
+      const live = { ...base, settings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0 }) } as unknown as TableView;
+      const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 1 }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 1, canKeep: false }));
+    });
+
+    it("never offers to keep, or names as the fallback, a game the host is taking off the menu", () => {
+      // As above, with Hold'em still on the menu (Hold'em, Badugi 6, Razz 8) but taken off during this hand: the
+      // change waits for the next one. Seven were seated: a missed pick deals Razz, the first staying game that
+      // seats seven. With the result in, six are left and the server's fallback turns to Badugi.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const menu = [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }] as const;
+      const table = defaultSettings('cash');
+      const settings = parseSettings({ ...table, table: { ...table.table, maxSeats: 8 }, game: { ...table.game, dealersChoice: { enabled: true, games: [...menu], hands: 0, pickSeconds: 20 } } });
+      const pendingSettings = { game: { dealersChoice: { games: [menu[1], menu[2]] } } };
+      const live = { ...base, settings, pendingSettings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 1 }) } as unknown as TableView;
+      const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 2 }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 2, canKeep: false }));
+      // Without the change, Hold'em is kept and is what a missed pick deals, both before and after the result.
+      const staying = { ...live, pendingSettings: null, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0, canKeep: true }) } as TableView;
+      expect(holdBack(staying, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
+      // A change that ends Dealer's choice takes no game off: the result shows no next pick.
+      const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
+      expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
+    });
+  });
+
+  it('holds back a waitlist offer for a seat someone in the hand had, until the result', () => {
+    const offer = (seat: number) => ({ seat, playerId: `w${seat}`, name: `W${seat}`, expiresAt: 99 });
+    // Seat 1's player busted and left as the hand ended, and the waitlist was offered their seat; seat 4 was empty.
+    const live = { ...finished(), offers: [offer(1), offer(4)] } as TableView;
+    expect(holdBack(live, before(), 0).offers).toEqual([offer(4)]);
   });
 
   it('keeps players at the table who bust or leave when the hand ends', () => {

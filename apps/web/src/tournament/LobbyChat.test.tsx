@@ -19,7 +19,7 @@ const T0 = Date.parse('2026-11-01T20:00:00Z');
 
 /** A lobby with players Ana and Bob, and Dan, a co-host who may manage chat. */
 function lobbyState(lobbyChat?: LobbyChatRules) {
-  let s = createTournament({ id: 'T', hostId: 'host', settings: defaultSettings({ name: 'Friday' }), now: T0, seed: 'a1'.repeat(32) });
+  let s = createTournament({ id: 'T', hostId: 'host', settings: defaultSettings({ name: 'Friday' }), now: T0, seed: 'a1'.repeat(32), legacyRng: 7 });
   for (const [playerId, displayName] of [['ana', 'Ana'], ['bob', 'Bob'], ['dan', 'Dan']]) s = apply(s, { type: 'register', playerId, displayName }, T0).state;
   s = apply(s, { type: 'setCoHost', by: 'host', playerId: 'dan', powers: ['players'] }, T0).state;
   return lobbyChat ? { ...s, lobbyChat } : s;

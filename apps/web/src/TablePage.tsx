@@ -38,7 +38,8 @@ import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
 import { CashGameLine } from './components/table/GameLine';
-import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
+import { navigate, tournamentOfTable, useFollowSeat, useTournamentGames } from './tournament/hooks';
+import { tableAllLimit, tableGames } from './tableGames';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
 import { pageTitle, usePageTitle } from './pageTitle';
@@ -199,6 +200,23 @@ export function TablePage({ tableId }: { tableId: string }) {
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
+  // Every game the table deals, so a mixed table is laid out once for all of them (#409). A tournament table's own
+  // settings always say Hold'em: its games come from the tournament, asked for as the page opens (the table's address
+  // names it), so they're mostly known by the first deal and the table isn't laid out twice. The page saying the table
+  // has closed doesn't follow the tournament.
+  const event = useTournamentGames(error ? null : (view?.tournamentId ?? tournamentOfTable(tableId)));
+  // The host can change a running tournament's games (a level's own game) at any time: a table takes the new list once
+  // its hand is over, as a cash table takes new settings, so no seat moves in the middle of a hand. The first list is
+  // taken at once.
+  const handOn = !!view?.hand && view.hand.phase !== 'complete';
+  const [eventNow, setEventNow] = useState(event);
+  if (eventNow !== event && (!handOn || !eventNow.games.length)) setEventNow(event);
+  const cashGames = view && view.mode === 'cash' ? tableGames(view.settings).join(',') : '';
+  const games = useMemo(() => (view?.tournamentId ? eventNow.games : cashGames ? cashGames.split(',') : []), [view?.tournamentId, eventNow, cashGames]);
+  // A table that deals a No-Limit or Pot-Limit game keeps room under the felt for that game's taller bar even in its
+  // Limit games, so the felt keeps its size when the betting changes. Until a tournament's games are known, this
+  // follows the hand.
+  const allLimit = view?.tournamentId ? !eventNow.games.length || eventNow.allLimit : view?.mode === 'cash' ? tableAllLimit(view.settings) : true;
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
   const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
   const busy = runningOut || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
@@ -790,6 +808,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             compact={portrait}
             fill
             wide={wide}
+            games={games}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
@@ -829,7 +848,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           <Dock
             reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
-            limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
+            limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
