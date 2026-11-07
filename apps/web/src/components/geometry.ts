@@ -303,6 +303,54 @@ export function placeSeats(
   return players && seatsApart(players, w, h, (seat) => (taken[seat] ? boxes[seat] : undefined)) ? players : even;
 }
 
+/** The first player's seat from `anchor` on, going round (the anchor itself when it's taken, or when nobody is seated). */
+function firstPlayerFrom(taken: readonly boolean[], anchor: number): number {
+  const n = taken.length;
+  for (let k = 0; k < n; k++) if (taken[(anchor + k) % n]) return (anchor + k) % n;
+  return anchor;
+}
+
+/**
+ * Where each seat sits when empty seats aren't drawn (a tournament table, #303): the players evenly round the
+ * table in seat order, with the anchor seat (yours) at the bottom. When the anchor seat is empty (someone
+ * watching, who is anchored on seat 1), the first player from it on goes to the bottom, so no gap is left there.
+ * Empty seats still get a place (between their neighbours), for a dead button to sit in front of, but nothing
+ * is drawn there.
+ */
+export function playerFractions(taken: readonly boolean[], anchor: number): number[] {
+  return seatFractions(taken, firstPlayerFrom(taken, anchor));
+}
+
+/**
+ * Where each seat sits round a w×h desktop table whose empty seats aren't drawn (a tournament table, #303). The even
+ * spacing of `playerFractions` is kept wherever no player's box covers another's, as `placeSeats` keeps its own. Otherwise
+ * the players are spaced by their boxes (#363), from the same first player at the bottom: with `gap` between them if
+ * there's room, touching if not. Empty seats take no room either way: they share the gaps between their neighbours, for a
+ * dead button to sit in front of. A table too full for that, or one where a player has no box yet (before the first
+ * measure), keeps the even spacing. `keep` is where the seats are now, kept while no box covers another there.
+ */
+export function placePlayers(
+  taken: readonly boolean[],
+  anchor: number,
+  w: number,
+  h: number,
+  { box, gap = 0, keep }: { box: (seat: number) => Extent | undefined; gap?: number; keep?: readonly number[] },
+): readonly number[] {
+  const even = playerFractions(taken, anchor);
+  const boxes = taken.map((t, seat) => (t ? box(seat) : undefined));
+  if (taken.some((t, seat) => t && !boxes[seat])) return even;
+  const fine = (fractions: readonly number[]) => seatsApart(fractions, w, h, (seat) => boxes[seat]);
+  if (keep?.length === taken.length && fine(keep)) return keep;
+  if (fine(even)) return even;
+  const none: Extent = { l: 0, r: 0, u: 0, d: 0 };
+  const first = firstPlayerFrom(taken, anchor);
+  for (const g of gap > 0 ? [gap, 0] : [0]) {
+    const spread = spreadByBoxes(taken, first, w, h, (seat) => boxes[seat] ?? none, { gap: g, players: true });
+    if (spread && fine(spread)) return spread;
+  }
+  return even;
+}
+
 /** Part of the way from `a` to `b`. */
 export const lerp = (a: Point, b: Point, f: number): Point => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
 

@@ -4,7 +4,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, placeSeats, px, seatFractions, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
+import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, placePlayers, placeSeats, playerFractions, px, seatFractions, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
@@ -374,8 +374,12 @@ export function Table({
   const handFit = useHandFit(felt, compact);
   const room = useRoom(felt, fill && !compact);
   const n = view.seats.length;
-  // Rotate so your own seat is at the bottom.
-  const offset = view.me.seat ?? 0;
+  // Rotate so your own seat is at the bottom. Knocked out of a tournament, you have no seat on the server any more, but
+  // yours stays on screen until the next deal (#308), and the table stays turned your way until then.
+  const offset = view.me.seat ?? Math.max(0, view.seats.findIndex((s) => !!s?.departed && s.playerId === view.me.playerId));
+  // Nobody picks a seat at a tournament table, so its empty seats aren't drawn and the players spread evenly round it
+  // (#303). Cash tables keep them: people sit down by clicking one, and hosts add bots there.
+  const showEmpty = view.mode !== 'tournament';
   const hand = view.hand;
   const done = hand?.phase === 'complete';
   const live = !!hand && !done;
@@ -391,11 +395,13 @@ export function Table({
   const h = size.h || (compact ? 520 : 500);
   const center: Point = { x: w / 2, y: h / 2 };
   const perimeter = 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
-  // Desktop seats shrink a little when the players and empty seats round the table leave them less room than a
-  // nameplate (about 290px a player and 130px an empty seat at full size), and grow a little on a big window. A short
-  // felt keeps them smaller too, so seats at the top and bottom leave the board (two boards, the result) room between them.
   const players = view.seats.filter(Boolean).length;
-  const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + (n - players) * 130));
+  // Empty seats that aren't drawn take no room.
+  const empties = showEmpty ? n - players : 0;
+  // Desktop seats shrink a little when the players and empty seats round the table leave them less room than a
+  // nameplate (about 290px a player and 130px a drawn empty seat at full size), and grow a little on a big window. A short
+  // felt keeps them smaller too, so seats at the top and bottom leave the board (two boards, the result) room between them.
+  const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + empties * 130));
   // On a big window the whole table grows with it (#317): k is the table's scale, from the room the felt has. Below k = 1
   // (laptops, and the replayer) the sizes above stay as they were.
   // A short, very wide window (an ultrawide screen, or a big one with tall browser bars) has the width but not the height:
@@ -421,7 +427,7 @@ export function Table({
   const estW = room.w - 2 * sideMargin * k;
   const estH = room.h - (topMargin + 46) * k;
   const estPerimeter = 2 * Math.abs(estW - estH) + Math.PI * Math.min(estW, estH);
-  const grownScale = Math.round(Math.max(0.72, Math.min(k, (estPerimeter * 0.92) / (players * podWidth + (n - players) * 130))) * 100) / 100;
+  const grownScale = Math.round(Math.max(0.72, Math.min(k, (estPerimeter * 0.92) / (players * podWidth + empties * 130))) * 100) / 100;
   const seatScale = compact ? 1 : grown ? grownScale : Math.round(Math.max(0.72, roomy) * 100) / 100;
   // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been (starting from their size once
   // dealt in) since the shape of the game's hands or the seats' size last changed: they shrink when a player folds and
@@ -443,13 +449,15 @@ export function Table({
   const minGap = (compact ? 72 : 120) / perimeter;
   // On a computer that spacing is kept unless it puts one seat on another; then seats are spaced by their real size (#363).
   // Worked out again only when something it depends on changes: the box spacing takes a moment, and the clocks re-render often.
-  // Seats already placed from the same measure stay where they are while they have room (see placeSeats).
+  // Seats already placed from the same measure stay where they are while they have room (see placeSeats and placePlayers).
   const takenKey = view.seats.map((s) => (s ? 1 : 0)).join('');
   const mine = view.me.seat;
   const placed = useRef<{ key: string; at: readonly number[] } | null>(null);
   const spread = useMemo(() => {
     const taken = [...takenKey].map((c) => c === '1');
-    if (compact) return seatFractions(taken, offset, { clear, minGap });
+    // A tournament table's players spread evenly round it, with its empty seats (not drawn) taking no room (#303).
+    const even = () => (showEmpty ? seatFractions(taken, offset, { clear, minGap }) : playerFractions(taken, offset));
+    if (compact) return even();
     const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? sized.empty : seat === mine ? sized.me : sized.others);
     // A new felt size is placed afresh: seats kept from the size before the felt was measured (or before a banner came or
     // went) would depend on what happened before, and two players with the same window could see different tables.
@@ -457,20 +465,22 @@ export function Table({
     const keep = placed.current?.key === key ? placed.current.at : undefined;
     let at: readonly number[];
     try {
-      at = placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep });
+      at = showEmpty
+        ? placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep })
+        : placePlayers(taken, offset, w, h, { box: boxOf, gap: 6, keep });
     } catch (error) {
       // A slip here mustn't take the table down: report it and fall back to the old spacing.
       reportError(error, 'error');
-      at = seatFractions(taken, offset, { clear, minGap });
+      at = even();
     }
     placed.current = { key, at };
     return at;
-  }, [takenKey, offset, mine, compact, clear, minGap, w, h, sized]);
+  }, [takenKey, offset, mine, compact, clear, minGap, w, h, sized, showEmpty]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
   const band = 30 + (boardRows > 1 ? boardRows * 52 : boardRows * 68) + 30 + 100;
-  const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - n * 100) / 2))) : spread;
+  const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - (players + empties) * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);
   // Board cards grow with the felt, so a big window doesn't leave a small board in a sea of green.
   const boardCard = compact
@@ -700,6 +710,7 @@ export function Table({
       {view.seats.map((s, seat) => {
         const pos = seatPoint(seat);
         if (!s) {
+          if (!showEmpty) return null;
           return (
             <div className="seat empty" style={px(pos)} key={seat}>
               {seatsClosed ? (
