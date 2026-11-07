@@ -298,7 +298,9 @@ export function Table({
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
-  const fourCard = ['plo4', 'plo8', 'badugi'].includes(gameId);
+  // The stud games tuck their cards in the same way on third and fourth street, before the row goes over the nameplate:
+  // counted with them, so a side seat's three or four cards don't run off the window's edge (#385).
+  const fourCard = ['plo4', 'plo8', 'badugi', 'stud', 'razz', 'stud8'].includes(gameId);
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
   const longGame = wide && ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(gameId);
