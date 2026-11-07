@@ -203,38 +203,109 @@ describe('waitlist', () => {
     expect([...outcomes].sort()).toEqual(['busted', 'busted after a runout', 'full', 'full after a runout']);
   });
 
-  it('offers no seat while a runout is dealt out, so where someone sits then says nothing about the result', () => {
-    // Four seats: the host and two bots on small stacks, no rebuys, and seat 4 empty all along. During the runout Eve
-    // joins the waitlist and Fay presses Sit on seat 4: Fay gets it whether or not a bot busted, and Eve has no offer
-    // (a hidden one on the busted bot's seat would have sent Fay's press, or Eve's own, somewhere else).
+  /**
+   * A cash table of `seats` seats at the end of an all-in runout: the host (seat 1) called two bots on 2 chips
+   * (seats 2 and 3), rebuys off, so a bot that busted has left. `before` runs first (to seat or queue others).
+   * Null when this seed's hand ended without a runout.
+   */
+  function afterRunout(seed: number, seats: number, before: (rt: TableRuntime) => void = () => {}, patch: (s: TableSettings) => void = () => {}) {
+    const clock = new FakeClock();
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.seating.waitlist = true;
+    settings.seating.allowRebuys = false;
+    settings.play.runItTwice = 'off';
+    settings.table.maxSeats = seats;
+    settings.stakes = { ...settings.stakes, smallBlind: 1, bigBlind: 2 };
+    patch(settings);
+    const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+    for (const p of PEOPLE) rt.connect(p);
+    rt.requestSeat('host', { seat: 0, name: 'H', stack: 200, consent: true });
+    rt.addBot('host', { seat: 1, stack: 2 });
+    rt.addBot('host', { seat: 2, stack: 2 });
+    before(rt);
+    rt.start('host');
+    for (let i = 0; i < 200 && rt.state.handNumber === 1 && rt.state.hand && rt.state.hand.phase !== 'complete'; i++) {
+      const h = rt.state.hand;
+      if (h.toAct !== null && rt.state.seats[h.toAct]?.playerId === 'host') rt.act('host', { type: 'call' });
+      else clock.advance(500);
+    }
+    const reveal = rt.state.hand?.phase === 'complete' ? runoutMs(rt.state.hand.events) : 0;
+    if (!reveal) return null;
+    const busted = [1, 2].filter((i) => !rt.state.seats[i]);
+    // How long browsers still have to deal it out (the hand may have ended partway through the last clock step).
+    const left = rt.state.history.at(-1)!.endedAt + reveal - clock.now();
+    return { rt, clock, left, busted };
+  }
+
+  it('keeps the seats of the players in a runout taken until it has been dealt out, bust or not', () => {
+    // Seat 4 is empty all along. During the runout Eve joins the waitlist and is offered seat 4 either way; a busted
+    // bot's seat is offered (to Dan) only once the runout has had time to show. Fay's Sit presses get the same answers
+    // whether or not a bot busted, and so does a bot the host adds.
     const outcomes = new Set<boolean>();
-    for (let seed = 1; seed <= 12; seed++) {
-      const clock = new FakeClock();
-      const settings = defaultSettings('cash');
-      settings.seating.requireApproval = false;
-      settings.seating.waitlist = true;
-      settings.seating.allowRebuys = false;
-      settings.play.runItTwice = 'off';
-      settings.table.maxSeats = 4;
-      settings.stakes = { ...settings.stakes, smallBlind: 1, bigBlind: 2 };
-      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
-      for (const p of PEOPLE) rt.connect(p);
-      rt.requestSeat('host', { seat: 0, name: 'H', stack: 200, consent: true });
-      rt.addBot('host', { seat: 1, stack: 2 });
-      rt.addBot('host', { seat: 2, stack: 2 });
-      rt.start('host');
-      for (let i = 0; i < 200 && rt.state.handNumber === 1 && rt.state.hand && rt.state.hand.phase !== 'complete'; i++) {
-        const h = rt.state.hand;
-        if (h.toAct !== null && rt.state.seats[h.toAct]?.playerId === 'host') rt.act('host', { type: 'call' });
-        else clock.advance(500);
-      }
-      if (!runoutMs(rt.state.hand!.events)) continue;
-      const busted = rt.state.seats.filter(Boolean).length < 3;
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 4);
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      const err = (fn: () => void) => {
+        try {
+          fn();
+          return 'ok';
+        } catch (e) {
+          return (e as Error).message;
+        }
+      };
       rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
-      rt.requestSeat('d', { seat: 3, name: 'Fay', stack: 100 });
-      expect(seatOf(rt, 'd')).toBe(3);
-      expect(rt.state.offers).toEqual([]);
-      outcomes.add(busted);
+      rt.joinWaitlist('c', { name: 'Dan', stack: 100 });
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 3]]);
+      expect(err(() => rt.requestSeat('d', { seat: 3, name: 'Fay', stack: 100 }))).toBe('that seat is being held for Eve from the waitlist');
+      expect(err(() => rt.requestSeat('d', { seat: 1, name: 'Fay', stack: 100 }))).toBe('that seat is taken');
+      expect(err(() => rt.requestSeat('d', { seat: 2, name: 'Fay', stack: 100 }))).toBe('that seat is taken');
+      expect(err(() => rt.addBot('host'))).toBe('every seat is taken');
+      expect(err(() => rt.addBot('host', { seat: 1 }))).toBe('that seat is taken');
+      expect(left).toBeGreaterThan(1);
+      clock.advance(left - 1);
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['e']);
+      clock.advance(1);
+      // Once it has been shown, Dan is offered the first busted bot's seat, if one busted.
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 3], ...busted.slice(0, 1).map((i) => ['c', i])]);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
+  it('offers a seat that comes free during a runout for another reason straight away', () => {
+    // Al sits out in seat 4, so he isn't in the hand. He stands up during the runout: his seat goes to the first person
+    // waiting at once, as at any other time, and nobody else can take it.
+    let ran = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const t = afterRunout(seed, 4, (rt) => {
+        rt.requestSeat('a', { seat: 3, name: 'Al', stack: 100 });
+        rt.sitOut('a', true);
+        rt.joinWaitlist('c', { name: 'Cat', stack: 100 });
+      });
+      if (!t) continue;
+      const { rt, clock } = t;
+      expect(rt.state.hand!.seats.map((hs) => hs.seat)).not.toContain(3);
+      rt.stand('a');
+      expect(rt.state.offers).toEqual([{ seat: 3, playerId: 'c', expiresAt: clock.now() + SEAT_OFFER_MS }]);
+      expect(() => rt.requestSeat('d', { seat: 3, name: 'Dee', stack: 100 })).toThrow('that seat is being held for Cat from the waitlist');
+      ran++;
+    }
+    expect(ran).toBeGreaterThan(0);
+  });
+
+  it('never draws a busted player\'s seat for a random seat while the runout is dealt out', () => {
+    // Random seats, seat 4 empty all along: Dee sits during the runout and always gets seat 4.
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 4, () => {}, (s) => {
+        s.seating.randomSeats = true;
+      });
+      if (!t) continue;
+      t.rt.requestSeat('d', { seat: 3, name: 'Dee', stack: 100 });
+      expect(seatOf(t.rt, 'd')).toBe(3);
+      outcomes.add(t.busted.length > 0);
     }
     expect([...outcomes].sort()).toEqual([false, true]);
   });
