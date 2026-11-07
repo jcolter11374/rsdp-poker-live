@@ -6,7 +6,7 @@ import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
-import { usePortrait, useWide } from './layout';
+import { useMinWidth, usePortrait, useWide } from './layout';
 import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
@@ -34,6 +34,8 @@ import { Dock } from './components/table/Dock';
 import { useDepartures, useRunoutReveal } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
+import { TournamentGameLine } from './tournament/TableGame';
+import { CashGameLine } from './components/table/GameLine';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
@@ -158,6 +160,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
+  // Below these the top bar's count of hands left, or time to the next game, takes its short wording, and then the
+  // game its short name, so neither is cut (#373).
+  const narrowBar = !useMinWidth(1280);
+  const tightBar = !useMinWidth(1100);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
   const [noticeRoom, setNoticeRoom] = useState(true);
@@ -549,20 +555,27 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           )}
         </a>
-        <span className="stakes">
-          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
-          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
-          {game && (
-            <>
-              {portrait ? <br /> : ' · '}
-              {game.label} {game.stakes}
-            </>
-          )}
-          {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
-          {levelText && <> · {levelText}</>}
-          {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-          {view.paused && <b className="paused"> · Paused</b>}
-        </span>
+        {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
+            At a tournament the strip under the bar names the event, so the bar just says which table. */}
+        {view.tournamentId ? (
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
+        ) : view.rotation ? (
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
+        ) : (
+          <span className="stakes">
+            <b>{view.name}</b>
+            {game && (
+              <>
+                {portrait ? <br /> : ' · '}
+                {game.label} {game.stakes}
+              </>
+            )}
+            {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
+            {levelText && <> · {levelText}</>}
+            {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
+            {view.paused && <b className="paused"> · Paused</b>}
+          </span>
+        )}
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
             {portrait ? 'Pick' : 'Pick next game'}

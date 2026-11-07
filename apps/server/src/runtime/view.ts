@@ -103,6 +103,13 @@ export function tableView(
       upcoming = null;
     }
   }
+  // Mixed games: how many more hands of this game, and the next game (#373). A bad setting never breaks the view.
+  let rotation: TableView['rotation'] = null;
+  try {
+    rotation = rt.rotationProgress();
+  } catch {
+    rotation = null;
+  }
 
   return {
     id: s.id,
@@ -137,6 +144,7 @@ export function tableView(
     nit: nitRound ? { prize: nitRound.prize, participants: nitRound.participants.length, holders: nitRound.holders.length } : null,
     rakeTotal: rake.enabled || s.sideGames?.rakeTotal ? (staff || rake.visibleTo === 'everyone' ? (s.sideGames?.rakeTotal ?? 0) : null) : null,
     upcoming,
+    rotation,
     level: levelView(rt, now),
     // Besides their own, a player sees the requests of bots they added, so they can take them back.
     requests: (rt.can(playerId, 'approve') ? s.requests : s.requests.filter((r) => r.playerId === playerId || rt.botInfo(r.playerId)?.ownerId === playerId)).map((r) => {
@@ -170,7 +178,7 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow' | 'fair' | 'bombPotNext' | 'nit' | 'rakeTotal' | 'started' | 'stopAfterHand' | 'choice'>;
+export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow' | 'fair' | 'bombPotNext' | 'nit' | 'rakeTotal' | 'started' | 'stopAfterHand' | 'rotation' | 'choice'>;
 
 /**
  * The ledger, hand list, next-hand countdown and fair-dealing commits run behind too, or they would give away
@@ -193,6 +201,8 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   rakeTotal: view.rakeTotal,
   started: view.started,
   stopAfterHand: view.stopAfterHand,
+  // The count moves on as each hand is dealt, and with whoever leaves when the live hand ends.
+  rotation: view.rotation ?? null,
   // Dealer's choice: a pick made as the live hand ends, or the table waiting for one, would tell it had ended.
   choice: view.choice,
 });
@@ -214,7 +224,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
   if (!past) {
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT, choice: live.choice && { ...live.choice, open: false, deadline: null, next: null } };
+    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, rotation: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT, choice: live.choice && { ...live.choice, open: false, deadline: null, next: null } };
   }
   // A paused snapshot's clocks stand still: they move on with the time shown, not by the delay.
   const move = past.paused ? live.serverNow - past.serverNow : delayMs;
@@ -246,6 +256,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     rakeTotal: past.rakeTotal,
     started: past.started,
     stopAfterHand: past.stopAfterHand,
+    rotation: past.rotation ?? null,
     rabbit: NO_RABBIT,
   };
 }
