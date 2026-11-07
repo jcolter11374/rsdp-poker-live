@@ -85,11 +85,13 @@ export class DealersChoice {
     return s.choice;
   }
 
-  /** At a table that hasn't dealt yet: where the first hand's button goes (on the first chooser). */
+  /**
+   * At a table that hasn't dealt yet: where the first hand's button goes (on the first chooser). If they aren't dealt
+   * in (sitting out, say), the deal puts it on the next player round who is, as the planner does with any first button.
+   */
   firstButton(candidates: SeatState[]): number | null {
     if (!this.menu || this.s.positions) return null;
-    const c = this.ensure(candidates);
-    return c.firstButton !== null && candidates.some((x) => x.seat === c.firstButton) ? c.firstButton : null;
+    return this.ensure(candidates).firstButton;
   }
 
   /** The next seat round from `seat` (to the left) with somebody in it, or `seat + 1` at an empty table. */

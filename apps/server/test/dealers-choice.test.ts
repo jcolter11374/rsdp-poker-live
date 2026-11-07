@@ -1015,6 +1015,102 @@ describe("Dealer's choice: the first hand's button and a holder who is moved (th
     expect(checked).toBeGreaterThan(0);
   });
 
+  /** The first seat round from `from` (not counting it) with someone in it who will be dealt in. */
+  const nextIn = (rt: TableRuntime, from: number) => {
+    const len = rt.state.seats.length;
+    return Array.from({ length: len }, (_, i) => rt.state.seats[(from + 1 + i) % len]).find((x) => x && !x.sittingOut)!;
+  };
+
+  it('gives the first button to the next player dealt in when the first picker sits out or leaves, not a random one (fourth review)', () => {
+    let checked = 0;
+    for (const hold of ['pause', 'stop'] as const) {
+      for (let n = 1; n <= 8; n++) {
+        // The first picker sits out before the first hand.
+        const a = fresh(n, hold);
+        pick(a.rt, 'nlhe');
+        a.rt.sitOut(a.first.playerId, true);
+        go(a.rt, a.clock, hold);
+        expect(live(a.rt)).toBe(true);
+        expect(hand(a.rt).input.button).toBe(nextIn(a.rt, a.first.seat).seat);
+        // The player after them sits out, then the first picker leaves: the button passes them by too.
+        const b = fresh(n, hold);
+        if (b.first.playerId === 'host') continue;
+        pick(b.rt, 'nlhe');
+        const after = nextIn(b.rt, b.first.seat);
+        if (after.playerId === 'host') continue;
+        b.rt.sitOut(after.playerId, true);
+        b.rt.stand(b.first.playerId);
+        go(b.rt, b.clock, hold);
+        expect(live(b.rt)).toBe(true);
+        expect(hand(b.rt).input.button).toBe(nextIn(b.rt, b.first.seat).seat);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(4);
+  });
+
+  it('puts the first button on the first picker when they pick a stud game (fourth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      seat(rt, 4);
+      rt.start('host');
+      const first = chooser(rt);
+      pick(rt, 'razz');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.game.id).toBe('razz');
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it('starts afresh when everyone leaves a new table before its first hand, so the first picker still gets the first button (fourth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      expect(rt.state.choice).toBeDefined();
+      rt.stand('a');
+      rt.stand('b');
+      expect(rt.state.choice).toBeUndefined();
+      rt.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      rt.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      rt.requestSeat('e', { seat: 7, name: 'E', stack: 1000 });
+      clock.advance(30_000);
+      const first = chooser(rt);
+      pick(rt, 'nlhe');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it("moves a first button left on an empty seat by older code to the next player, so a newcomer there doesn't get it (fourth review)", () => {
+    let checked = 0;
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock, first } = fresh(n, 'pause');
+      if (first.playerId === 'host') continue;
+      pick(rt, 'nlhe');
+      rt.stand(first.playerId);
+      // What a snapshot from before #421 holds: the button still on the leaver's seat.
+      rt.state.choice!.firstButton = first.seat;
+      const saved = JSON.parse(JSON.stringify(rt.state));
+      rt.dispose();
+      const back = new TableRuntime(saved, { clock, rng: seeded(n) });
+      back.resume();
+      for (const p of PEOPLE) back.connect(p);
+      const next = nextIn(back, first.seat);
+      expect(back.state.choice!.firstButton).toBe(next.seat);
+      back.requestSeat('h', { seat: first.seat, name: 'H', stack: 1000 });
+      back.pause('host', false);
+      clock.advance(RESUME_MIN_MS + 10_000);
+      expect(live(back)).toBe(true);
+      expect(hand(back).input.button).toBe(next.seat);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(2);
+  });
+
   it('keeps the chip with a holder who is sitting out when the host moves them, so whoever sits in their old seat never takes it', () => {
     let checked = 0;
     for (let n = 1; n <= 12; n++) {

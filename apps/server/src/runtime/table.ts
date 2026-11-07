@@ -224,6 +224,15 @@ export class TableRuntime {
       seatRoom: () => this.seatRoom(null),
       log: (text) => this.log(text),
     });
+    // Dealer's choice: a snapshot from before #421 can have the first hand's button on the empty seat of a first chooser
+    // who picked and left. It goes on to the next player round, as a leaver's does now, so whoever sits there doesn't
+    // take it; at a new table nobody is left at, it starts afresh.
+    const c = state.choice;
+    if (c && c.firstButton !== null && !state.seats[c.firstButton]) {
+      const next = this.seatedFrom(c.firstButton);
+      if (next) c.firstButton = next.seat;
+      else state.choice = undefined;
+    }
     // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
     // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.
     const queued = state.pendingSettings?.spectators;
@@ -767,9 +776,11 @@ export class TableRuntime {
     this.state.seats[seat.seat] = null;
     // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
     // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). At
-    // a new table the first hand's button goes the same way, whether or not they still had the chip.
+    // a new table the first hand's button goes the same way, whether or not they still had the chip. A new table that
+    // everyone leaves before its first hand starts afresh: the next deal draws a new first chooser.
     const c = this.state.choice;
-    if (c && (c.chip === seat.seat || c.firstButton === seat.seat)) {
+    if (c && c.firstButton !== null && !this.state.seats.some(Boolean)) this.state.choice = undefined;
+    else if (c && (c.chip === seat.seat || c.firstButton === seat.seat)) {
       const next = this.seatedFrom(seat.seat);
       if (c.firstButton === seat.seat) c.firstButton = next?.seat ?? null;
       if (c.chip === seat.seat && next) c.chip = next.seat;
@@ -2558,7 +2569,8 @@ export class TableRuntime {
     const plannerSeats = this.plannerSeatsOf(candidates);
     const maxSeats = s.seats.length;
     // Dealer's choice at a table that hasn't dealt yet: the first chooser gets the first button.
-    const firstButton = (this.isTournament ? null : this.choice.firstButton(candidates)) ?? candidates[this.rng(candidates.length)].seat;
+    const chosen = this.isTournament ? null : this.choice.firstButton(candidates);
+    const firstButton = chosen ?? candidates[this.rng(candidates.length)].seat;
     /** `fromButton`: plan as a first hand from that button, ignoring the blinds on record. */
     const planFor = (setup: HandSetup, bombPot: { amount: number } | null = null, fromButton: number | null = null) =>
       planForcedBets({
@@ -2568,7 +2580,10 @@ export class TableRuntime {
         seats: plannerSeats,
         lastBigBlindSeat: fromButton !== null ? null : (s.positions?.bigBlind ?? null),
         lastSmallBlindSeat: fromButton !== null ? null : (s.positions?.smallBlind ?? null),
-        lastButton: fromButton ?? s.positions?.button ?? firstButton,
+        // The planner puts a first blinds hand's button on the first player dealt in from lastButton on, and a stud
+        // hand's on the one after it, as it moves on each hand: so a first stud hand is given the seat before the
+        // chooser's.
+        lastButton: fromButton ?? s.positions?.button ?? (chosen !== null && setup.game.forcedBets === 'ante-bring-in' ? (chosen - 1 + maxSeats) % maxSeats : firstButton),
         mode: this.isTournament ? 'tournament' : 'cash',
         straddles: this.isTournament ? 'off' : s.settings.play.straddle,
         bombPot,
