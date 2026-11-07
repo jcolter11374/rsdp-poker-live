@@ -534,7 +534,7 @@ export function Table({
           return (
             <div className="seat empty" style={px(pos)} key={seat}>
               {seatsClosed ? (
-                // Dealer's choice: a smaller game has every seat it can deal (D31).
+                // Dealer's choice: a smaller game has every seat it can deal (D32).
                 <span className="closed" title="This game seats no more players. The seat opens after this game.">
                   Closed
                 </span>

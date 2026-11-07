@@ -8,7 +8,7 @@ import { useNow } from '../Table';
 import { choiceOf } from '../settings/dealersChoice';
 
 /*
- * Dealer's choice at the table (D31): the Pick chip on the next chooser's seat, the line on the felt while they
+ * Dealer's choice at the table (D32): the Pick chip on the next chooser's seat, the line on the felt while they
  * pick, and the chooser's "Pick the next game" panel.
  */
 

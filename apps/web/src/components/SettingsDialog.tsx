@@ -11,7 +11,7 @@ import { BettingNudge } from './BettingNudge';
 import { Field } from './settings/fields';
 import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
-import { canAddGame, canAddLevel, nextBlindLevel } from './settings/lists';
+import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
 import { choiceOf, DEFAULT_MENU, menuSeats, repeatsOf, stakesForMenu } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
@@ -70,7 +70,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   const choice = choiceOf(draft);
   const mode: 'one' | 'rotate' | 'choice' = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
   const games = draft.game.rotation.enabled && draft.game.rotation.steps.length ? draft.game.rotation.steps.map((s) => s.gameId) : [draft.game.gameId];
-  // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D31).
+  // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D32).
   const seatLimit = mode === 'choice' ? menuSeats(choice.games) : maxSeatsFor(games);
 
   // A game with fewer seats than the table: say up front who has to leave, or who moves seats.
@@ -388,6 +388,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </div>
                   );
                 })}
+                {scheduleBetsNote(draft.game) && <p className="muted">{scheduleBetsNote(draft.game)}</p>}
                 <button
                   type="button"
                   disabled={!canAddLevel(sched.levels)}

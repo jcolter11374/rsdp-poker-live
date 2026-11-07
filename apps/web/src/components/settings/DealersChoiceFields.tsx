@@ -10,7 +10,7 @@ const BETTINGS: BettingKind[] = ['no-limit', 'pot-limit', 'fixed-limit'];
 const L = SETTINGS_LIMITS;
 
 /**
- * The Game tab's Dealer's choice section (D31): the menu the chooser picks from, with one-tap fills, how long a pick
+ * The Game tab's Dealer's choice section (D32): the menu the chooser picks from, with one-tap fills, how long a pick
  * lasts and the time to pick. `setMenu` also sets up the stakes the menu's games need.
  */
 export function DealersChoiceFields({

@@ -1,9 +1,9 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { fairRevealsAt, fillStakes, rabbitCards, type TableRuntime } from './table';
+import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
-import { gameCode, gameTitle, skipsMixedGameAnte } from '@rsdp/engine/variants';
+import { gameCode, gameTitle } from '@rsdp/engine/variants';
 import { spectatorsSeeCards } from '@rsdp/engine/settings';
 
 const CHAT_SHOWN = 100;
@@ -322,19 +322,11 @@ function previewSetup(rt: TableRuntime): TableView['upcoming'] {
   const settings = rt.state.settings;
   const rot = settings.game.rotation;
   // Dealer's choice: the game picked (or what a missed pick would deal).
-  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[rt.state.rotation.step % rot.steps.length] : null);
+  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[rt.previewRotationStep() % rot.steps.length] : null);
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
-  const { centsMode: _c, ...stakes } = settings.stakes;
-  const sched = settings.blindSchedule;
-  if (sched.enabled && sched.levels.length) {
-    const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
-    Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
-  }
+  const stakes = cashHandStakes(settings, Math.min(rt.state.level.index, settings.blindSchedule.levels.length - 1), game);
   const betting = step?.betting ?? settings.game.betting;
-  // Dealer's choice: with a stud game on the menu only the stud games ante (D29, D31).
-  const menu = settings.game.dealersChoice?.enabled ? settings.game.dealersChoice.games.map((g) => g.gameId) : null;
-  if (menu && skipsMixedGameAnte(game.id, menu)) stakes.ante = 0;
-  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes: fillStakes(stakes, game) };
+  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes };
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {

@@ -171,7 +171,7 @@ const GameSection = z
         if (r.enabled && r.steps.length < L.rotationSteps.min) custom(ctx, ['steps'], 'add at least one step to rotate games');
       }),
     /**
-     * Dealer's choice (D31). Optional because settings saved with a table
+     * Dealer's choice (D32). Optional because settings saved with a table
      * before it existed aren't migrated: missing means off. New settings
      * always have it.
      */

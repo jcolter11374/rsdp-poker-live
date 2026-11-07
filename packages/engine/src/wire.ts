@@ -215,7 +215,7 @@ export interface TableView {
   bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
   upcoming: { gameId: string; gameName: string; betting: BettingKind; stakes: Stakes } | null;
-  /** Dealer's choice (D31): who picks next, the game being played and the pick clock. Absent at other tables. */
+  /** Dealer's choice (D32): who picks next, the game being played and the pick clock. Absent at other tables. */
   choice?: ChoiceView | null;
   /** Blind schedule: current level and when it ends. */
   level: { index: number; count: number; endsAt: number | null; handsLeft: number | null } | null;
