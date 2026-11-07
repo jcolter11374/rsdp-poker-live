@@ -8,7 +8,7 @@ import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
 import { dealtShapes, rowHand, splitsPot } from '../handSizes';
-import { dealableGames } from '../tableGames';
+import { FOUR_CARD_GAMES, LONG_HAND_GAMES, dealableGames, layoutOf } from '../tableGames';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
@@ -539,20 +539,36 @@ export function Table({
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
-  // A mixed table is laid out for every game it deals, the game on now included (a bomb pot can deal one that isn't on
-  // the list), so neither the felt nor the seats move when the game changes (#409). Games too small for the players
-  // seated can't be dealt now, so they're left out.
+  // A mixed table is laid out for every game it deals, so neither the felt nor the seats move when the game changes
+  // (#409). Games too small for the players seated can't be dealt now, so they're left out.
+  // A hand in a game that isn't on the list (a one-off bomb pot from the host's button, or the last hand before the host
+  // changed the games) adds its game, unless the list's layout already has room for it (#418).
+  // And a hand keeps the layout it was laid out with while that still has room for its game: a change to the table's
+  // games between hands takes effect at once, while the last hand is still on the table, and a player sitting down can
+  // leave a game out mid-hand. The new layout comes with the next deal, a single move, not one now and one then. A layout
+  // made before the page knew the table's games (a tournament's come a moment after the table) isn't kept.
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
   // A stud hand is a row of cards over the nameplate from its first card, not only from fifth street (#447).
   const rowNow = rowHand(gameId);
-  const dealtKey = [...new Set([...dealableGames(games ?? [], players), gameId].filter(Boolean))].sort().join(',');
+  const handNo = hand?.handNumber ?? null;
+  const listed = dealableGames(games ?? [], players);
+  const covered = !gameId || listed.includes(gameId) || (listed.length > 0 && layoutOf(listed) === layoutOf([...listed, gameId]));
+  const laidOut = useRef<{ hand: number | null; key: string; known: boolean }>({ hand: null, key: '', known: false });
+  const laid = laidOut.current;
+  const laidGames = laid.key ? laid.key.split(',') : [];
+  const keep = handNo !== null && laid.hand === handNo && laid.known && !!gameId && layoutOf(laidGames) === layoutOf([...laidGames, gameId]);
+  const dealtKey = keep ? laid.key : [...new Set(covered ? listed : [...listed, gameId])].sort().join(',');
+  const known = listed.length > 0;
+  useLayoutEffect(() => {
+    laidOut.current = { hand: handNo, key: dealtKey, known };
+  }, [handNo, dealtKey, known]);
   const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
   // Four cards tucked in (four-card Omaha, Badugi) widen the nameplate. Stud's three or four don't: its hand is a row over
   // the nameplate from third street (#447).
-  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi'].includes(g));
+  const fourCard = dealt.some((g) => FOUR_CARD_GAMES.includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
-  const longGame = wide && dealt.some(rowHand);
+  const longGame = wide && dealt.some((g) => LONG_HAND_GAMES.includes(g));
   const topMargin = longGame ? 106 : 84;
   const podWidth = (wide ? 320 : 290) + (fourCard ? 50 : 0);
   // The felt's side margins hold half a side seat's nameplate.
