@@ -62,8 +62,8 @@ const migrationCount = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sq
 describe('PGlite versions', { timeout: 60_000 }, () => {
   it('ships the Postgres versions the server expects', async () => {
     // Written out rather than read from client.ts: if an update changes either, the live folder can't be opened by
-    // the new one, and the way through is D31's three releases, not a new number here.
-    expect([LEGACY_PGLITE_POSTGRES, PGLITE_POSTGRES], 'a new Postgres major version: see D31 in docs/DECISIONS.md').toEqual([16, 18]);
+    // the new one, and the way through is D32's three releases, not a new number here.
+    expect([LEGACY_PGLITE_POSTGRES, PGLITE_POSTGRES], 'a new Postgres major version: see D32 in docs/DECISIONS.md').toEqual([16, 18]);
     for (const [make, expected] of [
       [() => new LegacyPGlite(), 16],
       [() => new PGlite(), 18],
@@ -71,7 +71,7 @@ describe('PGlite versions', { timeout: 60_000 }, () => {
       const raw = make();
       try {
         const { rows } = await raw.query<{ v: string }>("select current_setting('server_version_num') as v");
-        expect(Math.floor(Number(rows[0].v) / 10_000), 'a new Postgres major version: see D31 in docs/DECISIONS.md').toBe(expected);
+        expect(Math.floor(Number(rows[0].v) / 10_000), 'a new Postgres major version: see D32 in docs/DECISIONS.md').toBe(expected);
       } finally {
         await raw.close();
       }
