@@ -116,8 +116,8 @@ for how it works.
 - The site keeps a few things in your browser's local storage: your guest id
   and secret, your signed-in session, your table name, settings such as
   sound, volume and alerts, the alerts it has already shown (and which
-  tournament a tab of the site has on screen, so another tab doesn't alert
-  you about it meanwhile), players you muted or hid in chat (at tables and in
+  tournament a tab of the site has on screen, or is about to alert you
+  about, so another tab doesn't alert you about it meanwhile), players you muted or hid in chat (at tables and in
   tournament lobbies), tips you've dismissed, guest
   presets, tournaments you made, and what your
   browser saw during hands (so it can check the dealing later). Clearing the

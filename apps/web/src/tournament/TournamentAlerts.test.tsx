@@ -136,11 +136,37 @@ describe('Starting soon in the browser', () => {
     expect(startingSoon()).toHaveLength(1);
     expect(fired()).toEqual([]);
     cleanup();
-    // The tab left on a cash table gives it at its next check.
+    // The tab left on a cash table gives it once the closed tab's claim to be raising it has lapsed (10 s).
     hidden = false;
     await open('/t/cash1');
+    expect(startingSoon()).toHaveLength(1);
+    await wait(15_000);
     expect(startingSoon()).toHaveLength(2);
     expect(fired()).toEqual([`start:abc:${event.startAt}`]);
+  });
+
+  it("waits while another tab is raising it (the player switched tabs as it looked away), and gives it if that tab didn't", async () => {
+    // The lobby's tab, losing the screen to this one, claimed it a moment ago and is still showing it.
+    localStorage.setItem('rsdp.notified.raising', JSON.stringify({ [`start:abc:${event.startAt}`]: Date.now() }));
+    await open('/t/cash1');
+    expect(startingSoon()).toEqual([]);
+    // That tab closed before showing it: the claim lapses, and this tab gives it at its next check.
+    await wait(15_000);
+    expect(startingSoon()).toHaveLength(1);
+    expect(fired()).toEqual([`start:abc:${event.startAt}`]);
+    // Its own claim is given up once the alert is shown.
+    expect(JSON.parse(localStorage.getItem('rsdp.notified.raising') ?? '{}')).toEqual({});
+  });
+
+  it('claims it for the other tabs while it is on its way', async () => {
+    let shown!: (ok: boolean) => void;
+    alerts.notify.mockReturnValueOnce(new Promise<boolean>((r) => (shown = r)));
+    await open('/t/cash1');
+    expect(Object.keys(JSON.parse(localStorage.getItem('rsdp.notified.raising') ?? '{}'))).toEqual([`start:abc:${event.startAt}`]);
+    // Taken down before it showed (the player came back to the tab): the claim goes, and it isn't counted as given.
+    await act(async () => shown(false));
+    expect(JSON.parse(localStorage.getItem('rsdp.notified.raising') ?? '{}')).toEqual({});
+    expect(fired()).toEqual([]);
   });
 
   it("doesn't raise it twice while the first is still on its way", async () => {

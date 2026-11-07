@@ -17,12 +17,36 @@ const ON_SCREEN_KEY = 'rsdp.notified.onScreen';
 /** This tab, in those notes. */
 const TAB = Math.random().toString(36).slice(2, 10);
 
-function loadOnScreen(): Record<string, number> {
+/** Starting soon alerts a tab of the site is raising now, so another tab doesn't raise the same one meanwhile. */
+const RAISING_KEY = 'rsdp.notified.raising';
+/** A claim left by a tab that closed before its alert showed lapses after this, and another tab gives the alert. */
+const RAISING_FOR_MS = 10_000;
+
+/** A stored map of names to times, as these notes keep them. */
+function loadStamps(storeKey: string): Record<string, number> {
   try {
-    const v = JSON.parse(localStorage.getItem(ON_SCREEN_KEY) ?? '{}');
+    const v = JSON.parse(localStorage.getItem(storeKey) ?? '{}');
     return v && typeof v === 'object' && !Array.isArray(v) ? (Object.fromEntries(Object.entries(v).filter(([, at]) => typeof at === 'number')) as Record<string, number>) : {};
   } catch {
     return {};
+  }
+}
+const loadOnScreen = () => loadStamps(ON_SCREEN_KEY);
+
+/** Alerts some tab claimed to be raising in the last few seconds. */
+function raisingNow(now: number): Set<string> {
+  return new Set(Object.entries(loadStamps(RAISING_KEY)).flatMap(([key, at]) => (now - at < RAISING_FOR_MS && at <= now + 1000 ? [key] : [])));
+}
+
+/** Claims an alert as being raised by this tab, or gives the claim up; lapsed claims go. */
+function setRaising(key: string, on: boolean) {
+  try {
+    const now = Date.now();
+    const claims = Object.fromEntries(Object.entries(loadStamps(RAISING_KEY)).filter(([k, at]) => k !== key && now - at < RAISING_FOR_MS && at <= now + 1000));
+    if (on) claims[key] = now;
+    localStorage.setItem(RAISING_KEY, JSON.stringify(claims));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -106,23 +130,32 @@ export function TournamentAlerts() {
     /** Alerts this tab is showing now, so a check that comes meanwhile doesn't raise one twice. */
     const showing = new Set<string>();
     const check = async () => {
+      const now = Date.now();
       const fired = new Set(loadFired());
       // An event's lobby or table on screen, in this tab or another, already counts down, so its alert is held back
       // and comes if the player looks away before the start.
       const here = document.hidden ? null : eventOnPage(location.pathname, tournamentOfTable);
       noteOnScreen(here);
-      const held = onScreenNow(loadOnScreen(), Date.now(), TAB);
+      const held = onScreenNow(loadOnScreen(), now, TAB);
       if (here) held.add(here);
-      const all = startAlertsDue(list, Date.now() + skew, fired).filter((t) => !showing.has(startKey(t)));
+      const raising = raisingNow(now);
+      const all = startAlertsDue(list, now + skew, fired).filter((t) => !showing.has(startKey(t)) && !raising.has(startKey(t)));
       if (!all.length) return;
+      // Claimed before the wait below: the player switching from the lobby's tab to another tab of the site has the
+      // other tab check as this one does, and only one raises it.
+      const due = all.filter((t) => !held.has(t.id)).map(startKey);
+      for (const key of due) setRaising(key, true);
       // The server's Starting soon reaches a device with push whatever is on screen. One a push already showed here
       // has been had, and isn't given again (the service worker notes what it showed).
       const pushed = await shownByPush(all.map(startKey));
-      if (!alive) return;
       if (pushed.size) saveFired([...loadFired(), ...pushed]);
       for (const t of all) {
         const key = startKey(t);
-        if (pushed.has(key) || held.has(t.id)) continue;
+        if (!due.includes(key)) continue;
+        if (!alive || pushed.has(key) || showing.has(key)) {
+          setRaising(key, false);
+          continue;
+        }
         const minutes = Math.max(1, Math.round((t.startAt! - Date.now() - skew) / 60_000));
         showing.add(key);
         // Shown even with the tab in front: the player may be on another page of the site. It counts as had only once
@@ -130,6 +163,7 @@ export function TournamentAlerts() {
         void notify('Starting soon', `${t.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, { tag: key, url: `/tn/${t.id}`, whenVisible: true }).then((ok) => {
           showing.delete(key);
           if (ok) saveFired([...loadFired(), key]);
+          setRaising(key, false);
         });
       }
     };
