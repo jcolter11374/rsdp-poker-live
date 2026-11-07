@@ -116,6 +116,11 @@ export interface HandView {
    * that card goes on, so each shows a face-down card there until it turns over.
    */
   comingNext?: { run: number; board: number }[];
+  /**
+   * Set only in the browser, never by the server: while an all-in runout is being shown and more of it is still to
+   * come, so the last card out so far was dealt like the rest. Only the run's very last card turns over where it waited.
+   */
+  runoutToCome?: boolean;
 }
 
 export interface RequestView {

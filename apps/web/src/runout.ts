@@ -94,11 +94,24 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
   // back, with the street events (stud) that close those steps.
   const cut = steps[shown]?.[0].seq ?? Infinity;
   const events = hand.events.filter((e) => e.seq <= runIt || ((e.t === 'board' || e.t === 'deal' || e.t === 'street') && e.seq < cut));
+  // The last step out so far is the run's last only once every step is out (#412).
+  const toCome = shown < steps.length;
   const won = hand.awards.reduce((s, a) => s + a.amount, 0);
   const pots = hand.pots.length ? hand.pots : [{ amount: won, eligible: [] }];
   return {
     ...view,
-    hand: { ...hand, phase: 'betting', showdown: false, awards: [], boards, events, pots, potTotal: Math.max(hand.potTotal, won), ...(comingNext ? { comingNext } : {}) },
+    hand: {
+      ...hand,
+      phase: 'betting',
+      showdown: false,
+      awards: [],
+      boards,
+      events,
+      pots,
+      potTotal: Math.max(hand.potTotal, won),
+      ...(comingNext ? { comingNext } : {}),
+      ...(toCome ? { runoutToCome: true } : {}),
+    },
     seats: seatsDuring(view, before, events),
     ledger: before.ledger,
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
@@ -114,10 +127,12 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
 
 /**
  * The last card of a single all-in run: it waited face down on the board before turning over (#308). Stud's last
- * street goes to the seats, with no card waiting on the board, so it is dealt as usual.
+ * street goes to the seats, with no card waiting on the board, so it is dealt as usual. While more of the runout is
+ * still to come, the last card out so far was dealt like the rest, so nothing is held: the run's last card turns over
+ * from when it lands to the result, and no card on the board changes how it came on, which would play it again (#412).
  */
 export function heldCards(hand: TableView['hand']): string[] {
-  if (!hand || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
+  if (!hand || hand.runoutToCome || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
   return runoutSteps(hand.events).at(-1)?.flatMap((e) => (e.t === 'board' ? e.cards : [])) ?? [];
 }
 

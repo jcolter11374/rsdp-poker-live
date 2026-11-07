@@ -137,6 +137,9 @@ describe('a player knocked out (#308)', () => {
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
     // When the result shows, that card turns over where it lies.
     expect(heldCards(after.hand)).toEqual(['3s']);
+    // It does from when it lands; the cards before it were dealt, even while each was the last out so far (#412).
+    expect([0, 1, 2, 3].map((n) => heldCards(holdBack(after, frozen, n).hand))).toEqual([[], [], [], ['3s']]);
+    expect(holdBack(after, frozen, 3).hand!.runoutToCome).toBeUndefined();
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
     expect(heldCards(finished().hand)).toEqual([]);
