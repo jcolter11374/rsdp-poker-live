@@ -8,7 +8,7 @@ import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, 
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
-import { handSizes } from '../handSizes';
+import { dealtSizes } from '../handSizes';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
@@ -337,6 +337,9 @@ interface Flight {
   kind: 'sweep' | 'award';
 }
 
+/** How much the felt's width or height may change, as a share of it, before the seats are placed afresh. */
+const FELT_SLACK = 0.04;
+
 let flightId = 0;
 
 export function Table({
@@ -350,6 +353,7 @@ export function Table({
   discard,
   fill = false,
   wide = false,
+  games,
 }: {
   view: TableView;
   /** Server clock minus ours. */
@@ -366,6 +370,11 @@ export function Table({
   fill?: boolean;
   /** The wide desktop layout (no side column): cards grow a little more than the nameplates. */
   wide?: boolean;
+  /**
+   * Every game the table deals (a rotation, a Dealer's choice menu, a tournament's games): it is laid out for all of
+   * them, so the seats don't move when the game changes (#409). Left out, the game on now.
+   */
+  games?: readonly string[];
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
@@ -409,11 +418,15 @@ export function Table({
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
+  // A mixed table is laid out for every game it deals, the game on now included (a bomb pot can deal one that isn't on
+  // the list), so neither the felt nor the seats move when the game changes (#409).
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
-  const fourCard = ['plo4', 'plo8', 'badugi'].includes(gameId);
+  const dealtKey = [...new Set([...(games ?? []), gameId].filter(Boolean))].sort().join(',');
+  const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
+  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi'].includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
-  const longGame = wide && ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(gameId);
+  const longGame = wide && dealt.some((g) => ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(g));
   const topMargin = longGame ? 106 : 84;
   const podWidth = (wide ? 320 : 290) + (fourCard ? 50 : 0);
   // The felt's side margins hold half a side seat's nameplate.
@@ -424,13 +437,13 @@ export function Table({
   const grownScale = Math.round(Math.max(0.72, Math.min(k, (estPerimeter * 0.92) / (players * podWidth + (n - players) * 130))) * 100) / 100;
   const seatScale = compact ? 1 : grown ? grownScale : Math.round(Math.max(0.72, roomy) * 100) / 100;
   // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been (starting from their size once
-  // dealt in) since the shape of the game's hands or the seats' size last changed: they shrink when a player folds and
-  // between hands, and the seats mustn't move then or when the cards come (#363). Games whose hands look alike (stud, razz
-  // and stud hi-lo; Omaha and badugi) share their boxes, so a mixed game doesn't move the seats at every change.
+  // dealt in, in every game the table deals) since the table's games or the seats' size last changed: they shrink when a
+  // player folds and between hands, and the seats mustn't move then, when the cards come (#363) or when a mixed game
+  // moves on to the next game (#409).
   // Everyone but you shares the biggest of their boxes, so a long name or a folded hand doesn't move anyone either.
   // Before a tournament table's first hand the view has no game yet (its settings say Hold'em whatever the event plays),
-  // so there's nothing to size for until the deal.
-  const sizes = useMemo(() => handSizes(gameId), [gameId]);
+  // so there's nothing to size for until the deal, unless the page knows the tournament's games.
+  const sizes = useMemo(() => dealtSizes(dealt), [dealt]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
   const sized = useSeatBoxes(felt, `${sizes.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`, sizes, seating, view.me.seat, !compact);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
@@ -446,15 +459,20 @@ export function Table({
   // Seats already placed from the same measure stay where they are while they have room (see placeSeats).
   const takenKey = view.seats.map((s) => (s ? 1 : 0)).join('');
   const mine = view.me.seat;
-  const placed = useRef<{ key: string; at: readonly number[] } | null>(null);
+  const placed = useRef<{ key: string; w: number; h: number; at: readonly number[] } | null>(null);
+  const measured = size.w > 0;
   const spread = useMemo(() => {
     const taken = [...takenKey].map((c) => c === '1');
     if (compact) return seatFractions(taken, offset, { clear, minGap });
     const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? sized.empty : seat === mine ? sized.me : sized.others);
-    // A new felt size is placed afresh: seats kept from the size before the felt was measured (or before a banner came or
-    // went) would depend on what happened before, and two players with the same window could see different tables.
-    const key = `${sized.key}|${takenKey}|${offset}|${Math.round(w)}x${Math.round(h)}`;
-    const keep = placed.current?.key === key ? placed.current.at : undefined;
+    // They stay through a small change to the felt's size too (the dock or the top bar a few pixels taller mid-hand),
+    // since placed afresh, a few pixels could send seats a long way. A bigger change (a banner coming or going, a new
+    // window size) or the felt's first measure places them afresh: seats kept from the size before would depend on what
+    // happened before, and two players with the same window could see different tables.
+    const key = `${sized.key}|${takenKey}|${offset}`;
+    const was = placed.current;
+    const near = !!was && was.key === key && measured && Math.abs(w - was.w) <= was.w * FELT_SLACK && Math.abs(h - was.h) <= was.h * FELT_SLACK;
+    const keep = near ? was.at : undefined;
     let at: readonly number[];
     try {
       at = placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep });
@@ -463,9 +481,10 @@ export function Table({
       reportError(error, 'error');
       at = seatFractions(taken, offset, { clear, minGap });
     }
-    placed.current = { key, at };
+    // Kept seats keep the size they were placed for, so a run of small changes can't carry them across a big one.
+    placed.current = !measured ? null : near && at === was.at ? was : { key, w, h, at };
     return at;
-  }, [takenKey, offset, mine, compact, clear, minGap, w, h, sized]);
+  }, [takenKey, offset, mine, compact, clear, minGap, w, h, measured, sized]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;

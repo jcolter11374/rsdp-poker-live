@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TournamentState } from '@rsdp/tournament';
 import { socket } from '../socket';
 import { tournamentClient, type Session } from './client';
+import { tournamentGames } from '../tableGames';
 
 /** Re-renders every `ms` with the current time. */
 export function useNow(ms = 1000): number {
@@ -49,6 +50,20 @@ export function useTournament(id: string) {
     [client, id],
   );
   return { state, skew, nextId, nextError, error };
+}
+
+/**
+ * Every game a tournament deals (see tournamentGames), for laying out its tables; empty until it loads, or with no
+ * tournament. Only a change to the list re-renders.
+ */
+export function useTournamentGames(id: string | null): string[] {
+  const [key, setKey] = useState('');
+  useEffect(() => {
+    setKey('');
+    if (!id) return;
+    return tournamentClient().subscribe(id, (v) => setKey(tournamentGames(v.state.settings).join(',')), () => {});
+  }, [id]);
+  return useMemo(() => (key ? key.split(',') : []), [key]);
 }
 
 /** Changes page without reloading; App follows popstate. */

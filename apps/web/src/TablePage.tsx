@@ -34,7 +34,8 @@ import { Dock } from './components/table/Dock';
 import { useDepartures, useRunoutReveal } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
-import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
+import { navigate, tournamentOfTable, useFollowSeat, useTournamentGames } from './tournament/hooks';
+import { tableGames } from './tableGames';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
 
@@ -162,6 +163,11 @@ export function TablePage({ tableId }: { tableId: string }) {
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
+  // Every game the table deals, so a mixed table is laid out once for all of them (#409). A tournament table's own
+  // settings always say Hold'em: its games come from the tournament.
+  const eventGames = useTournamentGames(view?.tournamentId ?? null);
+  const cashGames = view && view.mode === 'cash' ? tableGames(view.settings).join(',') : '';
+  const games = useMemo(() => (view?.tournamentId ? eventGames : cashGames ? cashGames.split(',') : []), [view?.tournamentId, eventGames, cashGames]);
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
   const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
   const busy = view !== live || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
@@ -691,6 +697,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             compact={portrait}
             fill
             wide={wide}
+            games={games}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
