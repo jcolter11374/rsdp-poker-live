@@ -99,7 +99,7 @@ export function handsJson(tableName: string, centsMode: boolean, hands: HandReco
 
 /** Every hand as a readable text log, the same lines as the table's log. */
 export function handHistoryText(tableName: string, hands: HandRecordView[], myId: string, fmt: Fmt): string {
-  const out = [`${tableName} — hand history (${hands.length} hands)`, ''];
+  const out = [`${tableName} — hand history (${hands.length} ${hands.length === 1 ? 'hand' : 'hands'})`, ''];
   for (const h of hands) {
     const names = new Map(h.seats.map((s) => [s.seat, s.name]));
     const mySeat = h.seats.find((s) => s.playerId === myId)?.seat ?? null;

@@ -310,7 +310,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
-  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  // The tip sits beside the table instead of pushing it down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
     const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
@@ -450,7 +450,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       : null;
   const level = view.level;
   const levelText = level
-    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
+    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} ${level.handsLeft === 1 ? 'hand' : 'hands'}` : ''}`
     : null;
   // The top bar's line at a cash table that plays one game or Dealer's choice (rotating and tournament tables have their own).
   const barName = view.name;
@@ -632,6 +632,29 @@ export function TablePage({ tableId }: { tableId: string }) {
     ),
   ].filter(Boolean);
 
+  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
+  // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
+  // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
+  // the table's size (#350).
+  const tipInCorner = wide && !drawer;
+  const keysTipBox = keysTip && !dialog && (
+    <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
+      <span>
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
+      </span>
+      <button
+        onClick={() => {
+          dismissKeysTip();
+          setDialog({ kind: 'keys' });
+        }}
+      >
+        All shortcuts
+      </button>
+      <button onClick={() => dismissKeysTip()}>Got it</button>
+    </div>
+  );
+
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
       <header className="topbar">
@@ -802,28 +825,6 @@ export function TablePage({ tableId }: { tableId: string }) {
             noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
           />
-          {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
-              stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
-              whole table twitch on big screens (#350). */}
-          <div className="tip-anchor">
-            {keysTip && !dialog && (
-              <div className="tip-toast" role="status">
-                <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
-                  {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
-                </span>
-                <button
-                  onClick={() => {
-                    dismissKeysTip();
-                    setDialog({ kind: 'keys' });
-                  }}
-                >
-                  All shortcuts
-                </button>
-                <button onClick={() => dismissKeysTip()}>Got it</button>
-              </div>
-            )}
-          </div>
           <Dock
             reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
@@ -853,6 +854,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </section>
         {!portrait && (
           <aside id="records-panel" className={wide ? `side drawer${drawer ? ' open' : ''}` : 'side'}>
+            {!tipInCorner && keysTipBox}
             {hostPanel}
             <PartBoundary name="side panel">
               <SidePanel view={view} fmt={fmt} />
@@ -871,6 +873,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
+        {tipInCorner && keysTipBox}
       </div>
 
       {portrait && sheet === 'menu' && (
