@@ -881,6 +881,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             notice={noticeUnder && view.hand ? null : startNotice}
             noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
+            barNamesHand
           />
           <Dock
             reset={`${portrait}:${view.me.seat}`}

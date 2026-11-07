@@ -287,8 +287,9 @@ function changedAtResult({ before, after }) {
 }
 
 /**
- * Every other player who showed a losing hand has its name on a tab, and every tab is on the screen with nothing over
- * it: what is on top at its middle is the tab itself.
+ * Every other player who showed a losing hand has its name on a tab, and every tab shown is on the screen with nothing
+ * over it: what is on top at its middle is the tab itself. (Your own tab shows only on a phone on its side, where the bar
+ * under the table leaves your hand's name out.)
  */
 const tabsUnseen = (p) =>
   p.evaluate(() => {
@@ -300,6 +301,7 @@ const tabsUnseen = (p) =>
       if (shown && !s.querySelector('.shown-tab')?.textContent) found.push(`${name(s)} showed and lost, and no tab names the hand`);
     }
     for (const tab of document.querySelectorAll('.felt .shown-tab')) {
+      if (!tab.getClientRects().length) continue;
       const r = tab.getBoundingClientRect();
       const what = `${name(tab)}'s tab "${tab.textContent}"`;
       if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) found.push(`${what} goes off the screen`);
@@ -1119,7 +1121,8 @@ try {
           // The first of the two to act goes all in, and the other calls.
           else if (await p.locator('.felt .seat.all-in').count()) await press('.buttons button', /^Call/);
           else {
-            await press('.presets button', /^All in$/);
+            // The preset's text is "All in" and its keyboard hint (⇧A).
+            await press('.presets button', /^All in/);
             await press('.buttons button.primary', /^All in/);
           }
           acted = true;

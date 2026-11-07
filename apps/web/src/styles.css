@@ -575,15 +575,23 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .nameplate .timer { left: 6px; right: 6px; bottom: 2px; height: 3px; }
 .felt.compact .seat .status, .felt.compact .last-action { font-size: 0.6rem; }
 /* At the result a shown hand's name sits on a tab where the cards meet the nameplate, not on a line that would widen the
-   nameplate into its neighbours (#455). Nothing in the nameplate changes size: the lines it showed last stay, unseen. */
+   nameplate into its neighbours (#455). Nothing in the nameplate changes size: the lines it showed last stay, unseen.
+   Table.tsx sets --tab-drop for a bunched row's smaller cards, so the tab meets their suits instead of covering them, and
+   --tab-slide to bring it out from under the dealer button. */
 .felt.compact .shown-tab {
-  position: absolute; left: 50%; bottom: calc(100% - 5px); translate: -50% 0; z-index: 3;
+  position: absolute; left: 50%; bottom: calc(100% - var(--tab-drop, 5px)); translate: calc(-50% + var(--tab-slide, 0px)) 0; z-index: 3;
   padding: 0 4px; border-radius: 6px; background: #14171b;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 1px 3px rgba(0, 0, 0, 0.5);
   font: 700 0.72rem/12px 'Barlow Condensed', 'Inter Variable', sans-serif; letter-spacing: 0.01em; color: #eef1f4;
   white-space: nowrap; pointer-events: none;
 }
-@media (max-height: 500px) { .felt.compact .shown-tab { bottom: calc(100% - 7px); } }
+/* On its side a phone's cards are smaller and end lower over the nameplate: the tab is 10px tall there, from 5px above the
+   nameplate to 5px into it, clear of their suits and of accents on the name's capitals. An 8px line with 2px under it
+   puts its capitals in the middle (the font's own line sits them low). */
+@media (max-height: 500px) { .felt.compact .shown-tab { bottom: calc(100% - 5px); line-height: 8px; padding-bottom: 2px; } }
+/* Your own hand's tab: standing up the bar under the table names your hand in full. On its side the bar leaves that
+   line out, and your cards sit beside your nameplate, so the tab shows there. */
+@media not all and (max-height: 500px) { .felt.compact .shown-tab.mine { display: none; } }
 .felt.compact .seat.departed .shown-tab { animation: depart-dim 0.8s ease 1.2s both; }
 @media (prefers-reduced-motion: reduce) { .felt.compact .seat.departed .shown-tab { animation: none; opacity: 0.6; filter: grayscale(0.8); } }
 .felt.compact .nameplate .stack .out-mark { font-size: 0.7rem; color: #ffb4ad; letter-spacing: 0.01em; }

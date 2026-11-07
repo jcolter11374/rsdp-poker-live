@@ -14,7 +14,8 @@ describe('handKind: a shown hand on a phone tab (#455)', () => {
     expect(handKind('Badugi, King high')).toBe('Badugi');
   });
 
-  it('gives every hand the evaluators can name a short tab, in every game', () => {
+  // 24,000 hands: about 4s on its own, longer on a busy machine.
+  it('gives every hand the evaluators can name a short tab, in every game', { timeout: 30_000 }, () => {
     const ranks = '23456789TJQKA';
     const deck = [...ranks].flatMap((r) => [...'cdhs'].map((s) => r + s));
     // A small seeded generator, so a failure can be run again.

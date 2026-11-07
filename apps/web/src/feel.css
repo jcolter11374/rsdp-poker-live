@@ -184,9 +184,9 @@
   .felt.compact .win-float { background: rgba(10, 12, 14, 0.82); padding: 1px 7px; border-radius: 999px; text-shadow: none; }
   /* All in: the seat goes red-hot and the stack line becomes a stamp. */
   .seat.all-in .last-action { display: none; }
-  /* A phone nameplate keeps the stamp's width through the result, and the line the stamp hid stays hidden (#455). */
+  /* Through the result a phone nameplate keeps the stamp's width (#455): a player knocked out, or one stamped in the
+     hand's last live view (Table.tsx). */
   .felt.compact .seat:is(.departed, .went-all-in) .nameplate { min-width: 100px; }
-  .felt.compact .seat.went-all-in .nameplate > .kept { display: none; }
   .seat.all-in .nameplate { border-color: #ff6b5e !important; box-shadow: 0 0 0 1px #ff6b5e, 0 0 24px rgba(255, 90, 76, 0.55), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .seat.all-in .stack {
     display: inline-block;

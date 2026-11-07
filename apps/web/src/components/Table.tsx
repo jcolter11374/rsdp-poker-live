@@ -671,10 +671,19 @@ export interface DiscardPick {
   toggle: (index: number) => void;
 }
 
-/** The lines each phone nameplate showed in a hand's last live view, by seat: each line's classes and text (#455). */
-interface KeptLines {
+/**
+ * What each phone nameplate showed in a hand's last live view, by seat (#455): who sat there, whether it had the all-in
+ * stamp, and each line under the stack that took room (its classes and text).
+ */
+interface LastLive {
   hand: number;
-  lines: Map<number, [string, string][]>;
+  seats: Map<number, { playerId: string; allIn: boolean; lines: [string, string][] }>;
+}
+
+/** On a phone at the result, how far each hand-name tab slides aside, by seat, to come out from under the dealer button. */
+interface TabSlides {
+  key: string;
+  by: Map<number, number>;
 }
 
 /** Chips flying across the felt: bets swept into the pot, the pot pushed to a winner. */
@@ -703,6 +712,7 @@ export function Table({
   noticeHidden = false,
   onNoticeRoom,
   games,
+  barNamesHand = false,
 }: {
   view: TableView;
   /** Server clock minus ours. */
@@ -733,6 +743,12 @@ export function Table({
    * them, so the seats don't move when the game changes (#409). Left out, the game on now.
    */
   games?: readonly string[];
+  /**
+   * The bar under the table names your own hand (the table page's action bar). On a phone your own losing hand is then
+   * named on a tab only on its side, where the bar leaves that line out. Without it (the replayer, a shared hand) your
+   * nameplate names it, as before #455.
+   */
+  barNamesHand?: boolean;
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
@@ -775,25 +791,36 @@ export function Table({
   const live = !!hand && !done;
   // On a phone the result adds no line to a nameplate (#455): a shown hand's name goes on a tab over it, and "Knocked out"
   // or "Busted" takes the chip count's place. The server clears each player's last move ("Bet", "Check") when the river's
-  // betting ends, so the lines each nameplate showed in the hand's last live view are kept, unseen, through the result:
-  // it keeps its size, and nothing beside it moves. Set before the first paint of the result (a layout effect).
-  const seenLines = useRef<KeptLines | null>(null);
-  const [keptLines, setKeptLines] = useState<KeptLines | null>(null);
+  // betting ends, so what each nameplate showed in the hand's last live view is kept through the result: its lines, kept
+  // unseen, and the all-in stamp's width. It keeps its size, and nothing beside it moves. Recorded for each player, not
+  // each seat: someone new can sit down while the result shows. Set before the first paint of the result (a layout effect).
+  const seenLive = useRef<LastLive | null>(null);
+  const [lastLive, setLastLive] = useState<LastLive | null>(null);
   useLayoutEffect(() => {
     if (!compact || !hand || !felt.current) return;
     if (live) {
-      const lines = new Map<number, [string, string][]>();
-      for (const s of felt.current.querySelectorAll<HTMLElement>('.seat[data-seat]')) {
-        const shown = [...s.querySelectorAll<HTMLElement>('.nameplate > :is(.last-action, .low-text, .bank-text)')].map((l): [string, string] => [l.className, l.textContent ?? '']);
-        if (shown.length) lines.set(Number(s.dataset.seat), shown);
+      const seats: LastLive['seats'] = new Map();
+      for (const el of felt.current.querySelectorAll<HTMLElement>('.seat[data-seat]')) {
+        const seat = Number(el.dataset.seat);
+        const s = view.seats[seat];
+        if (!s) continue;
+        // Only lines that take room: the all-in stamp hides a seat's last move (.seat.all-in .last-action), not its clock.
+        const lines = [...el.querySelectorAll<HTMLElement>('.nameplate > :is(.last-action, .low-text, .bank-text)')]
+          .filter((l) => l.getClientRects().length > 0)
+          .map((l): [string, string] => [l.className, l.textContent ?? '']);
+        // The stamp, not the hand's history: a shove whose unmatched chips came back is no longer all in.
+        const allIn = el.classList.contains('all-in');
+        if (lines.length || allIn) seats.set(seat, { playerId: s.playerId, allIn, lines });
       }
-      seenLines.current = { hand: hand.handNumber, lines };
-    } else if (done && keptLines?.hand !== hand.handNumber) {
-      setKeptLines(seenLines.current?.hand === hand.handNumber ? seenLines.current : { hand: hand.handNumber, lines: new Map() });
+      seenLive.current = { hand: hand.handNumber, seats };
+    } else if (done) {
+      // Follows the last live view whenever it changes, as the replayer steps back to it and on to the result again. A
+      // result seen with no live view before it (the page opened then) keeps nothing. Set only when it differs, so the
+      // render it causes sets nothing more.
+      const next = seenLive.current?.hand === hand.handNumber ? seenLive.current : lastLive?.hand === hand.handNumber ? lastLive : { hand: hand.handNumber, seats: new Map() };
+      if (next !== lastLive) setLastLive(next);
     }
   });
-  // Seats that went all in this hand: their nameplate was the all-in stamp's width, which it keeps through the result.
-  const shoved = new Set(compact && hand ? hand.events.flatMap((e) => ((e.t === 'action' || e.t === 'post') && e.allIn ? [e.seat] : [])) : []);
   const ticking = !view.paused && (!!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline);
   // While paused the server sends each clock as the time left at the view's own moment, so it stands still.
   const clientNow = useNow(ticking) + skew;
@@ -1135,6 +1162,57 @@ export function Table({
   // Order of seats from the button, so the deal goes round the table.
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
+  // What a player who showed down and lost made. On a phone it goes on a tab over their nameplate (#455), on every seat
+  // but your own, and on yours too when the bar under the table names your hand: there the tab shows only on a phone on
+  // its side, where the bar leaves that line out (styles.css). With no such bar your nameplate names it, as before.
+  const shownOf = (s: SeatView, seat: number) => (done && !results.has(seat) && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null);
+  const ownLine = (seat: number) => compact && seat === view.me.seat && !barNamesHand;
+  const tabs = new Map<number, string>();
+  if (compact && done)
+    view.seats.forEach((s, seat) => {
+      const shown = s && !ownLine(seat) ? shownOf(s, seat) : null;
+      if (shown) tabs.set(seat, handKind(shown));
+    });
+  // Standing up, a bunched row's smaller cards end lower over the nameplate: the tab drops to meet their suits, not
+  // cover them (a suit ends 3 - 0.34 cw px from the nameplate's top). On its side a phone keeps the tab where it is.
+  const tabDrop = (seat: number) => {
+    const spot = seat === view.me.seat ? undefined : rowSpots[seat];
+    return spot?.margin !== undefined && spot.cw !== undefined ? Math.round(Math.max(5, Math.min(7, 15 - 0.34 * spot.cw)) * 100) / 100 : null;
+  };
+  // The dealer button is drawn over every seat, so a tab under it slides aside, away from it, just clear (below). That is
+  // worked out once for the result, and again only if the felt's size, the button's spot or the tabs change: a tab that
+  // moved doesn't move anything it was measured by, so nothing goes back and forth.
+  const button = hand && !stud && !notice ? buttonPoint(hand.button) : null;
+  const slideKey =
+    tabs.size && button
+      ? [hand!.handNumber, `${w}x${h}`, `${Math.round(button.x)},${Math.round(button.y)}`, ...[...tabs].map(([seat, text]) => `${seat}:${text}:${tabDrop(seat) ?? ''}:${Math.round(seatPoint(seat).x)},${Math.round(seatPoint(seat).y)}`)].join('|')
+      : '';
+  const [tabSlides, setTabSlides] = useState<TabSlides | null>(null);
+  useLayoutEffect(() => {
+    const el = felt.current;
+    // Measured with no tab slid: the render before this one applied none for this key.
+    if (!slideKey || tabSlides?.key === slideKey || !el) return;
+    const by = new Map<number, number>();
+    const dealer = el.querySelector<HTMLElement>('.dealer');
+    if (dealer) {
+      const zoom = feltZoom(el);
+      // Where the button and seats are headed, if they are still gliding there.
+      const d = headedFor(dealer, zoom)(dealer.getBoundingClientRect());
+      const screen = document.documentElement.clientWidth || window.innerWidth;
+      for (const tab of el.querySelectorAll<HTMLElement>('.shown-tab')) {
+        const seatEl = tab.closest<HTMLElement>('.seat[data-seat]');
+        // (Your own tab standing up isn't shown.)
+        if (!seatEl || !tab.getClientRects().length) continue;
+        const t = headedFor(seatEl, zoom)(tab.getBoundingClientRect());
+        if (Math.min(t.right, d.right) <= Math.max(t.left, d.left) || Math.min(t.bottom, d.bottom) <= Math.max(t.top, d.top)) continue;
+        // Away from the button's middle, by as much as it covers and 2px more, as far as the screen has room.
+        const slide = (d.left + d.right) / 2 > (t.left + t.right) / 2 ? -Math.min(t.right - d.left + 2, Math.max(0, t.left)) : Math.min(d.right - t.left + 2, Math.max(0, screen - t.right));
+        if (slide) by.set(Number(seatEl.dataset.seat), Math.round((slide / zoom) * 100) / 100);
+      }
+    }
+    setTabSlides({ key: slideKey, by });
+  });
+
   return (
     <div
       ref={felt}
@@ -1281,8 +1359,13 @@ export function Table({
           secondsLeft = Math.max(0, Math.ceil((view.turn.deadline - now) / 1000));
         }
         const badge = seatBadge(s, view.mode === 'tournament');
-        // On a phone, a player out of chips says so where their chips were (#455), instead of on a line or pill of its own.
-        const outMark = !compact ? null : s.departed ? 'Knocked out' : s.online && s.sittingOut && s.sitOutReason === 'busted' && s.stack === 0 ? 'Busted' : null;
+        // On a phone, a player who goes out says so where their chips were (#455), instead of on a line or pill of its own:
+        // "Busted" at the result of the hand they busted in, and from the next deal on, the Busted pill as before.
+        const busted = done && s.inHand && s.online && s.sittingOut && s.sitOutReason === 'busted' && s.stack === 0;
+        const outMark = !compact ? null : s.departed ? 'Knocked out' : busted ? 'Busted' : null;
+        // What this seat's nameplate showed in the hand's last live view, if the same player still sits there.
+        const seen = compact && done && lastLive?.hand === hand!.handNumber ? lastLive.seats.get(seat) : undefined;
+        const lastSeen = seen?.playerId === s.playerId ? seen : undefined;
         const classes = [
           'seat',
           pos.x < w * 0.18 ? 'edge-left' : pos.x > w * 0.82 ? 'edge-right' : '',
@@ -1297,7 +1380,7 @@ export function Table({
           s.cards.length > 4 && 'long-hand',
           s.departed && 'departed',
           s.departed === 'fading' && 'fading',
-          shoved.has(seat) && 'went-all-in',
+          lastSeen?.allIn && 'went-all-in',
           onSeatClick && !s.departed && 'host-click',
         ]
           .filter(Boolean)
@@ -1305,7 +1388,13 @@ export function Table({
         const pickable = isMe && !!discard;
         // What the felt shows only by its look (the glow on whoever is to act, the D button, dimmed folded cards), in words.
         const state = [acting && 'to act', live && s.folded && 'folded', hand && !stud && hand.button === seat && 'dealer'].filter(Boolean).join(', ');
-        const shown = done && !won && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null;
+        const shown = shownOf(s, seat);
+        // Named in the nameplate: on a computer, and on a phone your own hand when no bar names it (see shownOf), where
+        // it takes the place of the lines kept, as before #455.
+        const shownLine = !!shown && (!compact || ownLine(seat));
+        const tab = tabs.get(seat);
+        const drop = tab ? tabDrop(seat) : null;
+        const slide = tab && tabSlides?.key === slideKey ? tabSlides.by.get(seat) : undefined;
         // Cards come off the dealer button (stud has none, so the middle of the table).
         const toMiddle = fromVars(hand && !stud ? buttonPoint(hand.button) : center, pos);
         const muck = fromVars(lerp(pos, center, 0.5), pos);
@@ -1370,12 +1459,13 @@ export function Table({
                 <div className="stack">{outMark ? <span className="out-mark">{outMark}</span> : s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
                 {badge?.kind === 'info' && !outMark && <div className="status">{badge.text}</div>}
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
-                {compact && done && keptLines?.hand === hand!.handNumber && keptLines.lines.get(seat)?.map(([cls, text], i) => (
-                  <div key={`kept-${i}`} className={`${cls} kept`} aria-hidden="true">
-                    {text}
-                  </div>
-                ))}
-                {shown && !compact && <div className="status">{shown}</div>}
+                {!shownLine &&
+                  lastSeen?.lines.map(([cls, text], i) => (
+                    <div key={`kept-${i}`} className={`${cls} kept`} aria-hidden="true">
+                      {text}
+                    </div>
+                  ))}
+                {shownLine && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
                   <TurnLine
                     key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}:${skew}`}
@@ -1395,8 +1485,14 @@ export function Table({
                 )}
                 <SeatExtras view={view} seat={s} />
               </div>
-              {/* Not on your own seat: the bar under the table names your hand in full. */}
-              {compact && shown && !isMe && <div className="shown-tab">{handKind(shown)}</div>}
+              {tab && (
+                <div
+                  className={`shown-tab${isMe ? ' mine' : ''}`}
+                  style={drop !== null || slide ? ({ ...(drop !== null ? { '--tab-drop': `${drop}px` } : {}), ...(slide ? { '--tab-slide': `${slide}px` } : {}) } as CSSProperties) : undefined}
+                >
+                  {tab}
+                </div>
+              )}
               {won && <div className="win-float">+{fmt(won.amount)}</div>}
             </div>
             {s.bet > 0 && (
