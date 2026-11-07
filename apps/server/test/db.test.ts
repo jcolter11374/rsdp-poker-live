@@ -34,6 +34,8 @@ describe('createDb', () => {
       'player_tokens',
       'players',
       'practice_resets',
+      'push_keys',
+      'push_subscriptions',
       'saved_setups',
       'sessions',
       'settings_changes',

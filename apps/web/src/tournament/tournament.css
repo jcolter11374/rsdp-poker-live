@@ -18,10 +18,11 @@
 .tn-hero { background: var(--felt); box-shadow: inset 0 0 0 6px var(--felt-edge); border-radius: 14px; padding: 18px 16px; text-align: center; }
 .tn-hero p { margin: 2px 0; }
 .tn-hero.tn-on-break { background: #6b5214; box-shadow: inset 0 0 0 6px #574210; }
-.tn-hero-label { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; color: #d7e6dd; }
+/* Light enough on the green and the gold to read, at least 4.5:1 (WCAG AA). */
+.tn-hero-label { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; color: #f0f6f2; }
 .tn-hero-main { font-size: clamp(2.4rem, 12vw, 4rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .tn-hero-blinds { font-size: 1.25rem; font-weight: 600; }
-.tn-hero .muted { color: #c3d6cb; }
+.tn-hero .muted { color: #f0f6f2; }
 
 .tn-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .tn-stats div { background: var(--panel); border-radius: 10px; padding: 8px 12px; min-width: 0; }
@@ -198,6 +199,8 @@
 .tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
 .tn-alerts.on { border-color: var(--good); color: var(--good); }
 .tn-list-head .tn-alerts { margin-left: auto; }
+.tn-alerts-help { font-size: 0.85rem; max-width: 34em; }
+.tn-list-head .tn-alerts-help { margin-left: auto; }
 
 /* Season leaderboard */
 .tn-scroll { overflow-x: auto; margin: 0 -4px; }
@@ -231,6 +234,8 @@
 .tn-chat-tools button { min-height: 32px; min-width: 48px; padding: 4px 10px; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.8rem; line-height: 1.2; }
 /* On a phone they go under the message, so a name and its words stay together; with more room, beside the name. */
 .tn-chat-list li > .tn-chat-tools { grid-column: 1 / -1; margin: 4px 0 2px; }
+/* On your own message's redder background, the time and the buttons are a little lighter, to stay above 4.5:1. */
+.tn-chat-list li.mine .muted, .tn-chat-list li.mine .tn-chat-tools button { color: #a3acb6; }
 @media (min-width: 601px) {
   .tn-chat-meta { grid-column: 1; }
   .tn-chat-list li > .tn-chat-tools { grid-column: 2; grid-row: 1; margin: 0 0 2px; }
