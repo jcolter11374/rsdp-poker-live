@@ -95,10 +95,11 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
       const rows: Record<string, number> = {};
       for (const table of tables) {
         rows[table] = 0;
-        // First where each row is and how big its JSON is, read in fetches of about PAGE_BYTES of JSON with a breath
-        // between them. Then the rows, a page at a time: a run of neighbouring rows whose JSON fits in PAGE_BYTES,
-        // read as a ctid range. All of it inside this one snapshot, where a row's ctid can't change. Nothing sorts
-        // the rows' JSON, so a big table needs no temporary files, and no one query holds the server for long.
+        // First where each row is and how big its JSON is, in small fetches with a breath between them (sized as
+        // SIZE_FETCH says: one fetch is at most SIZE_FETCH of the biggest rows). Then the rows, a page at a time: a
+        // run of neighbouring rows whose JSON fits in PAGE_BYTES, read as a ctid range. All of it inside this one
+        // snapshot, where a row's ctid can't change. Nothing sorts the rows' JSON, so a big table needs no temporary
+        // files.
         const found: { block: number; item: number; size: number }[] = [];
         await tx.execute(sql.raw(`declare backup_sizes no scroll cursor for select ctid::text as c, octet_length(row_to_json(t)::text) as n from ${ident(table)} t`));
         for (let fetch = SIZE_FIRST; ; ) {
