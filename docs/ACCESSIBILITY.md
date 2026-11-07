@@ -48,8 +48,9 @@ yet tried it with a real screen reader; see "Known and left".
 - **Dialogs and phone sheets** didn't take the keyboard with them: focus
   stayed behind, Tab wandered to the page underneath, and nothing put focus
   back when they closed. Now every dialog, phone sheet and the hand replayer
-  takes focus when it opens, keeps Tab inside, and hands focus back to the
-  button that opened it.
+  (even its "can't be replayed" box) takes focus when it opens, keeps Tab
+  inside, and hands focus back to the button that opened it, or to the menu
+  button when it was opened from the phone's menu.
 - **Boxes that scroll** (code and tables on the fairness, privacy and terms
   pages on a phone, and the table's log) couldn't be scrolled from the
   keyboard. Tab now stops on them while they scroll, so the arrow keys work.
@@ -119,6 +120,12 @@ rules. Any serious or critical problem fails the run. It also checks that a
 screen reader is told "Your turn". Until the table's colours are changed,
 the colour-contrast rule is left out on the table only (`TABLE` in the
 smoke test).
+
+The upgrade rehearsal (`.github/workflows/upgrade.yml`) runs `main`'s copy
+of the smoke test against `main`'s image, only to make data. It sets
+`SMOKE_A11Y=report`, so accessibility problems there are printed, not failed
+on: a newer axe in a release could flag what is already live, and that
+release can't change it. CI's own run of the smoke test still fails on them.
 
 To look at a page yourself on a local copy (`npm run build && npm start`):
 open it in Chrome, and run axe from its browser extension, or Lighthouse's

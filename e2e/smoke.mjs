@@ -7,6 +7,7 @@
 //
 // Screenshots go to e2e/out/. Any console error fails the run, and so does a
 // serious or critical accessibility problem on the main pages (docs/ACCESSIBILITY.md).
+// SMOKE_A11Y=report prints the accessibility problems instead of failing on them.
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -27,6 +28,14 @@ const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
 const a11y = [];
+// Only the upgrade rehearsal (upgrade.yml) sets SMOKE_A11Y=report. It runs main's copy of this test, with the newer
+// axe and Playwright a release brings, against main's image: a new rule there could flag what is already live, which
+// that release can't change, though the data it makes is fine. CI's own smoke test always fails on these problems.
+const A11Y = process.env.SMOKE_A11Y || 'fail';
+if (A11Y !== 'fail' && A11Y !== 'report') {
+  console.error(`SMOKE_A11Y is "fail" (the default) or "report", not "${A11Y}"`);
+  process.exit(1);
+}
 
 const browser = await chromium.launch();
 
@@ -37,6 +46,19 @@ const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
  * changing the table's look waits for John's before-and-after OK (D21). Take it out with that change.
  */
 const TABLE = { skip: ['color-contrast'] };
+
+/**
+ * An accessibility check that isn't axe's (a screen reader hears "Your turn"). Failing, it fails the run at once,
+ * or with SMOKE_A11Y=report it is noted with axe's problems.
+ */
+async function a11yCheck(label, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    if (A11Y !== 'report') throw e;
+    a11y.push(`${label}: ${e.message.split('\n')[0]}`);
+  }
+}
 
 /**
  * Checks the page as it is now with axe, and notes every serious or critical problem; any fails the run at the end.
@@ -50,10 +72,12 @@ async function checkA11y(page, label, { skip = [] } = {}) {
     });
     return Promise.race([Promise.all(short.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 4000))]);
   });
-  const result = await new AxeBuilder({ page }).withTags(WCAG_AA).disableRules(skip).analyze();
-  for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
-    a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
-  }
+  await a11yCheck(`${label} (axe)`, async () => {
+    const result = await new AxeBuilder({ page }).withTags(WCAG_AA).disableRules(skip).analyze();
+    for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
+      a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
+    }
+  });
 }
 
 async function open(label, viewport = { width: 1280, height: 860 }) {
@@ -159,7 +183,7 @@ try {
     await first.waitForTimeout(300);
     for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
     // A screen reader hears that it's their turn, from a region nobody sees.
-    await first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' });
+    await a11yCheck('table, your turn (read aloud)', () => first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' }));
     await checkA11y(first, 'table, your turn', TABLE);
     await checkA11y(first === host ? guest : host, 'table, waiting to act', TABLE);
     const watcher = await open('cash spectator');
@@ -526,7 +550,11 @@ try {
   await new Promise((r) => setTimeout(r, 2000));
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
-  if (a11y.length) throw new Error(`accessibility problems (docs/ACCESSIBILITY.md says how to check them):\n${a11y.join('\n')}`);
+  if (a11y.length) {
+    const found = `accessibility problems (docs/ACCESSIBILITY.md says how to check them):\n${a11y.join('\n')}`;
+    if (A11Y !== 'report') throw new Error(found);
+    console.warn(`${found}\nSMOKE_A11Y=report: reported, not failed.`);
+  }
   console.log('smoke test passed');
 } catch (e) {
   console.error('smoke test FAILED:', e.message);

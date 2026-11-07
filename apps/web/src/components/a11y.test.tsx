@@ -2,6 +2,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { HandRecordView } from '@rsdp/engine/wire';
+import { Replayer } from './Replayer';
 import { useScrollReach } from './scrollReach';
 import { Modal } from './SeatDialog';
 import { Sheet } from './Sheet';
@@ -16,6 +18,9 @@ vi.mock('../socket', () => ({
   currentSession: () => null,
   onSession: () => () => {},
 }));
+
+// A replay that breaks is reported to the server; not from here.
+vi.mock('../reportError', async (actual) => ({ ...(await actual<typeof import('../reportError')>()), reportError: vi.fn() }));
 
 beforeAll(() => {
   // jsdom has no layout: the table measures itself with these, and gets nothing back.
@@ -42,6 +47,26 @@ function Opener({ autoFocus = false, sheet = false }: { autoFocus?: boolean; she
           <input aria-label="Note" autoFocus={autoFocus} />
           <button onClick={() => setOpen(false)}>Save</button>
         </Box>
+      )}
+    </>
+  );
+}
+
+/** The phone's menu: a sheet whose How to play button closes it and opens its own dialog, in the same click. */
+function MenuThenDialog() {
+  const [open, setOpen] = useState<'menu' | 'rules' | null>(null);
+  return (
+    <>
+      <button onClick={() => setOpen('menu')}>Menu</button>
+      {open === 'menu' && (
+        <Sheet title="Menu" onClose={() => setOpen(null)}>
+          <button onClick={() => setOpen('rules')}>How to play</button>
+        </Sheet>
+      )}
+      {open === 'rules' && (
+        <Modal title="Rules" onClose={() => setOpen(null)}>
+          <button onClick={() => setOpen(null)}>Done</button>
+        </Modal>
       )}
     </>
   );
@@ -95,6 +120,51 @@ describe('dialogs and the keyboard', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
     tab(true);
     expect(document.activeElement).toBe(screen.getByText('Save'));
+  });
+
+  it('gives focus back to the menu button when a dialog opened from the menu sheet closes', () => {
+    render(<MenuThenDialog />);
+    const menu = screen.getByText('Menu');
+    menu.focus();
+    fireEvent.click(menu);
+    const rules = screen.getByText('How to play');
+    rules.focus();
+    fireEvent.click(rules);
+    expect(screen.queryByRole('dialog', { name: 'Menu' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Rules' }));
+    // The button that opened it went with the sheet: focus goes where the sheet would have put it back.
+    fireEvent.click(screen.getByText('Done'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(menu);
+  });
+
+  it("treats the replayer's \"can't be replayed\" box as a dialog too", () => {
+    // React reports the error it caught; the replayer shows its fallback instead.
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      function Page() {
+        const [open, setOpen] = useState(false);
+        return (
+          <>
+            <button onClick={() => setOpen(true)}>Replay</button>
+            {open && <Replayer hands={[{} as HandRecordView]} start={0} tableName="Poker night" seatCount={6} myId="p0" fmt={String} onClose={() => setOpen(false)} />}
+          </>
+        );
+      }
+      render(<Page />);
+      const opener = screen.getByText('Replay');
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = screen.getByRole('dialog', { name: 'Hand replay' });
+      expect(dialog.textContent).toContain('can’t be replayed');
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+      expect(document.activeElement).toBe(dialog);
+      fireEvent.click(screen.getByText('Close'));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });
 

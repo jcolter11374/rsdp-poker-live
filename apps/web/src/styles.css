@@ -286,8 +286,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 
 .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-/* A side panel's heading is an h2 under the table's name (the page's h1), the size an h3 always was here. */
-.panel h2, .panel h3 { margin: 0; font-size: 1rem; }
+/* A side panel's heading is an h2 under the table's name (the page's h1), the size an h3 always was here. Only the
+   panel's own: a dialog opened inside a panel (Share hand, in the side panel) keeps a dialog title's size. */
+.panel > h2, .panel h3 { margin: 0; font-size: 1rem; }
 .request { display: flex; gap: 6px; align-items: center; background: var(--panel-2); padding: 6px 8px; border-radius: 8px; }
 .request span { flex: 1; font-size: 0.85rem; }
 .settings input { padding: 6px; }

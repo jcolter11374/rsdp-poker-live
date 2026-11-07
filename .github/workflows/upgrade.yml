@@ -52,10 +52,13 @@ jobs:
           docker run -d --name rsdp-live -p 3001:8080 -v rsdp-data:/data -e ADMIN_KEY rsdp-live
           for _ in $(seq 1 60); do curl -sf "$SITE/api/health" && exit 0; sleep 1; done
           docker logs rsdp-live; exit 1
+      # Accessibility problems are printed, not failed on: a newer axe here could flag main's image, which this
+      # pull request can't change. CI's smoke test fails on them, so they're caught before main.
       - name: Make data with main's own smoke test
         run: node live/e2e/smoke.mjs
         env:
           BASE_URL: ${{ env.SITE }}
+          SMOKE_A11Y: report
       - name: Save what main answers, and a copy of its public record
         run: |
           mkdir -p rehearsal

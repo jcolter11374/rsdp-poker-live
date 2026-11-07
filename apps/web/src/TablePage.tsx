@@ -750,6 +750,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
+        {/* `view`, never `live`: in an all-in runout it says each card only as it lands on the felt (announce.test.ts). */}
         <QuietBoundary>
           <TableAnnouncer view={view} fmt={feltFmt} skew={skew} preQueued={preQueued} />
         </QuietBoundary>

@@ -24,15 +24,22 @@ class ReplayBoundary extends Component<{ onClose: () => void; children: ReactNod
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return (
-      <div className="replayer-backdrop" onClick={this.props.onClose}>
-        <div className="replayer" role="dialog" aria-label="Hand replay">
-          <p>This hand can’t be replayed.</p>
-          <button onClick={this.props.onClose}>Close</button>
-        </div>
-      </div>
-    );
+    return <ReplayFailed onClose={this.props.onClose} />;
   }
+}
+
+/** In place of a replay that broke: a dialog like any other, so focus moves in and goes back when it closes. */
+function ReplayFailed({ onClose }: { onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
+  return (
+    <div className="replayer-backdrop" onClick={onClose}>
+      <div ref={box} className="replayer" role="dialog" aria-modal="true" aria-label="Hand replay" tabIndex={-1}>
+        <p>This hand can’t be replayed.</p>
+        <button onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
 }
 
 export function Replayer(props: Parameters<typeof ReplayerView>[0]) {

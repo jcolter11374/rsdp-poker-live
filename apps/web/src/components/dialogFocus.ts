@@ -11,17 +11,34 @@ export function tabStops(root: HTMLElement): HTMLElement[] {
 const topDialog = () => [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')].at(-1) ?? null;
 
 /**
+ * Where each open dialog gives focus back to, first choice first: what opened it; when that was inside another
+ * dialog, that dialog, then where that one gives focus back to. A button in the phone's menu sheet closes the sheet
+ * as it opens its own dialog, so when that dialog closes, focus goes back to the menu button that opened the sheet.
+ */
+const returnTo = new WeakMap<HTMLElement, HTMLElement[]>();
+
+/** What has focus now, and if it is inside a dialog, that dialog and where it gives focus back to. */
+function openerChain(): HTMLElement[] {
+  if (typeof document === 'undefined' || !(document.activeElement instanceof HTMLElement)) return [];
+  const opener = document.activeElement;
+  const within = opener.closest<HTMLElement>('[aria-modal="true"]');
+  return within ? [opener, ...(within === opener ? [] : [within]), ...(returnTo.get(within) ?? [])] : [opener];
+}
+
+/**
  * Keyboard and screen-reader manners for a dialog (Modal, Sheet, the replayer): focus moves in when it opens, Tab and
  * Shift+Tab go round inside it and never reach the page behind, and focus goes back to whatever opened it when it
  * closes. Something inside that already took focus (an autoFocus box) keeps it; otherwise the dialog box itself takes
  * it, so a screen reader starts reading at its title. The dialog element needs tabIndex={-1} and aria-modal.
  */
 export function useDialogFocus(ref: RefObject<HTMLElement>) {
-  // Read while rendering, before an autoFocus inside the dialog moves focus away from the opener.
-  const [opener] = useState(() => (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  // Read while rendering, before an autoFocus inside the dialog moves focus away from the opener, and while a dialog
+  // the same click closes is still in the page.
+  const [openers] = useState(openerChain);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
+    returnTo.set(dialog, openers);
     if (!dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       // A dialog with its own Tab order inside (the coach's Why sheet) may have dealt with the key already.
@@ -42,10 +59,12 @@ export function useDialogFocus(ref: RefObject<HTMLElement>) {
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      // Back to the opener, unless it has gone (a Sit button whose seat was just taken) or focus has already moved on
+      // Back to the opener, or if it went with a dialog that closed, to where that dialog would have given it back.
+      // Not when the opener has gone for good (a Sit button whose seat was just taken), or focus has already moved on
       // to something else outside, such as another dialog opened from this one.
       const lost = !document.activeElement || document.activeElement === document.body || dialog.contains(document.activeElement);
-      if (lost && opener?.isConnected) opener.focus({ preventScroll: true });
+      const back = openers.find((el) => el.isConnected);
+      if (lost && back) back.focus({ preventScroll: true });
     };
   }, []);
 }
