@@ -30,6 +30,7 @@ _Hands left in each game_
 ### Fixed and changed
 
 - Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
+- Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
 
 ## [2026.11.07.2] - 2026-11-07
 
