@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { appendTournamentLog, deleteTournamentLogItem, recentTournamentLog, type Db } from '../db';
+import { appendTournamentLog, deleteTournamentLogItem, findTournamentLogItem, recentTournamentLog, type Db, type TournamentLogRow } from '../db';
 import type { LobbyItem } from '@rsdp/tournament';
 
 /** Where lobby chat and the public event log are kept. */
@@ -7,6 +7,8 @@ export interface LobbyStore {
   append(tournamentId: string, items: LobbyItem[]): Promise<void>;
   /** The latest `limit` items, oldest first. */
   recent(tournamentId: string, limit: number): Promise<LobbyItem[]>;
+  /** One item by its id, however old, or null. */
+  find(tournamentId: string, itemId: string): Promise<LobbyItem | null>;
   /** Deletes one item for good. */
   remove(tournamentId: string, itemId: string): Promise<void>;
 }
@@ -25,11 +27,17 @@ export function memoryLobbyStore(): LobbyStore {
     async recent(id, limit) {
       return structuredClone((rows.get(id) ?? []).slice(-limit));
     },
+    async find(id, itemId) {
+      return structuredClone((rows.get(id) ?? []).find((x) => x.id === itemId) ?? null);
+    },
     async remove(id, itemId) {
       rows.set(id, (rows.get(id) ?? []).filter((x) => x.id !== itemId));
     },
   };
 }
+
+type Stored = Omit<LobbyItem, 'id' | 'at'>;
+const fromRow = (r: TournamentLogRow<Stored>) => ({ ...r.item, id: r.itemId, at: r.at.getTime() }) as LobbyItem;
 
 export function dbLobbyStore(db: Db): LobbyStore {
   return {
@@ -41,7 +49,11 @@ export function dbLobbyStore(db: Db): LobbyStore {
       );
     },
     async recent(id, limit) {
-      return (await recentTournamentLog<Omit<LobbyItem, 'id' | 'at'>>(db, id, limit)).map((r) => ({ ...r.item, id: r.itemId, at: r.at.getTime() }) as LobbyItem);
+      return (await recentTournamentLog<Stored>(db, id, limit)).map(fromRow);
+    },
+    async find(id, itemId) {
+      const row = await findTournamentLogItem<Stored>(db, id, itemId);
+      return row && fromRow(row);
     },
     async remove(id, itemId) {
       await deleteTournamentLogItem(db, id, itemId);
@@ -105,6 +117,18 @@ export class LobbyLog {
     this.saving.set(tournamentId, saved);
     await next;
     return items;
+  }
+
+  /**
+   * One item: from the list in memory, or else from storage, which also holds those too old for the list (a browser
+   * that has had the lobby open a long while still shows them). Null when it is not there at all.
+   */
+  async find(tournamentId: string, itemId: string): Promise<LobbyItem | null> {
+    const recent = (await this.items(tournamentId)).find((x) => x.id === itemId);
+    if (recent) return recent;
+    // After the saves and deletions under way, so storage agrees with the list in memory.
+    await this.saving.get(tournamentId);
+    return this.store.find(tournamentId, itemId);
   }
 
   /**

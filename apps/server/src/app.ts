@@ -1836,7 +1836,8 @@ export function createApp(deps: AppDeps = {}) {
           const itemId = String(input?.itemId ?? '');
           const live = await tournaments.get(id);
           if (!live) throw new ActionError('tournament not found');
-          const item = (await lobby.items(id)).find((x) => x.id === itemId);
+          // Ids are short; a long one was never a message.
+          const item = itemId && itemId.length <= 64 ? await lobby.find(id, itemId) : null;
           if (item?.kind !== 'chat') throw new ActionError('that message is already gone');
           const refused = chatModerationRefusal(live.state, me, item.playerId);
           if (refused) throw new ActionError(refused);

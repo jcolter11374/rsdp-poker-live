@@ -235,7 +235,9 @@ authority (in the UK, the ICO).
 - **As a guest:** clear the site's data in your browser to start fresh. To
   have anything removed from the server, ask John.
 - **Anything else** (a chat message, a name in an old hand or tournament, a suggestion): ask
-  John. A tournament's host can also delete a message from its lobby chat. He'll tell you honestly what can be removed and what can't.
+  John. He'll tell you honestly what can be removed and what can't. A
+  tournament's host (or a co-host they let manage chat) can also delete a
+  message from its lobby chat.
 - **What can't be deleted:** the public record. It is built so that nothing
   in it can be changed or removed, which is the point of it. It holds no
   names, cards or table links: your entries there are fingerprints and

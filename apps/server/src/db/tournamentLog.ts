@@ -25,6 +25,16 @@ export async function recentTournamentLog<T = unknown>(db: Db, tournamentId: str
   return (rows as TournamentLogRow<T>[]).reverse();
 }
 
+/** One lobby item by its id, however old, or null. */
+export async function findTournamentLogItem<T = unknown>(db: Db, tournamentId: string, itemId: string): Promise<TournamentLogRow<T> | null> {
+  const [row] = await db
+    .select({ itemId: tournamentLog.itemId, at: tournamentLog.at, item: tournamentLog.item })
+    .from(tournamentLog)
+    .where(and(eq(tournamentLog.tournamentId, tournamentId), eq(tournamentLog.itemId, itemId)))
+    .limit(1);
+  return (row as TournamentLogRow<T> | undefined) ?? null;
+}
+
 /** Deletes one lobby item for good (a chat message the host deleted). */
 export async function deleteTournamentLogItem(db: Db, tournamentId: string, itemId: string): Promise<void> {
   await db.delete(tournamentLog).where(and(eq(tournamentLog.tournamentId, tournamentId), eq(tournamentLog.itemId, itemId)));

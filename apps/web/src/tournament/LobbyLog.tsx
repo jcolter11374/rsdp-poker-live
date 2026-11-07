@@ -37,6 +37,8 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
   // The server checks all of this again; these only decide which buttons to show.
   const moderator = !!me && chatModerationRefusal(state, me) === null;
   const mayModerate = (playerId: string) => !!me && chatModerationRefusal(state, me, playerId) === null;
+  // Nobody unmutes themselves but the host, so a co-host the host muted stays muted.
+  const mayUnmute = (playerId: string) => mayModerate(playerId) && (playerId !== me || me === state.hostId);
   const muted = (moderator && state.lobbyChat?.muted) || [];
   const nameOf = (playerId: string) => [...all].reverse().find((m) => m.playerId === playerId)?.name ?? namesIn(state)(playerId);
   // Only people from this lobby: the list is kept for every table and lobby.
@@ -78,7 +80,7 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
     }
   };
 
-  /** Beside a message: hide its writer (just for me) and, for the host, mute them or delete it for everyone. */
+  /** With a message: hide its writer (just for me) and, for the host, mute them or delete it for everyone. */
   const tools = (m: ChatItem) => {
     const theirs = m.playerId !== me;
     const mod = mayModerate(m.playerId);
@@ -92,7 +94,11 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
           </button>
         )}
         {theirs && mod && (
-          <button type="button" title={isMuted ? `Let ${m.name} chat here again` : `Stop ${m.name} chatting here`} onClick={() => act(tournamentClient().chatMute(id, m.playerId, !isMuted))}>
+          <button
+            type="button"
+            title={isMuted ? `Let ${m.name} chat here again` : `Stop ${m.name} chatting here`}
+            onClick={() => (isMuted || confirm(`Mute ${m.name} for everyone? They can still read this chat, but not send to it.`)) && act(tournamentClient().chatMute(id, m.playerId, !isMuted))}
+          >
             {isMuted ? 'Unmute' : 'Mute'}
           </button>
         )}
@@ -122,9 +128,9 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
             <li key={m.id} className={m.playerId === me ? 'mine' : ''}>
               <span className="tn-chat-meta">
                 <b>{m.name}</b> <span className="muted">{time(m.at)}</span>
-                {tools(m)}
               </span>
               <span className="tn-chat-text">{m.text}</span>
+              {tools(m)}
             </li>
           ))}
         </ol>
@@ -143,11 +149,16 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
       {muted.length > 0 && (
         <p className="tn-chat-tools muted">
           Muted for everyone:{' '}
-          {muted.map((p) => (
-            <button key={p} type="button" title="Let them chat here again" onClick={() => act(tournamentClient().chatMute(id, p, false))}>
-              {nameOf(p)} ✕
-            </button>
-          ))}
+          {muted.map((p) =>
+            mayUnmute(p) ? (
+              <button key={p} type="button" title="Let them chat here again" onClick={() => act(tournamentClient().chatMute(id, p, false))}>
+                {nameOf(p)} ✕
+              </button>
+            ) : (
+              // Only the host unmutes a co-host, this one included.
+              <span key={p}>{nameOf(p)}</span>
+            ),
+          )}
         </p>
       )}
       {!off && !mutedByHost && (

@@ -317,7 +317,9 @@ export class TournamentManager {
     const live = await this.chatLive(id);
     // Player ids are short; anything else is not someone who could have chatted.
     if (!playerId || playerId.length > 64) throw new ActionError('pick a player');
-    if (playerId === me) throw new ActionError("you can't mute yourself");
+    if (playerId === me && value) throw new ActionError("you can't mute yourself");
+    // Only the host is above everyone's mutes; a co-host the host muted stays muted until the host says otherwise.
+    if (playerId === me && me !== live.state.hostId) throw new ActionError('only the host can unmute you');
     const refused = chatModerationRefusal(live.state, me, playerId);
     if (refused) throw new ActionError(refused);
     const muted = live.state.lobbyChat?.muted ?? [];
@@ -883,9 +885,13 @@ export class TournamentManager {
         // A replayed edit is already in the table's snapshot, which may be a hand further on.
         if (e.applied && !live.replay) this.table(live, e.tableId)?.tournamentSetStack(e.playerId, e.stack);
         break;
-      case 'hostChanged':
+      case 'hostChanged': {
         for (const rt of live.tables.values()) rt.state.hostId = e.hostId;
+        // Nobody acts on the host's chat but the host, so a player muted in the lobby is unmuted on taking it over.
+        const muted = live.state.lobbyChat?.muted;
+        if (muted?.includes(e.hostId)) live.state = { ...live.state, lobbyChat: { ...live.state.lobbyChat, muted: muted.filter((p) => p !== e.hostId) } };
         break;
+      }
       case 'tableBroken': {
         const rt = this.table(live, e.tableId);
         if (rt) {

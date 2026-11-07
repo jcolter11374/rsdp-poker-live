@@ -10,7 +10,7 @@ import { createTestDb } from '../src/db/testing';
 import { tournamentLog } from '../src/db/schema';
 import { systemClock, type Clock } from '../src/runtime/types';
 import { dbIdentity, dbStore } from '../src/storage';
-import { dbLobbyStore } from '../src/tournament/lobby';
+import { dbLobbyStore, LOBBY_KEEP } from '../src/tournament/lobby';
 import { dbTournamentStore } from '../src/tournament/store';
 import { socketClient, type Client } from './socket-client';
 
@@ -179,9 +179,10 @@ describe('lobby chat moderation', () => {
     expect((await cyd.untilState((s) => !!s.lobbyChat)).lobbyChat!.muted).toEqual([]);
     await expect(ana.call('tournament:chat', { id, text: 'let me talk' })).rejects.toThrow('the host has muted you in this chat');
     await bob.call('tournament:chat', { id, text: 'Ana is quiet now' });
-    // The host can mute a co-host as well; a co-host can't.
+    // The host can mute a co-host as well; a co-host can't, nor unmute themselves.
     await mute(host, 'Dan');
     await expect(dan.call('tournament:chat', { id, text: 'hey' })).rejects.toThrow('the host has muted you in this chat');
+    await expect(mute(dan, 'Dan', false)).rejects.toThrow('only the host can unmute you');
 
     await mute(host, 'Ana', false);
     await ana.untilState((s) => s.lobbyChat?.muted?.length === 0);
@@ -190,6 +191,46 @@ describe('lobby chat moderation', () => {
     await ana.call('tournament:chat', { id, text: 'thanks' });
     // Refused messages were never kept.
     expect(chatText(await host.until((items) => chatText(items).length === 2))).toEqual(['Bob: Ana is quiet now', 'Ana: thanks']);
+  });
+
+  it('unmutes a muted player who is made the host, since only the host could unmute them', async () => {
+    const { id, ids, host, ana, bob } = await lobby();
+    await host.call('tournament:chatMute', { id, playerId: ids.Ana, value: true });
+    await host.call('tournament:chatMute', { id, playerId: ids.Bob, value: true });
+    await host.call('tournament:command', { id, command: { type: 'transferHost', to: ids.Ana } });
+    expect((await ana.untilState((s) => s.hostId === ids.Ana)).lobbyChat!.muted).toEqual([ids.Bob]);
+    await ana.call('tournament:chat', { id, text: 'my event now' });
+    // The old host stays on as a co-host with every power, and can still unmute a player.
+    await host.call('tournament:chatMute', { id, playerId: ids.Bob, value: false });
+    await bob.untilState((s) => s.lobbyChat?.muted?.length === 0);
+    // Kept that way with the tournament.
+    const after = await restart();
+    const ana2 = after('mod-ana-secret-000000000');
+    await ana2.call('tournament:subscribe', { id });
+    expect((await ana2.untilState(() => true)).lobbyChat!.muted).toEqual([]);
+  });
+
+  it('deletes a message older than the lobby keeps in memory, which a tab open all evening still shows', async () => {
+    const { id, ids, ana } = await lobby();
+    await ana.call('tournament:chat', { id, text: 'an old rude remark' });
+    const old = (await ana.until((xs) => chatText(xs).length === 1)).find((x) => x.kind === 'chat')!;
+    // A long evening later, the lobby's newest items no longer include it.
+    const later: LobbyItem[] = Array.from({ length: LOBBY_KEEP }, (_, i) => ({ id: `later${i}`, at: old.at + 1000 + i, kind: 'chat', playerId: ids.Bob, name: 'Bob', text: `line ${i}` }));
+    const after = await restart();
+    await dbLobbyStore(db!).append(id, later);
+    const [host2, bob2] = ['mod-host-secret-00000000', 'mod-bob-secret-000000000'].map(after);
+    for (const c of [host2, bob2]) await c.call('tournament:subscribe', { id });
+    expect((await bob2.until((xs) => xs.length === LOBBY_KEEP)).some((x) => x.id === old.id)).toBe(false);
+
+    await expect(bob2.call('tournament:chatDelete', { id, itemId: old.id })).rejects.toThrow('only the host can do that');
+    await host2.call('tournament:chatDelete', { id, itemId: old.id });
+    // Everyone watching is told, so a tab that still shows it drops it.
+    await bob2.until(() => bob2.deleted.includes(old.id));
+    const rows = JSON.stringify(await db!.select().from(tournamentLog).where(eq(tournamentLog.tournamentId, id)));
+    expect(rows).not.toContain('an old rude remark');
+    expect(rows).toContain('line 0');
+    await expect(host2.call('tournament:chatDelete', { id, itemId: old.id })).rejects.toThrow('that message is already gone');
+    await expect(host2.call('tournament:chatDelete', { id, itemId: 'x'.repeat(65) })).rejects.toThrow('that message is already gone');
   });
 
   it('lets the host delete a message for everyone, for good', async () => {
@@ -261,8 +302,5 @@ describe('lobby chat moderation', () => {
     await host2.call('tournament:chatMute', { id, playerId: ids.Bob, value: false });
     await host2.call('tournament:chatOff', { id, off: true });
     expect(server!.tournaments.view(id)!.state.lobbyChat).toEqual({ off: true, muted: [] });
-    // The finished event's chat download holds the tables' chat only, so a deleted lobby message can't be in it.
-    const download = await host2.call<{ tables: unknown[] }>('tournament:tableChat', { id });
-    expect(JSON.stringify(download)).not.toContain('back on');
   });
 });

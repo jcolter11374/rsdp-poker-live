@@ -72,6 +72,7 @@ describe('lobby chat', () => {
     expect(message('welcome').queryByRole('button', { name: 'Delete' })).toBeNull();
 
     fireEvent.click(message('hi all').getByRole('button', { name: 'Mute' }));
+    expect(window.confirm).toHaveBeenCalledWith('Mute Ana for everyone? They can still read this chat, but not send to it.');
     expect(server.chatMute).toHaveBeenCalledWith('T', 'ana', true);
     fireEvent.click(message('hi all').getByRole('button', { name: 'Delete' }));
     expect(window.confirm).toHaveBeenCalledWith('Delete this message for everyone?');
@@ -80,11 +81,13 @@ describe('lobby chat', () => {
     expect(server.chatOff).toHaveBeenCalledWith('T', true);
   });
 
-  it('deletes nothing when the host thinks better of it', () => {
+  it('mutes and deletes nothing when the host thinks better of it', () => {
     vi.mocked(window.confirm).mockReturnValue(false);
     show('host');
     fireEvent.click(message('welcome').getByRole('button', { name: 'Delete' }));
     expect(server.chatDelete).not.toHaveBeenCalled();
+    fireEvent.click(message('hi all').getByRole('button', { name: 'Mute' }));
+    expect(server.chatMute).not.toHaveBeenCalled();
   });
 
   it('says the host turned chat off, and takes the message box away', () => {
@@ -116,6 +119,20 @@ describe('lobby chat', () => {
     expect(screen.getByText(/Muted for everyone/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Ana ✕' }));
     expect(server.chatMute).toHaveBeenCalledWith('T', 'ana', false);
+    // Letting someone talk again needs no second thought.
+    fireEvent.click(message('hi all').getByRole('button', { name: 'Unmute' }));
+    expect(server.chatMute).toHaveBeenCalledTimes(2);
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  it('offers a co-host an unmute only for those they may unmute', () => {
+    // The host muted Ana and Dan, a co-host: Dan may let Ana talk again, but not himself.
+    show('dan', { muted: ['ana', 'dan'] });
+    expect(screen.getByText('The host has muted you in this chat.')).toBeTruthy();
+    const list = within(screen.getByText(/Muted for everyone/));
+    expect(list.getByRole('button', { name: 'Ana ✕' })).toBeTruthy();
+    expect(list.queryByRole('button', { name: /Dan/ })).toBeNull();
+    expect(list.getByText('Dan')).toBeTruthy();
   });
 
   it('shows the server’s reason when it refuses', async () => {
