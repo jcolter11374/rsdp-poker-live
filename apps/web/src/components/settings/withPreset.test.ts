@@ -47,4 +47,15 @@ describe('seats that fit every game', () => {
     expect(seatsThatFit(preset(10, undefined, false)).table.maxSeats).toBe(10);
     expect(seatsThatFit(preset(10, [step('nlhe', 'no-limit'), step('no-such-game', 'no-limit')])).table.maxSeats).toBe(10);
   });
+
+  it("at Dealer's choice, keeps the seats of the menu's biggest game, whatever the table's own game", () => {
+    const dc = (maxSeats: number, gameId: string, games: { gameId: string; betting: 'no-limit' | 'fixed-limit' | 'pot-limit' }[]) => {
+      const s = preset(maxSeats, [], false);
+      return { ...s, game: { ...s.game, gameId, dealersChoice: { enabled: true, games, hands: 0, pickSeconds: 20 } } };
+    };
+    // Its own game (hidden while Dealer's choice is on) seats 6, but the menu's Hold'em seats 9.
+    expect(seatsThatFit(dc(9, 'td27', [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'plo4', betting: 'pot-limit' }])).table.maxSeats).toBe(9);
+    // A menu of Stud and Razz seats 8.
+    expect(seatsThatFit(dc(9, 'nlhe', [{ gameId: 'stud', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }])).table.maxSeats).toBe(8);
+  });
 });
