@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
-import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { MIGRATIONS_DIR, queryRows, type Db } from '../src/db';
+import { pgliteFor } from '../src/db/client';
 import { backupLines, writeBackup } from '../src/db/backup';
 import * as schema from '../src/db/schema';
 
@@ -88,7 +88,8 @@ export function migrationsBefore(tag: string): number {
  */
 export async function databaseBefore(tag: string, dataDir?: string): Promise<{ db: Db; upgrade(): Promise<void>; close(): Promise<void> }> {
   const folder = migrationsUpTo(migrationsBefore(tag));
-  const client = new PGlite(dataDir);
+  // The engine the server opens a new database with (PGlite 0.2 today, D32), so the old shape is the one the site has.
+  const client = pgliteFor(dataDir);
   try {
     const db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: folder });
