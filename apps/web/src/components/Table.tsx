@@ -292,6 +292,10 @@ export function Table({
   const packed = wide && fill && !compact && !!room.w;
   const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort, packed ? 0.72 : 0) * 100) / 100;
   const grown = k > 1 || packed;
+  // The wide layout's bigger cards (styles.css), except on a window so short (under about 620px, or a little taller with
+  // a row above the table) that the table is held at that smallest size in less room than it needs: there your own big
+  // cards would cover the board, so the seats keep their usual cards.
+  const bigCards = grown && wide && Math.max(kTall, kShort) >= 0.72;
   // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
   const short = kShort > kTall && grown;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
@@ -317,8 +321,9 @@ export function Table({
   const boardCard = compact
     ? null
     : grown
-      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it.
-        Math.round(Math.max(short ? 44 : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
+      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it,
+        // and a little more on a window too short for the big cards, so your own cards stay off it.
+        Math.round(Math.max(short ? (bigCards ? 44 : 38) : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
       : Math.round(Math.max(60, Math.min(88, w * 0.062, h * 0.17)));
   // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
   const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
@@ -460,7 +465,7 @@ export function Table({
   return (
     <div
       ref={felt}
-      className={['felt', compact && 'compact', grown && 'grown', grown && wide && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
+      className={['felt', compact && 'compact', grown && 'grown', bigCards && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(grown ? { '--k': k, '--sk': seatScale, '--side-margin': `${sideMargin}px`, '--top-margin': `${topMargin}px` } : {}), ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}), ...(handFit ? { '--fit-cw': `${handFit.cw}px`, '--fit-overlap': `${-handFit.overlap}px` } : {}) } as CSSProperties}
     >
       <FeltEmblem />

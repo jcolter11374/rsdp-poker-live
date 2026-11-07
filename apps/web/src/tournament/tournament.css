@@ -169,6 +169,10 @@
 .tn-corner-clock b { font-size: 2rem; line-height: 1; }
 .tn-corner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
 .tn-corner .tn-strip-row { padding: 0; }
+/* The open Log drawer is a little narrower than the box on windows over about 1570px: hidden, not cut off at its edge,
+   once the drawer has slid in over it (styles.css), and back as soon as the drawer starts to go. */
+.table-page.wide:has(.side.drawer.open) .tn-corner { visibility: hidden; transition: visibility 0s 0.25s; }
+@media (prefers-reduced-motion: reduce) { .table-page.wide:has(.side.drawer.open) .tn-corner { transition: none; } }
 
 /* Home page tournament lists. */
 .tn-list { margin-bottom: 16px; gap: 10px; }

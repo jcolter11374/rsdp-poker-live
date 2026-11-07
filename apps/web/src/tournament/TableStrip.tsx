@@ -124,13 +124,16 @@ export function TableStrip({
   );
 
   if (corner) {
-    const asking = seatTable > 0 || o?.entry?.status === 'rebuy-offer' || !!o?.canAddOn || !!o?.canReEnter || !!o?.pending.length || !!error;
+    const asking = seatTable > 0 || o?.entry?.status === 'rebuy-offer' || !!o?.canAddOn || !!o?.canReEnter || !!o?.pending.length;
+    // An error stays until the next command, and once its ask has gone there may be no next one: it shows under the asks
+    // while there are some, and in the corner box after, so it never holds the strip above the table open on its own.
+    const errorRow = error && <div className="tn-strip-row error">{error}</div>;
     return (
       <>
         {asking && (
           <div className="tn-strip">
             {asks}
-            {error && <div className="tn-strip-row error">{error}</div>}
+            {errorRow}
           </div>
         )}
         <div className="tn-corner panel">
@@ -164,6 +167,7 @@ export function TableStrip({
             )}
           </div>
           {finished}
+          {!asking && errorRow}
         </div>
       </>
     );
