@@ -43,6 +43,7 @@ How this file works:
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
+| [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
 
 ---
@@ -360,6 +361,35 @@ How this file works:
 - **Why:** #259 put 0.5 in place of 0.2 in one step. Deployed, the server couldn't have opened the live database, and nothing in CI would have said so: every CI check starts from an empty database, and the upgrade rehearsal (`upgrade.yml`) runs only on releases. The rehearsal also starts the release before on the upgraded data, as a rollback would; a single-step move fails that on purpose, because the release before can't read Postgres 18. Step 1 is what makes the move in step 2 reversible.
 - **For next time:** Dependabot groups PGlite with Drizzle in a `database` group of its own (`.github/dependabot.yml`). A PGlite update that changes the Postgres major version (see `PGLITE_POSTGRES` in `apps/server/src/db/client.ts`, which `apps/server/test/pglite-versions.test.ts` checks) follows these three steps again.
 - **Where:** `apps/server/src/db/client.ts`, `apps/server/test/pglite-versions.test.ts`, issue #367.
+
+## D33. Dealer's choice
+
+- **Decided:** 2026-11-06, by John (issue #341). He asked how Dealer's choice would work, read the plan, and took all nine of its recommendations on a decision card. The fine print below the nine is Claude's, settled while building it, and reversible.
+- **Decision (John's nine):**
+  1. A pick lasts one orbit: as many hands as players were dealt into its first hand. The host can set a fixed number of hands instead.
+  2. A **Pick chip**, separate from the dealer button, says who picks next. It moves one seat to the left after each pick.
+  3. The table keeps the seats the host chose. Games that seat fewer players than are sitting down are greyed out in the picker.
+  4. If the chooser doesn't pick in time, the current game carries on for another orbit.
+  5. The same game can be picked twice in a row. No "no repeats" setting unless the group asks.
+  6. A bot holding the chip picks at random from the games that fit, using the site's secure random numbers (as random bomb pots do).
+  7. Cash tables only, for now.
+  8. HORSE and 8-Game fill the menu in one tap; they aren't a single pick.
+  9. One set of stakes for every game on the menu, as for mixed games (D29): with a stud game on the menu, only the stud games ante.
+- **The fine print (Claude):**
+  - **The menu** has 2 to 20 entries, each a game with its betting, with no entry twice. Dealer's choice and a mixed-game rotation can't both be on.
+  - **The first chooser:** when Dealer's choice starts at a table that hasn't dealt yet, a random player (the site's secure random numbers) gets the chip, and the first hand's button is drawn on them. At a table already playing, the chip starts with the player due the next button, and the game it was dealing (a rotation's game, if it was rotating) is the "current game" until the first pick, so the chooser can keep it. A table that hasn't dealt yet has no current game. Turned off and on again, it starts afresh: a pick from before is never resumed.
+  - **When the clock runs:** once the last hand of an orbit is dealt, the chooser can pick at any time, with no clock. The pick clock (20 seconds by default; the host can set 10 to 60) starts when the next hand is due, and the table waits for the pick instead of dealing it. A pick made early is dealt with no wait. A paused table stops it, and so does a table that can't deal (the game stopped, or too few players): the chooser can still pick, and gets a fresh clock once a hand can be dealt. After a restart the chooser gets a fresh clock.
+  - **Who can pick:** anyone seated who isn't sitting out, has chips and isn't offline past the table's offline grace time, including a newcomer waiting for the big blind. That is checked while they hold the chip and picking is open: if they stop being able to pick, the chip moves on for good (they don't take it back by sitting in again, and nor does someone who sits in their seat) and the next player gets a fresh clock. At a new table, the first hand's button goes with it. A pick that's made stands, even if the chooser then busts or leaves. If nobody can pick, the current game carries on and the chip stays.
+  - **The default:** a missed pick keeps the current game if it is still on the menu and fits the table; otherwise the first game on the menu that fits. A fixed rule, so everyone knows what will happen.
+  - **An orbit gets shorter** when players leave: it ends once it has had as many hands as were dealt into its first hand, or as the next hand would deal in if that is fewer (so when someone leaves before the last hand, the pick can be due at once). Someone sitting out a hand shortens it only while they are out: back in, the orbit is its full length again.
+  - **A table made smaller** by the host: the Pick chip moves with its player into their new seat. If its seat is empty and goes, it passes to the next player round from it, who would have picked anyway.
+  - **Seats while a smaller game is on:** from the moment a game is picked (or kept) until the next game starts, the table seats nobody beyond that game's limit, counting seats held for a waitlist offer or a seat request as taken. Someone taking a seat held for them (their waitlist offer, or their seat request the host approves) counts only the other waitlist offers, as the check that the game fits does, so a seat request never blocks the offer the game was picked with. Empty seats show as closed, and the waitlist, seat requests and new bots wait. A spectator watching on a delay who tries to sit in a closed seat is told only that it is closed, not which game was picked. A game "fits" when the seated players plus anyone offered a seat from the waitlist are no more than it seats. Seat requests don't count toward that, because only the host sees them; they wait while a smaller game is on. The host can't save a menu where no game fits, and the table has no more seats than the menu's biggest game.
+  - **A host's change** to the menu applies from the next pick. Editing the menu never moves the chip or restarts the orbit, and a pick already made stands even if its game comes off the menu.
+  - **What players see:** the chooser gets a "Pick the next game" panel; everyone sees the Pick chip, a "Sam is picking" line where "Next hand in" shows, and the game in the top bar. Picks go in the table log. There is no chat line: chat isn't held back for spectators on a delay, and a pick made as a hand ends would tell them it had ended.
+  - **A bomb pot** counts as one hand of the orbit.
+- **Why:** card rooms (the World Series of Poker, the Asian Poker Tour) run Dealer's Choice with a separate pick button and one orbit per pick, so nobody picks a game to suit their own seat. The stud games don't show a button, and after a full orbit the button is back where it started, so "the button picks" would give the same player every pick. PokerNow doesn't offer Dealer's choice. The plan John read is linked from issue #341.
+- **Not done, on purpose:** tournaments (decision 7), a single pick that deals HORSE in turn (decision 8), separate stakes for each game (decision 9, D29), and a chat line for each pick.
+- **Where:** `game.dealersChoice` in `packages/engine/src/settings/schema.ts`; the Pick chip and pick clock in `apps/server/src/runtime/choice.ts` and `dealHand` in `apps/server/src/runtime/table.ts`; the Pick tag, the felt line and the picker in `apps/web/src/components/table/Choice.tsx`; the menu editor in `apps/web/src/components/settings/DealersChoiceFields.tsx`.
 
 ## D34. Releases go out when they're ready, not at a quiet time
 
