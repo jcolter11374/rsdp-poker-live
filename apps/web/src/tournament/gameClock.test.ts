@@ -11,7 +11,7 @@ const HORSE = { games: ['nlhe', 'plo8', 'razz', 'stud', 'stud8'], gameBetting: [
 
 /** A tournament whose clock started at T0 and has run `ms` (stopped there when paused). */
 function event(settings: Partial<TournamentSettings>, ms: number, status: TournamentState['status'] = 'running'): { s: TournamentState; now: number } {
-  const s = createTournament({ id: 't', hostId: 'h', settings: defaultSettings({ seatsPerTable: 8, structure: [100, 200, 300, 400, 600].map((bb) => level(bb)), ...settings }), now: T0, seed: 1 });
+  const s = createTournament({ id: 't', hostId: 'h', settings: defaultSettings({ seatsPerTable: 8, structure: [100, 200, 300, 400, 600].map((bb) => level(bb)), ...settings }), now: T0, seed: '01'.repeat(32) });
   s.status = status;
   s.clock = status === 'paused' ? { elapsedMs: ms, runningSince: null, rowIndex: 0 } : { elapsedMs: 0, runningSince: T0, rowIndex: 0 };
   return { s, now: T0 + ms };
