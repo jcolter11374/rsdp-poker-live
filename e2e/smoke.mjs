@@ -1055,6 +1055,7 @@ try {
         await page.waitForFunction(() => document.querySelectorAll('.felt .board .playing-card').length === 5);
         await page.waitForTimeout(2000);
         const scales = await page.evaluate(() => [...window.__scales]);
+        if (!scales.length) throw new Error(`${how} mid-hand, no frame with the board in the middle was read, so this step checked nothing`);
         if (scales.some((s) => s !== 'none' && s !== '1')) throw new Error(`${how} mid-hand, the middle was drawn at ${scales.join(', ')}`);
       }
       await page.screenshot({ path: path.join(OUT, 'opened-mid-hand.png') });
