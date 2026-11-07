@@ -860,7 +860,7 @@ kbd {
 .portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
 /* The one-time keyboard tip (#399). It never covers the table: beside the side column it heads that column, and in the
    wide layout it takes the bottom-right corner, across from the chat, in the room the action bar keeps clear (or heads
-   the drawer while that is open over the corner). Either way it is outside the felt's layout, so it coming and going
+   the drawer while that is open over the corner, and at a tournament table, whose clock has that corner: #385). Either way it is outside the felt's layout, so it coming and going
    can't change the table's size (#350). Below 1181px the
    side column moves under the table, out of sight, and so does the tip (the action buttons still show their keys). */
 .tip-toast {

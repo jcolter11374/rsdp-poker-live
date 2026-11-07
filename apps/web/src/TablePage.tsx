@@ -637,8 +637,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
   // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
   // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
-  // the table's size (#350).
-  const tipInCorner = wide && !drawer;
+  // the table's size (#350). At a tournament table that corner holds the tournament's clock (#385), so the tip heads the
+  // drawer's column there, as it did before #399.
+  const tipInCorner = wide && !drawer && !view.tournamentId;
   const keysTipBox = keysTip && !dialog && (
     <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
       <span>
