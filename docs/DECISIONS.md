@@ -42,6 +42,7 @@ How this file works:
 | [D29](#d29-in-a-mix-with-stud-only-the-stud-games-ante) | In a mix with stud, only the stud games ante | 2026-11-06 | Claude |
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
+| [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
 
 ---
 
@@ -347,3 +348,14 @@ How this file works:
   - **A cash hand the usual rules would deal to fewer than two players** (new players and missed blinds waiting for the button to pass, which it can't while no hand is dealt) deals everyone in free instead, as when a game starts (#357). Before, the table sat still until someone sat down, sat out or left; the nightly deep fuzz caught it too (#286).
 - **Why:** each is what a card room does, or the plainest rule that keeps every game its full length. A big-blind ante of 300 at a full stud table of 8 puts about what 8 antes of 40 put in, and matches what the per-player presets give at that big blind.
 - **Where:** `packages/engine/src/variants/antes.ts` (`studAnteForBigBlindAnte`, `anteForGame`), `levelDeal` in `packages/tournament/src/director.ts`, and in `apps/server/src/runtime/table.ts`: `fillStakes`, `cashHandStakes`, `nextRotation`, `dealHand`, `applyPendingSettings` and `moveIntoKeptSeats`.
+
+## D32. A database engine that changes Postgres version moves in three releases
+
+- **Decided:** 2026-11-06, while taking Dependabot's #259 (issue #367). The plan is Claude's; the coordinator asked for the PGlite update to be split from the test-tool security fix if it was risky.
+- **Decision:** PGlite 0.2 runs Postgres 16 and PGlite 0.5 runs Postgres 18, and Postgres can't open another major version's data files. So the live site's folder (`/data/pglite`) moves across in three releases, each one full (D25) and each one able to roll back to the one before:
+  1. **Both engines.** PGlite 0.5 ships next to 0.2 (installed as `pglite-0.2`). A Postgres 18 folder opens with 0.5; new folders, in-memory databases and Postgres 16 folders open with 0.2, as before. Nothing changes on the live site. 0.5 is started with 0.2's limit on kept write-ahead log (`max_wal_size` 64 MB, where 0.5's own is 1 GB), so a big write such as a restore doesn't leave that much on the 1 GB volume.
+  2. **Move the data.** On start, a Postgres 16 folder is copied into a new Postgres 18 folder through the backup format (export with 0.2, restore with 0.5, every table's row count checked) and swapped in; the old folder stays beside it. New folders use 0.5 from then on.
+  3. **Tidy up.** PGlite 0.2 and the move are removed once the live site runs on the moved folder. Nothing fails if one of these is missed, so remove them together: the `pglite-0.2` dependency and its Dependabot ignore, `LegacyPGlite` in `client.ts` and the tests, the `pglite-0.2` name in `apps/web/licenses.test.ts`, the "two versions ship" sentences in docs/CREDITS.md (the public /credits page) and docs/ARCHITECTURE.md, and the move's own code and its notes in docs/DEPLOY.md and docs/RUNBOOK.md.
+- **Why:** #259 put 0.5 in place of 0.2 in one step. Deployed, the server couldn't have opened the live database, and nothing in CI would have said so: every CI check starts from an empty database, and the upgrade rehearsal (`upgrade.yml`) runs only on releases. The rehearsal also starts the release before on the upgraded data, as a rollback would; a single-step move fails that on purpose, because the release before can't read Postgres 18. Step 1 is what makes the move in step 2 reversible.
+- **For next time:** Dependabot groups PGlite with Drizzle in a `database` group of its own (`.github/dependabot.yml`). A PGlite update that changes the Postgres major version (see `PGLITE_POSTGRES` in `apps/server/src/db/client.ts`, which `apps/server/test/pglite-versions.test.ts` checks) follows these three steps again.
+- **Where:** `apps/server/src/db/client.ts`, `apps/server/test/pglite-versions.test.ts`, issue #367.
