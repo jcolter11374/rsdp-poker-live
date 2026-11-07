@@ -1,6 +1,6 @@
 # Changelog
 
-Every release of RSDP Poker Live!, newest first.
+Every release of RSDP Live!, newest first.
 
 <!-- Made by `npm run changelog` from apps/web/src/roadmap/changelog.json and whatsnew.json. Edit those, not this file. -->
 This file is made from [`changelog.json`](apps/web/src/roadmap/changelog.json) and
@@ -19,6 +19,12 @@ still being filled in: its tag and GitHub release only exist once it goes live. 
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
 ## [2026.11.06.6] - 2026-11-06
+
+_We're RSDP Live! now_
+
+### New
+
+- **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name changed: the look, the games and the web address are the same. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
 
 ### Fixed and changed
 

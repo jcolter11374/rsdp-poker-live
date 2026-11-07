@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026.11.06.6",
+      "date": "2026-11-06",
+      "title": "We're RSDP Live! now",
+      "items": [
+        { "title": "The site has a shorter name", "detail": "The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name changed: the look, the games and the web address are the same. If you saved the site to your phone's home screen, it may keep the old name until you add it again.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026.11.06.4",
       "date": "2026-11-06",
       "title": "HORSE and 8-Game tournaments",

@@ -269,7 +269,7 @@ export function renderChangelog({ changelog, whatsnew }) {
   const lines = [
     '# Changelog',
     '',
-    'Every release of RSDP Poker Live!, newest first.',
+    'Every release of RSDP Live!, newest first.',
     '',
     '<!-- Made by `npm run changelog` from apps/web/src/roadmap/changelog.json and whatsnew.json. Edit those, not this file. -->',
     'This file is made from [`changelog.json`](apps/web/src/roadmap/changelog.json) and',

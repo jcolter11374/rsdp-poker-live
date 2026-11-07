@@ -1,6 +1,6 @@
 # How we track and ship work
 
-This is how work on RSDP Poker Live! is tracked, reviewed and released. It
+This is how work on RSDP Live! is tracked, reviewed and released. It
 is the ordinary GitHub way: **issues** for every piece of work, **pull
 requests** that name their issue, and **tagged releases** with notes. John
 owns the product and makes the product calls. Most of the code is written by

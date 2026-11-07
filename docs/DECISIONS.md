@@ -1,6 +1,6 @@
 # Decisions
 
-The lasting decisions behind RSDP Poker Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
+The lasting decisions behind RSDP Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
 
 How this file works:
 
@@ -43,6 +43,7 @@ How this file works:
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
+| [D35](#d35-the-site-is-called-rsdp-live) | The site is called RSDP Live! | 2026-11-07 | John |
 
 ---
 
@@ -359,3 +360,10 @@ How this file works:
 - **Why:** #259 put 0.5 in place of 0.2 in one step. Deployed, the server couldn't have opened the live database, and nothing in CI would have said so: every CI check starts from an empty database, and the upgrade rehearsal (`upgrade.yml`) runs only on releases. The rehearsal also starts the release before on the upgraded data, as a rollback would; a single-step move fails that on purpose, because the release before can't read Postgres 18. Step 1 is what makes the move in step 2 reversible.
 - **For next time:** Dependabot groups PGlite with Drizzle in a `database` group of its own (`.github/dependabot.yml`). A PGlite update that changes the Postgres major version (see `PGLITE_POSTGRES` in `apps/server/src/db/client.ts`, which `apps/server/test/pglite-versions.test.ts` checks) follows these three steps again.
 - **Where:** `apps/server/src/db/client.ts`, `apps/server/test/pglite-versions.test.ts`, issue #367.
+
+## D35. The site is called RSDP Live!
+
+- **Decided:** 2026-11-07, 01:29 UTC, by John: "How hard would it be to change the name of the website and all mentions from RSDP Poker Live! To RSDP Live! The poker is redundant because RSDP is an acronym where the P stands for poker." A minute later: "I do really like the design and the style so I'd like to keep that". The name had been RSDP Poker Live! since he chose it on 2026-10-25.
+- **Decision:** the site is called **RSDP Live!** everywhere it shows a name: page titles and link previews, the logo, the crest on the felt (its top arc now reads RSDP, above LIVE), the app name on a phone's home screen, the offline page, the public pages, downloaded hand histories and the docs. Only the words changed: the logo, the crest and the preview picture keep their fonts, sizes, colours and layout.
+- **Not changed, on purpose:** the web address (`rsdp-poker-live.fly.dev`), the GitHub repository, the Fly app and the ids inside the code and data, which all say `rsdp-poker-live` or `rsdp`. Changing those would break saved links and touch Google sign-in, the signed build record and the backups, so it would be a separate decision for John. Release notes already published keep the name they had. A phone that already has the site on its home screen may keep the old label until the site is added again.
+- **Where:** issue [#391](https://github.com/jcolter11374/rsdp-poker-live/issues/391). `apps/server/test/site-name.test.ts` fails if the old name comes back. `scripts/upgrade/compare.mjs` lets a page title under the old name match the same title under the new one, so the release that renames the site passes the upgrade rehearsal.

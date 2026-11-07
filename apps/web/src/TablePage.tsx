@@ -331,7 +331,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     return (
       <main className="home">
         <h1 className="logo">
-          RSDP Poker <span>Live!</span>
+          RSDP <span>Live!</span>
         </h1>
         <p className="error">{error === 'deleted' ? 'This table was deleted.' : error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
         {tournament && (
@@ -495,7 +495,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           ) : (
             <>
-              RSDP Poker <span>Live!</span>
+              RSDP <span>Live!</span>
             </>
           )}
         </a>
