@@ -4,7 +4,7 @@ import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } fr
 import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
-import { spectatorsSeeCards } from '@rsdp/engine/settings';
+import { IMMEDIATE_FIELDS, spectatorsSeeCards, type TableSettings } from '@rsdp/engine/settings';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -178,7 +178,29 @@ export function tableView(
 }
 
 /** The part of a spectator's view that runs behind the table. */
-export type DelayedPart = Pick<TableView, 'seats' | 'hand' | 'turn' | 'ledger' | 'history' | 'nextHandAt' | 'upcoming' | 'paused' | 'serverNow' | 'fair' | 'bombPotNext' | 'nit' | 'rakeTotal' | 'started' | 'stopAfterHand' | 'rotation' | 'choice'>;
+export type DelayedPart = Pick<
+  TableView,
+  | 'seats'
+  | 'hand'
+  | 'turn'
+  | 'ledger'
+  | 'history'
+  | 'nextHandAt'
+  | 'upcoming'
+  | 'paused'
+  | 'serverNow'
+  | 'fair'
+  | 'bombPotNext'
+  | 'nit'
+  | 'rakeTotal'
+  | 'started'
+  | 'stopAfterHand'
+  | 'rotation'
+  | 'choice'
+  | 'settings'
+  | 'pendingSettings'
+  | 'level'
+>;
 
 /**
  * The ledger, hand list, next-hand countdown and fair-dealing commits run behind too, or they would give away
@@ -205,7 +227,25 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   rotation: view.rotation ?? null,
   // Dealer's choice: a pick made as the live hand ends, or the table waiting for one, would tell it had ended.
   choice: view.choice,
+  // A change the host makes during a hand waits for the next one, and a blind level counted in hands moves on as
+  // each hand is dealt: seen live, either would tell the live hand had ended (#432).
+  settings: view.settings,
+  pendingSettings: view.pendingSettings,
+  level: view.level,
 });
+
+/**
+ * The settings as they were, but with what changes at once, mid-hand too (IMMEDIATE_FIELDS: the table's name and
+ * felt, chat, who may watch, seating), as it is now: those say nothing about how a hand went, and a spectator
+ * should see chat turned off when it is.
+ */
+export function settingsBehind(past: TableSettings, live: TableSettings): TableSettings {
+  if (past === live) return live;
+  type Obj = Record<string, unknown>;
+  const copy = (to: Obj, from: Obj, [key, ...rest]: string[]): Obj =>
+    rest.length ? { ...to, [key]: copy((to[key] ?? {}) as Obj, (from[key] ?? {}) as Obj, rest) } : { ...to, [key]: from[key] };
+  return IMMEDIATE_FIELDS.reduce((out, path) => copy(out, live as unknown as Obj, path.split('.')), past as unknown as Obj) as unknown as TableSettings;
+}
 
 /** What a spectator on a delay sees of the next hand's commit before anything is old enough to show. */
 const NO_FAIR: TableView['fair'] = { nextCommit: '', handCommit: null, openThrough: 0 };
@@ -257,6 +297,9 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     started: past.started,
     stopAfterHand: past.stopAfterHand,
     rotation: past.rotation ?? null,
+    settings: settingsBehind(past.settings, live.settings),
+    pendingSettings: past.pendingSettings,
+    level: past.level && { ...past.level, endsAt: later(past.level.endsAt) },
     rabbit: NO_RABBIT,
   };
 }
