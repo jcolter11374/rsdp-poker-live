@@ -764,11 +764,15 @@ export class TableRuntime {
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
     // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
-    // pick in their place anyway, so whoever sits down there later (or a bot the host adds) doesn't take it (D33).
+    // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). At
+    // a new table the first hand's button goes with it.
     const c = this.state.choice;
     if (c?.chip === seat.seat) {
       const next = this.seatedFromChip();
-      if (next) c.chip = next.seat;
+      if (next) {
+        if (c.firstButton === c.chip) c.firstButton = next.seat;
+        c.chip = next.seat;
+      }
     }
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
@@ -1399,14 +1403,10 @@ export class TableRuntime {
       // reaches them), so it follows that player: otherwise a mover sitting down there would end the orbit early.
       // If the button is on an empty seat in between, it has just gone past the start, so the orbit counts from there.
       const r = s.rotation;
-      // Dealer's choice: an empty seat holding the Pick chip stands for the next player round from it (the chooser
-      // is the first player to its left who can pick), so the chip goes to that player and moves with them.
+      // Dealer's choice: the Pick chip goes with its player, as when the host moves them (D33). An empty seat holding
+      // it stands for the next player round from it, who would pick anyway.
       const c = s.choice;
-      if (c && !s.seats[c.chip]) {
-        const n = s.seats.length;
-        const to = Array.from({ length: n }, (_, i) => (c.chip + i) % n).find((i) => s.seats[i]);
-        if (to !== undefined) c.chip = to;
-      }
+      const chip = this.chipBefore();
       if (r.anchor !== null && !s.seats[r.anchor]) {
         const n = s.seats.length;
         const round = Array.from({ length: n }, (_, i) => (r.anchor! + i) % n);
@@ -1419,6 +1419,7 @@ export class TableRuntime {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
+      this.chipAfter(chip);
       // The blinds move on from where they were, as after any hand; they start afresh only if one of them sat in a
       // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
       const p = s.positions;
@@ -1534,13 +1535,23 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Dealer's choice, before a host seat change: who the Pick chip sits with, and who the PICK tag is on (D33). */
+  private chipBefore(): { holder: SeatState | null; tag: SeatState | null } | null {
+    return this.state.choice ? { holder: this.seatedFromChip(), tag: this.choice.chooser() } : null;
+  }
+
   /**
-   * Dealer's choice: the player the PICK tag is on, who keeps the chip through a host move or a seat shuffle (D33).
-   * While its holder is sitting out or away, that is whoever picks in their place. Failing anyone who can pick, the
-   * first player round from the chip's seat. Null without Dealer's choice or players.
+   * After it: the chip stays with its holder in their new seat. If that would put the PICK tag on someone else (its
+   * holder is sitting out or away, so whoever picks in their place depends on the seating), it goes for good to
+   * whoever had the tag. Either way no seat change gives the next pick to someone else.
    */
-  private chipHolder(): SeatState | null {
-    return this.state.choice ? (this.choice.chooser() ?? this.seatedFromChip()) : null;
+  private chipAfter(before: { holder: SeatState | null; tag: SeatState | null } | null) {
+    const c = this.state.choice;
+    if (!c || !before) return;
+    // Still at the table (making it smaller cashes out anyone it can't seat, and leaving passes the chip on).
+    const here = (x: SeatState | null) => !!x && this.state.seats[x.seat] === x;
+    if (here(before.holder)) c.chip = before.holder!.seat;
+    if (here(before.tag) && this.choice.chooser()?.playerId !== before.tag!.playerId) c.chip = before.tag!.seat;
   }
 
   /** The first player round from the Pick chip's seat (to the left), the seat itself included. */
@@ -1569,7 +1580,7 @@ export class TableRuntime {
     const taken = s.seats.flatMap((x, i) => (x ? [i] : []));
     if (taken.length < 2) throw new ActionError('need at least two players to shuffle');
     // Dealer's choice: the Pick chip stays with the player who holds it, so a shuffle never changes who picks next (D33).
-    const chipHolder = this.chipHolder();
+    const chip = this.chipBefore();
     const buttonHolder = s.choice?.firstButton != null ? s.seats[s.choice.firstButton] : null;
     const players = shuffle(taken.map((i) => s.seats[i]!), this.rng);
     taken.forEach((seatNo, i) => {
@@ -1583,7 +1594,7 @@ export class TableRuntime {
     for (const r of s.requests) if (r.kind === 'rebuy') r.seat = this.seatOf(r.playerId)?.seat ?? r.seat;
     s.positions = null;
     s.rotation.anchor = null;
-    if (s.choice && chipHolder) s.choice.chip = chipHolder.seat;
+    this.chipAfter(chip);
     if (s.choice && buttonHolder) s.choice.firstButton = buttonHolder.seat;
     this.log('The host shuffled the seats');
     this.sync();
@@ -1604,7 +1615,7 @@ export class TableRuntime {
     const from = seat.seat;
     // Dealer's choice: the Pick chip stays with the player who holds it, wherever the host moves them or anyone else (D33).
     const c = this.state.choice;
-    const chipHolder = this.chipHolder();
+    const chip = this.chipBefore();
     this.state.seats[from] = null;
     seat.seat = to;
     // A new place at the table: like someone sitting down, they post or wait for the big blind.
@@ -1612,7 +1623,7 @@ export class TableRuntime {
     seat.missedBigBlind = false;
     seat.missedSmallBlind = false;
     this.state.seats[to] = seat;
-    if (c && chipHolder) c.chip = chipHolder.seat;
+    this.chipAfter(chip);
     if (c?.firstButton === from) c.firstButton = to;
     for (const r of this.state.requests) if (r.playerId === playerId) r.seat = to;
     this.log(`The host moved ${seat.name} from seat ${from + 1} to seat ${to + 1}`);

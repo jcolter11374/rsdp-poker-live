@@ -154,7 +154,7 @@ export const EXTRAS: ExtraGuide[] = [
     idea: 'Players take turns choosing the game. Whoever has the Pick chip chooses the next game from a menu the host sets up, and the table plays it for one orbit. As soon as they pick, the chip moves one seat to the left, to whoever picks next.',
     steps: [
       'The Pick chip is separate from the dealer button. It shows as a gold PICK tag on the nameplate of whoever chooses next.',
-      'When the last hand of a pick is dealt, the next chooser can pick straight away: tap Pick next game at the top. The table only waits if they haven\'t picked when that hand ends.',
+      'When the last hand of a pick is dealt, the next chooser can pick straight away: tap Pick next game at the top. The table only waits if they haven\'t picked when that hand ends. If they are in an all-in, they pick once the cards are out.',
       'Then the chooser gets a Pick the next game panel with every game on the menu, each with its How to play guide, and a countdown (20 seconds unless the host changed it). Everyone else sees who is picking.',
       'A pick lasts one orbit: as many hands as players were dealt into its first hand. If players leave, it ends sooner. The host can set a number of hands instead.',
       'If the chooser runs out of time, the game being played carries on for another orbit. At a new table, the first game on the menu that fits is dealt.',

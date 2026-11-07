@@ -25,6 +25,8 @@ export interface Frozen {
   me: TableView['me'];
   nit: TableView['nit'];
   choice?: TableView['choice'];
+  /** Whether `choice` is from this hand (false when the hand was dealt and run out in one update). */
+  sameHand?: boolean;
 }
 
 /**
@@ -55,7 +57,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
-        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, choice: before.choice },
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
       });
       setShown(0);
     }
@@ -105,7 +107,7 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
     nit: before.nit,
-    choice: heldChoice(view.choice, before.choice),
+    choice: heldChoice(view, before),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
@@ -115,16 +117,23 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
 }
 
 /**
- * Dealer's choice during the reveal: the PICK tag stays where it was, so a busted chooser's doesn't move on before the
- * result, unless a pick has come in since. Nobody picks until the cards are out: a chooser who busted would be refused,
- * which would tell them the result. The pick clock only starts after the reveal, so nobody loses time. The rest
- * (the game, the next pick, closed seats) is as it is now.
+ * Dealer's choice during the reveal. The PICK tag stays where it was: once the server has the result it passes over
+ * anyone who busted, so moving it would give the result away. A chooser in the all-in picks once the cards are out:
+ * a busted chooser would be refused, and a pick in their place shows who busted, so their pick waits for the result
+ * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual.
  */
-export function heldChoice(live: TableView['choice'], before: TableView['choice']): TableView['choice'] {
-  if (!live || !before) return live;
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const picked = !same(live.next, before.next) || !same(live.current, before.current);
-  return { ...live, chip: picked ? live.chip : before.chip, open: false };
+export function heldChoice(view: TableView, before: Frozen): TableView['choice'] {
+  const live = view.choice;
+  const was = before.choice;
+  if (!live || !was) return live;
+  const chip = was.chip;
+  const events = view.hand?.events ?? [];
+  const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
+  const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
+  if (!inHand) return { ...live, chip };
+  // The rest of the pick as it was too, but who can sit down as it is now.
+  const held = before.sameHand === false ? { ...live, chip } : { ...was, count: live.count, cap: live.cap, closed: live.closed };
+  return { ...held, open: false };
 }
 
 /** Seats as they stand with everything in the middle and nothing paid out yet. */
