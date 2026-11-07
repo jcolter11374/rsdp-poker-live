@@ -667,7 +667,9 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
   text-align: center;
   text-wrap: balance;
 }
-.felt.grown .board-notice { max-width: min(760px, 70%); font-size: calc(0.95rem * min(var(--k), 1.25)); }
+/* Clear of the nameplates at the ends of the table, level with the middle. */
+.felt:not(.compact) .board-notice { max-width: min(600px, calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
+.felt.grown .board-notice { max-width: min(760px, calc(100% - 2 * (150px * var(--sk) + 12px))); font-size: calc(0.95rem * min(var(--k), 1.25)); }
 .felt.compact .board-notice { max-width: 86%; padding: 6px 12px; font-size: 0.8rem; line-height: 1.3; }
 /* The host's, in the wide layout: it opens Host & log, where Start game is. */
 .board-notice.clickable { pointer-events: auto; cursor: pointer; }
