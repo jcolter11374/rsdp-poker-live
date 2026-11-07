@@ -205,8 +205,28 @@ function grownIn(el: Element, zoom: number): Box {
 
 /**
  * The scale the middle of the table (`stack`, drawn scaled about its centre) needs so it covers no player's nameplate or
- * cards (#417): see fitMiddle.
+ * cards (#417), and whether several winners' lines should be stacked rather than side by side. Side by side keeps the
+ * middle short (a wide, short window), but a side seat's long row of cards (stud's seven, five- and six-card Omaha) can
+ * reach in that far: then, if stacked lines need less shrinking, they're stacked (#474). Both are measured each time, so
+ * the choice doesn't depend on which one is drawn now.
  */
+function boardFitOf(felt: HTMLElement, stack: HTMLElement): { fit: number; stacked: boolean } {
+  const several = [...stack.children].find((c): c is HTMLElement => c.classList.contains('several'));
+  if (!several) return { fit: boardScale(felt, stack), stacked: false };
+  const drawn = several.classList.contains('stacked');
+  several.classList.remove('stacked');
+  const side = boardScale(felt, stack);
+  let out = { fit: side, stacked: false };
+  if (side < 1) {
+    several.classList.add('stacked');
+    const stacked = boardScale(felt, stack);
+    if (stacked > side) out = { fit: stacked, stacked: true };
+  }
+  several.classList.toggle('stacked', drawn);
+  return out;
+}
+
+/** The scale the middle needs as it is laid out now: see fitMiddle. */
 function boardScale(felt: HTMLElement, stack: HTMLElement): number {
   const now = parseFloat(getComputedStyle(stack).scale) || 1;
   const s = stack.getBoundingClientRect();
@@ -682,12 +702,14 @@ export function Table({
   // the board and the results come, so it doesn't grow and shrink back and forth. Phones: see #380.
   const stack = useRef<HTMLDivElement>(null);
   const [boardFit, setBoardFit] = useState(1);
+  const [stackResults, setStackResults] = useState(false);
   const fitHeld = useRef({ key: '', fit: 1, failed: false });
   const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
   useLayoutEffect(() => {
     let fit = 1;
+    let stacked = false;
     try {
-      if (!compact && felt.current && stack.current) fit = boardScale(felt.current, stack.current);
+      if (!compact && felt.current && stack.current) ({ fit, stacked } = boardFitOf(felt.current, stack.current));
     } catch (error) {
       // As for the seats: a slip here mustn't take the table down. The middle keeps its full size, as before #417.
       if (!fitHeld.current.failed) reportError(error, 'error');
@@ -696,6 +718,7 @@ export function Table({
     if (fitHeld.current.key === fitKey) fit = Math.min(fit, fitHeld.current.fit);
     fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed };
     setBoardFit((f) => (f === fit ? f : fit));
+    setStackResults((was) => (was === stacked ? was : stacked));
   });
   const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
   const betHalf = compact ? { w: 22, h: 10 } : { w: 30, h: 13 };
@@ -884,9 +907,10 @@ export function Table({
           </div>
         )}
         {/* One line per winner. Several (a split pot, side pots) sit side by side where the felt has the width, so the middle
-            doesn't grow taller than the room between the seats above and below it (#417). */}
+            doesn't grow taller than the room between the seats above and below it (#417), or stacked where that needs
+            less shrinking (#474: see boardFitOf). */}
         {done && results.size > 0 && (
-          <div className={`results${results.size > 1 ? ' several' : ''}`}>
+          <div className={`results${results.size > 1 ? ` several${stackResults ? ' stacked' : ''}` : ''}`}>
             {[...results.entries()].map(([seat, w]) => (
               <div className="pot result" key={seat}>
                 {view.hand?.names?.[seat] ?? view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
