@@ -656,8 +656,9 @@ export class TableRuntime {
    * Dealer's choice: tableCount once the host's change waiting for the next hand (`next`) applies, as the table will
    * be when a missed pick is dealt (#459). The deal applies the change before the pick clock starts, and upkeep then
    * offers the seats a bigger table opens to the waitlist: one for each online player waiting without an offer, while
-   * there are free seats nobody holds and the game being played has room. Players leaving after this hand are gone by
-   * then, and their seats are offered too. (The waitlist itself is switched at once, never with the next hand; a
+   * there are free seats nobody holds and the game being played has room, in queue order. As in tableCount, an offer to
+   * someone who still needs the host's OK isn't counted, though it takes a seat. Players leaving after this hand are
+   * gone by then, and their seats are offered too. (The waitlist itself is switched at once, never with the next hand; a
    * smaller table has already let go of offers in the seats it drops.) While an all-in runout is still being dealt
    * out, its players' seats stay taken, as tableCount still counts them (revealSeats): the answer doesn't change with
    * whether one of them busted. Only those who said before the result that they were leaving count as gone then.
@@ -679,11 +680,12 @@ export class TableRuntime {
     let open = 0;
     for (let i = 0; i < next.table.maxSeats; i++) if ((!s.seats[i] || leaving.has(i)) && !held.has(i)) open++;
     const offered = new Set(this.offers().map((o) => o.playerId));
-    const waiting = this.queue().filter((w) => !offered.has(w.playerId) && this.isOnline(w.playerId)).length;
+    const waiting = this.queue().filter((w) => !offered.has(w.playerId) && this.isOnline(w.playerId));
     // Leavers count toward the room the game being played leaves (seatRoom) until they go.
     const room = this.seatRoom(null);
-    const fill = Math.min(open, waiting, room === null ? Infinity : room + leaving.size);
-    return count - leaving.size + Math.max(0, fill);
+    const fill = Math.max(0, Math.min(open, waiting.length, room === null ? Infinity : room + leaving.size));
+    // Seats are offered in queue order, and one offered to someone who still needs the host's OK isn't counted (#453).
+    return count - leaving.size + waiting.slice(0, fill).filter((w) => !this.needsApproval(w.playerId)).length;
   }
 
   /**

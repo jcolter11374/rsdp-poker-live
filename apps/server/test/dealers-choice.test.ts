@@ -1868,6 +1868,44 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     expect(hand(rt).input.game.id).toBe('badugi');
   });
 
+  it("doesn't count waiting players who still need the host's OK: their offers only ask for the seat (#453)", () => {
+    const { rt, clock } = lastHand(['f', 'g']);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.updateSettings('host', BIGGER);
+    const during = tableView(rt, 'a', clock.now()).choice!;
+    expect(during).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+    expect(during.comingCount).toBeUndefined();
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(rt.state.offers!.map((o) => o.playerId).sort()).toEqual(['f', 'g']);
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+    clock.advance(25_000);
+    expect(hand(rt).input.game.id).toBe('badugi');
+  });
+
+  for (const sw of [
+    { first: 'needs the host', queue: ['f', 'g'], count: 6, dealt: 'badugi' },
+    { first: 'may approve seats', queue: ['g', 'f'], count: 7, dealt: 'nlhe' },
+  ]) {
+    it(`gives one new seat to the first in the queue, who ${sw.first}, and counts it only if they can sit (#453)`, () => {
+      // F needs the host's OK and G may approve seats. The one new seat goes to whoever is first, whether or not
+      // their offer counts, so the count follows the queue, not whoever could sit.
+      const { rt, clock } = lastHand(sw.queue);
+      rt.updateSettings('host', { seating: { requireApproval: true } });
+      rt.setCoHost('host', 'g', ['approve']);
+      rt.updateSettings('host', { ...BIGGER, table: { maxSeats: 7 } });
+      const during = tableView(rt, 'a', clock.now()).choice!;
+      expect(during).toMatchObject({ count: 6, fallback: { gameId: sw.dealt } });
+      expect(during.comingCount).toBe(sw.count === 6 ? undefined : sw.count);
+      checkDown(rt);
+      clock.advance(10_000);
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual([sw.queue[0]]);
+      expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ count: sw.count, fallback: { gameId: sw.dealt } });
+      clock.advance(25_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+    });
+  }
+
   it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
     const { rt, clock } = lastHand(['f', 'g']);
     rt.disconnect('f');
