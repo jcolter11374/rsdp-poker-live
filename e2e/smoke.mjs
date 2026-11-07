@@ -93,6 +93,31 @@ async function stopGame(host, players) {
   await stopped.waitFor();
 }
 
+/** Starts noting the table's size (its scale and the felt's height) every animation frame (#350). */
+async function sampleTableSizes(page) {
+  await page.evaluate(() => {
+    const seen = (window.__tableSizes = new Set());
+    const sample = () => {
+      const felt = document.querySelector('.felt');
+      if (felt) seen.add(`scale ${felt.style.getPropertyValue('--k')}, felt ${Math.round(felt.getBoundingClientRect().height)}px`);
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+/** The table's sizes seen over a quarter of a second at this window size, after it has had time to settle. */
+async function tableSizesAt(page, width, height) {
+  // A change of width, so the bar under the table lets go of a taller size it held from an earlier height (Dock.tsx).
+  await page.setViewportSize({ width: width - 1, height });
+  await page.waitForTimeout(100);
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.__tableSizes.clear());
+  await page.waitForTimeout(250);
+  return page.evaluate(() => [...window.__tableSizes]);
+}
+
 /**
  * Starts noting, every animation frame, the felt's size and place, the seats' scale and every player's seat spot: each
  * distinct combination is one layout. `layoutsSeen` stops and returns them, so one entry means nothing moved.
@@ -505,6 +530,31 @@ try {
     if (log.includes('(auto)')) throw new Error('a player was acted for automatically in the first hand');
     await host.screenshot({ path: path.join(OUT, 'tournament.png') });
 
+    // A wide, short window (John's is about 2300x824): the tournament's clock moves to the bottom-right corner, so the
+    // table gets the same big layout a cash table gets there. The strip above it used to take just enough height to
+    // drop the seats and cards to their smallest size (#385). Frame by frame, it holds that one size (#350).
+    await host.setViewportSize({ width: 2300, height: 824 });
+    await host.locator('.tn-corner:has-text("Level 1")').waitFor();
+    if (await host.locator('.tn-strip').count()) throw new Error('the tournament strip still takes room above the table on a wide window');
+    // A rebuy offer or an add-on goes under the table there, in a spot that takes no room while nothing is asked. (On
+    // your turn the spot is hidden anyway, so this looks at it off turn: the next hand waits for the showdown.)
+    const asks = await host.locator('.dock-notes.tournament-asks:not(.your-turn)').evaluate((el) => `${el.childElementCount} inside, display ${getComputedStyle(el).display}`);
+    if (asks !== '0 inside, display none') throw new Error(`the empty spot for tournament asks under the table takes room (${asks})`);
+    await sampleTableSizes(host);
+    for (const h of [824, 800]) {
+      const sizes = await tableSizesAt(host, 2300, h);
+      if (sizes.length !== 1) throw new Error(`a tournament table at 2300x${h} kept changing size: ${sizes.join(' / ')}`);
+      const k = await host.locator('.felt').evaluate((el) => parseFloat(el.style.getPropertyValue('--k')));
+      if (!(k >= 1)) throw new Error(`a tournament table at 2300x${h} stayed small (scale ${k})`);
+      if (h === 824) await host.screenshot({ path: path.join(OUT, 'tournament-wide-short.png') });
+    }
+    // The Log drawer is a little narrower than the box: the box goes while the drawer is open, rather than peek out.
+    await host.click('.drawer-button');
+    await host.locator('.tn-corner').waitFor({ state: 'hidden' });
+    await host.click('.drawer-button');
+    await host.locator('.tn-corner').waitFor();
+    await host.setViewportSize({ width: 1280, height: 860 });
+
     // The host ends it early the way the Host tab asks (pause, let the hand in progress finish, end), so its
     // table isn't still dealing when CI's backup drill runs. The players stay at the table to finish that hand.
     const lobby = await openTab(host, 'tournament host lobby');
@@ -587,37 +637,30 @@ try {
     await host.waitForSelector('.seat .hole .playing-card');
     if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
     await host.locator('.tip-toast').waitFor();
-    await host.evaluate(() => {
-      const seen = (window.__tableSizes = new Set());
-      const sample = () => {
-        const felt = document.querySelector('.felt');
-        if (felt) seen.add(`scale ${felt.style.getPropertyValue('--k')}, felt ${Math.round(felt.getBoundingClientRect().height)}px`);
-        requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    });
-    const sweep = async () => {
+    await sampleTableSizes(host);
+    const sweep = async (from, to) => {
       const sizes = [];
-      for (let h = 760; h <= 880; h += 12) {
-        // A change of width, so the bar under the table lets go of a taller size it held from an earlier height (Dock.tsx).
-        await host.setViewportSize({ width: 2299, height: h });
-        await host.waitForTimeout(100);
-        await host.setViewportSize({ width: 2300, height: h });
-        await host.waitForTimeout(250);
-        await host.evaluate(() => window.__tableSizes.clear());
-        await host.waitForTimeout(250);
-        const seen = await host.evaluate(() => [...window.__tableSizes]);
+      for (let h = from; h <= to; h += 12) {
+        const seen = await tableSizesAt(host, 2300, h);
         if (seen.length !== 1) throw new Error(`at 2300x${h} the table kept changing size: ${seen.join(' / ')}`);
         sizes.push(seen[0]);
       }
       return sizes;
     };
-    const withTip = await sweep();
+    const withTip = await sweep(760, 880);
     if (!(await host.locator('.tip-toast').count())) throw new Error('the keyboard tip went before the sweep with it was done');
     await host.click('.tip-toast button:has-text("Got it")');
-    const withoutTip = await sweep();
+    const withoutTip = await sweep(760, 880);
     withTip.forEach((s, i) => {
       if (s !== withoutTip[i]) throw new Error(`at 2300x${760 + 12 * i} the keyboard tip changed the table's size: ${s} with it, ${withoutTip[i]} without`);
+    });
+    // Shorter still, where the table keeps shrinking below its usual size down to the smallest seats (#385), rather than
+    // dropping to the laptop layout (where the table has no scale of its own) as soon as there isn't room for scale 1.
+    const low = await sweep(604, 748);
+    const scales = low.map((s) => parseFloat(s.slice('scale '.length)));
+    scales.forEach((k, i) => {
+      if (!(k >= 0.72 && k < 1.05)) throw new Error(`at 2300x${604 + 12 * i} the table didn't keep the big-table layout at a smaller size: ${low[i]}`);
+      if (i && k < scales[i - 1]) throw new Error(`at 2300x${604 + 12 * i} the table got smaller as the window got taller: ${low[i - 1]}, then ${low[i]}`);
     });
     await host.setViewportSize({ width: 2300, height: 800 });
     await host.click('.drawer-button');
