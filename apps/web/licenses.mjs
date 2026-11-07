@@ -13,10 +13,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 export const PARTS = { browser: 'apps/web', server: 'apps/server' };
 
 /**
- * Build tools that put a little of their own code into what browsers download: Vite's preload helper, and the
- * helpers Rolldown (the bundler inside Vite) adds to wrap the CommonJS packages, React among them.
+ * Build tools that put a little of their own code into what browsers download: Vite's preload helper, the helpers
+ * Rolldown (the bundler inside Vite) adds to wrap the CommonJS packages, React among them, and Babel's class-field
+ * helpers. Oxc, inside Rolldown, copies those from @babel/runtime to rewrite class fields for the older browsers in
+ * vite.config.ts. Oxc carries its own copy, so the @babel/runtime credited is the one installed here, a devDependency
+ * kept for its license (the same MIT text in every version).
  */
-export const BUNDLED_TOOLS = { browser: ['vite', 'rolldown'] };
+export const BUNDLED_TOOLS = { browser: ['vite', 'rolldown', '@babel/runtime'] };
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));

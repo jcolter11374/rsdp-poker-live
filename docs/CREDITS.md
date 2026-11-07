@@ -33,7 +33,7 @@ Each of these uses smaller packages of its own, and those use others: about a hu
 
 ## Tools that build and test it
 
-These don't run with the game (Vite and Rolldown add a few tiny helpers to what your browser downloads, so they're in the list below too), but the site couldn't be made without them: [Vitest](https://vitest.dev/) runs more than a thousand automatic tests, [Playwright](https://playwright.dev/) drives real browsers through whole games, [Rolldown](https://rolldown.rs/) and [Oxc](https://oxc.rs/) do the bundling inside Vite, and [pokersolver](https://github.com/goldfire/pokersolver) is a second, independent hand ranker the tests check our own against. [GitHub](https://github.com/) holds the code and runs the checks, and [Fly.io](https://fly.io/) hosts the server, on [Debian](https://www.debian.org/) Linux.
+These don't run with the game (Vite and Rolldown add a few tiny helpers to what your browser downloads, some of them [Babel](https://babeljs.io/)'s, so they're in the list below too), but the site couldn't be made without them: [Vitest](https://vitest.dev/) runs more than a thousand automatic tests, [Playwright](https://playwright.dev/) drives real browsers through whole games, [Rolldown](https://rolldown.rs/) and [Oxc](https://oxc.rs/) do the bundling inside Vite, and [pokersolver](https://github.com/goldfire/pokersolver) is a second, independent hand ranker the tests check our own against. [GitHub](https://github.com/) holds the code and runs the checks, and [Fly.io](https://fly.io/) hosts the server, on [Debian](https://www.debian.org/) Linux.
 
 ## The licenses
 

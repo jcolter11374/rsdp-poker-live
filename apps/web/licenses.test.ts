@@ -22,6 +22,7 @@ describe('the /credits package list', () => {
   it('leaves out tools only used to build and test, but credits the ones that add code to the bundle', () => {
     expect(named('vite')?.parts).toEqual(['browser']);
     expect(named('rolldown')?.parts).toEqual(['browser']);
+    expect(named('@babel/runtime')?.parts).toEqual(['browser']);
     for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
   });
 
@@ -35,6 +36,8 @@ describe('the /credits package list', () => {
     expect(text).toContain('Copyright (c) Facebook, Inc. and its affiliates.');
     expect(text).toContain('SIL OPEN FONT LICENSE');
     expect(text).toContain('The Inter Project Authors');
+    // Babel's helpers, which Oxc copies into the bundle for older browsers.
+    expect(text).toContain('Sebastian McKenzie and other contributors');
   });
 
   it('gives the page a short list without the license texts', () => {

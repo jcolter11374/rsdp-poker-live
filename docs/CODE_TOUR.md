@@ -226,7 +226,7 @@ Library, as `components/ActionBar.test.tsx` does for the betting bar.
 
 ## Running it on your own computer
 
-You need [Node.js](https://nodejs.org) 22 (20 or later works for the
+You need [Node.js](https://nodejs.org) 22.12 or later (20 or later works for the
 stand-alone checkers) and git.
 
 ```bash
