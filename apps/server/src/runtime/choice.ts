@@ -35,6 +35,8 @@ export interface ChoiceHost {
   canPick(seat: SeatState): boolean;
   /** Seated players plus seats held for someone (a waitlist offer, a seat request). */
   tableCount(): number;
+  /** How many more people may sit while a smaller game is on (seat requests count as taken); null for no limit. */
+  seatRoom(): number | null;
   log(text: string): void;
 }
 
@@ -79,7 +81,7 @@ export class DealersChoice {
       chip = candidates[this.host.rng(candidates.length)].seat;
       firstButton = chip;
     }
-    s.choice = { chip, firstButton, current: null, hands: 0, length: 0, next: null, deadline: null, clockFor: null, botAt: null };
+    s.choice = { chip, firstButton, current: null, hands: 0, length: 0, first: 0, next: null, deadline: null, clockFor: null, botAt: null };
     return s.choice;
   }
 
@@ -112,9 +114,14 @@ export class DealersChoice {
     return null;
   }
 
-  /** The game being played: the current pick, or the table's own game before the first. */
+  /**
+   * The game being played: the current pick. Before the first, the game the table was dealing when Dealer's choice
+   * was turned on (a rotation's step, say), or else the table's own game.
+   */
   private currentGame(): { gameId: string; betting: BettingKind } {
-    return this.s.choice?.current ?? { gameId: this.s.settings.game.gameId, betting: this.s.settings.game.betting };
+    const s = this.s;
+    if (s.choice?.current) return s.choice.current;
+    return (s.handNumber > 0 && s.choiceWas) || { gameId: s.settings.game.gameId, betting: s.settings.game.betting };
   }
 
   /**
@@ -183,10 +190,15 @@ export class DealersChoice {
     }
     const now = this.host.now();
     const c = this.ensure(candidates);
-    // Players have gone since the orbit began: it is as long as the hand about to be dealt (pickOpen agrees from now).
-    if (c.current && c.hands > 0 && !menu.hands && dealtIn < c.length) {
-      c.length = dealtIn;
-      if (c.hands >= c.length && !c.next) this.openPick();
+    // The orbit is as long as its first hand dealt in, or as the hand about to be dealt if that is fewer (players have
+    // gone, or are sitting out); pickOpen agrees from now. A player back from sitting out a hand makes it longer again.
+    // Not while the pick clock runs: the table is already waiting for the pick.
+    if (c.current && c.hands > 0 && !menu.hands && c.deadline === null) {
+      const length = Math.min(c.first ?? c.length, dealtIn);
+      if (length !== c.length) {
+        c.length = length;
+        if (c.hands >= c.length && !c.next) this.openPick();
+      }
     }
     if (!this.pickDone()) return 'go';
     if (c.next) {
@@ -229,8 +241,9 @@ export class DealersChoice {
     if (!this.menu || !c || !c.current) return;
     c.hands++;
     const fixed = this.menu.hands;
-    if (c.hands === 1) c.length = fixed || dealtIn;
-    else if (!fixed) c.length = Math.min(c.length, dealtIn);
+    if (c.hands === 1) c.first = fixed || dealtIn;
+    // Fewer dealt in this hand: it may be the last (the gate makes the orbit longer again if they're back next hand).
+    c.length = fixed || Math.min(c.first ?? c.length, dealtIn);
     if (c.hands >= c.length) this.openPick();
   }
 
@@ -244,9 +257,19 @@ export class DealersChoice {
   private startClock(chooser: SeatState) {
     const c = this.s.choice!;
     const now = this.host.now();
+    // The chip is theirs now: a player it passed over who can pick again, or someone sitting in its empty seat,
+    // doesn't take it back (D33: it moves on).
+    this.moveChip(chooser);
     c.deadline = now + this.menu!.pickSeconds * 1000;
     c.clockFor = chooser.playerId;
     c.botAt = this.host.isBot(chooser.playerId) ? now + BOT_PICK_MS : null;
+  }
+
+  /** The chip moves on to `chooser` for good (and at a new table, the first hand's button with it). */
+  private moveChip(chooser: SeatState) {
+    const c = this.s.choice!;
+    c.chip = chooser.seat;
+    if (c.firstButton !== null) c.firstButton = chooser.seat;
   }
 
   private start(pick: ChoicePick) {
@@ -254,6 +277,7 @@ export class DealersChoice {
     c.current = pick;
     c.hands = 0;
     c.length = 0;
+    c.first = 0;
     c.next = null;
     c.deadline = null;
     c.clockFor = null;
@@ -310,6 +334,8 @@ export class DealersChoice {
     }
     if (!menu || !c || !this.pickOpen()) return false;
     const chooser = this.chooser();
+    // While picking is open, a chooser who can't pick passes the chip on for good, clock or not.
+    if (chooser && chooser.seat !== c.chip) this.moveChip(chooser);
     if (c.deadline !== null && chooser && c.clockFor !== chooser.playerId) {
       this.startClock(chooser);
       this.s.nextHandAt = c.deadline;
@@ -393,8 +419,8 @@ export class DealersChoice {
     const c = s.choice ?? null;
     const now = this.host.now();
     const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, how: g.how };
-    // While paused the clock stands still: it shows what resuming now would give.
-    const deadline = s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : (c?.deadline ?? null);
+    // While paused the clock stands still: it shows what resuming now would give. Once the pick is made there is none.
+    const deadline = c?.deadline == null ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;
     return {
       chip: c ? (this.chooser()?.seat ?? null) : null,
       current: pickView(c?.current ?? null),
@@ -404,6 +430,7 @@ export class DealersChoice {
       deadline,
       count: this.host.tableCount(),
       cap: this.seatCap()?.cap ?? null,
+      closed: (this.host.seatRoom() ?? 1) <= 0,
       defaultIndex: this.defaultIndex(),
       canKeep: this.canKeep(),
     };

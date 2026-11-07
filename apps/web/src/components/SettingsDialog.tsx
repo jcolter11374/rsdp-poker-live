@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
 import { getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
@@ -13,7 +13,7 @@ import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
 import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
-import { choiceOf, DEFAULT_MENU, menuSeats, repeatsOf, stakesForMenu } from './settings/dealersChoice';
+import { choiceOf, DEFAULT_MENU, MENU_STAKES, menuSeats, repeatsOf, stakesForMenu } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
@@ -144,24 +144,48 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       game: { ...d.game, dealersChoice: { ...choiceOf(d), games: menu } },
       stakes: stakesForMenu(d.stakes, menu, choiceOf(d).games),
     }));
-  const setMode = (next: 'one' | 'rotate' | 'choice') =>
-    setDraft((d) => {
-      const dc = choiceOf(d);
-      const rotation = { ...d.game.rotation, enabled: next === 'rotate' };
-      if (next === 'rotate' && !rotation.steps.length) rotation.steps = [{ gameId: d.game.gameId, betting: d.game.betting, length: 1, unit: 'orbits' }];
-      // A new menu starts with the 8-Game games, and the stakes they need.
-      const menu = next === 'choice' && dc.games.length < 2 ? DEFAULT_MENU : dc.games;
-      return {
-        ...d,
-        game: { ...d.game, rotation, dealersChoice: { ...dc, enabled: next === 'choice', games: menu } },
-        stakes: next === 'choice' ? stakesForMenu(d.stakes, menu, dc.enabled ? dc.games : []) : d.stakes,
-      };
-    });
+  // The stakes before and after switching to Dealer's choice in this dialog set them up for its menu, so switching
+  // back before saving undoes that (each field the host hasn't changed since).
+  const choiceStakes = useRef<{ before: TableSettings['stakes']; after: TableSettings['stakes'] } | null>(null);
+  const setMode = (next: 'one' | 'rotate' | 'choice') => {
+    const d = draft;
+    const dc = choiceOf(d);
+    const rotation = { ...d.game.rotation, enabled: next === 'rotate' };
+    if (next === 'rotate' && !rotation.steps.length) rotation.steps = [{ gameId: d.game.gameId, betting: d.game.betting, length: 1, unit: 'orbits' }];
+    // A new menu starts with the 8-Game games, and the stakes they need.
+    const menu = next === 'choice' && dc.games.length < 2 ? DEFAULT_MENU : dc.games;
+    let stakes = d.stakes;
+    if (next === 'choice' && !dc.enabled) {
+      // The games dealt now: a stud ante the table already has (a HORSE rotation, a stud game) is kept.
+      const dealing = d.game.rotation.enabled && d.game.rotation.steps.length ? d.game.rotation.steps : [d.game];
+      stakes = stakesForMenu(d.stakes, menu, dealing);
+      choiceStakes.current = { before: d.stakes, after: stakes };
+    } else if (next !== 'choice' && dc.enabled && choiceStakes.current) {
+      const { before, after } = choiceStakes.current;
+      stakes = { ...d.stakes };
+      for (const k of MENU_STAKES) if (d.stakes[k] === after[k]) (stakes as Record<string, unknown>)[k] = before[k];
+      choiceStakes.current = null;
+    }
+    setDraft({ ...d, game: { ...d.game, rotation, dealersChoice: { ...dc, enabled: next === 'choice', games: menu } }, stakes });
+  };
 
   const save = () => {
-    const fixed = { ...draft, table: { ...draft.table, maxSeats: Math.min(draft.table.maxSeats, seatLimit) } };
+    const dc = draft.game.dealersChoice;
+    const fixed = {
+      ...draft,
+      table: { ...draft.table, maxSeats: Math.min(draft.table.maxSeats, seatLimit) },
+      // Saved straight from the pick time field, before it lost focus: the lowest it can be.
+      game: dc ? { ...draft.game, dealersChoice: { ...dc, pickSeconds: Math.max(SETTINGS_LIMITS.pickSeconds.min, dc.pickSeconds) } } : draft.game,
+    };
     const patch = diff(view.settings, fixed) as SettingsPatch | undefined;
     if (!patch) return onClose();
+    // How the game is chosen: a change queued earlier in this hand isn't shown here (the dialog starts from the table as
+    // it is now), so send both switches, and the queue ends up with the mode shown.
+    const g = patch.game as { rotation?: object; dealersChoice?: object } | undefined;
+    if (g && (g.rotation || g.dealersChoice)) {
+      g.rotation = { ...g.rotation, enabled: fixed.game.rotation.enabled };
+      if (fixed.game.dealersChoice) g.dealersChoice = { ...g.dealersChoice, enabled: fixed.game.dealersChoice.enabled };
+    }
     setBusy(true);
     call('host:settings', { patch })
       .then(onClose)

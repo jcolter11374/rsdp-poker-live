@@ -403,7 +403,9 @@ describe('cross-field rules', () => {
     expect(issuesOf(() => parseSettings(withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl] })))).toEqual([
       { path: 'game.dealersChoice.games', message: 'put at least two games on the menu' },
     ]);
-    expect(pathsOf(() => parseSettings(withFields(cash(), { 'game.dealersChoice.games': [nl, razz, nl] })))).toEqual(['game.dealersChoice.games[2]']);
+    expect(pathsOf(() => parseSettings(withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz, nl] })))).toEqual(['game.dealersChoice.games[2]']);
+    // A menu that is off is hidden in the dialog, so a repeat left on it doesn't stop the host saving.
+    expect(() => parseSettings(withFields(cash(), { 'game.dealersChoice.games': [nl, razz, nl] }))).not.toThrow();
     const on = withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz] });
     expect(() => parseSettings(on)).not.toThrow();
     expect(pathsOf(() => parseSettings(withFields(on, { 'game.rotation.enabled': true, 'game.rotation.steps': [{ ...nl, length: 1, unit: 'hands' }] })))).toEqual([

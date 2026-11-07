@@ -78,7 +78,10 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false));
   };
-  const keepIndex = current ? menu.findIndex((g) => g.gameId === current.gameId && g.betting === current.betting) : -1;
+  // The game being played (before the first pick, the one the table was dealing) can be kept: it's what a missed pick
+  // deals, so the server's default points at it.
+  const keepIndex = c.canKeep ? c.defaultIndex : -1;
+  const keep = keepIndex >= 0 ? menu[keepIndex] : null;
   const fallback = menu[c.defaultIndex];
   return (
     <Modal title="Pick the next game" onClose={onClose}>
@@ -90,9 +93,9 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
           {c.handsLeft === null && !current ? 'The first game' : 'Your game'} lasts {view.settings.game.dealersChoice?.hands ? `${view.settings.game.dealersChoice.hands} hands` : 'one orbit'}
           {fallback ? `. If time runs out: ${gameTitle(fallback.gameId, fallback.betting)}.` : '.'}
         </p>
-        {c.canKeep && keepIndex >= 0 && current && (
+        {keep && (
           <button className="primary" disabled={busy} onClick={() => pick(keepIndex)}>
-            Keep playing {current.gameName}
+            Keep playing {gameTitle(keep.gameId, keep.betting)}
           </button>
         )}
         <ul className="game-picker-list">

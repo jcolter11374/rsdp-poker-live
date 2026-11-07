@@ -41,10 +41,14 @@ export function nextMenuGame(games: readonly ChoiceGame[]): ChoiceGame | null {
   return null;
 }
 
+/** The stakes stakesForMenu may change. */
+export const MENU_STAKES = ['smallBlind', 'smallBet', 'bigBet', 'ante', 'anteType', 'bringIn'] as const;
+
 /**
  * The stakes a menu needs, as for HORSE: Limit bets of the big blind and twice it when a Limit game is added and
  * none are set, a small blind for the blind games, and the stud ante and bring-in when the first stud game goes
- * on (in place of any other ante: with stud on the menu, only the stud games ante, D29).
+ * on (in place of any other ante: with stud on the menu, only the stud games ante, D29). When the last stud game
+ * comes off, so does that ante: it would be posted in every blind game instead.
  */
 export function stakesForMenu(stakes: TableSettings['stakes'], games: readonly ChoiceGame[], before: readonly ChoiceGame[]): TableSettings['stakes'] {
   const next = { ...stakes };
@@ -59,5 +63,6 @@ export function stakesForMenu(stakes: TableSettings['stakes'], games: readonly C
     next.anteType = 'per-player';
   }
   if (stud && next.bringIn === 0) next.bringIn = studBringIn(next.smallBet || next.bigBlind, next.centsMode);
+  if (!stud && before.some((g) => isStud(g.gameId))) next.ante = 0;
   return next;
 }

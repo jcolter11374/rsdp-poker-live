@@ -255,7 +255,7 @@ export function Table({
   const clientNow = useNow(ticking) + skew;
   const now = view.paused ? view.serverNow : clientNow;
   const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
-  const seatsClosed = view.choice?.cap != null && view.choice.count >= view.choice.cap;
+  const seatsClosed = !!view.choice?.closed;
 
   // Geometry. Before the first measure, assume a typical box so nothing jumps far.
   const w = size.w || (compact ? 320 : 800);

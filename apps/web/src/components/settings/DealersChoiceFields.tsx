@@ -108,7 +108,9 @@ export function DealersChoiceFields({
             min={L.pickSeconds.min}
             max={L.pickSeconds.max}
             value={choice.pickSeconds}
-            onChange={(e) => onChange({ pickSeconds: Math.min(L.pickSeconds.max, Math.max(L.pickSeconds.min, Math.round(+e.target.value))) })}
+            // The lowest is only enforced on leaving the field, so typing 30 over 20 doesn't snap the 3 up to 10.
+            onChange={(e) => onChange({ pickSeconds: Math.min(L.pickSeconds.max, Math.max(0, Math.round(+e.target.value))) })}
+            onBlur={() => choice.pickSeconds < L.pickSeconds.min && onChange({ pickSeconds: L.pickSeconds.min })}
           />
         </Field>
       </div>

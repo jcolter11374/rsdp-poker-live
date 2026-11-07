@@ -552,3 +552,174 @@ describe("Dealer's choice: a smaller table and the table's own game", () => {
     expect(() => TableRuntime.checkGameSettings(s)).toThrow(/unknown game nosuch/);
   });
 });
+
+describe("Dealer's choice: from the final review", () => {
+  it('moves the chip on for good: a chooser who sits out and back in, or a newcomer in their seat, never takes it back', () => {
+    const { rt, clock } = table();
+    seat(rt, 4);
+    rt.start('host');
+    const a = chooser(rt);
+    rt.sitOut(a.playerId, true);
+    const b = chooser(rt);
+    expect(b.playerId).not.toBe(a.playerId);
+    const deadline = rt.state.choice!.deadline;
+    clock.advance(5_000);
+    rt.sitOut(a.playerId, false);
+    expect(chooser(rt).playerId).toBe(b.playerId);
+    expect(rt.state.choice!.deadline).toBe(deadline);
+    // Gone and replaced: whoever sits in the old seat doesn't take the pick either.
+    rt.stand(a.playerId);
+    rt.requestSeat('h', { seat: a.seat, name: 'H', stack: 1000 });
+    expect(chooser(rt).playerId).toBe(b.playerId);
+    // B's pick deals, with the first button on B, the player who picked.
+    pick(rt, 'nlhe');
+    expect(hand(rt).input.button).toBe(b.seat);
+  });
+
+  it('keeps the orbit its full length when a player sits out a single hand of it', () => {
+    const { rt, clock } = table();
+    seat(rt, 5);
+    rt.start('host');
+    pick(rt, 'razz');
+    const sitter = rt.state.seats.find((x) => x && x.playerId !== chooser(rt).playerId)!.playerId;
+    rt.sitOut(sitter, true);
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('razz');
+    rt.sitOut(sitter, false);
+    checkDown(rt);
+    const games = ['razz', 'razz', ...playUntilPick(rt, clock)];
+    // 5 were dealt into the first hand, and 5 are back: five hands of Razz, not four.
+    expect(games.filter((g) => g === 'razz')).toHaveLength(5);
+  });
+
+  it('shows no pick clock once the pick is made while the game is paused', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    clock.advance(2_000);
+    rt.pause('host', true);
+    pick(rt, 'razz');
+    const v = tableView(rt, 'a', clock.now()).choice!;
+    expect(v).toMatchObject({ deadline: null, open: false, next: { gameId: 'razz' } });
+  });
+
+  it('tells someone without a seat only that it isn’t their pick, whatever the hand', () => {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    expect(() => rt.chooseGame('h', { index: 0, handNumber: 7 })).toThrow(/isn't your pick/);
+    pick(rt, 'nlhe');
+    expect(() => rt.chooseGame('h', { index: 0, handNumber: 0 })).toThrow(/isn't your pick/);
+    expect(() => rt.chooseGame('h', { index: 0, handNumber: rt.state.handNumber })).toThrow(/isn't your pick/);
+    clock.advance(1);
+  });
+
+  it("doesn't name the game picked to a spectator on the delay who tries to sit in a closed seat", () => {
+    const { rt } = table((s) => {
+      s.spectators.delaySeconds = 30;
+    });
+    seat(rt, 8);
+    rt.start('host');
+    pick(rt, 'razz');
+    expect(() => rt.requestSeat('h', { seat: 8, name: 'H', stack: 1000 })).toThrow(/^that seat is closed for now$/);
+  });
+
+  it('shows the seats closed when a seat request fills a smaller game', () => {
+    const { rt, clock } = table();
+    seat(rt, 5);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.requestSeat('f', { seat: 7, name: 'F', stack: 1000 });
+    rt.start('host');
+    pick(rt, 'badugi');
+    // The request isn't counted when checking the game fits (5 of 6), but it takes the last seat Badugi deals.
+    expect(tableView(rt, 'g', clock.now()).choice).toMatchObject({ count: 5, cap: 6, closed: true });
+    rt.cancelRequest('f');
+    expect(tableView(rt, 'g', clock.now()).choice).toMatchObject({ count: 5, cap: 6, closed: false });
+  });
+
+  it('lets the host approve one of two seat requests when one seat is left in a smaller game', () => {
+    const { rt } = table();
+    seat(rt, 5);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.requestSeat('f', { seat: 6, name: 'F', stack: 1000 });
+    rt.requestSeat('g', { seat: 7, name: 'G', stack: 1000 });
+    rt.start('host');
+    pick(rt, 'badugi');
+    const [first, second] = rt.state.requests;
+    rt.approve('host', first.id);
+    expect(rt.state.seats.filter(Boolean)).toHaveLength(6);
+    expect(() => rt.approve('host', second.id)).toThrow(/Badugi seats at most 6/);
+  });
+
+  it('lets a waitlisted player take the seat offered to them when a seat request is also waiting', () => {
+    const { rt } = table((s) => {
+      s.table.maxSeats = 7;
+      s.seating.waitlist = true;
+      s.game.dealersChoice!.hands = 1;
+    });
+    seat(rt, 7);
+    rt.start('host');
+    pick(rt, 'nlhe');
+    rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+    checkDown(rt);
+    // F leaves: the seat is offered to H. E leaves, and G asks for that seat (the host approves seats for a moment).
+    rt.stand('f');
+    expect(rt.state.offers).toHaveLength(1);
+    rt.stand('e');
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.requestSeat('g', { seat: 5, name: 'G', stack: 1000 });
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    // Badugi fits: 5 seated and H's offer. G's request waits; it can't take the seat H was counted in.
+    pick(rt, 'badugi');
+    rt.requestSeat('h', { seat: rt.state.offers![0].seat, name: 'H', stack: 1000 });
+    expect(rt.state.seats.some((x) => x?.playerId === 'h')).toBe(true);
+    expect(() => rt.approve('host', rt.state.requests[0].id)).toThrow(/Badugi seats at most 6/);
+  });
+
+  it('starts afresh when the host turns Dealer’s choice off and on again, so an old pick never comes back', () => {
+    const { rt, clock } = table();
+    seat(rt, 6);
+    rt.start('host');
+    pick(rt, 'badugi');
+    checkDown(rt);
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: false } } });
+    for (const id of ['g', 'h']) rt.requestSeat(id, { seat: PEOPLE.indexOf(id), name: id.toUpperCase(), stack: 1000 });
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: true } } });
+    clock.advance(10_000);
+    expect(rt.state.log.some((l) => /Couldn't deal/.test(l.text))).toBe(false);
+    // The table waits for a fresh first pick; the game it was dealing before (its own) is what a missed one keeps.
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ current: null, open: true, cap: null });
+    expect(rt.choice.chooser()).not.toBeNull();
+  });
+
+  it("after a rotation, keeps the game the rotation was dealing when the first pick is missed", () => {
+    const { rt, clock } = table((s) => {
+      s.game.dealersChoice!.enabled = false;
+      s.game.rotation = {
+        enabled: true,
+        steps: [
+          { gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'hands' },
+          { gameId: 'razz', betting: 'fixed-limit', length: 1, unit: 'hands' },
+        ],
+      };
+    });
+    seat(rt, 3);
+    rt.start('host');
+    expect(hand(rt).input.game.id).toBe('nlhe');
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('razz');
+    // Mid-hand, the host switches to Dealer's choice: it starts when this hand ends.
+    rt.updateSettings('host', { game: { rotation: { enabled: false }, dealersChoice: { enabled: true } } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(live(rt)).toBe(false);
+    const view = tableView(rt, 'a', clock.now()).choice!;
+    expect(view.canKeep).toBe(true);
+    expect(rt.settings.game.dealersChoice!.games[view.defaultIndex].gameId).toBe('razz');
+    clock.advance(25_000);
+    expect(hand(rt).input.game.id).toBe('razz');
+    expect(rt.state.log.some((l) => /didn't pick in time, so Razz carries on/.test(l.text))).toBe(true);
+  });
+});

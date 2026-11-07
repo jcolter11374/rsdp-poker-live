@@ -286,6 +286,8 @@ export interface ChoiceView {
   count: number;
   /** While a smaller game is picked or played, the table seats at most this many (null: no limit). */
   cap: number | null;
+  /** Every seat it can deal is taken or held (counting seat requests), so the empty seats are closed. */
+  closed: boolean;
   /** The menu entry a missed pick deals. */
   defaultIndex: number;
   /** The current game is on the menu and fits, so the chooser can keep it going. */

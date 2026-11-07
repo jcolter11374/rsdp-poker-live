@@ -26,6 +26,9 @@ describe("Dealer's choice settings helpers", () => {
     const next = stakesForMenu(stakes, DEFAULT_MENU, []);
     expect(next).toMatchObject({ smallBet: 50, bigBet: 100, ante: 10, anteType: 'per-player', bringIn: 15 });
     // Adding more games to a menu that already had stud leaves the host's ante alone.
-    expect(stakesForMenu({ ...next, ante: 20 }, [...DEFAULT_MENU, { gameId: 'badugi', betting: 'fixed-limit' }], DEFAULT_MENU).ante).toBe(20);
+    expect(stakesForMenu({ ...next, ante: 20 }, [...DEFAULT_MENU, { gameId: 'badugi', betting: 'fixed-limit' }], DEFAULT_MENU).ante).toBe(20);    // Taking the last stud game off takes its ante off too: it would be posted in every Hold'em and Omaha hand.
+    const flop = CHOICE_FILLS.find((f) => f.id === 'flop')!.games;
+    expect(stakesForMenu(next, flop, DEFAULT_MENU).ante).toBe(0);
+    expect(stakesForMenu({ ...stakes, ante: 0 }, flop, []).ante).toBe(0);
   });
 });

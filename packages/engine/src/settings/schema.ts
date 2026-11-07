@@ -144,10 +144,11 @@ const DealersChoiceSchema = z
   .strict()
   .superRefine((d, ctx) => {
     if (d.enabled && d.games.length < L.choiceGames.min) custom(ctx, ['games'], 'put at least two games on the menu');
+    // A menu that is off is kept as the host left it (the dialog hides it), so it is only checked once it's on.
     const seen = new Set<string>();
     d.games.forEach((g, i) => {
       const key = `${g.gameId}/${g.betting}`;
-      if (seen.has(key)) custom(ctx, ['games', i], 'is on the menu twice');
+      if (d.enabled && seen.has(key)) custom(ctx, ['games', i], 'is on the menu twice');
       seen.add(key);
     });
   });

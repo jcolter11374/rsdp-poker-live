@@ -254,6 +254,8 @@ export interface RuntimeState {
   rotation: { step: number; hands: number; orbits: number; anchor: number | null };
   /** Dealer's choice (D33): the Pick chip and the game picked. Missing until a table plays it. */
   choice?: ChoiceState;
+  /** Dealer's choice: the game the table was dealing when it was turned on, the current game until the first pick. */
+  choiceWas?: { gameId: string; betting: BettingKind } | null;
   chat: ChatMessage[];
   log: TableLogEntry[];
   history: HandRecord[];
@@ -361,6 +363,8 @@ export interface ChoiceState {
   /** Hands of `current` dealt so far, and how many it lasts (0 until its first hand). */
   hands: number;
   length: number;
+  /** How many were dealt into its first hand (or the host's fixed number of hands). Missing in older saves. */
+  first?: number;
   /** The next game, picked once picking opened (during the current pick's last hand, or while the table waits). */
   next: ChoicePick | null;
   /** When the chooser's clock runs out; null while no clock runs. */

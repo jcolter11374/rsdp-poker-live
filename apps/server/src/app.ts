@@ -14,6 +14,7 @@ import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rs
 import { isArchived, isTournamentStaff, LOBBY_CHAT_MAX, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
+import { choiceMenu } from './runtime/choice';
 import { botIdsOf, systemClock, type ChatMessage, type Clock, type HandRecord, type PastHand, type RuntimeState, type TableLine, type TableLogEntry } from './runtime/types';
 import { splitLines, startingLines } from './storage';
 import { cleanName } from './names';
@@ -1164,7 +1165,9 @@ export function createApp(deps: AppDeps = {}) {
       if (!state) return null;
       const { settings } = state;
       const { smallBlind, bigBlind, centsMode } = settings.stakes;
-      return tablePreview(settings.table.name, [settings.game.gameId], `${amountText(smallBlind, centsMode)}/${amountText(bigBlind, centsMode)}`, settings.game.betting, spectatorsSeeCards(settings));
+      const menu = choiceMenu(settings);
+      const games = menu ? `Dealer's choice of ${menu.games.length} games` : undefined;
+      return tablePreview(settings.table.name, [settings.game.gameId], `${amountText(smallBlind, centsMode)}/${amountText(bigBlind, centsMode)}`, settings.game.betting, spectatorsSeeCards(settings), games);
     }
     if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
     if (/^\/changelog\/?$/.test(pathname)) return { title: 'Changelog · RSDP Poker Live!', description: 'Every release of RSDP Poker Live! and the small fixes in it.' };

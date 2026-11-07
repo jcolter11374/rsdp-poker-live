@@ -33,7 +33,7 @@ export function SeatingBanners({
   const taken = view.seats.every((s, i) => s !== null || held.has(i));
   // Dealer's choice: while a smaller game is on, the empty seats are closed and newcomers wait on the waitlist.
   const cap = view.choice?.cap;
-  const closed = cap != null && view.choice!.count >= cap;
+  const closed = !!view.choice?.closed;
   const full = taken || closed;
   const leave = () => call('waitlist:leave').catch(() => {});
 

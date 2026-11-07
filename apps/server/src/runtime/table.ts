@@ -219,6 +219,7 @@ export class TableRuntime {
       isBot: (id) => this.isBot(id),
       canPick: (seat) => this.canPick(seat),
       tableCount: () => this.tableCount(),
+      seatRoom: () => this.seatRoom(null),
       log: (text) => this.log(text),
     });
     // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
@@ -469,7 +470,7 @@ export class TableRuntime {
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
-      this.checkRoom(r.playerId);
+      this.checkRoom(r.playerId, by);
       // Asked before spectators could see every card: they haven't agreed to it, so they must ask again.
       if (spectatorsSeeCards(this.settings) && !r.consent && !this.botInfo(r.playerId)) {
         throw new ActionError(`${r.name} asked to sit before spectators could see every card; they need to ask again and agree to it`);
@@ -590,17 +591,23 @@ export class TableRuntime {
 
   /**
    * Dealer's choice: how many more people may sit (or be promised a seat) while a smaller game is picked or played,
-   * not counting `playerId`'s own held seat. Null when there is no limit.
+   * not counting `playerId`'s own held seat. Someone taking a seat held for them (a waitlist offer, or a seat request
+   * the host approves) counts only the other waitlist offers, as the check that the game fits did (tableCount): seat
+   * requests wait, so they can't take the room the game was picked with. Null when there is no limit.
    */
   private seatRoom(playerId: PlayerId | null): number | null {
     const cap = this.isTournament ? null : this.choice.seatCap();
     if (!cap) return null;
-    return cap.cap - this.state.seats.filter(Boolean).length - this.heldSeats(playerId);
+    const holds = playerId !== null && (this.offers().some((o) => o.playerId === playerId) || this.state.requests.some((r) => r.kind === 'seat' && r.playerId === playerId));
+    const others = holds ? new Set(this.offers().map((o) => o.playerId).filter((id) => id !== playerId && !this.seatOf(id))).size : this.heldSeats(playerId);
+    return cap.cap - this.state.seats.filter(Boolean).length - others;
   }
 
-  private checkRoom(playerId: PlayerId | null) {
+  /** `asker` gets the error: a spectator on the delay isn't told which game was picked before their view shows it. */
+  private checkRoom(playerId: PlayerId | null, asker: PlayerId | null = playerId) {
     const room = this.seatRoom(playerId);
     if (room === null || room > 0) return;
+    if (asker !== null && !this.seatOf(asker) && !this.isStaff(asker) && this.settings.spectators.delaySeconds > 0) throw new ActionError('that seat is closed for now');
     const cap = this.choice.seatCap()!;
     throw new ActionError(`${gameTitle(cap.gameId, cap.betting)} seats at most ${cap.cap} players, so the other seats are closed until the next game`);
   }
@@ -618,6 +625,9 @@ export class TableRuntime {
    */
   chooseGame(playerId: PlayerId, input: { index: number; handNumber?: number; gameId?: string; betting?: BettingKind }) {
     if (this.isTournament) throw new ActionError("tournaments don't play Dealer's choice");
+    // Only a seated player can hold the chip. Refused first, as liveHandFor does, so a spectator on the delay can't
+    // learn from the other answers when each live hand ends or a game is picked.
+    if (!this.seatOf(playerId)) throw new ActionError("it isn't your pick");
     if (input.handNumber !== undefined && input.handNumber !== this.state.handNumber) throw new ActionError('that pick was for an earlier hand');
     const asked = input.gameId !== undefined && input.betting !== undefined ? { gameId: input.gameId, betting: input.betting } : undefined;
     const why = this.choice.pick(playerId, input.index, asked);
@@ -1414,6 +1424,14 @@ export class TableRuntime {
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
+    }
+    // Dealer's choice turned on: it starts afresh (D33), never with a pick left from before it was last turned off. At a
+    // table already playing, the game it was dealing (a rotation's step, say) is the current game until the first pick.
+    if (!choiceMenu(before) && choiceMenu(s.settings)) {
+      s.choice = undefined;
+      const rot = before.game.rotation;
+      const step = rot.enabled && rot.steps.length ? rot.steps[s.rotation.step % rot.steps.length] : before.game;
+      s.choiceWas = s.handNumber > 0 ? { gameId: step.gameId, betting: step.betting } : null;
     }
     if (JSON.stringify(before.game.rotation) !== JSON.stringify(s.settings.game.rotation)) {
       s.rotation = { step: 0, hands: 0, orbits: 0, anchor: null };
