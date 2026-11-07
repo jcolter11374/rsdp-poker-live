@@ -272,13 +272,15 @@ export interface TournamentState {
   /**
    * Where seat draws get their randomness (rsdp-seats-v1, `seatRng` in seating.ts): a secret seed and how far
    * into its stream the draws have read. It never goes to browsers. Missing in tournaments saved before
-   * 2026-11-06, which drew from `rng`; the server gives one whose seats aren't drawn yet a fresh seed when it
+   * rsdp-seats-v1, which drew from `rng`; the server gives one whose seats aren't drawn yet a fresh seed when it
    * loads it (`needsSeatSeed`).
    */
   seatRng?: SeatRngState;
   /**
-   * The mulberry32 state that drew seats before 2026-11-06. Only a state saved before then without `seatRng`
-   * still reads it; new tournaments keep 0 here.
+   * The mulberry32 state that drew seats before rsdp-seats-v1. Only a state without `seatRng` still reads it.
+   * A new tournament keeps a secret, nonzero value here derived from its seed (`legacyRngFor`), so a server
+   * rolled back to before rsdp-seats-v1, which draws from this alone, still draws from a secret seed. Browsers
+   * are sent 0.
    */
   rng: number;
   /** Invite codes the host has made. Only the host is sent these. */

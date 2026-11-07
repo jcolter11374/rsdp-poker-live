@@ -1,14 +1,17 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, drawSeats, seatRng, type TournamentState } from '@rsdp/tournament';
+import { defaultSettings, drawSeats, legacyRngFor, seatRng, type TournamentState } from '@rsdp/tournament';
+import { TournamentManager } from '../src/tournament/manager';
+import { memoryTournamentStore } from '../src/tournament/store';
+import { FakeClock } from './fake-clock';
 import { registerAll, seatsAgree, setup } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-/** Rewrites a saved tournament the way a server saved it before 2026-11-06: a mulberry32 state and no seat-draw seed. */
+/** Rewrites a saved tournament the way a server saved it before rsdp-seats-v1: a mulberry32 state and no seat-draw seed. */
 async function saveTheOldWay(env: ReturnType<typeof setup>, id: string, rng: number) {
   await env.manager.flush();
   env.manager.dispose();
@@ -26,6 +29,8 @@ describe('tournament seat-draw seeds on the server', () => {
     expect(await seedOf(a)).toMatch(HEX64);
     expect(await seedOf(b)).toMatch(HEX64);
     expect(await seedOf(a)).not.toBe(await seedOf(b));
+    // The old generator's state is secret too (for a rolled-back server), and comes from the seed.
+    expect((await env.manager.peek(a))!.rng).toBe(legacyRngFor(await seedOf(a)));
     await registerAll(env, a, 3);
     await env.manager.command(a, 'host', '', { type: 'startNow', by: 'host' });
     const seed = await seedOf(a);
@@ -39,6 +44,29 @@ describe('tournament seat-draw seeds on the server', () => {
     await env.manager.flush();
     expect((await env.store.load(a))!.state.seatRng).toEqual((await env.manager.peek(a))!.seatRng);
     expect((await env.manager.peek(a))!.seatRng!.at).toBeGreaterThan(0);
+  });
+
+  it('takes the seed from crypto.randomBytes when no test generator is given', async () => {
+    const errors: unknown[] = [];
+    const manager = new TournamentManager({
+      clock: new FakeClock(),
+      store: memoryTournamentStore(),
+      tables: {
+        createTable: async () => {},
+        loadTable: async () => null,
+        attach: () => {},
+        detach: () => {},
+      },
+      onState: () => {},
+      onMoved: () => {},
+      log: (m, e) => errors.push([m, e]),
+    });
+    const ids = [await manager.create('host', defaultSettings({ name: 'A' })), await manager.create('host', defaultSettings({ name: 'B' }))];
+    const seeds = await Promise.all(ids.map(async (id) => (await manager.peek(id))!.seatRng!.seed));
+    for (const seed of seeds) expect(seed).toMatch(HEX64);
+    expect(seeds[0]).not.toBe(seeds[1]);
+    manager.dispose();
+    expect(errors).toEqual([]);
   });
 
   it('gives a tournament saved with the old 32-bit seed a fresh secure one when its seats are still to draw', async () => {

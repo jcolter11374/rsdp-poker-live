@@ -11,7 +11,7 @@ import {
   type Command,
   type TournamentState,
 } from '../src';
-import { legacySeatRng } from '../src/seating';
+import { legacyRngFor, legacySeatRng, nextRandom } from '../src/seating';
 
 const T0 = Date.parse('2026-11-06T00:00:00Z');
 const SEED = 'a1'.repeat(32);
@@ -28,7 +28,7 @@ const start: Command = { type: 'startNow', by: 'host' };
 const seatsOf = (s: TournamentState) => s.tables.map((t) => t.seats);
 const waitingIds = (s: TournamentState) => s.entries.filter((e) => e.status === 'registered').map((e) => e.id);
 
-/** A state as a server saved it before 2026-11-06: no seat-draw seed, a mulberry32 state in `rng`. */
+/** A state as a server saved it before rsdp-seats-v1: no seat-draw seed, a mulberry32 state in `rng`. */
 function savedBeforeTheChange(s: TournamentState, rng: number): TournamentState {
   const { seatRng: _gone, ...old } = JSON.parse(JSON.stringify(s)) as TournamentState;
   return { ...old, rng };
@@ -38,7 +38,9 @@ describe('tournament seat draws', () => {
   it('start every new tournament on a 32-byte secret seed, and refuse anything less', () => {
     const s = fresh();
     expect(s.seatRng).toEqual({ seed: SEED, at: 0 });
-    expect(s.rng).toBe(0);
+    // The old generator's state is secret too, never the 0 browsers are sent (see the rollback test below).
+    expect(s.rng).toBe(legacyRngFor(SEED));
+    expect(s.rng).not.toBe(0);
     expect(needsSeatSeed(s)).toBe(false);
     for (const bad of [42, 'a1'.repeat(16), 'A1'.repeat(32), '', null]) expect(() => fresh(bad as string)).toThrow(/seed/);
   });
@@ -67,6 +69,28 @@ describe('tournament seat draws', () => {
     // Codes passed in (as the server always does) leave the stream where it was.
     const passed = run(fresh(), { type: 'createInvites', by: 'host', count: 1, maxUses: 1, codes: ['ABCD2345'] });
     expect(passed.seatRng).toEqual({ seed: SEED, at: 0 });
+  });
+
+  it('leave a server rolled back to before rsdp-seats-v1 a secret seed to draw from, not a public 0', () => {
+    // That server ignores seatRng and draws with mulberry32 from `rng` alone, from the registered entries, which every
+    // viewer is sent. With a fixed rng anyone could work the draw out in advance; with one from the secret seed they can't.
+    const oldDraw = (s: TournamentState) => {
+      let state = s.rng;
+      const rng = (n: number) => {
+        const [r, next] = nextRandom(state);
+        state = next;
+        return Math.floor(r * n);
+      };
+      return drawSeats(waitingIds(s), 6, rng);
+    };
+    const a = run(fresh(), ...register(14));
+    const b = run(fresh('b2'.repeat(32)), ...register(14));
+    expect(waitingIds(a)).toEqual(waitingIds(b));
+    expect(a.rng).not.toBe(b.rng);
+    expect(oldDraw(a)).not.toEqual(oldDraw(b));
+    expect(oldDraw(a)).not.toEqual(oldDraw({ ...a, rng: 0 }));
+    // The new code itself never reads it while the state has a seed.
+    expect(seatsOf(run({ ...a, rng: 0 }, start))).toEqual(seatsOf(run(a, start)));
   });
 
   it('keep the seat seed through a save, and draw the same after it', () => {

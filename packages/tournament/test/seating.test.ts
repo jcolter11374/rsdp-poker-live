@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { drawSeats, isSeatSeed, legacySeatRng, nextRandom, SEAT_RNG_VERSION, seatRng, tablesNeeded } from '../src/seating';
+import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextRandom, SEAT_RNG_VERSION, seatRng, tablesNeeded } from '../src/seating';
 import type { SeatRngState } from '../src/types';
 
 const SEED = '5eed'.repeat(16);
@@ -11,7 +11,7 @@ function streamWord(seed: string, i: number): number {
   return block.readUInt32BE((i % 8) * 4);
 }
 
-/** The draw the way seats were drawn before 2026-11-06 (mulberry32, copied from the old seating.ts). */
+/** The draw the way seats were drawn before rsdp-seats-v1 (mulberry32, copied from the old seating.ts). */
 function oldDrawSeats<T>(players: T[], seatsPerTable: number, rng: number): [(T | null)[][], number] {
   const oldShuffle = <U>(items: U[], state: number): [U[], number] => {
     const out = [...items];
@@ -89,6 +89,17 @@ describe('the seat-draw generator (rsdp-seats-v1)', () => {
     const rng = seatRng({ seed: SEED, at: 0 });
     for (const n of [0, -1, 1.5, 2 ** 32 + 1, NaN]) expect(() => rng(n)).toThrow(RangeError);
     expect(rng(1)).toBe(0);
+  });
+
+  it("derives a new tournament's old-generator state from its seed under its own label, never 0", () => {
+    const expected = createHash('sha256').update(`${SEAT_RNG_VERSION}-legacy|${SEED}`).digest().readUInt32BE(0);
+    expect(legacyRngFor(SEED)).toBe(expected || 1);
+    expect(legacyRngFor(SEED)).not.toBe(0);
+    // It isn't a word of the seat-draw stream.
+    expect(legacyRngFor(SEED)).not.toBe(streamWord(SEED, 0));
+    const seen = new Set(Array.from({ length: 200 }, (_, i) => legacyRngFor(i.toString(16).padStart(64, '0'))));
+    expect(seen.size).toBe(200);
+    expect(seen.has(0)).toBe(false);
   });
 
   it('knows a seed when it sees one', () => {

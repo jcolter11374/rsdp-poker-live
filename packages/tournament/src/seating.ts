@@ -44,7 +44,22 @@ export function seatRng(state: SeatRngState): Rng {
   };
 }
 
-/** mulberry32, which drew seats before 2026-11-06: returns [value in [0, 1), next state]. */
+/**
+ * The old generator's 32-bit state for a new tournament, derived from its seed
+ * under its own label: the first big-endian 32-bit word of
+ * SHA-256("rsdp-seats-v1-legacy|<seed>"), never 0. This code never draws from
+ * it while the state has a seed. It is there for a rollback: a server from
+ * before rsdp-seats-v1 draws seats from `rng` alone, and must find a secret
+ * value there rather than a fixed 0 anyone can read in the source. It says
+ * nothing about the seat-draw stream, which hashes the seed under another label.
+ */
+export function legacyRngFor(seed: string): number {
+  const h = sha256(utf8(`${SEAT_RNG_VERSION}-legacy|${seed}`));
+  // 0 is what browsers are sent in its place, so never store that.
+  return (((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0) || 1;
+}
+
+/** mulberry32, which drew seats before rsdp-seats-v1: returns [value in [0, 1), next state]. */
 export function nextRandom(state: number): [number, number] {
   const s = (state + 0x6d2b79f5) >>> 0;
   let t = s;
@@ -54,7 +69,7 @@ export function nextRandom(state: number): [number, number] {
 }
 
 /**
- * The old generator for a tournament saved before 2026-11-06 that has no
+ * The old generator for a tournament saved before rsdp-seats-v1 that has no
  * seat-draw seed: mulberry32 from `holder.rng`, scaled the way the old draws
  * scaled it, so such a state draws exactly what it would have before. It moves
  * `holder.rng` on as it goes.

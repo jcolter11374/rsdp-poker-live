@@ -36,7 +36,7 @@ import {
 } from './formats';
 import { MAX_PRIZE_AMOUNT, placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
-import { drawSeats, isSeatSeed, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
+import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
 import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type LevelRow, type StructureRow } from './structure';
 import { cleanText, hasUnstorableText, isId } from './text';
 import {
@@ -343,12 +343,13 @@ export function createTournament({ id, hostId, settings: raw, now, seed, follows
     handForHand: { active: false, round: 0 },
     counters: { entry: 0, table: 0, request: 0 },
     seatRng: { seed, at: 0 },
-    rng: 0,
+    // Unused while seatRng is here, but secret, so a rolled-back server that draws from it alone can't be predicted.
+    rng: legacyRngFor(seed),
   };
 }
 
 /**
- * A tournament saved before seat draws moved to rsdp-seats-v1 (2026-11-06)
+ * A tournament saved before seat draws moved to rsdp-seats-v1 (no `seatRng`)
  * whose seats are still to be drawn. The server gives it a fresh seed from a
  * secure generator when it loads it (`withSeatSeed`), so its draw is as strong
  * as a new tournament's. Its old seed was never shown to anyone, so nothing
@@ -366,7 +367,7 @@ export function withSeatSeed(s: TournamentState, seed: string): TournamentState 
  * The generator seat draws (and codes the director makes itself) read from,
  * carrying on from where the last one stopped. It moves the state's position
  * on as it reads, so call it on the director's own copy. A state saved before
- * 2026-11-06 that never got a seed keeps mulberry32 (`legacySeatRng`).
+ * rsdp-seats-v1 that never got a seed keeps mulberry32 (`legacySeatRng`).
  */
 const drawRng = (s: TournamentState) => (s.seatRng ? seatRng(s.seatRng) : legacySeatRng(s));
 
