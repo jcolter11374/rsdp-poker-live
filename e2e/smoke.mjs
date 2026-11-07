@@ -480,15 +480,12 @@ try {
     const host = await open('phone host');
     await host.goto(BASE);
     await host.fill('input[required]', 'Pat');
+    await host.selectOption('label:has-text("Game") select', 'plo4');
     await host.click('button:has-text("Create table")');
     await host.waitForURL(/\/t\//);
     await host.locator('.seat.empty button').first().click();
     await host.click('button:has-text("Sit down")');
     await host.waitForSelector('.seat.me');
-    await host.click('button:has-text("Table settings")');
-    await host.click('.tabs button:has-text("Game")');
-    await host.locator('.field:has-text("Game") select, label:has-text("Game") select').first().selectOption('plo4');
-    await host.click('.modal button:has-text("Save")');
     // Everyone else sits down: seats fill in order, so the table is full and the rows are side by side.
     const guests = [];
     for (const name of ['Bea', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy']) {
