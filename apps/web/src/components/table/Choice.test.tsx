@@ -103,6 +103,25 @@ describe('the Pick the next game panel', () => {
       expect(screen.queryByRole('button', { name: 'Keep playing Razz' })).toBeNull();
     });
 
+    it("names what a missed pick deals as the server says, even a game the waiting menu adds (#444)", () => {
+      const pending = { game: { dealersChoice: { games: [{ gameId: 'stud', betting: 'fixed-limit' }, MENU[2]] } } } as SettingsPatch;
+      const view = viewWith(pending);
+      view.choice = { ...view.choice!, defaultIndex: 2, fallback: { gameId: 'stud', betting: 'fixed-limit', gameName: 'Seven Card Stud' } };
+      render(<GamePicker view={view} skew={0} onClose={() => {}} onRules={() => {}} />);
+      expect(screen.getByText(/If time runs out: Seven Card Stud\./)).toBeTruthy();
+    });
+
+    it('says how long the game picked now lasts once the waiting change applies (#444)', () => {
+      // The host changes how long each pick lasts during the hand: the next pick is dealt after the change applies.
+      const { unmount } = render(<GamePicker view={viewWith({ game: { dealersChoice: { hands: 5 } } } as SettingsPatch)} skew={0} onClose={() => {}} onRules={() => {}} />);
+      expect(screen.getByText(/Your game lasts 5 hands/)).toBeTruthy();
+      unmount();
+      const view = viewWith({ game: { dealersChoice: { hands: 0 } } } as SettingsPatch);
+      view.settings.game.dealersChoice!.hands = 3;
+      render(<GamePicker view={view} skew={0} onClose={() => {}} onRules={() => {}} />);
+      expect(screen.getByText(/Your game lasts one orbit/)).toBeTruthy();
+    });
+
     it('greys nothing out for a change that leaves the menu as it is', () => {
       render(<GamePicker view={viewWith({ table: { name: 'Friday night' } } as SettingsPatch)} skew={0} onClose={() => {}} onRules={() => {}} />);
       for (const name of ["No-Limit Hold'em", 'Razz', 'Pot-Limit Omaha']) expect(pickButton(name).disabled).toBe(false);
