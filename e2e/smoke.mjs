@@ -264,6 +264,79 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step('cash table: the seats stay put when the game starts', async () => {
+    // Before the first hand, a banner above the table said to press Start game. It took height from the felt, so when it
+    // went the felt grew and every seat slid to a new spot while the first cards came (#383). The middle of the table says
+    // it now. On a laptop (the host, with the side column) and a wide, short screen (a player), from before the host
+    // presses Start game until the cards are out, the felt keeps its size and no player's seat moves or changes size.
+    const host = await open('start host', { width: 1280, height: 800 });
+    const guest = await open('start guest', { width: 2300, height: 824 });
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Lou');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Mo');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    for (const [p, says] of [
+      [host, 'press Start game'],
+      [guest, 'Waiting for the host to start the game'],
+    ]) {
+      await p.locator('.felt .board-notice', { hasText: says }).waitFor();
+      // (The host's "1 request is waiting" banner goes once the approval reaches the host's page.)
+      await p.waitForFunction(() => !document.querySelector('.felt-area > .banner')).catch(async () => {
+        throw new Error(`a banner above the table: ${await p.locator('.felt-area > .banner').first().innerText()}`);
+      });
+    }
+    // The request banner has just gone, and seats glide to new spots in 0.4s.
+    await host.waitForTimeout(900);
+    const sampleLayouts = (p) =>
+      p.evaluate(() => {
+        const seen = (window.__layouts = new Set());
+        const sample = () => {
+          const felt = document.querySelector('.felt');
+          if (felt) {
+            const r = felt.getBoundingClientRect();
+            // The players' seats. (Empty seats' markers can still shift a pixel or two when the first stacks change, which is
+            // the seat spacing's business, not this check's.)
+            const seats = [...felt.querySelectorAll('.seat[data-seat]')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
+            seen.add(`felt ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.top)}, seats ${felt.style.getPropertyValue('--seat-scale')}: ${seats}`);
+          }
+          if (window.__layouts === seen) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+    await Promise.all([sampleLayouts(host), sampleLayouts(guest)]);
+    await host.click('button:has-text("Start game")');
+    for (const p of [host, guest]) await p.waitForSelector('.seat .hole .playing-card');
+    await host.waitForTimeout(1000);
+    for (const [p, who] of [
+      [host, 'the host at 1280x800'],
+      [guest, 'a player at 2300x824'],
+    ]) {
+      const seen = await p.evaluate(() => {
+        const s = [...window.__layouts];
+        window.__layouts = null;
+        return s;
+      });
+      if (seen.length !== 1) throw new Error(`for ${who}, the table moved when the game started:\n  ${seen.join('\n  ')}`);
+      if (await p.locator('.felt .board-notice').count()) throw new Error(`for ${who}, the middle of the table still says to start the game`);
+    }
+    await host.screenshot({ path: path.join(OUT, 'started.png') });
+    await stopGame(host, [host, guest]);
+    // Stopped, the middle of the table says so, under the last hand's result, and the dealer button (which would sit on
+    // the note) is gone.
+    await host.locator('.felt .board-notice', { hasText: 'The game is stopped' }).waitFor();
+    await guest.locator('.felt .board-notice', { hasText: 'Waiting for the host to start it again' }).waitFor();
+    for (const p of [host, guest]) if (await p.locator('.felt .dealer').count()) throw new Error('the dealer button is still on the table after the game stopped');
+  });
+
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {
     const p = await open('practice');
     await p.goto(BASE);
@@ -471,6 +544,96 @@ try {
     await host.setViewportSize({ width: 2300, height: 800 });
     await host.click('.drawer-button');
     await stopGame(host, [host, guest]);
+  });
+
+  await step('Omaha on a laptop: no nameplate covers another, and the seats hold still', async () => {
+    // Four-card Omaha has the widest nameplates. At a nine-seat table on a 1280x800 window, the seats once ran out of room
+    // and went back to even spacing, and your nameplate covered the next player's (#363).
+    const p = await open('omaha layout', { width: 1280, height: 800 });
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Oli');
+    await p.selectOption('label:has-text("Game") select', 'plo4');
+    await p.selectOption('.home-practice label:has-text("Bots") select', '3');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    await p.waitForSelector('.seat.me .hole .playing-card');
+    if (await p.locator('.side.drawer.open').count()) await p.keyboard.press('Escape');
+    // Every nameplate (with the cards beside it) and empty seat, against every other: which ones overlap.
+    const covered = () =>
+      p.evaluate(() => {
+        const box = (el) => el.getBoundingClientRect();
+        const seats = [...document.querySelectorAll('.felt .seat[data-seat]')].map((el) => {
+          const hole = el.querySelector('.hole:not(.mucked)');
+          // Cards sliding to or back from the muck are on their way, not where they sit.
+          const cards = hole && hole.childElementCount && getComputedStyle(hole).transform === 'none' ? box(hole) : null;
+          return { name: `seat ${Number(el.dataset.seat) + 1}`, plate: box(el.querySelector('.nameplate')), cards };
+        });
+        const empties = [...document.querySelectorAll('.felt .seat.empty')].map((el, i) => ({ name: `empty seat ${i + 1}`, plate: box(el) }));
+        const over = (a, b) => a && b && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+        const found = [];
+        seats.forEach((a, i) => {
+          for (const b of [...seats.slice(i + 1), ...empties]) {
+            if (over(a.plate, b.plate)) found.push(`${a.name} and ${b.name}`);
+            else if (over(a.cards, b.plate) || over(b.cards, a.plate)) found.push(`${a.name}'s or ${b.name}'s cards`);
+          }
+        });
+        return found;
+      });
+    const check = async (what) => {
+      // Seats glide to new places in 0.4s.
+      await p.waitForTimeout(900);
+      const found = await covered();
+      if (found.length) throw new Error(`${what}: these overlap: ${found.join(', ')}`);
+    };
+    const addBots = async (count) => {
+      for (let i = 0; i < count; i++) {
+        await p.locator('.seat.empty .add-bot').first().click();
+        await p.click('.modal button.primary:has-text("Add")');
+        await p.locator('.modal').waitFor({ state: 'detached' });
+      }
+    };
+    await check('four players at 1280x800');
+    await p.setViewportSize({ width: 2300, height: 824 });
+    await check('four players at 2300x824');
+    await p.setViewportSize({ width: 1280, height: 800 });
+    await addBots(2);
+    await check('six players at 1280x800');
+    await addBots(3);
+    await check('nine players at 1280x800');
+    // Oli checks or calls when it's her turn, so the hands play on instead of waiting on her clock.
+    const play = async (ms) => {
+      const buttons = p.locator('.action-bar.my-turn .buttons button');
+      for (const end = Date.now() + ms; Date.now() < end; ) {
+        const pick = (await buttons.allInnerTexts().catch(() => [])).findIndex((t) => /^(Check|Call)/.test(t));
+        if (pick >= 0) await buttons.nth(pick).click({ timeout: 2000 }).catch(() => {});
+        await p.waitForTimeout(250);
+      }
+    };
+    // Wait for a hand dealt after the last bot sat down (Oli's cards change), so the seats are where they'll stay.
+    const hand = () => p.locator('.seat.me .hole .playing-card').evaluateAll((cards) => cards.map((c) => c.getAttribute('aria-label')).join());
+    const before = await hand();
+    for (let i = 0; i < 120 && (await hand()) === before; i++) await play(500);
+    await p.waitForTimeout(900);
+    // Frame to frame, the seats stay where they are while the hands play: cards dealt, bets, folds and the lines under
+    // the nameplates coming and going (#350's twitch, #363's spacing).
+    await p.evaluate(() => {
+      const seen = (window.__spots = new Set());
+      const sample = () => {
+        seen.add([...document.querySelectorAll('.felt .seat')].map((s) => `${s.style.left},${s.style.top}`).join(' '));
+        if (window.__spots === seen) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await play(8000);
+    const spots = await p.evaluate(() => {
+      const n = window.__spots.size;
+      window.__spots = null;
+      return n;
+    });
+    if (spots !== 1) throw new Error(`the seats moved ${spots - 1} times in eight seconds of play`);
+    await p.screenshot({ path: path.join(OUT, 'omaha-laptop.png') });
+    await stopGame(p, [p]);
+    await p.close();
   });
 
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.

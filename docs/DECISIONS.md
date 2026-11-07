@@ -43,7 +43,9 @@ How this file works:
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
+| [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
+| [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
 
 ---
 
@@ -361,6 +363,38 @@ How this file works:
 - **For next time:** Dependabot groups PGlite with Drizzle in a `database` group of its own (`.github/dependabot.yml`). A PGlite update that changes the Postgres major version (see `PGLITE_POSTGRES` in `apps/server/src/db/client.ts`, which `apps/server/test/pglite-versions.test.ts` checks) follows these three steps again.
 - **Where:** `apps/server/src/db/client.ts`, `apps/server/test/pglite-versions.test.ts`, issue #367.
 
+## D33. Dealer's choice
+
+- **Decided:** 2026-11-06, by John (issue #341). He asked how Dealer's choice would work, read the plan, and took all nine of its recommendations on a decision card. The fine print below the nine is Claude's, settled while building it, and reversible.
+- **Decision (John's nine):**
+  1. A pick lasts one orbit: as many hands as players were dealt into its first hand. The host can set a fixed number of hands instead.
+  2. A **Pick chip**, separate from the dealer button, says who picks next. It moves one seat to the left after each pick.
+  3. The table keeps the seats the host chose. Games that seat fewer players than are sitting down are greyed out in the picker.
+  4. If the chooser doesn't pick in time, the current game carries on for another orbit.
+  5. The same game can be picked twice in a row. No "no repeats" setting unless the group asks.
+  6. A bot holding the chip picks at random from the games that fit, using the site's secure random numbers (as random bomb pots do).
+  7. Cash tables only, for now.
+  8. HORSE and 8-Game fill the menu in one tap; they aren't a single pick.
+  9. One set of stakes for every game on the menu, as for mixed games (D29): with a stud game on the menu, only the stud games ante.
+- **The fine print (Claude):**
+  - **The menu** has 2 to 20 entries, each a game with its betting, with no entry twice. Dealer's choice and a mixed-game rotation can't both be on.
+  - **The first chooser:** when Dealer's choice starts at a table that hasn't dealt yet, a random player (the site's secure random numbers) gets the chip, and the first hand's button is drawn on them. At a table already playing, the chip starts with the player due the next button, and the game it was dealing (a rotation's game, if it was rotating) is the "current game" until the first pick, so the chooser can keep it. A table that hasn't dealt yet has no current game. Turned off and on again, it starts afresh: a pick from before is never resumed.
+  - **When the clock runs:** once the last hand of an orbit is dealt, the chooser can pick at any time, with no clock. The pick clock (20 seconds by default; the host can set 10 to 60) starts when the next hand is due, and the table waits for the pick instead of dealing it. A pick made early is dealt with no wait. A paused table stops it, and so does a table that can't deal (the game stopped, or too few players): the chooser can still pick, and gets a fresh clock once a hand can be dealt. After a restart the chooser gets a fresh clock.
+  - **Who can pick:** anyone seated who isn't sitting out, has chips and isn't offline past the table's offline grace time, including a newcomer waiting for the big blind. That is checked while they hold the chip and picking is open: if they stop being able to pick, the chip moves on for good (they don't take it back by sitting in again, and nor does someone who sits in their seat) and the next player gets a fresh clock. At a new table, the first hand's button goes with it. A pick that's made stands, even if the chooser then busts or leaves. If nobody can pick, the current game carries on and the chip stays.
+  - **The default:** a missed pick keeps the current game if it is still on the menu and fits the table; otherwise the first game on the menu that fits. A fixed rule, so everyone knows what will happen.
+  - **An orbit gets shorter** when players leave: it ends once it has had as many hands as were dealt into its first hand, or as the next hand would deal in if that is fewer (so when someone leaves before the last hand, the pick can be due at once). Someone sitting out a hand shortens it only while they are out: back in, the orbit is its full length again.
+  - **A table made smaller** by the host: the Pick chip moves with its player into their new seat. If its seat is empty and goes, it passes to the next player round from it, who would have picked anyway.
+  - **The host moves a player or shuffles the seats:** the Pick chip stays with the player who holds it, in their new seat. If its holder is sitting out or away and the change would put the PICK tag on someone else (whoever picks in their place depends on the seating), the chip goes for good to whoever had the tag. The host sets the menu, never the pick, so no seat change gives the next pick to someone else. Who picks after them follows the new seating. At a new table the first hand's button goes with the first chooser too; after the first hand, a shuffle draws the button afresh as usual.
+  - **A chooser who leaves** gives up the Pick chip: it goes to the next player round from their seat, who would pick in their place anyway. Whoever sits down in that seat later, or a bot the host adds there, doesn't take it. At a new table the first hand's button goes with it. (While a holder sits out, whoever picks in their place is the first player round from them who can pick, so someone sitting down in between picks instead: the seating decides, as for any skip.)
+  - **An all-in runout:** while the cards are dealt out, the PICK tag stays where it was, since once the server has the result it passes over anyone who busted. A chooser in that all-in picks once the result shows; their pick clock only starts after it. A chooser not in it can pick as usual.
+  - **Seats while a smaller game is on:** from the moment a game is picked (or kept) until the next game starts, the table seats nobody beyond that game's limit, counting seats held for a waitlist offer or a seat request as taken. Someone taking a seat held for them (their waitlist offer, or their seat request the host approves) counts only the other waitlist offers, as the check that the game fits does, so a seat request never blocks the offer the game was picked with. Empty seats show as closed, and the waitlist, seat requests and new bots wait. A spectator watching on a delay who tries to sit in a closed seat is told only that it is closed, not which game was picked. A game "fits" when the seated players plus anyone offered a seat from the waitlist are no more than it seats. Seat requests don't count toward that, because only the host sees them; they wait while a smaller game is on. The host can't save a menu where no game fits, and the table has no more seats than the menu's biggest game.
+  - **A host's change** to the menu applies from the next pick. Editing the menu never moves the chip or restarts the orbit, and a pick already made stands even if its game comes off the menu.
+  - **What players see:** the chooser gets a "Pick the next game" panel; everyone sees the Pick chip, a "Sam is picking" line where "Next hand in" shows, and the game in the top bar. Picks go in the table log. There is no chat line: chat isn't held back for spectators on a delay, and a pick made as a hand ends would tell them it had ended.
+  - **A bomb pot** counts as one hand of the orbit.
+- **Why:** card rooms (the World Series of Poker, the Asian Poker Tour) run Dealer's Choice with a separate pick button and one orbit per pick, so nobody picks a game to suit their own seat. The stud games don't show a button, and after a full orbit the button is back where it started, so "the button picks" would give the same player every pick. PokerNow doesn't offer Dealer's choice. The plan John read is linked from issue #341.
+- **Not done, on purpose:** tournaments (decision 7), a single pick that deals HORSE in turn (decision 8), separate stakes for each game (decision 9, D29), and a chat line for each pick.
+- **Where:** `game.dealersChoice` in `packages/engine/src/settings/schema.ts`; the Pick chip and pick clock in `apps/server/src/runtime/choice.ts` and `dealHand` in `apps/server/src/runtime/table.ts`; the Pick tag, the felt line and the picker in `apps/web/src/components/table/Choice.tsx`; the menu editor in `apps/web/src/components/settings/DealersChoiceFields.tsx`.
+
 ## D34. Releases go out when they're ready, not at a quiet time
 
 - **Decided:** 2026-11-07, 01:15 UTC, by John. A release was being held for a quiet time (after 04:00 UTC), as D05's conditions and D25 said. John: "Did I say to wait? is this a new policy of yours?" and "I've basically worked against that framing." The wait was Claude's own condition (D05), never his; on 2026-10-26 he had said "go ahead and push updates now. Don't worry about active tables".
@@ -368,3 +402,10 @@ How this file works:
 - **Why:** a deploy restarts the server, but hands in progress resume and browsers reconnect by themselves, so players see a pause of a few seconds. John prefers that to finished work waiting.
 - **Replaces** the quiet-time condition in D05 and the "release at a quiet time" in D25's full path. Nothing else in them changes.
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CONTRIBUTING.md](../CONTRIBUTING.md#full-or-light-how-much-checking-a-change-needs), [CLAUDE.md](../CLAUDE.md), [CODE_TOUR.md](CODE_TOUR.md).
+
+## D36. A worked-out stud bring-in is a round amount
+
+- **Decided:** 2026-11-07, by Claude, fixing the odd tournament bring-ins found in the play-test of release 2026.11.07 (issue #398). Reversible.
+- **Decision:** when the site works out a stud bring-in itself (every tournament level that doesn't set its own, and a cash table whose bring-in is left at 0), it is a third of the small bet rounded down to a round amount: 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten, the steps the tournament blinds use, and never less than 1. With Limit bets of 2,000/4,000 the bring-in is 600 (not 666), at 4,000/8,000 it is 1,000 (not 1,333), and at 1,000/2,000 it is 300. On the usual tournament levels that is between a quarter and a third of the small bet. A bring-in someone set themselves (a structure's own, or the Stakes tab's) is kept as it is, and the bring-in a new cash table fills in for the host (a third of the small bet, to the nearest nickel) doesn't change.
+- **Why:** card rooms bring in for about a quarter to a third of the small bet, in chips that are in play; 666 is an amount no dealer would ask for. Rounding down keeps it at most a third, the size the Stakes tab has always described. A fixed quarter would also give round amounts at the usual levels, but at Limit bets of 1,000/2,000 it would be 250 rather than 300, smaller than the third players already know from the cash tables.
+- **Where:** `bringInFor` in `packages/engine/src/variants/antes.ts`, used by `levelFor` in `packages/tournament/src/director.ts` and `fillStakes` in `apps/server/src/runtime/table.ts`.

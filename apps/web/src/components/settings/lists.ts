@@ -13,9 +13,11 @@ export function nextBlindLevel(last: BlindLevel): BlindLevel {
   return { ...last, smallBlind: double(last.smallBlind), bigBlind: double(last.bigBlind), ante: double(last.ante) };
 }
 
-/** For a blind schedule at a table with Limit or stud games: those amounts rise with the blinds too. Null when there are none. */
+/** For a blind schedule at a table with Limit or stud games (in its rotation or on its Dealer's choice menu): those amounts rise with the blinds too. Null when there are none. */
 export function scheduleBetsNote(game: TableSettings['game']): string | null {
-  const steps = game.rotation.enabled && game.rotation.steps.length ? game.rotation.steps : [game];
+  const dc = game.dealersChoice;
+  const menu = dc?.enabled && dc.games.length >= 2 && !game.rotation.enabled ? dc.games : null;
+  const steps = menu ?? (game.rotation.enabled && game.rotation.steps.length ? game.rotation.steps : [game]);
   const limit = steps.some((st) => st.betting === 'fixed-limit');
   const stud = steps.some((st) => getVariant(st.gameId).forcedBets === 'ante-bring-in');
   if (!limit && !stud) return null;

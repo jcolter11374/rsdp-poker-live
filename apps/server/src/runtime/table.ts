@@ -33,7 +33,7 @@ import {
   type TableSettings,
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
-import { gameTitle, skipsMixedGameAnte, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
+import { bringInFor, gameTitle, skipsMixedGameAnte, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
 import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip, type TurnKey } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
@@ -58,6 +58,7 @@ import { maskProfanity } from './profanity';
 import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../bots/strategy';
 import { coachTip as buildCoachTip } from '../bots/coach';
 import { botNote, plainNote } from '../bots/reasons';
+import { choiceMenu, DealersChoice } from './choice';
 
 /** Chat and log lines the state keeps, for the side panel; every one is also handed to onLine to be kept for good. */
 const CHAT_LIMIT = 200;
@@ -188,7 +189,7 @@ export class TableRuntime {
   private readonly offlineSince = new Map<PlayerId, number>();
   /** When this runtime came up: players it has never seen get their grace from here. */
   private readonly upSince: number;
-  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null, reveal: null };
+  private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null, reveal: null, pick: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
@@ -199,6 +200,8 @@ export class TableRuntime {
   private tipSlowLogged = false;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
+  /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
+  readonly choice: DealersChoice;
 
   constructor(state: RuntimeState, deps: RuntimeDeps = {}) {
     this.state = state;
@@ -209,6 +212,16 @@ export class TableRuntime {
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
     this.upSince = this.clock.now();
+    this.choice = new DealersChoice({
+      state,
+      now: () => this.clock.now(),
+      rng: (n) => this.rng(n),
+      isBot: (id) => this.isBot(id),
+      canPick: (seat) => this.canPick(seat),
+      tableCount: () => this.tableCount(),
+      seatRoom: () => this.seatRoom(null),
+      log: (text) => this.log(text),
+    });
     // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
     // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.
     const queued = state.pendingSettings?.spectators;
@@ -280,6 +293,7 @@ export class TableRuntime {
   restartClocks() {
     const s = this.state;
     const hand = s.hand;
+    this.choice.restart();
     if (s.paused || !hand || hand.phase === 'complete') return;
     if (s.turn) s.turn = this.newTurn(s.turn.key, s.turn.seat);
     if (hand.phase === 'rit-vote' && s.ritDeadline !== null) s.ritDeadline = this.clock.now() + RIT_VOTE_SECONDS * 1000;
@@ -428,6 +442,7 @@ export class TableRuntime {
     if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, seat);
     this.checkSeatKept(seat, playerId);
+    this.checkRoom(playerId);
     this.checkBuyIn(playerId, stack);
     // A new request replaces your earlier one (which never holds a seat against you).
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
@@ -455,6 +470,7 @@ export class TableRuntime {
     if (!r) throw new ActionError('request not found');
     if (r.kind === 'seat') {
       if (this.seatOf(r.playerId)) throw new ActionError('already seated');
+      this.checkRoom(r.playerId, by);
       // Asked before spectators could see every card: they haven't agreed to it, so they must ask again.
       if (spectatorsSeeCards(this.settings) && !r.consent && !this.botInfo(r.playerId)) {
         throw new ActionError(`${r.name} asked to sit before spectators could see every card; they need to ask again and agree to it`);
@@ -540,8 +556,10 @@ export class TableRuntime {
     }
   }
 
-  /** Empty seats nobody else is waiting on. */
+  /** Empty seats nobody else is waiting on. None while a smaller Dealer's choice game has every seat it can deal. */
   private openSeats(playerId: PlayerId | null = null): number[] {
+    const room = this.seatRoom(playerId);
+    if (room !== null && room <= 0) return [];
     const held = new Set([
       ...this.offers().filter((o) => o.playerId !== playerId).map((o) => o.seat),
       ...this.state.requests.filter((r) => r.kind === 'seat' && r.playerId !== playerId).map((r) => r.seat!),
@@ -552,6 +570,69 @@ export class TableRuntime {
     // (see moveIntoKeptSeats) aren't open to anyone else.
     const kept = new Set(this.moverSeats(limit, this.movers()));
     return open.filter((i) => !kept.has(i));
+  }
+
+  /** Seats held for someone not yet sitting: waitlist offers and seat requests (not `except`'s own). */
+  private heldSeats(except: PlayerId | null = null): number {
+    const ids = new Set([...this.offers().map((o) => o.playerId), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.playerId)]);
+    if (except !== null) ids.delete(except);
+    return [...ids].filter((id) => !this.seatOf(id)).length;
+  }
+
+  /**
+   * Dealer's choice counts these when checking a game fits: everyone sitting down, and anyone offered a seat from
+   * the waitlist. A seat request isn't counted, since only the host sees it; like the waitlist, it waits while a
+   * smaller game is on (seatRoom counts it).
+   */
+  private tableCount(): number {
+    const offered = new Set(this.offers().map((o) => o.playerId));
+    return this.state.seats.filter(Boolean).length + [...offered].filter((id) => !this.seatOf(id)).length;
+  }
+
+  /**
+   * Dealer's choice: how many more people may sit (or be promised a seat) while a smaller game is picked or played,
+   * not counting `playerId`'s own held seat. Someone taking a seat held for them (a waitlist offer, or a seat request
+   * the host approves) counts only the other waitlist offers, as the check that the game fits did (tableCount): seat
+   * requests wait, so they can't take the room the game was picked with. Null when there is no limit.
+   */
+  private seatRoom(playerId: PlayerId | null): number | null {
+    const cap = this.isTournament ? null : this.choice.seatCap();
+    if (!cap) return null;
+    const holds = playerId !== null && (this.offers().some((o) => o.playerId === playerId) || this.state.requests.some((r) => r.kind === 'seat' && r.playerId === playerId));
+    const others = holds ? new Set(this.offers().map((o) => o.playerId).filter((id) => id !== playerId && !this.seatOf(id))).size : this.heldSeats(playerId);
+    return cap.cap - this.state.seats.filter(Boolean).length - others;
+  }
+
+  /** `asker` gets the error: a spectator on the delay isn't told which game was picked before their view shows it. */
+  private checkRoom(playerId: PlayerId | null, asker: PlayerId | null = playerId) {
+    const room = this.seatRoom(playerId);
+    if (room === null || room > 0) return;
+    if (asker !== null && !this.seatOf(asker) && !this.isStaff(asker) && this.settings.spectators.delaySeconds > 0) throw new ActionError('that seat is closed for now');
+    const cap = this.choice.seatCap()!;
+    throw new ActionError(`${gameTitle(cap.gameId, cap.betting)} seats at most ${cap.cap} players, so the other seats are closed until the next game`);
+  }
+
+  /** Dealer's choice: who may pick the next game. Seated, playing, with chips (bots rebuy) and not gone. */
+  private canPick(seat: SeatState): boolean {
+    if (seat.sittingOut || seat.leaveAfterHand) return false;
+    if (seat.stack <= 0 && !this.isBot(seat.playerId)) return false;
+    return this.isOnline(seat.playerId) || this.offlineFor(seat) <= this.state.settings.seating.offlineGraceSeconds * 1000;
+  }
+
+  /**
+   * Dealer's choice: the chooser picks the next game from the menu. `handNumber` is the hand they saw, and
+   * `gameId`/`betting` the game they tapped, so a pick sent just before the hand or the menu changed is refused.
+   */
+  chooseGame(playerId: PlayerId, input: { index: number; handNumber?: number; gameId?: string; betting?: BettingKind }) {
+    if (this.isTournament) throw new ActionError("tournaments don't play Dealer's choice");
+    // Only a seated player can hold the chip. Refused first, as liveHandFor does, so a spectator on the delay can't
+    // learn from the other answers when each live hand ends or a game is picked.
+    if (!this.seatOf(playerId)) throw new ActionError("it isn't your pick");
+    if (input.handNumber !== undefined && input.handNumber !== this.state.handNumber) throw new ActionError('that pick was for an earlier hand');
+    const asked = input.gameId !== undefined && input.betting !== undefined ? { gameId: input.gameId, betting: input.betting } : undefined;
+    const why = this.choice.pick(playerId, input.index, asked);
+    if (why) throw new ActionError(why);
+    this.sync();
   }
 
   /**
@@ -682,6 +763,17 @@ export class TableRuntime {
     if (row) row.cashOut += stack;
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
+    // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
+    // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). At
+    // a new table the first hand's button goes with it.
+    const c = this.state.choice;
+    if (c?.chip === seat.seat) {
+      const next = this.seatedFromChip();
+      if (next) {
+        if (c.firstButton === c.chip) c.firstButton = next.seat;
+        c.chip = next.seat;
+      }
+    }
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
     this.log(`${seat.name} left the table with ${this.money(stack)}`);
@@ -830,6 +922,8 @@ export class TableRuntime {
       this.revealHands();
     }
     this.state.nextHandAt = null;
+    // Dealer's choice: the chooser's time doesn't run out while the game is stopped; Start gives a fresh clock.
+    this.choice.hold();
     this.log(`${this.nameOf(by)} stopped the game`);
     this.sync();
   }
@@ -1107,6 +1201,7 @@ export class TableRuntime {
         turn: s.turn?.deadline != null ? Math.max(RESUME_MIN_MS, s.turn.deadline - now) : null,
         nextHand: s.nextHandAt != null ? Math.max(0, s.nextHandAt - now) : null,
         rit: s.ritDeadline != null ? Math.max(RESUME_MIN_MS, s.ritDeadline - now) : null,
+        pick: this.choice.pause(RESUME_MIN_MS),
       };
       if (s.level.runningSince !== null) {
         s.level.elapsedMs += now - s.level.runningSince;
@@ -1126,6 +1221,7 @@ export class TableRuntime {
       }
       if (left?.nextHand != null) s.nextHandAt = now + left.nextHand;
       if (left?.rit != null && s.hand?.phase === 'rit-vote') s.ritDeadline = now + left.rit;
+      this.choice.resume(left?.pick);
       s.pausedLeft = null;
       s.paused = false;
       for (const id of this.offlineSince.keys()) this.offlineSince.set(id, now);
@@ -1207,10 +1303,22 @@ export class TableRuntime {
     // Every amount here, the ledger and everyone's records are in the table's unit, so it stays the one the table was made with.
     if (next.stakes.centsMode !== cur.stakes.centsMode) throw new ActionError(cur.stakes.centsMode ? 'cash games are played in dollars and cents' : 'this table plays in chips; start a new table to play in dollars and cents');
     const seated = this.state.seats.filter(Boolean).length;
+    // Dealer's choice keeps the table's seats: games that seat fewer are greyed out in the picker (D33). No game on
+    // the menu may seat fewer than are sitting down.
+    const menu = choiceMenu(next);
+    if (menu) {
+      const biggest = TableRuntime.menuBiggest(menu.games);
+      if (seated > biggest.maxPlayers) {
+        const extra = seated - biggest.maxPlayers;
+        throw new ActionError(
+          `No game on the menu seats ${seated}: the biggest, ${biggest.name}, seats at most ${biggest.maxPlayers}. ${extra} ${extra === 1 ? 'player needs' : 'players need'} to leave the table (or remove ${extra === 1 ? 'a bot' : 'some bots'}), or add a bigger game.`,
+        );
+      }
+    }
     const specs = TableRuntime.gameSpecs(next);
     // The game with the fewest seats sets the size of the whole table, even in a mixed-game rotation.
-    const tightest = specs.reduce((a, b) => (b.maxPlayers < a.maxPlayers ? b : a));
-    if (seated > tightest.maxPlayers) {
+    const tightest = specs.length ? specs.reduce((a, b) => (b.maxPlayers < a.maxPlayers ? b : a)) : null;
+    if (tightest && seated > tightest.maxPlayers) {
       const extra = seated - tightest.maxPlayers;
       const which = specs.length > 1 ? `${tightest.name}, one of the games in the rotation,` : tightest.name;
       throw new ActionError(
@@ -1238,10 +1346,27 @@ export class TableRuntime {
       }
       if (spec.family !== 'flop' || spec.forcedBets !== 'blinds') throw new ActionError(`bomb pots need a game with a flop, not ${spec.name}`);
     }
+    // Dealer's choice: the table has no more seats than the menu's biggest game.
+    const menu = choiceMenu(next);
+    if (menu) {
+      // The table's own game is still dealt before the first pick at a table that was already playing, so it has to exist.
+      try {
+        variants.get(next.game.gameId);
+      } catch {
+        throw new ActionError(`unknown game ${next.game.gameId}`);
+      }
+      const biggest = TableRuntime.menuBiggest(menu.games);
+      if (next.table.maxSeats > biggest.maxPlayers) throw new ActionError(`the biggest game on the menu, ${biggest.name}, seats at most ${biggest.maxPlayers}: lower the table to ${biggest.maxPlayers} seats or add a bigger game`);
+    }
   }
 
-  /** The games the settings deal (the rotation's when it is on); a game there isn't is refused. */
+  /**
+   * The games the settings deal (the rotation's when it is on); a game there isn't is refused. None for Dealer's
+   * choice: the table keeps its seats, and games that seat fewer are greyed out when picking (checkGameSettings
+   * checks the menu).
+   */
   private static gameSpecs(next: TableSettings): GameSpec[] {
+    if (choiceMenu(next)) return [];
     const games = next.game.rotation.enabled ? next.game.rotation.steps.map((st) => st.gameId) : [next.game.gameId];
     return games.map((id) => {
       try {
@@ -1250,6 +1375,18 @@ export class TableRuntime {
         throw new ActionError(`unknown game ${id}`);
       }
     });
+  }
+
+  /** Dealer's choice: the menu's biggest game. A game on the menu there isn't is refused. */
+  private static menuBiggest(games: readonly { gameId: string }[]): GameSpec {
+    const specs = games.map((g) => {
+      try {
+        return variants.get(g.gameId).spec;
+      } catch {
+        throw new ActionError(`unknown game ${g.gameId}`);
+      }
+    });
+    return specs.reduce((a, b) => (b.maxPlayers > a.maxPlayers ? b : a));
   }
 
   private applyPendingSettings() {
@@ -1266,6 +1403,10 @@ export class TableRuntime {
       // reaches them), so it follows that player: otherwise a mover sitting down there would end the orbit early.
       // If the button is on an empty seat in between, it has just gone past the start, so the orbit counts from there.
       const r = s.rotation;
+      // Dealer's choice: the Pick chip goes with its player, as when the host moves them (D33). An empty seat holding
+      // it stands for the next player round from it, who would pick anyway.
+      const c = s.choice;
+      const chip = this.chipBefore();
       if (r.anchor !== null && !s.seats[r.anchor]) {
         const n = s.seats.length;
         const round = Array.from({ length: n }, (_, i) => (r.anchor! + i) % n);
@@ -1278,6 +1419,7 @@ export class TableRuntime {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
+      this.chipAfter(chip);
       // The blinds move on from where they were, as after any hand; they start afresh only if one of them sat in a
       // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
       const p = s.positions;
@@ -1285,9 +1427,19 @@ export class TableRuntime {
       // With nobody to follow, or the blinds drawn afresh (which can't carry on an orbit), the orbit starts again
       // from the next button.
       if (r.anchor !== null && (r.anchor >= seats || !s.positions)) r.anchor = null;
+      if (c && c.chip >= seats) c.chip = 0;
+      if (c && c.firstButton !== null && c.firstButton >= seats) c.firstButton = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
+    }
+    // Dealer's choice turned on: it starts afresh (D33), never with a pick left from before it was last turned off. At a
+    // table already playing, the game it was dealing (a rotation's step, say) is the current game until the first pick.
+    if (!choiceMenu(before) && choiceMenu(s.settings)) {
+      s.choice = undefined;
+      const rot = before.game.rotation;
+      const step = rot.enabled && rot.steps.length ? rot.steps[s.rotation.step % rot.steps.length] : before.game;
+      s.choiceWas = s.handNumber > 0 ? { gameId: step.gameId, betting: step.betting } : null;
     }
     if (JSON.stringify(before.game.rotation) !== JSON.stringify(s.settings.game.rotation)) {
       s.rotation = { step: 0, hands: 0, orbits: 0, anchor: null };
@@ -1318,6 +1470,10 @@ export class TableRuntime {
       if (p) for (const k of ['button', 'smallBlind', 'bigBlind'] as const) if (p[k] === from) p[k] = to;
       // So does the seat where the current game's orbit began, so a mixed game's step keeps its length.
       if (s.rotation.anchor === from) s.rotation.anchor = to;
+      // And the Pick chip, so the same player picks next (D33).
+      const c = s.choice;
+      if (c?.chip === from) c.chip = to;
+      if (c?.firstButton === from) c.firstButton = to;
       for (const r of s.requests) if (r.playerId === seat.playerId) r.seat = to;
       this.log(`${seat.name} moved from seat ${from + 1} to seat ${to + 1}: the table now has ${limit} seats`);
     }
@@ -1379,6 +1535,38 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Dealer's choice, before a host seat change: who the Pick chip sits with, and who the PICK tag is on (D33). */
+  private chipBefore(): { holder: SeatState | null; tag: SeatState | null } | null {
+    return this.state.choice ? { holder: this.seatedFromChip(), tag: this.choice.chooser() } : null;
+  }
+
+  /**
+   * After it: the chip stays with its holder in their new seat. If that would put the PICK tag on someone else (its
+   * holder is sitting out or away, so whoever picks in their place depends on the seating), it goes for good to
+   * whoever had the tag. Either way no seat change gives the next pick to someone else.
+   */
+  private chipAfter(before: { holder: SeatState | null; tag: SeatState | null } | null) {
+    const c = this.state.choice;
+    if (!c || !before) return;
+    // Still at the table (making it smaller cashes out anyone it can't seat, and leaving passes the chip on).
+    const here = (x: SeatState | null) => !!x && this.state.seats[x.seat] === x;
+    if (here(before.holder)) c.chip = before.holder!.seat;
+    if (here(before.tag) && this.choice.chooser()?.playerId !== before.tag!.playerId) c.chip = before.tag!.seat;
+  }
+
+  /** The first player round from the Pick chip's seat (to the left), the seat itself included. */
+  private seatedFromChip(): SeatState | null {
+    const s = this.state;
+    const c = s.choice;
+    if (!c) return null;
+    const n = s.seats.length;
+    for (let i = 0; i < n; i++) {
+      const seat = s.seats[(c.chip + i) % n];
+      if (seat) return seat;
+    }
+    return null;
+  }
+
   /**
    * Cash tables, between hands: deals everyone seated a random seat among the
    * seats already taken. The button is drawn again and missed blinds are
@@ -1391,6 +1579,9 @@ export class TableRuntime {
     const s = this.state;
     const taken = s.seats.flatMap((x, i) => (x ? [i] : []));
     if (taken.length < 2) throw new ActionError('need at least two players to shuffle');
+    // Dealer's choice: the Pick chip stays with the player who holds it, so a shuffle never changes who picks next (D33).
+    const chip = this.chipBefore();
+    const buttonHolder = s.choice?.firstButton != null ? s.seats[s.choice.firstButton] : null;
     const players = shuffle(taken.map((i) => s.seats[i]!), this.rng);
     taken.forEach((seatNo, i) => {
       const seat = players[i];
@@ -1403,6 +1594,8 @@ export class TableRuntime {
     for (const r of s.requests) if (r.kind === 'rebuy') r.seat = this.seatOf(r.playerId)?.seat ?? r.seat;
     s.positions = null;
     s.rotation.anchor = null;
+    this.chipAfter(chip);
+    if (s.choice && buttonHolder) s.choice.firstButton = buttonHolder.seat;
     this.log('The host shuffled the seats');
     this.sync();
   }
@@ -1420,6 +1613,9 @@ export class TableRuntime {
     this.checkSeatFree(playerId, to);
     if (this.inHand(playerId)) throw new ActionError('move them once this hand is over');
     const from = seat.seat;
+    // Dealer's choice: the Pick chip stays with the player who holds it, wherever the host moves them or anyone else (D33).
+    const c = this.state.choice;
+    const chip = this.chipBefore();
     this.state.seats[from] = null;
     seat.seat = to;
     // A new place at the table: like someone sitting down, they post or wait for the big blind.
@@ -1427,6 +1623,8 @@ export class TableRuntime {
     seat.missedBigBlind = false;
     seat.missedSmallBlind = false;
     this.state.seats[to] = seat;
+    this.chipAfter(chip);
+    if (c?.firstButton === from) c.firstButton = to;
     for (const r of this.state.requests) if (r.playerId === playerId) r.seat = to;
     this.log(`The host moved ${seat.name} from seat ${from + 1} to seat ${to + 1}`);
     this.sync();
@@ -1562,6 +1760,7 @@ export class TableRuntime {
       const mine = Object.values(this.state.bots ?? {}).filter((b) => b.ownerId === by).length;
       if (mine >= BOTS_PER_PLAYER) throw new ActionError(`you can have at most ${BOTS_PER_PLAYER} bots here`);
     }
+    this.checkRoom(null);
     const open = this.openSeats();
     let seat = input.seat;
     if (seat === undefined) {
@@ -2322,8 +2521,13 @@ export class TableRuntime {
     s.nextHandAt = null;
     this.applyPendingSettings();
     if (s.paused) return false;
+    // Dealer's choice: no pick clock runs out while no hand can be dealt.
+    const none = () => {
+      if (!this.isTournament) this.choice.hold();
+      return false;
+    };
     // Tournament tables also wait for their director (start time, breaks, hand-for-hand).
-    if (!s.started) return false;
+    if (!s.started) return none();
     if (this.tournament && this.tournament.gate(now) !== 'deal') return false;
 
     // Busted players can't be dealt in; nor can anyone sitting out (cash).
@@ -2340,16 +2544,17 @@ export class TableRuntime {
     }
     const offline = (seat: SeatState) => !this.isOnline(seat.playerId);
     const candidates = this.dealCandidates();
-    if (candidates.length < 2) return false;
+    if (candidates.length < 2) return none();
     // Bots don't play on by themselves at a cash table: someone has to be there.
     const here = (x: SeatState) => !this.isBot(x.playerId) && !(offline(x) && this.offlineFor(x) > s.settings.seating.offlineGraceSeconds * 1000);
-    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return false;
+    if (!this.isTournament && candidates.some((x) => this.isBot(x.playerId)) && !candidates.some(here)) return none();
     // Nobody has played yet (or a game is restarting): deal everyone in free.
     if (candidates.filter((x) => !x.isNew).length < 2) for (const x of candidates) x.isNew = false;
 
     const plannerSeats = this.plannerSeatsOf(candidates);
     const maxSeats = s.seats.length;
-    const firstButton = candidates[this.rng(candidates.length)].seat;
+    // Dealer's choice at a table that hasn't dealt yet: the first chooser gets the first button.
+    const firstButton = (this.isTournament ? null : this.choice.firstButton(candidates)) ?? candidates[this.rng(candidates.length)].seat;
     /** `fromButton`: plan as a first hand from that button, ignoring the blinds on record. */
     const planFor = (setup: HandSetup, bombPot: { amount: number } | null = null, fromButton: number | null = null) =>
       planForcedBets({
@@ -2380,15 +2585,28 @@ export class TableRuntime {
       }
       return planFor(setup);
     };
-    // A deal that can't go ahead leaves the rotation as it was, so no game is skipped or cut short.
+    // A deal that can't go ahead leaves the rotation (and a Dealer's choice orbit) as it was, so no game is skipped or
+    // cut short.
     const rotationBefore = { ...s.rotation };
+    let choiceBefore: typeof s.choice;
     const cannotDeal = () => {
       s.rotation = rotationBefore;
-      return false;
+      if (choiceBefore) s.choice = choiceBefore;
+      return none();
     };
     let setup = this.handSetup();
     let plan = planDealable(setup);
-    if (plan.dealtIn.length < 2) return false;
+    if (plan.dealtIn.length < 2) return none();
+    // Dealer's choice: the table waits for the next game to be picked, or a new pick starts with this hand.
+    if (!this.isTournament) {
+      const gate = this.choice.gate(candidates, plan.dealtIn.length);
+      if (gate === 'wait') return false;
+      if (gate === 'changed') {
+        setup = this.handSetup();
+        plan = planDealable(setup);
+        if (plan.dealtIn.length < 2) return none();
+      }
+    }
     // Mixed games: the step may end with this hand's button (orbits), which changes the game.
     const rotation = nextRotation(s.settings.game.rotation, s.rotation, s.positions?.button ?? null, plan.button, maxSeats);
     s.rotation = rotation.state;
@@ -2436,6 +2654,10 @@ export class TableRuntime {
       seat.missedSmallBlind = false;
     }
     if (s.settings.game.rotation.enabled) s.rotation.hands++;
+    if (!this.isTournament) {
+      choiceBefore = s.choice && { ...s.choice };
+      this.choice.dealt(plan.dealtIn.length);
+    }
 
     const dealt = new Set(plan.dealtIn);
     const fair = this.fairDeal(candidates.filter((x) => dealt.has(x.seat)).map((x) => x.playerId));
@@ -2556,6 +2778,9 @@ export class TableRuntime {
       gameId = step.gameId;
       betting = step.betting;
     }
+    // Dealer's choice: the game picked (or the table's own before the first pick).
+    const picked = this.choice.setup();
+    if (picked) ({ gameId, betting } = picked);
     const game = variants.get(gameId).spec;
     // Only a schedule in use moves the level on.
     const levelIndex = settings.blindSchedule.enabled && settings.blindSchedule.levels.length ? this.currentLevelIndex() : 0;
@@ -2661,6 +2886,8 @@ export class TableRuntime {
     const hand = s.hand;
     // A vote clock with no vote left to run (the hand ended while the game was paused) would fire forever.
     if (s.ritDeadline !== null && hand?.phase !== 'rit-vote') s.ritDeadline = null;
+    // Dealer's choice: a bot holding the Pick chip picks; a chooser who has gone passes it on.
+    if (!this.isTournament && this.choice.tick()) return true;
     if (hand && hand.phase !== 'complete') {
       if (hand.phase === 'rit-vote') {
         // Nobody is to act during the vote. The last actor's turn clock would run out mid-vote and fire forever.
@@ -2784,6 +3011,9 @@ export class TableRuntime {
     const open = this.openSeats();
     for (const entry of this.queue()) {
       if (!open.length) break;
+      // Dealer's choice: a smaller game has every seat it can deal.
+      const room = this.seatRoom(null);
+      if (room !== null && room <= 0) break;
       if (this.offers().some((o) => o.playerId === entry.playerId) || !this.isOnline(entry.playerId)) continue;
       const seat = open.shift()!;
       this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
@@ -2882,6 +3112,7 @@ export class TableRuntime {
     at('bot', this.botDue());
     at('next', s.nextHandAt);
     at('rit', s.ritDeadline);
+    at('pick', this.choice.due());
   }
 
   private clearTimer(key: TimerKey) {
@@ -2916,7 +3147,7 @@ export class TableRuntime {
   }
 }
 
-const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep', 'bot', 'reveal'] as const;
+const TIMER_KEYS = ['turn', 'next', 'rit', 'upkeep', 'bot', 'reveal', 'pick'] as const;
 type TimerKey = (typeof TIMER_KEYS)[number];
 
 /** Fills in limit sizes and the bring-in when the settings leave them at 0. */
@@ -2924,7 +3155,8 @@ export function fillStakes(stakes: Stakes, game: GameSpec): Stakes {
   const out = { ...stakes };
   if (out.smallBet <= 0) out.smallBet = Math.max(1, out.bigBlind);
   if (out.bigBet <= 0) out.bigBet = out.smallBet * 2;
-  if (game.family === 'stud' && out.bringIn <= 0) out.bringIn = Math.max(1, Math.floor(out.smallBet / 3));
+  // About a third of the small bet, in a round amount, as in tournaments (#398).
+  if (game.family === 'stud' && out.bringIn <= 0) out.bringIn = bringInFor(out.smallBet);
   // Stud has no big blind: a big-blind ante is paid by everyone there, at about an eighth of it.
   if (game.forcedBets === 'ante-bring-in' && out.anteType === 'big-blind') Object.assign(out, { ante: studAnteForBigBlindAnte(out.ante), anteType: 'per-player' });
   return out;
@@ -2959,6 +3191,9 @@ export function cashHandStakes(settings: TableSettings, levelIndex: number, game
   }
   const rotation = settings.game.rotation;
   if (rotation.enabled && rotation.steps.length && skipsMixedGameAnte(game.id, rotation.steps.map((st) => st.gameId))) stakes.ante = 0;
+  // A Dealer's choice menu is a mix too.
+  const menu = choiceMenu(settings);
+  if (menu && skipsMixedGameAnte(game.id, menu.games.map((g) => g.gameId))) stakes.ante = 0;
   return fillStakes(stakes, game);
 }
 

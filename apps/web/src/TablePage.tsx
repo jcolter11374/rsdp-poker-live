@@ -35,6 +35,8 @@ import { useDepartures, useRunoutReveal } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
+import type { BettingKind } from '@rsdp/engine/core';
+import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
 
 /** Plays sounds, buzzes and badges the tab for what changed between two views. */
 function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
@@ -45,6 +47,12 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     if (!view || !before) return;
     if (newChat(before.chat, view.chat).some((m) => m.playerId && m.playerId !== view.me.playerId)) sounds.chat();
     if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
+    // Dealer's choice: the table waiting for my pick calls me like a turn to act.
+    if (myPickDue(view) && !myPickDue(before)) {
+      sounds.turn();
+      buzz();
+      notify('Your pick: choose the next game', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
+    }
     const hand = view.hand;
     if (!hand) return;
     const fresh = hand.handNumber !== before.hand?.handNumber;
@@ -74,7 +82,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     }
   }, [view]);
 
-  const myTurn = !!view?.legal || !!view?.canDraw || !!view?.canVoteRunItTwice;
+  const myTurn = !!view?.legal || !!view?.canDraw || !!view?.canVoteRunItTwice || (!!view && myPickDue(view));
 
   // A warning beep a few seconds before your clock runs out.
   const deadline = myTurn && !view?.paused && view?.turn?.seat === view?.me.seat ? (view?.turn?.deadline ?? null) : null;
@@ -113,7 +121,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules' } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | null;
 
 /** How long the keyboard tip stays up if nobody presses Got it. */
 const KEYS_TIP_MS = 20_000;
@@ -128,6 +136,17 @@ export function TablePage({ tableId }: { tableId: string }) {
   /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
   const [seatError, setSeatError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
+  // Dealer's choice: my "Pick the next game" panel. It opens by itself when the table starts waiting for my pick.
+  const [picker, setPicker] = useState(false);
+  const pickDue = !!view && myPickDue(view);
+  const mayPick = !!view && canPickNow(view);
+  useEffect(() => {
+    if (pickDue) setPicker(true);
+  }, [pickDue]);
+  // Once my turn to pick is over (picked, missed or passed on), the panel doesn't come back by itself next time.
+  useEffect(() => {
+    if (!mayPick) setPicker(false);
+  }, [mayPick]);
   const [sheet, setSheet] = useState<'menu' | 'chat' | Tab | null>(null);
   const [copied, setCopied] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
@@ -140,6 +159,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
+  // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
+  const [noticeRoom, setNoticeRoom] = useState(true);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
@@ -390,7 +411,10 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const game = view.hand
     ? { label: gameLabel(view.hand.gameId, view.hand.betting), stakes: stakesLabel(view.hand.stakes, view.hand.family, view.hand.betting, fmt) }
-    : view.upcoming
+    : view.choice && !view.choice.current
+      ? // Dealer's choice before the first pick: no game yet.
+        { label: "Dealer's choice", stakes: '' }
+      : view.upcoming
       ? {
           label: gameLabel(view.upcoming.gameId, view.upcoming.betting),
           stakes: stakesLabel(view.upcoming.stakes, gameFamily(view.upcoming.gameId), view.upcoming.betting, fmt),
@@ -484,6 +508,32 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The panel starts open for a host whose game hasn't started, so Start game is in view; after that it's the player's pick.
   const drawer = wide && (drawerPick ?? (!!hostPanel && !view.started));
   const openDrawer = () => setDrawer(true);
+  // Before a cash game starts (or after the host stops it), the middle of the table says what happens next. It used to be
+  // a banner above the table, which took height from the felt: when it went away at the start, the felt grew and every
+  // seat slid to a new spot while the first cards were dealt (#383). Before the first hand the middle is empty; after a
+  // stop the note goes under the last hand's result, where "Next hand in" would be (see .board-notice.after-hand).
+  const canRun = view.powers.includes('run');
+  const startNotice =
+    cash && !view.started
+      ? {
+          text:
+            view.history.length > 0
+              ? canRun
+                ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
+                : 'The game is stopped. Waiting for the host to start it again.'
+              : canRun
+                ? portrait
+                  ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
+                  : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
+                : 'Waiting for the host to start the game.',
+          onClick: wide && canRun ? openDrawer : undefined,
+        }
+      : null;
+  // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
+  // bottom seat), the middle is full, and on a small phone table the note doesn't fit there (Table's onNoticeRoom): then
+  // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
+  // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
+  const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -508,10 +558,16 @@ export function TablePage({ tableId }: { tableId: string }) {
               {game.label} {game.stakes}
             </>
           )}
+          {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
           {levelText && <> · {levelText}</>}
           {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
           {view.paused && <b className="paused"> · Paused</b>}
         </span>
+        {canPickNow(view) && !picker && (
+          <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
+            {portrait ? 'Pick' : 'Pick next game'}
+          </button>
+        )}
         {bigBlind > 0 && (
           <button
             className="units-toggle"
@@ -598,19 +654,6 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {cash && !view.started && (
-            <div className="banner" onClick={wide && view.powers.includes('run') ? openDrawer : undefined}>
-              {view.history.length > 0
-                ? view.powers.includes('run')
-                  ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
-                  : 'The game is stopped. Waiting for the host to start it again.'
-                : view.powers.includes('run')
-                  ? portrait
-                    ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
-                    : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
-                  : 'Waiting for the host to start the game.'}
-            </div>
-          )}
           {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
           {pending > 0 && (
             <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
@@ -667,6 +710,9 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
+            notice={noticeUnder && view.hand ? null : startNotice}
+            noticeHidden={noticeUnder}
+            onNoticeRoom={setNoticeRoom}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
               stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
@@ -696,6 +742,11 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
+            {noticeUnder && view.hand && (
+              <div className="dock-notes">
+                <div className="banner">{startNotice!.text}</div>
+              </div>
+            )}
             <ActionBar
               view={view}
               fmt={fmt}
@@ -708,6 +759,7 @@ export function TablePage({ tableId }: { tableId: string }) {
                 preQueued.current = q;
               }}
               onRules={() => setDialog({ kind: 'rules' })}
+              note={noticeUnder && !view.hand ? startNotice!.text : null}
             />
             <div className="dock-row">
               <HandExtras view={view} />
@@ -819,7 +871,11 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'add-bot' && <AddBotDialog view={view} seat={dialog.seat} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'rebuy' && <RebuyDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'settings' && <SettingsDialog view={view} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'rules' && <RulesDialog view={view} onClose={() => setDialog(null)} />}
+      {/* Dealer's choice: the chooser's panel sits under the other dialogs, so How to play opens on top of it. */}
+      {picker && canPickNow(view) && (
+        <GamePicker view={view} skew={skew} onClose={() => setPicker(false)} onRules={(gameId, betting) => setDialog({ kind: 'rules', gameId, betting })} />
+      )}
+      {dialog?.kind === 'rules' && <RulesDialog view={view} gameId={dialog.gameId} betting={dialog.betting} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'people' && <PeopleDialog view={view} fmt={fmt} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'keys' && <ShortcutsDialog onClose={() => setDialog(null)} />}
