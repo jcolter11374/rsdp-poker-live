@@ -21,6 +21,7 @@ updates:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
       # The older PGlite stays at 0.2 on purpose: it reads Postgres 16 folders until the live site's has moved (D31).
+      # Dependabot skips `npm:` aliases anyway; what stops a change is pglite-versions.test.ts, which checks both versions.
       - dependency-name: 'pglite-0.2'
 
   - package-ecosystem: github-actions

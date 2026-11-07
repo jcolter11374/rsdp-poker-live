@@ -53,6 +53,13 @@ export const PGLITE_POSTGRES = 18;
 /** What the older PGlite (0.2, installed as `pglite-0.2`) runs. */
 export const LEGACY_PGLITE_POSTGRES = 16;
 
+/**
+ * PGlite 0.5 keeps up to 1 GB of old write-ahead log files for reuse after a
+ * checkpoint, where 0.2 kept 64 MB; one big write (a restore) would leave that
+ * much on the 1 GB volume for good. These keep 0.5 to 0.2's 64 MB.
+ */
+const POSTGRES_18_START = [...PGlite.defaultStartParams, '-c', 'max_wal_size=64MB', '-c', 'min_wal_size=32MB'];
+
 /** The Postgres major version of a PGlite folder's files (its PG_VERSION), or null when the folder is new. */
 export function pgliteFolderVersion(dataDir: string): number | null {
   let text: string;
@@ -77,7 +84,7 @@ export function pgliteFolderVersion(dataDir: string): number | null {
  */
 export function pgliteFor(dataDir?: string): PGlite {
   const version = dataDir ? pgliteFolderVersion(dataDir) : null;
-  if (version === PGLITE_POSTGRES) return new PGlite(dataDir);
+  if (version === PGLITE_POSTGRES) return new PGlite(dataDir, { startParams: POSTGRES_18_START });
   // The two versions answer queries the same way; only the files they read differ.
   if (version === null || version === LEGACY_PGLITE_POSTGRES) return new LegacyPGlite(dataDir) as unknown as PGlite;
   throw new Error(`${dataDir} holds Postgres ${version} files; this server reads Postgres ${LEGACY_PGLITE_POSTGRES} and ${PGLITE_POSTGRES}. Restore a backup into a new folder instead (docs/DEPLOY.md, "Backups").`);
