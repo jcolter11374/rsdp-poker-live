@@ -70,7 +70,8 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     if (myTurn && !wasMyTurn && !preQueued.current) {
       sounds.turn();
       buzz();
-      notify('Your turn', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
+      // The server's phone alert for this turn carries the same tag (apps/server/src/app.ts, watchTurn), so a phone shows one.
+      notify('Your turn', view.name, { tag: `turn:${view.id}:${hand.handNumber}:${hand.events.length}`, url: `/t/${view.id}`, replaces: `turn:${view.id}:` });
     }
   }, [view]);
 

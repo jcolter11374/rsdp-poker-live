@@ -35,6 +35,8 @@ export async function fill(target: Db) {
   await q(`insert into tournament_log (tournament_id, item_id, at, item) values ('tn1', 'i1', now(), '{"k":"bust"}'), ('tn1', 'i2', now(), '{"k":"win"}')`);
   await q(`insert into audit_log (seq, at, kind, data, prev, hash) values (1, ${BIG}, 'boot', '{"commit":"abc"}', '0', 'h')`);
   await q(`insert into ops_log (at, kind, message) values (now(), 'server', 'saving table failed: timeout')`);
+  await q(`insert into push_keys (id, public_key, private_key) values ('vapid', 'BPub', 'priv')`);
+  await q(`insert into push_subscriptions (endpoint, player_id, device, session, p256dh, auth) values ('https://fcm.googleapis.com/fcm/send/abc', 'p1', 'th1', 'sh1', 'BKey', 'auth')`);
 }
 
 /** Every row of every table, as Postgres prints it, so two databases can be compared whole. */

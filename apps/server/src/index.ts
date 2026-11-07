@@ -18,6 +18,7 @@ import { googleFromEnv } from './google';
 import { dbTournamentStore } from './tournament/store';
 import { FAIR_LEAD_MS } from './runtime/table';
 import { dbLobbyStore } from './tournament/lobby';
+import { dbPushStore, pushFromEnv } from './push/alerts';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -34,7 +35,7 @@ const webDist = path.resolve(here, '../../web/dist');
 // The record's own failures go through the server's log once it exists, so the game-night recap sees them too.
 let serverLog = (m: string, e?: unknown) => console.error(m, dbCause(e) ?? '');
 const audit = await AuditLog.open(dbAuditStore(db), { log: (m, e) => serverLog(m, e) });
-const server = createApp({ audit, fairLeadMs: FAIR_LEAD_MS, webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db), setups: dbSetups(db), lobby: dbLobbyStore(db), avatars: dbAvatars(db), shared: dbSharedHands(db), suggestions: dbSuggestions(db), feedback: dbFeedback(db), accounts: db, google: googleFromEnv(), checkDb: () => db.execute(sql`select 1`) });
+const server = createApp({ audit, fairLeadMs: FAIR_LEAD_MS, webDist, identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), notes: dbNotes(db), setups: dbSetups(db), lobby: dbLobbyStore(db), avatars: dbAvatars(db), shared: dbSharedHands(db), suggestions: dbSuggestions(db), feedback: dbFeedback(db), accounts: db, google: googleFromEnv(), push: { config: pushFromEnv(), store: dbPushStore(db) }, checkDb: () => db.execute(sql`select 1`) });
 serverLog = server.log;
 // Unfinished tournaments carry on, and scheduled ones keep their start time.
 await server.resume();

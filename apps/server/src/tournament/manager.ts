@@ -361,6 +361,16 @@ export class TournamentManager {
     return { ...settings, season: { id: season.id, name: latest.settings.season!.name } };
   }
 
+  /** An event this server holds in memory, as it is now; null when it isn't held (nothing is loaded). */
+  liveState(id: string): TournamentState | null {
+    return this.live.get(id)?.state ?? null;
+  }
+
+  /** The ids of every event held in memory (every event still to come or under way is). */
+  liveIds(): string[] {
+    return [...this.live.keys()];
+  }
+
   /** The tournament a runtime table belongs to (by its runtime id), if any. */
   tournamentOf(tableId: string) {
     return this.tableOwners.get(tableId) ?? null;
