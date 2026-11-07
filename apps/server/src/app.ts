@@ -1,7 +1,9 @@
 import express from 'express';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { statfs } from 'node:fs/promises';
+import { createServer, type Server as HttpServer } from 'node:http';
+import type { Socket as NetSocket } from 'node:net';
 import path from 'node:path';
 import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
@@ -38,6 +40,7 @@ import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
 import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
+import { quietSteps, type ShutdownSteps } from './shutdown';
 import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
@@ -198,6 +201,8 @@ export interface AppDeps {
   build?: BuildInfo;
   /** Asks the database something trivial, for /api/health's `db` field. Without it the field is left out. */
   checkDb?: () => Promise<unknown>;
+  /** The folder the database keeps its files in (PGlite), for /api/health's disk fields. Without it they are left out. */
+  dataDir?: string;
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
@@ -390,6 +395,12 @@ export function createApp(deps: AppDeps = {}) {
 
   const app = express();
   const http = createServer(app);
+  /** Every open connection, websockets too, so a shutdown can cut the ones still open after a short grace. */
+  const connections = new Set<NetSocket>();
+  http.on('connection', (socket: NetSocket) => {
+    connections.add(socket);
+    socket.once('close', () => connections.delete(socket));
+  });
   const io = new Server<C2S, S2C>(http, {
     cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
     // A phone that loses its signal sends nothing; with the defaults (25 s + 20 s) the table waited up to 45 s
@@ -440,12 +451,15 @@ export function createApp(deps: AppDeps = {}) {
       .catch((e) => log('loading avatars failed', e));
   }
 
-  // `ok` and the 200 stay as they are whatever the database says: Fly's own health check reads them, and failing it
-  // takes the only machine out of service. The site-down alert reads `db` too (docs/DEPLOY.md, "Site-down alert").
+  // `ok` and the 200 stay as they are whatever the database or the disk says: Fly's own health check reads them, and
+  // failing it takes the only machine out of service. The site-down alert reads `db` too (docs/DEPLOY.md, "Site-down
+  // alert"), and the daily memory and disk check reads `memoryMb` and `diskUsedPct` ("Memory and disk check").
   const dbHealth = deps.checkDb ? databaseHealth(deps.checkDb, log) : null;
+  const disk = deps.dataDir ? diskHealth(deps.dataDir, log) : null;
   app.get('/api/health', async (_req, res) => {
     const body = { ok: true, tables: tables.size, memoryMb: Math.round(process.memoryUsage().rss / 1_048_576) };
-    res.json(dbHealth ? { ...body, db: await dbHealth() } : body);
+    const [db, space] = await Promise.all([dbHealth?.(), disk?.()]);
+    res.json({ ...body, ...(db && { db }), ...space });
   });
   auditRoutes(app, audit, build, startedAt, log);
   const adminKey = deps.adminKey ?? process.env.ADMIN_KEY;
@@ -705,11 +719,19 @@ export function createApp(deps: AppDeps = {}) {
     const gzip = createGzip();
     gzip.pipe(res);
     let stopped = false;
-    stopBackup = () => (stopped = true);
-    res.on('close', stopBackup);
+    // Once the download has closed, room to write more never comes, so a write waiting for it stops waiting. Without
+    // this, a client that went away part-way left the backup's transaction open, and every save waited behind it.
+    const closed = new Promise<void>((done) =>
+      res.once('close', () => {
+        stopped = true;
+        done();
+      }),
+    );
+    // Shutting down cuts the download: a client that has stopped reading would otherwise hold it open for good.
+    stopBackup = () => void res.destroy();
     backup = writeBackup(db, (line) => {
       if (stopped) throw new Error('the download was closed');
-      if (!gzip.write(line)) return new Promise<void>((done) => gzip.once('drain', done));
+      if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
     })
       .then(() => gzip.end())
       .catch((e) => {
@@ -1885,16 +1907,27 @@ export function createApp(deps: AppDeps = {}) {
     forgetOldAddresses,
     /** How many addresses the open-tournament limit remembers now. */
     openTournamentAddresses: () => openTournaments.addresses(),
-    /** `crash`: the error the server is stopping for, kept so the recap shows the restart after it as a crash. */
-    async close(opts: { crash?: unknown } = {}) {
+    /**
+     * Saves everything and closes. `crash`: the error the server is stopping for, kept so the recap shows the restart
+     * after it as a crash. `steps`: told as each step starts, for the shutdown's timing log (shutdown.ts).
+     * `graceMs`: how long requests still being answered get to finish before their connections are cut.
+     */
+    async close(opts: { crash?: unknown; steps?: ShutdownSteps; graceMs?: number } = {}) {
+      const steps = opts.steps ?? quietSteps;
+      steps.step('stopping play');
       const stopped = 'crash' in opts ? ops.crashing(opts.crash) : ops.stopping();
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
       // The server going down is not players leaving, so their tables never see them drop (and time them out).
       for (const s of io.of('/').sockets.values()) s.removeAllListeners('disconnect');
-      io.close();
-      stopBackup();
-      await backup;
+      // Also stops taking connections (http.close), and starts closing every socket.
+      void io.close();
+      if (backup) {
+        steps.step('stopping the backup download');
+        stopBackup();
+        await backup;
+      }
+      steps.step('putting tables away');
       tournaments.dispose();
       if (sweep) clearInterval(sweep);
       await Promise.allSettled([...unloading.values()]);
@@ -1902,11 +1935,18 @@ export function createApp(deps: AppDeps = {}) {
       for (const rt of open) rt.dispose();
       for (const t of saveTimers.values()) clearTimeout(t);
       saveTimers.clear();
+      steps.step('saving tournaments');
       await tournaments.flush();
       await lobby.flush();
+      steps.step('saving tables');
       await Promise.all(open.map((rt) => (created.get(rt.state.id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch(() => {})));
-      await new Promise<void>((resolve) => http.close(() => resolve()));
+      steps.step('closing connections');
+      const graceMs = opts.graceMs ?? CLOSE_GRACE_MS;
+      const cut = await closeConnections(http, connections, graceMs);
+      if (cut) steps.note(`cut ${cut} connection${cut === 1 ? '' : 's'} still open after ${graceMs} ms`);
+      steps.step('writing the public record');
       await audit.flush();
+      steps.step('recording the stop');
       await stopped;
     },
   };
@@ -1929,6 +1969,28 @@ export function requestFailed(log: (message: string, err?: unknown) => void): ex
     log(`${req.method} ${req.route?.path ?? 'request'} failed`, err);
     res.status(500).json({ error: 'Something went wrong on the server.' });
   };
+}
+
+/** How long requests still being answered get to finish when the server stops, before their connections are cut. */
+export const CLOSE_GRACE_MS = 2_000;
+
+/**
+ * Stops the server taking connections and waits for the open ones to end, for at most `graceMs`; then cuts the
+ * rest, so none can hold up the public record and the database closing, and says how many it cut. Without the cut,
+ * one connection could hold a shutdown past its 10 s limit: a half-sent request waits up to a minute (Node's
+ * headersTimeout), and a websocket whose browser never answers the close (a phone asleep) 30 s (ws's closeTimeout).
+ */
+async function closeConnections(http: HttpServer, connections: Set<NetSocket>, graceMs: number): Promise<number> {
+  // Called a second time (io.close calls it too), close still calls back once the last connection ends.
+  const closed = new Promise<void>((resolve) => http.close(() => resolve()));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = await Promise.race([closed.then(() => false), new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(true), graceMs)))]);
+  clearTimeout(timer);
+  if (!late) return 0;
+  const cut = connections.size;
+  for (const socket of connections) socket.destroy();
+  await closed;
+  return cut;
 }
 
 /** How long /api/health waits for the database before calling it slow: well inside Fly's 5 s health check timeout. */
@@ -1964,6 +2026,69 @@ export function databaseHealth(check: () => Promise<unknown>, log: (message: str
     if (now === 'ok' && last !== 'ok') log('database health check: answering again');
     last = now;
     return now;
+  };
+}
+
+/** How long /api/health keeps the data disk's use before reading it again. */
+export const DISK_HEALTH_MS = 60_000;
+
+/** The data disk's use as /api/health reports it. */
+export interface DiskUse {
+  /** How full it is, as `df` shows it: rounded up, and the space kept back for the system doesn't count as free. */
+  diskUsedPct: number;
+  /** What the server may still write, in MB. */
+  diskFreeMb: number;
+}
+
+/** What diskUse needs from statfs: sizes in blocks, all of them, free, and free for anyone but the system. */
+type DiskBlocks = { blocks: number; bfree: number; bavail: number; bsize: number };
+
+/** A disk's use from statfs, or null when the numbers make no sense. */
+export function diskUse(s: DiskBlocks): DiskUse | null {
+  const used = s.blocks - s.bfree;
+  const size = used + s.bavail;
+  if (!(size > 0) || used < 0) return null;
+  // Rounded up as df rounds, so the 70% warning starts just over 70%. Multiplying first keeps exact cases exact
+  // ((70 / 100) * 100 is 70.00000000000001 in floating point, which would round up to 71).
+  return { diskUsedPct: Math.ceil((used * 100) / size), diskFreeMb: Math.floor((s.bavail * s.bsize) / 1_048_576) };
+}
+
+/**
+ * How full the disk holding `dir` is, for /api/health. Read at most once a DISK_HEALTH_MS, and never waited on for
+ * more than DB_HEALTH_MS, so the health check always answers quickly. When the disk can't be read: nothing (the
+ * fields are left out), logged once until it can be read again.
+ */
+export function diskHealth(dir: string, log: (message: string, err?: unknown) => void, now: () => number = Date.now, read: (dir: string) => Promise<DiskBlocks> = (d) => statfs(d)) {
+  let last: { at: number; use: DiskUse | null } | null = null;
+  let pending: Promise<DiskUse | null> | null = null;
+  let failing = false;
+  return async (): Promise<DiskUse | null> => {
+    if (last && now() - last.at < DISK_HEALTH_MS) return last.use;
+    pending ??= read(dir)
+      .then(
+        (s) => {
+          if (failing) log('reading the data disk: answering again');
+          failing = false;
+          return diskUse(s);
+        },
+        (err: unknown) => {
+          if (!failing) log("reading the data disk's free space failed", err);
+          failing = true;
+          return null;
+        },
+      )
+      .then((use) => {
+        last = { at: now(), use };
+        pending = null;
+        return use;
+      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<DiskUse | null>((resolve) => {
+      timer = setTimeout(() => resolve(last?.use ?? null), DB_HEALTH_MS);
+    });
+    const use = await Promise.race([pending, slow]);
+    clearTimeout(timer);
+    return use;
   };
 }
 

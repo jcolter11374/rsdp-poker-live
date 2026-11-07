@@ -23,5 +23,11 @@
     "drizzle-orm": "^0.45.4",
     "playwright": "^1.64.1",
     "typescript": "^5.6.3"
+  },
+  "//": "overrides: drizzle-kit 0.31 depends on @esbuild-kit/esm-loader, whose esbuild 0.18 has a security advisory, but never loads it. The override points that unused copy at the esbuild the rest of the tree uses. Drop it once drizzle-kit no longer depends on @esbuild-kit (#368).",
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.28.2"
+    }
   }
 }
