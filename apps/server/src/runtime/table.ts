@@ -1328,6 +1328,12 @@ export class TableRuntime {
     // Dealer's choice: the table has no more seats than the menu's biggest game.
     const menu = choiceMenu(next);
     if (menu) {
+      // The table's own game is still dealt before the first pick at a table that was already playing, so it has to exist.
+      try {
+        variants.get(next.game.gameId);
+      } catch {
+        throw new ActionError(`unknown game ${next.game.gameId}`);
+      }
       const biggest = TableRuntime.menuBiggest(menu.games);
       if (next.table.maxSeats > biggest.maxPlayers) throw new ActionError(`the biggest game on the menu, ${biggest.name}, seats at most ${biggest.maxPlayers}: lower the table to ${biggest.maxPlayers} seats or add a bigger game`);
     }
@@ -1376,6 +1382,14 @@ export class TableRuntime {
       // reaches them), so it follows that player: otherwise a mover sitting down there would end the orbit early.
       // If the button is on an empty seat in between, it has just gone past the start, so the orbit counts from there.
       const r = s.rotation;
+      // Dealer's choice: an empty seat holding the Pick chip stands for the next player round from it (the chooser
+      // is the first player to its left who can pick), so the chip goes to that player and moves with them.
+      const c = s.choice;
+      if (c && !s.seats[c.chip]) {
+        const n = s.seats.length;
+        const to = Array.from({ length: n }, (_, i) => (c.chip + i) % n).find((i) => s.seats[i]);
+        if (to !== undefined) c.chip = to;
+      }
       if (r.anchor !== null && !s.seats[r.anchor]) {
         const n = s.seats.length;
         const round = Array.from({ length: n }, (_, i) => (r.anchor! + i) % n);
@@ -1395,6 +1409,8 @@ export class TableRuntime {
       // With nobody to follow, or the blinds drawn afresh (which can't carry on an orbit), the orbit starts again
       // from the next button.
       if (r.anchor !== null && (r.anchor >= seats || !s.positions)) r.anchor = null;
+      if (c && c.chip >= seats) c.chip = 0;
+      if (c && c.firstButton !== null && c.firstButton >= seats) c.firstButton = null;
     }
     if (!before.blindSchedule.enabled && s.settings.blindSchedule.enabled) {
       s.level = { index: 0, elapsedMs: 0, runningSince: s.handNumber > 0 && !s.paused ? this.clock.now() : null, hands: 0 };
@@ -1428,6 +1444,10 @@ export class TableRuntime {
       if (p) for (const k of ['button', 'smallBlind', 'bigBlind'] as const) if (p[k] === from) p[k] = to;
       // So does the seat where the current game's orbit began, so a mixed game's step keeps its length.
       if (s.rotation.anchor === from) s.rotation.anchor = to;
+      // And the Pick chip, so the same player picks next (D33).
+      const c = s.choice;
+      if (c?.chip === from) c.chip = to;
+      if (c?.firstButton === from) c.firstButton = to;
       for (const r of s.requests) if (r.playerId === seat.playerId) r.seat = to;
       this.log(`${seat.name} moved from seat ${from + 1} to seat ${to + 1}: the table now has ${limit} seats`);
     }

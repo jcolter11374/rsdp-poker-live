@@ -504,3 +504,51 @@ describe("Dealer's choice: the pick clock when the table can't deal", () => {
     expect(hand(rt).input.game.id).toBe('razz');
   });
 });
+
+describe("Dealer's choice: a smaller table and the table's own game", () => {
+  /** Host in seat 0, A in seat 1, then the rest in seats 7 and 8. Plays picks until `who` holds the chip. */
+  function farSeats(far: string[], who: string) {
+    const { rt, clock } = table();
+    rt.requestSeat('host', { seat: 0, name: 'HOST', stack: 1000 });
+    rt.requestSeat('a', { seat: 1, name: 'A', stack: 1000 });
+    far.forEach((id, i) => rt.requestSeat(id, { seat: 7 + i, name: id.toUpperCase(), stack: 1000 }));
+    rt.start('host');
+    pick(rt, 'nlhe');
+    for (let i = 0; i < 4 && chooser(rt).playerId !== who; i++) {
+      playUntilPick(rt, clock);
+      pick(rt, 'nlhe');
+    }
+    expect(chooser(rt).playerId).toBe(who);
+    return { rt, clock };
+  }
+
+  it('moves the Pick chip with its player when the host makes the table smaller', () => {
+    const { rt, clock } = farSeats(['b'], 'b');
+    rt.updateSettings('host', { table: { maxSeats: 6 } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(rt.state.seats).toHaveLength(6);
+    // B moved into a kept seat, and still picks next.
+    expect(rt.state.seats.some((x) => x?.playerId === 'b')).toBe(true);
+    expect(chooser(rt).playerId).toBe('b');
+  });
+
+  it('gives the chip of an empty seat that goes to the next player round from it', () => {
+    const { rt, clock } = farSeats(['b', 'c'], 'b');
+    rt.stand('b');
+    // B's seat is empty: C, the next player to its left, picks next.
+    expect(chooser(rt).playerId).toBe('c');
+    rt.updateSettings('host', { table: { maxSeats: 6 } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(rt.state.seats.some((x) => x?.playerId === 'c')).toBe(true);
+    expect(chooser(rt).playerId).toBe('c');
+  });
+
+  it('refuses a table whose own game it doesn’t know, which it deals before the first pick at a table already playing', () => {
+    const s = defaultSettings('cash');
+    s.game.dealersChoice = { enabled: true, games: MENU, hands: 0, pickSeconds: 20 };
+    s.game.gameId = 'nosuch';
+    expect(() => TableRuntime.checkGameSettings(s)).toThrow(/unknown game nosuch/);
+  });
+});
