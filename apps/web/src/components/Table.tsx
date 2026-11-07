@@ -338,8 +338,10 @@ interface Flight {
   kind: 'sweep' | 'award';
 }
 
-/** How much smaller seats get at each step when they can't be placed apart (#415). */
+/** How much smaller seats get at each step when they can't be placed apart (#415), and at most how many steps: each one
+ * is two renders before the browser paints, and React stops a page that renders itself 50 times in a row. */
 const FIT_STEP = 0.03;
+const FIT_STEPS_MAX = 12;
 
 let flightId = 0;
 
@@ -559,7 +561,7 @@ export function Table({
   const spread = placement.at;
   // Seats measured at this size that still cover each other: a step smaller (see fitKey).
   useLayoutEffect(() => {
-    if (grown && placement.current && !placement.fine && seatScale > 0.72) setFit({ key: fitKey, steps: steps + 1 });
+    if (grown && placement.current && !placement.fine && seatScale > 0.72 && steps < FIT_STEPS_MAX) setFit({ key: fitKey, steps: steps + 1 });
   }, [grown, placement, seatScale, fitKey, steps]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
