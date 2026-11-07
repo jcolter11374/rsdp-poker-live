@@ -124,8 +124,9 @@ for how it works.
   address and keys above), and the site's background helper (a "service
   worker") shows the alerts that arrive while the site is closed.
 - While a page of the site is open, your browser tells the server whether
-  that tab is on screen, so the server doesn't send "Your turn" while you're
-  looking at the table, or a seat alert while you're looking at the site. It
+  that tab is on screen, so the server doesn't send "Your turn" (or "Your
+  pick" in Dealer's choice) while you're looking at the table, or a seat
+  alert while you're looking at the site. It
   keeps that only while the tab is connected and never saves it.
 - The only cookie is a short one (10 minutes) set while you sign in with
   Google, to make sure the sign-in finishes in the browser that started it.

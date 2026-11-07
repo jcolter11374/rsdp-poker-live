@@ -29,16 +29,24 @@ yet tried it with a real screen reader; see "Known and left".
 
 - **Green buttons** (Create table, Sit down, Register, Sign in) had white
   words on a green of only 3:1. They are a darker green now, 5:1. The table
-  keeps its brighter green until John has seen the change (below).
+  keeps its brighter green until John has seen the change (below). The hand
+  replayer away from the table (a shared hand, hand search) has the darker
+  green, like the rest of the site.
 - **The tournament lobby's clock card** had pale green words at 4:1 and
   3.4:1 on the green; they are lighter now.
+- **The lobby chat:** on your own messages, the time and the host's Hide,
+  Mute and Delete buttons were 4.4:1 on the redder background; they are
+  lighter now, 4.9:1. The open tab of the lobby lost its light background
+  while the pointer was over it (1.4:1); it keeps it now.
 - **The table read aloud.** Nothing told a screen reader what was happening.
   Now a region only screen readers hear reads each new line of the hand
   ("Bo bets 40", "Turn: queen of spades", "Cy wins 240 with a pair of
   jacks"), says "Your turn" with what you can do and the pot ("Your turn:
   call 40, raise to 80 up to 1000 or fold. Pot 200."), says when the game
-  pauses, and warns when 10 seconds are left on your clock. It reads only
-  what your own screen already shows.
+  pauses, says who is picking the next game in Dealer's choice ("Bo is
+  picking the next game", or "Your pick"), and warns when 10 seconds are
+  left on your clock or on your pick. It reads only what your own screen
+  already shows.
 - **Seats in words.** Each nameplate says who is to act, who has folded and
   who has the dealer button. Empty seats' buttons say which seat ("Sit in
   seat 3", "Add a practice bot to seat 3").
@@ -50,7 +58,10 @@ yet tried it with a real screen reader; see "Known and left".
   back when they closed. Now every dialog, phone sheet and the hand replayer
   (even its "can't be replayed" box) takes focus when it opens, keeps Tab
   inside, and hands focus back to the button that opened it, or to the menu
-  button when it was opened from the phone's menu.
+  button when it was opened from the phone's menu. A dialog that opens by
+  itself under another (Dealer's choice's "Pick the next game" while
+  Keyboard shortcuts is open) leaves focus in the one on top, and gets it
+  when that one closes.
 - **Boxes that scroll** (code and tables on the fairness, privacy and terms
   pages on a phone, and the table's log) couldn't be scrolled from the
   keyboard. Tab now stops on them while they scroll, so the arrow keys work.
@@ -63,8 +74,9 @@ yet tried it with a real screen reader; see "Known and left".
   the move buttons and the bet box say their keyboard shortcuts (F, K, C,
   R); and the menu button on a phone says how many requests are waiting.
 - **Messages:** errors on sign-in, sign-up, password reset, creating a
-  table, sitting down, registering for a tournament and on the move buttons
-  are read out when they appear, as are the table's notices (your
+  table, sitting down, registering for a tournament, on the move buttons,
+  picking the next game, sending or moderating in the lobby chat, and
+  getting the hands for the recap are read out when they appear, as are the table's notices (your
   tournament table is ready, you're no longer seated, the game stops after
   this hand, connection lost).
 
@@ -114,8 +126,9 @@ commit:
 
 The browser smoke test (`e2e/smoke.mjs`, run by CI against the production
 image on every pull request) checks the home, sign-in, sign-up and new
-tournament pages on a computer and a phone, a tournament lobby, and the
-table on your turn, while waiting and as a spectator, with axe's WCAG 2.2 AA
+tournament pages on a computer and a phone, a tournament lobby and its chat
+with messages in it (as the host and on a phone), and the table on your
+turn, while waiting and as a spectator, with axe's WCAG 2.2 AA
 rules. Any serious or critical problem fails the run. It also checks that a
 screen reader is told "Your turn". Until the table's colours are changed,
 the colour-contrast rule is left out on the table only (`TABLE` in the

@@ -102,6 +102,21 @@ describe('what the table says', () => {
     expect(announcements(off, on, fmt)).toEqual(['The game is back on.']);
   });
 
+  it("says who is picking the next game once the table waits for it (Dealer's choice), and once only", () => {
+    const choice = (chip: number | null, deadline: number | null) => ({ chip, current: null, handsLeft: 0, next: null, open: deadline !== null, deadline, count: 3, cap: null, closed: false, defaultIndex: 0, canKeep: true });
+    const at = (chip: number | null, deadline: number | null, over: Partial<TableView> = {}) => tableView({ hand: { phase: 'complete' }, view: { choice: choice(chip, deadline), ...over } });
+    const before = at(1, null);
+    expect(announcements(before, at(1, 20_000), fmt)).toEqual(['Bo is picking the next game']);
+    // The clock ticks on, or stands still while paused: nothing new to say.
+    expect(announcements(at(1, 20_000), at(1, 20_000, { serverNow: 5_000 }), fmt)).toEqual([]);
+    expect(announcements(at(1, 20_000, { paused: true }), at(1, 25_000, { paused: true }), fmt)).toEqual([]);
+    // Bo leaves it to Cy, and then it's mine.
+    expect(announcements(at(1, 20_000), at(2, 40_000), fmt)).toEqual(['Cy is picking the next game']);
+    expect(announcements(before, at(0, 20_000), fmt)).toEqual(['Your pick: choose the next game']);
+    // A pick during the last hand of the one before has no clock, and the table doesn't wait for it.
+    expect(announcements(before, tableView({ view: { choice: choice(1, null) } }), fmt)).toEqual([]);
+  });
+
   it('reads the result', () => {
     const before = tableView({ hand: { events: [start] } });
     const win: HandEvent = { seq: 1, t: 'award', pot: 0, run: 0, board: 0, half: 'scoop', seat: 2, amount: 240, handName: 'a pair of jacks' };

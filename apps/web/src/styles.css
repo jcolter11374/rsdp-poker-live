@@ -45,8 +45,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--go-fill); border-color: var(--go-fill); color: #fff; font-weight: 700; }
 button.primary:hover:not(:disabled) { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
 /* The table page (and the dialogs over it) keeps its brighter green for now: a change to the table's look waits for
-   John's before-and-after OK (D21). */
-:root:has(.table-page) { --go-fill: var(--go); --go-fill-hover: var(--go-hover); }
+   John's before-and-after OK (D21). TablePage sets the class while the table is shown. Elsewhere, the hand replayer
+   (a shared hand, hand search) has the darker green like the rest of the site. */
+:root.on-table { --go-fill: var(--go); --go-fill-hover: var(--go-hover); }
 /* Words for screen readers only: off screen to the eye, still read aloud and still reachable with Tab. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* A dialog takes focus itself when it opens with nothing inside focused; the box needs no ring of its own. */

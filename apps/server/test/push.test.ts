@@ -1,8 +1,8 @@
 // Phone alerts (push/alerts.ts): turning them on and off, who they go to,
-// the visibility rule for "your turn", the four alerts the server sends, and
-// what happens to a subscription that has gone (404, 410), signed out, sat
-// unused, or belonged to a deleted account. The push services are faked:
-// nothing here leaves the machine.
+// the visibility rule for "your turn" (a Dealer's choice pick included), the
+// four alerts the server sends, and what happens to a subscription that has
+// gone (404, 410), signed out, sat unused, or belonged to a deleted account.
+// The push services are faked: nothing here leaves the machine.
 
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -325,6 +325,69 @@ describe('phone alerts from the server', () => {
     clock.advance(TURN_ALERT_DELAY_MS);
     await flush();
     expect(opened(service, myPhone)).toHaveLength(1);
+  });
+
+  /** A Dealer's choice table for two, started: nothing is dealt until the first chooser picks. */
+  async function picking(name: string, hostToken: string, guestToken: string) {
+    const host = client(hostToken);
+    const guest = client(guestToken);
+    const games = [
+      { gameId: 'nlhe', betting: 'no-limit' },
+      { gameId: 'razz', betting: 'fixed-limit' },
+    ];
+    const { tableId } = await host.call<{ tableId: string }>('table:create', {
+      settings: { table: { name, maxSeats: 8 }, seating: { requireApproval: false }, timing: { autoStartNextHand: false }, game: { dealersChoice: { enabled: true, games, hands: 0, pickSeconds: 20 } } },
+    });
+    await host.call('table:join', { tableId });
+    await guest.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 10_000 });
+    await guest.call('seat:request', { seat: 1, name: 'Guest', stack: 10_000 });
+    await host.until((v) => v.seats.filter(Boolean).length === 2);
+    await host.call('host:start');
+    const hv = await host.until((v) => v.choice?.deadline != null);
+    const mine = hv.choice!.chip === hv.me.seat;
+    return { tableId, me: mine ? host : guest, other: mine ? guest : host, myToken: mine ? hostToken : guestToken, theirToken: mine ? guestToken : hostToken };
+  }
+
+  it("sends 'your pick' once to a Dealer's choice chooser the table is waiting for, under the table's turn alerts", async () => {
+    const t = await picking('Picks', 'push-pick-host-secret-01', 'push-pick-guest-secret-1');
+    const myPhone = await subscribe(t.myToken);
+    const theirPhone = await subscribe(t.theirToken);
+    await hidden(t.me);
+    await hidden(t.other);
+    clock.advance(TURN_ALERT_DELAY_MS);
+    await flush();
+    // The page's own tag (TablePage.tsx), so a phone with the page in the background shows it once.
+    expect(opened(service, myPhone)).toEqual([{ title: 'Your pick: choose the next game', body: 'Picks', url: `/t/${t.tableId}`, tag: `turn:${t.tableId}:pick:0`, replaces: `turn:${t.tableId}:` }]);
+    expect(opened(service, theirPhone)).toEqual([]);
+    // Only once for that pick, however long it takes.
+    clock.advance(5_000);
+    await flush();
+    expect(opened(service, myPhone)).toHaveLength(1);
+    // Picked: the first hand is dealt, and its turns are alerted as usual.
+    await t.me.call('hand:chooseGame', { index: 0, gameId: 'nlhe', betting: 'no-limit' });
+    const first = await t.me.until((v) => !!v.hand);
+    clock.advance(TURN_ALERT_DELAY_MS);
+    await flush();
+    const phone = first.legal ? myPhone : theirPhone;
+    expect(opened(service, phone).map((a) => a.title).at(-1)).toBe('Your turn');
+    expect(opened(service, myPhone).filter((a) => a.title.startsWith('Your pick'))).toHaveLength(1);
+  });
+
+  it('sends no pick alert when the chooser picks within the moment, or is looking at the table', async () => {
+    const quick = await picking('Quick pick', 'push-qpick-host-secret-1', 'push-qpick-guest-secret');
+    const quickPhone = await subscribe(quick.myToken);
+    await hidden(quick.me);
+    await quick.me.call('hand:chooseGame', { index: 1, gameId: 'razz', betting: 'fixed-limit' });
+    clock.advance(TURN_ALERT_DELAY_MS);
+    await flush();
+    expect(opened(service, quickPhone).filter((a) => a.title.startsWith('Your pick'))).toEqual([]);
+
+    const looking = await picking('Looking', 'push-lpick-host-secret-1', 'push-lpick-guest-secret');
+    const lookingPhone = await subscribe(looking.myToken);
+    clock.advance(TURN_ALERT_DELAY_MS);
+    await flush();
+    expect(opened(service, lookingPhone)).toEqual([]);
   });
 
   it('drops a subscription its push service says has gone (404 or 410), and keeps one that only failed', async () => {

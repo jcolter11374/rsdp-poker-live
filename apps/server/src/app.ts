@@ -897,17 +897,31 @@ export function createApp(deps: AppDeps = {}) {
     else fn();
   }
 
-  /** Whose move it is, as the views have it (TableView.legal and canDraw): a person's, not a bot's, and not while paused. */
-  function turnToAct(rt: TableRuntime): { playerId: PlayerId; handNumber: number; at: number } | null {
+  /**
+   * What the table is waiting on a person for, as the views have it: a move (TableView.legal and canDraw), or a
+   * Dealer's choice pick with its clock running (the page calls the chooser for it like a turn: myPickDue in
+   * Choice.tsx). Not a bot's, and not while paused. `key` names it once; `tag` is the page's own alert tag
+   * (TablePage.tsx), so a phone that shows the page's alert too shows it once.
+   */
+  function turnToAct(rt: TableRuntime): { playerId: PlayerId; key: string; tag: string; title: string } | null {
     const s = rt.state;
     const hand = s.hand;
-    if (!hand || s.paused || hand.toAct === null || (hand.phase !== 'betting' && hand.phase !== 'drawing')) return null;
-    const dealt = hand.seats.find((x) => x.seat === hand.toAct);
-    if (!dealt || rt.seatOf(dealt.playerId)?.seat !== hand.toAct || s.bots?.[dealt.playerId]) return null;
-    return { playerId: dealt.playerId, handNumber: hand.input.handNumber, at: hand.events.length };
+    if (s.paused) return null;
+    if (hand && hand.phase !== 'complete') {
+      if (hand.toAct === null || (hand.phase !== 'betting' && hand.phase !== 'drawing')) return null;
+      const dealt = hand.seats.find((x) => x.seat === hand.toAct);
+      if (!dealt || rt.seatOf(dealt.playerId)?.seat !== hand.toAct || s.bots?.[dealt.playerId]) return null;
+      const at = `${hand.input.handNumber}:${hand.events.length}`;
+      return { playerId: dealt.playerId, key: `${dealt.playerId}:${at}`, tag: `turn:${s.id}:${at}`, title: 'Your turn' };
+    }
+    // Between hands: the table waits for the chooser's pick while its clock runs (choice.ts). Once per pick: the
+    // hand it follows, so a pause and its fresh clock don't make it a new one.
+    if (rt.tournament || s.choice?.deadline == null || !rt.choice.pickOpen()) return null;
+    const chooser = rt.choice.chooser();
+    if (!chooser || s.bots?.[chooser.playerId]) return null;
+    const after = hand?.input.handNumber ?? 0;
+    return { playerId: chooser.playerId, key: `pick:${chooser.playerId}:${after}`, tag: `turn:${s.id}:pick:${after}`, title: 'Your pick: choose the next game' };
   }
-
-  const turnKey = (turn: { playerId: PlayerId; handNumber: number; at: number }) => `${turn.playerId}:${turn.handNumber}:${turn.at}`;
 
   /** True when one of the player's tabs at this table is on screen (or never said). */
   const lookingAt = (tableId: string, playerId: PlayerId) => [...(watchers.get(tableId) ?? [])].some((s) => s.data.playerId === playerId && s.data.visible !== false);
@@ -915,23 +929,23 @@ export function createApp(deps: AppDeps = {}) {
   const onSite = (playerId: PlayerId) => [...(playerSockets.get(playerId) ?? [])].some((s) => s.data.visible !== false);
 
   /**
-   * "Your turn" on the player's phones: once per turn, a moment after it starts, and only if it is still that turn
-   * and none of their tabs at this table is on screen. The tag is the page's own (TablePage.tsx), so a phone that
-   * shows the page's alert too shows it once.
+   * "Your turn" (or "Your pick" in Dealer's choice) on the player's phones: once per turn, a moment after it starts,
+   * and only if it is still that turn and none of their tabs at this table is on screen. The tag is the page's own
+   * (TablePage.tsx), so a phone that shows the page's alert too shows it once.
    */
   function watchTurn(rt: TableRuntime) {
     const id = rt.state.id;
     const turn = turnToAct(rt);
     // Between turns, and while paused, the last turn stays seen, so resuming doesn't alert for it again.
     if (!turn) return;
-    const key = turnKey(turn);
+    const key = turn.key;
     if (turnSeen.get(id) === key) return;
     turnSeen.set(id, key);
     if (!push.on) return;
     /** Still that turn, and none of the player's tabs at the table on screen. */
     const due = () => {
       const still = tables.get(id) === rt ? turnToAct(rt) : null;
-      return !!still && turnKey(still) === key && !lookingAt(id, turn.playerId);
+      return !!still && still.key === key && !lookingAt(id, turn.playerId);
     };
     clock.setTimeout(
       () =>
@@ -942,7 +956,7 @@ export function createApp(deps: AppDeps = {}) {
           if (!due()) return;
           push.send(
             turn.playerId,
-            { title: 'Your turn', body: rt.state.settings.table.name, url: `/t/${id}`, tag: `turn:${id}:${turn.handNumber}:${turn.at}`, replaces: `turn:${id}:` },
+            { title: turn.title, body: rt.state.settings.table.name, url: `/t/${id}`, tag: turn.tag, replaces: `turn:${id}:` },
             { ttl: TURN_ALERT_TTL_S, urgency: 'high' },
             // Played, or looked at, while it waited for a slow push service: it goes nowhere.
             due,

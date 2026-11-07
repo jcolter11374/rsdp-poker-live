@@ -3,8 +3,9 @@ import { eventLines, stakesLabel, type Fmt } from './format';
 
 /*
  * What the table says aloud to a screen reader (TableAnnouncer): each new line of the hand log as it happens (the
- * deal, every move, the board, the result), "Your turn" with what you can do, and a pause. It reads only what this
- * player's own view of the table already shows, so it can never tell anyone more than their screen does.
+ * deal, every move, the board, the result), "Your turn" with what you can do, who is picking the next game in
+ * Dealer's choice, and a pause. It reads only what this player's own view of the table already shows, so it can never
+ * tell anyone more than their screen does.
  */
 
 const RANK: Record<string, string> = { A: 'ace', K: 'king', Q: 'queen', J: 'jack', T: '10' };
@@ -68,8 +69,22 @@ export function turnText(view: TableView, fmt: Fmt): string | null {
 }
 
 /**
+ * Dealer's choice: who the table is waiting on to pick the next game, in the felt's words (ChoiceLine in Choice.tsx),
+ * or null while it waits for nobody's pick. `key` is one pick: the hand it follows, and who is picking.
+ */
+export function pickWait(view: TableView): { key: string; text: string } | null {
+  const c = view.choice;
+  const live = !!view.hand && view.hand.phase !== 'complete';
+  if (!c || live || !view.started || c.deadline === null || c.chip === null) return null;
+  const who = view.seats[c.chip];
+  if (!who) return null;
+  return { key: `${view.hand?.handNumber ?? 0}:${who.playerId}`, text: who.playerId === view.me.playerId ? 'Your pick: choose the next game' : `${who.name} is picking the next game` };
+}
+
+/**
  * What to say for the change from `before` to `view`: the hand-log lines that are new since `before` (all of a hand
- * that has just been dealt), then the turn when it has just become yours, and a pause or restart. The first view of a
+ * that has just been dealt), a pause or restart, who has just started picking the next game, then the turn when it has
+ * just become yours. The first view of a
  * table says nothing, so arriving mid-hand doesn't read out the whole hand. `preQueued`: a move ticked in advance will
  * answer the turn by itself, so it isn't called out.
  */
@@ -90,6 +105,8 @@ export function announcements(before: TableView | null, view: TableView, fmt: Fm
   }
   if (view.paused && !before.paused) out.push('The game is paused.');
   if (!view.paused && before.paused) out.push('The game is back on.');
+  const pick = pickWait(view);
+  if (pick && pick.key !== pickWait(before)?.key) out.push(pick.text);
   const turn = myTurnKey(view);
   if (turn !== null && turn !== myTurnKey(before) && !preQueued) {
     const words = turnText(view, fmt);

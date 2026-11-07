@@ -7,8 +7,8 @@ export function tabStops(root: HTMLElement): HTMLElement[] {
   );
 }
 
-/** The dialog on top: the last one open in the page. Only it keeps focus. */
-const topDialog = () => [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')].at(-1) ?? null;
+/** The dialog on top: the last one open in the page, leaving out `closing`. Only it takes and keeps focus. */
+const topDialog = (closing?: HTMLElement) => [...document.querySelectorAll<HTMLElement>('[aria-modal="true"]')].filter((d) => d !== closing).at(-1) ?? null;
 
 /**
  * Where each open dialog gives focus back to, first choice first: what opened it; when that was inside another
@@ -30,6 +30,9 @@ function openerChain(): HTMLElement[] {
  * Shift+Tab go round inside it and never reach the page behind, and focus goes back to whatever opened it when it
  * closes. Something inside that already took focus (an autoFocus box) keeps it; otherwise the dialog box itself takes
  * it, so a screen reader starts reading at its title. The dialog element needs tabIndex={-1} and aria-modal.
+ *
+ * A dialog that opens by itself under another (Dealer's choice's picker, under Keyboard shortcuts) leaves focus in the
+ * one on top, and gets it once that one closes, rather than the page behind both.
  */
 export function useDialogFocus(ref: RefObject<HTMLElement>) {
   // Read while rendering, before an autoFocus inside the dialog moves focus away from the opener, and while a dialog
@@ -39,7 +42,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement>) {
     const dialog = ref.current;
     if (!dialog) return;
     returnTo.set(dialog, openers);
-    if (!dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true });
+    if (topDialog() === dialog && !dialog.contains(document.activeElement)) dialog.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       // A dialog with its own Tab order inside (the coach's Why sheet) may have dealt with the key already.
       if (e.key !== 'Tab' || e.defaultPrevented || topDialog() !== dialog) return;
@@ -61,10 +64,13 @@ export function useDialogFocus(ref: RefObject<HTMLElement>) {
       window.removeEventListener('keydown', onKey);
       // Back to the opener, or if it went with a dialog that closed, to where that dialog would have given it back.
       // Not when the opener has gone for good (a Sit button whose seat was just taken), or focus has already moved on
-      // to something else outside, such as another dialog opened from this one.
+      // to something else outside, such as another dialog opened from this one. With a dialog still open underneath,
+      // only somewhere inside it: else that dialog itself, not the page behind it.
       const lost = !document.activeElement || document.activeElement === document.body || dialog.contains(document.activeElement);
-      const back = openers.find((el) => el.isConnected);
-      if (lost && back) back.focus({ preventScroll: true });
+      if (!lost) return;
+      const under = topDialog(dialog);
+      const back = openers.find((el) => el.isConnected && (!under || under.contains(el))) ?? under;
+      back?.focus({ preventScroll: true });
     };
   }, []);
 }

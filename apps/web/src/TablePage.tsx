@@ -40,8 +40,14 @@ import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
 
+/**
+ * Every turn alert at a table starts with this, the page's and a push's alike (apps/server/src/app.ts, watchTurn): the
+ * next one replaces it, and it is taken down once the turn is over. A turn at another table still needs its player.
+ */
+const turnAlerts = (tableId: string) => `turn:${tableId}:`;
+
 /** Plays sounds, buzzes and badges the tab for what changed between two views. */
-function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
+export function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
   const prev = useRef<TableView | null>(null);
   useEffect(() => {
     const before = prev.current;
@@ -53,7 +59,8 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     if (myPickDue(view) && !myPickDue(before)) {
       sounds.turn();
       buzz();
-      notify('Your pick: choose the next game', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
+      // One alert for each pick (the hand it follows), with the same tag as the server's phone alert for it.
+      notify('Your pick: choose the next game', view.name, { tag: `${turnAlerts(view.id)}pick:${view.hand?.handNumber ?? 0}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
     }
     const hand = view.hand;
     if (!hand) return;
@@ -81,7 +88,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
       sounds.turn();
       buzz();
       // The server's phone alert for this turn carries the same tag (apps/server/src/app.ts, watchTurn), so a phone shows one.
-      notify('Your turn', view.name, { tag: `turn:${view.id}:${hand.handNumber}:${hand.events.length}`, url: `/t/${view.id}`, replaces: `turn:${view.id}:` });
+      notify('Your turn', view.name, { tag: `${turnAlerts(view.id)}${hand.handNumber}:${hand.events.length}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
     }
   }, [view]);
 
@@ -117,8 +124,8 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
       clearInterval(t);
       document.title = original;
       badgeFavicon(false);
-      // Acted (here or in another tab): this table's alert is out of date. A turn at another table still needs its player.
-      closeNotifications(`turn:${tableId}:`);
+      // Acted or picked (here or in another tab), or the time ran out: this table's alert is out of date.
+      if (tableId) closeNotifications(turnAlerts(tableId));
     };
   }, [myTurn, tableId]);
 }
@@ -348,6 +355,13 @@ export function TablePage({ tableId }: { tableId: string }) {
     ro.observe(bar);
     return () => ro.disconnect();
   }, [wide, !!view]);
+  // The table keeps its brighter green buttons (styles.css), in browsers too old for :has().
+  const onTable = !error && !!view;
+  useLayoutEffect(() => {
+    if (!onTable) return;
+    document.documentElement.classList.add('on-table');
+    return () => document.documentElement.classList.remove('on-table');
+  }, [onTable]);
   if (error) {
     // A tournament table closes when it breaks; the lobby knows the new seat.
     const tournament = error === 'table not found' ? tournamentOfTable(tableId) : null;

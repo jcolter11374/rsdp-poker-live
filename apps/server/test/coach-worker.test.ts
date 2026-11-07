@@ -128,7 +128,9 @@ async function longestStall(during: () => Promise<unknown>): Promise<number> {
 
 describe("the coach's own thread", () => {
   it('works out the same tip as the table would itself, every time it is asked', async () => {
-    const pool = coachWorker({ tuning: TUNING });
+    // TUNING deals far more draws than the site does: on a busy machine one tip could pass the coach's own time limits,
+    // which this doesn't test.
+    const pool = coachWorker({ tuning: TUNING, runMs: 60_000, waitMs: 60_000 });
     try {
       const td = dealt('td27', 3, 2);
       const jobs = [quick(), jobFor(td, 7), jobFor(toDraw(dealt('badugi', 2, 5)), 9), jobFor(dealt('plo8', 4, 6), 11)];
@@ -331,7 +333,7 @@ describe("the coach's own thread", () => {
 
 describe('what a table sends the coach', () => {
   it('is the hand as the one player sees it, and its own random numbers from the turn', async () => {
-    const pool = coachWorker({ tuning: TUNING });
+    const pool = coachWorker({ tuning: TUNING, runMs: 60_000, waitMs: 60_000 });
     const sent: TipJob[] = [];
     const watched: TipWorker = { work: (job) => (sent.push(structuredClone(job)), pool.work(job)) };
     const clock = new FakeClock();

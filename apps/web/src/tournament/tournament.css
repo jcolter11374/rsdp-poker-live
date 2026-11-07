@@ -39,7 +39,7 @@
 .tn-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
 .tn-tabs::-webkit-scrollbar { display: none; }
 .tn-tabs button { flex: none; border-radius: 999px; min-height: 40px; white-space: nowrap; }
-.tn-tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.tn-tabs button.on, .tn-tabs button.on:hover:not(:disabled) { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .tn-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .tn-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; padding: 4px 6px; }
@@ -216,6 +216,8 @@
 .tn-chat-tools button { min-height: 32px; min-width: 48px; padding: 4px 10px; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.8rem; line-height: 1.2; }
 /* On a phone they go under the message, so a name and its words stay together; with more room, beside the name. */
 .tn-chat-list li > .tn-chat-tools { grid-column: 1 / -1; margin: 4px 0 2px; }
+/* On your own message's redder background, the time and the buttons are a little lighter, to stay above 4.5:1. */
+.tn-chat-list li.mine .muted, .tn-chat-list li.mine .tn-chat-tools button { color: #a3acb6; }
 @media (min-width: 601px) {
   .tn-chat-meta { grid-column: 1; }
   .tn-chat-list li > .tn-chat-tools { grid-column: 2; grid-row: 1; margin: 0 0 2px; }

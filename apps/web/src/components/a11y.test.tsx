@@ -138,6 +138,50 @@ describe('dialogs and the keyboard', () => {
     expect(document.activeElement).toBe(menu);
   });
 
+  it('leaves focus in the dialog on top when another opens by itself underneath, and gives it to that one next', () => {
+    // As at the table: Dealer's choice's picker comes before the other dialogs in the page, so they sit on top of it.
+    function Page({ pick }: { pick: boolean }) {
+      const [keys, setKeys] = useState(false);
+      const [picking, setPicking] = useState(true);
+      return (
+        <>
+          <button onClick={() => setKeys(true)}>Keyboard shortcuts</button>
+          {pick && picking && (
+            <Modal title="Pick the next game" onClose={() => setPicking(false)}>
+              <button>Razz</button>
+            </Modal>
+          )}
+          {keys && (
+            <Modal title="Keyboard shortcuts" onClose={() => setKeys(false)}>
+              <button onClick={() => setKeys(false)}>Done</button>
+            </Modal>
+          )}
+        </>
+      );
+    }
+    const { rerender } = render(<Page pick={false} />);
+    const opener = screen.getByText('Keyboard shortcuts');
+    opener.focus();
+    fireEvent.click(opener);
+    const keys = screen.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    expect(document.activeElement).toBe(keys);
+    // The table starts waiting for my pick: its panel opens by itself, under the shortcuts.
+    rerender(<Page pick />);
+    expect(screen.getAllByRole('dialog').map((d) => d.getAttribute('aria-label'))).toEqual(['Pick the next game', 'Keyboard shortcuts']);
+    expect(document.activeElement).toBe(keys);
+    tab();
+    expect(document.activeElement).toBe(screen.getByText('Done'));
+    // Closing the shortcuts gives focus to the picker, still open, rather than to the page behind it.
+    fireEvent.click(screen.getByText('Done'));
+    const picker = screen.getByRole('dialog', { name: 'Pick the next game' });
+    expect(document.activeElement).toBe(picker);
+    tab();
+    expect(document.activeElement).toBe(screen.getByText('Razz'));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("treats the replayer's \"can't be replayed\" box as a dialog too", () => {
     // React reports the error it caught; the replayer shows its fallback instead.
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -219,6 +263,25 @@ describe('the table for a keyboard and a screen reader', () => {
       expect(screen.getByRole('log').textContent).toBe('');
       act(() => vi.advanceTimersByTime(1_500));
       expect(screen.getByRole('log').textContent).toBe('10 seconds left to act.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("warns when ten seconds are left to pick the next game (Dealer's choice)", () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      const choice = (deadline: number | null) => ({ chip: 0, current: null, handsLeft: 0, next: null, open: true, deadline, count: 3, cap: null, closed: false, defaultIndex: 0, canKeep: true });
+      const before = tableView({ hand: { phase: 'complete' }, view: { choice: choice(null) } });
+      const { rerender } = render(<TableAnnouncer view={before} fmt={String} skew={0} preQueued={{ current: false }} />);
+      const said = () => [...screen.getByRole('log').querySelectorAll('p')].map((p) => p.textContent);
+      act(() => rerender(<TableAnnouncer view={tableView({ hand: { phase: 'complete' }, view: { choice: choice(now + 20_000) } })} fmt={String} skew={0} preQueued={{ current: false }} />));
+      expect(said()).toEqual(['Your pick: choose the next game.']);
+      act(() => vi.advanceTimersByTime(9_000));
+      expect(said()).toHaveLength(1);
+      act(() => vi.advanceTimersByTime(1_500));
+      expect(said()).toEqual(['Your pick: choose the next game.', '10 seconds left to pick.']);
     } finally {
       vi.useRealTimers();
     }

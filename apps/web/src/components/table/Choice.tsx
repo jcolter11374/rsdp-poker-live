@@ -6,6 +6,7 @@ import { call } from '../../socket';
 import { Modal } from '../SeatDialog';
 import { useNow } from '../Table';
 import { choiceOf } from '../settings/dealersChoice';
+import { pickWait } from '../../announce';
 
 /*
  * Dealer's choice at the table (D33): the Pick chip on the next chooser's seat, the line on the felt while they
@@ -33,16 +34,13 @@ export function PickTag({ view, seat }: { view: TableView; seat: SeatView }) {
 
 /** Between hands while the table waits for a pick: who is picking, and the time left. In the "Next hand in" spot. */
 export function ChoiceLine({ view, now }: { view: TableView; now: number }) {
-  const c = view.choice;
-  const live = !!view.hand && view.hand.phase !== 'complete';
-  if (!c || live || !view.started || c.deadline === null) return null;
-  const secs = secondsTo(c.deadline, now);
-  const who = c.chip !== null ? view.seats[c.chip] : null;
-  if (!who) return null;
+  // A screen reader hears the same words as the line appears (announce.ts).
+  const wait = pickWait(view);
+  if (!wait) return null;
   return (
     <div className="next-hand choice-line">
-      {who.playerId === view.me.playerId ? 'Your pick: choose the next game' : `${who.name} is picking the next game`}
-      {view.paused ? '' : ` · ${secs}`}
+      {wait.text}
+      {view.paused ? '' : ` · ${secondsTo(view.choice!.deadline, now)}`}
     </div>
   );
 }
@@ -120,7 +118,7 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
             );
           })}
         </ul>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <button onClick={onClose}>Close</button>
       </div>
     </Modal>

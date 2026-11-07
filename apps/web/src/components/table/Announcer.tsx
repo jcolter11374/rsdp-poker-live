@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TableView } from '@rsdp/engine/wire';
 import { announcements } from '../../announce';
 import type { Fmt } from '../../format';
+import { myPickDue } from './Choice';
 
 /** Seconds left on your clock when a screen reader is told time is running out. */
 const LOW_TIME_S = 10;
@@ -12,8 +13,9 @@ let said = 0;
 
 /**
  * The table read aloud for screen readers: a log region nobody sees, where each change to the table (the hand log's
- * new lines, your turn and what you can do, a pause) is added as it happens, and a warning when your clock is nearly
- * out. Screen readers read new lines out politely, after whatever they are saying; everyone else sees nothing.
+ * new lines, your turn and what you can do, who is picking the next game, a pause) is added as it happens, and a
+ * warning when your clock, or your pick's, is nearly out. Screen readers read new lines out politely, after whatever
+ * they are saying; everyone else sees nothing.
  */
 export function TableAnnouncer({ view, fmt, skew, preQueued }: { view: TableView; fmt: Fmt; skew: number; preQueued: { current: boolean } }) {
   const [lines, setLines] = useState<{ id: number; text: string }[]>([]);
@@ -27,16 +29,18 @@ export function TableAnnouncer({ view, fmt, skew, preQueued }: { view: TableView
     if (news.length) say(news.map((t) => (/[.?!]$/.test(t) ? t : `${t}.`)).join(' '));
   }, [view]);
 
-  // Ten seconds left on your own clock, said once a turn (the warning beep comes at five).
+  // Ten seconds left on your own clock, said once a turn (the warning beep comes at five), or on the clock for your
+  // Dealer's choice pick.
   const mine = view.turn && view.me.seat !== null && view.turn.seat === view.me.seat && !view.paused ? view.turn : null;
-  const deadline = mine?.deadline ?? null;
+  const picking = !mine && myPickDue(view);
+  const deadline = mine?.deadline ?? (picking ? view.choice!.deadline : null);
   useEffect(() => {
     if (deadline === null) return;
     const ms = deadline - skew - LOW_TIME_S * 1000 - Date.now();
     if (ms < 0) return;
-    const t = setTimeout(() => say(`${LOW_TIME_S} seconds left to act.`), ms);
+    const t = setTimeout(() => say(`${LOW_TIME_S} seconds left to ${picking ? 'pick' : 'act'}.`), ms);
     return () => clearTimeout(t);
-  }, [deadline, skew]);
+  }, [deadline, skew, picking]);
 
   return (
     <div className="sr-only" role="log" aria-live="polite" aria-label="What's happening at the table">

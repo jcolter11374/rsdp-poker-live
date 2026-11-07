@@ -420,6 +420,21 @@ try {
     }
     await checkA11y(host, 'tournament lobby, host');
     await checkA11y(players[2], 'tournament lobby (phone)');
+    // The lobby chat with messages in it: your own (on its redder background) and another player's, with the host's
+    // Hide, Mute and Delete beside them.
+    for (const [p, text] of [
+      [host, 'Good luck, everyone'],
+      [players[2], 'Thanks, you too'],
+    ]) {
+      await p.getByRole('tab', { name: /^Chat/ }).click();
+      await p.getByRole('textbox', { name: 'Message' }).fill(text);
+      await p.getByRole('button', { name: 'Send' }).click();
+      await p.locator('.tn-chat-list li.mine', { hasText: text }).waitFor();
+    }
+    await host.locator('.tn-chat-list li', { hasText: 'Thanks, you too' }).getByRole('button', { name: 'Mute' }).waitFor();
+    await players[2].locator('.tn-chat-list li', { hasText: 'Good luck, everyone' }).waitFor();
+    await checkA11y(host, 'tournament lobby chat, host');
+    await checkA11y(players[2], 'tournament lobby chat (phone)');
     // The host starts from the card by the clock, without opening the Host tab.
     await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
 
