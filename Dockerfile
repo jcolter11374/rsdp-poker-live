@@ -1,4 +1,4 @@
-# RSDP Poker Live! production image: the game server plus the built web app.
+# RSDP Live! production image: the game server plus the built web app.
 # Data goes to Postgres when DATABASE_URL is set, otherwise to PGlite under
 # PGLITE_DIR (mount a volume at /data to keep it).
 

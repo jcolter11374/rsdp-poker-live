@@ -190,7 +190,7 @@ export function SharedHandPage({ id }: { id: string }) {
     return (
       <main className="home">
         <h1 className="logo">
-          RSDP Poker <span>Live!</span>
+          RSDP <span>Live!</span>
         </h1>
         <p className={error ? 'error' : 'muted'}>{error || 'Loading the hand…'}</p>
         <a href="/">Start your own table</a>
@@ -199,7 +199,7 @@ export function SharedHandPage({ id }: { id: string }) {
   return (
     <main className="home shared-hand">
       <h1 className="logo">
-        RSDP Poker <span>Live!</span>
+        RSDP <span>Live!</span>
       </h1>
       <p className="tagline">
         {data.sharedBy || 'A player'} shared hand #{data.hand.handNumber} from {data.tableName}.

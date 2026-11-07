@@ -1,6 +1,6 @@
 # Credits
 
-RSDP Poker Live! stands on free, open-source software that thousands of volunteers and companies have written and given away. This page names it and thanks them.
+RSDP Live! stands on free, open-source software that thousands of volunteers and companies have written and given away. This page names it and thanks them.
 
 ## What's ours and what isn't
 

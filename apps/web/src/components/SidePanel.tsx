@@ -12,6 +12,8 @@ import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
+import { RecapDialog, useRecapOffered } from './table/Recap';
+import { finishedOnScreen } from '../runout';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -68,6 +70,7 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
 type SortKey = 'name' | 'buyIn' | 'cashOut' | 'stack' | 'net';
 const SORT_KEY = 'rsdp.ledgerSort';
 
+/** The cash ledger, settle-up and Copy recap. */
 function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(() => {
     try {
@@ -78,6 +81,13 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   });
   const [settle, setSettle] = useState(false);
   const [copied, setCopied] = useState(false);
+  // A spectator on a delay waits it out from when the table opened in this browser (TablePage notes it), not from
+  // when this tab opened.
+  const recap = useRecapOffered(view);
+  const [recapOpen, setRecapOpen] = useState(false);
+  // The hands the Hands tab shows, loaded only once the recap is open. Opened again, it waits for them to catch up
+  // with the hands finished since, rather than offer last time's to copy.
+  const recapHands = useAllHands(view, recap && recapOpen);
   if (!view.ledger.length) return <p className="muted">Nobody has bought in yet.</p>;
 
   const seated = new Set(view.seats.filter((s) => s !== null).map((s) => s.playerId));
@@ -120,7 +130,15 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
           {settle ? 'Show ledger' : 'Settle up'}
         </button>
         <button onClick={() => download(`${fileStem(view.name)}-ledger.csv`, ledgerCsv(rows, seated, view.settings.stakes.centsMode), 'text/csv')}>Download CSV</button>
+        {recap && (
+          <button onClick={() => setRecapOpen(true)} title="A few lines about the game for the group chat">
+            Copy recap
+          </button>
+        )}
       </div>
+      {recap && recapOpen && (
+        <RecapDialog view={view} fmt={fmt} hands={recapHands.current ? recapHands.hands : null} error={recapHands.error} onRetry={recapHands.retry} onClose={() => setRecapOpen(false)} />
+      )}
       {settle ? (
         <div className="settle">
           {transfers.length === 0 ? (
@@ -280,20 +298,32 @@ function useAllHands(view: TableView, active: boolean) {
   const [hands, setHands] = useState<HandRecordView[] | null>(() => handCache.get(view.id) ?? null);
   const [error, setError] = useState('');
   const [tries, setTries] = useState(0);
+  // Whether hands have come in since it last started loading. Cleared when it stops, so the recap, opened again,
+  // can tell last time's hands from new ones.
+  const [fresh, setFresh] = useState(false);
   const latest = view.history.at(-1)?.handNumber ?? 0;
   const dealing = view.hand?.handNumber ?? 0;
+  useEffect(() => {
+    if (active) return;
+    setFresh(false);
+    setError('');
+  }, [active]);
   // Hands open for checking half an hour after the game stops (docs/FAIRNESS.md): openThrough moves then, so that fetches them again too.
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
     allHands(view)
-      .then((h) => live && (setHands(h), setError('')))
+      .then((h) => live && (setHands(h), setError(''), setFresh(true)))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
     };
   }, [active, latest, dealing, tries, view.started, view.fair.openThrough]);
-  return { hands, error, retry: () => setTries((t) => t + 1), setHands };
+  // Never ahead of the table on screen: the Hands and Stats tabs and the recap don't give away a runout still being dealt.
+  const shown = useMemo(() => finishedOnScreen(hands, view), [hands, view.history]);
+  // Up to date: loaded since it started, or the ones kept from before already reach the newest hand on screen.
+  const current = fresh || (!!shown && (shown.at(-1)?.handNumber ?? 0) >= latest);
+  return { hands: shown, current, error, retry: () => setTries((t) => t + 1), setHands };
 }
 
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {
