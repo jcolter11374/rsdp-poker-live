@@ -45,6 +45,7 @@ class Sim {
       settings: defaultSettings({ structure: levels, startingStack: 1000, lateRegistration: { enabled: false, throughLevel: null }, ...overrides }),
       now: this.now,
       seed: '42'.repeat(32),
+      legacyRng: 7,
     });
   }
   do(cmd: Command) {
@@ -152,7 +153,7 @@ describe('scheduled auto-start', () => {
   });
 
   it('rejects a start time in the past', () => {
-    expect(() => createTournament({ id: 'x', hostId: 'h', settings: defaultSettings({ start: { kind: 'scheduled', startAt: T0 - 1 } }), now: T0, seed: '01'.repeat(32) })).toThrow(
+    expect(() => createTournament({ id: 'x', hostId: 'h', settings: defaultSettings({ start: { kind: 'scheduled', startAt: T0 - 1 } }), now: T0, seed: '01'.repeat(32), legacyRng: 7 })).toThrow(
       DirectorError,
     );
   });

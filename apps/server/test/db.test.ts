@@ -24,7 +24,6 @@ describe('createDb', () => {
     expect(rows.map((r) => r.table_name)).toEqual([
       'accounts',
       'audit_log',
-      'chip_movements',
       'feedback',
       'hands',
       'hidden_tables',
@@ -36,7 +35,6 @@ describe('createDb', () => {
       'players',
       'practice_resets',
       'saved_setups',
-      'seat_sessions',
       'sessions',
       'settings_changes',
       'shared_hands',

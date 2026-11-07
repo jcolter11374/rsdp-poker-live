@@ -11,7 +11,7 @@ import type { Rng } from '@rsdp/engine';
 import { ActionError, type BettingKind, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
-import { isArchived, isTournamentStaff, LOBBY_CHAT_MAX, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
+import { chatModerationRefusal, isArchived, isTournamentStaff, LOBBY_CHAT_MAX, lobbyChatRefusal, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
 import { choiceMenu } from './runtime/choice';
@@ -43,6 +43,7 @@ import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
 import { quietSteps, type ShutdownSteps } from './shutdown';
 import { subjectRef } from '@rsdp/engine';
+import { LoadGate, ReplaceNameError, replacePlayerName } from './replaceName';
 
 export interface Session {
   playerId: PlayerId;
@@ -414,6 +415,10 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   const tables = new Map<string, TableRuntime>();
+  /** Tables and tournaments read from the database while a player's name was being replaced are read again. */
+  const gate = new LoadGate();
+  /** Set once the server starts shutting down: no name is replaced from then on. */
+  let closing = false;
   const watchers = new Map<string, Set<Sock>>();
   const tournamentWatchers = new Map<string, Set<Sock>>();
   const playerSockets = new Map<PlayerId, Set<Sock>>();
@@ -703,6 +708,51 @@ export function createApp(deps: AppDeps = {}) {
       res.status(500).json({ error: 'Something went wrong. Try again.' });
     });
   });
+  // Issue #233: replaces a player's name with "Deleted player" in old records, for someone who deleted their account or
+  // played as a guest (docs/PRIVACY.md, "Deleting your data"; replaceName.ts). Run from replace-name.yml, whose log is
+  // public, so the answer holds counts and never a name. A dry run (the default) changes nothing and isn't recorded;
+  // a change goes in the public record with only a fingerprint of the player.
+  app.post('/api/admin/players/:id/replace-name', express.json({ limit: '1kb' }), (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isAdmin(req, res)) return;
+    const db = deps.accounts;
+    if (!db) return void res.status(404).json({ error: 'This server has no database.' });
+    const id = String(req.params.id);
+    if (!/^[\w-]{4,40}$/.test(id)) return void res.status(404).json({ error: 'No player has that id.', code: 'not-found' });
+    const dryRun = req.body?.dryRun !== false;
+    // Shutting down saves every table and tournament it holds: a change can't run alongside that, nor hold it up.
+    if (closing) return void res.status(409).json({ error: 'The server is restarting. Try again in a few minutes.', code: 'busy' });
+    const saveLeftBehind = () => [...inFlight].filter(([tableId]) => !tables.has(tableId)).flatMap(([, saves]) => [...saves]);
+    const replace = async () => {
+      // The last saves of tables and tournaments let go of just now land first, so none can come after the change.
+      await Promise.allSettled([...unloading.values(), ...saveLeftBehind()]);
+      await tournaments.settled();
+      return replacePlayerName(db, id, {
+        dryRun,
+        inMemory: (would) => {
+          // Also a tournament the hourly cleanup let go of since the wait above: its final save would come after the change.
+          if (unloading.size || saveLeftBehind().length || tournaments.saving) return 'busy';
+          return { tables: [...tables.values()].filter((rt) => would.table(rt.state)).length, tournaments: tournaments.held().filter((s) => would.tournament(s)).length };
+        },
+      });
+    };
+    (dryRun ? replace() : gate.run(replace))
+      .then(async ({ report, lobbies }) => {
+        if (!report.dryRun) {
+          // Lobby items are never saved again once added (only deleted), so the ones held in memory are changed the same way here.
+          for (const l of lobbies) await lobby.rewrite(l.id, l.change);
+          audit.admin('replace-name', subjectRef('player', id));
+          const rows = Object.values(report.rows).reduce((a, b) => a + b, 0);
+          log(`a player's name was replaced with "Deleted player" in ${rows} saved rows by the admin`);
+        }
+        res.json(report);
+      })
+      .catch((e) => {
+        if (e instanceof ReplaceNameError) return void res.status(e.code === 'not-found' ? 404 : 409).json({ error: e.message, code: e.code });
+        log('replacing a player name failed', e);
+        res.status(500).json({ error: 'Something went wrong. Nothing was changed.' });
+      });
+  });
   // The nightly off-site backup (GitHub Actions, backup.yml) downloads the whole database here. Each copy goes in the
   // public record: it holds any hand being played at that moment.
   /** The backup being downloaded, if one is: shutting down stops it, so its transaction can't hold up the final saves. */
@@ -730,10 +780,15 @@ export function createApp(deps: AppDeps = {}) {
     );
     // Shutting down cuts the download: a client that has stopped reading would otherwise hold it open for good.
     stopBackup = () => void res.destroy();
-    backup = writeBackup(db, (line) => {
-      if (stopped) throw new Error('the download was closed');
-      if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
-    })
+    backup = writeBackup(
+      db,
+      (line) => {
+        if (stopped) throw new Error('the download was closed');
+        if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
+      },
+      new Date(),
+      () => stopped,
+    )
       .then(() => gzip.end())
       .catch((e) => {
         log('backup failed', e);
@@ -1064,6 +1119,7 @@ export function createApp(deps: AppDeps = {}) {
     clock,
     rng: deps.rng,
     fairLeadMs: deps.fairLeadMs,
+    gate,
     store: deps.tournaments ?? memoryTournamentStore(),
     tables: {
       createTable: (state) => store.createTable(state),
@@ -1077,8 +1133,8 @@ export function createApp(deps: AppDeps = {}) {
         feeds.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
-        // Save the final state so the table's history stays readable.
-        store.saveTable(rt.state).catch(() => {});
+        // Save the final state so the table's history stays readable (tracked, so a name being replaced waits for it).
+        track(rt.state.id, store.saveTable(rt.state).catch(() => {}));
         broadcast(rt);
       },
     },
@@ -1118,6 +1174,7 @@ export function createApp(deps: AppDeps = {}) {
     const live = tables.get(id);
     if (live) return live;
     if (deleted.has(id)) return null;
+    const mark = gate.mark();
     // A table being put away is read back once its last save is written.
     await unloading.get(id);
     if (tables.has(id)) return tables.get(id)!;
@@ -1139,6 +1196,11 @@ export function createApp(deps: AppDeps = {}) {
     // Another join may have loaded it (or it was deleted) while we waited.
     if (deleted.has(id)) return null;
     if (tables.has(id)) return tables.get(id)!;
+    // A player's name was replaced since this was read: read it again, or the table's first save would put the name back.
+    if (gate.stale(mark)) {
+      await gate.settled();
+      return getTable(id);
+    }
     const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
     if (ended && runtime.closeSavedHand(ended)) log(`table ${id}: hand ${ended.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
     const rt = attach(runtime);
@@ -1849,11 +1911,48 @@ export function createApp(deps: AppDeps = {}) {
           if (!text) return;
           // Only from a tab with the lobby (or its table strip) open.
           if (!socket.data.tournaments.has(id)) throw new ActionError('open the tournament first');
+          // The host may have turned the chat off, or muted this player.
+          const live = await tournaments.get(id);
+          if (!live) throw new ActionError('tournament not found');
+          const refused = lobbyChatRefusal(live.state, me);
+          if (refused) throw new ActionError(refused);
           const now = clock.now();
           // Per player, so more tabs don't mean more messages.
           if (now - (lastLobbyChat.get(me) ?? 0) < LOBBY_CHAT_GAP_MS) throw new ActionError('slow down a little');
           lastLobbyChat.set(me, now);
           addToLobby(id, [{ at: now, kind: 'chat', playerId: me, name, text }]);
+        },
+        log,
+      ),
+    );
+    on('tournament:chatMute', (input, ack) =>
+      guarded(ack, () => tournaments.muteInChat(String(input?.id ?? ''), me, String(input?.playerId ?? ''), !!input?.value), log),
+    );
+    on('tournament:chatOff', (input, ack) => guarded(ack, () => tournaments.setChatOff(String(input?.id ?? ''), me, !!input?.off), log));
+    on('tournament:chatDelete', (input, ack) =>
+      guarded(
+        ack,
+        async () => {
+          const id = String(input?.id ?? '');
+          const itemId = String(input?.itemId ?? '');
+          const live = await tournaments.get(id);
+          if (!live) throw new ActionError('tournament not found');
+          // Only someone who may manage the chat gets storage looked through, or learns whether a message is there.
+          const cannot = chatModerationRefusal(live.state, me);
+          if (cannot) throw new ActionError(cannot);
+          // Ids are short; a long one was never a message.
+          const item = itemId && itemId.length <= 64 ? await lobby.find(id, itemId) : null;
+          if (item?.kind !== 'chat') throw new ActionError('that message is already gone');
+          const refused = chatModerationRefusal(live.state, me, item.playerId);
+          if (refused) throw new ActionError(refused);
+          try {
+            await lobby.removeChat(id, itemId);
+          } catch (e) {
+            log(`deleting a lobby chat message of ${id} failed`, e);
+            throw new ActionError('the message could not be deleted; try again');
+          }
+          // Gone for good: every tab with the lobby open drops it now, and a reload never gets it back.
+          for (const s of tournamentWatchers.get(id) ?? []) s.emit('tournament:chatDeleted', { id, itemId });
         },
         log,
       ),
@@ -1931,6 +2030,7 @@ export function createApp(deps: AppDeps = {}) {
       const steps = opts.steps ?? quietSteps;
       steps.step('stopping play');
       const stopped = 'crash' in opts ? ops.crashing(opts.crash) : ops.stopping();
+      closing = true;
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
       // The server going down is not players leaving, so their tables never see them drop (and time them out).
@@ -1941,6 +2041,11 @@ export function createApp(deps: AppDeps = {}) {
         steps.step('stopping the backup download');
         stopBackup();
         await backup;
+      }
+      // A name being replaced commits (or is undone) before the final saves, which would otherwise wait on it.
+      if (gate.busy) {
+        steps.step('finishing a name replacement');
+        await gate.settled();
       }
       steps.step('putting tables away');
       tournaments.dispose();

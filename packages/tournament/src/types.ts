@@ -272,21 +272,37 @@ export interface TournamentState {
   /**
    * Where seat draws get their randomness (rsdp-seats-v1, `seatRng` in seating.ts): a secret seed and how far
    * into its stream the draws have read. It never goes to browsers. Missing in tournaments saved before
-   * rsdp-seats-v1, which drew from `rng`; the server gives one whose seats aren't drawn yet a fresh seed when it
-   * loads it (`needsSeatSeed`).
+   * rsdp-seats-v1, which drew from `rng`. While the seats are still to draw, the server gives a fresh seed every
+   * time it loads the tournament (`needsSeatSeed`).
    */
   seatRng?: SeatRngState;
   /**
    * The mulberry32 state that drew seats before rsdp-seats-v1. Only a state without `seatRng` still reads it.
-   * A new tournament keeps a secret, nonzero value here derived from its seed (`legacyRngFor`), so a server
-   * rolled back to before rsdp-seats-v1, which draws from this alone, still draws from a secret seed. Browsers
-   * are sent 0.
+   * A new tournament keeps a secret, nonzero value here, made apart from its seed (`CreateInput.legacyRng`), so a
+   * server rolled back to before rsdp-seats-v1, which draws from this alone and sends `seatRng` to browsers,
+   * still draws from a secret. Browsers are sent 0.
    */
   rng: number;
   /** Invite codes the host has made. Only the host is sent these. */
   invites?: InviteCode[];
   /** Check-in progress: when the first group opened, and how many groups are open. */
   checkIn?: { openedAt: number | null; groupsOpen: number };
+  /**
+   * What the host set for the lobby chat. Set by the server, never by the director, and still changed once the event is
+   * over, since its lobby chat stays open. Missing: nothing was ever set (or the state was saved before this was kept).
+   */
+  lobbyChat?: LobbyChatRules;
+}
+
+/** The host's switch for the lobby chat, and the people they muted in it. */
+export interface LobbyChatRules {
+  /** Nobody can send to the lobby chat while it is off. */
+  off?: boolean;
+  /**
+   * Players who can read the lobby chat but not send to it. A browser is sent the whole list only when its player may
+   * unmute them (viewFor); anyone else learns only whether they are on it.
+   */
+  muted?: PlayerId[];
 }
 
 // ---------------------------------------------------------------------------

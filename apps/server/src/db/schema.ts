@@ -5,7 +5,8 @@
  * Change this file, then generate a migration from the repo root:
  *   npm run db:generate
  * and check the migrations agree with each other with `npm run db:check`.
- * Migrations only ever add: the rules are in docs/ARCHITECTURE.md ("Database migrations").
+ * Migrations add, and drop only what no release uses and never a row: the rules
+ * are in docs/ARCHITECTURE.md ("Database migrations").
  */
 
 import { sql } from 'drizzle-orm';
@@ -26,7 +27,6 @@ import {
 } from 'drizzle-orm/pg-core';
 
 const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
-const chips = (name: string) => bigint(name, { mode: 'number' });
 
 /** SQL list for a check constraint, from a readonly tuple of string literals. */
 function oneOf(values: readonly string[]) {
@@ -35,25 +35,11 @@ function oneOf(values: readonly string[]) {
 
 export const TABLE_STATUSES = ['open', 'paused', 'stopped', 'archived'] as const;
 export const TABLE_MODES = ['cash', 'tournament'] as const;
-export const MOVEMENT_KINDS = [
-  'buy-in',
-  'rebuy',
-  'add-on',
-  'host-add',
-  'host-remove',
-  'host-set',
-  'cash-out',
-  'escrow-in',
-  'escrow-out',
-  'bounty',
-  'rake',
-] as const;
 export const JOB_STATUSES = ['pending', 'running', 'done', 'failed', 'cancelled'] as const;
 export const TOURNAMENT_STATUSES = ['registering', 'seating', 'running', 'paused', 'finished', 'cancelled'] as const;
 
 export type TableStatus = (typeof TABLE_STATUSES)[number];
 export type TableMode = (typeof TABLE_MODES)[number];
-export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export type TournamentStatus = (typeof TOURNAMENT_STATUSES)[number];
 
@@ -187,75 +173,6 @@ export const settingsChanges = pgTable(
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('settings_changes_table_idx').on(t.tableId, t.createdAt)],
-);
-
-/**
- * Unused, like chip_movements below: the site never wrote to either. The cash
- * ledger is in each table's saved state (table_snapshots.state.ledger). Both go
- * in a later migration, once no release we might go back to reads them.
- */
-export const seatSessions = pgTable(
-  'seat_sessions',
-  {
-    id: text('id').primaryKey(),
-    tableId: text('table_id')
-      .notNull()
-      .references(() => tables.id),
-    playerId: text('player_id')
-      .notNull()
-      .references(() => players.id),
-    seat: integer('seat').notNull(),
-    startedAt: at('started_at').notNull().defaultNow(),
-    endedAt: at('ended_at'),
-  },
-  (t) => [
-    index('seat_sessions_table_idx').on(t.tableId),
-    uniqueIndex('seat_sessions_open_seat_idx').on(t.tableId, t.seat).where(sql`${t.endedAt} is null`),
-    uniqueIndex('seat_sessions_open_player_idx').on(t.tableId, t.playerId).where(sql`${t.endedAt} is null`),
-    check('seat_sessions_seat_check', sql`${t.seat} >= 0`),
-  ],
-);
-
-/**
- * Unused (see seat_sessions above). Planned as an append-only chip ledger: a
- * trigger rejects UPDATE and DELETE.
- */
-export const chipMovements = pgTable(
-  'chip_movements',
-  {
-    id: text('id').primaryKey(),
-    /** Insertion order; created_at can tie within a millisecond. */
-    seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity(),
-    tableId: text('table_id')
-      .notNull()
-      .references(() => tables.id),
-    seatSessionId: text('seat_session_id').references(() => seatSessions.id),
-    playerId: text('player_id').references(() => players.id),
-    kind: text('kind', { enum: MOVEMENT_KINDS }).notNull(),
-    amount: chips('amount').notNull(),
-    stackBefore: chips('stack_before'),
-    stackAfter: chips('stack_after'),
-    /** Null when the system moved the chips (tournament payouts, rake). */
-    actorPlayerId: text('actor_player_id').references(() => players.id),
-    handNumber: integer('hand_number'),
-    createdAt: at('created_at').notNull().defaultNow(),
-  },
-  (t) => [
-    index('chip_movements_table_idx').on(t.tableId, t.seq),
-    index('chip_movements_player_idx').on(t.playerId),
-    check('chip_movements_kind_check', sql`${t.kind} in (${oneOf(MOVEMENT_KINDS)})`),
-    check(
-      'chip_movements_player_check',
-      sql`${t.kind} = 'rake'
-        or (${t.playerId} is not null and ${t.stackBefore} is not null and ${t.stackAfter} is not null)`,
-    ),
-    check(
-      'chip_movements_stack_check',
-      sql`(${t.stackBefore} is null and ${t.stackAfter} is null)
-        or (${t.stackBefore} is not null and ${t.stackAfter} is not null
-          and ${t.stackBefore} >= 0 and ${t.stackAfter} >= 0 and ${t.stackAfter} = ${t.stackBefore} + ${t.amount})`,
-    ),
-  ],
 );
 
 // ---------------------------------------------------------------- hands
