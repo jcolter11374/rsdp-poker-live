@@ -189,7 +189,11 @@ export const settingsChanges = pgTable(
   (t) => [index('settings_changes_table_idx').on(t.tableId, t.createdAt)],
 );
 
-/** One stretch of a player sitting in one seat. Open while ended_at is null. */
+/**
+ * Unused, like chip_movements below: the site never wrote to either. The cash
+ * ledger is in each table's saved state (table_snapshots.state.ledger). Both go
+ * in a later migration, once no release we might go back to reads them.
+ */
 export const seatSessions = pgTable(
   'seat_sessions',
   {
@@ -213,9 +217,8 @@ export const seatSessions = pgTable(
 );
 
 /**
- * Append-only chip ledger (a trigger rejects UPDATE and DELETE). `amount` is
- * the signed change to the player's stack, so stack_after = stack_before +
- * amount. Rake rows describe chips leaving the table and need no player.
+ * Unused (see seat_sessions above). Planned as an append-only chip ledger: a
+ * trigger rejects UPDATE and DELETE.
  */
 export const chipMovements = pgTable(
   'chip_movements',

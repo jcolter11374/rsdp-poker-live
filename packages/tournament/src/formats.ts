@@ -2,9 +2,9 @@
 // progressive knockout), invite codes, and check-in groups. These are the
 // pure helpers; the director calls them from its transitions.
 
+import type { Rng } from '@rsdp/engine';
 import { hasPower } from '@rsdp/engine/roles';
 import { MAX_PRIZE_AMOUNT } from './payouts';
-import { nextRandom } from './seating';
 import type { Entry, InviteCode, PlayerId, TournamentSettings, TournamentState } from './types';
 
 const isWhole = (n: unknown, min: number, max: number) => Number.isSafeInteger(n) && (n as number) >= min && (n as number) <= max;
@@ -81,22 +81,21 @@ export const normalizeCode = (code: unknown) => (typeof code === 'string' ? code
 
 export const isCodeFormat = (code: string) => CODE_PATTERN.test(code);
 
-/** Draws codes with the director's seeded generator; the server passes in codes from a secure source instead. */
-export function drawCodes(rng: number, count: number, taken: Set<string>): [string[], number] {
+/**
+ * Draws codes from the director's seat-draw generator, for a command that came without any. The server always
+ * passes in codes from a secure source of its own instead (`newCodes` in apps/server/src/tournament/manager.ts).
+ */
+export function drawCodes(rng: Rng, count: number, taken: Set<string>): string[] {
   const out: string[] = [];
   while (out.length < count) {
     let code = '';
-    for (let i = 0; i < CODE_LENGTH; i++) {
-      const [r, next] = nextRandom(rng);
-      rng = next;
-      code += CODE_ALPHABET[Math.floor(r * CODE_ALPHABET.length)];
-    }
+    for (let i = 0; i < CODE_LENGTH; i++) code += CODE_ALPHABET[rng(CODE_ALPHABET.length)];
     if (!taken.has(code)) {
       taken.add(code);
       out.push(code);
     }
   }
-  return [out, rng];
+  return out;
 }
 
 /** A fresh code from any source of random 32-bit words (the server uses crypto). */
