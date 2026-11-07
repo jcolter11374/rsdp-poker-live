@@ -18,11 +18,17 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.07.5] - 2026-11-07
+## [2026.11.07.6] - 2026-11-07
 
 ### Fixed and changed
 
 - Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
+
+## [2026.11.07.5] - 2026-11-07
+
+### Fixed and changed
+
+- Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The "every card face up" note starts with its hand too.
 
 ## [2026.11.07.4] - 2026-11-07
 
@@ -726,6 +732,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3

@@ -1,10 +1,17 @@
 {
   "releases": [
     {
-      "id": "2026.11.07.5",
+      "id": "2026.11.07.6",
       "date": "2026-11-07",
       "fixes": [
         "Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it."
+      ]
+    },
+    {
+      "id": "2026.11.07.5",
+      "date": "2026-11-07",
+      "fixes": [
+        "Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The \"every card face up\" note starts with its hand too."
       ]
     },
     {

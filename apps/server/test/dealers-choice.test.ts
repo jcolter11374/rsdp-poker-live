@@ -86,6 +86,9 @@ describe("Dealer's choice", () => {
     expect(hand(rt).input.game.id).toBe('plo4');
     expect(hand(rt).input.button).toBe(first.seat);
     expect(rt.state.log.some((l) => l.text === `${first.name} picked Pot-Limit Omaha`)).toBe(true);
+    // The pick keeps the chooser's id for name replacement (replaceName.ts), and no browser is sent it.
+    expect(rt.state.choice!.current).toMatchObject({ by: first.name, seat: first.seat, byId: first.playerId, how: 'picked' });
+    expect(JSON.stringify(tableView(rt, 'a', clock.now()).choice)).not.toContain('byId');
     // The chip moves one seat to the left.
     const second = chooser(rt);
     expect(second.seat).toBe((first.seat + 1) % 3);
