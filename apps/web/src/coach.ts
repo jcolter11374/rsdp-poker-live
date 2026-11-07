@@ -576,3 +576,16 @@ export function soloPractice(view: Pick<TableView, 'mode' | 'realGame' | 'me' | 
   const others = view.seats.filter((s) => s && s.playerId !== view.me.playerId);
   return others.some((s) => !!s!.bot) && others.every((s) => !!s!.bot || !dealtIn(s!));
 }
+
+/**
+ * The room the area under the table (the Dock) keeps for coach tips and the bots' reasons button: at a practice table,
+ * from the moment you sit down (soloPractice) as well as in its hands (view.tips), each as the viewer's Look choices
+ * allow. Then neither the first deal nor the first "Why did the bots play last hand?" pushes the table up (#476).
+ */
+export function practiceRoom(
+  view: Pick<TableView, 'tips' | 'mode' | 'realGame' | 'me' | 'seats' | 'settings'>,
+  prefs: { tips: boolean; botReasons: boolean },
+): { tips: boolean; why: boolean } {
+  const practice = !!view.tips || soloPractice(view);
+  return { tips: practice && prefs.tips, why: practice && prefs.botReasons };
+}

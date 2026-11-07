@@ -12,7 +12,7 @@ import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
 import { Table, useNow } from './components/Table';
 import { HandExtras } from './components/table/HandExtras';
-import { soloPractice } from './coach';
+import { practiceRoom } from './coach';
 import { PlayerExtras } from './components/table/Persona';
 import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
@@ -454,7 +454,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Coach tips and the bots' reasons come with each hand at a practice table where you're the only person. The server
   // turns them on at the deal (view.tips), but the area under the table makes room for them from the start, so neither
   // the first deal nor the first "Why did the bots play…?" pushes the table up (#476).
-  const practice = !!view.tips || soloPractice(view);
+  const room = practiceRoom(view, prefs);
   // Like run() in the host panel: a refusal or a lost answer shows, instead of the button seeming dead.
   const seatCall = (event: 'seat:sitOut' | 'seat:prefs', payload: object) =>
     call(event, payload)
@@ -902,8 +902,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             reset={`${portrait}:${place}`}
             seated={place !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
-            tips={practice && prefs.tips}
-            why={practice && prefs.botReasons}
+            tips={room.tips}
+            why={room.why}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
             {/* TableStrip's asks, while there is one (empty, it takes no room: .dock-notes:empty). */}

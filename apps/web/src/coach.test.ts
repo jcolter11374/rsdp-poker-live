@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, type BettingKind, type HandEvent, type HandState } from '@rsdp/engine/core';
 import { BOT_NOTE_RULES, COACH_RULES, type BotNote, type CoachMove, type CoachRule, type CoachTip, type HandRecordView, type TableView } from '@rsdp/engine/wire';
 import { STAKES, start } from '../../../packages/engine/test/core/harness';
-import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, soloPractice, tipText, VERDICT_CAP, type FactCode } from './coach';
+import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, practiceRoom, soloPractice, tipText, VERDICT_CAP, type FactCode } from './coach';
 import { bbExactFormat, eventLines } from './format';
 import { frameView, type Frame } from './replay';
 
@@ -633,5 +633,17 @@ describe('soloPractice (#476)', () => {
     expect(soloPractice(view([person('me'), robot('b1'), person('p2', { stack: 0 })]))).toBe(true);
     expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })]))).toBe(true);
     expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })], {}, true))).toBe(false);
+  });
+
+  it("gives the area under the table room for the tip and the bots' reasons from the moment you sit down, as Look allows (practiceRoom)", () => {
+    const on = { tips: true, botReasons: true };
+    const amongBots = view([person('me'), robot('b1')]);
+    expect(practiceRoom({ ...amongBots, tips: undefined }, on)).toEqual({ tips: true, why: true });
+    expect(practiceRoom({ ...amongBots, tips: undefined }, { tips: false, botReasons: true })).toEqual({ tips: false, why: true });
+    expect(practiceRoom({ ...amongBots, tips: undefined }, { tips: true, botReasons: false })).toEqual({ tips: true, why: false });
+    // A hand the server sent tips with keeps the room, whatever the seats say now.
+    const withFriend = view([person('me'), robot('b1'), person('p2')]);
+    expect(practiceRoom({ ...withFriend, tips: true }, on)).toEqual({ tips: true, why: true });
+    expect(practiceRoom({ ...withFriend, tips: undefined }, on)).toEqual({ tips: false, why: false });
   });
 });
