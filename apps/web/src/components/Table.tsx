@@ -448,12 +448,14 @@ export function Table({
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
   // The hand sizes, the seats' scale, then the layout (the placement below leaves the scale out of its key).
   const boxKey = (of: readonly number[]) => `${of.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`;
-  const sized = useSeatBoxes(felt, boxKey(sizes), sizes, seating, view.me.seat, !compact);
+  const sizedKey = boxKey(sizes);
+  const sized = useSeatBoxes(felt, sizedKey, sizes, seating, view.me.seat, !compact);
   // A table too full to give every game's hands their room at once is spaced for the game on now instead, as before #409:
   // its seats move when the game changes, but nobody's nameplate covers another's.
   const nowSizes = useMemo(() => dealtSizes(gameId ? [gameId] : []), [gameId]);
   const mixed = nowSizes.join('-') !== sizes.join('-');
-  const sizedNow = useSeatBoxes(felt, boxKey(nowSizes), nowSizes, seating, view.me.seat, !compact && mixed);
+  const nowKey = boxKey(nowSizes);
+  const sizedNow = useSeatBoxes(felt, nowKey, nowSizes, seating, view.me.seat, !compact && mixed);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
   const emptyHalf = compact ? 34 : 58;
@@ -480,21 +482,24 @@ export function Table({
     // happened before, and two players with the same window could see different tables.
     // The seats' scale isn't part of it: a small change to the felt's size can step the scale too, and kept seats still
     // have to fit the boxes at the new scale (placeSeats checks).
-    const place = (b: SeatBoxes, clearing: number) => {
+    const place = (b: SeatBoxes, clearing: number, current: string) => {
       const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? b.empty : seat === mine ? b.me : b.others);
       const key = `${b.key.split('|').filter((_, i) => i !== 1).join('|')}|${takenKey}|${offset}`;
       const near = keepPlaced(was, key, size.w, size.h);
       const at = placeSeats(taken, offset, w, h, { clear: clearing, minGap, box: boxOf, gap: 6, keep: near ? was.at : undefined });
       // Kept seats keep the size they were placed for, so a run of small changes can't carry them across a big one.
       const record = near && at === was.at ? was : { key, w, h, at };
-      return { at, record, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
+      return { at, record, current: b.key === current, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
     };
     let at: readonly number[];
     try {
-      let done = place(sized, clear);
-      if (mixed && !done.fine) done = place(sizedNow, clearNow);
+      let done = place(sized, clear, sizedKey);
+      if (mixed && !done.fine) done = place(sizedNow, clearNow, nowKey);
       at = done.at;
-      placed.current = measured ? done.record : null;
+      // Seats placed with boxes from before this size and scale (the render before they're measured again) aren't
+      // kept: the first measure of the felt would otherwise keep a spacing worked out for boxes at another scale.
+      if (!measured) placed.current = null;
+      else if (done.current) placed.current = done.record;
     } catch (error) {
       // A slip here mustn't take the table down: report it and fall back to the old spacing.
       reportError(error, 'error');
@@ -502,7 +507,7 @@ export function Table({
       placed.current = null;
     }
     return at;
-  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed]);
+  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, sizedKey, nowKey]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
