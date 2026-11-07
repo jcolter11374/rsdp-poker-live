@@ -7,6 +7,10 @@ name: Memory and disk check
 # closes it. Read-only on the site (one GET); no secrets but GitHub's own token;
 # costs nothing (public repos run Actions free). GitHub starts scheduled jobs late,
 # by hours, which is fine for this. See docs/DEPLOY.md, "Memory and disk check".
+#
+# The lines below and the issue's text are for today's machine (1 GB of memory, a 1 GB data disk). A PR that
+# changes the machine's memory (`[[vm]]` in fly.toml) or the volume's size also updates MEMORY_MB, DISK_PCT and
+# the issue's text here, or the check warns at the wrong point and describes the wrong machine.
 on:
   schedule:
     - cron: '47 14 * * *'
@@ -62,7 +66,9 @@ jobs:
           fi
           now=$(date -u '+%Y-%m-%d %H:%M UTC')
           run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          # The search finds titles that contain the phrase; only the one with exactly this title is ours to edit and
+          # close, never a person's issue that quotes it.
+          open=$(gh issue list --state open --limit 100 --search "in:title \"$TITLE\"" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number')
           if [ "${#over[@]}" = 0 ]; then
             echo "Under both lines: memory $mem MB, disk ${used:-not reported}${used:+% full}."
             if [ -n "$open" ] && [ -z "$used" ]; then

@@ -116,7 +116,8 @@ If the volume is gone, deploy first so a new one exists. Restoring takes the sit
 The server and its embedded database share one machine with 1 GB of memory and a 1 GB data disk. Memory peaks near 600 MB at start-up, and the database's files grow between restarts: the vacuum every 5 minutes lets saves reuse space but never shrinks a file, and only the start-up `VACUUM FULL table_snapshots` gives space back. So once a day, `.github/workflows/resources.yml` reads `memoryMb` and `diskUsedPct` from `/api/health` on the live site. While memory is over 800 MB or the disk is over 70% full, it keeps one issue open, "The server is running short of memory or disk", mentioning John so GitHub emails him. It updates that issue each day the server is still over a line, and comments and closes it when both are back under.
 
 - Read-only: it only reads `/api/health` (a failed read is retried a few times), runs from `main` only, and uses no secret but GitHub's own token. If the site doesn't answer, it does nothing (that is the [site-down alert](#site-down-alert)'s job). If the disk fields are missing, it checks memory only, and leaves an open issue open.
-- The lines are `MEMORY_MB` and `DISK_PCT` at the top of the workflow.
+- The lines are `MEMORY_MB` and `DISK_PCT` at the top of the workflow. They and the issue's text are for today's machine, so a PR that changes the machine's memory or the volume's size updates them too.
+- It only edits and closes an open issue with exactly that title, never another issue whose title quotes it.
 - It is scheduled for 14:47 UTC, but like every scheduled job GitHub starts it hours late, which is fine for a daily check. Run it by hand from Actions → Memory and disk check → Run workflow.
 - What to do when it fires is in [RUNBOOK.md](RUNBOOK.md#running-short-of-memory-or-disk). A bigger machine, a bigger disk or a separate Postgres database costs more each month, so that is John's call.
 

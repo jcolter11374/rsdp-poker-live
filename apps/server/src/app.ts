@@ -2032,7 +2032,7 @@ export const DISK_HEALTH_MS = 60_000;
 
 /** The data disk's use as /api/health reports it. */
 export interface DiskUse {
-  /** How full it is, as `df` shows it (the space kept back for the system doesn't count as free). */
+  /** How full it is, as `df` shows it: rounded up, and the space kept back for the system doesn't count as free. */
   diskUsedPct: number;
   /** What the server may still write, in MB. */
   diskFreeMb: number;
@@ -2046,7 +2046,9 @@ export function diskUse(s: DiskBlocks): DiskUse | null {
   const used = s.blocks - s.bfree;
   const size = used + s.bavail;
   if (!(size > 0) || used < 0) return null;
-  return { diskUsedPct: Math.round((used / size) * 100), diskFreeMb: Math.floor((s.bavail * s.bsize) / 1_048_576) };
+  // Rounded up as df rounds, so the 70% warning starts just over 70%. Multiplying first keeps exact cases exact
+  // ((70 / 100) * 100 is 70.00000000000001 in floating point, which would round up to 71).
+  return { diskUsedPct: Math.ceil((used * 100) / size), diskFreeMb: Math.floor((s.bavail * s.bsize) / 1_048_576) };
 }
 
 /**

@@ -53,14 +53,14 @@ describe('/api/health', () => {
     }
   });
 
-  it("keeps ok and the 200 when the disk can't be read, leaves its fields out, and logs it once", async () => {
+  // That it logs once, not on every read, is tested on diskHealth below, where the clock can move past the cache.
+  it("keeps ok and the 200 when the disk can't be read, leaves its fields out, and logs it", async () => {
     const { health, logged } = await serve(undefined, path.join(tmpdir(), 'rsdp-health-no-such-folder', 'pglite'));
     const r = await health();
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(true);
     expect(r.body).not.toHaveProperty('diskUsedPct');
     expect(r.body).not.toHaveProperty('diskFreeMb');
-    await health();
     expect(logged.filter((m) => m.includes('data disk'))).toHaveLength(1);
   });
 
@@ -145,5 +145,38 @@ describe('the disk fields', () => {
     answer!({ blocks: 100, bfree: 10, bavail: 10, bsize: 1_048_576 });
     await new Promise((r) => setTimeout(r, 10));
     expect(await disk()).toEqual({ diskUsedPct: 90, diskFreeMb: 10 });
+  });
+
+  it('round up as df does, and keep exact cases exact', () => {
+    // 0.026% used shows as 1% in df.
+    expect(diskUse({ blocks: 100_000, bfree: 99_974, bavail: 99_974, bsize: 4_096 })?.diskUsedPct).toBe(1);
+    // Just over 70% is over the warning line, but 70% exactly is not ((70 / 100) * 100 isn't quite 70 in floating point).
+    expect(diskUse({ blocks: 100_000, bfree: 29_999, bavail: 29_999, bsize: 4_096 })?.diskUsedPct).toBe(71);
+    expect(diskUse({ blocks: 100, bfree: 30, bavail: 30, bsize: 4_096 })?.diskUsedPct).toBe(70);
+    expect(diskUse({ blocks: 100, bfree: 100, bavail: 100, bsize: 4_096 })?.diskUsedPct).toBe(0);
+  });
+
+  it("log a disk that can't be read once, not on every read, and say when it answers again", async () => {
+    let now = 0;
+    let broken = true;
+    const logged: string[] = [];
+    const read = () => (broken ? Promise.reject(new Error('EIO')) : Promise.resolve({ blocks: 100, bfree: 60, bavail: 60, bsize: 1_048_576 }));
+    const disk = diskHealth('/data', (m) => logged.push(m), () => now, read);
+    // Each read is a fresh one: the clock has moved past the cache every time.
+    for (let i = 0; i < 3; i++) {
+      expect(await disk()).toBeNull();
+      now += DISK_HEALTH_MS;
+    }
+    expect(logged).toEqual(["reading the data disk's free space failed"]);
+    broken = false;
+    expect(await disk()).toEqual({ diskUsedPct: 40, diskFreeMb: 60 });
+    expect(logged).toEqual(["reading the data disk's free space failed", 'reading the data disk: answering again']);
+    // Failing again after answering is logged again, once.
+    broken = true;
+    now += DISK_HEALTH_MS;
+    await disk();
+    now += DISK_HEALTH_MS;
+    await disk();
+    expect(logged.filter((m) => m.includes('failed'))).toHaveLength(2);
   });
 });
