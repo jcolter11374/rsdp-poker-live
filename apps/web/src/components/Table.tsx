@@ -551,8 +551,11 @@ export function Table({
   // its seats move when the game changes, but nobody's nameplate covers another's.
   const nowSizes = useMemo(() => dealtSizes(gameId ? [gameId] : []), [gameId]);
   const nowHiLo = useMemo(() => splitsPot(gameId), [gameId]);
-  const mixed = nowSizes.join('-') !== sizes.join('-');
   const nowKey = boxKey(nowSizes, nowHiLo);
+  // Games with the same hand sizes can still differ in their boxes: one hi-lo, one not (Omaha 5 and Omaha 5 hi-lo).
+  const mixed = nowKey !== sizedKey;
+  // What the table deals, for the fallback's mark below.
+  const allGames = `${sizes.join('-')}${hiLo ? ' hi-lo' : ''}`;
   const sizedNow = useSeatBoxes(felt, nowKey, nowSizes, nowHiLo, seating, view.me.seat, !compact && mixed);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
@@ -581,7 +584,7 @@ export function Table({
     // The seats' scale isn't part of it: a small change to the felt's size can step the scale too, and kept seats still
     // have to fit the boxes at the new scale (placeSeats checks).
     // `fallback` marks the spacing for the game on now that a mixed table falls back to (below), with the games' hand
-    // sizes, so it's never taken for a spacing made before the table dealt those games.
+    // sizes and whether any is hi-lo, so it's never taken for a spacing made before the table dealt those games.
     const place = (b: SeatBoxes, clearing: number, current: string, fallback = '') => {
       const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? b.empty : seat === mine ? b.me : b.others);
       const key = `${b.key.split('|').filter((_, i) => i !== 1).join('|')}|${takenKey}|${offset}${fallback && `|for ${fallback}`}`;
@@ -596,7 +599,7 @@ export function Table({
     try {
       // A mixed table spaced for the game on now (below) stays that way while its seats are kept: trying every game's
       // boxes first would swap it between the two spacings whenever a few pixels tipped those in or out of fitting.
-      const stay = mixed ? place(sizedNow, clearNow, nowKey, sizes.join('-')) : null;
+      const stay = mixed ? place(sizedNow, clearNow, nowKey, allGames) : null;
       let done = stay?.kept && stay.fine ? stay : place(sized, clear, sizedKey);
       if (mixed && !done.fine) done = stay!;
       at = done.at;
@@ -611,7 +614,7 @@ export function Table({
       placed.current = null;
     }
     return at;
-  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, sizes, sizedKey, nowKey]);
+  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, allGames, sizedKey, nowKey]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
