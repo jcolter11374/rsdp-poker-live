@@ -1030,11 +1030,6 @@ export function createApp(deps: AppDeps = {}) {
     );
   }
 
-  /** When spectators on a delay see the table as it is now: at once at a table without a delay that has caught up (#435). */
-  function spectatorsSeeAt(rt: TableRuntime, now: number): number {
-    return now + rt.settings.spectators.delaySeconds * 1000;
-  }
-
   function attach(rt: TableRuntime, ready: Promise<void> = Promise.resolve()) {
     const id = rt.state.id;
     tables.set(id, rt);

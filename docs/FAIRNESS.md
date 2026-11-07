@@ -368,6 +368,22 @@ your cards to a player at the table, so the site makes it hard to miss:
   The warnings always say which.
 - Turning it off works at once, even in the middle of a hand.
 
+**Watching on a delay.** Spectators at a table with a delay see it as it was
+that long ago: the hand, the seats and stacks, the stakes, the waitlist and the
+table log. The server answers what they ask (a seat, a hand to share, the hand
+list, a link's preview) from that same moment, and sends them an update only
+when something they can see changes. A change to the delay starts for them at
+the first hand dealt under it. A few things stay live on purpose:
+
+- Chat, and who has the table open.
+- The warning that spectators see every card. It can only be turned on between
+  hands, so when it appears, someone watching on a delay can tell that the live
+  table is between hands. Delaying it would let people sit down without seeing
+  the warning.
+- After a server restart (every release is one), a spectator's view starts
+  again from the table as it is then, so it can jump ahead by up to the delay
+  once.
+
 ## HUDs and tracking software
 
 A HUD is a program (PokerTracker, Holdem Manager and the like) that reads hand

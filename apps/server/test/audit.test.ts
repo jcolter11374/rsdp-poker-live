@@ -305,10 +305,14 @@ describe('hands at a table watched on a delay', () => {
     playHand(live);
     expect(await handsOf('delay-live')).toHaveLength(1);
 
-    // Hand 2's own delay has passed, but it waits behind hand 1.
+    // Hand 2's own delay has passed, but spectators reach it on the old one (D39), so it waits as long as hand 1 did.
     clock.advance(20_000);
     expect(await handsOf('delay-slow')).toEqual([]);
     clock.advance(start + DELAY - clock.now());
+    expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1]);
+    clock.advance(999);
+    expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1]);
+    clock.advance(1);
     expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1, 2]);
     expect(chainProblem(await all())).toBeNull();
   });
