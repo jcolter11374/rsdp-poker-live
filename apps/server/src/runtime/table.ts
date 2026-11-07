@@ -3295,7 +3295,9 @@ export class TableRuntime {
       // A table that seats newcomers at random offers a random free seat too, so the waitlist isn't a way to pick one.
       const random = s.settings.seating.randomSeats && !this.can(entry.playerId, 'players');
       const seat = random ? open.splice(this.rng(open.length), 1)[0] : open.shift()!;
-      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
+      // Someone watching on a delay sees the seat come free, and the offer, that much later: they get the same minute.
+      const behindMs = this.shownTo(entry.playerId)?.behindMs ?? 0;
+      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS + behindMs });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
   }

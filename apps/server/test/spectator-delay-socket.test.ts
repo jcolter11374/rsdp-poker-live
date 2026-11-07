@@ -211,6 +211,41 @@ describe('a spectator on a delay', () => {
   }, 30_000);
 });
 
+describe('a spectator on a delay on the waitlist (#452)', () => {
+  it('is offered the seat a player left only when their view shows it free, with the whole minute to take it', async () => {
+    const { ann, ben, fan } = await table('offer', 30, { table: { maxSeats: 2 }, seating: { requireApproval: false, waitlist: true } });
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.handNumber === 1);
+    await fan.call('waitlist:join', { name: 'Fan', stack: 10_000 });
+    await fan.until((v) => v.waitlist.some((w) => w.name === 'Fan'));
+    // Ben leaves after this hand; it ends, and seat 2 is the fan's at the live table.
+    (ben.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', { afterHand: true });
+    await settle();
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    const freedAt = clock.now();
+    await ann.until((v) => !v.seats[1] && v.offers.some((o) => o.name === 'Fan'));
+    await settle();
+    // Thirty seconds behind, Ben is still in seat 2 and there is no offer.
+    expect(fan.view().seats[1]?.name).toBe('Ben');
+    expect(fan.view().offers).toEqual([]);
+    clock.advance(29_999);
+    await settle();
+    expect(fan.view().offers).toEqual([]);
+    clock.advance(1);
+    const offered = await fan.until((v) => v.offers.some((o) => o.playerId === v.me.playerId));
+    expect(offered.seats[1]).toBeNull();
+    // A whole minute from when they see it.
+    const mine = offered.offers.find((o) => o.playerId === offered.me.playerId)!;
+    expect(mine.expiresAt - offered.serverNow).toBe(60_000);
+    expect(mine.expiresAt).toBe(freedAt + 90_000);
+    // Still theirs fifty-nine seconds on, and they can take it.
+    clock.advance(59_000);
+    await settle();
+    await fan.call('seat:request', { seat: 1, name: 'Fan', stack: 10_000 });
+    await fan.until((v) => v.seats[1]?.name === 'Fan');
+  }, 30_000);
+});
+
 describe('what a spectator on a delay can fetch', () => {
   it('a pasted link shows the stakes they are shown, not the new ones the live table dealt with (item 4)', async () => {
     const { ann, ben, tableId } = await table('preview', 60, { stakes: { smallBlind: 100, bigBlind: 200, centsMode: true } });

@@ -309,7 +309,9 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   const waitlist = part.waitlist.filter((w) => w.playerId !== me || mineWaiting);
   if (mineWaiting && !waitlist.some((w) => w.playerId === me)) waitlist.push(mineWaiting);
   const mineOffered = live.offers.find((o) => o.playerId === me);
-  const offers = part.offers.filter((o) => o.playerId !== me);
+  // Other people's offers as they were, their clocks moved on with the rest of the view.
+  const offers = part.offers.filter((o) => o.playerId !== me).map((o) => ({ ...o, expiresAt: o.expiresAt + delayMs }));
+  // Mine runs out on the live clock: a seat offered to someone on a delay waits the delay longer (#452).
   if (mineOffered && part.offers.some((o) => o.playerId === me && o.seat === mineOffered.seat)) offers.push(mineOffered);
   return {
     paused: part.paused,
