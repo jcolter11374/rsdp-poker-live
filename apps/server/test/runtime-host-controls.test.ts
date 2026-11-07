@@ -95,7 +95,61 @@ describe('waitlist', () => {
     expect(rt.state.requests.find((r) => r.playerId === 'a')?.seat).toBe(3);
   });
 
-  it('refuses to queue when a seat is free, and clears the queue when turned off', () => {
+  it('queues someone even when a seat is free, and offers it to them at once', () => {
+    // During an all-in runout the browser still shows the table full, so a "there is a free seat" answer would say
+    // someone in the hand had busted and left before the cards were out (#437): the answer is the same either way.
+    const { rt, clock } = full();
+    rt.joinWaitlist('c', { name: 'Cat', stack: 150 });
+    rt.stand('b');
+    rt.declineOffer('c');
+    expect(rt.state.offers).toEqual([]);
+    rt.joinWaitlist('d', { name: 'Dan', stack: 150 });
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['d']);
+    expect(rt.state.offers).toEqual([{ seat: 2, playerId: 'd', expiresAt: clock.now() + SEAT_OFFER_MS }]);
+    expect(rt.state.log.slice(-2).map((l) => l.text)).toEqual(['Dan joined the waitlist', 'Seat 3 is free: Dan is next on the waitlist']);
+    // Taking it is the same as taking any offered seat.
+    rt.requestSeat('d', { seat: 0, name: 'Dan', stack: 150 });
+    expect(seatOf(rt, 'd')).toBe(2);
+    expect(rt.state.waitlist).toEqual([]);
+  });
+
+  it('answers a waitlist join the same whether or not a player in the all-in busted and left', () => {
+    // Three seats: the host and two bots on small stacks, no rebuys, so a busted bot leaves as the hand ends.
+    const outcomes = new Set<string>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const clock = new FakeClock();
+      const settings = defaultSettings('cash');
+      settings.seating.requireApproval = false;
+      settings.seating.waitlist = true;
+      settings.seating.allowRebuys = false;
+      settings.play.runItTwice = 'off';
+      settings.table.maxSeats = 3;
+      settings.stakes = { ...settings.stakes, smallBlind: 1, bigBlind: 2 };
+      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+      for (const p of PEOPLE) rt.connect(p);
+      rt.requestSeat('host', { seat: 0, name: 'H', stack: 200, consent: true });
+      rt.addBot('host', { stack: 2 });
+      rt.addBot('host', { stack: 2 });
+      rt.start('host');
+      // The host calls whatever the bots do, until the hand is over and before the next one is dealt.
+      for (let i = 0; i < 200 && rt.state.handNumber === 1 && rt.state.hand && rt.state.hand.phase !== 'complete'; i++) {
+        const h = rt.state.hand;
+        if (h.toAct !== null && rt.state.seats[h.toAct]?.playerId === 'host') rt.act('host', { type: 'call' });
+        else clock.advance(500);
+      }
+      expect(rt.state.hand?.phase).toBe('complete');
+      const busted = rt.state.seats.filter(Boolean).length < 3;
+      // Asking to join gives the same answer either way: no error, on the waitlist.
+      expect(() => rt.joinWaitlist('e', { name: 'Eve', stack: 100 })).not.toThrow();
+      expect(rt.state.waitlist!.some((w) => w.playerId === 'e')).toBe(true);
+      expect(rt.state.offers!.some((o) => o.playerId === 'e')).toBe(busted);
+      outcomes.add(busted ? 'busted' : 'full');
+    }
+    // Both cases came up among the seeds.
+    expect([...outcomes].sort()).toEqual(['busted', 'full']);
+  });
+
+  it('clears the queue when the waitlist is turned off', () => {
     const { rt } = full();
     expect(() => rt.joinWaitlist('host', { name: 'H', stack: 100 })).toThrow(/already have a seat/);
     rt.joinWaitlist('c', { name: 'Cat', stack: 150 });

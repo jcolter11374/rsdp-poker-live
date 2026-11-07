@@ -683,7 +683,9 @@ export class TableRuntime {
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
     if (this.queue().some((w) => w.playerId === playerId)) throw new ActionError("you're already on the waitlist");
     if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
-    if (this.openSeats(playerId).length) throw new ActionError('there is a free seat: take it');
+    // Queued even when a seat is free: upkeep offers it straight away. Refusing would tell someone pressing "Join the
+    // waitlist" during an all-in runout that a player in it had busted and left before the cards were out (#437); the
+    // browser holds that offer back until the result.
     this.checkBuyIn(playerId, input.stack);
     this.queue().push({ playerId, name, stack: input.stack, at: this.clock.now() });
     this.log(`${name} joined the waitlist`);
