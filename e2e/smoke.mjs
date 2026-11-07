@@ -563,6 +563,64 @@ try {
     await p.close();
   });
 
+  await step('HORSE on a laptop: the seats stay put when the game changes', async () => {
+    // A mixed table is laid out once for every game it deals. Once, the seats were placed again for each game's hands, so
+    // they slid round the table when Limit Hold'em gave way to Omaha hi-lo (#409).
+    const p = await open('mixed layout', { width: 1280, height: 800 });
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Oli');
+    await p.selectOption('label:has-text("Game") select', 'mix:horse');
+    await p.selectOption('.home-practice label:has-text("Bots") select', '3');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    await p.waitForSelector('.seat.me .hole .playing-card');
+    if (await p.locator('.side.drawer.open').count()) await p.keyboard.press('Escape');
+    const play = async (ms) => {
+      const buttons = p.locator('.action-bar.my-turn .buttons button');
+      for (const end = Date.now() + ms; Date.now() < end; ) {
+        const pick = (await buttons.allInnerTexts().catch(() => [])).findIndex((t) => /^(Check|Call)/.test(t));
+        if (pick >= 0) await buttons.nth(pick).click({ timeout: 2000 }).catch(() => {});
+        await p.waitForTimeout(250);
+      }
+    };
+    // From the second Hold'em hand (the first deal's settling is over) until a while after Omaha hi-lo is dealt.
+    const cards = p.locator('.seat.me .hole .playing-card');
+    const hand = () => cards.evaluateAll((all) => all.map((c) => c.getAttribute('aria-label')).join());
+    const first = await hand();
+    for (let i = 0; i < 120 && (await hand()) === first; i++) await play(500);
+    await p.waitForTimeout(900);
+    await p.evaluate(() => {
+      const at = () => [...document.querySelectorAll('.felt .seat')].map((s) => [parseFloat(s.style.left), parseFloat(s.style.top)]);
+      const start = at();
+      window.__moved = 0;
+      const sample = () => {
+        if (window.__moved === null) return;
+        const now = at();
+        if (now.length === start.length) now.forEach(([x, y], i) => (window.__moved = Math.max(window.__moved, Math.hypot(x - start[i][0], y - start[i][1]))));
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    let omaha = false;
+    for (let i = 0; i < 360 && !omaha; i++) {
+      await play(500);
+      omaha = (await cards.count()) === 4;
+    }
+    if (!omaha) throw new Error('Omaha hi-lo was never dealt');
+    await play(4000);
+    const moved = await p.evaluate(() => {
+      const most = window.__moved;
+      window.__moved = null;
+      return Math.round(most);
+    });
+    // A few pixels are allowed: if the table's size changes by a pixel or two, the seats keep their places round it and so
+    // move with its edge.
+    if (moved > 12) throw new Error(`a seat moved ${moved}px when the game changed from Hold'em to Omaha hi-lo`);
+    await p.screenshot({ path: path.join(OUT, 'horse-laptop.png') });
+    await stopGame(p, [p]);
+    await p.close();
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.

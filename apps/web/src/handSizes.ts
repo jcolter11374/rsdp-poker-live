@@ -16,3 +16,8 @@ export function handSizes(gameId: string): number[] {
   }
   return sizes;
 }
+
+/** Every size a hand reaches in any of these games, smallest first: a mixed table is laid out for all of them (#409). */
+export function dealtSizes(games: readonly string[]): number[] {
+  return [...new Set(games.flatMap(handSizes))].sort((a, b) => a - b);
+}
