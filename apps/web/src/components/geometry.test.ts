@@ -343,6 +343,8 @@ describe('keepPlaced (#410: seats kept through a small change to the felt)', () 
     expect(keepPlaced(was, '2-3-4-5-6-7|0|0|111100000|0', 646, 402)).toBe(false);
     expect(keepPlaced(null, was.key, 646, 402)).toBe(false);
     expect(keepPlaced({ ...was, w: 0, h: 0 }, was.key, 0, 0)).toBe(false);
+  });
+});
 
 describe('fitMiddle', () => {
   const centre = { x: 500, y: 200 };
