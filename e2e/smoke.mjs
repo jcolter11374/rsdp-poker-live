@@ -473,6 +473,80 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step('Omaha on a laptop: no nameplate covers another, and the seats hold still', async () => {
+    // Four-card Omaha has the widest nameplates. At a nine-seat table on a 1280x800 window, the seats once ran out of room
+    // and went back to even spacing, and your nameplate covered the next player's (#363).
+    const p = await open('omaha layout', { width: 1280, height: 800 });
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Oli');
+    await p.selectOption('label:has-text("Game") select', 'plo4');
+    await p.selectOption('.home-practice label:has-text("Bots") select', '3');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    await p.waitForSelector('.seat.me .hole .playing-card');
+    if (await p.locator('.side.drawer.open').count()) await p.keyboard.press('Escape');
+    // Every nameplate (with the cards beside it) and empty seat, against every other: which ones overlap.
+    const covered = () =>
+      p.evaluate(() => {
+        const box = (el) => el.getBoundingClientRect();
+        const seats = [...document.querySelectorAll('.felt .seat[data-seat]')].map((el) => {
+          const hole = el.querySelector('.hole:not(.mucked)');
+          // Cards sliding to or back from the muck are on their way, not where they sit.
+          const cards = hole && hole.childElementCount && getComputedStyle(hole).transform === 'none' ? box(hole) : null;
+          return { name: `seat ${Number(el.dataset.seat) + 1}`, plate: box(el.querySelector('.nameplate')), cards };
+        });
+        const empties = [...document.querySelectorAll('.felt .seat.empty')].map((el, i) => ({ name: `empty seat ${i + 1}`, plate: box(el) }));
+        const over = (a, b) => a && b && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+        const found = [];
+        seats.forEach((a, i) => {
+          for (const b of [...seats.slice(i + 1), ...empties]) {
+            if (over(a.plate, b.plate)) found.push(`${a.name} and ${b.name}`);
+            else if (over(a.cards, b.plate) || over(b.cards, a.plate)) found.push(`${a.name}'s or ${b.name}'s cards`);
+          }
+        });
+        return found;
+      });
+    const check = async (what) => {
+      // Seats glide to new places in 0.4s.
+      await p.waitForTimeout(900);
+      const found = await covered();
+      if (found.length) throw new Error(`${what}: these overlap: ${found.join(', ')}`);
+    };
+    const addBots = async (count) => {
+      for (let i = 0; i < count; i++) {
+        await p.locator('.seat.empty .add-bot').first().click();
+        await p.click('.modal button.primary:has-text("Add")');
+        await p.locator('.modal').waitFor({ state: 'detached' });
+      }
+    };
+    await check('four players at 1280x800');
+    await p.setViewportSize({ width: 2300, height: 824 });
+    await check('four players at 2300x824');
+    await p.setViewportSize({ width: 1280, height: 800 });
+    await addBots(2);
+    await check('six players at 1280x800');
+    await addBots(3);
+    await check('nine players at 1280x800');
+    // Frame to frame, the seats stay where they are while the bots play and fold (#350's twitch, #363's spacing).
+    const spots = await p.evaluate(
+      () =>
+        new Promise((done) => {
+          const seen = new Set();
+          const end = performance.now() + 3000;
+          const sample = () => {
+            seen.add([...document.querySelectorAll('.felt .seat')].map((s) => `${s.style.left},${s.style.top}`).join(' '));
+            if (performance.now() < end) requestAnimationFrame(sample);
+            else done(seen.size);
+          };
+          requestAnimationFrame(sample);
+        }),
+    );
+    if (spots !== 1) throw new Error(`the seats moved ${spots - 1} times in three seconds of play`);
+    await p.screenshot({ path: path.join(OUT, 'omaha-laptop.png') });
+    await stopGame(p, [p]);
+    await p.close();
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.

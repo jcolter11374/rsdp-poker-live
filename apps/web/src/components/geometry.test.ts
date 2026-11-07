@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideBet, clearSideBands, fitHand, handRoom, inFront, seatFractions, stadiumPoint } from './geometry';
+import { apart, besideBet, clearSideBands, fitHand, handRoom, inFront, placeSeats, seatFractions, seatsApart, spreadByBoxes, stadiumLength, stadiumPoint, type Extent } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -72,6 +72,146 @@ describe('seatFractions', () => {
 
   it('falls back to even spacing when nobody is seated', () => {
     expect(seatFractions(seats(4, []), 0)).toEqual([0, 0.25, 0.5, 0.75]);
+  });
+});
+
+describe('apart', () => {
+  const plate: Extent = { l: 100, r: 100, u: 30, d: 30 };
+  it('is true side by side or one above the other, and false when the boxes cross', () => {
+    expect(apart({ x: 0, y: 0 }, plate, { x: 200, y: 0 }, plate)).toBe(true);
+    expect(apart({ x: 0, y: 0 }, plate, { x: 150, y: 59 }, plate)).toBe(false);
+    expect(apart({ x: 0, y: 0 }, plate, { x: 150, y: 60 }, plate)).toBe(true);
+    expect(apart({ x: 0, y: 60 }, plate, { x: 150, y: 0 }, plate)).toBe(true);
+  });
+  it('asks for the gap too, and reads each side of a lopsided box', () => {
+    expect(apart({ x: 0, y: 0 }, plate, { x: 200, y: 0 }, plate, 1)).toBe(false);
+    // Cards standing up over a nameplate reach further up than down.
+    const tall: Extent = { l: 100, r: 100, u: 70, d: 30 };
+    expect(apart({ x: 0, y: 0 }, tall, { x: 0, y: -90 }, plate)).toBe(false);
+    expect(apart({ x: 0, y: 0 }, tall, { x: 0, y: 100 }, plate)).toBe(true);
+  });
+});
+
+describe('placeSeats (#363: nameplates covering each other on a laptop)', () => {
+  // The felt of a 1280x800 window with the side column, and the boxes of #363's table: four-card Omaha nameplates with
+  // their cards (yours a little bigger), and the + Bot button of an empty seat.
+  const w = 646;
+  const h = 391;
+  const box = (taken: boolean[], me: Extent, other: Extent, empty: Extent) => (seat: number) => (!taken[seat] ? empty : seat === 0 ? me : other);
+  const omaha = { me: { l: 140, r: 140, u: 45, d: 30 }, other: { l: 134, r: 134, u: 38, d: 31 } };
+  const plusBot: Extent = { l: 40, r: 40, u: 14, d: 14 };
+  // The spacing Table.tsx asks seatFractions for: half the widest nameplate and half an empty seat, and 120px between empty seats.
+  const spacing = (podHalf: number) => ({ clear: (podHalf + 58 + 6) / stadiumLength(w, h), minGap: 120 / stadiumLength(w, h) });
+  const inOrder = (f: readonly number[]) => {
+    const round = f.map((t, s) => ({ t, s })).sort((a, b) => a.t - b.t).map((x) => x.s);
+    return round.every((s, i) => s === i);
+  };
+
+  it('moves four Omaha players apart where even spacing put two nameplates on top of each other', () => {
+    const taken = seats(9, [0, 1, 2, 3]);
+    const b = box(taken, omaha.me, omaha.other, plusBot);
+    // The old spacing ran out of room and spaced all nine seats evenly: your nameplate covered the next one.
+    const old = seatFractions(taken, 0, spacing(140));
+    expect(old).toEqual(Array.from({ length: 9 }, (_, s) => s / 9));
+    expect(seatsApart(old, w, h, b)).toBe(false);
+    const f = placeSeats(taken, 0, w, h, { ...spacing(140), box: b, gap: 6 });
+    expect(seatsApart(f, w, h, b)).toBe(true);
+    expect(f[0]).toBe(0);
+    expect(inOrder(f)).toBe(true);
+    // The players spread round the table, a quarter each, and the empty seats share the last quarter.
+    [1, 2, 3].forEach((s) => expect(f[s]).toBeCloseTo(s / 4, 1));
+  });
+
+  it('keeps six and nine Omaha players clear of each other on the same laptop', () => {
+    const six = seats(9, [0, 1, 2, 3, 4, 5]);
+    const small = { me: { l: 125, r: 125, u: 40, d: 23 }, other: { l: 120, r: 120, u: 30, d: 23 } };
+    const b6 = box(six, small.me, small.other, plusBot);
+    expect(seatsApart(seatFractions(six, 0, spacing(125)), w, h, b6)).toBe(false);
+    const f6 = placeSeats(six, 0, w, h, { ...spacing(125), box: b6, gap: 6 });
+    expect(seatsApart(f6, w, h, b6)).toBe(true);
+    expect(inOrder(f6)).toBe(true);
+    const nine = seats(9, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const smaller = { me: { l: 120, r: 120, u: 38, d: 22 }, other: { l: 115, r: 115, u: 29, d: 22 } };
+    const b9 = box(nine, smaller.me, smaller.other, plusBot);
+    expect(seatsApart(seatFractions(nine, 0, spacing(120)), w, h, b9)).toBe(false);
+    const f9 = placeSeats(nine, 0, w, h, { ...spacing(120), box: b9, gap: 6 });
+    expect(seatsApart(f9, w, h, b9)).toBe(true);
+    expect(inOrder(f9)).toBe(true);
+  });
+
+  it('mirrors the table when the players sit on the other side of you', () => {
+    const after = seats(9, [0, 1, 2, 3]);
+    const before = seats(9, [0, 6, 7, 8]);
+    const fa = placeSeats(after, 0, w, h, { ...spacing(140), box: box(after, omaha.me, omaha.other, plusBot), gap: 6 });
+    const fb = placeSeats(before, 0, w, h, { ...spacing(140), box: box(before, omaha.me, omaha.other, plusBot), gap: 6 });
+    // Seat 1 after you sits where seat 8 before you does, reflected left to right (to within a few pixels: the spots
+    // round the table are a few pixels apart).
+    [[1, 8], [2, 7], [3, 6]].forEach(([a, b]) => {
+      const p = stadiumPoint(fa[a], w, h);
+      const q = stadiumPoint(fb[b], w, h);
+      expect(Math.abs(p.x - (w - q.x))).toBeLessThan(12);
+      expect(Math.abs(p.y - q.y)).toBeLessThan(12);
+    });
+  });
+
+  it('keeps the old spacing exactly where nothing overlaps, so tables that looked right stay as they were', () => {
+    const taken = seats(9, [0, 1, 2, 3]);
+    const holdem = box(taken, { l: 122, r: 122, u: 59, d: 30 }, { l: 117, r: 117, u: 46, d: 31 }, plusBot);
+    const f = placeSeats(taken, 0, 900, 520, { ...spacing(122), box: holdem, gap: 6 });
+    expect(f).toEqual(seatFractions(taken, 0, spacing(122)));
+  });
+
+  it('lets two empty seats meet by a pixel or two, as they do today on a wide, short window', () => {
+    // John's 2300x824-class screen at 2300x800, four Omaha players at a 9-seat table: the empty seats along the bottom
+    // are 120px apart and 122px wide. Players are all clear, so nothing moves.
+    const [fw, fh] = [1867, 345];
+    const taken = seats(9, [0, 1, 2, 3]);
+    const b = box(taken, { l: 212, r: 212, u: 74, d: 47 }, { l: 196, r: 196, u: 62, d: 47 }, { l: 61, r: 61, u: 13, d: 13 });
+    const sp = { clear: (212 + 58 + 6) / stadiumLength(fw, fh), minGap: 120 / stadiumLength(fw, fh) };
+    const old = seatFractions(taken, 0, sp);
+    expect(seatsApart(old, fw, fh, b)).toBe(false);
+    expect(placeSeats(taken, 0, fw, fh, { ...sp, box: b, gap: 6 })).toEqual(old);
+  });
+
+  it('keeps seats where they are while they still have room, and moves them only when a box would cover another', () => {
+    const taken = seats(9, [0, 1, 2, 3]);
+    const b = box(taken, omaha.me, omaha.other, plusBot);
+    const f = placeSeats(taken, 0, w, h, { ...spacing(140), box: b, gap: 6 });
+    // A badge under the nameplates makes every box a little taller: there's still room, so nothing moves.
+    const taller = box(taken, { ...omaha.me, d: omaha.me.d + 6 }, { ...omaha.other, d: omaha.other.d + 6 }, plusBot);
+    expect(placeSeats(taken, 0, w, h, { ...spacing(140), box: taller, gap: 6, keep: f })).toBe(f);
+    // Seats left where they'd overlap are placed again.
+    const old = seatFractions(taken, 0, spacing(140));
+    const again = placeSeats(taken, 0, w, h, { ...spacing(140), box: b, gap: 6, keep: old });
+    expect(again).not.toEqual(old);
+    expect(seatsApart(again, w, h, b)).toBe(true);
+  });
+
+  it('keeps the old spacing until every seat has been measured', () => {
+    const taken = seats(9, [0, 1, 2, 3]);
+    const f = placeSeats(taken, 0, w, h, { ...spacing(140), box: (seat) => (seat === 2 ? undefined : omaha.other), gap: 6 });
+    expect(f).toEqual(seatFractions(taken, 0, spacing(140)));
+  });
+
+  it('squeezes empty seats in between players when there is no room to keep them clear, and gives up only when players cannot fit', () => {
+    const taken = seats(9, [0, 1, 2, 3, 4, 5, 6, 7]);
+    const big = box(taken, omaha.me, omaha.other, { l: 70, r: 70, u: 40, d: 40 });
+    const f = placeSeats(taken, 0, w, h, { ...spacing(140), box: big, gap: 6 });
+    // Players are clear of each other, even though the empty seat isn't clear of them.
+    expect(seatsApart(f, w, h, (s) => (taken[s] ? big(s) : undefined))).toBe(true);
+    // Far too big for the table: back to even spacing.
+    const huge: Extent = { l: 300, r: 300, u: 120, d: 120 };
+    expect(placeSeats(taken, 0, w, h, { ...spacing(300), box: () => huge, gap: 6 })).toEqual(seatFractions(taken, 0, spacing(300)));
+  });
+});
+
+describe('spreadByBoxes', () => {
+  it('says when the boxes cannot fit round the table', () => {
+    expect(spreadByBoxes(seats(9, [0, 1, 2, 3, 4, 5, 6, 7, 8]), 0, 400, 250, () => ({ l: 150, r: 150, u: 40, d: 40 }))).toBeNull();
+  });
+  it('spaces seats evenly when every box fits with room to spare', () => {
+    const f = spreadByBoxes(seats(4, [0, 1, 2, 3]), 0, 900, 520, () => ({ l: 40, r: 40, u: 20, d: 20 }))!;
+    [0, 1, 2, 3].forEach((s) => expect(f[s]).toBeCloseTo(s / 4, 2));
   });
 });
 

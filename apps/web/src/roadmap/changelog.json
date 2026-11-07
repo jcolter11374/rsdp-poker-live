@@ -3,7 +3,9 @@
     {
       "id": "2026.11.07.2",
       "date": "2026-11-07",
-      "fixes": []
+      "fixes": [
+        "Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays."
+      ]
     },
     {
       "id": "2026.11.07",

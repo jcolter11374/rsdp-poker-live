@@ -107,6 +107,199 @@ export function seatFractions(taken: readonly boolean[], anchor: number, { clear
   return out;
 }
 
+/** How far a seat's box reaches from its spot: left, right, up and down, in pixels. */
+export interface Extent {
+  l: number;
+  r: number;
+  u: number;
+  d: number;
+}
+
+/** Whether box `a` round `p` and box `b` round `q` are at least `gap` apart, side by side or one above the other. */
+export function apart(p: Point, a: Extent, q: Point, b: Extent, gap = 0): boolean {
+  return p.x + a.r + gap <= q.x - b.l || q.x + b.r + gap <= p.x - a.l || p.y + a.d + gap <= q.y - b.u || q.y + b.d + gap <= p.y - a.u;
+}
+
+/** The way round a stadium inside a w×h box, in pixels. */
+export const stadiumLength = (w: number, h: number) => 2 * Math.abs(w - h) + Math.PI * Math.min(w, h);
+
+/**
+ * Whether no seat's box covers another's, with the seats at `fractions` round a w×h stadium. `box` gives each seat's box
+ * (a player's nameplate and cards, or an empty seat's button); a seat it gives nothing for is left out of the check.
+ * `gap` is the room wanted between two seats, or a function giving it for each pair (below 0 lets them overlap that much).
+ */
+export function seatsApart(
+  fractions: readonly number[],
+  w: number,
+  h: number,
+  box: (seat: number) => Extent | undefined,
+  gap: number | ((a: number, b: number) => number) = 0,
+): boolean {
+  const spots = fractions.map((f) => stadiumPoint(f, w, h));
+  const boxes = fractions.map((_, seat) => box(seat));
+  for (let a = 0; a < spots.length; a++)
+    for (let b = a + 1; b < spots.length; b++) {
+      const ba = boxes[a];
+      const bb = boxes[b];
+      if (ba && bb && !apart(spots[a], ba, spots[b], bb, typeof gap === 'number' ? gap : gap(a, b))) return false;
+    }
+  return true;
+}
+
+/**
+ * Seats spaced by how much room each one's box really needs, for when the even spacing of `seatFractions` would put one
+ * nameplate on another (#363). That spacing counts the way round the table, so it asks a wide nameplate for its full
+ * width everywhere, though at the round ends of the table seats sit one above the other and need only their height.
+ * With four-card Omaha's wide nameplates on a laptop, or six or more players, the room it asked for ran out, and every
+ * seat went back to even spacing, closer than the nameplates are wide.
+ *
+ * Here each player is placed round from the anchor (at the bottom) at the first spot where its box clears the seats
+ * before it, with the empty seats between them placed the same way. Players are then spread as evenly as that allows:
+ * each gap is the same share of the way round, or the least its seats need when that's more. Fractions as from
+ * `seatFractions`, or null when the boxes can't all fit round the table. With `players`, only players' boxes are kept
+ * apart: empty seats share what's left between them.
+ */
+export function spreadByBoxes(
+  taken: readonly boolean[],
+  anchor: number,
+  w: number,
+  h: number,
+  box: (seat: number) => Extent,
+  { gap = 0, players = false } = {},
+): number[] | null {
+  const n = taken.length;
+  if (n === 0 || w <= 0 || h <= 0) return null;
+  // Spots round the table every few pixels: plenty for seats that are 40px tall or more.
+  const steps = Math.max(360, Math.min(1440, Math.round(stadiumLength(w, h) / 3)));
+  const spot = Array.from({ length: steps }, (_, i) => stadiumPoint(i / steps, w, h));
+  const at = (i: number) => spot[((i % steps) + steps) % steps];
+  const seatOf = (k: number) => (anchor + k) % n;
+  // The anchor and the players, counted round from the anchor. The anchor stays at the bottom even when it's empty.
+  const stops = [0];
+  for (let k = 1; k < n; k++) if (taken[seatOf(k)]) stops.push(k);
+  const m = stops.length;
+  const boxes = Array.from({ length: n }, (_, k) => box(seatOf(k)));
+  const counts = (k: number) => !players || k === 0 || taken[seatOf(k)];
+  /** The first spot after `from` where seat k's box is clear of every placed one by `space` (or Infinity when there is none). */
+  const firstClear = (from: number, k: number, placed: { i: number; k: number }[], space: number) => {
+    if (!counts(k)) return from + 1;
+    const near = placed.filter((p) => counts(p.k));
+    for (let i = from + 1; i <= from + steps; i++) if (near.every((p) => apart(at(i), boxes[k], at(p.i), boxes[p.k], space))) return i;
+    return Infinity;
+  };
+  /**
+   * The j-th player's stretch, from them (at `from`) to the next player: its empty seats each placed at the first spot
+   * clear of the seats before them by `space`, and the first spot where the next player would be clear of them all.
+   */
+  const stretch = (j: number, from: number, space: number) => {
+    const next = j + 1 < m ? stops[j + 1] : n;
+    const placed = [{ i: from, k: stops[j] }];
+    let cur = from;
+    for (let k = stops[j] + 1; k < next; k++) {
+      cur = firstClear(cur, k, placed, space);
+      placed.push({ i: cur, k });
+    }
+    return { placed, end: firstClear(cur, next % n, placed, space) };
+  };
+  /** Players placed round the table, each gap at least `share` spots: where they go, and where the anchor would come round. */
+  const chain = (share: number) => {
+    const where = [0];
+    let s = 0;
+    for (let j = 0; j < m; j++) {
+      s = Math.max(stretch(j, s, gap).end, s + share);
+      if (!Number.isFinite(s) || s > steps) return { where, end: Infinity };
+      if (j + 1 < m) where.push(s);
+    }
+    return { where, end: s };
+  };
+  if (chain(0).end > steps) return null;
+  // The biggest even share that still fits, found by halving.
+  let lo = 0;
+  let hi = Math.floor(steps / m);
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (chain(mid).end <= steps) lo = mid;
+    else hi = mid - 1;
+  }
+  const where = chain(lo).where;
+  const out = new Array<number>(n).fill(0);
+  for (let j = 0; j < m; j++) {
+    const from = where[j];
+    const to = j + 1 < m ? where[j + 1] : steps;
+    const k0 = stops[j];
+    const empties = (j + 1 < m ? stops[j + 1] : n) - k0 - 1;
+    out[seatOf(k0)] = from / steps;
+    if (empties === 0) continue;
+    if (players) {
+      // Only the players count: the empty seats split the gap between them evenly.
+      for (let e = 1; e <= empties; e++) out[seatOf(k0 + e)] = (from + ((to - from) * e) / (empties + 1)) / steps;
+      continue;
+    }
+    // The empty seats spread out as far as the gap allows: the same extra room between each of them and the seats either
+    // side, found by halving. (Even steps round the table would crowd the ones where it curves into the long sides.)
+    let best = stretch(j, from, gap).placed;
+    let low = 0;
+    let high = to - from;
+    for (let t = 0; t < 12 && high - low > 0.5; t++) {
+      const extra = (low + high) / 2;
+      const tried = stretch(j, from, gap + extra);
+      if (tried.end <= to) {
+        best = tried.placed;
+        low = extra;
+      } else high = extra;
+    }
+    for (const p of best.slice(1)) out[seatOf(p.k)] = p.i / steps;
+  }
+  return out;
+}
+
+/**
+ * How far two empty seats may overlap and still count as clear of each other. Their buttons are pills with rounded ends,
+ * and on some windows today's spacing has two of them meet by a pixel or two, which covers nothing; moving every seat
+ * for that would change tables that look right.
+ */
+export const EMPTY_SEATS_MAY_TOUCH = 6;
+
+/**
+ * Where each seat sits round a w×h desktop table. The spacing of `seatFractions` is kept wherever no box covers another,
+ * so tables that look right stay as they are. Otherwise seats are spaced by their boxes (`spreadByBoxes`): with `gap`
+ * between them if there's room, touching if not, and if even that can't fit, with players kept apart and empty seats
+ * squeezed in between. A table that full falls back to even spacing. Until every seat has a box (before the first
+ * measure), the spacing of `seatFractions` is kept.
+ *
+ * `keep` is where the seats are now. While no box covers another there, they stay: boxes only grow while the seats are
+ * worked out from the same measure (a stud hand's row of cards gets longer each street, a badge appears under a
+ * nameplate), and a seat shouldn't shift a few pixels every time that happens when it has room where it is.
+ */
+export function placeSeats(
+  taken: readonly boolean[],
+  anchor: number,
+  w: number,
+  h: number,
+  {
+    clear = 0,
+    minGap = 0,
+    box,
+    gap = 0,
+    keep,
+  }: { clear?: number; minGap?: number; box: (seat: number) => Extent | undefined; gap?: number; keep?: readonly number[] },
+): readonly number[] {
+  const even = seatFractions(taken, anchor, { clear, minGap });
+  const boxes = taken.map((_, seat) => box(seat));
+  if (boxes.some((b) => !b)) return even;
+  const sized = (seat: number) => boxes[seat]!;
+  const fine = (fractions: readonly number[]) =>
+    seatsApart(fractions, w, h, sized, (a, b) => (!taken[a] && !taken[b] ? -EMPTY_SEATS_MAY_TOUCH : 0));
+  if (keep?.length === taken.length && fine(keep)) return keep;
+  if (fine(even)) return even;
+  for (const g of gap > 0 ? [gap, 0] : [0]) {
+    const spread = spreadByBoxes(taken, anchor, w, h, sized, { gap: g });
+    if (spread && seatsApart(spread, w, h, sized)) return spread;
+  }
+  const players = spreadByBoxes(taken, anchor, w, h, sized, { players: true });
+  return players && seatsApart(players, w, h, (seat) => (taken[seat] ? boxes[seat] : undefined)) ? players : even;
+}
+
 /** Part of the way from `a` to `b`. */
 export const lerp = (a: Point, b: Point, f: number): Point => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
 
