@@ -941,6 +941,8 @@ export class TournamentManager {
         const rt = this.table(live, e.tableId);
         if (rt) {
           live.tables.delete(e.tableId);
+          // It deals no more: whoever stays looking at it (a player knocked out in its last hand) sees no countdown.
+          rt.state.nextHandAt = null;
           this.deps.tables.detach(rt);
           rt.dispose();
         }
