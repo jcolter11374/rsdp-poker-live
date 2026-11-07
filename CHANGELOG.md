@@ -26,6 +26,15 @@ _Dealer's choice_
 
 - **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 
+### Fixed and changed
+
+- Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot.
+- Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
+- Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
+- Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
+- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat. A narrower window doesn't show it; the action buttons still show their keys.
+- Blinds that go up after a number of hands: with one hand left in a level, the top bar now says "1 hand" instead of "1 hands".
+
 ## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
