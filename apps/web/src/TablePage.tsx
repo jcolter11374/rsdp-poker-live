@@ -844,6 +844,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               tableId={tableId}
               seatedHere={view.me.seat !== null}
               keptHere={view.me.seat === null && myPlace !== null}
+              emptyHere={!!live && live.seats.every((s) => !s)}
               holding={runningOut}
               corner={wide}
               asksIn={wide ? tournamentAsks : null}

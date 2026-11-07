@@ -22,6 +22,7 @@ export function TableStrip({
   tableId,
   seatedHere,
   keptHere = false,
+  emptyHere = false,
   holding = false,
   corner = false,
   asksIn = null,
@@ -34,6 +35,8 @@ export function TableStrip({
    * the corner box), "You finished" waits for it to go, so the felt doesn't move down as the result shows (#445).
    */
   keptHere?: boolean;
+  /** Nobody is seated at the table on screen (the server's view, not the seats kept for a knocked-out player). */
+  emptyHere?: boolean;
   holding?: boolean;
   corner?: boolean;
   /** With `corner`: where the asks go (TablePage's spot for them under the table). Until it exists they wait. */
@@ -76,13 +79,23 @@ export function TableStrip({
     </a>
   );
 
-  const c = sum.clock;
+  // A finished event's clock stopped at its last hand: the winner says it all, without a level and blinds (#446).
+  const c = state.status === 'finished' ? null : sum.clock;
   const place = o?.entry && !['registered', 'seated', 'rebuy-offer'].includes(o.entry.status) ? standings(state).find((s) => s.entryId === o.entry!.id)?.place : null;
   const winner = state.status === 'finished' ? standings(state).find((s) => s.place === 1) : null;
   const seatTable = seat && seat !== tableId ? state.tables.findIndex((t) => tableAddress(t.id) === seat) + 1 : 0;
 
   const paused = state.status === 'paused';
   const finished = place != null && !winner && <div className="tn-strip-row">You finished {ordinal(place)}.</div>;
+  // A table that broke: its players were moved and told, but someone only watching it would see the last hand stay
+  // there for good (#446). Only once it is empty: a table opened while this page's tournament state is a moment old
+  // has players.
+  const closedHere =
+    emptyHere && (state.status === 'running' || state.status === 'paused') && !state.tables.some((t) => tableAddress(t.id) === tableId) && (
+      <div className="tn-strip-row" role="status">
+        This table has closed. Play goes on at the other {state.tables.length === 1 ? 'table' : 'tables'}.
+      </div>
+    );
   const asks = (
     <>
       {seatTable > 0 && (
@@ -181,6 +194,7 @@ export function TableStrip({
             )}
           </div>
           {finished}
+          {closedHere}
           {!asking && errorRow}
         </div>
       </>
@@ -215,6 +229,7 @@ export function TableStrip({
       </div>
       {asks}
       {!keptHere && finished}
+      {closedHere}
       {error && <div className="tn-strip-row error">{error}</div>}
     </div>
   );
