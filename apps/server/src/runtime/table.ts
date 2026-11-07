@@ -517,7 +517,7 @@ export class TableRuntime {
     if (maxBuyIn > 0 && stack > maxBuyIn) throw new ActionError(`the maximum buy-in is ${this.money(maxBuyIn)}`);
     const left = this.state.departures[playerId];
     if (ratholeMinutes > 0 && left && this.clock.now() - left.at < ratholeMinutes * 60_000 && stack < left.stack) {
-      throw new ActionError(`you left with ${this.money(left.stack)} less than ${ratholeMinutes} minutes ago; come back with at least that`);
+      throw new ActionError(`you left with ${this.money(left.stack)} less than ${ratholeMinutes} ${ratholeMinutes === 1 ? 'minute' : 'minutes'} ago; come back with at least that`);
     }
   }
 
@@ -2753,6 +2753,16 @@ export class TableRuntime {
       }
     }
     if (next.game.family !== 'flop' || next.game.forcedBets !== 'blinds' || next.stakes.bigBlind < 1) return null;
+    // Dealt in place of a stud hand, the table's ante is the stud ante, which a blind game doesn't post (D29). A bomb
+    // pot's own posts replace the blinds and antes anyway, so its stakes keep none, and the top bar, hand history and
+    // hand search don't show a stud ante on a hold'em hand (#397). A stud-only table has no small blind either: the
+    // hold'em hand gets half its big blind, as a Dealer's choice menu with blind games does, so it doesn't read
+    // "NLH 0/0.50" or lose its chip colours. Nobody posts it.
+    if (setup.game.forcedBets === 'ante-bring-in') {
+      const stakes = { ...next.stakes, ante: 0 };
+      if (stakes.smallBlind === 0 && stakes.bigBlind > 1) stakes.smallBlind = Math.floor(stakes.bigBlind / 2);
+      next = { ...next, stakes };
+    }
     return next;
   }
 
@@ -3096,7 +3106,8 @@ export class TableRuntime {
     if (releaseMs > 0 && !s.paused) {
       for (const seat of s.seats) {
         if (!seat || seat.leaveAfterHand || this.isOnline(seat.playerId) || this.offlineFor(seat) < releaseMs) continue;
-        this.log(`${seat.name} has been offline for ${s.settings.seating.releaseOfflineSeatMinutes} minutes, so their seat is released`);
+        const mins = s.settings.seating.releaseOfflineSeatMinutes;
+        this.log(`${seat.name} has been offline for ${mins} ${mins === 1 ? 'minute' : 'minutes'}, so their seat is released`);
         if (this.inHand(seat.playerId)) {
           seat.leaveAfterHand = true;
           seat.released = true;
