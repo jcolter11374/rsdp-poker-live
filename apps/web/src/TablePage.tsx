@@ -310,7 +310,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
-  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  // The tip sits beside the table instead of pushing it down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
     const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
@@ -450,8 +450,17 @@ export function TablePage({ tableId }: { tableId: string }) {
       : null;
   const level = view.level;
   const levelText = level
-    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
+    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} ${level.handsLeft === 1 ? 'hand' : 'hands'}` : ''}`
     : null;
+  // The top bar's line at a cash table that plays one game or Dealer's choice (rotating and tournament tables have their own).
+  const barName = view.name;
+  const pickLine = view.choice?.current ? choiceText(view) : null;
+  const bombPot = !!view.hand?.bombPot && view.hand.phase !== 'complete';
+  const barLine = [barName, game && `${game.label} ${game.stakes}`.trim(), pickLine, levelText, bombPot && 'Bomb pot', view.paused && 'Paused']
+    .filter(Boolean)
+    .join(' · ');
+  /** What goes before a part of the line: a dot, or on a desktop just a space for the first part (its dot is the name's). */
+  const dot = (first: boolean) => (first && !portrait ? ' ' : ' · ');
   // Straddles need blinds, so stud tables never offer them.
   const nextFamily = view.hand?.family ?? (view.upcoming ? gameFamily(view.upcoming.gameId) : 'flop');
   const straddleOn = cash && view.settings.play.straddle !== 'off' && nextFamily !== 'stud';
@@ -623,6 +632,29 @@ export function TablePage({ tableId }: { tableId: string }) {
     ),
   ].filter(Boolean);
 
+  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
+  // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
+  // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
+  // the table's size (#350).
+  const tipInCorner = wide && !drawer;
+  const keysTipBox = keysTip && !dialog && (
+    <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
+      <span>
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
+      </span>
+      <button
+        onClick={() => {
+          dismissKeysTip();
+          setDialog({ kind: 'keys' });
+        }}
+      >
+        All shortcuts
+      </button>
+      <button onClick={() => dismissKeysTip()}>Got it</button>
+    </div>
+  );
+
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
       <header className="topbar">
@@ -644,23 +676,42 @@ export function TablePage({ tableId }: { tableId: string }) {
         ) : view.rotation ? (
           <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
         ) : (
-          <span className="stakes">
-            <b>{view.name}</b>
-            {game && (
-              <>
-                {portrait ? <br /> : ' · '}
-                {game.label} {game.stakes}
-              </>
-            )}
-            {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
-            {levelText && <> · {levelText}</>}
-            {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-            {view.paused && <b className="paused"> · Paused</b>}
+          /* On a desktop the line never wraps, so nothing that comes and goes in the bar (the Pick button, Paused, a
+             level's clock) changes its height and moves the table (#408). When it doesn't fit, the table's name gives
+             way first; the whole line is in the tooltip. */
+          <span className="stakes" title={barLine}>
+            {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
+            <span className="stakes-name">
+              <b>{barName}</b>
+              {!portrait && barLine !== barName && ' ·'}
+            </span>
+            <span className="stakes-more">
+              {game && (
+                <>
+                  {portrait ? <br /> : ' '}
+                  {[game.label, game.stakes].filter(Boolean).join(' ')}
+                </>
+              )}
+              {pickLine && (
+                <>
+                  {dot(!game)}
+                  {pickLine}
+                </>
+              )}
+              {levelText && (
+                <>
+                  {dot(!game && !pickLine)}
+                  {levelText}
+                </>
+              )}
+              {bombPot && <b>{dot(!game && !pickLine && !levelText)}Bomb pot</b>}
+              {view.paused && <b className="paused">{dot(!game && !pickLine && !levelText && !bombPot)}Paused</b>}
+            </span>
           </span>
         )}
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
-            {portrait ? 'Pick' : 'Pick next game'}
+            Pick<span className="pick-more"> next game</span>
           </button>
         )}
         {bigBlind > 0 && (
@@ -774,28 +825,6 @@ export function TablePage({ tableId }: { tableId: string }) {
             noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
           />
-          {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
-              stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
-              whole table twitch on big screens (#350). */}
-          <div className="tip-anchor">
-            {keysTip && !dialog && (
-              <div className="tip-toast" role="status">
-                <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
-                  {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
-                </span>
-                <button
-                  onClick={() => {
-                    dismissKeysTip();
-                    setDialog({ kind: 'keys' });
-                  }}
-                >
-                  All shortcuts
-                </button>
-                <button onClick={() => dismissKeysTip()}>Got it</button>
-              </div>
-            )}
-          </div>
           <Dock
             reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
@@ -825,6 +854,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </section>
         {!portrait && (
           <aside id="records-panel" className={wide ? `side drawer${drawer ? ' open' : ''}` : 'side'}>
+            {!tipInCorner && keysTipBox}
             {hostPanel}
             <PartBoundary name="side panel">
               <SidePanel view={view} fmt={fmt} />
@@ -843,6 +873,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
+        {tipInCorner && keysTipBox}
       </div>
 
       {portrait && sheet === 'menu' && (

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
-import { clock, type Fmt } from '../format';
+import { betUnit, clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { besideBet, clearSideBands, fitHand, fitMiddle, fromVars, handRoom, inFront, keepPlaced, lerp, placeSeats, px, seatFractions, seatsFine, stadiumPoint, type Box, type Extent, type HandFit, type Point, type Reach } from './geometry';
@@ -782,7 +782,10 @@ export function Table({
   const stakes = hand?.stakes ?? view.settings.stakes;
   const dollars = view.settings.stakes.centsMode;
   const chipSet = dollars ? DOLLAR_CHIPS : CHIP_SET;
-  const chipBase = dollars ? 1 : baseChip(Math.min(...[stakes.smallBlind, stakes.ante, stud ? stakes.bringIn : 0].filter((x): x is number => !!x && x > 0), Infinity));
+  // With no forced bet at all (a hold'em bomb pot at a 1-chip stud table, say), the bet step sets it instead of every bet
+  // turning into one white chip.
+  const forced = [stakes.smallBlind, stakes.ante, stud ? stakes.bringIn : 0].filter((x): x is number => !!x && x > 0);
+  const chipBase = dollars ? 1 : baseChip(forced.length ? Math.min(...forced) : betUnit(stakes));
   // Order of seats from the button, so the deal goes round the table.
   const dealOrder = (seat: number) => (hand ? (seat - hand.button - 1 + n) % n : 0);
 
