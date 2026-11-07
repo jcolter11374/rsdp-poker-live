@@ -382,8 +382,8 @@ export function liveSeedWarning(view: TableView): { line: string; text: string }
   return {
     text,
     line: otherDevice
-      ? "a seed under your name wasn't sent from this browser. That's expected if you're also here on another device"
-      : 'your browser found a problem with how this hand was dealt, so the deck may have been steered. Tell the table',
+      ? "a seed under your name wasn't sent from this browser (expected if you're on two devices)"
+      : "this hand failed your browser's checks, so the deck may have been steered. Tell the table",
   };
 }
 

@@ -525,7 +525,7 @@ describe('seeds that nobody checks', () => {
     expect(liveSeedWarning(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
     // A seed from my other device: the short line says that's expected; the whole warning is kept for its details.
     const other = liveSeedWarning(view([{ playerId: 'me', seed: 'bb' }]))!;
-    expect(other.line).toMatch(/wasn't sent from this browser.*expected if you're also here on another device/);
+    expect(other.line).toMatch(/wasn't sent from this browser \(expected if you're on two devices\)/);
     expect(other.text).toBe(liveSeedProblem(view([{ playerId: 'me', seed: 'bb' }])));
     expect(other.text).toMatch(/\(bb\).*If you aren't, the deck may have been steered/);
     // Anything else says the deck may have been steered, and never that it's expected.

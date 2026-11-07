@@ -1117,6 +1117,98 @@ try {
     }
   });
 
+  await step('laptop, one player on two devices: the fair-dealing warning leaves the seats where they are', async () => {
+    // Each device sends its own seed and the table keeps the newest, so the other device warns that a seed under your
+    // name wasn't sent from it (#209). The warning was a banner over the table and took the table's height, so every seat
+    // moved when it came or went (#438). It now sits under the buttons, in room that's kept there.
+    const laptop = { width: 1280, height: 800 };
+    const first = await open('two devices, first', laptop);
+    await first.goto(BASE);
+    await first.fill('input[required]', 'Ned');
+    await first.click('button:has-text("Create table")');
+    await first.waitForURL(/\/t\//);
+    await first.locator('.seat.empty button').first().click();
+    await first.click('button:has-text("Sit down")');
+    await first.waitForSelector('.seat.me');
+    const tableId = new URL(first.url()).pathname.split('/').pop();
+    // The same player on a second device: another browser, signed in as the same guest.
+    const token = await first.evaluate(() => localStorage.getItem('rsdp.guestId'));
+    const second = await open('two devices, second', laptop);
+    await second.context().addInitScript((t) => localStorage.setItem('rsdp.guestId', t), token);
+    await second.goto(`${BASE}/t/${tableId}`);
+    await second.waitForSelector('.seat.me');
+    const guests = [];
+    try {
+      // Two more players from plain connections, who check or call.
+      for (const [i, name] of ['Bea', 'Cal'].entries()) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        guests.push(s);
+        const call = (ev, arg) => s.timeout(10_000).emitWithAck(ev, arg).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        let busy = false;
+        let latest = null;
+        const act = () => {
+          const v = latest;
+          if (busy || !v?.legal) return;
+          busy = true;
+          call('hand:act', { type: v.legal.canCheck ? 'check' : 'call', handNumber: v.hand?.handNumber })
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (latest !== v) act();
+            });
+        };
+        s.on('table:state', (v) => {
+          latest = v;
+          act();
+        });
+        await call('table:join', { tableId });
+        await call('seat:request', { seat: i + 3, name, stack: 5000, consent: true });
+        await first.locator('.request button:has-text("Approve")').first().click();
+        await first.locator(`.seat[data-seat="${i + 3}"]:not(.empty)`).waitFor();
+      }
+      // Every frame on both devices, from before the first deal: the layout, and each time the warning comes or goes. It
+      // comes with a hand's deal on the device whose seed wasn't used, and on a computer it waits under the buttons during
+      // your own turn, so it comes and goes then too.
+      for (const p of [first, second]) {
+        await sampleLayouts(p);
+        await p.evaluate(() => {
+          window.__warnings = 0;
+          let was = null;
+          const look = () => {
+            const shown = [...document.querySelectorAll('.banner.warn')].some((b) => /Fair dealing/.test(b.textContent ?? '') && b.getClientRects().length > 0);
+            if (was !== null && shown !== was) window.__warnings++;
+            was = shown;
+            if (window.__layouts) requestAnimationFrame(look);
+          };
+          requestAnimationFrame(look);
+        });
+      }
+      await first.click('button:has-text("Start game")');
+      for (const p of [first, second]) await p.waitForSelector('.seat.me .hole .playing-card');
+      // Hands until the warning has come or gone. Only the first device plays: a move made on both at once would be turned
+      // down on one.
+      const warnings = async () => (await Promise.all([first, second].map((p) => p.evaluate(() => window.__warnings)))).reduce((a, b) => a + b);
+      let hands = 0;
+      do {
+        await playOut([first], 60);
+        hands++;
+        await first.locator('.pot.result').first().waitFor({ state: 'detached', timeout: 30_000 });
+        await first.waitForSelector('.seat.me .hole .playing-card');
+        await first.waitForTimeout(900);
+      } while (hands < 6 && (await warnings()) < 1);
+      const seen = [await layoutsSeen(first), await layoutsSeen(second)];
+      const moved = seen.findIndex((s) => s.length !== 1);
+      if (moved >= 0) throw new Error(`the seats moved on the ${moved ? 'second' : 'first'} device in ${hands} hands:\n  ${seen[moved].join('\n  ')}`);
+      if ((await warnings()) < 1) throw new Error(`in ${hands} hands the fair-dealing warning never came or went, so this step checked nothing`);
+      await second.screenshot({ path: path.join(OUT, 'two-devices-laptop.png') });
+      await stopGame(first, [first, second]);
+    } finally {
+      for (const s of guests) s.close();
+    }
+    await second.close();
+    await first.close();
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.
