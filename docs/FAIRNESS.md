@@ -181,7 +181,11 @@ when they deal at a home game.
   database; the admin page makes it easy, so that way is recorded. Lobby chat is open to anyone with the tournament's
   link anyway. Don't say anything at a table you wouldn't want John to read.
 - **Use admin powers, or a shell on the server.** The admin page can remove
-  test tables, answer suggestions and read table chat; each use now goes in the public record
+  test tables, answer suggestions and read table chat, and a workflow on
+  GitHub can replace the name of someone who deleted their account (or played
+  as a guest) with "Deleted player" in old records, when they ask. That
+  changes only names: hands, amounts and their fingerprints stay as they
+  were, so every check on this page still passes. Each use now goes in the public record
   and on [/transparency](/transparency). Looking is not recorded: the admin
   page can list tables and who is at them without leaving an entry, and the
   game-night recap John gets (errors, restarts, how much was played; see

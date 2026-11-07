@@ -1,0 +1,466 @@
+// Replacing a deleted player's name with "Deleted player" in old records (#233, src/replaceName.ts, the admin route
+// and .github/workflows/replace-name.yml). The name goes from everywhere past play keeps it; hands, amounts, ids, the
+// public record, the leaderboard and the profit graph stay exactly as they were, and the record's own checkers still
+// pass on the data.
+
+import { execFile, execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { asc, eq, getTableName, is, sql } from 'drizzle-orm';
+import { PgTable } from 'drizzle-orm/pg-core';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { subjectRef, tableRef, type AuditEntry } from '@rsdp/engine';
+import { variants } from '@rsdp/engine/core';
+import { registerAllVariants } from '@rsdp/engine/variants';
+import type { TableView } from '@rsdp/engine/wire';
+import { defaultSettings } from '@rsdp/tournament';
+import { createApp, type TableStore } from '../src/app';
+import { AuditLog, dbAuditStore } from '../src/audit';
+import { closeDb, leaderboard, leaderData, profitSessions, queryRows, schema, type Db } from '../src/db';
+import { createTestDb } from '../src/db/testing';
+import { dbFeedback } from '../src/feedback';
+import { DELETED_NAME, LoadGate, NameReplacer, replaceInText, type ReplaceReport } from '../src/replaceName';
+import { dbSharedHands } from '../src/shared';
+import { dbIdentity, dbStore, type SavedHeader } from '../src/storage';
+import { dbLobbyStore } from '../src/tournament/lobby';
+import { dbTournamentStore } from '../src/tournament/store';
+import { socketClient, type Client } from './socket-client';
+
+beforeAll(() => registerAllVariants(variants));
+
+const run = promisify(execFile);
+const root = path.resolve(__dirname, '../../..');
+const node = (script: string, ...args: string[]) =>
+  run(process.execPath, [path.join(root, script), ...args]).then(
+    (r) => ({ code: 0, out: r.stdout + r.stderr }),
+    (e: { code: number; stdout: string; stderr: string }) => ({ code: e.code, out: e.stdout + e.stderr }),
+  );
+
+describe('finding a name in a line of text', () => {
+  it('replaces whole words only, and leaves longer names that hold it', () => {
+    expect(replaceInText('Al asked for seat 2', ['Al'])).toEqual({ text: 'Deleted player asked for seat 2', count: 1 });
+    expect(replaceInText("Also Alan and Al's bot, then Al.", ['Al'])).toEqual({ text: "Also Alan and Deleted player's bot, then Deleted player.", count: 2 });
+    expect(replaceInText('Big Al made Al a co-host', ['Al'], ['Big Al']).text).toBe('Big Al made Deleted player a co-host');
+    // Longer names first, so a nickname inside a full name doesn't split it.
+    expect(replaceInText('Al B is now Al', ['Al', 'Al B']).text).toBe('Deleted player is now Deleted player');
+    expect(replaceInText('al_b and al', ['al']).text).toBe('al_b and Deleted player');
+    expect(replaceInText('Zoë 🎲 left', ['Zoë 🎲']).text).toBe('Deleted player left');
+    expect(replaceInText('nobody here', ['Al'])).toEqual({ text: 'nobody here', count: 0 });
+  });
+
+  it('never looks for placeholder names, and goes by ids where there are some', () => {
+    const r = new NameReplacer('p1', ['Guest', 'Dealer', 'A player', 'Pat', '']);
+    expect(r.words).toEqual(['Pat']);
+    const state = {
+      id: 't1',
+      seats: [{ playerId: 'p1', name: 'Pat' }, { playerId: 'p2', name: 'Pat' }, null],
+      ledger: { p1: { playerId: 'p1', name: 'Pat', buyIn: 100, cashOut: 0 }, b1: { playerId: 'b1', name: 'Robo', buyIn: 100, cashOut: 0, bot: true, owner: 'Pat' } },
+      handNames: { p1: 'Pat', p2: 'Pat' },
+      bots: { b1: { ownerId: 'p2', ownerName: 'Pat', buyIn: 100 } },
+      chat: [
+        { at: 1, playerId: 'p1', name: 'Pat', text: 'hi' },
+        { at: 2, playerId: null, name: 'Dealer', text: 'Pat turned on run it twice' },
+      ],
+      log: [{ at: 1, text: 'Pat asked for seat 1' }],
+    };
+    const there = r.table(state, { there: true, keep: new Set(['Pat']) });
+    // Seat, ledger row, hand name, own chat name, a log line and a dealer line; the other Pat and their bot stay.
+    expect(there.names).toBe(6);
+    expect(state.seats[1]).toEqual({ playerId: 'p2', name: 'Pat' });
+    expect(state.handNames.p2).toBe('Pat');
+    expect(state.ledger.b1.owner).toBe('Pat');
+    expect(state.bots.b1.ownerName).toBe('Pat');
+    expect(state.chat[0]).toEqual({ at: 1, playerId: 'p1', name: DELETED_NAME, text: 'hi' });
+    expect(r.shared({ there: true, keep: new Set(['Pat']) })).toBe(true);
+    // Somewhere the player never was, only what carries their id changes.
+    const elsewhere = { id: 't2', seats: [{ playerId: 'p3', name: 'Pat' }], ledger: {}, chat: [], log: [{ at: 1, text: 'Pat sat down' }] };
+    expect(r.table(elsewhere, { there: false, keep: new Set() }).names).toBe(0);
+    expect(elsewhere.log[0].text).toBe('Pat sat down');
+  });
+
+  it('replaces a lobby event’s names only where the player was', () => {
+    const r = new NameReplacer('p1', ['Pat']);
+    const item = { kind: 'event', event: { type: 'eliminated', name: 'Pat', place: 3, by: ['Sam', 'Pat'], reason: 'busted' } };
+    expect(r.lobbyItem(item, { there: true, keep: new Set() }).names).toBe(2);
+    expect(item.event).toEqual({ type: 'eliminated', name: DELETED_NAME, place: 3, by: ['Sam', DELETED_NAME], reason: 'busted' });
+    const other = { kind: 'event', event: { type: 'registered', name: 'Pat' } };
+    expect(r.lobbyItem(other, { there: false, keep: new Set() }).names).toBe(0);
+    // Someone else's message that names them is counted, not changed.
+    const said = { kind: 'chat', playerId: 'p2', name: 'Sam', text: 'gl Pat' };
+    expect(r.lobbyItem(said, { there: true, keep: new Set() })).toEqual({ names: 0, mentions: 1 });
+    expect(said.text).toBe('gl Pat');
+  });
+});
+
+describe('the load gate', () => {
+  it('tells a load that read before or during a change to read again', async () => {
+    const gate = new LoadGate();
+    const before = gate.mark();
+    expect(gate.stale(before)).toBe(false);
+    let finish!: () => void;
+    const change = gate.run(() => new Promise<void>((resolve) => (finish = resolve)));
+    const during = gate.mark();
+    expect(gate.stale(before)).toBe(true);
+    expect(gate.stale(during)).toBe(true);
+    await expect(gate.run(async () => {})).rejects.toThrow(/Another name/);
+    const settled = gate.settled();
+    finish();
+    await change;
+    await settled;
+    expect(gate.stale(during)).toBe(true);
+    expect(gate.stale(gate.mark())).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------- a real server
+
+const KEY = 'replace-name-admin-key-0123';
+const HANA = 'rn-hana-secret-000000000';
+const ZEKE = 'rn-zeke-secret-000000000';
+const BIG = 'rn-bigz-secret-000000000';
+const GUS = 'rn-gus0-secret-000000000';
+const PASSWORD = 'correct horse battery';
+
+let db: Db | undefined;
+let server: ReturnType<typeof createApp> | undefined;
+let url = '';
+const clients: Client[] = [];
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+type C = ReturnType<typeof socketClient>;
+
+afterEach(async () => {
+  for (const c of clients.splice(0)) c.close();
+  await server?.close();
+  if (db) await closeDb(db);
+  server = db = undefined;
+});
+
+async function start(d: Db, store: TableStore = dbStore(d)) {
+  const audit = await AuditLog.open(dbAuditStore(d), { log: () => {} });
+  server = createApp({
+    identity: dbIdentity(d),
+    store,
+    tournaments: dbTournamentStore(d),
+    lobby: dbLobbyStore(d),
+    shared: dbSharedHands(d),
+    feedback: dbFeedback(d),
+    accounts: d,
+    audit,
+    adminKey: KEY,
+    log: () => {},
+  });
+  await new Promise<void>((resolve) => server!.http.listen(0, resolve));
+  url = `http://localhost:${(server!.http.address() as AddressInfo).port}`;
+}
+
+async function restart(d: Db, store?: TableStore) {
+  for (const c of clients.splice(0)) c.close();
+  await server!.close();
+  await start(d, store);
+}
+
+const client = (token: string) => socketClient(url, token, clients);
+const post = (p: string, body: unknown, headers: Record<string, string> = {}) =>
+  fetch(`${url}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+const replaceName = (playerId: string, body: unknown = {}, key = KEY) => post(`/api/admin/players/${playerId}/replace-name`, body, { 'x-admin-key': key });
+const adminEntries = async () => ((await (await fetch(`${url}/api/audit/entries?after=0&kind=admin`)).json()) as { entries: AuditEntry[] }).entries.map((e) => e.data);
+
+/** Everyone folds to the big blind. */
+async function foldAround(cs: C[], handNumber: number) {
+  for (let i = 0; i < 20; i++) {
+    const turn = await Promise.race(cs.map((c) => c.until((v) => v.hand?.handNumber === handNumber && (v.hand.phase === 'complete' || !!v.legal)).then((v) => ({ c, v }))));
+    if (turn.v.hand!.phase === 'complete') return;
+    await turn.c.call('hand:act', { type: 'fold' });
+    await turn.c.until((v) => v !== turn.v);
+  }
+  throw new Error(`hand ${handNumber} didn't end`);
+}
+
+const TABLES = Object.values(schema)
+  .filter((t) => is(t, PgTable))
+  .map((t) => getTableName(t as PgTable));
+
+/** Every row of every table, as JSON text, in a fixed order. */
+async function dump(d: Db): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  for (const t of TABLES) out[t] = (await queryRows<{ j: string }>(d, sql.raw(`select row_to_json(x)::text as j from ${t} x order by 1`))).map((r) => r.j);
+  return out;
+}
+
+/** A dump with every string that holds one of the names (or "Deleted player") made the same, so only names can differ. */
+const namesBlanked = (rows: Record<string, string[]>, names: RegExp) =>
+  Object.fromEntries(
+    Object.entries(rows).map(([t, list]) => [
+      t,
+      list.map((j) => JSON.stringify(JSON.parse(j), (_k, v: unknown) => (typeof v === 'string' && (names.test(v.replaceAll('Big Zeke', '')) || v.includes(DELETED_NAME)) ? '<a name>' : v))),
+    ]),
+  );
+
+describe('replacing a deleted player’s name', () => {
+  it('takes it out of everything past play keeps, and changes nothing else', { timeout: 60_000 }, async () => {
+    db = await createTestDb();
+    await start(db);
+    const hana = client(HANA);
+    const zeke = client(ZEKE);
+    const big = client(BIG);
+    const gus = client(GUS);
+    const everyone = [hana, zeke, big, gus];
+    for (const [c, name] of [[hana, 'Hana'], [zeke, 'Zeke'], [big, 'Big Zeke'], [gus, 'Gus']] as const) await c.call('session:name', { name });
+    const signedUp = (await (await post('/api/account/signup', { username: 'zeke', password: PASSWORD }, { 'x-guest-token': ZEKE })).json()) as { session: string };
+
+    // A cash game: two hands, chat, a shared hand, feedback, and Zeke cashing out.
+    const { tableId } = await hana.call<{ tableId: string }>('table:create', {
+      settings: { table: { name: 'Friday' }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } },
+    });
+    for (const c of everyone) await c.call('table:join', { tableId });
+    for (const [i, [c, name]] of ([[hana, 'Hana'], [zeke, 'Zeke'], [big, 'Big Zeke'], [gus, 'Gus']] as const).entries()) await c.call('seat:request', { seat: i, name, stack: 2000 });
+    await hana.until((v) => v.seats.filter(Boolean).length === 4);
+    await hana.call('host:start');
+    await foldAround(everyone, 1);
+    await hana.call('host:deal');
+    await foldAround(everyone, 2);
+    await zeke.call('chat:send', { text: 'gg all' });
+    await big.call('chat:send', { text: 'well played Zeke' });
+    await big.call('hand:share', { handNumber: 1 });
+    await gus.call('feedback:send', { kind: 'idea', text: 'more tables please', screen: 'desktop' });
+    const zekeId = zeke.view().me.playerId;
+    const bigId = big.view().me.playerId;
+    const gusId = gus.view().me.playerId;
+    zeke.socket.emit('seat:stand', {});
+    await hana.until((v) => !v.seats.some((s) => s?.playerId === zekeId));
+
+    // A tournament Zeke entered under another name, which ends before it starts.
+    await zeke.call('session:name', { name: 'Zekey' });
+    const { id: tournamentId } = await hana.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Cup', startingStack: 1000 }) });
+    for (const c of [zeke, big]) {
+      await c.call('tournament:subscribe', { id: tournamentId });
+      await c.call('tournament:command', { id: tournamentId, command: { type: 'register' } });
+    }
+    await zeke.call('tournament:chat', { id: tournamentId, text: 'see you all there' });
+    await big.call('tournament:chat', { id: tournamentId, text: 'good luck Zekey' });
+    await pause(900);
+
+    // Refused: without the key, for an account that still exists, and for nobody at all.
+    expect((await replaceName(zekeId, {}, 'not-the-admin-key-000')).status).toBe(401);
+    const live = await replaceName(zekeId);
+    expect(live.status).toBe(409);
+    expect(((await live.json()) as { code: string }).code).toBe('account');
+    expect((await replaceName('no-such-player-000')).status).toBe(404);
+
+    // Zeke deletes the account: the name stays in the hands, ledger, logs and tournament.
+    const gone = await post('/api/account/delete', { password: PASSWORD }, { 'x-guest-token': ZEKE, 'x-session-token': signedUp.session });
+    expect(gone.status).toBe(200);
+    // Still refused while the table and the tournament are held in memory: their next save would put the name back.
+    await hana.call('tournament:command', { id: tournamentId, command: { type: 'end' } });
+    const held = await replaceName(zekeId);
+    expect(held.status).toBe(409);
+    const heldBody = (await held.json()) as { code: string; error: string };
+    expect(heldBody.code).toBe('in-memory');
+    expect(heldBody.error).toMatch(/1 table and 1 tournament/);
+    expect(heldBody.error).not.toMatch(/Zeke/);
+
+    // A restart puts the table away, and the ended tournament isn't taken back into memory.
+    await restart(db);
+    const mirror = mkdtempSync(path.join(tmpdir(), 'rsdp-copy-'));
+    expect((await node('scripts/transparency/mirror.mjs', url, mirror)).code).toBe(0);
+    const before = await dump(db);
+    const boardBefore = await leaderboard(db, await leaderData(db));
+    const graphsBefore = await Promise.all([zekeId, bigId, gusId].map((id) => profitSessions(db!, [id])));
+    expect(before.table_snapshots.join()).toMatch(/Zeke/);
+    expect(before.tournament_log.join()).toMatch(/Zekey/);
+
+    // The dry run says what would change and changes nothing.
+    const dry = await replaceName(zekeId);
+    expect(dry.status).toBe(200);
+    const preview = (await dry.json()) as ReplaceReport;
+    expect(preview).toMatchObject({ dryRun: true, names: 2, sharedNames: 0, chatMentions: 2 });
+    expect(preview.rows).toMatchObject({ players: 0, table_snapshots: 1, tournaments: 1, shared_hands: 1, feedback: 0 });
+    expect(preview.rows.table_log).toBeGreaterThanOrEqual(3);
+    expect(preview.rows.tournament_log).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(preview)).not.toMatch(/Zeke/);
+    expect(await dump(db)).toEqual(before);
+    expect(await adminEntries()).toEqual([]);
+
+    // The change itself: the same counts, and one entry in the public record, naming the player only by a fingerprint.
+    const done = (await (await replaceName(zekeId, { dryRun: false })).json()) as ReplaceReport;
+    expect(done).toEqual({ ...preview, dryRun: false });
+    expect(await adminEntries()).toEqual([{ action: 'replace-name', target: subjectRef('player', zekeId) }]);
+
+    // The name is gone from every table: what's left is Big Zeke's own name and the words Big Zeke typed.
+    const after = await dump(db);
+    const left = Object.values(after).flat().join('\n').replaceAll('Big Zeke', '').replaceAll('well played Zeke', '').replaceAll('good luck Zekey', '');
+    expect(left).not.toMatch(/\bZekey?\b/);
+    // Nothing but names changed: hands, the ledger's amounts, ids, cards and times are as they were.
+    const { audit_log: auditBefore, ops_log: _opsBefore, ...restBefore } = before;
+    const { audit_log: auditAfter, ops_log: _opsAfter, ...restAfter } = after;
+    expect(after.hands).toEqual(before.hands);
+    expect(namesBlanked(restAfter, /\bZekey?\b/)).toEqual(namesBlanked(restBefore, /\bZekey?\b/));
+    expect(auditAfter).toEqual(expect.arrayContaining(auditBefore));
+    expect(auditAfter).toHaveLength(auditBefore.length + 1);
+    // The leaderboard and everyone's profit graph give the same numbers; only Zeke's name on the board changed.
+    const boardAfter = await leaderboard(db, await leaderData(db));
+    expect(boardAfter.map(({ name: _n, ...r }) => r)).toEqual(boardBefore.map(({ name: _n, ...r }) => r));
+    expect(boardBefore.map((r) => r.name).sort()).toEqual(['Big Zeke', 'Gus', 'Hana', 'Zeke']);
+    expect(boardAfter.map((r) => r.name).sort()).toEqual(['Big Zeke', DELETED_NAME, 'Gus', 'Hana']);
+    expect(await Promise.all([zekeId, bigId, gusId].map((id) => profitSessions(db!, [id])))).toEqual(graphsBefore);
+
+    // The public record's own checkers still pass, on the record and on a hand rebuilt from the saved data.
+    const [row] = await db.select().from(schema.hands).where(eq(schema.hands.tableId, tableId)).orderBy(asc(schema.hands.number)).limit(1);
+    const header = row.header as SavedHeader;
+    const fair = header.input.fair!;
+    const proof = {
+      commit: fair.commit,
+      serverSeed: fair.serverSeed,
+      clientSeeds: fair.clientSeeds.map((c) => c.seed),
+      handSeed: fair.handSeed,
+      button: header.input.button,
+      seats: header.seats.map((s) => s.seat),
+      events: row.events,
+      record: { handId: header.input.handId, table: tableRef(tableId), handNumber: row.number, seats: header.seats.map((s) => ({ seat: s.seat, playerId: s.playerId, stack: s.startStack })) },
+    };
+    const proofFile = path.join(mirror, 'hand-1-proof.json');
+    writeFileSync(proofFile, JSON.stringify(proof));
+    const hand = await node('scripts/verify-hand.mjs', proofFile);
+    expect(hand.out).toContain('This hand checks out.');
+    expect(hand.code).toBe(0);
+    const record = await node('scripts/verify-audit.mjs', '--site', url, '--copy', mirror, '--proof', proofFile);
+    expect(record.out).toMatch(/every entry GitHub copied is still on the site, unchanged/);
+    expect(record.out).toMatch(/hand 1 is in the record as entry \d+, exactly as in this file/);
+    expect(record.code).toBe(0);
+
+    // The table opened again shows "Deleted player" in its ledger, log and chat; Big Zeke keeps his name.
+    const back = client(HANA);
+    await back.call('table:join', { tableId });
+    const view = await back.until((v: TableView) => v.ledger.length === 4);
+    expect(view.ledger.map((r) => r.name).sort()).toEqual(['Big Zeke', DELETED_NAME, 'Gus', 'Hana']);
+    expect(view.log.some((l) => /^Deleted player left the table/.test(l.text))).toBe(true);
+    expect(view.chat.map((c) => `${c.name}: ${c.text}`)).toEqual([`${DELETED_NAME}: gg all`, 'Big Zeke: well played Zeke']);
+    expect(view.log.some((l) => /\bZeke\b/.test(l.text.replaceAll('Big Zeke', '')))).toBe(false);
+    expect(view.log.some((l) => /^Big Zeke sat down/.test(l.text))).toBe(true);
+
+    // Nothing is left to change, so running it again changes nothing.
+    const again = (await (await replaceName(zekeId, { dryRun: false })).json()) as ReplaceReport;
+    expect(again.replaced).toBe(0);
+
+    // A guest who never had an account: their feedback and their name on file go too.
+    for (const c of clients.splice(0)) c.close();
+    await restart(db);
+    const guest = (await (await replaceName(gusId, { dryRun: false })).json()) as ReplaceReport;
+    expect(guest.rows).toMatchObject({ players: 1, feedback: 1, table_snapshots: 1 });
+    const [gus2] = await db.select().from(schema.players).where(eq(schema.players.id, gusId));
+    expect(gus2.displayName).toBe('');
+    const sent = await db.select().from(schema.feedback).where(eq(schema.feedback.playerId, gusId));
+    expect(sent.map((f) => [f.name, f.text])).toEqual([[DELETED_NAME, 'more tables please']]);
+    expect((await dump(db)).table_snapshots.join()).not.toMatch(/\bGus\b/);
+  });
+
+  it('makes a table read before the change, and taken in after it, read again', { timeout: 30_000 }, async () => {
+    db = await createTestDb();
+    let hold: Promise<void> | null = null;
+    let reached!: () => void;
+    const inner = dbStore(db);
+    // The first load of the table reads, then waits, as a slow load would.
+    const store: TableStore = {
+      ...inner,
+      async loadTable(id) {
+        const state = await inner.loadTable(id);
+        const wait = hold;
+        hold = null;
+        if (wait) {
+          reached();
+          await wait;
+        }
+        return state;
+      },
+    };
+    await start(db);
+    const hana = client(HANA);
+    const pat = client(ZEKE);
+    const { tableId } = await hana.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Slow' }, seating: { requireApproval: false } } });
+    await pat.call('table:join', { tableId });
+    await pat.call('seat:request', { seat: 1, name: 'Pat', stack: 2000 });
+    const patId = pat.view().me.playerId;
+    await pause(700);
+    await restart(db, store);
+
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => (release = resolve));
+    const readIt = new Promise<void>((resolve) => (reached = resolve));
+    const loading = server!.getTable(tableId);
+    await readIt;
+    const change = (await (await replaceName(patId, { dryRun: false })).json()) as ReplaceReport;
+    expect(change.rows.table_snapshots).toBe(1);
+    release();
+    const rt = await loading;
+    expect(rt!.state.seats.find((s) => s?.playerId === patId)?.name).toBe(DELETED_NAME);
+    expect(rt!.state.ledger[patId].name).toBe(DELETED_NAME);
+  });
+});
+
+describe('the workflow that runs it', () => {
+  const file = readFileSync(path.join(root, '.github/workflows/replace-name.yml'), 'utf8');
+
+  it('only runs by hand, from main, and never takes the player id through its logged settings', () => {
+    const on = file.slice(file.indexOf('\non:'), file.indexOf('\npermissions:'));
+    expect(on).toMatch(/workflow_dispatch:/);
+    expect(on).not.toMatch(/\b(push|pull_request|pull_request_target|schedule|workflow_run):/);
+    expect(file).toMatch(/if: github\.ref == 'refs\/heads\/main'/);
+    expect(file).not.toMatch(/\$\{\{\s*(github\.event\.)?inputs\.player_id/);
+    expect(file).toMatch(/::add-mask::\$PLAYER_ID/);
+  });
+
+  const hasTools = ['jq', 'curl'].every((tool) => {
+    try {
+      return execFileSync('sh', ['-c', `command -v ${tool}`]).length > 0;
+    } catch {
+      return false;
+    }
+  });
+
+  it.skipIf(!hasTools)('prints counts and refusals, never a name', { timeout: 30_000 }, async () => {
+    // The step's script, the last thing in the file, as GitHub runs it.
+    const lines = file.split('\n');
+    const at = lines.findIndex((l) => l.trim() === 'run: |');
+    const indent = lines[at + 1].length - lines[at + 1].trimStart().length;
+    const script = lines
+      .slice(at + 1)
+      .map((l) => l.slice(indent))
+      .join('\n');
+    db = await createTestDb();
+    await start(db);
+    const pat = client(ZEKE);
+    await pat.call('session:name', { name: 'Zeke' });
+    const { tableId } = await pat.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Solo' }, seating: { requireApproval: false } } });
+    await pat.call('table:join', { tableId });
+    await pat.call('seat:request', { seat: 0, name: 'Zeke', stack: 2000 });
+    const patId = pat.view().me.playerId;
+    await pause(700);
+    for (const c of clients.splice(0)) c.close();
+    await restart(db);
+    const dir = mkdtempSync(path.join(tmpdir(), 'rsdp-replace-name-'));
+    const step = async (playerId: string, dryRun: string) => {
+      writeFileSync(path.join(dir, 'event.json'), JSON.stringify({ inputs: { player_id: playerId, dry_run: dryRun === 'true' } }));
+      const env = { ...process.env, SITE: url, ADMIN_KEY: KEY, DRY_RUN: dryRun, GITHUB_EVENT_PATH: path.join(dir, 'event.json'), GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md') };
+      return run('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], { cwd: dir, env }).then(
+        (r) => ({ code: 0, out: r.stdout + r.stderr }),
+        (e: { code: number; stdout: string; stderr: string }) => ({ code: e.code, out: e.stdout + e.stderr }),
+      );
+    };
+    const dry = await step(patId, 'true');
+    expect(dry.code).toBe(0);
+    expect(dry.out).toMatch(/Dry run: nothing was changed/);
+    expect(dry.out).toMatch(/table_snapshots: 1/);
+    const done = await step(patId, 'false');
+    expect(done.out).toMatch(/Done: the name was replaced/);
+    expect(readFileSync(path.join(dir, 'summary.md'), 'utf8')).toMatch(/Rows, by place/);
+    const refused = await step('no-such-player-000', 'true');
+    expect(refused.code).toBe(1);
+    expect(refused.out).toMatch(/The site answered 404: No player has that id\./);
+    const bad = await step('not an id; rm -rf /', 'true');
+    expect(bad.code).toBe(1);
+    for (const out of [dry.out, done.out, refused.out, bad.out]) expect(out).not.toMatch(/Zeke/);
+  });
+});

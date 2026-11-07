@@ -7,7 +7,7 @@ it. It is written from what the code actually does, and the code is public on
 GitHub, so anyone can check it. It is not legal advice, and nobody here is a
 lawyer.
 
-Last updated: 5 November 2026. Every change to this page is in its
+Last updated: 7 November 2026. Every change to this page is in its
 [history on GitHub](https://github.com/jcolter11374/rsdp-poker-live/commits/main/docs/PRIVACY.md).
 
 ## Who is responsible
@@ -99,7 +99,10 @@ reads from the admin page) and server starts, and
 copies it to GitHub every few hours. It also lists each player's buy-ins and
 cash-outs at each table, as amounts. It holds **no names, no cards and no
 table links**: a table and each player at it appear only as fingerprints that
-someone who already has the table's link can match up. See [Checking John](/transparency)
+someone who already has the table's link can match up. When John takes a
+name out of old records (see *Deleting your data*), the record notes it with a
+fingerprint of that player's id, which only someone who knows the id can
+match. See [Checking John](/transparency)
 for how it works.
 
 ## Your browser
@@ -222,12 +225,19 @@ authority (in the UK, the ICO).
   played, and your messages in table chat, stay in other players' history,
   ledgers and table logs under the name you used at the time, because they
   are part of their games too. If you want your
-  name taken out of those as well, ask John: names aren't part of the
+  name taken out of those as well, ask John once your account is deleted: names aren't part of the
   public record's fingerprints, so he can replace yours with "Deleted
-  player" without breaking it. Copies in backups
-  disappear as the backups expire, within 90 days.
+  player" without breaking it. That covers your name in hands, ledgers,
+  table logs and chat, tournament entries and lobbies, and other players'
+  shared hand links. The words of your messages stay as you wrote them, and
+  so do other people's messages that mention you (he can tell you how many
+  there are). The public record notes that he did it, with only a
+  fingerprint of your player id. Copies in backups
+  disappear as the backups expire, within 90 days, and copies people
+  downloaded keep the old name.
 - **As a guest:** clear the site's data in your browser to start fresh. To
-  have anything removed from the server, ask John.
+  have anything removed from the server, ask John. He can replace your name
+  with "Deleted player" in the same way.
 - **Anything else** (a chat message, a name in an old hand or tournament, a suggestion): ask
   John. He'll tell you honestly what can be removed and what can't.
 - **What can't be deleted:** the public record. It is built so that nothing

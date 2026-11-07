@@ -104,6 +104,29 @@ Requests to see, correct or delete someone's data are handled **privately**, by 
 
 If a request arrives as a public issue, thank them and ask them to message John directly. Then remove their personal details. GitHub keeps every earlier version of an edited comment or issue, so delete the old version from its edit history, or delete the issue (John can).
 
+If they want their name taken out of old games, see the next section.
+
+## Someone asks for their name to be taken out
+
+[PRIVACY.md](PRIVACY.md#deleting-your-data) promises this to anyone who deleted their account, or played as a guest: John puts "Deleted player" in place of their name in old hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Only names change. Hands, amounts, the leaderboard's and profit graphs' numbers and the public record stay exactly as they were. It runs from GitHub (`replace-name.yml`, which calls the site with the admin key), so it needs nobody on Fly.
+
+1. **Check it's really them,** privately, as above. Never in a public issue.
+2. **Their account goes first.** If they still have one, they delete it from their profile (**Delete account**). The workflow refuses anyone whose account still exists. A guest has nothing to delete.
+3. **Find their player id.** Open a cash table they played at, then the **Ledger** tab, then **Download CSV**. The `player_id` column is next to each name. Anyone who had the table open can do this, and every table they played at gives the same id, unless they played from more than one phone or computer: then each device has its own id. Look at a few of their tables, and do steps 4 and 5 for each id you find. Keep the id private, and never post it next to their name. (For someone who only ever played in tournaments, no download shows the id yet.)
+4. **Count first.** Actions → **Replace a deleted player's name** → Run workflow, on `main`. Paste the id and leave **dry run** ticked. The run's summary says how many names they went by and how many rows would change in each place, and nothing changes. The run's log is public, so it shows only counts and hides the id. If it's refused:
+   - "That player has an account": step 2 isn't done yet.
+   - "That player is in 1 table and 0 tournaments the server has open right now": the server is holding those in memory, and their next save would put the name back. Wait and run it again. A cash table nobody has open is put away within the hour. A tournament is let go within two hours of ending. One that hasn't ended yet holds on until it does, unless its host removes them.
+   - "A table is being put away right now": run it again in a minute.
+   - "No player has that id": check the id.
+5. **Make the change.** Run it again with **dry run** unticked. It should give the same counts. The public record, and so [/transparency](https://rsdp-poker-live.fly.dev/transparency), gets a "Name taken out" entry with only a fingerprint of the player's id. The leaderboard shows "Deleted player" within a minute.
+6. **Tell them what was done, and what wasn't:**
+   - Their own chat messages keep their words, now under "Deleted player". Messages other people typed that mention their name stay as typed. The run counts those ("Chat messages others typed that name them").
+   - "Tables and tournaments where someone else used one of the same names": there, a log line that named the other person by that same name now says "Deleted player" too. It's rare, and nobody's records or numbers change.
+   - Roadmap suggestions carry a name typed with the suggestion, not a player id, so this doesn't touch them.
+   - Files people downloaded keep the old name. Backups keep it until they expire, within 90 days.
+
+Running it again for the same id is harmless: it finds nothing left to change.
+
 ## Logs
 
 - **Server logs:** `fly logs -a rsdp-poker-live` (John, or anyone with Fly access). Fly keeps only recent logs (unverified: about 7 days), so copy anything important into the incident note.

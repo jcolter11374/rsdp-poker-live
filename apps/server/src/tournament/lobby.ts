@@ -99,6 +99,15 @@ export class LobbyLog {
     return items;
   }
 
+  /**
+   * Changes the items of a lobby held in memory the way they were just changed in storage (a player's name replaced):
+   * items are only ever added to storage, never saved again, so this is only what browsers are sent from now on.
+   */
+  async rewrite(tournamentId: string, change: (item: LobbyItem) => void) {
+    const list = this.cache.get(tournamentId);
+    if (list) for (const item of await list) change(item);
+  }
+
   /** Keeps the most recently used lobbies in memory; the rest load again from storage when needed. */
   private trim() {
     for (const id of this.cache.keys()) {
