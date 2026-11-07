@@ -6,9 +6,10 @@
  * (unless the disk itself loses writes it said it had made).
  *
  * A hand at a table whose spectators watch on a delay goes in that long after it
- * ends (D38), so the record never tells anyone a hand is over before the people
- * watching see it end. Until then it waits outside the chain, saved as a row in
- * `jobs` (kind 'audit-hand'), and gets its number and hash only when it goes in.
+ * ends (D38), so its entry can't tell anyone the hand is over before the people
+ * watching see it end (chip totals that change as it ends still go in at once).
+ * Until then it waits outside the chain, saved as a row in `jobs` (kind
+ * 'audit-hand'), and gets its number and hash only when it goes in.
  */
 
 import { asc, desc, eq, gt, and, inArray, sql } from 'drizzle-orm';
@@ -183,6 +184,7 @@ export function buildFromEnv(env: NodeJS.ProcessEnv = process.env): BuildInfo {
 }
 
 export interface AuditOptions {
+  /** The app's clock: a hand waiting for a spectator delay is due by it. */
   now?: () => number;
   log?: (message: string, err?: unknown) => void;
 }
@@ -367,8 +369,9 @@ export class AuditLog {
 
   /**
    * A finished hand (again after a late show). Hands dealt before provably fair dealing aren't recorded.
-   * `publishAt`: when the table's spectators on a delay see it end. Until then it waits (D38), and always behind the
-   * table's hands already waiting, so a table's hands go in in order even when its delay is shortened.
+   * `publishAt`: when the table's spectators on a delay see it end, on this log's clock (AuditOptions.now, which must be
+   * the app's). Until then it waits (D38), and always behind the table's hands already waiting, so a table's hands go in
+   * in order even when its delay is shortened.
    */
   hand(tableId: string, record: HandRecord, publishAt?: number) {
     const { input, seats, events } = record.hand;

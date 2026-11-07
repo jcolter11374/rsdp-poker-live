@@ -950,8 +950,13 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      // In the public record no sooner than spectators on a delay see it end (D38); a late show too.
-      audit.safely('a hand', () => audit.hand(id, record, spectatorsSeeAt(rt, clock.now())));
+      // In the public record no sooner than spectators on a delay see it end (D38); a late show too. A table they
+      // watch live passes no time, so it is recorded at once whatever clock the record was given.
+      audit.safely('a hand', () => {
+        const now = clock.now();
+        const seeAt = spectatorsSeeAt(rt, now);
+        audit.hand(id, record, seeAt > now ? seeAt : undefined);
+      });
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
