@@ -47,6 +47,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: once an event is over, the bar over its tables shows only who won, not a stopped clock with the next blinds. Someone still looking at a table that broke is told it has closed and that play goes on at the other tables.
 - Seven Card Stud, Stud Hi-Lo and Razz on a computer: each player's cards sit in a row over their nameplate from the first card, instead of tucked into the nameplate until fifth street. The cards no longer jump up and every nameplate no longer narrows at fifth street, and on some screens a table that only deals stud now has bigger seats and cards.
 - Dealer's choice: when the host adds seats during a hand while people are on the waitlist, "If time runs out" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.
+- Cash games, during an all-in runout: until the cards have been dealt out on screen, the host's controls and the table's settings no longer give the result away. A practice bot that busts stays in its seat, sitting out, until then. Start and Deal next hand wait for the runout, and so do changes to the game, stakes or seats saved during it, as they would during a hand. The host can't move or shuffle the players in the hand until it's over, and Add chips checks the most you may have against the chips you had before the result.
 
 ## [2026.11.07.6] - 2026-11-07
 
