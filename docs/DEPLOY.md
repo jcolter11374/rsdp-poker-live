@@ -23,7 +23,7 @@ What to do when something goes wrong is in [RUNBOOK.md](RUNBOOK.md).
 | `DATABASE_URL` | unset | Postgres connection string. When set, PGlite is not used. |
 | `PGLITE_DIR` | `/data/pglite` in the image | Where the embedded database lives when `DATABASE_URL` is unset. |
 | `NODE_ENV` | `production` in the image | Turns off development CORS. |
-| `PUBLIC_URL` | unset; `fly.toml` sets the live address | The site's public address. Link previews use it, and Google sends people back to `PUBLIC_URL` + `/auth/google/callback`. Unset, the request's own address is used. |
+| `PUBLIC_URL` | unset; `fly.toml` sets the live address | The site's public address. Link previews use it, and Google sends people back to `PUBLIC_URL` + `/auth/google/callback`. Unset, the request's own address is used. It also turns on phone alerts (push), as the contact address each alert is signed with: unset, the server sends none, so a copy and the restore drill never alert the phones in a backup. The key alerts are signed with is made on first use and kept in the database (`push_keys`), so it is in the locked backups; it is not a setting. |
 | `ADMIN_KEY` | unset (a secret) | Turns on the roadmap admin page (suggestions, table feedback, reset codes, reading a table's chat with `/api/admin/chat/:id`, each read in the public record) and the backup download (`/api/admin/backup`). At least 12 characters, or the server ignores it. |
 | `REPORT_KEY` | unset (a secret) | A read-only key for the game-night recap (`/api/admin/recap`, see [Game-night recap](#game-night-recap)). It opens nothing else. At least 12 characters, or the server ignores it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset (secrets) | Sign in with Google is on only when both are set. |
@@ -156,7 +156,7 @@ BASE_URL=http://localhost:3001 npm run smoke                   # cash table, pra
 docker stop copy && docker rm copy                             # when you're done
 ```
 
-Then try what the release changes, by hand in a browser or with bots placed by hand. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
+Then try what the release changes, by hand in a browser or with bots placed by hand. To try phone alerts, add `-e PUBLIC_URL=https://…` (an https address; push services may refuse anything else) to `docker run`, and open the copy at `http://localhost:3001` (browsers allow push on localhost). Alerts then really go out through the browser's push service, to the browsers that turned them on on the copy, so only on a copy with test data. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
 
 ## Releasing
 
@@ -178,6 +178,8 @@ Everything runs on John's own accounts. No values here, only what each one is fo
 | GitHub (`jcolter11374`) | The code, CI, deploys, daily backups, the public record (`transparency` branch), issues and alerts. |
 | Fly.io | The live server, its data volume and daily volume snapshots, and the image registry. Billed by usage. |
 | Google Cloud | The OAuth client behind "Sign in with Google". |
+
+Phone alerts go through each browser's own push service (Google, Apple, Mozilla or Microsoft), which needs no account and costs nothing.
 
 Costs: Fly bills one always-on small machine and a 1 GB volume to John's account, by usage. GitHub (public repository) and Google sign-in cost nothing. Anything that adds cost needs John's OK first: a second machine, a bigger volume, a paid service, or audio and video. If John loses access to one of these accounts, the site loses what it provides, so each one should have two-factor sign-in and saved recovery codes (#180).
 
