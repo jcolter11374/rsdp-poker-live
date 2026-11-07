@@ -234,10 +234,21 @@ export class NameReplacer {
       // The dealer's lines (no player id) repeat some log lines, such as a settings change and who made it.
       for (const m of list(state.chat)) if (isObj(m) && m.playerId === null) tally.names += this.text(m, 'text', place);
       // Dealer's choice keeps the chooser's name with the game being played and the next one ("Pat's pick" in the
-      // top bar), beside a seat but no id: matched by the names the player went by, as a bot's owner is.
-      if (isObj(state.choice)) for (const k of ['current', 'next']) if (isObj(state.choice[k])) tally.names += this.owner(state.choice[k], 'by', undefined, place);
+      // top bar), beside a seat but no id.
+      if (isObj(state.choice)) for (const k of ['current', 'next']) if (isObj(state.choice[k])) tally.names += this.pickBy(state.choice[k], list(state.seats), place);
     }
     return tally;
+  }
+
+  /**
+   * A Dealer's choice pick's chooser (ChoicePick.by in runtime/types.ts), matched by the names the player went by, as
+   * a bot's owner is. A practice bot's pick is never theirs, nor one whose seat holds someone else of that name.
+   */
+  private pickBy(pick: Obj, seats: unknown[], place: Place): number {
+    if (pick.how === 'bot') return 0;
+    const at = typeof pick.seat === 'number' ? seats[pick.seat] : undefined;
+    if (isObj(at) && typeof at.playerId === 'string' && at.playerId !== this.playerId && at.name === pick.by) return 0;
+    return this.owner(pick, 'by', undefined, place);
   }
 
   /** One saved line of a table's log or chat (table_log.item). */

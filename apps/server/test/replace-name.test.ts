@@ -171,6 +171,12 @@ describe('finding a name in a line of text', () => {
     const elsewhere = { id: 't3', seats: [{ playerId: 'p3', name: 'Pat' }], ledger: {}, choice: choiceOf(pick('Pat', 0), null) };
     expect(r.table(elsewhere, { there: false, keep: new Set() }).names).toBe(0);
     expect(elsewhere.choice.current.by).toBe('Pat');
+    // Where they were: another Pat sitting in the chooser's seat made the pick, and a practice bot's pick is never theirs.
+    const botPick = { ...pick('Pat', 2), how: 'bot' };
+    const shared = { id: 't4', seats: [null, { playerId: 'p3', name: 'Pat' }, { playerId: 'b1', name: 'Pat 2' }], ledger: { p1: { playerId: 'p1', name: 'Pat', buyIn: 100, cashOut: 0 } }, choice: choiceOf(pick('Pat', 1), botPick) };
+    expect(r.table(shared, { there: true, keep: new Set(['Pat', 'Pat 2']) }).names).toBe(1);
+    expect(shared.choice.current).toEqual(pick('Pat', 1));
+    expect(shared.choice.next).toEqual(botPick);
   });
 });
 
