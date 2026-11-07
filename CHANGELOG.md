@@ -40,6 +40,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
 - Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
 - Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+- Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room. When a waitlist offer has to be let go (the table gets smaller, or a smaller game has no room for it), its holder keeps their place: the seats are offered again in queue order, so nobody behind them sits first.
 
 ## [2026.11.07.6] - 2026-11-07
 
