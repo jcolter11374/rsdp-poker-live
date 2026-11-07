@@ -5,7 +5,7 @@ const T0 = Date.parse('2026-11-01T00:00:00Z');
 
 /** Plays an event to the end: players bust in the order given (last one wins), each to the next player in the list. */
 function event(id: string, players: string[], extra: Partial<TournamentSettings> = {}, at = T0): TournamentState {
-  let s = createTournament({ id, hostId: 'host', settings: defaultSettings({ startingStack: 100, season: { id: 'S', name: 'Fall league' }, ...extra }), now: at, seed: '01'.repeat(32) });
+  let s = createTournament({ id, hostId: 'host', settings: defaultSettings({ startingStack: 100, season: { id: 'S', name: 'Fall league' }, ...extra }), now: at, seed: '01'.repeat(32), legacyRng: 7 });
   const step = (c: Parameters<typeof apply>[1]) => (s = apply(s, c, at).state);
   for (const p of players) step({ type: 'register', playerId: p, displayName: p.toUpperCase() });
   step({ type: 'startNow', by: 'host' });
@@ -34,7 +34,7 @@ describe('season leaderboard', () => {
     const a = event('a', ['p1', 'p2', 'p3', 'p4']);
     const b = event('b', ['p4', 'p3', 'p1'], {}, T0 + 1000);
     const other = event('c', ['p1', 'p2'], { season: { id: 'X', name: 'Other' } });
-    const open = createTournament({ id: 'd', hostId: 'host', settings: defaultSettings({ season: { id: 'S', name: 'Fall league 2' } }), now: T0 + 5000, seed: '01'.repeat(32) });
+    const open = createTournament({ id: 'd', hostId: 'host', settings: defaultSettings({ season: { id: 'S', name: 'Fall league 2' } }), now: T0 + 5000, seed: '01'.repeat(32), legacyRng: 7 });
     const board = seasonBoard('S', [a, b, other, open]);
     expect(board.name).toBe('Fall league 2');
     expect(board.events.map((e) => [e.id, e.entrants, e.winners])).toEqual([
@@ -64,7 +64,7 @@ describe('season leaderboard', () => {
   it('validates the season setting and fills in a new season id', () => {
     expect(validateSettings({ ...defaultSettings(), season: { id: 'S', name: '' } })).toContain('The season name must be 1-40 characters');
     expect(validateSettings({ ...defaultSettings(), season: { id: 'bad id!', name: 'x' } })).toContain('Pick a season');
-    const s = createTournament({ id: 'new1', hostId: 'h', settings: defaultSettings({ season: { id: '', name: 'Winter' } }), now: T0, seed: '01'.repeat(32) });
+    const s = createTournament({ id: 'new1', hostId: 'h', settings: defaultSettings({ season: { id: '', name: 'Winter' } }), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
     expect(s.settings.season).toEqual({ id: 'new1', name: 'Winter' });
     expect(() => apply(s, { type: 'updateSettings', by: 'h', settings: { season: { id: 'other', name: 'x' } } }, T0)).toThrow('The season is set when the tournament is created');
   });

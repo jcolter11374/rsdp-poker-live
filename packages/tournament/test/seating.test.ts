@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextRandom, SEAT_RNG_VERSION, seatRng, tablesNeeded } from '../src/seating';
+import { drawSeats, isLegacyRng, isSeatSeed, legacySeatRng, nextRandom, SEAT_RNG_VERSION, seatRng, tablesNeeded } from '../src/seating';
 import type { SeatRngState } from '../src/types';
 
 const SEED = '5eed'.repeat(16);
@@ -91,15 +91,9 @@ describe('the seat-draw generator (rsdp-seats-v1)', () => {
     expect(rng(1)).toBe(0);
   });
 
-  it("derives a new tournament's old-generator state from its seed under its own label, never 0", () => {
-    const expected = createHash('sha256').update(`${SEAT_RNG_VERSION}-legacy|${SEED}`).digest().readUInt32BE(0);
-    expect(legacyRngFor(SEED)).toBe(expected || 1);
-    expect(legacyRngFor(SEED)).not.toBe(0);
-    // It isn't a word of the seat-draw stream.
-    expect(legacyRngFor(SEED)).not.toBe(streamWord(SEED, 0));
-    const seen = new Set(Array.from({ length: 200 }, (_, i) => legacyRngFor(i.toString(16).padStart(64, '0'))));
-    expect(seen.size).toBe(200);
-    expect(seen.has(0)).toBe(false);
+  it('knows a valid old-generator state: a whole number from 1 to 2^32 - 1', () => {
+    for (const ok of [1, 7, 0x9e3779b9, 2 ** 32 - 1]) expect(isLegacyRng(ok)).toBe(true);
+    for (const bad of [0, -1, 1.5, 2 ** 32, NaN, Infinity, '7', null, undefined]) expect(isLegacyRng(bad)).toBe(false);
   });
 
   it('knows a seed when it sees one', () => {

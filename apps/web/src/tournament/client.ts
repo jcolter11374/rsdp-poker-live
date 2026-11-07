@@ -217,6 +217,14 @@ function randomId(bytes = 8): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** A secret state for the old seat-draw generator, apart from the seed (as on the server): never 0. */
+function randomLegacyRng(): number {
+  const buf = new Uint32Array(1);
+  do crypto.getRandomValues(buf);
+  while (buf[0] === 0);
+  return buf[0];
+}
+
 /**
  * Runs @rsdp/tournament in this tab. Tournaments are saved to localStorage so
  * a refresh keeps them, and a 1 s timer calls tick whenever nextWakeAt passes.
@@ -233,8 +241,8 @@ export class LocalTournamentClient implements TournamentClient {
     const store = storage();
     try {
       const saved = JSON.parse(store?.getItem(STORE_KEY) ?? '{}') as Record<string, TournamentState>;
-      // A demo saved before seat draws used a 32-byte seed, with its seats still to draw, gets a fresh one (as on the server).
-      for (const [id, s] of Object.entries(saved)) this.states.set(id, needsSeatSeed(s) ? withSeatSeed(s, randomId(32)) : s);
+      // A demo whose seats are still to draw gets a fresh seed each time it loads (as on the server).
+      for (const [id, s] of Object.entries(saved)) this.states.set(id, needsSeatSeed(s) ? withSeatSeed(s, randomId(32), randomLegacyRng()) : s);
     } catch {
       /* start empty */
     }
@@ -292,7 +300,7 @@ export class LocalTournamentClient implements TournamentClient {
     // The seat-draw seed: 32 bytes from the browser's secure generator.
     const seed = randomId(32);
     try {
-      this.commit(id, createTournament({ id, hostId: this.me.playerId, settings, now: Date.now(), seed }));
+      this.commit(id, createTournament({ id, hostId: this.me.playerId, settings, now: Date.now(), seed, legacyRng: randomLegacyRng() }));
     } catch (e) {
       throw new Error(e instanceof DirectorError ? e.message : String(e));
     }

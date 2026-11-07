@@ -130,11 +130,13 @@ export class DealersChoice {
     return s.choice;
   }
 
-  /** At a table that hasn't dealt yet: where the first hand's button goes (on the first chooser). */
+  /**
+   * At a table that hasn't dealt yet: where the first hand's button goes (on the first chooser). If they aren't dealt
+   * in (sitting out, say), the deal puts it on the next player round who is, as the planner does with any first button.
+   */
   firstButton(candidates: SeatState[]): number | null {
     if (!this.menu || this.s.positions) return null;
-    const c = this.ensure(candidates);
-    return c.firstButton !== null && candidates.some((x) => x.seat === c.firstButton) ? c.firstButton : null;
+    return this.ensure(candidates).firstButton;
   }
 
   /** The next seat round from `seat` (to the left) with somebody in it, or `seat + 1` at an empty table. */
@@ -261,7 +263,7 @@ export class DealersChoice {
       const cur = this.keepable();
       const kept = !!cur && same(g, cur);
       this.host.log(`Nobody can pick the next game, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
-      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
       return 'changed';
     }
     if (c.deadline === null || c.clockFor !== chooser.playerId) {
@@ -280,7 +282,7 @@ export class DealersChoice {
     this.host.log(`${chooser.name} didn't pick in time, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
     this.passChip(chooser.seat);
     // Nobody picked it: the top bar says whose pick a game was only when someone chose it.
-    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
     return 'changed';
   }
 
@@ -372,11 +374,14 @@ export class DealersChoice {
     const cur = this.keepable();
     const kept = !!cur && same(g, cur);
     const bot = this.host.isBot(playerId);
-    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
+    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, byId: chooser.playerId, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
     const waiting = c.deadline !== null;
     c.deadline = null;
     c.clockFor = null;
     c.botAt = null;
+    // At a new table the first hand's button goes to whoever made the first pick, as when their clock started: a
+    // player picking in the first chooser's place while the table is paused or stopped (no clock) gets it too.
+    if (c.firstButton !== null) c.firstButton = chooser.seat;
     this.passChip(chooser.seat);
     const title = gameTitle(g.gameId, g.betting);
     this.host.log(kept ? `${chooser.name} kept ${title} going` : `${chooser.name} picked ${title}`);
@@ -485,7 +490,7 @@ export class DealersChoice {
     const s = this.s;
     const c = s.choice ?? null;
     const now = this.host.now();
-    const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, how: g.how };
+    const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, seat: g.seat, how: g.how };
     // While paused the clock stands still: it shows what resuming now would give. Once the pick is made there is none.
     // (No clock runs while a host's change waits: the change applies before the table can wait for a pick.)
     const deadline = c?.deadline == null ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;
