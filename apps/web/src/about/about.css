@@ -7,8 +7,8 @@
 .about-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
 .about-button { display: inline-block; padding: 10px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-weight: 700; text-decoration: none; }
 .about-button:hover { border-color: #4a525d; background: #2c323a; }
-.about-button.primary { background: var(--go); border-color: var(--go); color: #fff; }
-.about-button.primary:hover { background: var(--go-hover); border-color: var(--go-hover); }
+.about-button.primary { background: var(--go-fill); border-color: var(--go-fill); color: #fff; }
+.about-button.primary:hover { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
 .about-heading { margin: 20px 0 12px; font-size: 1.2rem; }
 .about-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .about-card { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }

@@ -55,7 +55,12 @@ export function TableMenu({ items }: { items: MenuItem[] }) {
             <button
               key={i}
               onClick={() => {
-                if (!it.keepOpen) setOpen(false);
+                // Focus goes back to Menu before the list (and this item) goes, so a dialog the item opens gives it
+                // back there when it closes, not to the page.
+                if (!it.keepOpen) {
+                  button.current?.focus();
+                  setOpen(false);
+                }
                 it.onClick();
               }}
             >

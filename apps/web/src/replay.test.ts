@@ -3,6 +3,7 @@ import { engine, type HandState } from '@rsdp/engine/core';
 import type { BotNote, HandRecordView, SharedHandView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
 import { finalStacks, frameView, isReplayable, playerStats, replayFrames, sharedHandViewer } from './replay';
+import { heldCards } from './runout';
 
 const fmt = (n: number) => String(n);
 /** A finished engine hand as one viewer gets it from the server. */
@@ -33,6 +34,25 @@ function passive(state: HandState, draw: (seat: number) => number[] = () => []) 
 }
 
 describe('replayFrames', () => {
+  it("names each stud street once, before that street's cards, in the captions", () => {
+    const s = start({ game: 'stud', betting: 'fixed-limit', stacks: [500, 500, 500], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 4, bigBet: 8 } });
+    passive(s);
+    const frames = replayFrames(record(s, 0), 'p0', fmt);
+    const captions = frames.map((f) => f.caption);
+    ['Fourth Street', 'Fifth Street', 'Sixth Street', 'Seventh Street'].forEach((street, i) => {
+      const at = frames.filter((f) => f.caption.includes(street));
+      expect(at).toHaveLength(1);
+      // The street's name, then who gets what.
+      expect(at[0].caption).toMatch(new RegExp(`^— ${street} — · .*(gets|dealt)`));
+      // That step is the street's start: the last street's bets (third street's bring-in and calls) are in the pot.
+      expect(at[0].street).toBe(i + 1);
+      expect([...at[0].seats.values()].map((x) => x.bet)).toEqual([0, 0, 0]);
+      expect(at[0].pot).toBeGreaterThanOrEqual(i === 0 ? 9 : 0);
+    });
+    // No step repeats the one before it.
+    expect(captions.filter((c, i) => i > 0 && c && c === captions[i - 1])).toEqual([]);
+  });
+
   it('ends on the engine stacks and an empty pot', () => {
     const s = start({ stacks: [100, 100, 100] });
     passive(s);
@@ -176,6 +196,20 @@ describe('frameView bots', () => {
     const view = frameView('Practice', 2, h, replayFrames(h, null, fmt).at(-1)!, null);
     expect(view.seats[0]!.bot).toBeUndefined();
     expect(view.seats[1]!.bot).toEqual({ ownerId: '', ownerName: 'Ann', look: 3 });
+  });
+});
+
+describe('frameView in an all-in runout (#412)', () => {
+  it('turns over only the very last card, from the frame it lands on', () => {
+    const s = start({ stacks: [100, 100] });
+    engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.maxTo });
+    engine.act(s, s.toAct!, { type: 'call' });
+    const h = record(s, 0);
+    const frames = replayFrames(h, 'p0', fmt);
+    // The flop and the turn are each the last card out for a frame or more: they were dealt all the same.
+    const lands = frames.findIndex((f) => f.boards[0][0].length === 5);
+    expect(frames.filter((f) => f.boards[0][0].length === 3)).not.toHaveLength(0);
+    expect(frames.map((f) => heldCards(frameView('', 2, h, f, 'p0').hand))).toEqual(frames.map((_, i) => (i >= lands ? [s.runs[0][0][4]] : [])));
   });
 });
 
