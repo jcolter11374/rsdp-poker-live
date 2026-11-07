@@ -103,6 +103,21 @@ describe('tournament seat-draw seeds on the server', () => {
     expect(env.errors).toEqual([]);
   });
 
+  it('keeps the seed a new tournament was saved with, with no second save, until it is loaded again', async () => {
+    const env = setup();
+    let saves = 0;
+    const save = env.store.save.bind(env.store);
+    env.store.save = (...args: Parameters<typeof save>) => (saves++, save(...args));
+    const id = await env.manager.create('host', defaultSettings({ name: 'New' }));
+    const stored = (await env.store.load(id))!.state;
+    const live = (await env.manager.peek(id))!;
+    expect(live.seatRng).toEqual(stored.seatRng);
+    expect(live.rng).toBe(stored.rng);
+    env.clock.advance(1000);
+    expect(saves).toBe(0);
+    expect(env.errors).toEqual([]);
+  });
+
   it('gives a tournament a fresh seed and old-generator state each time it loads while its seats are still to draw', async () => {
     // A server rolled back to before rsdp-seats-v1 sends seatRng to browsers, so a seed saved while it ran may have
     // been seen. The next load replaces it; nothing has been drawn from it yet.

@@ -221,7 +221,7 @@ export class TournamentManager {
       const state = this.newState(newTournamentId(), hostId, settings);
       // A taken id is never saved over: another one is drawn.
       if (!(await this.deps.store.create(state))) continue;
-      await this.adopt(state, null);
+      await this.adopt(state, null, true);
       return state.id;
     }
     throw new Error('no free tournament id');
@@ -529,15 +529,19 @@ export class TournamentManager {
     }, wait);
   }
 
-  /** Takes a tournament into memory: its tables come back from their snapshots. */
-  private async adopt(state: TournamentState, nextId: string | null): Promise<Live> {
+  /**
+   * Takes a tournament into memory: its tables come back from their snapshots. `made` is true when this server
+   * has just made the state, so its seat seed has never left the server.
+   */
+  private async adopt(state: TournamentState, nextId: string | null, made = false): Promise<Live> {
     // Every snapshot loads before anything is mounted, so a failed load leaves nothing half-built to be found later.
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    // Seats still to draw: a fresh seed every time it loads (see needsSeatSeed). That upgrades one saved before
-    // rsdp-seats-v1, and retires a seed that a server from before then sent to browsers after a rollback.
-    const reseeded = needsSeatSeed(state);
+    // Seats still to draw: a fresh seed every time it loads from storage (see needsSeatSeed). That upgrades one
+    // saved before rsdp-seats-v1, and retires a seed that a server from before then sent to browsers after a
+    // rollback. One this server has just made keeps the seed it was made with.
+    const reseeded = !made && needsSeatSeed(state);
     if (reseeded) state = withSeatSeed(state, this.newSeatSeed(), this.newLegacyRng());
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
@@ -941,7 +945,7 @@ export class TournamentManager {
     // A series keeps a rebuy or add-on count saved before the per-player cap (#281).
     const state = { ...this.newState(id, live.state.hostId, settings, live.state.settings), spawnedFrom: live.state.id };
     // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
-    if (await this.deps.store.create(state)) await this.adopt(state, null);
+    if (await this.deps.store.create(state)) await this.adopt(state, null, true);
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);
     live.nextId = id;
     if (live.state.nextError !== undefined) {
