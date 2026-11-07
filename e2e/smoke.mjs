@@ -5,7 +5,7 @@
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
 //
-// Screenshots go to e2e/out/. Any console error fails the run.
+// Screenshots go to e2e/out/, and a failed step adds one of every open page. Any console error fails the run.
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -24,6 +24,8 @@ const SERVER = new URL(BASE).host;
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
+/** Every page the run opens, so a failed step can screenshot them all. */
+const pages = [];
 
 const browser = await chromium.launch();
 
@@ -44,6 +46,7 @@ async function openTab(page, label) {
 }
 
 function watch(p, label) {
+  pages.push({ p, label });
   p.setDefaultTimeout(15_000);
   p.on('console', (m) => m.type() === 'error' && errors.push(`${label}: ${m.text()}`));
   p.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
@@ -51,14 +54,20 @@ function watch(p, label) {
   return p;
 }
 
-/** Checks or calls for whoever is to act until the hand is over. */
-async function playOut(players, maxSteps = 120) {
-  for (let i = 0; i < maxSteps; i++) {
+/**
+ * Checks or calls for whoever is to act until the hand is over, for up to `seconds`. When everyone is all in it runs
+ * the board once: the table does that anyway once nobody has answered for 12 seconds, so the hand ends the same way.
+ * A hand here takes up to about 20 s. The limit stays under one turn that runs out (30 s, then the 30 s time bank),
+ * so a move that never reaches the table fails here instead of passing when the table acts for the player.
+ */
+async function playOut(players, seconds = 45) {
+  const until = Date.now() + seconds * 1000;
+  while (Date.now() < until) {
     let acted = false;
     for (const p of players) {
       const buttons = p.locator('.action-bar.my-turn .buttons button');
       const texts = await buttons.allInnerTexts();
-      const pick = texts.findIndex((t) => /^(Check|Call|Stand pat|Bring in)/.test(t));
+      const pick = texts.findIndex((t) => /^(Check|Call|Stand pat|Bring in|Run it once)/.test(t));
       if (pick >= 0) {
         await buttons.nth(pick).click().catch(() => {});
         acted = true;
@@ -68,7 +77,8 @@ async function playOut(players, maxSteps = 120) {
     if (await players[0].locator('.pot.result').count()) return;
     if (!acted) await players[0].waitForTimeout(250);
   }
-  throw new Error('the hand did not finish');
+  const bars = await Promise.all(players.map((p) => p.locator('.action-bar').first().innerText({ timeout: 1000 }).catch(() => 'none')));
+  throw new Error(`the hand did not finish in ${seconds} s; action bar: ${bars.map((b) => b.replace(/\s+/g, ' ').trim()).join(' / ')}`);
 }
 
 /**
@@ -532,6 +542,10 @@ try {
   console.error('smoke test FAILED:', e.message);
   if (errors.length) console.error(errors.join('\n'));
   process.exitCode = 1;
+  // What every open page showed when it failed, uploaded with the other screenshots.
+  for (const [i, { p, label }] of pages.entries()) {
+    if (!p.isClosed()) await p.screenshot({ path: path.join(OUT, `failed-${i + 1}-${label}.png`) }).catch(() => {});
+  }
 } finally {
   await browser.close();
 }

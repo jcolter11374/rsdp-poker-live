@@ -20,7 +20,7 @@ Live at https://rsdp-poker-live.fly.dev. Play money only.
 
 ## Quick start
 
-You need Node.js 22.
+You need Node.js 22.12 or later.
 
 ```bash
 npm install

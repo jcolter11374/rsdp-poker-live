@@ -5,7 +5,9 @@ import { evaluate, freshDeck, shuffle } from '../src';
 
 /** Cross-checks our evaluator against an independent open-source one on random deals. */
 describe('evaluator vs pokersolver', () => {
-  it('agrees on who wins 20,000 random heads-up showdowns', () => {
+  // 1.6-2.9 s on CI, close to vitest's 5 s default for one test, which vitest 2 never enforced on a test that doesn't
+  // wait. A slow CI machine shouldn't fail it, so it gets the room it always had in practice.
+  it('agrees on who wins 20,000 random heads-up showdowns', { timeout: 30_000 }, () => {
     let seed = 7;
     const rng = (n: number) => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
