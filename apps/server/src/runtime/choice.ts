@@ -263,7 +263,7 @@ export class DealersChoice {
       const cur = this.keepable();
       const kept = !!cur && same(g, cur);
       this.host.log(`Nobody can pick the next game, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
-      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
       return 'changed';
     }
     if (c.deadline === null || c.clockFor !== chooser.playerId) {
@@ -282,7 +282,7 @@ export class DealersChoice {
     this.host.log(`${chooser.name} didn't pick in time, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
     this.passChip(chooser.seat);
     // Nobody picked it: the top bar says whose pick a game was only when someone chose it.
-    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
     return 'changed';
   }
 
@@ -374,7 +374,7 @@ export class DealersChoice {
     const cur = this.keepable();
     const kept = !!cur && same(g, cur);
     const bot = this.host.isBot(playerId);
-    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
+    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, byId: chooser.playerId, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
     const waiting = c.deadline !== null;
     c.deadline = null;
     c.clockFor = null;

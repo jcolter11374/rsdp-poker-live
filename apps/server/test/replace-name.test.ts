@@ -177,6 +177,15 @@ describe('finding a name in a line of text', () => {
     expect(r.table(shared, { there: true, keep: new Set(['Pat', 'Pat 2']) }).names).toBe(1);
     expect(shared.choice.current).toEqual(pick('Pat', 1));
     expect(shared.choice.next).toEqual(botPick);
+    // Picks saved since 2026.11.07.4 keep the chooser's id, which decides wherever anyone sits now: the player's own
+    // pick goes though another Pat has their seat, and the other Pat's stays though the player now sits in theirs.
+    const byId = (by: string, seat: number, id: string) => ({ ...pick(by, seat), byId: id });
+    const moved = { id: 't5', seats: [{ playerId: 'p1', name: 'Pat' }, { playerId: 'p3', name: 'Pat' }], ledger: {}, choice: choiceOf(byId('Pat', 1, 'p1'), byId('Pat', 0, 'p3')) };
+    expect(r.table(moved, { there: true, keep: new Set(['Pat']) }).names).toBe(2);
+    expect(moved.choice.current).toEqual(byId(DELETED_NAME, 1, 'p1'));
+    expect(moved.choice.next).toEqual(byId('Pat', 0, 'p3'));
+    // A second run finds nothing left.
+    expect(r.table(moved, { there: true, keep: new Set(['Pat']) }).names).toBe(0);
   });
 });
 

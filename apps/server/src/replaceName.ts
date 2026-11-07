@@ -241,10 +241,12 @@ export class NameReplacer {
   }
 
   /**
-   * A Dealer's choice pick's chooser (ChoicePick.by in runtime/types.ts), matched by the names the player went by, as
-   * a bot's owner is. A practice bot's pick is never theirs, nor one whose seat holds someone else of that name.
+   * A Dealer's choice pick's chooser (ChoicePick.by in runtime/types.ts): by the chooser's id beside it. A pick saved
+   * before the id was kept (2026.11.07.4) is matched by the names the player went by, as a bot's owner is, except a
+   * practice bot's pick and one whose seat holds someone else of that name.
    */
   private pickBy(pick: Obj, seats: unknown[], place: Place): number {
+    if (typeof pick.byId === 'string') return pick.byId === this.playerId ? put(pick, 'by') : 0;
     if (pick.how === 'bot') return 0;
     const at = typeof pick.seat === 'number' ? seats[pick.seat] : undefined;
     if (isObj(at) && typeof at.playerId === 'string' && at.playerId !== this.playerId && at.name === pick.by) return 0;
