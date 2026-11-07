@@ -29,6 +29,7 @@ _Hands left in each game_
 ### Fixed and changed
 
 - Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
+- Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you.
 
 ## [2026.11.07.2] - 2026-11-07
 
