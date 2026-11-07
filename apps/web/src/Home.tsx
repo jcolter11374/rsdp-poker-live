@@ -111,7 +111,7 @@ export function Home({ onCreated }: { onCreated: (tableId: string) => void }) {
       <main>
         <section className="home-hero">
           <h1 className="logo">
-            RSDP Poker <span>Live!</span>
+            RSDP <span>Live!</span>
           </h1>
           <p className="home-lede">Start a table, send the link, and play with friends. No sign-up needed.</p>
           <p className="home-about">

@@ -1,4 +1,4 @@
-# RSDP Poker Live! architecture
+# RSDP Live! architecture
 
 This is the contract every workstream builds on. Change it only with a note to the other workstreams (see "Changing contracts").
 

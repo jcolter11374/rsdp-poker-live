@@ -6,7 +6,7 @@ import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
-import { usePortrait, useWide } from './layout';
+import { useMinWidth, usePortrait, useWide } from './layout';
 import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
@@ -36,6 +36,8 @@ import { TableAnnouncer } from './components/table/Announcer';
 import { useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
+import { TournamentGameLine } from './tournament/TableGame';
+import { CashGameLine } from './components/table/GameLine';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
@@ -169,7 +171,13 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
+  // Below these the top bar's count of hands left, or time to the next game, takes its short wording, and then the
+  // game its short name, so neither is cut (#373).
+  const narrowBar = !useMinWidth(1280);
+  const tightBar = !useMinWidth(1100);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
+  // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
+  const [noticeRoom, setNoticeRoom] = useState(true);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
@@ -350,7 +358,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   useLayoutEffect(() => {
     const page = pageRef.current;
     const bar = page?.querySelector<HTMLElement>('.topbar');
-    if (!wide || !page || !bar) return;
+    // Every layout: "Connection lost" floats just under the bar too (#388).
+    if (!page || !bar) return;
     const measure = () => page.style.setProperty('--topbar-h', `${bar.offsetHeight}px`);
     measure();
     const ro = new ResizeObserver(measure);
@@ -363,7 +372,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     return (
       <main className="home">
         <h1 className="logo">
-          RSDP Poker <span>Live!</span>
+          RSDP <span>Live!</span>
         </h1>
         <p className="error">{error === 'deleted' ? 'This table was deleted.' : error === 'table not found' ? 'This table has closed or the link is wrong.' : error}</p>
         {tournament && (
@@ -521,6 +530,92 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The panel starts open for a host whose game hasn't started, so Start game is in view; after that it's the player's pick.
   const drawer = wide && (drawerPick ?? (!!hostPanel && !view.started));
   const openDrawer = () => setDrawer(true);
+  // Before a cash game starts (or after the host stops it), the middle of the table says what happens next. It used to be
+  // a banner above the table, which took height from the felt: when it went away at the start, the felt grew and every
+  // seat slid to a new spot while the first cards were dealt (#383). Before the first hand the middle is empty; after a
+  // stop the note goes under the last hand's result, where "Next hand in" would be (see .board-notice.after-hand).
+  const canRun = view.powers.includes('run');
+  const startNotice =
+    cash && !view.started
+      ? {
+          text:
+            view.history.length > 0
+              ? canRun
+                ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
+                : 'The game is stopped. Waiting for the host to start it again.'
+              : canRun
+                ? portrait
+                  ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
+                  : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
+                : 'Waiting for the host to start the game.',
+          onClick: wide && canRun ? openDrawer : undefined,
+        }
+      : null;
+  // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
+  // bottom seat), the middle is full, and on a small phone table the note doesn't fit there (Table's onNoticeRoom): then
+  // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
+  // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
+  const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
+  // Notes about you, the host's waiting requests and the host stopping the game go under the table with your buttons
+  // rather than above the felt, where they took its height: every seat moved when one came or went, often mid-hand
+  // (#388). The area under the table holds its height (Dock), so a note that fits in the room it already holds moves
+  // nothing. One note fits at a no-limit table for a seated player; a fixed-limit table on a laptop (whose room is kept
+  // for a shorter bar), several notes at once, or someone watching without a seat can still need more, once: the area
+  // then keeps that height. On your turn they give way to the betting buttons, which that room is kept for (except where
+  // the window is too narrow for the side column: see .dock-notes in styles.css); the host still sees the count in
+  // Host controls, on Host & log or on the menu.
+  const yourTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+  const dockNotes = [
+    noticeUnder && view.hand && (
+      <div className="banner" key="stopped">
+        {startNotice!.text}
+      </div>
+    ),
+    view.stopAfterHand && (
+      <div className="banner" key="stop" role="status">
+        The host is stopping the game after this hand.
+      </div>
+    ),
+    pending > 0 && (
+      <div className={`banner attention${portrait || wide ? ' clickable' : ''}`} key="requests" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
+        {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
+      </div>
+    ),
+    ...myBotRequests.map((r) => (
+      <div className="banner" key={r.id}>
+        Your bot {r.name} is waiting for the host to let it sit…{' '}
+        <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
+      </div>
+    )),
+    rebuyRequest && (
+      <div className="banner" key="rebuy">
+        Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…
+      </div>
+    ),
+    mySeat?.sittingOut && (
+      <div className="banner" key="away">
+        {mySeat.sitOutReason === 'busted'
+          ? "You're out of chips."
+          : mySeat.sitOutReason === 'timeouts'
+            ? 'You were marked away after running out of time.'
+            : mySeat.sitOutReason === 'host'
+              ? 'The host sat you out.'
+              : "You're sitting out."}
+        {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
+        {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
+          <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
+            Add chips
+          </button>
+        ) : canSitIn ? (
+          <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
+            I'm back
+          </button>
+        ) : (
+          mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
+        )}
+      </div>
+    ),
+  ].filter(Boolean);
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -532,27 +627,37 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           ) : (
             <>
-              RSDP Poker <span>Live!</span>
+              RSDP <span>Live!</span>
             </>
           )}
         </a>
-        <span className="stakes">
-          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
-          {/* The page's heading for screen readers, which jump between headings; it looks as it always has. */}
-          <b role="heading" aria-level={1}>
-            {view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}
-          </b>
-          {game && (
-            <>
-              {portrait ? <br /> : ' · '}
-              {game.label} {game.stakes}
-            </>
-          )}
-          {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
-          {levelText && <> · {levelText}</>}
-          {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-          {view.paused && <b className="paused"> · Paused</b>}
-        </span>
+        {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
+            At a tournament the strip under the bar names the event, so the bar just says which table. The table's name
+            is the page's heading for screen readers, which jump between headings; it looks as it always has. */}
+        {view.tournamentId || view.rotation ? (
+          <h1 className="sr-only">{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</h1>
+        ) : null}
+        {view.tournamentId ? (
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
+        ) : view.rotation ? (
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
+        ) : (
+          <span className="stakes">
+            <b role="heading" aria-level={1}>
+              {view.name}
+            </b>
+            {game && (
+              <>
+                {portrait ? <br /> : ' · '}
+                {game.label} {game.stakes}
+              </>
+            )}
+            {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
+            {levelText && <> · {levelText}</>}
+            {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
+            {view.paused && <b className="paused"> · Paused</b>}
+          </span>
+        )}
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
             {portrait ? 'Pick' : 'Pick next game'}
@@ -651,67 +756,14 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {cash && !view.started && (
-            <div className="banner" onClick={wide && view.powers.includes('run') ? openDrawer : undefined}>
-              {view.history.length > 0
-                ? view.powers.includes('run')
-                  ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
-                  : 'The game is stopped. Waiting for the host to start it again.'
-                : view.powers.includes('run')
-                  ? portrait
-                    ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
-                    : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
-                  : 'Waiting for the host to start the game.'}
-            </div>
-          )}
-          {view.stopAfterHand && (
-            <div className="banner" role="status">
-              The host is stopping the game after this hand.
-            </div>
-          )}
-          {pending > 0 && (
-            <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
-              {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
-            </div>
-          )}
           {seatRequest && (
             <div className="banner">
               Waiting for the host to let you sit…{' '}
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
-          {myBotRequests.map((r) => (
-            <div className="banner" key={r.id}>
-              Your bot {r.name} is waiting for the host to let it sit…{' '}
-              <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
-            </div>
-          ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
           {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
-          {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
-          {mySeat?.sittingOut && (
-            <div className="banner">
-              {mySeat.sitOutReason === 'busted'
-                ? "You're out of chips."
-                : mySeat.sitOutReason === 'timeouts'
-                  ? 'You were marked away after running out of time.'
-                  : mySeat.sitOutReason === 'host'
-                    ? 'The host sat you out.'
-                    : "You're sitting out."}
-              {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
-              {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
-                <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
-                  Add chips
-                </button>
-              ) : canSitIn ? (
-                <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
-                  I'm back
-                </button>
-              ) : (
-                mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
-              )}
-            </div>
-          )}
           {seatErrorLine}
           <Table
             view={view}
@@ -724,6 +776,9 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
+            notice={noticeUnder && view.hand ? null : startNotice}
+            noticeHidden={noticeUnder}
+            onNoticeRoom={setNoticeRoom}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
               stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
@@ -759,6 +814,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
+            {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
             <ActionBar
               view={view}
               fmt={fmt}
@@ -771,6 +827,7 @@ export function TablePage({ tableId }: { tableId: string }) {
                 preQueued.current = q;
               }}
               onRules={() => setDialog({ kind: 'rules' })}
+              note={noticeUnder && !view.hand ? startNotice!.text : null}
             />
             <div className="dock-row">
               <HandExtras view={view} />

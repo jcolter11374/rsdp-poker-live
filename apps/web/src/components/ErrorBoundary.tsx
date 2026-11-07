@@ -37,7 +37,7 @@ function CrashPage() {
   return (
     <main className="home">
       <h1 className="logo">
-        RSDP Poker <span>Live!</span>
+        RSDP <span>Live!</span>
       </h1>
       <p>Something broke on this page. Reloading it usually fixes it.</p>
       <button className="primary big" onClick={() => location.reload()}>

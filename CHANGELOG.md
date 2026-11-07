@@ -1,6 +1,6 @@
 # Changelog
 
-Every release of RSDP Poker Live!, newest first.
+Every release of RSDP Live!, newest first.
 
 <!-- Made by `npm run changelog` from apps/web/src/roadmap/changelog.json and whatsnew.json. Edit those, not this file. -->
 This file is made from [`changelog.json`](apps/web/src/roadmap/changelog.json) and
@@ -18,23 +18,48 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.07.2] - 2026-11-07
+## [2026.11.07.4] - 2026-11-07
 
-_Dealer's choice, lobby chat moderation and a recap of the night_
+_Lobby chat moderation and a recap of the night_
 
 ### New
 
-- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 - **Moderate a tournament's lobby chat.** Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. A muted player, or everyone while the chat is off, is told why they can't send. Mute and Delete ask first, and on a phone the buttons sit under each message, big enough to tap. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too.
 - **Copy a recap of the night.** At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself.
 
 ### Fixed and changed
 
-- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over.
 - Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables as soon as the hand's result shows, instead of sometimes staying on the old table until they reload.
 - The Hands and Stats tabs no longer show a hand's result while its all-in runout is still being dealt on the table, if you open them for the first time just then.
 - If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
 - The Checking John page now shows each time John takes a name out of old records, without the name itself.
+
+## [2026.11.07.3] - 2026-11-07
+
+_Hands left in each game_
+
+### New
+
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
+- **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name is new: the site looks the same and the web address hasn't changed. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
+
+### Fixed and changed
+
+- Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
+
+## [2026.11.07.2] - 2026-11-07
+
+_Dealer's choice_
+
+### New
+
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit. As soon as they pick, the tag moves one seat to the left, to whoever picks next. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
+
+### Fixed and changed
+
+- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes.
 - Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
 
 ## [2026.11.07] - 2026-11-07
@@ -691,6 +716,8 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
+[2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5

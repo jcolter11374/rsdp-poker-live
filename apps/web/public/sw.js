@@ -10,8 +10,8 @@
  * carries only the alert's words, the page to open and a tag.
  */
 const OFFLINE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RSDP Poker Live!</title><body style="margin:0;background:#10161d;color:#e8eef4;font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center">
-<div><h1 style="color:#f2b84b">No connection</h1><p>RSDP Poker Live! needs the internet to deal.</p><button onclick="location.reload()" style="font:inherit;padding:10px 18px;border-radius:8px;border:0;background:#c0392b;color:#fff">Try again</button></div>`;
+<title>RSDP Live!</title><body style="margin:0;background:#10161d;color:#e8eef4;font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center">
+<div><h1 style="color:#f2b84b">No connection</h1><p>RSDP Live! needs the internet to deal.</p><button onclick="location.reload()" style="font:inherit;padding:10px 18px;border-radius:8px;border:0;background:#c0392b;color:#fff">Try again</button></div>`;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));

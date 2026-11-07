@@ -34,7 +34,7 @@ import {
 } from '@rsdp/engine/settings';
 import { bombPotDue, bombPotSchema, bounty72Schema, nitClears, nitSchema, sevenDeuceWinners } from '@rsdp/engine/modifiers';
 import { bringInFor, gameTitle, skipsMixedGameAnte, studAnteForBigBlindAnte } from '@rsdp/engine/variants';
-import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip, type TurnKey } from '@rsdp/engine/wire';
+import { BOT_LEVELS, BOT_LOOKS, type BotLevel, type BotNote, type CoachTip, type RotationView, type TurnKey } from '@rsdp/engine/wire';
 import {
   RUNTIME_VERSION,
   systemClock,
@@ -766,6 +766,17 @@ export class TableRuntime {
     if (row) row.cashOut += stack;
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
+    // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
+    // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). At
+    // a new table the first hand's button goes with it.
+    const c = this.state.choice;
+    if (c?.chip === seat.seat) {
+      const next = this.seatedFromChip();
+      if (next) {
+        if (c.firstButton === c.chip) c.firstButton = next.seat;
+        c.chip = next.seat;
+      }
+    }
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
     this.log(`${seat.name} left the table with ${this.money(stack)}`);
@@ -1395,14 +1406,10 @@ export class TableRuntime {
       // reaches them), so it follows that player: otherwise a mover sitting down there would end the orbit early.
       // If the button is on an empty seat in between, it has just gone past the start, so the orbit counts from there.
       const r = s.rotation;
-      // Dealer's choice: an empty seat holding the Pick chip stands for the next player round from it (the chooser
-      // is the first player to its left who can pick), so the chip goes to that player and moves with them.
+      // Dealer's choice: the Pick chip goes with its player, as when the host moves them (D33). An empty seat holding
+      // it stands for the next player round from it, who would pick anyway.
       const c = s.choice;
-      if (c && !s.seats[c.chip]) {
-        const n = s.seats.length;
-        const to = Array.from({ length: n }, (_, i) => (c.chip + i) % n).find((i) => s.seats[i]);
-        if (to !== undefined) c.chip = to;
-      }
+      const chip = this.chipBefore();
       if (r.anchor !== null && !s.seats[r.anchor]) {
         const n = s.seats.length;
         const round = Array.from({ length: n }, (_, i) => (r.anchor! + i) % n);
@@ -1415,6 +1422,7 @@ export class TableRuntime {
       // Nobody should be left in a dropped seat, but if someone is, they cash out rather than vanish with their chips.
       for (const seat of s.seats.slice(seats)) if (seat) this.removeSeat(seat);
       s.seats = Array.from({ length: seats }, (_, i) => s.seats[i] ?? null);
+      this.chipAfter(chip);
       // The blinds move on from where they were, as after any hand; they start afresh only if one of them sat in a
       // seat that is gone (redrawing them anyway could give the last big blind the big blind again).
       const p = s.positions;
@@ -1438,6 +1446,11 @@ export class TableRuntime {
     }
     if (JSON.stringify(before.game.rotation) !== JSON.stringify(s.settings.game.rotation)) {
       s.rotation = { step: 0, hands: 0, orbits: 0, anchor: null };
+    }
+    // Dealer's choice turned off: a pick made for the next game isn't dealt (#423), unless the game dealt now is it.
+    if (choiceMenu(before) && !choiceMenu(s.settings)) {
+      const rot = s.settings.game.rotation;
+      this.choice.ended(rot.enabled && rot.steps.length ? rot.steps[s.rotation.step % rot.steps.length] : s.settings.game);
     }
   }
 
@@ -1530,6 +1543,38 @@ export class TableRuntime {
     this.sync();
   }
 
+  /** Dealer's choice, before a host seat change: who the Pick chip sits with, and who the PICK tag is on (D33). */
+  private chipBefore(): { holder: SeatState | null; tag: SeatState | null } | null {
+    return this.state.choice ? { holder: this.seatedFromChip(), tag: this.choice.chooser() } : null;
+  }
+
+  /**
+   * After it: the chip stays with its holder in their new seat. If that would put the PICK tag on someone else (its
+   * holder is sitting out or away, so whoever picks in their place depends on the seating), it goes for good to
+   * whoever had the tag. Either way no seat change gives the next pick to someone else.
+   */
+  private chipAfter(before: { holder: SeatState | null; tag: SeatState | null } | null) {
+    const c = this.state.choice;
+    if (!c || !before) return;
+    // Still at the table (making it smaller cashes out anyone it can't seat, and leaving passes the chip on).
+    const here = (x: SeatState | null) => !!x && this.state.seats[x.seat] === x;
+    if (here(before.holder)) c.chip = before.holder!.seat;
+    if (here(before.tag) && this.choice.chooser()?.playerId !== before.tag!.playerId) c.chip = before.tag!.seat;
+  }
+
+  /** The first player round from the Pick chip's seat (to the left), the seat itself included. */
+  private seatedFromChip(): SeatState | null {
+    const s = this.state;
+    const c = s.choice;
+    if (!c) return null;
+    const n = s.seats.length;
+    for (let i = 0; i < n; i++) {
+      const seat = s.seats[(c.chip + i) % n];
+      if (seat) return seat;
+    }
+    return null;
+  }
+
   /**
    * Cash tables, between hands: deals everyone seated a random seat among the
    * seats already taken. The button is drawn again and missed blinds are
@@ -1542,6 +1587,9 @@ export class TableRuntime {
     const s = this.state;
     const taken = s.seats.flatMap((x, i) => (x ? [i] : []));
     if (taken.length < 2) throw new ActionError('need at least two players to shuffle');
+    // Dealer's choice: the Pick chip stays with the player who holds it, so a shuffle never changes who picks next (D33).
+    const chip = this.chipBefore();
+    const buttonHolder = s.choice?.firstButton != null ? s.seats[s.choice.firstButton] : null;
     const players = shuffle(taken.map((i) => s.seats[i]!), this.rng);
     taken.forEach((seatNo, i) => {
       const seat = players[i];
@@ -1554,6 +1602,8 @@ export class TableRuntime {
     for (const r of s.requests) if (r.kind === 'rebuy') r.seat = this.seatOf(r.playerId)?.seat ?? r.seat;
     s.positions = null;
     s.rotation.anchor = null;
+    this.chipAfter(chip);
+    if (s.choice && buttonHolder) s.choice.firstButton = buttonHolder.seat;
     this.log('The host shuffled the seats');
     this.sync();
   }
@@ -1571,6 +1621,9 @@ export class TableRuntime {
     this.checkSeatFree(playerId, to);
     if (this.inHand(playerId)) throw new ActionError('move them once this hand is over');
     const from = seat.seat;
+    // Dealer's choice: the Pick chip stays with the player who holds it, wherever the host moves them or anyone else (D33).
+    const c = this.state.choice;
+    const chip = this.chipBefore();
     this.state.seats[from] = null;
     seat.seat = to;
     // A new place at the table: like someone sitting down, they post or wait for the big blind.
@@ -1578,6 +1631,8 @@ export class TableRuntime {
     seat.missedBigBlind = false;
     seat.missedSmallBlind = false;
     this.state.seats[to] = seat;
+    this.chipAfter(chip);
+    if (c?.firstButton === from) c.firstButton = to;
     for (const r of this.state.requests) if (r.playerId === playerId) r.seat = to;
     this.log(`The host moved ${seat.name} from seat ${from + 1} to seat ${to + 1}`);
     this.sync();
@@ -2818,6 +2873,115 @@ export class TableRuntime {
       bombPot: null,
     });
     return nextRotation(rot, r, s.positions.button, plan.button, s.seats.length).state.step;
+  }
+
+  /**
+   * Mixed games: the game the rotation is on, how many more hands of it there are, and the game after it, for the
+   * table view (#373). Later steps that play the same game count as more of it. A change to the rotation made during
+   * a hand starts it afresh at the next deal, so that is the one counted. Null at a tournament, without a rotation, or
+   * when every step plays the same game. Changes nothing.
+   */
+  rotationProgress(): RotationView | null {
+    const s = this.state;
+    if (this.isTournament) return null;
+    const pending = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings.game.rotation : null;
+    const fresh = !!pending && JSON.stringify(pending) !== JSON.stringify(s.settings.game.rotation);
+    const rot = fresh ? pending! : s.settings.game.rotation;
+    const r: RotationState = fresh ? { step: 0, hands: 0, orbits: 0, anchor: null } : s.rotation;
+    if (!rot.enabled || !rot.steps.length) return null;
+    const at = r.step % rot.steps.length;
+    const step = rot.steps[at];
+    const stepAt = (i: number) => rot.steps[(at + i) % rot.steps.length];
+    let ahead = 1;
+    while (ahead < rot.steps.length && stepAt(ahead).gameId === step.gameId && stepAt(ahead).betting === step.betting) ahead++;
+    if (ahead >= rot.steps.length) return null;
+    const next = stepAt(ahead);
+    return {
+      gameId: step.gameId,
+      betting: step.betting,
+      gameName: gameTitle(step.gameId, step.betting),
+      dealt: r.hands,
+      handsLeft: this.handsLeftInGame(rot, { ...r, step: at }, ahead),
+      next: { gameId: next.gameId, betting: next.betting, gameName: gameTitle(next.gameId, next.betting) },
+    };
+  }
+
+  /**
+   * Hands still to deal before the rotation moves to another game: the rest of step `r.step` and of the `steps - 1`
+   * steps after it, which play the same game. A step counted in hands has its count. Orbits are played forward with
+   * the forced-bet planner from the button as it stands, with the players who would be dealt in now, the way the deal
+   * moves it. A seat that has just emptied can make the button stand on it or skip a seat, but only in the first two
+   * hands; once those are past, each orbit still to come is a hand for each player. Nobody coming or going is assumed.
+   * Null with fewer than two players to deal to.
+   */
+  private handsLeftInGame(rot: RotationSettings, r: RotationState, steps: number): number | null {
+    const s = this.state;
+    const stepAt = (i: number) => rot.steps[(r.step + i) % rot.steps.length];
+    const players = this.dealCandidates().length;
+    if (players < 2) return null;
+    /** The hands of steps `from` to the last of this game, played from their start. */
+    const rest = (from: number) => {
+      let n = 0;
+      for (let i = from; i < steps; i++) n += stepAt(i).unit === 'hands' ? stepAt(i).length : stepAt(i).length * players;
+      return n;
+    };
+    /** The hands of step `i` still to deal, its progress being `st`, and whole orbits left. */
+    const left = (st: RotationState, i: number) => Math.max(0, stepAt(i).length - (stepAt(i).unit === 'hands' ? st.hands : st.orbits)) * (stepAt(i).unit === 'hands' ? 1 : players);
+    /** Steps `from` on are all counted in hands, so the button doesn't matter. */
+    const handsOnly = (from: number) => Array.from({ length: steps - from }, (_, k) => stepAt(from + k)).every((x) => x.unit === 'hands');
+    if (handsOnly(0)) return left(r, 0) + rest(1);
+    // The orbit starts with the next hand (a new table, a reshuffle, or a smaller table): whole orbits are left.
+    if (!s.positions || r.anchor === null) return left(r, 0) + rest(1);
+    const seats = this.plannerSeatsOf(this.dealCandidates());
+    // As the deal does: when nobody has played yet, everyone is dealt in free.
+    if (seats.filter((x) => !x.isNew).length < 2) for (const x of seats) x.isNew = false;
+    let positions = { ...s.positions };
+    let state = { ...r };
+    let i = 0;
+    const planNext = () =>
+      planForcedBets({
+        game: variants.get(stepAt(i).gameId).spec,
+        stakes: s.settings.stakes,
+        maxSeats: s.seats.length,
+        seats,
+        lastBigBlindSeat: positions.bigBlind,
+        lastSmallBlindSeat: positions.smallBlind,
+        lastButton: positions.button,
+        mode: 'cash',
+        straddles: 'off',
+        bombPot: null,
+      });
+    // Enough for the first two hands, then an orbit that may pass every seat of the table, twice over.
+    for (let count = 0; count < 3 * (s.seats.length + 2); count++) {
+      let plan = planNext();
+      // As the deal does: a hand the usual rules would deal to fewer than two is dealt to everyone, free.
+      if (plan.dealtIn.length < 2) {
+        for (const x of seats) Object.assign(x, { isNew: false, missedBigBlind: false, missedSmallBlind: false, waitForBigBlind: false });
+        plan = planNext();
+      }
+      if (plan.dealtIn.length < 2) return null;
+      const settled = count >= 2;
+      const moved = nextRotation(rot, state, positions.button, plan.button, s.seats.length);
+      if (moved.switched) {
+        // This hand starts the next step: another game's, or more of this one.
+        if (i + 1 >= steps) return count;
+        i++;
+        if (settled || handsOnly(i)) return count + rest(i);
+      } else if (stepAt(i).unit === 'hands' ? settled || handsOnly(i) : settled && moved.state.orbits > state.orbits) {
+        // From this hand on, whole orbits (or the step's own count of hands) are left: an orbit ends with the hand
+        // that comes round to its first seat again.
+        return count + left(moved.state, i) + rest(i + 1);
+      }
+      state = { ...moved.state, hands: moved.state.hands + 1 };
+      positions = { button: plan.button, smallBlind: plan.smallBlindSeat, bigBlind: plan.bigBlindSeat };
+      for (const x of seats) {
+        if (!plan.dealtIn.includes(x.seat)) continue;
+        x.isNew = false;
+        x.missedBigBlind = false;
+        x.missedSmallBlind = false;
+      }
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------- clocks

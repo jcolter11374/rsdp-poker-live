@@ -18,8 +18,8 @@ const before = { leaderboard: [ann, bob], record: { seq: 12, hash: 'x'.repeat(64
 
 // Saved tables and tournaments (scripts/upgrade/saved.mjs): a cash table, and a running tournament's and a finished one's.
 const cash = { id: 'c4sh-tab1e', name: "Ann's table", mode: 'cash', createdAt: '2026-11-01T20:00:00.000Z', hands: 3, players: ['Ann', 'Bob'], realGame: true, live: true };
-const running = { id: 'aaaaaaaaaaaaaaaa', status: 'running', title: 'Smoke Cup · RSDP Poker Live!', description: 'Running now · Level 1 · 3 of 3 left.' };
-const finished = { id: 'bbbbbbbbbbbbbbbb', status: 'finished', title: 'Monday Cup · RSDP Poker Live!', description: 'Won by Ann · 3 players.' };
+const running = { id: 'aaaaaaaaaaaaaaaa', status: 'running', title: 'Smoke Cup · RSDP Live!', description: 'Running now · Level 1 · 3 of 3 left.' };
+const finished = { id: 'bbbbbbbbbbbbbbbb', status: 'finished', title: 'Monday Cup · RSDP Live!', description: 'Won by Ann · 3 players.' };
 const runningTable = { ...cash, id: 'aaaaaaaaaaaaaaaa-t1', name: 'Smoke Cup · Table 1', mode: 'tournament', hands: 6, players: ['Hana', 'Bo'] };
 const finishedTable = { ...runningTable, id: 'bbbbbbbbbbbbbbbb-t1', name: 'Monday Cup · Table 1' };
 const saved = { ...before, tables: [cash, runningTable, finishedTable, { id: 'old-format', missing: true }], tournaments: [running, finished] };
@@ -92,10 +92,26 @@ describe('upgrade rehearsal compare', () => {
   });
 
   it("fails a tournament whose page no longer shows it, or a finished one's changed result", async () => {
-    const tournaments = again([{ ...running, title: 'RSDP Poker Live!' }, { ...finished, description: 'Won by Bob · 3 players.' }]);
+    const tournaments = again([{ ...running, title: 'RSDP Live!' }, { ...finished, description: 'Won by Bob · 3 players.' }]);
     const r = await compare({ ...before, tables: saved.tables, tournaments }, saved);
     expect(r.code).toBe(1);
-    expect(r.out).toContain('aaaaaaaaaaaaaaaa: its page showed "Smoke Cup · RSDP Poker Live!", now "RSDP Poker Live!"');
-    expect(r.out).toContain('Monday Cup · RSDP Poker Live! (finished): its page said "Won by Ann · 3 players.", now "Won by Bob · 3 players."');
+    expect(r.out).toContain('aaaaaaaaaaaaaaaa: its page showed "Smoke Cup · RSDP Live!", now "RSDP Live!"');
+    expect(r.out).toContain('Monday Cup · RSDP Live! (finished): its page said "Won by Ann · 3 players.", now "Won by Bob · 3 players."');
+  });
+
+  // D35: the release that renamed the site starts on pages the server before titled with the old name.
+  const oldName = (t: { title: string }) => ({ ...t, title: t.title.replace('RSDP Live!', 'RSDP Poker Live!') });
+  const savedUnderOldName = { ...saved, tournaments: saved.tournaments.map(oldName) };
+
+  it("passes tournament pages whose titles end in the site's new name instead of its old one", async () => {
+    const r = await compare({ ...before, tables: saved.tables, tournaments: again() }, savedUnderOldName);
+    expect(r.out).toContain('all 2 read back');
+    expect(r.code).toBe(0);
+  });
+
+  it("still fails a tournament page that lost its own name across the rename", async () => {
+    const r = await compare({ ...before, tables: saved.tables, tournaments: again([{ ...running, title: 'RSDP Live!' }, finished]) }, savedUnderOldName);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('aaaaaaaaaaaaaaaa: its page showed "Smoke Cup · RSDP Poker Live!", now "RSDP Live!"');
   });
 });

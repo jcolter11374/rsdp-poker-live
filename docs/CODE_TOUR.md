@@ -1,7 +1,7 @@
 # A guided tour of the code
 
 This page is for someone opening the repository for the first time and
-wanting to understand how RSDP Poker Live! works: what each folder does, how
+wanting to understand how RSDP Live! works: what each folder does, how
 the pieces talk to each other, which files to read first, and how to run it
 on your own computer.
 
