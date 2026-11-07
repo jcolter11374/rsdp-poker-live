@@ -41,6 +41,11 @@ export interface ChoiceHost {
   tableCount(): number;
   /** How many more people may sit while a smaller game is on (seat requests count as taken); null for no limit. */
   seatRoom(): number | null;
+  /**
+   * tableCount once the host's change waiting for the next hand (`next`) applies: a bigger table offers its new seats
+   * to the waitlist before a missed pick is dealt (#459).
+   */
+  comingCount(next: TableSettings): number;
   log(text: string): void;
 }
 
@@ -191,8 +196,7 @@ export class DealersChoice {
   }
 
   /** defaultIndex for the games `games`, passing over those `skip` says. */
-  private defaultOn(games: readonly { gameId: string; betting: BettingKind }[], skip: (g: { gameId: string; betting: BettingKind }) => boolean): number {
-    const count = this.host.tableCount();
+  private defaultOn(games: readonly { gameId: string; betting: BettingKind }[], skip: (g: { gameId: string; betting: BettingKind }) => boolean, count = this.host.tableCount()): number {
     const cur = this.keepable();
     const kept = cur ? games.findIndex((g) => same(g, cur) && this.fits(g.gameId, count) && !skip(g)) : -1;
     if (kept >= 0) return kept;
@@ -210,8 +214,10 @@ export class DealersChoice {
    * deal another game than the current menu's first that fits (#444).
    */
   missedPick(): { gameId: string; betting: BettingKind } {
-    const coming = this.s.pendingSettings ? choiceMenu(this.coming()) : null;
-    if (coming) return coming.games[this.defaultOn(coming.games, () => false)];
+    const next = this.s.pendingSettings ? this.coming() : null;
+    const coming = next && choiceMenu(next);
+    // Counted as the table will be then: seats a bigger table opens are offered from the waitlist first (#459).
+    if (coming) return coming.games[this.defaultOn(coming.games, () => false, this.host.comingCount(next))];
     return this.menu!.games[this.defaultIndex()];
   }
 
@@ -515,6 +521,8 @@ export class DealersChoice {
     const deadline = c?.deadline == null ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;
     // The host's change ends Dealer's choice with this hand: nobody picks next, and this is the pick's last hand.
     const ending = this.ending();
+    const count = this.host.tableCount();
+    const coming = s.pendingSettings ? this.host.comingCount(this.coming()) : count;
     return {
       chip: c && !ending ? (this.chooser()?.seat ?? null) : null,
       current: pickView(c?.current ?? null),
@@ -522,7 +530,8 @@ export class DealersChoice {
       next: pickView(c?.next ?? null),
       open: this.pickOpen(),
       deadline,
-      count: this.host.tableCount(),
+      count,
+      ...(coming !== count ? { comingCount: coming } : {}),
       cap: this.seatCap()?.cap ?? null,
       closed: (this.host.seatRoom() ?? 1) <= 0,
       defaultIndex: this.defaultIndex(),
