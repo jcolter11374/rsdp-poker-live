@@ -27,9 +27,10 @@ export interface Frozen {
 
 /**
  * All-in runouts arrive in one update, finished. This holds the table back
- * and deals them out a street at a time (board 1 before board 2), so each card
- * lands with its own sound, then shows the result. The server holds the next
- * hand for as long (runoutMs). Opening the table mid-runout shows it finished.
+ * and deals them out a street at a time (board 1 before board 2; in stud each
+ * street's cards to every seat together), so each card lands with its own
+ * sound, then shows the result. The server holds the next hand for as long
+ * (runoutMs). Opening the table mid-runout shows it finished.
  */
 export function useRunoutReveal(live: TableView | null): TableView | null {
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -74,31 +75,44 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
 export function holdBack(view: TableView, before: Frozen, shown: number): TableView {
   const hand = view.hand!;
   const steps = runoutSteps(hand.events);
-  const hidden = new Set(steps.slice(shown).flat().map((e) => e.seq));
+  const owed = steps.slice(shown).flat();
   const boards = hand.boards.map((run, r) =>
     run.map((cards, b) => {
       // Every card a run still owes waits for its own step. A second run starts with the cards both runs share,
       // on the felt as soon as the board splits, so its first step deals only its own next card (#372).
-      const owed = steps
-        .slice(shown)
-        .flat()
-        .filter((e) => e.run === r && e.board === b)
-        .reduce((n, e) => n + e.cards.length, 0);
-      return cards.slice(0, cards.length - owed);
+      const n = owed.reduce((n, e) => n + (e.t === 'board' && e.run === r && e.board === b ? e.cards.length : 0), 0);
+      return cards.slice(0, cards.length - n);
     }),
   );
   const runItEvent = hand.events.find((e) => e.t === 'run-it')!;
   const runIt = runItEvent.seq;
-  // A single run waits longest before its last card: that card waits face down on its board (#308).
-  const lastWait = runItEvent.t === 'run-it' && runItEvent.times === 1 && shown === steps.length - 1;
-  const comingNext = lastWait ? steps[shown].map((e) => ({ run: e.run, board: e.board })) : undefined;
-  const events = hand.events.filter((e) => e.seq <= runIt || (e.t === 'board' && !hidden.has(e.seq)));
+  // A single hold'em or Omaha run waits longest before its last card: that card waits face down on its board (#308).
+  // Stud waits as long before its last street, which goes to the seats, so it has no card on the board to wait.
+  const lastWait = runItEvent.t === 'run-it' && runItEvent.times === 1 && shown === steps.length - 1 && hand.family !== 'stud';
+  const comingNext = lastWait ? steps[shown].flatMap((e) => (e.t === 'board' ? [{ run: e.run, board: e.board }] : [])) : undefined;
+  // The steps come in the order they were dealt, so everything dealt from the first step still to show on stays
+  // back, with the street events (stud) that close those steps.
+  const cut = steps[shown]?.[0].seq ?? Infinity;
+  const events = hand.events.filter((e) => e.seq <= runIt || ((e.t === 'board' || e.t === 'deal' || e.t === 'street') && e.seq < cut));
+  // The last step out so far is the run's last only once every step is out (#412).
+  const toCome = shown < steps.length;
   const won = hand.awards.reduce((s, a) => s + a.amount, 0);
   const pots = hand.pots.length ? hand.pots : [{ amount: won, eligible: [] }];
   return {
     ...view,
-    hand: { ...hand, phase: 'betting', showdown: false, awards: [], boards, events, pots, potTotal: Math.max(hand.potTotal, won), ...(comingNext ? { comingNext } : {}) },
-    seats: seatsDuring(view, before),
+    hand: {
+      ...hand,
+      phase: 'betting',
+      showdown: false,
+      awards: [],
+      boards,
+      events,
+      pots,
+      potTotal: Math.max(hand.potTotal, won),
+      ...(comingNext ? { comingNext } : {}),
+      ...(toCome ? { runoutToCome: true } : {}),
+    },
+    seats: seatsDuring(view, before, events),
     ledger: before.ledger,
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
@@ -111,9 +125,24 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
   };
 }
 
-/** Seats as they stand with everything in the middle and nothing paid out yet. */
-function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
+/**
+ * The last card of a single all-in run: it waited face down on the board before turning over (#308). Stud's last
+ * street goes to the seats, with no card waiting on the board, so it is dealt as usual. While more of the runout is
+ * still to come, the last card out so far was dealt like the rest, so nothing is held: the run's last card turns over
+ * from when it lands to the result, and no card on the board changes how it came on, which would play it again (#412).
+ */
+export function heldCards(hand: TableView['hand']): string[] {
+  if (!hand || hand.runoutToCome || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
+  return runoutSteps(hand.events).at(-1)?.flatMap((e) => (e.t === 'board' ? e.cards : [])) ?? [];
+}
+
+/**
+ * Seats as they stand with everything in the middle and nothing paid out yet. `shownEvents` are the hand's events
+ * as far as the runout has been shown.
+ */
+function seatsDuring(view: TableView, before: Frozen, shownEvents: readonly HandEvent[]): TableView['seats'] {
   const events = view.hand!.events;
+  const stud = view.hand!.family === 'stud';
   const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
   const paid = new Map<number, number>();
   const pay = (seat: number, n: number) => paid.set(seat, (paid.get(seat) ?? 0) + n);
@@ -128,12 +157,16 @@ function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
     const gone = !!start && live?.playerId !== start.playerId && was?.playerId === start.playerId;
     const s = gone ? { ...was!, cards: withShown(was!.cards, events, i) } : live;
     if (!s) return s;
+    // Stud deals its runout to the seats (#216): each holds only the streets shown so far, every card as this viewer
+    // sees it in the finished hand. That covers a player who has gone too, whose seat before had none of the runout.
+    const cards = stud && start?.playerId === s.playerId ? shownEvents.flatMap((e) => (e.t === 'deal' && e.seat === i ? e.cards : [])) : s.cards;
     const stack = start?.playerId === s.playerId ? start.stack - (paid.get(i) ?? 0) : s.stack - s.won;
     // Sitting out for being busted, leaving, coming off the nit and the like are the result too.
     // Players not in the hand change as they like.
     const prior = start?.playerId === s.playerId && was?.playerId === s.playerId ? was : s;
     return {
       ...s,
+      cards,
       stack,
       won: 0,
       handName: null,

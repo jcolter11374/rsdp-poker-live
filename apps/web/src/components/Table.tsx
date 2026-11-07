@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
@@ -13,7 +12,7 @@ import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
 import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
-import { sharedWithFirstRun } from '../runout';
+import { heldCards, sharedWithFirstRun } from '../runout';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -299,12 +298,6 @@ function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, sizes: readonly
     if (fresh || moved(boxes.me, mine) || moved(boxes.others, others) || moved(boxes.empty, empty)) setBoxes({ key, me: mine, others, empty });
   });
   return boxes;
-}
-
-/** The last card of a single all-in run: it waited face down on the board before turning over (#308). */
-function heldCards(hand: TableView['hand']): string[] {
-  if (!hand || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
-  return runoutSteps(hand.events).at(-1)?.flatMap((e) => e.cards) ?? [];
 }
 
 /** A short badge for a seat that is not playing, or null when it is. */

@@ -3,6 +3,7 @@ import { engine, type HandState } from '@rsdp/engine/core';
 import type { BotNote, HandRecordView, SharedHandView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
 import { finalStacks, frameView, isReplayable, playerStats, replayFrames, sharedHandViewer } from './replay';
+import { heldCards } from './runout';
 
 const fmt = (n: number) => String(n);
 /** A finished engine hand as one viewer gets it from the server. */
@@ -176,6 +177,20 @@ describe('frameView bots', () => {
     const view = frameView('Practice', 2, h, replayFrames(h, null, fmt).at(-1)!, null);
     expect(view.seats[0]!.bot).toBeUndefined();
     expect(view.seats[1]!.bot).toEqual({ ownerId: '', ownerName: 'Ann', look: 3 });
+  });
+});
+
+describe('frameView in an all-in runout (#412)', () => {
+  it('turns over only the very last card, from the frame it lands on', () => {
+    const s = start({ stacks: [100, 100] });
+    engine.act(s, s.toAct!, { type: 'raise', to: engine.legalActions(s, s.toAct!)!.maxTo });
+    engine.act(s, s.toAct!, { type: 'call' });
+    const h = record(s, 0);
+    const frames = replayFrames(h, 'p0', fmt);
+    // The flop and the turn are each the last card out for a frame or more: they were dealt all the same.
+    const lands = frames.findIndex((f) => f.boards[0][0].length === 5);
+    expect(frames.filter((f) => f.boards[0][0].length === 3)).not.toHaveLength(0);
+    expect(frames.map((f) => heldCards(frameView('', 2, h, f, 'p0').hand))).toEqual(frames.map((_, i) => (i >= lands ? [s.runs[0][0][4]] : [])));
   });
 });
 

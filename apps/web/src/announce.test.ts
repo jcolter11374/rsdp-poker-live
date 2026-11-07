@@ -6,7 +6,7 @@ import type { TableView } from '@rsdp/engine/wire';
 import { start as startHand } from '../../../packages/engine/test/core/harness';
 import { announcements, spokenCards, spokenLine, turnText } from './announce';
 import { holdBack, type Frozen } from './runout';
-import { CHECKED_TO_ME, tableView } from './test-table';
+import { CHECKED_TO_ME, seatView, tableView } from './test-table';
 
 registerAllVariants(variants);
 const fmt = (n: number) => String(n);
@@ -164,10 +164,52 @@ describe('an all-in runout read aloud', () => {
         expect(said[k + 1]).toEqual(lines);
       }
       // Nobody wins aloud before the result shows; then only the result is read, no street again.
-      expect(said.slice(0, -1).flat().filter((l) => / wins /.test(l))).toEqual([]);
+    expect(said.slice(0, -1).flat().filter((l) => / wins /.test(l))).toEqual([]);
       const result = said.at(-1)!;
       expect(result.length).toBeGreaterThan(0);
       expect(result.every((l) => / wins /.test(l))).toBe(true);
     });
   }
+});
+
+describe('a stud all-in runout read aloud (#216)', () => {
+  it('reads each street only as the table deals it to the seats, and never a card before it shows there', () => {
+    const s = startHand({ game: 'stud', betting: 'no-limit', stacks: [50, 50, 50], stakes: { ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 } });
+    // Everyone puts their chips in at the first chance, on third street.
+    for (let i = 0; i < 50 && s.phase === 'betting'; i++) {
+      const legal = engine.legalActions(s, s.toAct!)!;
+      engine.act(s, s.toAct!, legal.canRaise && legal.maxTo > legal.callAmount ? { type: legal.raiseKind, to: legal.maxTo } : { type: 'call' });
+    }
+    expect(s.phase).toBe('complete');
+    // The finished hand as Ann (seat 0) is sent it.
+    const events = engine.visibleEvents(s, { seat: 0, seeAll: false });
+    const dealt = (seat: number) => events.flatMap((e) => (e.t === 'deal' && e.seat === seat ? e.cards : []));
+    const seats = [0, 1, 2].map((seat) => seatView(seat, { cards: dealt(seat) }));
+    const hand = { handNumber: 1, gameId: 'stud', gameName: 'Seven Card Stud', family: 'stud' as const, phase: 'complete' as const, showdown: true, boards: [[[]]], pots: [], potTotal: 0, awards: [], events };
+    const live = tableView({ hand, seats });
+    const steps = runoutSteps(events);
+    expect(steps).toHaveLength(4);
+    const frozen: Frozen = { logCut: 0, seats: live.seats, ledger: [], me: live.me, nit: null };
+    const called = events.map((e) => e.t).lastIndexOf('action');
+    const pre: TableView = { ...live, hand: { ...live.hand!, phase: 'betting', events: events.slice(0, called) } };
+    const shown = [pre, ...Array.from({ length: steps.length + 1 }, (_, n) => holdBack(live, frozen, n)), live];
+    const said = shown.slice(1).map((v, i) => announcements(shown[i], v, fmt));
+    const onTable = (v: TableView) => new Set([...v.seats.flatMap((x) => x?.cards.map((c) => c.card) ?? []), ...v.hand!.boards.flat(2)]);
+    const named = (lines: string[]) => [...lines.join(' ').matchAll(/\b(ace|king|queen|jack|10|[2-9]) of (clubs|diamonds|hearts|spades)\b/g)].map((m) => m[0]);
+    const inWords = (card: string) => spokenCards(`[${card}]`);
+    // The call is read straight away, without a card of the runout.
+    expect(said[0].some((l) => / calls /.test(l))).toBe(true);
+    for (let k = 0; k < steps.length; k++) {
+      // Each street reads the cards it deals and no others, each as Ann's screen shows it by then. Seventh street's
+      // down cards are turned up at the end, so the finished hand she is sent has them: her seats show them from
+      // seventh street on, and that is when they are read.
+      const dealtNow = steps[k].flatMap((e) => (e.t === 'deal' ? e.cards.map((c) => c.card) : e.cards)).filter((c) => c !== '??');
+      expect(named(said[k + 1]).sort()).toEqual(dealtNow.map(inWords).sort());
+      // said[k + 1] is what the move to shown[k + 2] says.
+      const visible = [...onTable(shown[k + 2])].filter((c) => c !== '??').map(inWords);
+      for (const card of named(said[k + 1])) expect(visible).toContain(card);
+    }
+    expect(said.slice(0, -1).flat().filter((l) => / wins /.test(l))).toEqual([]);
+    expect(said.at(-1)!.some((l) => / wins /.test(l))).toBe(true);
+  });
 });
