@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { besideBet, clearSideBands, fitHand, handRoom, inFront, seatFractions, stadiumPoint } from './geometry';
+import { besideBet, clearSideBands, fitHand, handRoom, handSpan, inFront, placeRow, seatFractions, stadiumPoint } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -129,20 +129,27 @@ describe('besideBet', () => {
   });
 });
 
-describe('handRoom and fitHand (#304: your cards covering a neighbour on a phone)', () => {
+describe('handRoom, handSpan and fitHand (#304: your cards covering a neighbour on a phone)', () => {
   const box = (left: number, right: number, top: number, bottom: number) => ({ left, right, top, bottom });
   // A 390px phone, nine players: your nameplate in the middle, Bea and Host either side and a little higher, Cal far above.
   const mine = box(155, 235, 530, 578);
   const others = [box(66, 141, 495, 543), box(248, 327, 495, 543), box(23, 98, 408, 456)];
 
-  it('upright: twice the gap to the nearer neighbour level with your cards, less a margin', () => {
-    expect(handRoom(mine, others, false, 84)).toBe(2 * (248 - 195 - 6));
+  const screen = { left: 0, right: 390 };
+
+  it('upright: from the nearest plate on the left to the nearest on the right, among those level with your cards', () => {
+    expect(handSpan(mine, others, 84, screen)).toEqual({ left: 141 + 6, right: 248 - 6 });
   });
-  it('ignores plates far above your cards, and has no limit when nobody is beside you', () => {
-    expect(handRoom(mine, [box(23, 98, 300, 348)], false, 84)).toBe(Infinity);
+  it('ignores plates far above your cards, and goes to the screen edges when nobody is beside you', () => {
+    expect(handSpan(mine, [box(23, 98, 300, 348)], 84, screen)).toEqual({ left: 3, right: 387 });
   });
   it('sideways: the gap to the nearest plate on your left', () => {
-    expect(handRoom(box(380, 460, 265, 313), [box(205, 275, 265, 313), box(565, 640, 265, 313)], true, 56)).toBe(380 - 6 - 275 - 6);
+    expect(handRoom(box(380, 460, 265, 313), [box(205, 275, 265, 313), box(565, 640, 265, 313)], 56)).toBe(380 - 6 - 275 - 6);
+  });
+  it('sideways: counts a plate level with your cards, even if not with your nameplate', () => {
+    // Your cards (56px tall) reach 4px above and below your 48px nameplate.
+    expect(handRoom(box(380, 460, 265, 313), [box(205, 275, 215, 263)], 56)).toBe(380 - 6 - 275 - 6);
+    expect(handRoom(box(380, 460, 265, 313), [box(205, 275, 200, 258)], 56)).toBe(Infinity);
   });
 
   it('leaves a hand that fits as it is', () => {
@@ -161,5 +168,63 @@ describe('handRoom and fitHand (#304: your cards covering a neighbour on a phone
     // At least 45% of each card still shows, enough for its rank and suit.
     expect(smaller.cw - smaller.overlap).toBeGreaterThanOrEqual(Math.floor(smaller.cw * 0.45));
     expect(fitHand(4, 20, natural)!.cw).toBe(30);
+  });
+});
+
+describe('placeRow (#318: other players\' cards covering the next seat on a phone)', () => {
+  const box = (left: number, right: number, top: number, bottom: number) => ({ left, right, top, bottom });
+  const four = { cards: 4, cw: 30, step: 22 };
+  const width = (cards: number, cw: number, step: number) => cw + (cards - 1) * step;
+  const screen = { left: 0, right: 390 };
+  // A 390px phone, nine players at Omaha: Dee in the top-left corner, Eli's nameplate up and to the right of her cards.
+  const dee = box(34, 120, 175, 223);
+  const deeRow = { top: 136, bottom: 178 };
+  const eli = box(106, 188, 108, 156);
+
+  it('leaves a row that fits centred over its nameplate', () => {
+    expect(placeRow(box(160, 240, 300, 348), { top: 261, bottom: 303 }, [eli], screen, four)).toBeNull();
+  });
+  it('moves a row aside, keeping its look, when the next nameplate is in the way', () => {
+    const p = placeRow(dee, deeRow, [eli], screen, four)!;
+    expect(p).toMatchObject({ cw: 30, step: 22 });
+    const left = (dee.left + dee.right) / 2 - width(4, 30, 22) / 2 + p.shift;
+    expect(left).toBeGreaterThanOrEqual(3);
+    expect(left + width(4, 30, 22)).toBeLessThanOrEqual(eli.left - 3);
+  });
+  it('ignores what is above or below the row', () => {
+    // A nameplate that only reaches a sliver (4px) into the row, from above or below, doesn't count either.
+    expect(placeRow(dee, deeRow, [box(106, 188, 40, 136), box(106, 188, 178, 230), box(106, 188, 100, 140), box(106, 188, 174, 230)], screen, four)).toBeNull();
+    // Any more, and it does.
+    expect(placeRow(dee, deeRow, [box(106, 188, 100, 142)], screen, four)).not.toBeNull();
+  });
+  it('bunches the cards only when there is no room to move into, then makes them smaller', () => {
+    // Nameplates either side, 80px apart: the row can't move, so it bunches to fit between them.
+    const p = placeRow(box(150, 230, 300, 348), { top: 261, bottom: 303 }, [box(60, 145, 270, 318), box(235, 320, 270, 318)], screen, four)!;
+    const w = width(4, p.cw, p.step);
+    expect(p.cw).toBe(30);
+    expect(p.step).toBeLessThan(22);
+    expect(p.step).toBeGreaterThanOrEqual(15);
+    expect(190 + p.shift - w / 2).toBeGreaterThanOrEqual(148);
+    expect(190 + p.shift + w / 2).toBeLessThanOrEqual(232);
+    // Seven stud cards in 110px: bunched as far as half a card each, they'd still be 120px wide, so they get smaller too.
+    const seven = placeRow(box(150, 230, 300, 348), { top: 261, bottom: 303 }, [box(60, 137, 270, 318), box(253, 320, 270, 318)], screen, { cards: 7, cw: 30, step: 19 })!;
+    expect(seven).toMatchObject({ cw: 26, step: 13 });
+    expect(width(7, seven.cw, seven.step)).toBeLessThanOrEqual(110);
+    // In 50px they can't fit at the smallest size either: they sit in the middle of the room.
+    const tight = placeRow(box(150, 230, 300, 348), { top: 261, bottom: 303 }, [box(60, 162, 270, 318), box(218, 320, 270, 318)], screen, { cards: 7, cw: 30, step: 19 })!;
+    expect(tight).toEqual({ cw: 24, step: 12, shift: 0 });
+  });
+  it('keeps to its side of a line halfway to a level neighbour', () => {
+    // Two rows level with each other, nameplates 10px apart: a line at 195 between them.
+    const wall = box(195, 195, 261, 303);
+    const p = placeRow(box(100, 190, 300, 348), { top: 261, bottom: 303 }, [wall], screen, { cards: 5, cw: 30, step: 19 })!;
+    expect(145 + p.shift + width(5, 30, p.step) / 2).toBeLessThanOrEqual(192);
+  });
+  it('stays on the screen', () => {
+    const p = placeRow(box(-10, 70, 300, 348), { top: 261, bottom: 303 }, [], screen, { cards: 7, cw: 30, step: 19 })!;
+    expect(30 + p.shift - width(7, 30, 19) / 2).toBeGreaterThanOrEqual(3);
+    // Even when it can't fit: squeezed against the screen's edge, it spills over the nameplate beside it instead.
+    const q = placeRow(box(0, 76, 300, 348), { top: 261, bottom: 303 }, [box(60, 140, 270, 318)], screen, { cards: 7, cw: 30, step: 19 })!;
+    expect(38 + q.shift - width(7, q.cw, q.step) / 2).toBeGreaterThanOrEqual(3);
   });
 });

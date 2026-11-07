@@ -4,7 +4,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, px, seatFractions, stadiumPoint, type HandFit, type Point, type Reach } from './geometry';
+import { besideBet, clearSideBands, fitHand, fromVars, handRoom, handSpan, inFront, lerp, placeRow, px, seatFractions, stadiumPoint, type Box, type HandFit, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
@@ -92,22 +92,40 @@ function useSize(ref: RefObject<HTMLElement>) {
 }
 
 /**
- * Your own hand's size on a phone as styles.css draws it (the 4-card and 5-to-7-card rules,
- * standing up and on its side). Keep in step with those rules.
+ * Your own hand's size on a phone as styles.css draws it, standing up and on its side, for two or
+ * three cards, four, and five to seven: the card's width, and how much each card covers the one
+ * before it, net of the 2px gap between them. Keep in step with those rules.
  */
 const PHONE_HAND = {
-  upright: { four: { cw: 60, overlap: 24 }, more: { cw: 38, overlap: 15 } },
-  sideways: { four: { cw: 40, overlap: 24 }, more: { cw: 34, overlap: 15 } },
+  upright: { few: { cw: 60, overlap: 8 }, four: { cw: 60, overlap: 22 }, more: { cw: 38, overlap: 13 } },
+  sideways: { few: { cw: 40, overlap: 8 }, four: { cw: 40, overlap: 22 }, more: { cw: 34, overlap: 13 } },
 };
 
 /**
- * On a phone, a hand of four or more cards can be wider than the gap between the players either
- * side of you, and then covers their nameplates (#304). Measured after each render, this gives a
- * smaller fit for your cards when they'd reach a neighbour, and null when they fit as they are.
- * Desktop seats tuck the cards into the nameplate, so they're left alone.
+ * A phone nameplate as the layout counts it: its measured width, and the height of a plain one (name and stack)
+ * around its middle. A plate grows taller, evenly up and down, while it shows a line such as "Call 0.50"; counting
+ * that would move cards about each time someone acts, so it isn't.
  */
-function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): HandFit | null {
-  const [fit, setFit] = useState<HandFit | null>(null);
+const PLATE_HALF_HEIGHT = 25;
+const plateBox = (r: DOMRect, from: DOMRect = r): Box => {
+  const middle = (r.top + r.bottom) / 2;
+  return { left: from.left, right: from.right, top: middle - PLATE_HALF_HEIGHT, bottom: middle + PLATE_HALF_HEIGHT };
+};
+
+/** Your own hand on a phone: a smaller size when it has to fit (`cw`, `overlap`), and how far it moves aside (`shift`). */
+interface MyHandFit extends HandFit {
+  shift: number;
+}
+
+/**
+ * On a phone, your hand can be wider than the gap between the players either side of you, and then
+ * covers their nameplates (#304). Measured after each render, this moves your cards aside into the
+ * room there is (standing up), and when there still isn't enough, bunches them up and makes them
+ * smaller. Null when they fit as they are. Desktop seats tuck the cards into the nameplate, so
+ * they're left alone.
+ */
+function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): MyHandFit | null {
+  const [fit, setFit] = useState<MyHandFit | null>(null);
   // Seats glide to new places when someone sits down or leaves; measure again once they've arrived.
   const [, setGlides] = useState(0);
   useEffect(() => {
@@ -122,17 +140,100 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean): HandFit | n
     const me = el?.querySelector<HTMLElement>('.seat.me');
     const plate = me?.querySelector<HTMLElement>('.nameplate');
     const cards = me?.querySelectorAll('.hole:not(.mucked) .playing-card').length ?? 0;
-    let next: HandFit | null = null;
-    if (el && compact && plate && cards >= 4) {
+    let next: MyHandFit | null = null;
+    if (el && compact && plate && cards >= 2) {
       const sideways = window.matchMedia('(max-height: 500px)').matches;
-      const natural = PHONE_HAND[sideways ? 'sideways' : 'upright'][cards === 4 ? 'four' : 'more'];
-      const others = [...el.querySelectorAll<HTMLElement>('.seat:not(.me) .nameplate')].map((p) => p.getBoundingClientRect());
-      // On its side the cards hang off the seat's left edge, which can be wider than its nameplate.
-      next = fitHand(cards, handRoom((sideways ? me! : plate).getBoundingClientRect(), others, sideways, natural.cw * 1.4), natural);
+      const natural = PHONE_HAND[sideways ? 'sideways' : 'upright'][cards <= 3 ? 'few' : cards === 4 ? 'four' : 'more'];
+      const others = [...el.querySelectorAll<HTMLElement>('.seat:not(.me) .nameplate')].map((p) => plateBox(p.getBoundingClientRect()));
+      if (sideways) {
+        // On its side the cards hang off the seat's left edge, which can be wider than its nameplate.
+        const size = cards >= 4 ? fitHand(cards, handRoom(plateBox(plate.getBoundingClientRect(), me!.getBoundingClientRect()), others, natural.cw * 1.4), natural) : null;
+        next = size && { ...size, shift: 0 };
+      } else {
+        const mine = plateBox(plate.getBoundingClientRect());
+        const span = handSpan(mine, others, natural.cw * 1.4, { left: 0, right: document.documentElement.clientWidth });
+        const size = fitHand(cards, span.right - span.left, natural);
+        const f = size ?? natural;
+        const w = f.cw + (cards - 1) * (f.cw - f.overlap);
+        const cx = (mine.left + mine.right) / 2;
+        // Centred over your nameplate, then moved into the room; a hand that still can't fit sits in the middle of it.
+        const from = w <= span.right - span.left ? Math.min(Math.max(cx - w / 2, span.left), span.right - w) : (span.left + span.right - w) / 2;
+        const shift = Math.round(from - (cx - w / 2));
+        next = size || shift ? { ...f, shift } : null;
+      }
     }
-    if (next?.cw !== fit?.cw || next?.overlap !== fit?.overlap) setFit(next);
+    if (next?.cw !== fit?.cw || next?.overlap !== fit?.overlap || next?.shift !== fit?.shift) setFit(next);
   });
   return fit;
+}
+
+/**
+ * Other players' cards on a phone as styles.css draws them, standing up and on its side: the card's width
+ * and height, and the step from one card's left edge to the next (the card and the 2px gap, less the
+ * overlap) for two or three cards, four, and five to seven. Keep in step with those rules.
+ */
+const PHONE_ROW = {
+  upright: { cw: 30, height: 42, steps: [32, 22, 19], minCw: 24 },
+  sideways: { cw: 24, height: 34, steps: [26, 16, 13], minCw: 20 },
+};
+
+/** Where another player's cards go on a phone: moved aside by `shift` pixels, and bunched up when `margin` is set. */
+interface RowSpot {
+  shift: number;
+  /** Each card's margin after the first, in pixels, when the row is bunched up (net of the 2px gap). */
+  margin?: number;
+  /** The card's width, when bunched up. */
+  cw?: number;
+}
+
+/**
+ * On a phone, another player's row of cards is wider than their nameplate, so at a crowded table it
+ * could cover the next player's nameplate or cards (#318). Measured after each render, this moves each
+ * row aside into the room it has, and bunches it up only when there isn't enough. A row depends only on
+ * the nameplates and your own cards, never on another row: two rows level with each other each keep to
+ * their side of the line halfway between their nameplates. Seats gliding to new places are measured
+ * again when they arrive, through useHandFit's re-render.
+ */
+function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean): Record<number, RowSpot> {
+  const [spots, setSpots] = useState<Record<number, RowSpot>>({});
+  useLayoutEffect(() => {
+    const el = felt.current;
+    const next: Record<number, RowSpot> = {};
+    if (el && compact) {
+      const size = PHONE_ROW[window.matchMedia('(max-height: 500px)').matches ? 'sideways' : 'upright'];
+      const seats = [...el.querySelectorAll<HTMLElement>('.seat[data-seat]')].map((s) => ({
+        seat: Number(s.dataset.seat),
+        me: s.classList.contains('me'),
+        plate: plateBox(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect()),
+        cards: s.querySelectorAll('.hole:not(.mucked) .playing-card').length,
+      }));
+      // The row's bottom edge sits 3px down the nameplate (styles.css: bottom: calc(100% - 3px)), counted from a plain plate's top.
+      const band = (plate: Box) => ({ top: plate.top + 3 - size.height, bottom: plate.top + 3 });
+      const mine = el.querySelector<HTMLElement>('.seat.me .hole')?.getBoundingClientRect();
+      const rows = seats.filter((s) => !s.me && s.cards > 0);
+      for (const r of rows) {
+        const at = band(r.plate);
+        const blocks: Box[] = seats.filter((s) => s !== r).map((s) => s.plate);
+        if (mine?.width) blocks.push(mine);
+        for (const o of rows) {
+          const ob = band(o.plate);
+          if (o === r || !(ob.bottom > at.top && ob.top < at.bottom)) continue;
+          // Halfway between the two nameplates (between their middles, if they overlap).
+          const [a, b] = r.plate.left <= o.plate.left ? [r.plate, o.plate] : [o.plate, r.plate];
+          const x = a.right <= b.left ? (a.right + b.left) / 2 : (a.left + a.right + b.left + b.right) / 4;
+          blocks.push({ left: x, right: x, top: at.top, bottom: at.bottom });
+        }
+        const step = size.steps[r.cards <= 3 ? 0 : r.cards === 4 ? 1 : 2];
+        // Bunched up, half of each card still shows: its rank and suit, for when it's turned up.
+        const place = placeRow(r.plate, at, blocks, { left: 0, right: document.documentElement.clientWidth }, { cards: r.cards, cw: size.cw, step }, { minCw: size.minCw });
+        if (place) next[r.seat] = { shift: place.shift, ...(place.step < step || place.cw < size.cw ? { margin: place.step - place.cw - 2, cw: place.cw } : {}) };
+      }
+    }
+    const same = (a: Record<number, RowSpot>, b: Record<number, RowSpot>) =>
+      Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[+k]?.shift === v.shift && b[+k]?.margin === v.margin && b[+k]?.cw === v.cw);
+    if (!same(next, spots)) setSpots(next);
+  });
+  return spots;
 }
 
 /**
@@ -242,6 +343,7 @@ export function Table({
   const size = useSize(felt);
   const reach = useSeatReach(felt);
   const handFit = useHandFit(felt, compact);
+  const rowSpots = useRowSpots(felt, compact);
   const room = useRoom(felt, fill && !compact);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
@@ -455,7 +557,7 @@ export function Table({
     <div
       ref={felt}
       className={['felt', compact && 'compact', grown && 'grown', grown && wide && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
-      style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(grown ? { '--k': k, '--sk': seatScale, '--side-margin': `${sideMargin}px`, '--top-margin': `${topMargin}px` } : {}), ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}), ...(handFit ? { '--fit-cw': `${handFit.cw}px`, '--fit-overlap': `${-handFit.overlap}px` } : {}) } as CSSProperties}
+      style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(grown ? { '--k': k, '--sk': seatScale, '--side-margin': `${sideMargin}px`, '--top-margin': `${topMargin}px` } : {}), ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}), ...(handFit ? { '--fit-cw': `${handFit.cw}px`, '--fit-overlap': `${-handFit.overlap}px`, '--fit-shift': `${handFit.shift}px` } : {}) } as CSSProperties}
     >
       <FeltEmblem />
       <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
@@ -578,10 +680,14 @@ export function Table({
         // Cards come off the dealer button (stud has none, so the middle of the table).
         const toMiddle = fromVars(hand && !stud ? buttonPoint(hand.button) : center, pos);
         const muck = fromVars(lerp(pos, center, 0.5), pos);
+        const spot = isMe ? undefined : rowSpots[seat];
         return (
           <div key={seat}>
             <div className={classes} style={px(pos)} data-seat={seat}>
-              <div className={`hole n${s.cards.length} ${s.folded && !isMe ? 'mucked' : ''}`} style={muck}>
+              <div
+                className={`hole n${s.cards.length} ${s.folded && !isMe ? 'mucked' : ''} ${spot?.margin !== undefined ? 'bunched' : ''}`}
+                style={spot ? ({ ...muck, '--row-shift': `${spot.shift}px`, ...(spot.margin !== undefined ? { '--row-margin': `${spot.margin}px`, '--row-cw': `${spot.cw}px` } : {}) } as CSSProperties) : muck}
+              >
                 {s.cards.map((c, i) => {
                   const face = c.card !== '??';
                   // Cards turned over at showdown flip; everything else is dealt in from the middle.

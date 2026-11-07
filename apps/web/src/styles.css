@@ -919,6 +919,16 @@ dl.shortcuts dd { margin: 0; }
    smaller to fit, so it doesn't cover their nameplates (#304). Table.tsx works out the size. Last, to win over the rules above. */
 .felt.compact.hand-fit .seat.me .hole .playing-card { --cw: var(--fit-cw); }
 .felt.compact.hand-fit .seat.me .hole .playing-card + .playing-card { margin-left: var(--fit-overlap); }
+/* The overlap above is net of the gap between cards. Standing up, the hand also moves aside into the room there is. */
+.felt.compact.hand-fit .seat.me .hole { gap: 0; }
+@media not all and (max-height: 500px) { .felt.compact.hand-fit .seat.me .hole { translate: calc(-50% + var(--fit-shift, 0px)) 0; } }
+/* Phones: another player's cards sit centred over their nameplate, moved aside, or bunched up when there isn't room, so
+   they don't cover the next player's nameplate or cards (#318), and smaller only when even that isn't enough. Table.tsx works
+   out by how much; this replaces the edge rules. */
+.felt.compact .seat:not(.me) .hole { left: 50%; right: auto; translate: calc(-50% + var(--row-shift, 0px)) 0; }
+.felt.compact .seat:not(.me) .hole.bunched { height: auto; }
+.felt.compact .seat:not(.me) .hole.bunched .playing-card { --cw: var(--row-cw); }
+.felt.compact .seat:not(.me) .hole.bunched .playing-card + .playing-card { margin-left: var(--row-margin); }
 
 /* ---- big windows (#317): the table grows into the room. --k is its scale (Table.tsx), --sk the seats' (k, or less when a
    full table needs it). Below k = 1 none of this applies. */
