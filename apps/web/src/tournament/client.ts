@@ -6,11 +6,13 @@ import {
   apply,
   createTournament,
   DirectorError,
+  needsSeatSeed,
   nextWakeAt,
   tableGate,
   tick,
   tournamentListing,
   sortListings,
+  withSeatSeed,
   type Command,
   type LobbyItem,
   type TournamentListing,
@@ -190,7 +192,8 @@ export class LocalTournamentClient implements TournamentClient {
     const store = storage();
     try {
       const saved = JSON.parse(store?.getItem(STORE_KEY) ?? '{}') as Record<string, TournamentState>;
-      for (const [id, s] of Object.entries(saved)) this.states.set(id, s);
+      // A demo saved before seat draws used a 32-byte seed, with its seats still to draw, gets a fresh one (as on the server).
+      for (const [id, s] of Object.entries(saved)) this.states.set(id, needsSeatSeed(s) ? withSeatSeed(s, randomId(32)) : s);
     } catch {
       /* start empty */
     }
@@ -245,7 +248,8 @@ export class LocalTournamentClient implements TournamentClient {
 
   async create(settings: TournamentSettings) {
     const id = randomId(4);
-    const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+    // The seat-draw seed: 32 bytes from the browser's secure generator.
+    const seed = randomId(32);
     try {
       this.commit(id, createTournament({ id, hostId: this.me.playerId, settings, now: Date.now(), seed }));
     } catch (e) {

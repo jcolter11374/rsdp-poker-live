@@ -20,7 +20,6 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PGlite } from '@electric-sql/pglite';
 import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
 import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
@@ -28,7 +27,7 @@ import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
 import pg from 'pg';
-import { closeDb, createDb, MIGRATIONS_DIR, queryRows, type Db } from '../src/db/client';
+import { closeDb, createDb, MIGRATIONS_DIR, pgliteFor, queryRows, type Db } from '../src/db/client';
 import * as schema from '../src/db/schema';
 import { createTestDb } from '../src/db/testing';
 import { fill } from './backup-fixture';
@@ -208,7 +207,7 @@ describe('upgrading a database with data in it', { timeout: 60_000 }, () => {
       await upgrade(
         {
           async openOld(folder) {
-            const client = new PGlite(dataDir);
+            const client = pgliteFor(dataDir);
             const db = drizzlePglite(client, { schema });
             await migratePglite(db, { migrationsFolder: folder });
             return { db, close: () => client.close() };
@@ -264,7 +263,7 @@ describe('the migrations', () => {
     // twice, from the migrations and from schema.ts alone (drizzle-kit's own CREATE statements), and compare:
     // a slip while editing, such as a lost NOT NULL or default, shows here.
     const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
-    const client = new PGlite();
+    const client = pgliteFor();
     const migrated = await createTestDb();
     try {
       const described = drizzlePglite(client, { schema });

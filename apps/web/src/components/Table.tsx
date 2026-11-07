@@ -11,6 +11,7 @@ import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
 import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
+import { sharedWithFirstRun } from '../runout';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -461,8 +462,10 @@ export function Table({
       <FeltEmblem />
       <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
         {runs.map((run, r) =>
-          run.map(
-            (cards, b) =>
+          run.map((cards, b) => {
+            // Run it twice: the second run's first cards are the first run's, carried down as the board splits, not dealt again (#372).
+            const shared = sharedWithFirstRun(runs, r, b);
+            return (
               cards.length > 0 && (
                 <div className="cards board-row" key={`${r}-${b}`}>
                   {(multiRun || multiBoard) && <span className="board-label">{multiRun ? `Run ${r + 1}` : `Board ${b + 1}`}</span>}
@@ -470,6 +473,8 @@ export function Table({
                     held.has(c) ? (
                       // Takes the face-down card's place and turns over there.
                       <PlayingCard key={`${hand!.handNumber}-${r}-${b}-${c}`} card={c} className={`turn-held ${highlight(c, boardWinners.get(`${r}-${b}`))}`} />
+                    ) : i < shared ? (
+                      <PlayingCard key={`${hand!.handNumber}-${r}-${b}-${c}`} card={c} className={`copy-board ${highlight(c, boardWinners.get(`${r}-${b}`))}`} />
                     ) : (
                       <PlayingCard
                         key={`${hand!.handNumber}-${r}-${b}-${c}`}
@@ -485,8 +490,9 @@ export function Table({
                     </span>
                   )}
                 </div>
-              ),
-          ),
+              )
+            );
+          }),
         )}
         {live && (
           <div className="pots">

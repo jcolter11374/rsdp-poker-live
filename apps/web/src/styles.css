@@ -379,6 +379,9 @@ input[type='radio'] { width: auto; }
 .playing-card.dim { filter: brightness(0.72) saturate(0.6); }
 .deal-board { animation: deal-in 0.25s ease-out both; }
 @keyframes deal-in { from { transform: translateY(-12px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Run it twice (#372): the second run's shared cards slide down from the first run's board as it splits; they aren't dealt again. */
+.copy-board { animation: copy-down 0.45s ease-out both; }
+@keyframes copy-down { from { transform: translateY(-70%); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Hole cards fly in from the middle of the table (--dx/--dy point back to it). */
 .deal-hole { animation: deal-from 0.32s ease-out both; }
 @keyframes deal-from { from { transform: translate(var(--dx, 0), var(--dy, -12px)) scale(0.45) rotate(-25deg); opacity: 0; } 30% { opacity: 1; } to { transform: none; opacity: 1; } }
@@ -463,7 +466,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 @keyframes depart-dim { to { opacity: 0.6; filter: grayscale(0.8); } }
 .seat.departed.fading { opacity: 0; transition: opacity 0.9s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .deal-hole, .deal-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate, .held-slot, .turn-held { animation: none !important; }
+  .deal-hole, .deal-board, .copy-board, .flip-in, .bet, .chip-flight, .win-float, .seat.winner .nameplate, .seat.acting .nameplate, .held-slot, .turn-held { animation: none !important; }
   .seat.departed .nameplate { animation: none; opacity: 0.6; filter: grayscale(0.8); }
   .dealer, .seat, .seat .hole { transition: none; }
   .chip-flight { display: none; }

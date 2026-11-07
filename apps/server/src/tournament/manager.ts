@@ -16,6 +16,7 @@ import {
   isLive,
   levelFor,
   listedPublicly,
+  needsSeatSeed,
   nextOccurrence,
   sortListings,
   tournamentListing,
@@ -25,6 +26,7 @@ import {
   tableRulesOf,
   tick,
   viewFor,
+  withSeatSeed,
   type Command,
   type DirectorEvent,
   type HandResult,
@@ -266,14 +268,14 @@ export class TournamentManager {
   }
 
   /**
-   * What a browser is sent. The seating seed and the event this one was opened after (which would let anyone walk
-   * back through a series) stay on the server, and only the host sees invite codes (no viewer: everything else, for
-   * the server's own use).
+   * What a browser is sent. The seat-draw seed (and the old generator's state) and the event this one was opened
+   * after (which would let anyone walk back through a series) stay on the server, and only the host sees invite codes
+   * (no viewer: everything else, for the server's own use).
    */
   view(id: string, viewer?: PlayerId): TournamentView | null {
     const live = this.live.get(id);
     if (!live) return null;
-    const { spawnedFrom: _hidden, nextError, ...state } = viewer === undefined ? live.state : viewFor(live.state, viewer);
+    const { spawnedFrom: _hidden, seatRng: _secret, nextError, ...state } = viewer === undefined ? live.state : viewFor(live.state, viewer);
     return { state: { ...state, rng: 0 }, serverNow: this.clock.now(), nextId: live.nextId, nextError: nextError ?? null };
   }
 
@@ -438,9 +440,18 @@ export class TournamentManager {
   }
 
   private newState(id: string, hostId: PlayerId, settings: TournamentSettings, follows: TournamentSettings | null = null) {
-    // The seed for the seat draw: from the rng the tables use when one is given (tests seed it, so a run repeats).
-    const seed = this.deps.rng ? this.deps.rng(0x100000000) : randomBytes(4).readUInt32LE(0);
+    const seed = this.newSeatSeed();
     return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, follows }));
+  }
+
+  /**
+   * A secret seed for a tournament's seat draws: 32 bytes from crypto.randomBytes, or from the rng the tables use
+   * when one is given (tests seed it, so a run repeats).
+   */
+  private newSeatSeed(): string {
+    const rng = this.deps.rng;
+    const bytes = rng ? Uint8Array.from({ length: 32 }, () => rng(256)) : randomBytes(32);
+    return Buffer.from(bytes).toString('hex');
   }
 
   private guard<T>(fn: () => T): T {
@@ -511,6 +522,10 @@ export class TournamentManager {
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
+    // Saved before seat draws used a 32-byte seed, with its seats still to draw: it draws from a fresh secure seed
+    // rather than the old 32-bit one. Nobody ever saw the old seed, so nothing anyone saw changes.
+    const reseeded = needsSeatSeed(state);
+    if (reseeded) state = withSeatSeed(state, this.newSeatSeed());
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {
@@ -564,7 +579,7 @@ export class TournamentManager {
       live.replay = null;
       live.applying = false;
     }
-    if (missed.length) this.scheduleSave(live);
+    if (missed.length || reseeded) this.scheduleSave(live);
     // Catch up on anything that came due while the server was down before any table deals, so a level or
     // break that started in the meantime applies to the first hand.
     const at = nextWakeAt(live.state);

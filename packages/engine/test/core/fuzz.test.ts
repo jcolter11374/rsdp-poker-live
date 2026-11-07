@@ -155,7 +155,10 @@ function play(seed: number): HandState {
 }
 
 describe('fuzz: random hands in every game', () => {
-  it('always finishes, conserves chips and never duplicates a card', () => {
+  // CI's 3,000 hands take 6-8 s, past vitest's 5 s default for one test. Vitest 2 never enforced that on a test that
+  // doesn't wait, so this limit is new, not looser. A run with FUZZ_HANDS set (the nightly one deals 30,000) has no
+  // limit here: its workflow step's limit stands in.
+  it('always finishes, conserves chips and never duplicates a card', { timeout: process.env.FUZZ_HANDS ? 0 : 60_000 }, () => {
     let played = 0;
     let reshuffles = 0;
     const proofs: object[] = [];
