@@ -122,7 +122,7 @@ describe('database storage', () => {
   it('never saves a new tournament over one with the same id', async () => {
     const store = dbTournamentStore(db);
     const [host, other] = await Promise.all(['db-tn-same-id-host-0123456789', 'db-tn-same-id-other-0123456789'].map((t) => dbIdentity(db).resolve(t)));
-    const state = createTournament({ id: 'feedfacecafebeef', hostId: host.playerId, settings: tournamentDefaults({ name: 'First' }), now: Date.now(), seed: 1 });
+    const state = createTournament({ id: 'feedfacecafebeef', hostId: host.playerId, settings: tournamentDefaults({ name: 'First' }), now: Date.now(), seed: '01'.repeat(32) });
     expect(await store.create(state)).toBe(true);
     expect(await store.create({ ...state, hostId: other.playerId, settings: { ...state.settings, name: 'Second' } })).toBe(false);
     expect((await store.load(state.id))!.state).toMatchObject({ hostId: host.playerId, settings: { name: 'First' } });
@@ -134,7 +134,7 @@ describe('database storage', () => {
   it('marks events the server opened before `spawnedFrom` was saved, from the link the event before them saved', async () => {
     const host = await dbIdentity(db).resolve('db-tn-spawned-host-0123456789');
     for (const [prefix, store] of [['d', dbTournamentStore(db)], ['m', memoryTournamentStore()]] as const) {
-      const made = (n: number, name: string) => createTournament({ id: `${prefix}00000000000000${n}`, hostId: host.playerId, settings: tournamentDefaults({ name }), now: Date.now(), seed: 1 });
+      const made = (n: number, name: string) => createTournament({ id: `${prefix}00000000000000${n}`, hostId: host.playerId, settings: tournamentDefaults({ name }), now: Date.now(), seed: '01'.repeat(32) });
       const [first, second, third, own] = [made(1, 'Turbo 1'), made(2, 'Turbo 2'), made(3, 'Turbo 3'), made(4, 'Sunday main')];
       for (const s of [first, second, third, own]) await store.create(s);
       // Saved as before the field existed: the first, now finished, links to the second (which the server opened), and that to the third.

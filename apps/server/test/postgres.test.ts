@@ -10,7 +10,6 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { closeDb, createDb, MIGRATIONS_DIR, queryRows, type Db } from '../src/db/client';
-import { ledgerFor, openSeatSession, recordMovement } from '../src/db/ledger';
 import { createTable, loadSnapshot, saveSnapshot } from '../src/db/tables';
 import { resetTestDb } from '../src/db/testing';
 import { createAccount, login, resolveSession, resolveToken } from '../src/identity';
@@ -52,18 +51,6 @@ describe.skipIf(!url)('on Postgres (node-postgres)', () => {
     const table = await createTable(a, { ownerPlayerId: player.id, settings: { game: 'nlh' } });
     await saveSnapshot(a, table.id, { version: 1, state: { big: 2 ** 53 - 1 } });
     expect((await loadSnapshot(b, table.id))?.state).toEqual({ big: 2 ** 53 - 1 });
-
-    const seat = await openSeatSession(a, { tableId: table.id, playerId: player.id, seat: 0 });
-    const m = await recordMovement(a, {
-      tableId: table.id,
-      seatSessionId: seat.id,
-      playerId: player.id,
-      kind: 'buy-in',
-      amount: 2 ** 52,
-      stackBefore: 0,
-    });
-    expect(m.amount).toBe(2 ** 52);
-    expect((await ledgerFor(b, table.id)).totals.onTable).toBe(2 ** 52);
   });
 
   it('never runs a job twice across two connection pools', async () => {

@@ -23,7 +23,7 @@ describe('standings after a re-entry', () => {
         payouts: { structure: payoutPreset('standard', 600), money: { buyIn: 2000, rebuy: 2000 } },
       }),
       now: T0,
-      seed: 42,
+      seed: '42'.repeat(32),
     });
     const run = (cmd: Command) => (s = apply(s, cmd, T0).state);
     for (const p of ['p0', 'p1', 'p2']) run({ type: 'register', playerId: p, displayName: p.toUpperCase() });
