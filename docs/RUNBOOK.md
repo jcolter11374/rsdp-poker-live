@@ -45,6 +45,16 @@ Something broke right after a release: errors, a page that doesn't load, games m
 - **A few wrong rows** (a mistaken result, a stuck table): fix it through the site's own host or admin tools where possible. A change made by hand on the machine doesn't go in the public record, so note it in the incident log.
 - **The database is damaged or gone:** restore the newest backup. The steps are in DEPLOY.md under "Restoring". Restoring takes the site back to the moment of the backup, so tell players first. John has to unlock the backup with his key.
 
+## Running short of memory or disk
+
+The automatic issue "The server is running short of memory or disk" means the daily check (`resources.yml`, see [DEPLOY.md](DEPLOY.md#memory-and-disk-check)) found the server using over 800 MB of the machine's 1 GB of memory, or the 1 GB data disk over 70% full. The issue says which, with the numbers. Nothing is broken yet: it's a warning, so there's time to do this at a quiet time.
+
+1. **Look again.** Open `https://rsdp-poker-live.fly.dev/api/health` (anyone can; it only reads). `memoryMb` is the memory now, `diskUsedPct` and `diskFreeMb` the disk. The site-down alert covers a site that doesn't answer.
+2. **Restart at a quiet time:** no games being played and no tournament due soon (the home page shows both). Run Actions → Deploy → Run workflow on `main`, with the same care as under "The site is down", step 2 (it builds the newest commit on `main`). A restart gives memory back, and at start-up the server tidies its biggest table (`VACUUM FULL table_snapshots`), which gives disk space back too.
+3. **Run the check again** (Actions → Memory and disk check → Run workflow) a few minutes after the restart, once the start-up peak (near 600 MB) has passed. It closes the issue if both are back under the lines.
+4. **Still over after a restart, or back over within days?** For the disk, John follows "Disk full" below to see what's using the space. For memory, Fly's dashboard (Monitoring) shows how it grew. Either way, write what you found on the issue.
+5. **The lasting fix costs money, so it's John's call.** A bigger machine (`memory` under `[[vm]]` in `fly.toml`, through a PR), a bigger volume (`fly volumes extend`, see "Disk full"), or moving the database to a separate Postgres each add to the monthly bill. A Claude session can prepare the PR and say what it would cost, but doesn't merge it until John has agreed.
+
 ## Disk full
 
 The data volume is 1 GB. The server tidies the embedded database itself (it vacuums at start-up and every 5 minutes), so a full disk means something unusual. John, with `flyctl` signed in:
@@ -58,6 +68,7 @@ The data volume is 1 GB. The server tidies the embedded database itself (it vacu
 | Issue title | Opened by | What it means | Who acts |
 | --- | --- | --- | --- |
 | The site is down | `uptime.yml` | `/api/health` didn't answer, or its database didn't, for about 3 minutes. | Anyone checks and runs Deploy (above). John checks Fly. |
+| The server is running short of memory or disk | `resources.yml` | The daily check found memory over 800 MB or the data disk over 70% full. Nothing is broken yet. | Anyone restarts at a quiet time ("Running short of memory or disk", above). A bigger machine, disk or database costs money: John decides. |
 | Nightly backup failed | `backup.yml` | The latest daily backup, restore drill or locking failed. The run's log says which. | A Claude session reads the log and fixes it in a PR. Two failures in a row are urgent: there's no fresh copy. |
 | Transparency watcher found a problem | `transparency.yml` | One of the watcher's checks failed. It might be an image `deploy.yml` didn't sign, a secret the code doesn't read, an unexpected setting, a second machine, settings that changed without a new image, a public record that doesn't add up, or the site not saying which commit it runs (`/api/version`). That last one is also how an outage looks to the watcher. It also opens when one of its own checks hasn't managed to finish for 12 hours: a run in which a check couldn't finish, after a long gap. GitHub starting the job late (#196) can make the gap long, but the issue says "(it last exited with N)". 2 means it couldn't reach the site, Fly or GitHub, or a deploy was running: harmless if the next run is clean. 3 means the watcher's own script broke and needs a fix in a PR. This issue is public. | John looks first. If it's an outage, GitHub running late, or a mistake on our side (for example a new secret not yet allowlisted), explain that on the issue and fix anything that needs a PR. Never close it without an explanation. |
 | Security advisories in the libraries the server runs | `advisories.yml` | The weekly `npm audit` found a high or critical advisory in a library that ships to the server. The issue lists them. | A Claude session checks whether it's reachable and upgrades in a PR. The issue closes itself once none are left. |
@@ -107,6 +118,7 @@ If a request arrives as a public issue, thank them and ask them to message John 
 ## Logs
 
 - **Server logs:** `fly logs -a rsdp-poker-live` (John, or anyone with Fly access). Fly keeps only recent logs (unverified: about 7 days), so copy anything important into the incident note.
+- **A slow or stuck shutdown:** every stop logs its steps' times, starting `shutdown:`. A line `shutdown: gave up after 10000 ms, stuck <step> ...` means the server didn't finish by itself and its 10-second fallback stopped it, skipping whatever came after that step (if it was stuck before "writing the public record", the last public record entries too). Tables and tournaments are saved before the steps most likely to hang, and CI fails a change that needs the fallback, so this should not happen. If it does, open an issue with all the `shutdown:` lines from that stop: the step it was stuck on is where to look.
 - **Workflow runs:** the Actions tab keeps each run's log for the repository's retention period.
 - **What players and the operator did:** the public record on the `transparency` branch, and the /transparency page.
 

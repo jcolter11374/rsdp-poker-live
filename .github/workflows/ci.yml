@@ -92,8 +92,25 @@ jobs:
           test "$(jq '.leaderboard | length' expected.json)" -gt 0
       - name: Restart keeps data and shuts down cleanly
         run: |
-          docker stop rsdp
+          # A connection that would hold the server open: a request whose headers never finish (Node waits a minute
+          # for them). The server must cut it after a short grace, not wait for it.
+          exec 3<>/dev/tcp/127.0.0.1/3001
+          printf 'GET /api/health HTTP/1.1\r\nHost: ci\r\n' >&3
+          # docker stop's own limit is 30 s, as Fly's is (kill_timeout), so a stop that needed the server's 10 s
+          # fallback shows, both in the time it took and in the line the server logs when it gives up.
+          start=$(date +%s%N)
+          docker stop -t 30 rsdp
+          ms=$(( ($(date +%s%N) - start) / 1000000 ))
+          exec 3<&-
+          echo "docker stop took $ms ms"
+          docker logs rsdp 2>&1 | grep '^shutdown' || true
           test "$(docker inspect rsdp --format '{{.State.ExitCode}}')" = 0
+          if docker logs rsdp 2>&1 | grep -q '^shutdown: gave up'; then
+            echo "::error::The server didn't finish shutting down by itself and was stopped by its 10 s fallback. The shutdown lines above say which step it was stuck on."
+            exit 1
+          fi
+          docker logs rsdp 2>&1 | grep -q '^shutdown: finished' || { echo "::error::The server never logged that its shutdown finished."; exit 1; }
+          [ "$ms" -lt 9000 ] || { echo "::error::Stopping took $ms ms, close to the server's 10 s fallback; a clean stop takes a few seconds."; exit 1; }
           docker start rsdp
           for i in $(seq 1 60); do curl -sf localhost:3001/api/health && exit 0; sleep 1; done
           docker logs rsdp; exit 1
