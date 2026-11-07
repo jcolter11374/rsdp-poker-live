@@ -107,8 +107,11 @@ try {
 
   // Seven at the table: 2-7 Triple Draw seats 6, so it is greyed out.
   for (let i = 0; i < 3; i++) {
+    const seated = await john.locator('.seat:not(.empty)').count();
     await john.locator('.seat.empty button.add-bot').first().click();
     await john.locator('.modal button.primary').click();
+    // Wait for each bot to sit before the next click: while the table redraws, a "+ Bot" button can move or go.
+    await john.waitForFunction((n) => document.querySelectorAll('.seat:not(.empty)').length > n, seated, { timeout: 30_000 });
   }
   const seven = await chooser(300_000);
   await shot(seven, 'dc-greyed', `Seven at the table: 2-7 Triple Draw seats 6, so it is greyed out for ${seven.label}.`);

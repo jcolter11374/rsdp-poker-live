@@ -29,6 +29,7 @@ _Dealer's choice_
 
 ### Fixed and changed
 
+- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
 - Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. The strip only shows when it has something for you to do (a rebuy, an add-on, a re-entry, your seat at another table).
 - Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
 - Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
