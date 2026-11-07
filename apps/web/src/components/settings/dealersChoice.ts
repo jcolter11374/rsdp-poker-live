@@ -2,12 +2,12 @@ import { SETTINGS_LIMITS, type ChoiceGame, type DealersChoiceSettings, type Tabl
 import { getVariant, MIXED_GAMES, VARIANT_LIST } from '@rsdp/engine/variants';
 import { defaultStudAnte, studBringIn } from '../../format';
 
-/** Dealer's choice settings, filled in for tables saved before it existed (D32). */
+/** Dealer's choice settings, filled in for tables saved before it existed (D33). */
 export const choiceOf = (settings: TableSettings): DealersChoiceSettings => settings.game.dealersChoice ?? { enabled: false, games: [], hands: 0, pickSeconds: 20 };
 
 const fromMix = (id: string) => MIXED_GAMES.find((m) => m.id === id)!.steps.map((st) => ({ gameId: st.gameId, betting: st.betting }));
 
-/** One-tap menus. HORSE and 8-Game fill the menu with their games; they aren't a single pick (D32, decision 8). */
+/** One-tap menus. HORSE and 8-Game fill the menu with their games; they aren't a single pick (D33, decision 8). */
 export const CHOICE_FILLS: { id: string; name: string; games: ChoiceGame[] }[] = [
   { id: '8-game', name: 'The 8-Game games', games: fromMix('8-game') },
   { id: 'horse', name: 'The HORSE games', games: fromMix('horse') },

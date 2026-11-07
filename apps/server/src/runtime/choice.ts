@@ -1,5 +1,5 @@
 /**
- * Dealer's choice (D32): players take turns choosing the game.
+ * Dealer's choice (D33): players take turns choosing the game.
  *
  * A Pick chip, separate from the dealer button, sits with the next chooser.
  * Each pick lasts one orbit (as many hands as were dealt into its first hand,

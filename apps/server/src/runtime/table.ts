@@ -1282,7 +1282,7 @@ export class TableRuntime {
     // Every amount here, the ledger and everyone's records are in the table's unit, so it stays the one the table was made with.
     if (next.stakes.centsMode !== cur.stakes.centsMode) throw new ActionError(cur.stakes.centsMode ? 'cash games are played in dollars and cents' : 'this table plays in chips; start a new table to play in dollars and cents');
     const seated = this.state.seats.filter(Boolean).length;
-    // Dealer's choice keeps the table's seats: games that seat fewer are greyed out in the picker (D32). No game on
+    // Dealer's choice keeps the table's seats: games that seat fewer are greyed out in the picker (D33). No game on
     // the menu may seat fewer than are sitting down.
     const menu = choiceMenu(next);
     if (menu) {

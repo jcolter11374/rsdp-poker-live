@@ -54,7 +54,7 @@
 .felt.compact .nameplate .note-badge:not(.has-note) { display: none; }
 .felt.compact .nameplate .note-badge.has-note { top: -4px; right: -4px; width: 12px; height: 12px; font-size: 0; line-height: 0; border-width: 1.5px; border-color: var(--panel); }
 .note-button { align-self: flex-start; margin-top: 4px; }
-/* Dealer's choice (D32): the Pick chip on the next chooser's nameplate, closed seats, and the chooser's panel. */
+/* Dealer's choice (D33): the Pick chip on the next chooser's nameplate, closed seats, and the chooser's panel. */
 .tag.pick-tag { background: #c98a1b; }
 /* Phones hide the name tags to save room, so the picture wears the Pick chip, on top (a bot's level is underneath). */
 .seat-avatar .pick-badge { display: none; }

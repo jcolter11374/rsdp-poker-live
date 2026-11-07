@@ -42,7 +42,7 @@ How this file works:
 | [D29](#d29-in-a-mix-with-stud-only-the-stud-games-ante) | In a mix with stud, only the stud games ante | 2026-11-06 | Claude |
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
-| [D32](#d32-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
+| [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 
 ---
 
@@ -349,7 +349,7 @@ How this file works:
 - **Why:** each is what a card room does, or the plainest rule that keeps every game its full length. A big-blind ante of 300 at a full stud table of 8 puts about what 8 antes of 40 put in, and matches what the per-player presets give at that big blind.
 - **Where:** `packages/engine/src/variants/antes.ts` (`studAnteForBigBlindAnte`, `anteForGame`), `levelDeal` in `packages/tournament/src/director.ts`, and in `apps/server/src/runtime/table.ts`: `fillStakes`, `cashHandStakes`, `nextRotation`, `dealHand`, `applyPendingSettings` and `moveIntoKeptSeats`.
 
-## D32. Dealer's choice
+## D33. Dealer's choice
 
 - **Decided:** 2026-11-06, by John (issue #341). He asked how Dealer's choice would work, read the plan, and took all nine of its recommendations on a decision card. The fine print below the nine is Claude's, settled while building it, and reversible.
 - **Decision (John's nine):**

@@ -70,7 +70,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   const choice = choiceOf(draft);
   const mode: 'one' | 'rotate' | 'choice' = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
   const games = draft.game.rotation.enabled && draft.game.rotation.steps.length ? draft.game.rotation.steps.map((s) => s.gameId) : [draft.game.gameId];
-  // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D32).
+  // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D33).
   const seatLimit = mode === 'choice' ? menuSeats(choice.games) : maxSeatsFor(games);
 
   // A game with fewer seats than the table: say up front who has to leave, or who moves seats.

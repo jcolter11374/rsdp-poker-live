@@ -252,7 +252,7 @@ export interface RuntimeState {
   level: { index: number; elapsedMs: number; runningSince: number | null; hands: number };
   /** Mixed-game rotation progress. */
   rotation: { step: number; hands: number; orbits: number; anchor: number | null };
-  /** Dealer's choice (D32): the Pick chip and the game picked. Missing until a table plays it. */
+  /** Dealer's choice (D33): the Pick chip and the game picked. Missing until a table plays it. */
   choice?: ChoiceState;
   chat: ChatMessage[];
   log: TableLogEntry[];

@@ -1,4 +1,4 @@
-// Play-test: Dealer's choice (D32). A host makes a Dealer's choice table from
+// Play-test: Dealer's choice (D33). A host makes a Dealer's choice table from
 // the front page, three friends join (one on a phone), and they take turns
 // picking games: in time, early during the last hand of a pick, and late (the
 // current game carries on). Then three bots join, so 2-7 Triple Draw (6 seats) is
