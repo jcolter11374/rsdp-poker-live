@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, NoAnswerError, socket } from './socket';
-import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from './fair';
+import { contributeSeed, liveSeedWarning, watchCommitments, watchNextSeen } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -125,7 +125,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | { kind: 'seed'; text: string } | null;
 
 /** How long the keyboard tip stays up if nobody presses Got it. */
 const KEYS_TIP_MS = 20_000;
@@ -409,7 +409,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
   // Worked out once per render: it reads this browser's saved notes.
-  const seedWarning = liveSeedProblem(view);
+  const seedWarning = liveSeedWarning(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
   const pending = view.powers.includes('approve') ? view.requests.length : 0;
@@ -583,6 +583,13 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Host controls, on Host & log or on the menu.
   const yourTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
   const dockNotes = [
+    // Short, so it fits the area under the table without taking the table's height; Details has the whole of it (#438).
+    seedWarning && (
+      <div className="banner warn seed-warning" key="seed">
+        ⚠ Fair dealing: {seedWarning.line}.{' '}
+        <button onClick={() => setDialog({ kind: 'seed', text: seedWarning.text })}>Details</button>
+      </div>
+    ),
     noticeUnder && view.hand && (
       <div className="banner" key="stopped">
         {startNotice!.text}
@@ -815,7 +822,6 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           )}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
-          {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {seatErrorLine}
           <Table
             view={view}
@@ -977,6 +983,18 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'keys' && <ShortcutsDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === 'feedback' && <FeedbackDialog portrait={portrait} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'seed' && (
+        <Modal title="Fair dealing warning" onClose={() => setDialog(null)}>
+          <p>Your browser checks the seeds each hand is dealt from. For this hand, {dialog.text}.</p>
+          <p>Tell the table, and check this hand once it&rsquo;s revealed: open it in the replayer and press Check this hand.</p>
+          <p>
+            <a href="/fairness" target="_blank" rel="noreferrer">
+              How fair dealing works
+            </a>
+          </p>
+          <button onClick={() => setDialog(null)}>Close</button>
+        </Modal>
+      )}
     </div>
   );
 }

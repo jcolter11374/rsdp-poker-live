@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockSocket = vi.hoisted(() => ({ connected: false, emit: (..._: unknown[]) => {} }));
 vi.mock('./socket', () => ({ socket: mockSocket }));
-const { contributeSeed, liveRecordFor, liveSeedProblem, proofSeeds, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
+const { contributeSeed, liveRecordFor, liveSeedProblem, liveSeedWarning, proofSeeds, recordSeedProblem, seedListPassed, seedListProblem, seedProblem, shownAs, watchCommitments, watchNextSeen } = await import('./fair');
 
 const store = new Map<string, string>();
 beforeEach(() => {
@@ -509,6 +509,37 @@ describe('seeds that nobody checks', () => {
     expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
     expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }]))).toMatch(/\(ff\).*practice bot/);
     expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }]))).toMatch(/same seed \(aa\)/);
+  });
+
+  it('gives the table a short line, which says so in the one case that can be harmless (#438)', () => {
+    sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
+    accepted('aa');
+    const view = (clientSeeds: { playerId: string; seed: string }[]) =>
+      ({
+        id: 't1',
+        me: { playerId: 'me', seat: 0 },
+        seats: [{ seat: 0, playerId: 'me' }, { seat: 1, playerId: 'bot-1', bot: { ownerId: 'me', ownerName: 'Me', look: 0 } }, null],
+        hand: { names: { 0: 'Me', 1: 'Bot' }, fair: { commit: C, clientSeeds } },
+      }) as unknown as Parameters<typeof liveSeedWarning>[0];
+    store.set('rsdp.fairLive', JSON.stringify({ [C]: JSON.stringify({ at: 10_000, button: 0, seats: [0, 1], board: [], cards: {} }) }));
+    expect(liveSeedWarning(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
+    // A seed from my other device: the short line says that's expected; the whole warning is kept for its details.
+    const other = liveSeedWarning(view([{ playerId: 'me', seed: 'bb' }]))!;
+    expect(other.line).toMatch(/didn't come from this browser.*expected if you're also at this table on another device/);
+    expect(other.text).toBe(liveSeedProblem(view([{ playerId: 'me', seed: 'bb' }])));
+    expect(other.text).toMatch(/\(bb\).*If you aren't, the deck may have been steered/);
+    // Anything else says the deck may have been steered, and never that it's expected.
+    for (const seeds of [
+      [{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }],
+      [{ playerId: 'me', seed: 'bb' }, { playerId: 'me', seed: 'cc' }],
+      [{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }],
+      [],
+    ]) {
+      const warning = liveSeedWarning(view(seeds))!;
+      expect(warning.text).toBe(liveSeedProblem(view(seeds)));
+      expect(warning.line).toMatch(/may have been steered\. Tell the table$/);
+      expect(warning.line).not.toMatch(/expected/);
+    }
   });
 
   it('notes who was dealt in and who is a bot, so "Check this hand" need not take the record\'s word for it', () => {

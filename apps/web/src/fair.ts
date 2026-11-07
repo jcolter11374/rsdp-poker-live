@@ -346,7 +346,7 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
   if (under && under !== accepted && under !== sentSeed?.seed && !madeHere(commit, under)) {
     // Expected when one player is on two devices (#209): the table keeps only the newest seed. Still shown, as from
     // here a dishonest server would look the same; the wording says which case is harmless.
-    return `a seed (${under}) was listed under your name that this browser didn't send. If you're also at this table on another device (a phone and a laptop, say), that's expected and you can ignore it: the table uses only the newest seed from either one. If you aren't, the deck may have been steered`;
+    return notSentHere(under);
   }
   // Another tab's copy of the same seed may have got in first and been accepted.
   if (rejected && under === sentSeed!.seed && under !== accepted) return `the server turned down your browser's seed (${under}) but used it anyway`;
@@ -362,6 +362,29 @@ export function seedProblem(commit: string, listed: { playerId: string; seed: st
     return `the hand was dealt too soon after its commitment appeared for your browser's seed (${sentSeed.seed}) to count`;
   }
   return null;
+}
+
+/** A seed under my name that this browser didn't send: harmless when I'm also at the table on another device (#209). */
+function notSentHere(seed: string): string {
+  return `a seed (${seed}) was listed under your name that this browser didn't send. If you're also at this table on another device (a phone and a laptop, say), that's expected and you can ignore it: the table uses only the newest seed from either one. If you aren't, the deck may have been steered`;
+}
+
+/**
+ * The live warning for the hand in progress, if any: `text` is the whole of it, for its details, and `line` a short
+ * form that fits the area under the table, which holds its height, so the warning never takes the table's and moves
+ * every seat (#438). The one case that can be harmless says so in the short form too.
+ */
+export function liveSeedWarning(view: TableView): { line: string; text: string } | null {
+  const text = liveSeedProblem(view);
+  if (!text) return null;
+  const mine = view.hand!.fair!.clientSeeds.filter((c) => c.playerId === view.me.playerId);
+  const otherDevice = mine.length === 1 && text === notSentHere(mine[0].seed);
+  return {
+    text,
+    line: otherDevice
+      ? "a seed under your name didn't come from this browser. That's expected if you're also at this table on another device"
+      : 'your browser found a problem with how this hand was dealt, so the deck may have been steered. Tell the table',
+  };
 }
 
 /** The live warning for the hand in progress, if the seeds listed for it don't add up for me. */

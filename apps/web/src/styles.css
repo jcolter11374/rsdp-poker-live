@@ -914,6 +914,9 @@ dl.shortcuts dd { margin: 0; }
 /* A spot kept for notes that come and go (a tournament's asks, #385) takes no room while it's empty. */
 .dock-notes:empty { display: none; }
 .dock-notes .banner.clickable { cursor: pointer; }
+/* The fair-dealing seed warning: a short line and a small Details button, so it stays within the room this area holds
+   (#438). Details has the whole of it. */
+.dock-notes .seed-warning button { padding: 1px 10px; font-size: 0.85em; color: inherit; background: transparent; border-color: currentColor; vertical-align: baseline; }
 /* Windows too narrow for the side column (a laptop window at half width, a tablet on its side): the table's size comes
    from the window there, not from this area, and under the buttons the notes would be at the bottom edge of the screen.
    They go above the buttons, and stay on your turn so the buttons never move under a finger as it starts. */
