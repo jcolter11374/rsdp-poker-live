@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apart, besideBet, clearSideBands, fitHand, handRoom, inFront, placeSeats, seatFractions, seatsApart, spreadByBoxes, stadiumLength, stadiumPoint, type Extent } from './geometry';
+import { apart, besideBet, clearSideBands, FELT_SLACK, fitHand, fitMiddle, handRoom, inFront, keepPlaced, placeSeats, seatFractions, seatsApart, spreadByBoxes, stadiumLength, stadiumPoint, type Extent } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -320,5 +320,73 @@ describe('handRoom and fitHand (#304: your cards covering a neighbour on a phone
     // At least 45% of each card still shows, enough for its rank and suit.
     expect(smaller.cw - smaller.overlap).toBeGreaterThanOrEqual(Math.floor(smaller.cw * 0.45));
     expect(fitHand(4, 20, natural)!.cw).toBe(30);
+  });
+});
+
+describe('keepPlaced (#410: seats kept through a small change to the felt)', () => {
+  const was = { key: '2-4|0|0|111100000|0', w: 646, h: 402 };
+  it('keeps them through a change of a few pixels, and the 17px #410 measured', () => {
+    expect(keepPlaced(was, was.key, 646, 402)).toBe(true);
+    expect(keepPlaced(was, was.key, 646, 396)).toBe(true);
+    expect(keepPlaced(was, was.key, 646, 385)).toBe(true);
+    expect(keepPlaced(was, was.key, 640, 410)).toBe(true);
+  });
+  it('keeps them through 20px on a small felt, where that is more than 5% (a laptop window with its browser bars)', () => {
+    const small = { ...was, h: 320 };
+    expect(keepPlaced(small, was.key, 646, 303)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 300)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 299)).toBe(false);
+  });
+  it('places them afresh after a bigger change, a new key, or before anything was placed or measured', () => {
+    expect(keepPlaced(was, was.key, 646, Math.floor(402 * (1 - FELT_SLACK)) - 1)).toBe(false);
+    expect(keepPlaced(was, was.key, 700, 402)).toBe(false);
+    expect(keepPlaced(was, '2-3-4-5-6-7|0|0|111100000|0', 646, 402)).toBe(false);
+    expect(keepPlaced(null, was.key, 646, 402)).toBe(false);
+    expect(keepPlaced({ ...was, w: 0, h: 0 }, was.key, 0, 0)).toBe(false);
+  });
+});
+
+describe('fitMiddle', () => {
+  const centre = { x: 500, y: 200 };
+  // A board row 300 wide and 60 tall, and a winner's line under it, centred on (500, 200).
+  const board = { left: 350, right: 650, top: 150, bottom: 210 };
+  const line = { left: 400, right: 600, top: 220, bottom: 250, line: true };
+
+  it('keeps the full size when nothing is covered', () => {
+    expect(fitMiddle([board, line], [{ left: 450, right: 550, top: 20, bottom: 100 }], null, centre)).toBe(1);
+  });
+
+  it('draws the middle just small enough to clear a seat below it', () => {
+    // A nameplate whose top is 10px into the winner's line: at k the line's bottom is 200 + 50k, plus the 4px gap.
+    const k = fitMiddle([board, line], [{ left: 450, right: 550, top: 240, bottom: 300 }], null, centre);
+    expect(k).toBe(0.72);
+    expect(200 + 50 * k + 4).toBeLessThanOrEqual(240);
+  });
+
+  it('never draws the middle smaller for the dealer button alone', () => {
+    const button = { left: 490, right: 516, top: 236, bottom: 262 };
+    expect(fitMiddle([board, line], [], button, centre)).toBe(1);
+  });
+
+  it('where a seat makes it smaller anyway, goes a little further to move the lines off the button', () => {
+    // The seat needs 0.92 (the line's bottom, 200 + 50k, and the 4px gap reach no lower than 250). A button whose top is
+    // at 248 needs two steps more, 0.88; one at 246 would need 0.84, too far, so the seat's 0.92 stands.
+    const seat = { left: 450, right: 550, top: 250, bottom: 300 };
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 248, bottom: 274 }, centre)).toBe(0.88);
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 246, bottom: 272 }, centre)).toBe(0.92);
+    // On the cards, the button never matters.
+    expect(fitMiddle([board, line], [seat], { left: 490, right: 516, top: 150, bottom: 176 }, centre)).toBe(0.92);
+  });
+
+  it('lets the button stay on a line rather than give up much size for it', () => {
+    // No size near 0.92 (what the seat needs) clears the button, so the seat's size stands.
+    const button = { left: 480, right: 520, top: 205, bottom: 245 };
+    const seat = { left: 450, right: 550, top: 250, bottom: 300 };
+    expect(fitMiddle([board, line], [seat], button, centre)).toBe(0.92);
+  });
+
+  it('stops at the smallest size and covers as little as it can there', () => {
+    const seat = { left: 300, right: 700, top: 180, bottom: 260 };
+    expect(fitMiddle([board, line], [seat], null, centre)).toBe(0.6);
   });
 });

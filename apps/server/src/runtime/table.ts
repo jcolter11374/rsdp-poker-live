@@ -528,12 +528,14 @@ export class TableRuntime {
     if (maxBuyIn > 0 && stack > maxBuyIn) throw new ActionError(`the maximum buy-in is ${this.money(maxBuyIn)}`);
     const left = this.state.departures[playerId];
     if (ratholeMinutes > 0 && left && this.clock.now() - left.at < ratholeMinutes * 60_000 && stack < left.stack) {
-      throw new ActionError(`you left with ${this.money(left.stack)} less than ${ratholeMinutes} minutes ago; come back with at least that`);
+      throw new ActionError(`you left with ${this.money(left.stack)} less than ${ratholeMinutes} ${ratholeMinutes === 1 ? 'minute' : 'minutes'} ago; come back with at least that`);
     }
   }
 
   /** A seat someone else is waiting on: held for a waitlisted player, or asked for and awaiting the host. */
   private checkSeatFree(playerId: PlayerId, seat: number) {
+    // Browsers still show it taken (see revealSeats), whether or not its player busted or left.
+    if (this.revealSeats().has(seat)) throw new ActionError('that seat is taken');
     const offer = this.offers().find((o) => o.seat === seat);
     if (offer && offer.playerId !== playerId) throw new ActionError(`that seat is being held for ${this.queueName(offer.playerId)} from the waitlist`);
     const asked = this.state.requests.find((r) => r.kind === 'seat' && r.seat === seat && r.playerId !== playerId);
@@ -552,7 +554,9 @@ export class TableRuntime {
   /** Players sitting in seats a smaller table is about to drop: they move down into free seats when it does. */
   private movers(): number {
     const limit = this.seatLimit();
-    return this.state.seats.filter((x, i) => x && i >= limit).length;
+    // A player in an all-in runout still being dealt out counts where browsers still show them, bust or not (#437).
+    const reveal = this.revealSeats();
+    return this.state.seats.filter((x, i) => i >= limit && (x || reveal.has(i))).length;
   }
 
   /** `newcomer`: someone sitting down, who must not take a free seat a mover needs; null for a move. */
@@ -576,7 +580,8 @@ export class TableRuntime {
       ...this.state.requests.filter((r) => r.kind === 'seat' && r.playerId !== playerId).map((r) => r.seat!),
     ]);
     const limit = this.seatLimit();
-    const open = this.state.seats.flatMap((x, i) => (x || held.has(i) || i >= limit ? [] : [i]));
+    const reveal = this.revealSeats();
+    const open = this.state.seats.flatMap((x, i) => (x || held.has(i) || reveal.has(i) || i >= limit ? [] : [i]));
     // Players in the seats a smaller table drops need somewhere to go: the seats they will take
     // (see moveIntoKeptSeats) aren't open to anyone else.
     const kept = new Set(this.moverSeats(limit, this.movers()));
@@ -597,7 +602,14 @@ export class TableRuntime {
    */
   private tableCount(): number {
     const offered = new Set(this.offers().map((o) => o.playerId));
-    return this.state.seats.filter(Boolean).length + [...offered].filter((id) => !this.seatOf(id)).length;
+    return this.seatedCount() + [...offered].filter((id) => !this.seatOf(id)).length;
+  }
+
+  /** Everyone sitting down, and anyone who busted or left in an all-in runout browsers are still dealing out. */
+  private seatedCount(): number {
+    const last = this.state.history.at(-1);
+    const gone = last && this.revealSeats().size ? last.hand.seats.filter((hs) => !this.seatOf(hs.playerId)).length : 0;
+    return this.state.seats.filter(Boolean).length + gone;
   }
 
   /**
@@ -611,7 +623,7 @@ export class TableRuntime {
     if (!cap) return null;
     const holds = playerId !== null && (this.offers().some((o) => o.playerId === playerId) || this.state.requests.some((r) => r.kind === 'seat' && r.playerId === playerId));
     const others = holds ? new Set(this.offers().map((o) => o.playerId).filter((id) => id !== playerId && !this.seatOf(id))).size : this.heldSeats(playerId);
-    return cap.cap - this.state.seats.filter(Boolean).length - others;
+    return cap.cap - this.seatedCount() - others;
   }
 
   /** `asker` gets the error: a spectator on the delay isn't told which game was picked before their view shows it. */
@@ -650,10 +662,13 @@ export class TableRuntime {
    * The free seats the players in a smaller table's dropped seats will move into: the highest
    * seats nobody is waiting on, then held ones if there aren't enough.
    */
-  private moverSeats(limit: number, count: number): number[] {
+  private moverSeats(limit: number, count: number, moving = false): number[] {
     if (count <= 0) return [];
     const held = new Set([...this.offers().map((o) => o.seat), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!)]);
-    const free = this.state.seats.slice(0, limit).flatMap((x, i) => (x ? [] : [i])).reverse();
+    // The seat of a player in an all-in runout still being dealt out isn't free yet, bust or not (#437), except to
+    // players actually moving now, who must not be left without a seat.
+    const reveal = moving ? new Set<number>() : this.revealSeats();
+    const free = this.state.seats.slice(0, limit).flatMap((x, i) => (x || reveal.has(i) ? [] : [i])).reverse();
     return [...free.filter((i) => !held.has(i)), ...free.filter((i) => held.has(i))].slice(0, count);
   }
 
@@ -675,7 +690,7 @@ export class TableRuntime {
     if (this.state.offers?.some((o) => o.playerId === playerId)) this.state.offers = this.state.offers.filter((o) => o.playerId !== playerId);
   }
 
-  /** Join the waitlist of a full cash table, with the buy-in to sit with when a seat comes up. */
+  /** Join a cash table's waitlist, with the buy-in to sit with when a seat comes up. */
   joinWaitlist(playerId: PlayerId, input: { name: string; stack: number }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
     if (!this.settings.seating.waitlist) throw new ActionError('this table has no waitlist');
@@ -683,7 +698,11 @@ export class TableRuntime {
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
     if (this.queue().some((w) => w.playerId === playerId)) throw new ActionError("you're already on the waitlist");
     if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
-    if (this.openSeats(playerId).length) throw new ActionError('there is a free seat: take it');
+    // Queued even when a seat is free: upkeep offers it straight away (a seat someone had in an all-in runout once the
+    // runout has been dealt out, see revealSeats). Refusing would tell someone pressing "Join the waitlist" during the
+    // runout that a player in it had busted and left before the cards were out (#437). The browser also holds back any
+    // offer made since the result until the result shows (holdBack in runout.ts), in case its runout ends a little
+    // later than the server's.
     this.checkBuyIn(playerId, input.stack);
     this.queue().push({ playerId, name, stack: input.stack, at: this.clock.now() });
     this.log(`${name} joined the waitlist`);
@@ -1478,7 +1497,7 @@ export class TableRuntime {
     const s = this.state;
     const moving = s.seats.slice(limit).filter((x): x is SeatState => !!x);
     if (!moving.length) return;
-    const free = this.moverSeats(limit, moving.length).sort((a, b) => a - b);
+    const free = this.moverSeats(limit, moving.length, true).sort((a, b) => a - b);
     for (const seat of moving) {
       const to = free.shift();
       if (to === undefined) return;
@@ -2800,6 +2819,16 @@ export class TableRuntime {
       }
     }
     if (next.game.family !== 'flop' || next.game.forcedBets !== 'blinds' || next.stakes.bigBlind < 1) return null;
+    // Dealt in place of a stud hand, the table's ante is the stud ante, which a blind game doesn't post (D29). A bomb
+    // pot's own posts replace the blinds and antes anyway, so its stakes keep none, and the top bar, hand history and
+    // hand search don't show a stud ante on a hold'em hand (#397). A stud-only table has no small blind either: the
+    // hold'em hand gets half its big blind, as a Dealer's choice menu with blind games does, so it doesn't read
+    // "NLH 0/0.50" or lose its chip colours. Nobody posts it.
+    if (setup.game.forcedBets === 'ante-bring-in') {
+      const stakes = { ...next.stakes, ante: 0 };
+      if (stakes.smallBlind === 0 && stakes.bigBlind > 1) stakes.smallBlind = Math.floor(stakes.bigBlind / 2);
+      next = { ...next, stakes };
+    }
     return next;
   }
 
@@ -3143,7 +3172,8 @@ export class TableRuntime {
     if (releaseMs > 0 && !s.paused) {
       for (const seat of s.seats) {
         if (!seat || seat.leaveAfterHand || this.isOnline(seat.playerId) || this.offlineFor(seat) < releaseMs) continue;
-        this.log(`${seat.name} has been offline for ${s.settings.seating.releaseOfflineSeatMinutes} minutes, so their seat is released`);
+        const mins = s.settings.seating.releaseOfflineSeatMinutes;
+        this.log(`${seat.name} has been offline for ${mins} ${mins === 1 ? 'minute' : 'minutes'}, so their seat is released`);
         if (this.inHand(seat.playerId)) {
           seat.leaveAfterHand = true;
           seat.released = true;
@@ -3160,10 +3190,14 @@ export class TableRuntime {
       this.log(`${this.queueName(o.playerId)} didn't take seat ${o.seat + 1} in time and left the waitlist`);
       this.leaveQueue(o.playerId);
     }
-    // Seats taken some other way (the host moved someone in) are no longer on offer.
-    // Nor are seats a smaller table is about to drop.
+    // Seats taken some other way (the host moved someone in) are no longer on offer. Nor are seats a smaller table is
+    // about to drop, or a seat it keeps for a player moving in (only taken when no other seat is free): whoever was
+    // offered one stays on the waitlist for the next seat.
     const limit = this.seatLimit();
-    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit);
+    const kept = new Set(this.moverSeats(limit, this.movers()));
+    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    // While browsers still deal out the last hand's all-in runout, the seats of the players in it aren't offered
+    // (openSeats leaves them out, see revealSeats); upkeep runs again when the runout has had time to show (upkeepDue).
     const open = this.openSeats();
     for (const entry of this.queue()) {
       if (!open.length) break;
@@ -3171,17 +3205,43 @@ export class TableRuntime {
       const room = this.seatRoom(null);
       if (room !== null && room <= 0) break;
       if (this.offers().some((o) => o.playerId === entry.playerId) || !this.isOnline(entry.playerId)) continue;
-      const seat = open.shift()!;
+      // A table that seats newcomers at random offers a random free seat too, so the waitlist isn't a way to pick one.
+      const random = s.settings.seating.randomSeats && !this.can(entry.playerId, 'players');
+      const seat = random ? open.splice(this.rng(open.length), 1)[0] : open.shift()!;
       this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
   }
 
-  /** When upkeep next has something to do: an offer running out, or an offline seat to release. */
+  /** When the last hand's all-in runout, if it had one, has been dealt out in the browsers (0 when it hadn't). */
+  private revealUntil(): number {
+    const last = this.state.history.at(-1);
+    const ms = last ? runoutMs(last.hand.events) : 0;
+    return ms ? last!.endedAt + ms : 0;
+  }
+
+  /**
+   * The seats of everyone dealt into the last hand, while browsers are still dealing out its all-in runout. Browsers
+   * show those players in their seats until the result (holdBack in runout.ts), so until then each seat stays taken
+   * whether or not its player busted or left: it isn't offered from the waitlist, drawn for a random seat, sat in or
+   * given to a bot, and Dealer's choice still counts its player. Anything else that answered differently would give
+   * the result away early (#437). Seats that come free for other reasons are offered at once, as usual.
+   */
+  private revealSeats(): Set<number> {
+    const last = this.state.history.at(-1);
+    // Over once it has had time to show, or once a newer hand is dealt (browsers drop the runout for it).
+    if (!last || last.handNumber !== this.state.handNumber || this.revealUntil() <= this.clock.now()) return new Set();
+    return new Set(last.hand.seats.map((hs) => hs.seat));
+  }
+
+  /** When upkeep next has something to do: an offer running out, an offline seat to release, or a runout shown. */
   private upkeepDue(): number | null {
     if (this.isTournament) return null;
     const s = this.state;
     const times = this.offers().map((o) => o.expiresAt);
+    // When a runout has been dealt out, a seat a player in it left can be offered, and the views lose that player.
+    const reveal = this.revealUntil();
+    if (reveal > this.clock.now()) times.push(reveal);
     const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
     if (releaseMs > 0 && !s.paused) {
       const now = this.clock.now();

@@ -86,6 +86,9 @@ describe("Dealer's choice", () => {
     expect(hand(rt).input.game.id).toBe('plo4');
     expect(hand(rt).input.button).toBe(first.seat);
     expect(rt.state.log.some((l) => l.text === `${first.name} picked Pot-Limit Omaha`)).toBe(true);
+    // The pick keeps the chooser's id for name replacement (replaceName.ts), and no browser is sent it.
+    expect(rt.state.choice!.current).toMatchObject({ by: first.name, seat: first.seat, byId: first.playerId, how: 'picked' });
+    expect(JSON.stringify(tableView(rt, 'a', clock.now()).choice)).not.toContain('byId');
     // The chip moves one seat to the left.
     const second = chooser(rt);
     expect(second.seat).toBe((first.seat + 1) % 3);
@@ -1291,6 +1294,23 @@ describe("Dealer's choice: a switch to another game that waits for the next hand
     });
   }
 
+  // #444: once the hand is over the switch still waits for the deal. The next hand's preview names the game the switch
+  // deals, at the stakes it sets, not the game picked for Dealer's choice.
+  for (const sw of SWITCHES) {
+    it(`previews the game the switch to ${sw.name} deals, not the game picked (#444)`, () => {
+      const { rt, clock } = lastHand();
+      pick(rt, 'badugi');
+      rt.updateSettings('host', { ...sw.patch, stakes: { smallBlind: 3, bigBlind: 6 } });
+      checkDown(rt);
+      expect(live(rt)).toBe(false);
+      expect(rt.state.pendingSettings).not.toBeNull();
+      const shown = tableView(rt, 'a', clock.now()).upcoming!;
+      expect(shown).toMatchObject({ gameId: sw.dealt, stakes: { bigBlind: 6 } });
+      clock.advance(10_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+    });
+  }
+
   it('says it is the last hand of the pick when the host switches part way through it', () => {
     const { rt, clock } = table();
     seat(rt, 3);
@@ -1422,6 +1442,33 @@ describe("Dealer's choice: a game taken off the menu that waits for the next han
     expect(hand(rt).input.game.id).toBe(shown);
     expect(rt.state.log.some((l) => l.text === `${who.name} didn't pick in time, so No-Limit Hold'em is dealt`)).toBe(true);
   });
+
+  // #444: the new menu puts the games in another order, or adds one in front. The pick clock only runs once the change
+  // has applied, so a missed pick deals from the new menu; the panel's "If time runs out" says that game all along.
+  for (const sw of [
+    { name: 'in another order', games: [MENU[3], MENU[2]], dealt: 'plo4', title: 'Pot-Limit Omaha' },
+    { name: 'with a game added in front', games: [{ gameId: 'stud', betting: 'fixed-limit' as const }, MENU[2], MENU[3]], dealt: 'stud', title: 'Seven Card Stud' },
+  ]) {
+    it(`names the game a missed pick deals when the new menu waiting for the next hand is ${sw.name} (#444)`, () => {
+      const { rt, clock } = lastHand();
+      expect(tableView(rt, 'a', clock.now()).choice!.fallback).toEqual({ gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' });
+      rt.updateSettings('host', { game: { dealersChoice: { games: sw.games } } });
+      // Razz and Hold'em are coming off; on the current menu the first game that stays is Badugi, but it isn't dealt.
+      const during = tableView(rt, 'a', clock.now()).choice!;
+      expect(during.open).toBe(true);
+      expect(during.fallback).toMatchObject({ gameId: sw.dealt, gameName: sw.title });
+      const who = chooser(rt);
+      checkDown(rt);
+      clock.advance(10_000);
+      expect(live(rt)).toBe(false);
+      const after = tableView(rt, 'a', clock.now());
+      expect(after.choice!.fallback).toMatchObject({ gameId: sw.dealt });
+      expect(after.upcoming).toMatchObject({ gameId: sw.dealt });
+      clock.advance(25_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+      expect(rt.state.log.some((l) => l.text === `${who.name} didn't pick in time, so ${sw.title} is dealt`)).toBe(true);
+    });
+  }
 
   it('waits for the hand to end when the host changes the whole menu, then the chooser picks from the new one', () => {
     const { rt, clock } = lastHand();

@@ -37,7 +37,8 @@ import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
 import { CashGameLine } from './components/table/GameLine';
-import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
+import { navigate, tournamentOfTable, useFollowSeat, useTournamentGames } from './tournament/hooks';
+import { tableAllLimit, tableGames } from './tableGames';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
 
@@ -168,9 +169,28 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
   const [noticeRoom, setNoticeRoom] = useState(true);
+  // In the wide layout, the spot under the table where a tournament's rebuy offer, add-on or other ask goes (TableStrip).
+  const [tournamentAsks, setTournamentAsks] = useState<HTMLDivElement | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
+  // Every game the table deals, so a mixed table is laid out once for all of them (#409). A tournament table's own
+  // settings always say Hold'em: its games come from the tournament, asked for as the page opens (the table's address
+  // names it), so they're mostly known by the first deal and the table isn't laid out twice. The page saying the table
+  // has closed doesn't follow the tournament.
+  const event = useTournamentGames(error ? null : (view?.tournamentId ?? tournamentOfTable(tableId)));
+  // The host can change a running tournament's games (a level's own game) at any time: a table takes the new list once
+  // its hand is over, as a cash table takes new settings, so no seat moves in the middle of a hand. The first list is
+  // taken at once.
+  const handOn = !!view?.hand && view.hand.phase !== 'complete';
+  const [eventNow, setEventNow] = useState(event);
+  if (eventNow !== event && (!handOn || !eventNow.games.length)) setEventNow(event);
+  const cashGames = view && view.mode === 'cash' ? tableGames(view.settings).join(',') : '';
+  const games = useMemo(() => (view?.tournamentId ? eventNow.games : cashGames ? cashGames.split(',') : []), [view?.tournamentId, eventNow, cashGames]);
+  // A table that deals a No-Limit or Pot-Limit game keeps room under the felt for that game's taller bar even in its
+  // Limit games, so the felt keeps its size when the betting changes. Until a tournament's games are known, this
+  // follows the hand.
+  const allLimit = view?.tournamentId ? !eventNow.games.length || eventNow.allLimit : view?.mode === 'cash' ? tableAllLimit(view.settings) : true;
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
   const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
   const busy = runningOut || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
@@ -292,7 +312,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
-  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  // The tip sits beside the table instead of pushing it down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
     const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
@@ -432,8 +452,17 @@ export function TablePage({ tableId }: { tableId: string }) {
       : null;
   const level = view.level;
   const levelText = level
-    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} hands` : ''}`
+    ? `Level ${level.index + 1}/${level.count}${level.endsAt ? ` · ${clock(level.endsAt - now)}` : level.handsLeft !== null ? ` · ${level.handsLeft} ${level.handsLeft === 1 ? 'hand' : 'hands'}` : ''}`
     : null;
+  // The top bar's line at a cash table that plays one game or Dealer's choice (rotating and tournament tables have their own).
+  const barName = view.name;
+  const pickLine = view.choice?.current ? choiceText(view) : null;
+  const bombPot = !!view.hand?.bombPot && view.hand.phase !== 'complete';
+  const barLine = [barName, game && `${game.label} ${game.stakes}`.trim(), pickLine, levelText, bombPot && 'Bomb pot', view.paused && 'Paused']
+    .filter(Boolean)
+    .join(' · ');
+  /** What goes before a part of the line: a dot, or on a desktop just a space for the first part (its dot is the name's). */
+  const dot = (first: boolean) => (first && !portrait ? ' ' : ' · ');
   // Straddles need blinds, so stud tables never offer them.
   const nextFamily = view.hand?.family ?? (view.upcoming ? gameFamily(view.upcoming.gameId) : 'flop');
   const straddleOn = cash && view.settings.play.straddle !== 'off' && nextFamily !== 'stud';
@@ -605,6 +634,30 @@ export function TablePage({ tableId }: { tableId: string }) {
     ),
   ].filter(Boolean);
 
+  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
+  // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
+  // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
+  // the table's size (#350). At a tournament table that corner holds the tournament's clock (#385), so the tip heads the
+  // drawer's column there, as it did before #399.
+  const tipInCorner = wide && !drawer && !view.tournamentId;
+  const keysTipBox = keysTip && !dialog && (
+    <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
+      <span>
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
+      </span>
+      <button
+        onClick={() => {
+          dismissKeysTip();
+          setDialog({ kind: 'keys' });
+        }}
+      >
+        All shortcuts
+      </button>
+      <button onClick={() => dismissKeysTip()}>Got it</button>
+    </div>
+  );
+
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
       <header className="topbar">
@@ -620,29 +673,49 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </a>
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
-            At a tournament the strip under the bar names the event, so the bar just says which table. */}
+            At a tournament the strip under the bar names the event (in the wide layout, the box in the bottom-right
+            corner: #385), so the bar just says which table. */}
         {view.tournamentId ? (
           <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
         ) : view.rotation ? (
           <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
         ) : (
-          <span className="stakes">
-            <b>{view.name}</b>
-            {game && (
-              <>
-                {portrait ? <br /> : ' · '}
-                {game.label} {game.stakes}
-              </>
-            )}
-            {view.choice?.current && choiceText(view) && <> · {choiceText(view)}</>}
-            {levelText && <> · {levelText}</>}
-            {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-            {view.paused && <b className="paused"> · Paused</b>}
+          /* On a desktop the line never wraps, so nothing that comes and goes in the bar (the Pick button, Paused, a
+             level's clock) changes its height and moves the table (#408). When it doesn't fit, the table's name gives
+             way first; the whole line is in the tooltip. */
+          <span className="stakes" title={barLine}>
+            {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
+            <span className="stakes-name">
+              <b>{barName}</b>
+              {!portrait && barLine !== barName && ' ·'}
+            </span>
+            <span className="stakes-more">
+              {game && (
+                <>
+                  {portrait ? <br /> : ' '}
+                  {[game.label, game.stakes].filter(Boolean).join(' ')}
+                </>
+              )}
+              {pickLine && (
+                <>
+                  {dot(!game)}
+                  {pickLine}
+                </>
+              )}
+              {levelText && (
+                <>
+                  {dot(!game && !pickLine)}
+                  {levelText}
+                </>
+              )}
+              {bombPot && <b>{dot(!game && !pickLine && !levelText)}Bomb pot</b>}
+              {view.paused && <b className="paused">{dot(!game && !pickLine && !levelText && !bombPot)}Paused</b>}
+            </span>
           </span>
         )}
         {canPickNow(view) && !picker && (
           <button className="primary pick-button" onClick={() => setPicker(true)} title="Dealer's choice: pick the game for after this hand">
-            {portrait ? 'Pick' : 'Pick next game'}
+            Pick<span className="pick-more"> next game</span>
           </button>
         )}
         {bigBlind > 0 && (
@@ -710,7 +783,11 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} />}
+          {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
+              with the other notes about you, so the table keeps its height (#385). */}
+          {view.tournamentId && (
+            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -747,6 +824,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             compact={portrait}
             fill
             wide={wide}
+            games={games}
             onPickSeat={cash && !mySeat && !seatRequest ? (seat) => setDialog({ kind: 'seat', seat }) : undefined}
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
@@ -755,35 +833,15 @@ export function TablePage({ tableId }: { tableId: string }) {
             noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
           />
-          {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
-              stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
-              whole table twitch on big screens (#350). */}
-          <div className="tip-anchor">
-            {keysTip && !dialog && (
-              <div className="tip-toast" role="status">
-                <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
-                  {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
-                </span>
-                <button
-                  onClick={() => {
-                    dismissKeysTip();
-                    setDialog({ kind: 'keys' });
-                  }}
-                >
-                  All shortcuts
-                </button>
-                <button onClick={() => dismissKeysTip()}>Got it</button>
-              </div>
-            )}
-          </div>
           <Dock
             reset={`${portrait}:${view.me.seat}`}
             seated={view.me.seat !== null}
-            limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
+            limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
+            {/* TableStrip's asks, while there is one (empty, it takes no room: .dock-notes:empty). */}
+            {wide && view.tournamentId && <div className={`dock-notes tournament-asks${yourTurn ? ' your-turn' : ''}`} ref={setTournamentAsks} />}
             <ActionBar
               view={view}
               fmt={fmt}
@@ -806,6 +864,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </section>
         {!portrait && (
           <aside id="records-panel" className={wide ? `side drawer${drawer ? ' open' : ''}` : 'side'}>
+            {!tipInCorner && keysTipBox}
             {hostPanel}
             <PartBoundary name="side panel">
               <SidePanel view={view} fmt={fmt} />
@@ -824,6 +883,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
+        {tipInCorner && keysTipBox}
       </div>
 
       {portrait && sheet === 'menu' && (
