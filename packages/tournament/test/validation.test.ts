@@ -34,7 +34,7 @@ const levels: StructureRow[] = [
 const settings = (overrides: Record<string, unknown> = {}) =>
   ({ ...defaultSettings({ structure: levels, startingStack: 1000 }), ...overrides }) as TournamentSettings;
 
-const create = (overrides: Record<string, unknown> = {}) => createTournament({ id: 'T', hostId: 'host', settings: settings(overrides), now: T0, seed: '01'.repeat(32) });
+const create = (overrides: Record<string, unknown> = {}) => createTournament({ id: 'T', hostId: 'host', settings: settings(overrides), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
 
 const update = (state: TournamentState, changes: Record<string, unknown>) =>
   apply(state, { type: 'updateSettings', by: 'host', settings: changes as Partial<TournamentSettings> }, T0).state;

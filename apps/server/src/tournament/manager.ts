@@ -441,7 +441,8 @@ export class TournamentManager {
 
   private newState(id: string, hostId: PlayerId, settings: TournamentSettings, follows: TournamentSettings | null = null) {
     const seed = this.newSeatSeed();
-    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, follows }));
+    const legacyRng = this.newLegacyRng();
+    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, legacyRng, follows }));
   }
 
   /**
@@ -452,6 +453,18 @@ export class TournamentManager {
     const rng = this.deps.rng;
     const bytes = rng ? Uint8Array.from({ length: 32 }, () => rng(256)) : randomBytes(32);
     return Buffer.from(bytes).toString('hex');
+  }
+
+  /**
+   * A secret state for the old seat-draw generator, made apart from the seed (see `CreateInput.legacyRng`): 4 bytes
+   * from crypto.randomBytes, or from the test rng, never 0.
+   */
+  private newLegacyRng(): number {
+    const rng = this.deps.rng;
+    for (;;) {
+      const n = rng ? rng(0x100000000) : randomBytes(4).readUInt32BE(0);
+      if (n !== 0) return n;
+    }
   }
 
   private guard<T>(fn: () => T): T {
@@ -522,10 +535,10 @@ export class TournamentManager {
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
-    // Saved before seat draws used a 32-byte seed, with its seats still to draw: it draws from a fresh secure seed
-    // rather than the old 32-bit one. Nobody ever saw the old seed, so nothing anyone saw changes.
+    // Seats still to draw: a fresh seed every time it loads (see needsSeatSeed). That upgrades one saved before
+    // rsdp-seats-v1, and retires a seed that a server from before then sent to browsers after a rollback.
     const reseeded = needsSeatSeed(state);
-    if (reseeded) state = withSeatSeed(state, this.newSeatSeed());
+    if (reseeded) state = withSeatSeed(state, this.newSeatSeed(), this.newLegacyRng());
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {

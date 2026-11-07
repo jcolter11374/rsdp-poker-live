@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, drawSeats, legacyRngFor, seatRng, type TournamentState } from '@rsdp/tournament';
+import { defaultSettings, drawSeats, seatRng, type TournamentState } from '@rsdp/tournament';
 import { TournamentManager } from '../src/tournament/manager';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
@@ -29,8 +29,14 @@ describe('tournament seat-draw seeds on the server', () => {
     expect(await seedOf(a)).toMatch(HEX64);
     expect(await seedOf(b)).toMatch(HEX64);
     expect(await seedOf(a)).not.toBe(await seedOf(b));
-    // The old generator's state is secret too (for a rolled-back server), and comes from the seed.
-    expect((await env.manager.peek(a))!.rng).toBe(legacyRngFor(await seedOf(a)));
+    // The old generator's state is secret too (for a rolled-back server): a nonzero 32-bit number of its own.
+    const rngOf = async (id: string) => (await env.manager.peek(id))!.rng;
+    for (const id of [a, b]) {
+      expect(Number.isInteger(await rngOf(id))).toBe(true);
+      expect(await rngOf(id)).toBeGreaterThan(0);
+      expect(await rngOf(id)).toBeLessThan(2 ** 32);
+    }
+    expect(await rngOf(a)).not.toBe(await rngOf(b));
     await registerAll(env, a, 3);
     await env.manager.command(a, 'host', '', { type: 'startNow', by: 'host' });
     const seed = await seedOf(a);
@@ -65,6 +71,9 @@ describe('tournament seat-draw seeds on the server', () => {
     const seeds = await Promise.all(ids.map(async (id) => (await manager.peek(id))!.seatRng!.seed));
     for (const seed of seeds) expect(seed).toMatch(HEX64);
     expect(seeds[0]).not.toBe(seeds[1]);
+    const rngs = await Promise.all(ids.map(async (id) => (await manager.peek(id))!.rng));
+    for (const rng of rngs) expect(rng).toBeGreaterThan(0);
+    expect(rngs[0]).not.toBe(rngs[1]);
     manager.dispose();
     expect(errors).toEqual([]);
   });
@@ -81,7 +90,7 @@ describe('tournament seat-draw seeds on the server', () => {
     const loaded = (await env.manager.peek(id))!;
     expect(loaded.seatRng!.seed).toMatch(HEX64);
     expect(loaded.seatRng!.at).toBe(0);
-    // Saved straight away, so another restart before the draw keeps this seed.
+    // Saved straight away.
     env.clock.advance(1000);
     expect((await env.store.load(id))!.state.seatRng).toEqual(loaded.seatRng);
 
@@ -92,6 +101,45 @@ describe('tournament seat-draw seeds on the server', () => {
     expect(drawn.status).toBe('running');
     seatsAgree(env, id);
     expect(env.errors).toEqual([]);
+  });
+
+  it('gives a tournament a fresh seed and old-generator state each time it loads while its seats are still to draw', async () => {
+    // A server rolled back to before rsdp-seats-v1 sends seatRng to browsers, so a seed saved while it ran may have
+    // been seen. The next load replaces it; nothing has been drawn from it yet.
+    const first = setup();
+    const id = await first.manager.create('host', defaultSettings({ name: 'Reload', startingStack: 1000, seatsPerTable: 6 }));
+    await registerAll(first, id, 8);
+    await first.manager.flush();
+    first.manager.dispose();
+    const before = (await first.store.load(id))!.state;
+
+    const second = setup({ store: first.store, snapshots: first.snapshots, clock: first.clock }, { rngSeed: 12 });
+    await second.manager.resumeAll();
+    const loaded = (await second.manager.peek(id))!;
+    expect(loaded.seatRng!.seed).toMatch(HEX64);
+    expect(loaded.seatRng!.seed).not.toBe(before.seatRng!.seed);
+    expect(loaded.seatRng!.at).toBe(0);
+    expect(loaded.rng).toBeGreaterThan(0);
+    expect(loaded.rng).not.toBe(before.rng);
+    second.clock.advance(1000);
+    expect((await second.store.load(id))!.state.seatRng).toEqual(loaded.seatRng);
+
+    // Drawn from the new seed; after the draw a restart keeps the seed and its place.
+    const waiting = loaded.entries.filter((e) => e.status === 'registered').map((e) => e.id);
+    await second.manager.command(id, 'host', '', { type: 'startNow', by: 'host' });
+    const drawn = (await second.manager.peek(id))!;
+    expect(drawn.tables.map((t) => t.seats)).toEqual(drawSeats(waiting, 6, seatRng({ seed: loaded.seatRng!.seed, at: 0 })));
+    await second.manager.flush();
+    second.manager.dispose();
+
+    const third = setup({ store: first.store, snapshots: first.snapshots, clock: first.clock }, { rngSeed: 13 });
+    await third.manager.resumeAll();
+    const resumed = (await third.manager.peek(id))!;
+    expect(resumed.seatRng).toEqual(drawn.seatRng);
+    expect(resumed.rng).toBe(drawn.rng);
+    expect(resumed.tables.map((t) => t.seats)).toEqual(drawn.tables.map((t) => t.seats));
+    seatsAgree(third, id);
+    expect([...first.errors, ...second.errors, ...third.errors]).toEqual([]);
   });
 
   it('keeps a tournament saved with the old generator running once its seats are drawn, with no new seed', async () => {

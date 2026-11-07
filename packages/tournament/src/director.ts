@@ -37,7 +37,7 @@ import {
 } from './formats';
 import { MAX_PRIZE_AMOUNT, placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
-import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
+import { drawSeats, isLegacyRng, isSeatSeed, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
 import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type AnteType, type LevelRow, type StructureRow } from './structure';
 import { cleanText, hasUnstorableText, isId } from './text';
 import {
@@ -318,13 +318,21 @@ export interface CreateInput {
    * cryptographically secure generator (crypto.randomBytes), fresh for every tournament.
    */
   seed: string;
+  /**
+   * A second secret, for the old seat-draw generator's state (`rng`): a whole number from 1 to 2^32 - 1, made by
+   * the same secure generator separately from `seed`. This code never draws from it; a server from before
+   * rsdp-seats-v1 draws seats from `rng` alone. Such a server sends every field to browsers but `rng`, `seatRng`
+   * included, so after a rollback the seed is public and `rng` must tell nothing about it.
+   */
+  legacyRng: number;
   /** The event this one follows in a series: rebuy and add-on counts it was allowed to keep carry over. */
   follows?: TournamentSettings | null;
 }
 
-export function createTournament({ id, hostId, settings: raw, now, seed, follows }: CreateInput): TournamentState {
+export function createTournament({ id, hostId, settings: raw, now, seed, legacyRng, follows }: CreateInput): TournamentState {
   // A server bug, not something the host can fix, so not a DirectorError.
   if (!isSeatSeed(seed)) throw new Error('A tournament needs a seat-draw seed of 64 hex characters');
+  if (!isLegacyRng(legacyRng)) throw new Error('A tournament needs a secret old-generator state from 1 to 2^32 - 1');
   const settings = cleanSettings(raw) as TournamentSettings;
   const errors = validateSettings(settings, follows);
   if (settings.start?.kind === 'scheduled' && settings.start.startAt <= now) errors.push('The start time has already passed');
@@ -350,24 +358,28 @@ export function createTournament({ id, hostId, settings: raw, now, seed, follows
     handForHand: { active: false, round: 0 },
     counters: { entry: 0, table: 0, request: 0 },
     seatRng: { seed, at: 0 },
-    // Unused while seatRng is here, but secret, so a rolled-back server that draws from it alone can't be predicted.
-    rng: legacyRngFor(seed),
+    // Unused while seatRng is here, but secret and apart from the seed, so a rolled-back server that draws from it
+    // alone can't be predicted, even once it has shown the seed.
+    rng: legacyRng,
   };
 }
 
 /**
- * A tournament saved before seat draws moved to rsdp-seats-v1 (no `seatRng`)
- * whose seats are still to be drawn. The server gives it a fresh seed from a
- * secure generator when it loads it (`withSeatSeed`), so its draw is as strong
- * as a new tournament's. Its old seed was never shown to anyone, so nothing
- * anyone saw changes.
+ * A tournament whose seats are still to be drawn. The server gives it a fresh seed and old-generator state
+ * (`withSeatSeed`) every time it loads it. Nothing has been drawn from the old ones yet, so nothing anyone saw
+ * changes, and:
+ * - one saved before rsdp-seats-v1 (no `seatRng`) draws from a secure seed rather than its old 32-bit one;
+ * - one that a server from before rsdp-seats-v1 ran after a rollback, which sends `seatRng` to browsers, never
+ *   draws from a seed people may have seen.
+ * Once the seats are drawn it keeps its seed and place, so the same moves follow from the same saved state.
  */
-export const needsSeatSeed = (s: TournamentState) => !s.seatRng && s.status === 'registering' && s.tables.length === 0;
+export const needsSeatSeed = (s: TournamentState) => s.status === 'registering' && s.tables.length === 0;
 
-/** The state with a fresh seat-draw seed (64 hex characters from a secure generator), read from the start. */
-export function withSeatSeed(s: TournamentState, seed: string): TournamentState {
+/** The state with a fresh seat-draw seed (64 hex characters) and old-generator state, both from a secure generator. */
+export function withSeatSeed(s: TournamentState, seed: string, legacyRng: number): TournamentState {
   if (!isSeatSeed(seed)) throw new Error('A seat-draw seed is 64 hex characters');
-  return { ...s, seatRng: { seed, at: 0 } };
+  if (!isLegacyRng(legacyRng)) throw new Error('An old-generator state is a whole number from 1 to 2^32 - 1');
+  return { ...s, seatRng: { seed, at: 0 }, rng: legacyRng };
 }
 
 /**
