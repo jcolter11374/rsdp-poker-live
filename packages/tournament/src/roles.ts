@@ -48,6 +48,22 @@ export function mayCommand(s: TournamentState, playerId: PlayerId, cmd: Command)
   return true;
 }
 
+/**
+ * The power that moderates the lobby chat: muting someone, deleting a message, turning the chat off. It is the one that
+ * mutes chat at a cash table too.
+ */
+export const CHAT_POWER: HostPower = 'players';
+
+/**
+ * Why this player may not moderate the lobby chat, or null when they may. `about` is the player whose messages it is
+ * about (to mute them or delete one of theirs): as at a cash table, only the host does that to the host or a co-host.
+ */
+export function chatModerationRefusal(s: TournamentState, playerId: PlayerId, about?: PlayerId): string | null {
+  if (!hasPower(s, playerId, CHAT_POWER)) return isStaff(s, playerId) ? 'the host has not given you that power' : 'only the host can do that';
+  if (about !== undefined && about !== playerId && playerId !== s.hostId && isStaff(s, about)) return 'only the host can do that to the host or a co-host';
+  return null;
+}
+
 /** Sees the host tools: the host or any co-host. */
 export const isTournamentStaff = (s: TournamentState, playerId: PlayerId | null | undefined) => isStaff(s, playerId);
 

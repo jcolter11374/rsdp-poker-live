@@ -39,6 +39,7 @@ class Sim {
       settings: defaultSettings({ structure: levels, startingStack: 1000, lateRegistration: { enabled: false, throughLevel: null }, ...overrides }),
       now: this.now,
       seed: '07'.repeat(32),
+      legacyRng: 7,
     });
   }
   do(cmd: Command) {
