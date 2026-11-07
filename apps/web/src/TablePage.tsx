@@ -543,7 +543,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             {game && (
               <>
                 {portrait ? <br /> : ' '}
-                {game.label} {game.stakes}
+                {[game.label, game.stakes].filter(Boolean).join(' ')}
               </>
             )}
             {pickLine && (

@@ -577,7 +577,15 @@ try {
     const pickButton = p.locator('.topbar .pick-button');
     // Pia picks when it's her turn to, and checks or folds, until the bot's pick is on its last hand and she picks next.
     const buttons = p.locator('.action-bar.my-turn .buttons button');
-    for (const end = Date.now() + 150_000; !(await pickButton.count()); ) {
+    // When Pia's own pick starts, the button can show for a frame before the picker opens by itself, so it only counts
+    // if it is still there, with no picker, a moment later.
+    const pickShowing = async () => (await pickButton.count()) > 0 && !(await picker.count());
+    const pickReady = async () => {
+      if (!(await pickShowing())) return false;
+      await p.waitForTimeout(300);
+      return pickShowing();
+    };
+    for (const end = Date.now() + 150_000; !(await pickReady()); ) {
       if (Date.now() > end) throw new Error('Pia never got the Pick next game button');
       if (await picker.count()) {
         await picker.locator('.game-picker-pick:not(:disabled)').first().click().catch(() => {});
@@ -590,7 +598,10 @@ try {
       await p.waitForTimeout(250);
     }
     if (await p.locator('.side.drawer.open').count()) await p.keyboard.press('Escape');
+    // Narrow computer windows too, where the bar is tighter and the button just says Pick.
     const sizes = [
+      [760, 800],
+      [900, 800],
       [1000, 800],
       [1280, 800],
       [2300, 824],
