@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
+import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
 import { departures, finishedOnScreen, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
@@ -220,6 +221,28 @@ describe('holdBack', () => {
       const live = { ...base, settings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0 }) } as unknown as TableView;
       const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 1 }), sameHand: true };
       expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 1, canKeep: false }));
+    });
+
+    it("never offers to keep, or names as the fallback, a game the host is taking off the menu", () => {
+      // As above, with Hold'em still on the menu (Hold'em, Badugi 6, Razz 8) but taken off during this hand: the
+      // change waits for the next one. Seven were seated: a missed pick deals Razz, the first staying game that
+      // seats seven. With the result in, six are left and the server's fallback turns to Badugi.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const menu = [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }] as const;
+      const table = defaultSettings('cash');
+      const settings = parseSettings({ ...table, table: { ...table.table, maxSeats: 8 }, game: { ...table.game, dealersChoice: { enabled: true, games: [...menu], hands: 0, pickSeconds: 20 } } });
+      const pendingSettings = { game: { dealersChoice: { games: [menu[1], menu[2]] } } };
+      const live = { ...base, settings, pendingSettings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 1 }) } as unknown as TableView;
+      const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 2 }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 2, canKeep: false }));
+      // Without the change, Hold'em is kept and is what a missed pick deals, both before and after the result.
+      const staying = { ...live, pendingSettings: null, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0, canKeep: true }) } as TableView;
+      expect(holdBack(staying, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
+      // A change that ends Dealer's choice takes no game off: the result shows no next pick.
+      const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
+      expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
     });
   });
 

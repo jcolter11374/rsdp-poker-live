@@ -1,10 +1,38 @@
-import { MAX_CHIPS, SETTINGS_LIMITS, type BlindLevel, type ChoiceGame, type DealersChoiceSettings, type TableSettings } from '@rsdp/engine/settings';
+import { applyAtNextHand, MAX_CHIPS, SETTINGS_LIMITS, type BlindLevel, type ChoiceGame, type DealersChoiceSettings, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, MIXED_GAMES, VARIANT_LIST } from '@rsdp/engine/variants';
 import { defaultStudAnte, studBringIn } from '../../format';
 import { doubled } from './lists';
 
 /** Dealer's choice settings, filled in for tables saved before it existed (D33). */
 export const choiceOf = (settings: TableSettings): DealersChoiceSettings => settings.game.dealersChoice ?? { enabled: false, games: [], hands: 0, pickSeconds: 20 };
+
+/**
+ * The table's settings as the next hand will deal them. A change saved during a hand waits for the next one
+ * (applyAtNextHand): the settings dialog starts from it and is saved on top of it, so the host sees what will be
+ * dealt, and the game picker and the runout's hold-back leave out a game the change takes off the Dealer's choice menu.
+ */
+export const comingSettings = (settings: TableSettings, pending: SettingsPatch | null): TableSettings => {
+  if (!pending) return settings;
+  try {
+    return applyAtNextHand(settings, pending).settings;
+  } catch {
+    return settings;
+  }
+};
+
+/**
+ * Which games on the Dealer's choice menu the host is taking off it from the next hand (#441). A change made during a
+ * hand waits for the next one, so the chooser still sees the game on the menu, but the server refuses a pick of it
+ * (#425). As on the server (DealersChoice.leaving), only while the next hand still plays Dealer's choice: a change that
+ * ends it takes no game off, as there is no next pick then.
+ */
+export function leavingMenu(settings: TableSettings, pending: SettingsPatch | null): (g: ChoiceGame) => boolean {
+  if (!pending) return () => false;
+  const next = comingSettings(settings, pending);
+  const menu = choiceOf(next);
+  if (!menu.enabled || next.table.mode !== 'cash' || menu.games.length < 2 || next.game.rotation.enabled) return () => false;
+  return (g) => !menu.games.some((x) => x.gameId === g.gameId && x.betting === g.betting);
+}
 
 const fromMix = (id: string) => MIXED_GAMES.find((m) => m.id === id)!.steps.map((st) => ({ gameId: st.gameId, betting: st.betting }));
 

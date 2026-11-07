@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { BettingKind } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { gameTitle, getVariant } from '@rsdp/engine/variants';
 import { call } from '../../socket';
 import { Modal } from '../SeatDialog';
 import { useNow } from '../Table';
-import { choiceOf } from '../settings/dealersChoice';
+import { choiceOf, leavingMenu } from '../settings/dealersChoice';
 
 /*
  * Dealer's choice at the table (D33): the Pick chip on the next chooser's seat, the line on the felt while they
@@ -61,7 +61,7 @@ export function choiceText(view: TableView): string | null {
 
 /**
  * The chooser's panel: every game on the menu, with How to play for each (it opens on top), greyed out when it
- * seats fewer than are at the table. Opens by itself when the table is waiting; during the last hand of a pick
+ * seats fewer than are at the table, or when the host is taking it off the menu from the next hand (#441). Opens by itself when the table is waiting; during the last hand of a pick
  * the chooser opens it from the top bar.
  */
 export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; skew: number; onClose: () => void; onRules: (gameId: string, betting: BettingKind) => void }) {
@@ -69,6 +69,7 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
   const now = useNow(!!c?.deadline && !view.paused, 250) + skew;
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const leaving = useMemo(() => leavingMenu(view.settings, view.pendingSettings), [view.settings, view.pendingSettings]);
   if (!c) return null;
   const menu = choiceOf(view.settings).games;
   const secs = view.paused ? secondsTo(c.deadline, view.serverNow) : secondsTo(c.deadline, now);
@@ -83,7 +84,8 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
   };
   // The game being played (before the first pick, the one the table was dealing) can be kept: it's what a missed pick
   // deals, so the server's default points at it.
-  const keepIndex = c.canKeep ? c.defaultIndex : -1;
+  // (Never one the host is taking off the menu, which the server wouldn't deal: #441.)
+  const keepIndex = c.canKeep && menu[c.defaultIndex] && !leaving(menu[c.defaultIndex]) ? c.defaultIndex : -1;
   const keep = keepIndex >= 0 ? menu[keepIndex] : null;
   const fallback = menu[c.defaultIndex];
   return (
@@ -93,7 +95,7 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
           {c.deadline !== null
             ? `${secs} second${secs === 1 ? '' : 's'} left. `
             : 'You pick once this hand is over; you can choose now. '}
-          {c.handsLeft === null && !current ? 'The first game' : 'Your game'} lasts {view.settings.game.dealersChoice?.hands ? `${view.settings.game.dealersChoice.hands} hands` : 'one orbit'}
+          {c.handsLeft === null && !current ? 'The first game' : 'Your game'} lasts {view.settings.game.dealersChoice?.hands ? `${view.settings.game.dealersChoice.hands} hand${view.settings.game.dealersChoice.hands === 1 ? '' : 's'}` : 'one orbit'}
           {fallback ? `. If time runs out: ${gameTitle(fallback.gameId, fallback.betting)}.` : '.'}
         </p>
         {keep && (
@@ -105,15 +107,17 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
           {menu.map((g, i) => {
             const seats = getVariant(g.gameId).maxPlayers;
             const fits = seats >= c.count;
+            const off = leaving(g);
+            const can = fits && !off;
             const title = gameTitle(g.gameId, g.betting);
             return (
-              <li key={`${g.gameId}/${g.betting}`} className={fits ? '' : 'greyed'}>
-                <button className="game-picker-pick" disabled={busy || !fits} onClick={() => pick(i)} aria-describedby={fits ? undefined : `pick-why-${i}`}>
+              <li key={`${g.gameId}/${g.betting}`} className={can ? '' : 'greyed'}>
+                <button className="game-picker-pick" disabled={busy || !can} onClick={() => pick(i)} aria-describedby={can ? undefined : `pick-why-${i}`}>
                   {title}
                 </button>
-                {!fits && (
+                {!can && (
                   <span className="muted" id={`pick-why-${i}`}>
-                    Seats {seats} · {c.count} are sitting down
+                    {off ? 'The host is taking it off the menu' : `Seats ${seats} · ${c.count} are sitting down`}
                   </span>
                 )}
                 <button type="button" className="link" onClick={() => onRules(g.gameId, g.betting)} aria-label={`How to play ${title}`}>
