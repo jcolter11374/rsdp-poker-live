@@ -12,12 +12,13 @@
  * The last line is how a restore knows the copy wasn't cut short.
  */
 
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { createGunzip } from 'node:zlib';
 import type { Readable } from 'node:stream';
 import { sql } from 'drizzle-orm';
-import { queryRows, type Db } from './client';
+import { MIGRATIONS_DIR, queryRows, type Db } from './client';
 import { errorText } from './errors';
 
 export const BACKUP_FORMAT = 'rsdp';
@@ -40,6 +41,33 @@ export interface BackupSummary {
   at: string;
   migrations: number;
   rows: Record<string, number>;
+}
+
+/**
+ * Tables that migrations have dropped, which older backups still list: for each group, the tables, the migrations
+ * that made them and the one that dropped them. To restore such a backup, the tables it lists that the database
+ * lacks are made again by the statements of the migrations that made them (those that name them), their rows go
+ * in, and then the dropping migration runs again: an empty table goes, as it did on the site, and one with rows
+ * stays, so a restore never loses a row. Shipped migrations never change, so the tables come back exactly as they
+ * were. A migration that drops a table adds it here.
+ */
+export const RETIRED: readonly { tables: readonly string[]; madeBy: readonly string[]; droppedBy: string }[] = [
+  // The chip ledger that was never built: 0017 drops each of these that is empty.
+  { tables: ['chip_movements', 'seat_sessions'], madeBy: ['0000_init', '0001_ledger_append_only'], droppedBy: '0017_drop_unused_ledger' },
+];
+
+/** A migration's statements, split where the migrator splits them. */
+function migrationStatements(tag: string): string[] {
+  return readFileSync(path.join(MIGRATIONS_DIR, `${tag}.sql`), 'utf8')
+    .split('--> statement-breakpoint')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** The statements that made a group of retired tables, with their constraints, indexes and triggers, in the order they ran. */
+export function retiredTablesSql(group: (typeof RETIRED)[number]): string[] {
+  const namesOne = (statement: string) => group.tables.some((t) => statement.includes(t));
+  return group.madeBy.flatMap((tag) => migrationStatements(tag).filter(namesOne));
 }
 
 const ident = (name: string) => {
@@ -124,9 +152,10 @@ const ROW_LINE = /^\{"t":"([a-z_][a-z0-9_]*)","r":/;
  * Loads a backup into an empty database (createDb has applied the current
  * migrations). All in one transaction: a backup that is cut short or doesn't
  * fit restores nothing. Columns the backup doesn't have keep their defaults,
- * so an older backup restores into a newer schema. Rows go straight into the
- * newest tables: a future migration that rewrites data (not just adds columns)
- * would need its own step here for older backups.
+ * so an older backup restores into a newer schema, and tables a migration has
+ * dropped since come back for its rows (RETIRED). Rows go straight into
+ * the newest tables: a future migration that rewrites data (not just adds
+ * columns or drops empty tables) would need its own step here for older backups.
  */
 export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promise<BackupSummary> {
   return db.transaction(async (tx) => {
@@ -136,6 +165,7 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
       throw new BackupError(`Restoring needs a database role that may skip foreign key checks (a superuser, as on PGlite or your own Postgres): ${errorText(e)}`);
     });
     const tables = new Set(await tableNames(tx));
+    const remade: (typeof RETIRED)[number][] = [];
     let header: BackupHeader | null = null;
     let end: { rows: Record<string, number>; sequences?: Record<string, number> } | null = null;
     const counts: Record<string, number> = {};
@@ -149,7 +179,7 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
       // The backup's own column names (every row of a table has the same ones), so a column added since keeps its default.
       const columns = Object.keys(JSON.parse(rows[0]!)).map(ident).join(', ');
       // json_populate_recordset turns each JSON value back into its column's type (jsonb, timestamps, bigints).
-      // Overriding: identity columns (the ledger's seq) take the backup's numbers.
+      // Overriding: identity columns (chip_movements.seq, in older backups) take the backup's numbers.
       await tx.execute(sql`insert into ${sql.raw(ident(table))} (${sql.raw(columns)}) overriding system value select ${sql.raw(columns)} from json_populate_recordset(null::${sql.raw(ident(table))}, ${`[${rows.join(',')}]`}::json)`);
     };
 
@@ -162,6 +192,12 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
         header = item as BackupHeader;
         const migrations = await migrationCount(tx);
         if (header.migrations > migrations) throw new BackupError(`The backup is from a newer version (${header.migrations} migrations; this code has ${migrations}). Restore it with newer code.`);
+        for (const group of RETIRED) {
+          if (!header.tables.some((t) => !tables.has(t) && group.tables.includes(t))) continue;
+          for (const statement of retiredTablesSql(group)) await tx.execute(sql.raw(statement));
+          remade.push(group);
+        }
+        if (remade.length) for (const t of await tableNames(tx)) tables.add(t);
         for (const t of header.tables) {
           if (!tables.has(t)) throw new BackupError(`The backup has a table this code doesn't know: ${t}.`);
           counts[t] = 0;
@@ -190,6 +226,8 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
     for (const [t, n] of Object.entries(end.rows)) {
       if (counts[t] !== n) throw new BackupError(`The backup was cut short: ${t} should have ${n} rows, found ${counts[t] ?? 0}.`);
     }
+    // Retired tables that got no rows go again, as their migration dropped them.
+    for (const group of remade) for (const statement of migrationStatements(group.droppedBy)) await tx.execute(sql.raw(statement));
     // Counters (bigserial and identity columns) carry on after the highest id ever handed out.
     for (const { t, c, seq } of await counters(tx)) {
       const used = Number(end.sequences?.[`${t}.${c}`] ?? 0);

@@ -26,6 +26,7 @@ function describe(e: AuditEntry): string {
   if (e.data.action === 'backup') return 'Backup: a copy of the whole database was downloaded with the admin key';
   if (e.data.action === 'read-table-chat') return 'Chat read: the admin (John) read one table’s chat with the admin key';
   if (e.data.action === 'read-tournament-chat') return 'Chat read: the admin (John) read the chat at one tournament’s tables with the admin key';
+  if (e.data.action === 'replace-name') return 'Name taken out: the admin (John) replaced a player’s name with “Deleted player” in old records';
   return `Admin (John): ${e.data.action}${e.data.target ? ` (${e.data.target})` : ''}`;
 }
 
