@@ -638,7 +638,7 @@ export function TablePage({ tableId }: { tableId: string }) {
           <h1 className="sr-only">{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</h1>
         ) : null}
         {view.tournamentId ? (
-          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={runningOut} />
         ) : view.rotation ? (
           <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
         ) : (
