@@ -760,6 +760,65 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step("phone: other players' cards keep off their neighbours' names and stacks", async () => {
+    // On a phone, the row of cards above a player's nameplate once covered the next player's name and stack, most of all at
+    // full Omaha tables, in the top corners (#318). A full 9-seat Omaha table, four cards each: at each phone size, no row
+    // of cards, yours included, covers another player's name or stack, and none goes off the screen.
+    const host = await open('phone host');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Pat');
+    await host.selectOption('label:has-text("Game") select', 'plo4');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    // Everyone else sits down: seats fill in order, so the table is full and the rows are side by side.
+    const guests = [];
+    for (const name of ['Bea', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy']) {
+      const guest = await open(`phone guest ${name}`);
+      await guest.goto(host.url());
+      await guest.locator('.seat.empty button').first().click();
+      await guest.fill('.modal input[required]', name);
+      await guest.click('button:has-text("Ask to sit")');
+      await host.click('.request button:has-text("Approve")');
+      await guest.waitForSelector('.seat.me');
+      guests.push(guest);
+    }
+    await host.click('button:has-text("Start game")');
+    await host.waitForFunction(() => document.querySelectorAll('.seat:not(.me) .hole:not(.mucked) .playing-card').length === 32);
+    for (const [width, height] of [[390, 844], [390, 664], [360, 640], [430, 932]]) {
+      await host.setViewportSize({ width, height });
+      // Seats glide to their new spots (0.4s), then the rows are set out.
+      await host.waitForTimeout(800);
+      const problems = await host.evaluate(() => {
+        const box = (el) => el.getBoundingClientRect();
+        const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+        const seats = [...document.querySelectorAll('.felt .seat[data-seat]')];
+        const found = [];
+        // Your own cards too: they move aside, and get smaller only if they must.
+        for (const s of seats) {
+          const hole = s.querySelector('.hole:not(.mucked)');
+          if (!hole?.querySelector('.playing-card')) continue;
+          const row = box(hole);
+          // innerText leaves out the host's tag, which phones hide.
+          const name = s.querySelector('.name')?.innerText;
+          if (row.left < 0 || row.right > innerWidth) found.push(`${name}'s cards go off the screen`);
+          for (const o of seats) {
+            if (o === s) continue;
+            for (const part of o.querySelectorAll('.nameplate .name, .nameplate .stack'))
+              if (hit(row, box(part))) found.push(`${name}'s cards cover ${o.querySelector('.name')?.innerText}'s ${part.classList.contains('name') ? 'name' : 'stack'}`);
+          }
+        }
+        return found;
+      });
+      if (problems.length) throw new Error(`at ${width}x${height}: ${problems.join(', ')}`);
+      await host.screenshot({ path: path.join(OUT, `phone-omaha-${width}x${height}.png`) });
+    }
+    await host.setViewportSize({ width: 1280, height: 860 });
+    await stopGame(host, [host, ...guests]);
+  });
+
   await step('wide, short window: run it twice stays clear of the seats', async () => {
     // On a wide, short screen the two runs of the board went under the top player's nameplate, and the winners' lines and
     // "Next hand in" onto the bottom player's cards (#417). The middle now fits between them, and the seats hold still.
