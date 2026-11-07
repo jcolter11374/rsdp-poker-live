@@ -18,21 +18,6 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.07.5] - 2026-11-07
-
-_Bigger tournament tables on wide screens_
-
-### New
-
-- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
-
-### Fixed and changed
-
-- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. Anything for you to do (a rebuy, an add-on, a re-entry, your seat at another table) shows under the table with your buttons, so the seats don't move when it comes or goes.
-- Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
-- Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
-- Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
-
 ## [2026.11.07.4] - 2026-11-07
 
 _Lobby chat moderation and a recap of the night_
@@ -41,6 +26,7 @@ _Lobby chat moderation and a recap of the night_
 
 - **Moderate a tournament's lobby chat.** Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. A muted player, or everyone while the chat is off, is told why they can't send. Mute and Delete ask first, and on a phone the buttons sit under each message, big enough to tap. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too.
 - **Copy a recap of the night.** At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself.
+- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
 
 ### Fixed and changed
 
@@ -53,6 +39,10 @@ _Lobby chat moderation and a recap of the night_
 - Tournaments: the seat draw stays secret even if the site ever has to go back to an older version before the seats are drawn. The server now picks new secret numbers for the draw each time it loads a tournament whose seats aren't drawn yet, so nothing an older version shows can be used to work the draw out.
 - Backups: the nightly backup now works however big the saved tables get. Before, very large saved tables could make the backup fail and stop the site saving until it restarted. The site isn't near that size today.
 - Dealer's choice: at a new table, the first hand's button goes to the player who makes the first pick, and if they leave or sit out first, to the next player round. During an all-in runout, the seat count, closed seats, the fallback game and seat offers now wait for the result like the PICK tag, so none of them shows who busted before the cards are out.
+- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. Anything for you to do (a rebuy, an add-on, a re-entry, your seat at another table) shows under the table with your buttons, so the seats don't move when it comes or goes.
+- Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
+- Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
+- Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
 
 ## [2026.11.07.3] - 2026-11-07
 
@@ -735,7 +725,6 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
-[2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
