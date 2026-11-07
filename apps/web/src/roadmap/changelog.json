@@ -4,7 +4,11 @@
       "id": "2026.11.07.3",
       "date": "2026-11-07",
       "fixes": [
-        "Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. \"Connection lost\" now shows over the top of the table instead of pushing it down."
+        "Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. \"Connection lost\" now shows over the top of the table instead of pushing it down.",
+        "Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. The strip only shows when it has something for you to do (a rebuy, an add-on, a re-entry, your seat at another table).",
+        "Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.",
+        "Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.",
+        "Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap."
       ]
     },
     {

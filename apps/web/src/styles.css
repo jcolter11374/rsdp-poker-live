@@ -975,10 +975,13 @@ dl.shortcuts dd { margin: 0; }
 .felt.compact.hand-fit .seat.me .hole .playing-card + .playing-card { margin-left: var(--fit-overlap); }
 
 /* ---- big windows (#317): the table grows into the room. --k is its scale (Table.tsx), --sk the seats' (k, or less when a
-   full table needs it). Below k = 1 none of this applies. */
+   full table needs it). Below k = 1 none of this applies, except in the wide layout, which keeps it down to k = 0.72 (#385). */
 .table-page:not(.portrait) .felt-area > .felt.grown {
   margin: calc(var(--top-margin, 84px) * var(--sk)) calc(var(--side-margin) * var(--sk)) calc(46px * var(--sk));
   max-height: none;
+  /* A short wide window packs the table below k = 1 too (#385), so its felt can be under 280px. Its size has to come from
+     the room, not this floor: a felt held taller than the room would make the room measure bigger than it is (Table.tsx). */
+  min-height: 200px;
 }
 .felt.grown .board .pots { zoom: var(--k); }
 .felt.grown .board .cards { gap: calc(6px * var(--k)); }
@@ -1000,9 +1003,12 @@ dl.shortcuts dd { margin: 0; }
   .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -26px; }
   .seat.long-hand.me .nameplate { min-width: 260px; }
 }
-/* A short, very wide window (#347): your own row of five or more cards stays a little lower, so it clears the board. */
-.felt.big-cards.short:not(.compact) .seat.long-hand.me .playing-card.small { --cw: 56px; }
-.felt.big-cards.short:not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -20px; }
+/* A short, very wide window (#347): your own row of five or more cards stays a little lower, so it clears the board,
+   and on one too short for the big cards (#385, Table.tsx) as low as everyone else's. */
+.felt.short:not(.compact) .seat.long-hand.me .playing-card.small { --cw: 56px; }
+.felt.short:not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -20px; }
+.felt.short:not(.big-cards):not(.compact) .seat.long-hand.me .playing-card.small { --cw: 48px; }
+.felt.short:not(.big-cards):not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -17px; }
 
 /* ---- the wide layout (windows 1440px and wider, #317): no side column. Chat sits in the bottom-left corner beside the
    action bar, and the log, ledger, hands, stats and host controls slide out from the top bar's "Log" button. */
