@@ -133,7 +133,7 @@ const JIGGLE = 2;
  * move this small, which still leaves it clear of their nameplates and cards, is left out.
  */
 const HAND_JIGGLE = 4;
-const plateBox = (r: DOMRect, from: DOMRect = r): Box => {
+const plateBox = (r: Box, from: Box = r): Box => {
   const middle = (r.top + r.bottom) / 2;
   return { left: from.left, right: from.right, top: middle - PLATE_HALF_HEIGHT, bottom: middle + PLATE_HALF_HEIGHT };
 };
@@ -168,10 +168,14 @@ interface PhoneSeat {
 }
 
 function phoneSeats(el: HTMLElement, hold: (seat: number, box: Box) => Box): PhoneSeat[] {
+  const zoom = feltZoom(el);
   return [...el.querySelectorAll<HTMLElement>('.seat[data-seat]')].map((s) => ({
     seat: Number(s.dataset.seat),
     me: s.classList.contains('me'),
-    plate: hold(Number(s.dataset.seat), plateBox(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect())),
+    // Where the seat is headed while it glides to a new spot (someone sat down or left, or a tournament table spreads its
+    // players again after a knockout). Measured on the way, a seat still coming in leaves room that won't be there, and
+    // the cards beside it would move into that room and back as it arrived.
+    plate: hold(Number(s.dataset.seat), plateBox(headedFor(s, zoom)(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect()))),
     cards: s.querySelectorAll('.hole:not(.mucked) .playing-card').length,
     mucked: !!s.querySelector('.hole.mucked .playing-card'),
   }));
@@ -299,7 +303,8 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: st
       const others = seats.filter((s) => !s.me).map((s) => s.plate);
       if (sideways) {
         // On its side the cards hang off the seat's left edge, which can be wider than its nameplate.
-        const size = cards >= 4 ? fitHand(cards, handRoom(plateBox(plate.getBoundingClientRect(), me!.getBoundingClientRect()), others, natural.cw * 1.4), natural) : null;
+        const to = headedFor(me!, feltZoom(el));
+        const size = cards >= 4 ? fitHand(cards, handRoom(plateBox(to(plate.getBoundingClientRect()), to(me!.getBoundingClientRect())), others, natural.cw * 1.4), natural) : null;
         next = size && { ...size, shift: 0 };
       } else {
         const mine = seats.find((s) => s.me)!.plate;
@@ -353,10 +358,15 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean, plateKey: s
       // Your cards. Standing up, they hang from your nameplate's top, so a line on it lifts them, and taking it away drops
       // them again: they count from as high as a line lifts them over a plain nameplate, or higher if they are now, down to
       // where a plain nameplate puts them, so the rows round them don't move each time you act.
-      const hole = el.querySelector<HTMLElement>('.seat.me .hole')?.getBoundingClientRect();
-      const myPlate = el.querySelector<HTMLElement>('.seat.me .nameplate')?.getBoundingClientRect();
+      // Where your seat is headed, as for the others (phoneSeats).
+      const meSeat = el.querySelector<HTMLElement>('.seat.me');
+      const to = meSeat ? headedFor(meSeat, feltZoom(el)) : (b: Box) => b;
+      const holeBox = meSeat?.querySelector<HTMLElement>('.hole')?.getBoundingClientRect();
+      const hole = holeBox?.width ? to(holeBox) : undefined;
+      const plateEl = meSeat?.querySelector<HTMLElement>('.nameplate');
+      const myPlate = plateEl ? to(plateEl.getBoundingClientRect()) : undefined;
       const lift = myPlate && !sideways ? plateBox(myPlate).top - myPlate.top : 0;
-      const mine = hole?.width
+      const mine = hole
         ? { left: hole.left, right: hole.right, top: Math.min(hole.top, hole.top + lift - (sideways ? 0 : LINE_GROWTH / 2)), bottom: Math.max(hole.bottom, hole.bottom + lift) }
         : undefined;
       for (const [seat, { place, step }] of placeRows(seats, size, mine)) {
@@ -480,7 +490,7 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
   // Seats and the button glide to a new spot (when the table is first measured, on opening or reloading it, or when the
   // seats are spaced again), and a hand's fit is only ever made smaller. So each is measured where it is headed, not where
   // it is on the way: halfway in from the first guess at the table's size, they'd make the middle shrink for the hand (#462).
-  const zoom = felt.offsetWidth ? felt.getBoundingClientRect().width / felt.offsetWidth : 1;
+  const zoom = feltZoom(felt);
   const seats: Box[] = [];
   felt.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.empty)').forEach((seat) => {
     const to = headedFor(seat, zoom);
@@ -496,6 +506,11 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
   });
   const dealer = felt.querySelector<HTMLElement>('.dealer');
   return fitMiddle(items, seats, dealer ? headedFor(dealer, zoom)(dealer.getBoundingClientRect()) : null, centre);
+}
+
+/** How much bigger the felt is drawn than its own size (1 unless the page is zoomed by a transform). */
+function feltZoom(felt: HTMLElement): number {
+  return felt.offsetWidth ? felt.getBoundingClientRect().width / felt.offsetWidth : 1;
 }
 
 /** Moves a box inside a seat (or the button) by what that seat has left to glide: its spot is set in its style, and while
