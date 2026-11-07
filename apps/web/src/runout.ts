@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { HIDDEN_CARD, RUNOUT_SETTLE_MS, runoutSteps, runoutWaits, type HandEvent } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 
@@ -42,12 +42,19 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
   const [reveal, setReveal] = useState<Reveal | null>(null);
   /** Steps shown so far; the count past the last is the settle beat. */
   const [shown, setShown] = useState(0);
-  // Checked while rendering (not in an effect), so the finished board never flashes up first.
+  // Checked while rendering (not in an effect), so the finished board never flashes up first. What this render returns
+  // follows the change straight away too: the hooks after this one (useDepartures) run in the same render, and must
+  // never see the finished table while its runout is only starting.
   const [before, setBefore] = useState(live);
+  let current = reveal;
+  let step = shown;
   if (live !== before) {
     setBefore(live);
     const hand = live?.hand;
-    if (reveal && reveal.handNumber !== hand?.handNumber) setReveal(null);
+    if (reveal && reveal.handNumber !== hand?.handNumber) {
+      setReveal(null);
+      current = null;
+    }
     const ranIt = (h: TableView['hand']) => !!h?.events.some((e) => e.t === 'run-it');
     const steps = hand ? runoutSteps(hand.events).length : 0;
     // A hand can also be dealt and run out in one go (a bomb pot with someone all in from the start).
@@ -56,12 +63,14 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
     const prior = before?.hand;
     const fresh = !!hand && !!prior && (prior.handNumber === hand.handNumber ? !ranIt(prior) : prior.handNumber === hand.handNumber - 1);
     if (hand && before && steps && fresh) {
-      setReveal({
+      current = {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
         before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, rotation: before.rotation, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
-      });
+      };
+      step = 0;
+      setReveal(current);
       setShown(0);
     }
   }
@@ -74,7 +83,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
     return () => clearTimeout(t);
   }, [reveal, shown]);
 
-  return useMemo(() => (live && reveal && live.hand?.handNumber === reveal.handNumber ? holdBack(live, reveal.before, shown) : live), [live, reveal, shown]);
+  return useMemo(() => (live && current && live.hand?.handNumber === current.handNumber ? holdBack(live, current.before, step) : live), [live, current, step]);
 }
 
 /** The table as it was with only the first `shown` runout steps dealt. */
@@ -197,9 +206,10 @@ function seatsDuring(view: TableView, before: Frozen, shownEvents: readonly Hand
     // hand's: their seat there has that hand's cards and fold, so it takes this hand's cards as dealt instead.
     const gone = !!start && live?.playerId !== start.playerId && was?.playerId === start.playerId;
     const fresh = before.sameHand === false;
+    const folded = fresh && events.some((e) => e.t === 'action' && e.seat === i && e.action === 'fold');
     const s = gone
       ? fresh
-        ? { ...was!, cards: withShown(dealtTo(events, i), events, i), inHand: true, folded: false, bet: 0, lastAction: null }
+        ? { ...was!, cards: withShown(dealtTo(events, i), events, i), inHand: true, folded, bet: 0, lastAction: folded ? 'Fold' : null }
         : { ...was!, cards: withShown(was!.cards, events, i) }
       : live;
     if (!s) return s;
@@ -293,14 +303,24 @@ export function useDepartures(view: TableView | null, skew = 0): TableView | nul
   // shows: an all-in runout is still being dealt here for several seconds after the server finished the hand, and the
   // seat must not fade before the result it is kept for (the table shown then has no next deal, as it waits).
   // The time to the next deal is from this clock, not the view's own moment, which is as old as the runout by then.
+  // The moment is set once, when the result first shows (and again only if the next deal moves): every update
+  // after it (a chat line, a new clock skew) must not start the wait over.
   const showing = !!kept && view?.hand?.handNumber === kept.handNumber && view.hand.phase === 'complete';
   const nextAt = view?.nextHandAt ?? null;
+  const skewNow = useRef(skew);
+  skewNow.current = skew;
+  const fade = useRef<{ hand: number; shownAt: number; nextAt: number | null; at: number } | null>(null);
   useEffect(() => {
     if (!kept || !showing || kept.fading || kept.seats.size === 0) return;
-    const wait = nextAt === null ? 8000 : Math.max(1500, nextAt - (Date.now() + skew) - DEPART_FADE_MS);
-    const t = setTimeout(() => setKept((k) => (k && k.handNumber === kept.handNumber ? { ...k, fading: true } : k)), wait);
+    let f = fade.current;
+    if (!f || f.hand !== kept.handNumber || f.nextAt !== nextAt) {
+      const shownAt = f && f.hand === kept.handNumber ? f.shownAt : Date.now();
+      const at = nextAt === null ? shownAt + 8000 : Math.max(shownAt + 1500, nextAt - skewNow.current - DEPART_FADE_MS);
+      f = fade.current = { hand: kept.handNumber, shownAt, nextAt, at };
+    }
+    const t = setTimeout(() => setKept((k) => (k && k.handNumber === kept.handNumber ? { ...k, fading: true } : k)), Math.max(0, f.at - Date.now()));
     return () => clearTimeout(t);
-  }, [kept, showing, nextAt, skew]);
+  }, [kept, showing, nextAt]);
 
   return useMemo(() => {
     if (!view || !kept || view.hand?.handNumber !== kept.handNumber) return view;

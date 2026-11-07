@@ -49,6 +49,15 @@ import { pageTitle, usePageTitle } from './pageTitle';
  */
 const turnAlerts = (tableId: string) => `turn:${tableId}:`;
 
+/**
+ * Whether Enter on the focused `control` presses it, rather than starting a chat message (#320): only when it was
+ * reached with the keyboard. Not when it was last pressed with the mouse or a finger (`clicked`), nor when focus went
+ * back to it because what was pressed has gone (an item of the table's Menu, a dialog's Done button).
+ */
+export function enterPresses(control: Element | null, clicked: Element | null): boolean {
+  return !!control && control !== clicked && !(clicked && !clicked.isConnected);
+}
+
 /** Plays sounds, buzzes and badges the tab for what changed between two views. */
 export function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
   const prev = useRef<TableView | null>(null);
@@ -271,7 +280,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         // Start game pressed the Stop game button that took its place, and Pause flipped to Resume (#320).
         if (e.defaultPrevented) return;
         const control = e.target instanceof HTMLElement ? e.target.closest('button, a, summary, [role=button]') : null;
-        if (control && control !== clicked) return;
+        if (enterPresses(control, clicked)) return;
         if (document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) return;
         const box = document.querySelector<HTMLInputElement>('.side .chat-form input, .corner-chat .chat-form input');
         // With no chat box to go to (muted, say), a clicked button still isn't pressed again.

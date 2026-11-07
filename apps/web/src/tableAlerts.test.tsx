@@ -22,7 +22,7 @@ vi.mock('./socket', () => ({
   NoAnswerError: class extends Error {},
 }));
 
-const { useTableEffects } = await import('./TablePage');
+const { enterPresses, useTableEffects } = await import('./TablePage');
 
 /** Between hands 7 and 8, the table waiting for Ann's (seat 0) pick, or for nobody's once `deadline` is null. */
 function waiting(deadline: number | null, chip = 0): TableView {
@@ -66,7 +66,8 @@ describe("the table page's alerts", () => {
 
   it('calls me when the table opens on my turn (following my seat from the lobby in a tab behind), and only once', () => {
     const dealt = tableView({ hand: { handNumber: 1, events: [] }, legal: CHECKED_TO_ME });
-    through(dealt, dealt);
+    // The next update on the same turn (a chat line, a clock) is a new view.
+    through(dealt, { ...dealt, chat: [] });
     expect(shown()).toEqual([{ title: 'Your turn', tag: 'turn:t1:1:0', replaces: 'turn:t1:' }]);
     vi.clearAllMocks();
     // Opening it on someone else's turn says nothing.
@@ -77,5 +78,21 @@ describe("the table page's alerts", () => {
   it("doesn't call me for someone else's pick", () => {
     through(waiting(null, 1), waiting(20_000, 1), waiting(null, 1));
     expect(shown()).toEqual([]);
+  });
+});
+
+describe('Enter at the table (#320)', () => {
+  it('presses a button reached with the keyboard, not one pressed with the mouse or that focus went back to', () => {
+    const menu = document.createElement('button');
+    const item = document.createElement('button');
+    document.body.append(menu, item);
+    expect(enterPresses(menu, null)).toBe(true);
+    expect(enterPresses(menu, menu)).toBe(false);
+    expect(enterPresses(menu, item)).toBe(true);
+    // The Menu's item that was clicked has gone with its list, and focus went back to Menu.
+    item.remove();
+    expect(enterPresses(menu, item)).toBe(false);
+    expect(enterPresses(null, null)).toBe(false);
+    menu.remove();
   });
 });

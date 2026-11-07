@@ -34,6 +34,20 @@ function passive(state: HandState, draw: (seat: number) => number[] = () => []) 
 }
 
 describe('replayFrames', () => {
+  it("names each stud street once, before that street's cards, in the captions", () => {
+    const s = start({ game: 'stud', betting: 'fixed-limit', stacks: [500, 500, 500], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 4, bigBet: 8 } });
+    passive(s);
+    const captions = replayFrames(record(s, 0), 'p0', fmt).map((f) => f.caption);
+    for (const street of ['Fourth Street', 'Fifth Street', 'Sixth Street', 'Seventh Street']) {
+      const at = captions.filter((c) => c.includes(street));
+      expect(at).toHaveLength(1);
+      // The street's name, then who gets what.
+      expect(at[0]).toMatch(new RegExp(`^— ${street} — · .*(gets|dealt)`));
+    }
+    // No step repeats the one before it.
+    expect(captions.filter((c, i) => i > 0 && c && c === captions[i - 1])).toEqual([]);
+  });
+
   it('ends on the engine stacks and an empty pot', () => {
     const s = start({ stacks: [100, 100, 100] });
     passive(s);

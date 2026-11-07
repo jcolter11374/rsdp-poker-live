@@ -34,6 +34,63 @@ function table() {
   return { before, after, broken };
 }
 
+/** A stud tournament hand: b (seat 1) is all in on third street, the rest is run out, and b is knocked out. */
+type Card = { card: string; up: boolean };
+const down = (card: string): Card => ({ card, up: false });
+const up = (card: string): Card => ({ card, up: true });
+
+function studFinished(): TableView {
+  const events = [
+    { seq: 0, t: 'hand-start', seats: [{ seat: 0, playerId: 'a', stack: 100 }, { seat: 1, playerId: 'b', stack: 100 }] },
+    { seq: 1, t: 'post', seat: 0, kind: 'ante', amount: 1, live: false, allIn: false },
+    { seq: 2, t: 'post', seat: 1, kind: 'ante', amount: 1, live: false, allIn: false },
+    { seq: 3, t: 'deal', seat: 0, cards: [down('As'), down('Ad'), up('2c')] },
+    { seq: 4, t: 'deal', seat: 1, cards: [down('Kc'), down('Kd'), up('Kh')] },
+    { seq: 5, t: 'action', seat: 0, action: 'bet', amount: 99, to: 99, allIn: true, auto: false },
+    { seq: 6, t: 'action', seat: 1, action: 'call', amount: 99, to: 99, allIn: true, auto: false },
+    { seq: 7, t: 'show', seat: 0, cards: ['As', 'Ad'] },
+    { seq: 8, t: 'show', seat: 1, cards: ['Kc', 'Kd'] },
+    { seq: 9, t: 'run-it', times: 1 },
+    { seq: 10, t: 'deal', seat: 0, cards: [up('3s')] },
+    { seq: 11, t: 'deal', seat: 1, cards: [up('4h')] },
+    { seq: 12, t: 'street', street: 1, name: 'Fourth Street' },
+    { seq: 13, t: 'deal', seat: 0, cards: [up('5s')] },
+    { seq: 14, t: 'deal', seat: 1, cards: [up('6h')] },
+    { seq: 15, t: 'street', street: 2, name: 'Fifth Street' },
+    { seq: 16, t: 'deal', seat: 0, cards: [up('7s')] },
+    { seq: 17, t: 'deal', seat: 1, cards: [up('8h')] },
+    { seq: 18, t: 'street', street: 3, name: 'Sixth Street' },
+    { seq: 19, t: 'deal', seat: 0, cards: [down('9s')] },
+    { seq: 20, t: 'deal', seat: 1, cards: [down('Th')] },
+    { seq: 21, t: 'street', street: 4, name: 'Seventh Street' },
+    { seq: 22, t: 'show', seat: 0, cards: ['9s'] }, { seq: 23, t: 'show', seat: 1, cards: ['Th'] },
+    { seq: 24, t: 'award', pot: 0, run: 0, board: 0, half: 'scoop', seat: 0, amount: 200 },
+    { seq: 25, t: 'hand-end', stacks: { 0: 200, 1: 0 } },
+  ] as unknown as HandEvent[];
+  const seat = (n: number, cards: Card[], extra = {}) => ({ seat: n, playerId: 'ab'[n], name: 'P' + n, stack: 100, won: 0, handName: null, allIn: false, inHand: true, folded: false, sittingOut: false, sitOutReason: null, leaving: false, waiting: false, cards, ...extra });
+  const cards0 = [down('As'), down('Ad'), up('2c'), up('3s'), up('5s'), up('7s'), down('9s')];
+  return {
+    mode: 'tournament',
+    hand: { handNumber: 7, gameId: 'stud', family: 'stud', phase: 'complete', showdown: true, boards: [[[]]], pots: [], potTotal: 0, awards: [{ seat: 0, amount: 200 }], events },
+    seats: [seat(0, cards0, { stack: 200, won: 200, handName: 'Two pair' }), null],
+    ledger: [{ playerId: 'a', net: 0 }],
+    log: [{ at: 10, text: 'P0 bets' }, { at: 20, text: 'P0 wins 200' }],
+    history: [{ handNumber: 6 }, { handNumber: 7 }],
+    me: { playerId: 'a', seat: 0 },
+    nit: null, canShow: [], nextHandAt: 99_000, serverNow: 1000,
+    rabbit: { available: false, cards: null },
+  } as unknown as TableView;
+}
+
+function studBefore(): TableView {
+  const done = studFinished();
+  const hand = { ...done.hand!, phase: 'betting', showdown: false, awards: [], events: done.hand!.events.filter((e) => e.seq <= 5) } as TableView['hand'];
+  const seat1 = { seat: 1, playerId: 'b', name: 'P1', stack: 99, won: 0, handName: null, allIn: false, inHand: true, folded: false, sittingOut: false, sitOutReason: null, leaving: false, waiting: false, cards: [down('??'), down('??'), up('Kh')] };
+  const seats = [{ ...done.seats[0]!, stack: 1, won: 0, handName: null, cards: done.seats[0]!.cards.slice(0, 3) }, seat1];
+  return { ...done, hand, seats, log: done.log.slice(0, 1), history: [{ handNumber: 6 }], nextHandAt: null } as unknown as TableView;
+}
+
+
 describe('the table as shown, and what waits for it', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -68,7 +125,7 @@ describe('the table as shown, and what waits for it', () => {
     vi.setSystemTime(1000);
     const ms = runoutMs(after.hand!.events);
     const late = { ...after, nextHandAt: 1000 + ms + 6000 } as TableView;
-    const { result, rerender } = renderHook(({ live }) => useShownTable(live, 0), { initialProps: { live: before } });
+    const { result, rerender } = renderHook(({ live, skew }: { live: TableView; skew?: number }) => useShownTable(live, skew ?? 0), { initialProps: { live: before } as { live: TableView; skew?: number } });
     rerender({ live: late });
     let t = 0;
     while (result.current.runningOut && t < 60_000) {
@@ -78,9 +135,12 @@ describe('the table as shown, and what waits for it', () => {
       expect(result.current.view!.seats[1]?.departed).not.toBe('fading');
     }
     expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b', departed: 'out' });
-    // Fades about a second before the next deal, by this clock.
-    act(() => void vi.advanceTimersByTime(late.nextHandAt! - DEPART_FADE_MS - Date.now() - 200));
+    // An update while the result shows (a chat line, with its own clock reading) doesn't start the wait over.
+    act(() => void vi.advanceTimersByTime(late.nextHandAt! - DEPART_FADE_MS - Date.now() - 400));
+    rerender({ live: { ...late, serverNow: Date.now() + 3 } as TableView, skew: 3 });
+    act(() => void vi.advanceTimersByTime(200));
     expect(result.current.view!.seats[1]?.departed).toBe('out');
+    // Fades about a second before the next deal, by this clock.
     act(() => void vi.advanceTimersByTime(400));
     expect(result.current.view!.seats[1]?.departed).toBe('fading');
   });
@@ -106,5 +166,32 @@ describe('the table as shown, and what waits for it', () => {
     for (let i = 0; i < 20 && result.current.runningOut; i++) act(() => void vi.advanceTimersByTime(1_000));
     // At the result: kept in their seat, marked out, so the table doesn't turn or close up.
     expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b', departed: 'out', folded: false });
+  });
+
+  it('shows a player who folded in such a hand and has gone since as folded, not still in it', () => {
+    const { before, after } = table();
+    const last = { ...before, hand: { ...before.hand!, handNumber: 8, phase: 'complete', events: [] } } as unknown as TableView;
+    const deals = [0, 1, 2].map((n, i) => ({ seq: 0.1 + i / 10, t: 'deal', seat: n, cards: [{ card: '??', up: false }, { card: '??', up: false }] }));
+    // c, away, is folded by the table; then moved to another table as this one is balanced.
+    const fold = { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: true };
+    const events = [after.hand!.events[0], ...deals, fold, ...after.hand!.events.slice(1)] as unknown as HandEvent[];
+    const now = { ...after, me: { playerId: 'a', seat: 0 }, hand: { ...after.hand!, events }, seats: [after.seats[0], null, null] } as unknown as TableView;
+    const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: last } });
+    rerender({ live: now });
+    expect(result.current.runningOut).toBe(true);
+    expect(result.current.view!.seats[2]).toMatchObject({ playerId: 'c', folded: true, lastAction: 'Fold' });
+    expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b', folded: false });
+  });
+
+  it("keeps every card a knocked-out stud player was dealt in the runout at the result", () => {
+    const cards = (v: TableView | null) => v?.seats[1]?.cards.map((c) => c.card).join(' ');
+    const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: studBefore() } });
+    rerender({ live: studFinished() });
+    // Not the finished table, even for the render that starts the runout.
+    expect(result.current.runningOut).toBe(true);
+    expect(cards(result.current.view)).toBe('Kc Kd Kh');
+    for (let i = 0; i < 40 && result.current.runningOut; i++) act(() => void vi.advanceTimersByTime(500));
+    expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b', departed: 'out' });
+    expect(cards(result.current.view)).toBe('Kc Kd Kh 4h 6h 8h Th');
   });
 });

@@ -4,7 +4,7 @@ import { disableNotifications, enableNotifications, notify, syncPush, useNotifyS
 import { socket } from '../socket';
 import { tournamentClient } from './client';
 import { tournamentOfTable } from './hooks';
-import { startAlertsDue, startKey } from './startAlerts';
+import { eventOnPage, onScreenNow, startAlertsDue, startKey } from './startAlerts';
 
 /** How often the list of the player's tournaments is fetched while alerts are on. */
 const LIST_EVERY_MS = 60_000;
@@ -12,6 +12,30 @@ const LIST_EVERY_MS = 60_000;
 const CHECK_EVERY_MS = 15_000;
 const FIRED_KEY = 'rsdp.notified';
 const FIRED_MAX = 50;
+/** Events a tab of the site has on screen now, so the other tabs hold their Starting soon back too. */
+const ON_SCREEN_KEY = 'rsdp.notified.onScreen';
+
+function loadOnScreen(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(ON_SCREEN_KEY) ?? '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, at]) => typeof at === 'number')) as Record<string, number> : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Notes that this tab has `id` on screen, dropping notes too old to count. */
+function noteOnScreen(id: string) {
+  try {
+    const now = Date.now();
+    const notes = loadOnScreen();
+    notes[id] = now;
+    const fresh = onScreenNow(notes, now);
+    localStorage.setItem(ON_SCREEN_KEY, JSON.stringify(Object.fromEntries(Object.entries(notes).filter(([k]) => fresh.has(k)))));
+  } catch {
+    /* ignore */
+  }
+}
 
 function loadFired(): string[] {
   try {
@@ -80,9 +104,11 @@ export function TournamentAlerts() {
         .catch(() => {});
     const check = () => {
       const fired = loadFired();
-      // The lobby on screen already counts down. Only alerts that went out count as fired.
-      const inFront = document.hidden ? null : (/^\/tn\/([^/]+)$/.exec(location.pathname)?.[1] ?? null);
-      const due = startAlertsDue(list, Date.now() + skew, new Set(fired), inFront);
+      // An event's lobby or table on screen, in this tab or another, already counts down. Only alerts that went out
+      // count as fired, so one held back still comes once the player looks away.
+      const here = document.hidden ? null : eventOnPage(location.pathname, tournamentOfTable);
+      if (here) noteOnScreen(here);
+      const due = startAlertsDue(list, Date.now() + skew, new Set(fired), onScreenNow(loadOnScreen(), Date.now()));
       if (!due.length) return;
       for (const t of due) {
         const minutes = Math.max(1, Math.round((t.startAt! - Date.now() - skew) / 60_000));
