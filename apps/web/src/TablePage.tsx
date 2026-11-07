@@ -438,6 +438,10 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
+  // A player knocked out of a tournament keeps their seat, marked out, until the next deal (#308). Until it goes, the room
+  // under the table and the strip above it stay as they were, so the table doesn't jump as the result shows (#445).
+  const keptSeat = view.me.seat ?? (view.tournamentId ? view.seats.findIndex((s) => !!s?.departed && s.playerId === view.me.playerId) : -1);
+  const myPlace = keptSeat >= 0 ? keptSeat : null;
   // Worked out once per render: it reads this browser's saved notes.
   const seedWarning = liveSeedProblem(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
@@ -835,7 +839,15 @@ export function TablePage({ tableId }: { tableId: string }) {
           {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
               with the other notes about you, so the table keeps its height (#385). */}
           {view.tournamentId && (
-            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+            <TableStrip
+              tournamentId={view.tournamentId}
+              tableId={tableId}
+              seatedHere={view.me.seat !== null}
+              keptHere={view.me.seat === null && myPlace !== null}
+              holding={runningOut}
+              corner={wide}
+              asksIn={wide ? tournamentAsks : null}
+            />
           )}
           {readyTable && (
             <div className="banner attention" role="status">
@@ -883,8 +895,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             onNoticeRoom={setNoticeRoom}
           />
           <Dock
-            reset={`${portrait}:${view.me.seat}`}
-            seated={view.me.seat !== null}
+            reset={`${portrait}:${myPlace}`}
+            seated={myPlace !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >

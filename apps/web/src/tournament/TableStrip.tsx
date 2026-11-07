@@ -21,6 +21,7 @@ export function TableStrip({
   tournamentId,
   tableId,
   seatedHere,
+  keptHere = false,
   holding = false,
   corner = false,
   asksIn = null,
@@ -28,6 +29,11 @@ export function TableStrip({
   tournamentId: string;
   tableId: string;
   seatedHere: boolean;
+  /**
+   * The player was knocked out here and their seat still shows, marked out, until the next deal: above the table (not in
+   * the corner box), "You finished" waits for it to go, so the felt doesn't move down as the result shows (#445).
+   */
+  keptHere?: boolean;
   holding?: boolean;
   corner?: boolean;
   /** With `corner`: where the asks go (TablePage's spot for them under the table). Until it exists they wait. */
@@ -208,7 +214,7 @@ export function TableStrip({
         {lobby}
       </div>
       {asks}
-      {finished}
+      {!keptHere && finished}
       {error && <div className="tn-strip-row error">{error}</div>}
     </div>
   );

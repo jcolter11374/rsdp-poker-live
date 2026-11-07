@@ -9,6 +9,8 @@ import { TableStrip } from './TableStrip';
 
 const level: LevelRow = { kind: 'level', sb: 100, bb: 200, ante: 0, anteType: 'none', minutes: 8 };
 let options: Partial<PlayerOptions>;
+// The event's places so far.
+let places: { place: number; displayName: string; entryId: string }[];
 const send = vi.fn<(id: string, command: unknown) => Promise<void>>();
 
 vi.mock('@rsdp/tournament', async (original) => ({
@@ -22,7 +24,7 @@ vi.mock('@rsdp/tournament', async (original) => ({
     handForHand: false,
   }),
   playerOptions: () => ({ entry: null, pending: [], canAddOn: false, canReEnter: false, canRebuy: false, canDeclineRebuy: false, ...options }),
-  standings: () => [],
+  standings: () => places,
   tableAddress: (id: string) => id,
 }));
 vi.mock('./hooks', () => ({
@@ -39,6 +41,7 @@ vi.mock('./client', () => ({ tournamentClient: () => ({ send }) }));
 let under: HTMLDivElement;
 beforeEach(() => {
   options = {};
+  places = [];
   send.mockReset();
   under = document.body.appendChild(document.createElement('div'));
 });
@@ -91,5 +94,19 @@ describe('the tournament strip', () => {
     rerender(strip(true));
     expect(under.childElementCount).toBe(0);
     expect(container.querySelector('.tn-corner')?.textContent).toMatch(/Add-ons are closed/);
+  });
+  it("says where you finished only once your kept seat has gone, on a laptop, so the table doesn't move as the result shows (#445)", () => {
+    options = { entry: { id: 'e5', status: 'eliminated' } as PlayerOptions['entry'] };
+    places = [{ place: 5, displayName: 'Ana', entryId: 'e5' }];
+    const kept = (k: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere={k} />;
+    const { container, rerender } = render(kept(true));
+    expect(container.textContent).not.toMatch(/You finished/);
+    // The next deal: the seat goes, and the row with it.
+    rerender(kept(false));
+    expect(container.textContent).toMatch(/You finished 5th\./);
+    cleanup();
+    // In the corner box on a wide window it takes no room from the table, so it shows at once.
+    const corner = render(<TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere corner asksIn={under} />);
+    expect(corner.container.querySelector('.tn-corner')?.textContent).toMatch(/You finished 5th\./);
   });
 });
