@@ -1760,7 +1760,7 @@ export function createApp(deps: AppDeps = {}) {
           const kind = String(input?.kind ?? '') as GestureKind;
           if (!GESTURES.includes(kind)) throw new ActionError('unknown gesture');
           const to = String(input?.to ?? '');
-          // Counted before the table is asked, refused or not, so who may be thrown at can't be asked without limit (#435).
+          // Counted before the table is asked, so refused gestures count against the limit too (#435).
           const now = clock.now();
           const recent = (gestureTimes.get(me) ?? []).filter((t) => now - t < GESTURE_WINDOW_MS);
           if (recent.length >= GESTURE_BURST) throw new ActionError('easy there: a few seconds between gestures');

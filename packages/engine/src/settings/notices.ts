@@ -99,7 +99,7 @@ export function settingsNotices(before: TableSettings, after: TableSettings, who
     // loud copy goes to chat at once, so saying it only mid-hand would tell a spectator on a delay whether the live
     // hand is still being played (#435).
     out.push({
-      text: `${seesAll ? '⚠️ ' : ''}${who} set spectators to watch ${behindText(delay)} from the next hand (it was ${was > 0 ? `${delayText(was)} behind` : 'live'})${seesAll ? '. They see every hole card' : ''}.`,
+      text: `${seesAll ? '⚠️ ' : ''}${who} set spectators to watch ${behindText(delay)}, from the next hand (it was ${was > 0 ? `${delayText(was)} behind` : 'live'})${seesAll ? '. They see every hole card' : ''}.`,
       loud: seesAll && shorter,
     });
   }

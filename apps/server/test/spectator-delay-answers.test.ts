@@ -138,6 +138,34 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     expect(before).toEqual([CLOSED, 'no such seat']);
   });
 
+  it('may take a seat offered from the waitlist, though their view still shows it taken', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 4;
+      s.seating.waitlist = true;
+    });
+    rt.joinWaitlist('watcher', { name: 'Watcher', stack: 10_000 });
+    rt.stand('c', { afterHand: true });
+    const shown = freezeView(rt, clock);
+    checkDown(rt);
+    expect(rt.state.offers).toEqual([expect.objectContaining({ playerId: 'watcher', seat: 3 })]);
+    expect(shown.seats[3]).toBe('c');
+    expect(ask(rt, 3)).toBe('accepted');
+    expect(rt.seatOf('watcher')?.seat).toBe(3);
+  });
+
+  it('tells a player who has just left live, and is still shown in their seat, what they heard before it', () => {
+    const { rt, clock } = table();
+    rt.stand('c', { afterHand: true });
+    freezeView(rt, clock);
+    // A stack that would be refused: asking can't tell them the live hand has ended by the answer changing.
+    const sit = () => answer(() => rt.requestSeat('c', { seat: 5, name: 'C', stack: 0 }));
+    const before = sit();
+    checkDown(rt);
+    expect(rt.seatOf('c')).toBeNull();
+    expect(sit()).toBe(before);
+    expect(before).toBe('you already have a seat');
+  });
+
   it('leaves the answers of anyone who sees the table live as they were', () => {
     const { rt } = table();
     rt.updateSettings('host', { table: { maxSeats: 6 } });
@@ -180,7 +208,6 @@ describe('touching a bot (#435)', () => {
       answer(() => rt.removeBot('watcher', bot)),
       answer(() => rt.setBotLevel('watcher', bot, 'hard')),
       answer(() => rt.setBotLevel('watcher', bot, 'nope' as 'hard')),
-      answer(() => rt.removeBot('a', bot)),
     ];
     const here = tries();
     rt.removeBot('host', bot);
@@ -190,11 +217,22 @@ describe('touching a bot (#435)', () => {
       'only its owner or the host can remove a bot',
       "only its owner or the host can change a bot's level",
       'no such level',
-      'only its owner or the host can remove a bot',
     ]);
     // The host still hears that it has gone.
     expect(answer(() => rt.removeBot('host', bot))).toBe('no such bot');
     expect(answer(() => rt.setBotLevel('host', bot, 'hard'))).toBe('no such bot');
+  });
+
+  it('tells anyone who sees the table live that a bot has gone, its owner tapping again included', () => {
+    const { rt } = table();
+    const bot = rt.addBot('a', { seat: 5 });
+    expect(answer(() => rt.removeBot('b', bot))).toBe('only its owner or the host can remove a bot');
+    rt.removeBot('a', bot);
+    expect(rt.botInfo(bot)).toBeNull();
+    expect(answer(() => rt.removeBot('a', bot))).toBe('no such bot');
+    expect(answer(() => rt.setBotLevel('a', bot, 'hard'))).toBe('no such bot');
+    expect(answer(() => rt.removeBot('b', bot))).toBe('no such bot');
+    expect(answer(() => rt.setBotLevel('b', bot, 'nope' as 'hard'))).toBe('no such bot');
   });
 });
 
@@ -219,6 +257,66 @@ describe('fair reveal times on a delay (#435)', () => {
     expect(rt.fairRevealsAt(1, ended)).toBe(rt.state.fair!.stopped!.at + FAIR_STOP_REVEAL_MS);
     expect(rt.fairRevealsAt(1, ended, asOf)).toBe(ended + FAIR_REVEAL_AFTER_MS);
   });
+
+  it('on the table, stay where they were when the host starts the game again live', () => {
+    const { rt, clock } = table();
+    rt.stop('host');
+    checkDown(rt);
+    const ended = rt.state.history.at(-1)!.endedAt;
+    const opens = rt.state.fair!.stopped!.at + FAIR_STOP_REVEAL_MS;
+    clock.advance(10 * 60_000);
+    // A spectator on the delay is shown the game still stopped, its hands opening half an hour after the stop.
+    const asOf = clock.now() - DELAY;
+    expect(rt.fairRevealsAt(1, ended, asOf)).toBe(opens);
+    rt.start('host');
+    // Live, the hands stay private for the 12 hours again; their view still shows the stop.
+    expect(rt.fairRevealsAt(1, ended)).toBe(ended + FAIR_REVEAL_AFTER_MS);
+    expect(rt.fairRevealsAt(1, ended, asOf)).toBe(opens);
+    // Weighed against the time they are shown, the hands aren't open to them while the live table keeps them private.
+    expect(asOf < opens).toBe(true);
+    // Once their view reaches the start, they see the 12 hours too.
+    expect(rt.fairRevealsAt(1, ended, clock.now())).toBe(ended + FAIR_REVEAL_AFTER_MS);
+  });
+
+  it('on the table, follow each stop and start when the host does both twice within the delay', () => {
+    const { rt, clock } = table();
+    rt.stop('host');
+    checkDown(rt);
+    const first = { ended: rt.state.history.at(-1)!.endedAt, opens: rt.state.fair!.stopped!.at + FAIR_STOP_REVEAL_MS };
+    clock.advance(1000);
+    const duringFirst = clock.now();
+    clock.advance(1000);
+    rt.start('host');
+    clock.advance(1000);
+    const between = clock.now();
+    clock.advance(1000);
+    rt.stop('host');
+    checkDown(rt);
+    expect(rt.state.handNumber).toBe(2);
+    const secondOpens = rt.state.fair!.stopped!.at + FAIR_STOP_REVEAL_MS;
+    clock.advance(1000);
+    const duringSecond = clock.now();
+    clock.advance(1000);
+    rt.start('host');
+    expect(rt.fairRevealsAt(1, first.ended, duringFirst)).toBe(first.opens);
+    expect(rt.fairRevealsAt(1, first.ended, between)).toBe(first.ended + FAIR_REVEAL_AFTER_MS);
+    expect(rt.fairRevealsAt(1, first.ended, duringSecond)).toBe(secondOpens);
+    expect(rt.fairRevealsAt(1, first.ended, clock.now())).toBe(first.ended + FAIR_REVEAL_AFTER_MS);
+  });
+
+  it('on the table, read the same once a stop has opened its hands, before and after the game starts again', () => {
+    const { rt, clock } = table();
+    rt.stop('host');
+    checkDown(rt);
+    const ended = rt.state.history.at(-1)!.endedAt;
+    clock.advance(FAIR_STOP_REVEAL_MS + 60_000);
+    const asOf = clock.now() - DELAY;
+    const before = rt.fairRevealsAt(1, ended, asOf);
+    expect(before).toBeLessThanOrEqual(asOf);
+    rt.start('host');
+    expect(rt.fairRevealsAt(1, ended)).toBe(-Infinity);
+    expect(rt.fairRevealsAt(1, ended, asOf)).toBe(before);
+  });
 });
 
 describe('the delay notice (#435)', () => {
@@ -234,7 +332,7 @@ describe('the delay notice (#435)', () => {
     between.updateSettings('host', { spectators: { delaySeconds: 30 } });
     const said = (rt: TableRuntime) => rt.state.chat.at(-1)!.text;
     expect(said(between)).toBe(said(mid));
-    expect(said(mid)).toMatch(/30 seconds behind the table from the next hand/);
+    expect(said(mid)).toMatch(/30 seconds behind the table, from the next hand/);
   });
 });
 
