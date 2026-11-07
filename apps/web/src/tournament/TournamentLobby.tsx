@@ -152,7 +152,7 @@ export function TournamentLobby({ id }: { id: string }) {
                   <TableChatDownload state={state} />
                 </>
               )}
-              <LobbyChat id={id} items={log} session={session} />
+              <LobbyChat id={id} items={log} session={session} state={state} />
             </>
           )}
           {tab === 'activity' && <Activity items={log} />}

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
-import { defaultSettings, tableAddress, type TournamentTableChat } from '@rsdp/tournament';
+import { defaultSettings, tableAddress, type LobbyItem, type TournamentTableChat } from '@rsdp/tournament';
 import { createApp } from '../src/app';
 import { tableName } from '../src/tournament/manager';
 import { closeDb, type Db } from '../src/db';
@@ -60,6 +60,13 @@ describe('table chat of a finished tournament', () => {
     await ben.call('table:join', { tableId });
     await ana.call('chat:send', { text: 'the new bet slider is great' });
     await ben.call('chat:send', { text: 'blinds felt fast' });
+    // A lobby message the host deletes (#226) is in no download: this one holds the tables' chat only.
+    const lobby: LobbyItem[] = [];
+    (host.socket as unknown as { on: (e: string, cb: (x: { items: LobbyItem[] }) => void) => void }).on('tournament:log', (x) => lobby.push(...x.items));
+    for (const c of [host, ana]) await c.call('tournament:subscribe', { id });
+    await ana.call('tournament:chat', { id, text: 'a lobby line the host deleted' });
+    for (let i = 0; i < 100 && !lobby.some((x) => x.kind === 'chat'); i++) await pause(20);
+    await host.call('tournament:chatDelete', { id, itemId: lobby.find((x) => x.kind === 'chat')!.id });
 
     // The host pauses, the hand being played finishes, and the host ends it.
     await host.call('tournament:command', { id, command: { type: 'pause' } });
@@ -87,6 +94,7 @@ describe('table chat of a finished tournament', () => {
     expect(tables[0].name).toBe(tableName('Feedback night', 1));
     expect(tables[0].chat.map((c) => `${c.name}: ${c.text}`)).toEqual(['Ana: the new bet slider is great', 'Ben: blinds felt fast']);
     expect(tables[0].chat.every((c) => typeof c.at === 'number')).toBe(true);
+    expect(JSON.stringify(tables)).not.toContain('a lobby line');
     // A second download straight away waits a few seconds, as the table's own does.
     await expect(host.call('tournament:tableChat', { id })).rejects.toThrow('one download every few seconds');
 

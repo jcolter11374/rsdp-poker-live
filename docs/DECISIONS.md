@@ -47,6 +47,7 @@ How this file works:
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
 | [D35](#d35-the-site-is-called-rsdp-live) | The site is called RSDP Live! | 2026-11-07 | John |
 | [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
+| [D37](#d37-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
 
 ---
 
@@ -418,3 +419,16 @@ How this file works:
 - **Decision:** when the site works out a stud bring-in itself (every tournament level that doesn't set its own, and a cash table whose bring-in is left at 0), it is a third of the small bet rounded down to a round amount: 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten, the steps the tournament blinds use, and never less than 1. With Limit bets of 2,000/4,000 the bring-in is 600 (not 666), at 4,000/8,000 it is 1,000 (not 1,333), and at 1,000/2,000 it is 300. On the usual tournament levels that is between a quarter and a third of the small bet. A bring-in someone set themselves (a structure's own, or the Stakes tab's) is kept as it is, and the bring-in a new cash table fills in for the host (a third of the small bet, to the nearest nickel) doesn't change.
 - **Why:** card rooms bring in for about a quarter to a third of the small bet, in chips that are in play; 666 is an amount no dealer would ask for. Rounding down keeps it at most a third, the size the Stakes tab has always described. A fixed quarter would also give round amounts at the usual levels, but at Limit bets of 1,000/2,000 it would be 250 rather than 300, smaller than the third players already know from the cash tables.
 - **Where:** `bringInFor` in `packages/engine/src/variants/antes.ts`, used by `levelFor` in `packages/tournament/src/director.ts` and `fillStakes` in `apps/server/src/runtime/table.ts`.
+
+## D37. The cash game recap
+
+- **Decided:** 2026-11-07, while building issue #329. The details are Claude's; the roadmap had promised "a short recap ready to paste into the WhatsApp group" without saying what goes in it.
+- **Decision:** the ledger's Copy recap button gives a few plain lines about the whole table, as the ledger and Settle up do: the date of the night played, the games, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot.
+  - The results are the ledger's `net`, the same figures Settle up pays from.
+  - No house-fee line, because a host can hide the fee total from players.
+  - Practice bots get one line of their own and stay out of the list.
+  - No links (a table's link is its invite) and no cards.
+  - A spectator on a delay sees the button only once the delay has passed after their browser first saw people playing each other, so it never runs ahead of the delayed table. A spectator the host has blocked from hands gets a recap with no games, hands or biggest pot, and is told why.
+  - The hands come from the same filtered requests the Hands and Stats tabs use, and only when the recap is opened. Nothing new is sent by the server or stored.
+- **Why:** the recap is for a group chat, so it says only what anyone at the table could already see, with nothing that lets someone outside the group join or learn cards.
+- **Where:** `apps/web/src/recap.ts`, `apps/web/src/components/table/Recap.tsx`, issue #329.

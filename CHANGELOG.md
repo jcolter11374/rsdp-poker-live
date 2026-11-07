@@ -20,9 +20,20 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ## [2026.11.07.4] - 2026-11-07
 
+_Lobby chat moderation and a recap of the night_
+
+### New
+
+- **Moderate a tournament's lobby chat.** Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. A muted player, or everyone while the chat is off, is told why they can't send. Mute and Delete ask first, and on a phone the buttons sit under each message, big enough to tap. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too.
+- **Copy a recap of the night.** At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself.
+
 ### Fixed and changed
 
 - Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over.
+- Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables as soon as the hand's result shows, instead of sometimes staying on the old table until they reload.
+- The Hands and Stats tabs no longer show a hand's result while its all-in runout is still being dealt on the table, if you open them for the first time just then.
+- If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
+- The Checking John page now shows each time John takes a name out of old records, without the name itself.
 
 ## [2026.11.07.3] - 2026-11-07
 
