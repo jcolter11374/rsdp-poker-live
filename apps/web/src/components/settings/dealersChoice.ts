@@ -9,7 +9,7 @@ export const choiceOf = (settings: TableSettings): DealersChoiceSettings => sett
 /**
  * The table's settings as the next hand will deal them. A change saved during a hand waits for the next one
  * (applyAtNextHand): the settings dialog starts from it and is saved on top of it, so the host sees what will be
- * dealt, and the runout's hold-back leaves out a game the change takes off the Dealer's choice menu.
+ * dealt, and the game picker and the runout's hold-back leave out a game the change takes off the Dealer's choice menu.
  */
 export const comingSettings = (settings: TableSettings, pending: SettingsPatch | null): TableSettings => {
   if (!pending) return settings;
@@ -19,6 +19,48 @@ export const comingSettings = (settings: TableSettings, pending: SettingsPatch |
     return settings;
   }
 };
+
+/**
+ * Which games on the Dealer's choice menu the host is taking off it from the next hand (#441). A change made during a
+ * hand waits for the next one, so the chooser still sees the game on the menu, but the server refuses a pick of it
+ * (#425). As on the server (DealersChoice.leaving), only while the next hand still plays Dealer's choice: a change that
+ * ends it takes no game off, as there is no next pick then.
+ */
+export function leavingMenu(settings: TableSettings, pending: SettingsPatch | null): (g: ChoiceGame) => boolean {
+  const menu = comingMenu(settings, pending);
+  if (!menu) return () => false;
+  return (g) => !menu.some((x) => sameGame(x, g));
+}
+
+const sameGame = (a: ChoiceGame, b: ChoiceGame) => a.gameId === b.gameId && a.betting === b.betting;
+
+/**
+ * The Dealer's choice menu the host's change waiting for the next hand brings, or null when no change waits or the
+ * next hand doesn't play Dealer's choice (as the server's choiceMenu of the coming settings).
+ */
+export function comingMenu(settings: TableSettings, pending: SettingsPatch | null): readonly ChoiceGame[] | null {
+  if (!pending) return null;
+  const next = comingSettings(settings, pending);
+  const menu = choiceOf(next);
+  if (!menu.enabled || next.table.mode !== 'cash' || menu.games.length < 2 || next.game.rotation.enabled) return null;
+  return menu.games;
+}
+
+/**
+ * Index in `games` of what a missed pick deals, as the server works it out (DealersChoice.defaultIndex): the current
+ * game `cur` if it fits `count` players, else the first that fits, passing over the games `skip` says when it can,
+ * else the biggest.
+ */
+export function missedPickIndex(games: readonly ChoiceGame[], cur: ChoiceGame | null, count: number, skip: (g: ChoiceGame) => boolean = () => false): number {
+  const seats = (g: ChoiceGame) => getVariant(g.gameId).maxPlayers;
+  const fits = (g: ChoiceGame) => seats(g) >= count;
+  const kept = cur ? games.findIndex((g) => sameGame(g, cur) && fits(g) && !skip(g)) : -1;
+  if (kept >= 0) return kept;
+  const staying = games.findIndex((g) => fits(g) && !skip(g));
+  if (staying >= 0) return staying;
+  const first = games.findIndex(fits);
+  return first >= 0 ? first : games.reduce((best, g, i) => (seats(g) > seats(games[best]) ? i : best), 0);
+}
 
 const fromMix = (id: string) => MIXED_GAMES.find((m) => m.id === id)!.steps.map((st) => ({ gameId: st.gameId, betting: st.betting }));
 

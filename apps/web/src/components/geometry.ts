@@ -263,6 +263,30 @@ export function spreadByBoxes(
  */
 export const EMPTY_SEATS_MAY_TOUCH = 6;
 
+/** No seat's box covers another's at `fractions`, but two empty seats may touch (EMPTY_SEATS_MAY_TOUCH). */
+export function seatsFine(fractions: readonly number[], taken: readonly boolean[], w: number, h: number, box: (seat: number) => Extent | undefined): boolean {
+  return seatsApart(fractions, w, h, box, (a, b) => (!taken[a] && !taken[b] ? -EMPTY_SEATS_MAY_TOUCH : 0));
+}
+
+/**
+ * How much the felt's width or height may change, from the size the seats were placed at, before they're placed afresh
+ * (#410): FELT_SLACK of it, or FELT_SLACK_PX on a small felt. The dock and the top bar change height by a few pixels in
+ * the middle of a hand: the most #410 measured was 17px, on a felt about 400px tall, and a laptop's felt can be nearer
+ * 300px.
+ */
+export const FELT_SLACK = 0.05;
+export const FELT_SLACK_PX = 20;
+
+/**
+ * Whether seats placed earlier (`was`, from placements keyed `key`) stay where they are at a w×h felt: the same
+ * placement key, and a felt within the slack (above) of the size they were placed at. They still have to fit (see
+ * placeSeats).
+ */
+export function keepPlaced<T extends { key: string; w: number; h: number }>(was: T | null, key: string, w: number, h: number): was is T {
+  const near = (now: number, then: number) => Math.abs(now - then) <= Math.max(then * FELT_SLACK, FELT_SLACK_PX);
+  return !!was && was.key === key && w > 0 && near(w, was.w) && near(h, was.h);
+}
+
 /**
  * Where each seat sits round a w×h desktop table. The spacing of `seatFractions` is kept wherever no box covers another,
  * so tables that look right stay as they are. Otherwise seats are spaced by their boxes (`spreadByBoxes`): with `gap`
@@ -291,8 +315,7 @@ export function placeSeats(
   const boxes = taken.map((_, seat) => box(seat));
   if (boxes.some((b) => !b)) return even;
   const sized = (seat: number) => boxes[seat]!;
-  const fine = (fractions: readonly number[]) =>
-    seatsApart(fractions, w, h, sized, (a, b) => (!taken[a] && !taken[b] ? -EMPTY_SEATS_MAY_TOUCH : 0));
+  const fine = (fractions: readonly number[]) => seatsFine(fractions, taken, w, h, sized);
   if (keep?.length === taken.length && fine(keep)) return keep;
   if (fine(even)) return even;
   for (const g of gap > 0 ? [gap, 0] : [0]) {
@@ -423,4 +446,33 @@ export function fitHand(cards: number, room: number, natural: HandFit, minShow =
   if (bunched >= show * natural.cw) return { cw: natural.cw, overlap: Math.round(natural.cw - bunched) };
   const cw = Math.max(minCw, Math.min(natural.cw, Math.floor(room / (1 + (cards - 1) * show))));
   return { cw, overlap: Math.round(cw * (1 - show)) };
+}
+
+/** How much two boxes overlap, in px². */
+export const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+
+/**
+ * How small the middle of the table must be drawn so it covers no player's nameplate or cards (#417). `items` are what
+ * it holds, at full size, drawn scaled about `centre`. The answer is the largest scale from 1 down to `least`, in `step`s,
+ * that covers nothing, or where none does, the one that covers the least. Where the middle is drawn smaller for a seat
+ * anyway, it may go up to `spare` steps smaller still so that the items marked `line` (the winners' lines and what
+ * comes next) clear the dealer `button` too. The button alone never makes it smaller, so a hand that fits keeps the
+ * full size wherever the button is.
+ */
+export function fitMiddle(items: readonly (Box & { line?: boolean })[], seats: readonly Box[], button: Box | null, centre: Point, { gap = 4, least = 0.6, step = 0.02, spare = 2 } = {}): number {
+  const covered = (k: number, withButton: boolean) => {
+    let area = 0;
+    for (const it of items) {
+      const b = { left: centre.x + (it.left - centre.x) * k - gap, right: centre.x + (it.right - centre.x) * k + gap, top: centre.y + (it.top - centre.y) * k - gap, bottom: centre.y + (it.bottom - centre.y) * k + gap };
+      for (const o of seats) area += overlapArea(b, o);
+      if (withButton && button && it.line) area += overlapArea(b, button);
+    }
+    return area;
+  };
+  const scales: number[] = [];
+  for (let i = 0; 1 - i * step >= least - 1e-9; i++) scales.push(Math.round((1 - i * step) * 100) / 100);
+  const fits = scales.findIndex((k) => covered(k, false) < 1);
+  if (fits === 0) return 1;
+  if (fits > 0) return scales.slice(fits, fits + spare + 1).find((k) => covered(k, true) < 1) ?? scales[fits];
+  return scales.reduce((best, k) => (covered(k, false) < covered(best, false) - 1 ? k : best), 1);
 }

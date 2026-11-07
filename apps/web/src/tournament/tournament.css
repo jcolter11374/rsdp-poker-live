@@ -38,7 +38,8 @@
 .tn-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
 .tn-tabs::-webkit-scrollbar { display: none; }
 .tn-tabs button { flex: none; border-radius: 999px; min-height: 40px; white-space: nowrap; }
-.tn-tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+/* The selected tab keeps its look under the mouse and after a tap: the plain button hover rule is just as specific (#399). */
+.tn-tabs button.on, .tn-tabs button.on:hover:not(:disabled) { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .tn-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .tn-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; padding: 4px 6px; }
@@ -158,6 +159,23 @@
 .tn-strip-row + .tn-strip-row { border-top: 1px solid var(--panel-2); }
 .tn-strip-row a { margin-left: auto; }
 .tn-strip-row button { padding: 3px 10px; }
+/* The wide layout (#385): the level, clock, blinds and players left in the bottom-right corner, across from the chat box
+   and the same size, so they take no height from the table. Rows that ask something of the player go under the table,
+   with the other notes about you (TableStrip's asksIn, in .dock-notes). */
+.dock-notes .tn-strip { margin-bottom: 0; }
+.tn-corner.panel { position: fixed; right: 12px; bottom: 12px; width: var(--chat-w); min-height: var(--chat-h); z-index: 6; justify-content: space-between; gap: 8px; background: rgba(29, 33, 39, 0.94); font-size: 0.9rem; }
+.tn-corner-head { display: flex; align-items: baseline; gap: 10px; }
+.tn-corner-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-corner-now { display: flex; flex-direction: column; gap: 6px; }
+.tn-corner-clock { display: flex; align-items: baseline; gap: 10px; font-variant-numeric: tabular-nums; }
+.tn-corner-clock > span:first-child { font-size: 1.05rem; font-weight: 600; }
+.tn-corner-clock b { font-size: 2rem; line-height: 1; }
+.tn-corner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.tn-corner .tn-strip-row { padding: 0; }
+/* The open Log drawer is a little narrower than the box on windows over about 1570px: hidden, not cut off at its edge,
+   once the drawer has slid in over it (styles.css), and back as soon as the drawer starts to go. */
+.table-page.wide:has(.side.drawer.open) .tn-corner { visibility: hidden; transition: visibility 0s 0.25s; }
+@media (prefers-reduced-motion: reduce) { .table-page.wide:has(.side.drawer.open) .tn-corner { transition: none; } }
 
 /* Home page tournament lists. */
 .tn-list { margin-bottom: 16px; gap: 10px; }
