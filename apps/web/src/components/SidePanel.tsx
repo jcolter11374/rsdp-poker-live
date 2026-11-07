@@ -12,6 +12,7 @@ import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
+import { RecapDialog, useRecapOffered } from './table/Recap';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -20,6 +21,8 @@ const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'H
 export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; fmt: Fmt; initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const scroller = useRef<HTMLDivElement>(null);
+  // Here rather than in the ledger, so a spectator's wait on a delay starts as the table opens.
+  const recap = useRecapOffered(view);
 
   const names = useMemo(() => {
     const m = new Map<number, string>();
@@ -57,7 +60,7 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
             ))}
           </>
         )}
-        {tab === 'ledger' && <Ledger view={view} fmt={fmt} />}
+        {tab === 'ledger' && <Ledger view={view} fmt={fmt} recap={recap} />}
         {tab === 'hands' && <Hands view={view} fmt={fmt} />}
         {tab === 'stats' && <Stats view={view} fmt={fmt} />}
       </div>
@@ -68,7 +71,8 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
 type SortKey = 'name' | 'buyIn' | 'cashOut' | 'stack' | 'net';
 const SORT_KEY = 'rsdp.ledgerSort';
 
-function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
+/** The cash ledger and settle-up. `recap` offers Copy recap (useRecapOffered). */
+function Ledger({ view, fmt, recap }: { view: TableView; fmt: Fmt; recap: boolean }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(() => {
     try {
       return JSON.parse(localStorage.getItem(SORT_KEY) ?? '') as { key: SortKey; desc: boolean };
@@ -78,6 +82,9 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   });
   const [settle, setSettle] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
+  // The hands the Hands tab shows, loaded only once the recap is open.
+  const recapHands = useAllHands(view, recap && recapOpen);
   if (!view.ledger.length) return <p className="muted">Nobody has bought in yet.</p>;
 
   const seated = new Set(view.seats.filter((s) => s !== null).map((s) => s.playerId));
@@ -120,7 +127,15 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
           {settle ? 'Show ledger' : 'Settle up'}
         </button>
         <button onClick={() => download(`${fileStem(view.name)}-ledger.csv`, ledgerCsv(rows, seated, view.settings.stakes.centsMode), 'text/csv')}>Download CSV</button>
+        {recap && (
+          <button onClick={() => setRecapOpen(true)} title="A few lines about the game for the group chat">
+            Copy recap
+          </button>
+        )}
       </div>
+      {recap && recapOpen && (
+        <RecapDialog view={view} fmt={fmt} hands={recapHands.hands} error={recapHands.error} onRetry={recapHands.retry} onClose={() => setRecapOpen(false)} />
+      )}
       {settle ? (
         <div className="settle">
           {transfers.length === 0 ? (
