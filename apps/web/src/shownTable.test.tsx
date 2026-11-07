@@ -286,4 +286,14 @@ describe("Dealer's choice while a runout is dealt out (#459)", () => {
       expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
     }
   });
+
+  it('counts from before the runout when its first view comes after the server dealt it out', () => {
+    // Coming back from a dropped connection: the table before it is the last one seen, and the first view since is
+    // from after the server had dealt the runout out, with a busted player's seat given to someone waiting.
+    const { before, after, cash, razz, omaha } = dealersChoice();
+    const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: cash(before, 9, omaha) } });
+    rerender({ live: cash(after, 8, razz, 'end') });
+    expect(result.current.runningOut).toBe(true);
+    expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
+  });
 });

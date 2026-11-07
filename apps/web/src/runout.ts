@@ -108,7 +108,10 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
       step = 0;
       setReveal(current);
       setShown(0);
-      held = heldCounts(undefined, live);
+      // Counted from before the runout: a first view sent after the server had dealt it out (say, coming back from a
+      // dropped connection) can only add people.
+      const c = before.choice;
+      held = heldCounts(c ? { count: c.count, coming: c.comingCount ?? c.count } : undefined, live);
       setCounted(held);
     } else if (current && current.handNumber === hand?.handNumber) {
       held = heldCounts(counted, live);
