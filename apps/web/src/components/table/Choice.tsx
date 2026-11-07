@@ -90,7 +90,7 @@ export function GamePicker({ view, skew, onClose, onRules }: { view: TableView; 
           {c.deadline !== null
             ? `${secs} second${secs === 1 ? '' : 's'} left. `
             : 'You pick once this hand is over; you can choose now. '}
-          {c.handsLeft === null && !current ? 'The first game' : 'Your game'} lasts {view.settings.game.dealersChoice?.hands ? `${view.settings.game.dealersChoice.hands} hands` : 'one orbit'}
+          {c.handsLeft === null && !current ? 'The first game' : 'Your game'} lasts {view.settings.game.dealersChoice?.hands ? `${view.settings.game.dealersChoice.hands} hand${view.settings.game.dealersChoice.hands === 1 ? '' : 's'}` : 'one orbit'}
           {fallback ? `. If time runs out: ${gameTitle(fallback.gameId, fallback.betting)}.` : '.'}
         </p>
         {keep && (

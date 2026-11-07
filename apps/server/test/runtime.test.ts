@@ -739,6 +739,32 @@ describe('host settings', () => {
     expect(hand(rt).input.stakes.ante).toBe(0);
   });
 
+  it("a stud table made with no small blind gives its hold'em bomb pot half the big blind, and nobody posts it", () => {
+    // As the home page makes a stud table: no small blind, the big blind is the small bet.
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 8;
+      s.game = { ...s.game, gameId: 'stud', betting: 'fixed-limit' };
+      s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: 50, ante: 10, anteType: 'per-player', bringIn: 15, smallBet: 50, bigBet: 100, centsMode: true };
+      s.modifiers['bomb-pot'] = { ...(s.modifiers['bomb-pot'] as object), gameId: 'nlhe', betting: 'no-limit' };
+    });
+    seatPlayers(rt, 3, 5000);
+    rt.start('host');
+    expect(hand(rt).input.stakes).toMatchObject({ smallBlind: 0, ante: 10 });
+    rt.requestBombPot('host', true);
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.options.bombPot).toBe(true);
+    expect(hand(rt).input.game.id).toBe('nlhe');
+    expect(hand(rt).input.stakes).toMatchObject({ smallBlind: 25, bigBlind: 50, ante: 0 });
+    expect(hand(rt).input.posts.map((p) => p.kind)).toEqual(['bomb-pot', 'bomb-pot', 'bomb-pot']);
+    expect(tableView(rt, 'host', clock.now()).hand!.stakes).toMatchObject({ smallBlind: 25, ante: 0 });
+    // The next stud hand is back to no small blind and the ante.
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('stud');
+    expect(hand(rt).input.stakes).toMatchObject({ smallBlind: 0, ante: 10 });
+  });
+
   it('HORSE by orbits with regular bomb pots gives every game its full orbit, and never a stud game without stud hands', () => {
     const { rt, clock } = table((s) => {
       s.table.maxSeats = 8;

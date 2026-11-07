@@ -283,7 +283,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
-  // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
+  // The tip sits beside the table instead of pushing it down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
     const t = setTimeout(() => dismissKeysTip(false), KEYS_TIP_MS);
@@ -426,27 +426,6 @@ export function TablePage({ tableId }: { tableId: string }) {
   const nextFamily = view.hand?.family ?? (view.upcoming ? gameFamily(view.upcoming.gameId) : 'flop');
   const straddleOn = cash && view.settings.play.straddle !== 'off' && nextFamily !== 'stud';
 
-  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
-  // from the chat, where the action bar keeps clear; beside the side column it heads that column. Either way it stays
-  // out of the felt's layout, so it coming and going can't change the table's size (#350).
-  const keysTipBox = keysTip && !dialog && (
-    <div className={wide ? 'tip-toast corner' : 'tip-toast'} role="status">
-      <span>
-        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
-        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
-      </span>
-      <button
-        onClick={() => {
-          dismissKeysTip();
-          setDialog({ kind: 'keys' });
-        }}
-      >
-        All shortcuts
-      </button>
-      <button onClick={() => dismissKeysTip()}>Got it</button>
-    </div>
-  );
-
   const volumeButton = (
     <button
       title={VOLUME_NAME[volume]}
@@ -527,6 +506,29 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The panel starts open for a host whose game hasn't started, so Start game is in view; after that it's the player's pick.
   const drawer = wide && (drawerPick ?? (!!hostPanel && !view.started));
   const openDrawer = () => setDrawer(true);
+
+  // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
+  // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
+  // that corner, it heads the column. Either way it stays out of the felt's layout, so it coming and going can't change
+  // the table's size (#350).
+  const tipInCorner = wide && !drawer;
+  const keysTipBox = keysTip && !dialog && (
+    <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
+      <span>
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
+      </span>
+      <button
+        onClick={() => {
+          dismissKeysTip();
+          setDialog({ kind: 'keys' });
+        }}
+      >
+        All shortcuts
+      </button>
+      <button onClick={() => dismissKeysTip()}>Got it</button>
+    </div>
+  );
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -744,7 +746,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         </section>
         {!portrait && (
           <aside id="records-panel" className={wide ? `side drawer${drawer ? ' open' : ''}` : 'side'}>
-            {!wide && keysTipBox}
+            {!tipInCorner && keysTipBox}
             {hostPanel}
             <PartBoundary name="side panel">
               <SidePanel view={view} fmt={fmt} />
@@ -763,7 +765,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
-        {wide && keysTipBox}
+        {tipInCorner && keysTipBox}
       </div>
 
       {portrait && sheet === 'menu' && (
