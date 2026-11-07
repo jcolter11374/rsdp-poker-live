@@ -275,9 +275,10 @@ describe('hand search for someone who just left a table with a delay, with the 7
     const at = `http://localhost:${(own.http.address() as AddressInfo).port}`;
     const mine: Client[] = [];
     try {
+      // The host runs the table without a seat: the host watches live, so none of the players is staff.
+      const host = socketClient(at, 'hs-tia-secret-0123456789', mine);
       const tokens = ['hs-pia-secret-0123456789', 'hs-qin-secret-0123456789', 'hs-rae-secret-0123456789', 'hs-sol-secret-0123456789'];
       const cs = tokens.map((t) => socketClient(at, t, mine));
-      const [host] = cs;
       const { tableId } = await host.call<{ tableId: string }>('table:create', {
         settings: {
           table: { name: '7-2 on a delay' },
@@ -287,7 +288,7 @@ describe('hand search for someone who just left a table with a delay, with the 7
           modifiers: { 'bounty-72': { enabled: true, amount: 15, autoShow: true } },
         },
       });
-      for (const c of cs) await c.call('table:join', { tableId });
+      for (const c of [host, ...cs]) await c.call('table:join', { tableId });
       for (const [i, c] of cs.entries()) await c.call('seat:request', { seat: i, name: ['Pia', 'Qin', 'Rae', 'Sol'][i], stack: 100 });
       await host.until((v) => v.seats.filter(Boolean).length === 4);
       await host.call('host:start');
