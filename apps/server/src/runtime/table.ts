@@ -79,12 +79,22 @@ export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
  */
 export const FAIR_STOP_REVEAL_MS = 30 * 60 * 1000;
 
-/** When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours after it ended. */
-export function fairRevealsAt(fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined, handNumber: number, endedAt: number, stopRevealMs = FAIR_STOP_REVEAL_MS): number {
+/**
+ * When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours
+ * after it ended. With `asOf`, a stop made after that time is left out: a spectator on a delay sees the table as it
+ * was then, and a reveal time that moved when the live hand ended would tell them it had (#435).
+ */
+export function fairRevealsAt(
+  fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined,
+  handNumber: number,
+  endedAt: number,
+  stopRevealMs = FAIR_STOP_REVEAL_MS,
+  asOf = Infinity,
+): number {
   if (handNumber <= (fair?.revealedThrough ?? 0)) return -Infinity;
   const late = endedAt + FAIR_REVEAL_AFTER_MS;
   const stop = fair?.stopped;
-  return stop && handNumber <= stop.through ? Math.min(late, stop.at + stopRevealMs) : late;
+  return stop && stop.at <= asOf && handNumber <= stop.through ? Math.min(late, stop.at + stopRevealMs) : late;
 }
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
@@ -158,6 +168,19 @@ export interface RuntimeDeps {
   fairStopRevealMs?: number;
 }
 
+/** What a spectator on a delay is shown of the seats (#435). */
+export interface ShownTable {
+  /** Who sits in each seat in the view they are shown (as many seats as that view has). */
+  seats: (PlayerId | null)[];
+  /** The table time that view shows. */
+  at: number;
+  /** How far behind the table that view runs, in ms. */
+  behindMs: number;
+}
+
+/** The one answer a spectator on a delay gets for a seat the live table won't give them, whatever the reason (#435). */
+const SEAT_CLOSED = 'that seat is closed for now';
+
 /** The game, betting and stakes the next hand is dealt with. */
 interface HandSetup {
   game: GameSpec;
@@ -178,6 +201,16 @@ export class TableRuntime {
   onHandFinished: (record: HandRecord) => void = () => {};
   /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
   onLine: (line: TableLine) => void = () => {};
+  /**
+   * For someone watching on a delay (#435): what their view shows, or null when they see the table live. app.ts keeps
+   * the delayed feed and replaces this when it attaches the table. Without it (unit tests), anyone unseated and not
+   * staff at a table with a delay is shown the live seats, the delay behind.
+   */
+  shownTo: (playerId: PlayerId) => ShownTable | null = (playerId) => {
+    const delayMs = this.settings.spectators.delaySeconds * 1000;
+    if (delayMs <= 0 || this.seatOf(playerId) || this.isStaff(playerId)) return null;
+    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now() - delayMs, behindMs: delayMs };
+  };
 
   private readonly clock: Clock;
   private readonly rng: Rng;
@@ -370,6 +403,12 @@ export class TableRuntime {
     if (this.seatOf(playerId) || this.tournament?.stillPlaying?.(playerId)) return true;
     // A tournament's co-hosts are named in the lobby, so the event is asked as well as the table.
     if (this.isStaff(playerId) || this.tournament?.isStaff?.(playerId)) return false;
+    return this.neverPlayedHere(playerId);
+  }
+
+  /** Never dealt a hand here and never sat down here: neither handNames nor the ledger has them. */
+  neverPlayedHere(playerId: PlayerId): boolean {
+    const s = this.state;
     return !(s.handNames && Object.hasOwn(s.handNames, playerId)) && !Object.hasOwn(s.ledger, playerId);
   }
 
@@ -441,20 +480,23 @@ export class TableRuntime {
     const name = cleanName(input.name);
     let { seat } = input;
     const { stack } = input;
-    if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
-    if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
-    const offered = this.offers().find((o) => o.playerId === playerId);
-    if (offered) seat = offered.seat;
-    else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
-      const open = this.openSeats(playerId);
-      if (!open.length) throw new ActionError('every seat is taken');
-      seat = open[this.rng(open.length)];
+    // A spectator on a delay is answered from the seats they are shown. Someone holding a seat offered from the
+    // waitlist takes that seat, as below.
+    const shown = this.state.offers?.some((o) => o.playerId === playerId) ? null : this.shownTo(playerId);
+    if (shown) seat = this.shownSeat(playerId, seat, stack, shown);
+    else {
+      if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+      if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+      const offered = this.offers().find((o) => o.playerId === playerId);
+      if (offered) seat = offered.seat;
+      else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
+        const open = this.openSeats(playerId);
+        if (!open.length) throw new ActionError('every seat is taken');
+        seat = open[this.rng(open.length)];
+      }
+      this.checkSeatLive(playerId, seat);
+      this.checkBuyIn(playerId, stack);
     }
-    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
-    this.checkSeatFree(playerId, seat);
-    this.checkSeatKept(seat, playerId);
-    this.checkRoom(playerId);
-    this.checkBuyIn(playerId, stack);
     // A new request replaces your earlier one (which never holds a seat against you).
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
@@ -467,6 +509,42 @@ export class TableRuntime {
       this.log(`${name} asked for seat ${seat + 1} with ${this.money(stack)}`);
     }
     this.sync();
+  }
+
+  /** A seat against the live table: empty, nobody else waiting on it, not dropped or kept by a smaller table, room to sit. */
+  private checkSeatLive(playerId: PlayerId, seat: number) {
+    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
+    this.checkSeatFree(playerId, seat);
+    this.checkSeatKept(seat, playerId);
+    this.checkRoom(playerId);
+  }
+
+  /**
+   * The seat a spectator on a delay gets (#435). Their view runs behind the table, so they are answered from the seats
+   * it shows: an answer worked out against the live seats could tell them early that the live hand has ended (a
+   * player leaving after it has gone, a smaller table has taken effect). Checks of their own come first; then the seat
+   * against what they are shown; then anything the live table refuses gets one answer, the same whatever the reason.
+   */
+  private shownSeat(playerId: PlayerId, asked: number, stack: number, shown: ShownTable): number {
+    if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    this.checkBuyIn(playerId, stack);
+    if (!Number.isInteger(asked) || asked < 0 || asked >= shown.seats.length) throw new ActionError('no such seat');
+    const free = (i: number) => i < shown.seats.length && !shown.seats[i];
+    let seat = asked;
+    if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
+      if (!shown.seats.some((x) => !x)) throw new ActionError('every seat is taken');
+      // Only a seat free both live and in their view: one they can see is free, that the live table can give.
+      const open = this.openSeats(playerId).filter(free);
+      if (!open.length) throw new ActionError(SEAT_CLOSED);
+      seat = open[this.rng(open.length)];
+    } else if (!free(seat)) throw new ActionError('that seat is taken');
+    if (seat >= this.state.seats.length) throw new ActionError(SEAT_CLOSED);
+    try {
+      this.checkSeatLive(playerId, seat);
+    } catch (e) {
+      throw e instanceof ActionError ? new ActionError(SEAT_CLOSED) : e;
+    }
+    return seat;
   }
 
   cancelRequest(playerId: PlayerId) {
@@ -618,7 +696,7 @@ export class TableRuntime {
   private checkRoom(playerId: PlayerId | null, asker: PlayerId | null = playerId) {
     const room = this.seatRoom(playerId);
     if (room === null || room > 0) return;
-    if (asker !== null && !this.seatOf(asker) && !this.isStaff(asker) && this.settings.spectators.delaySeconds > 0) throw new ActionError('that seat is closed for now');
+    if (asker !== null && this.shownTo(asker) !== null) throw new ActionError(SEAT_CLOSED);
     const cap = this.choice.seatCap()!;
     throw new ActionError(`${gameTitle(cap.gameId, cap.betting)} seats at most ${cap.cap} players, so the other seats are closed until the next game`);
   }
@@ -1043,9 +1121,9 @@ export class TableRuntime {
     return Math.max(f.revealedThrough, stopOpen);
   }
 
-  /** When a finished hand's server seed may be shown (see fairRevealsAt). */
-  fairRevealsAt(handNumber: number, endedAt: number): number {
-    return fairRevealsAt(this.state.fair, handNumber, endedAt, this.fairStopRevealMs);
+  /** When a finished hand's server seed may be shown (see fairRevealsAt), leaving out a stop made after `asOf`. */
+  fairRevealsAt(handNumber: number, endedAt: number, asOf?: number): number {
+    return fairRevealsAt(this.state.fair, handNumber, endedAt, this.fairStopRevealMs, asOf);
   }
 
   fairRevealed(handNumber: number, endedAt: number): boolean {
@@ -1775,11 +1853,16 @@ export class TableRuntime {
     );
   }
 
-  /** Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. */
+  /**
+   * Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. A
+   * spectator on a delay may throw at whoever their view shows seated, so the answer never tells them early that
+   * someone has left the live table (#435).
+   */
   checkGesture(from: PlayerId, to: PlayerId) {
     if (this.state.settings.chat.gestures === false) throw new ActionError('the host has turned gestures off');
     if (from === to) throw new ActionError('pick another player');
-    if (!this.seatOf(to)) throw new ActionError('that player is not seated');
+    const shown = this.shownTo(from);
+    if (shown ? !shown.seats.includes(to) : !this.seatOf(to)) throw new ActionError('that player is not seated');
   }
 
   // ---------------------------------------------------------------- practice bots
@@ -1834,8 +1917,10 @@ export class TableRuntime {
   /** The bot's owner or the host takes a bot away (after folding its hand). */
   removeBot(by: PlayerId, botId: PlayerId) {
     const bot = this.botInfo(botId);
+    // Someone who may not remove it hears that whether or not it is still here: a spectator on a delay could
+    // otherwise learn early that a bot left the live table (busted out when its hand ended, say) (#435).
+    if (bot?.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (!bot) throw new ActionError('no such bot');
-    if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can remove a bot the host or a co-host added");
     if (this.state.requests.some((r) => r.playerId === botId)) {
       this.state.requests = this.state.requests.filter((r) => r.playerId !== botId);
@@ -1855,9 +1940,11 @@ export class TableRuntime {
   /** The bot's owner or the host changes how well it plays, from its next move on. */
   setBotLevel(by: PlayerId, botId: PlayerId, level: BotLevel) {
     const bot = this.botInfo(botId);
-    if (!bot) throw new ActionError('no such bot');
+    // As removeBot: someone who may not change it hears the same whether or not it is still here (#435).
+    const allowed = bot?.ownerId === by || this.can(by, 'players');
+    if (allowed && !bot) throw new ActionError('no such bot');
     if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
-    if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError("only its owner or the host can change a bot's level");
+    if (!allowed || !bot) throw new ActionError("only its owner or the host can change a bot's level");
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
     if ((bot.level ?? 'normal') === level) return;
     bot.level = level;
