@@ -9,8 +9,11 @@
  * Where names are kept beside the player's id (seats, ledger rows, chat, waitlists, co-hosts, tournament entries,
  * hand seeds in shared hands, feedback), the id decides. Lines with no id (the table log, the dealer's chat lines,
  * tournament lobby events) are matched by the names the player went by, and only at tables and tournaments where
- * the player's id is found, so someone else of the same name elsewhere is left alone. What people typed in chat is
- * left as they typed it: those messages are only counted.
+ * the player's id is found, so someone else of the same name elsewhere is left alone. A name is looked for inside a
+ * line of text only when it can't be mistaken for the server's own words there: it has a letter, at least two
+ * characters and a word the server never writes itself, so a name like "100", "a" or "Game" never rewrites an amount
+ * or "Game paused" (those names are counted, and still replaced wherever they sit beside the id). What people typed
+ * in chat is left as they typed it: those messages are only counted.
  */
 
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
@@ -20,8 +23,45 @@ const { players, tableSnapshots, tableLog, tournaments, tournamentLog, sharedHan
 
 export const DELETED_NAME = 'Deleted player';
 
-/** Names that stand for nobody in particular, so they are never looked for in a line of text. */
+/** Names that stand for nobody in particular, so they are never taken for the player's, in a field or a line of text. */
 const PLACEHOLDERS = new Set(['', 'Guest', 'A player', 'Dealer', DELETED_NAME]);
+
+/**
+ * Every word the server writes itself in a table's log and dealer lines (runtime/table.ts and the settings notices),
+ * and in what it puts in them: game names, bot levels, side games and the reasons a hand couldn't be dealt. A name
+ * made only of these words (in any case) is never looked for in a line of text, where it could match the line's own
+ * wording. replace-name.test.ts reads those lines from the code and fails when one has a word missing here.
+ */
+export const SERVER_WORDS: ReadonlySet<string> = new Set(
+  `a action add added after all already amount and anyone anything are aren as asked at away back badugi be been
+  behind better betting blind blinds board bomb bot bought bounties bounty bring call can cancelled cannot card cards
+  changed chat check clocks closed co collects come complete could couldn deal dealer deals dealt deck declined delay
+  deleted didn discard double down draw each early easy em ended ends enough every everyone flop folded for free from
+  game games given guest had hand hands hard has have here hi hidden hold holding hole host hunting if in into invalid
+  is it its joined last least leave left let level limit link live lo longer look losing made min minute minutes
+  modifiers most moved mucked muted need needs next nit no normal not nothing now of off offline ok omaha on one only
+  options or others out pass paused pays people play player players post pot practice rabbit raise rake ran razz re
+  rebuy released removed request result resumed right round run running s sat saved say schedule seat seated seating
+  seats second see seeing sees server set settings seven show showdown shown shuffled side sitting so someone
+  spectators stack stakes started stay stepped stopped stud such switching t table take taken that the their them they
+  this time to took total triple turn turned twice two undealt unknown unmuted visible vote waiting waitlist was watch
+  watching went what when who win wins with without would you your`.split(/\s+/),
+);
+
+/** The fewest characters a name needs to be looked for in a line of text. */
+const SEARCH_MIN = 2;
+
+/**
+ * Whether a name can be looked for in a line of text (a log or dealer line, or a chat message) without matching
+ * something that isn't a name: it has a letter, so it can't be an amount ("100", "5/10"), at least SEARCH_MIN
+ * characters, and a word the server doesn't write itself ("a", "Game", "The host" can't be told from its wording).
+ */
+export function searchable(name: string): boolean {
+  const n = name.trim();
+  if (PLACEHOLDERS.has(n) || Array.from(n).length < SEARCH_MIN || !/\p{L}/u.test(n)) return false;
+  const words = (n.match(/[\p{L}\p{N}\p{M}_]+/gu) ?? []).filter((w) => /\p{L}/u.test(w));
+  return words.some((w) => !SERVER_WORDS.has(w.toLowerCase()));
+}
 
 /** Fields that hold the name of the player whose id is beside them in `playerId`. */
 const NAME_KEYS = ['name', 'displayName'] as const;
@@ -81,13 +121,14 @@ function replaceById(doc: unknown, playerId: string): number {
 
 /**
  * `text` with each of `names` replaced where it stands as a whole word ("Al" leaves "Also" alone), except inside one
- * of `keep`: other people's names that contain it ("Big Al" stays when only "Al" goes). Longer names are tried first.
+ * of `keep`: other people's names that contain it ("Big Al" stays when only "Al" goes), and inside a "Deleted player"
+ * already there. Longer names are tried first.
  */
 export function replaceInText(text: string, names: readonly string[], keep: Iterable<string> = []): { text: string; count: number } {
   if (!text || !names.length) return { text, count: 0 };
   const sorted = [...names].sort((a, b) => b.length - a.length);
   const kept: [number, number][] = [];
-  for (const k of keep) {
+  for (const k of [...keep, DELETED_NAME]) {
     if (!sorted.some((n) => k.length > n.length && k.includes(n))) continue;
     for (let i = text.indexOf(k); i >= 0; i = text.indexOf(k, i + 1)) kept.push([i, i + k.length]);
   }
@@ -135,24 +176,27 @@ export function botOwners(state: unknown): (botId: unknown) => string | undefine
 
 /** Replaces one player's names, document by document. Every method changes the document it is given. */
 export class NameReplacer {
-  /** The names looked for in lines with no id: every name the player went by, apart from placeholders. */
+  /** Every name the player went by, apart from placeholders: replaced wherever a field holds one of them whole. */
+  readonly names: string[];
+  /** The ones also looked for inside lines of text with no id (see searchable). */
   readonly words: string[];
 
   constructor(
     readonly playerId: string,
     names: Iterable<string>,
   ) {
-    this.words = [...new Set(names)].filter((n) => !PLACEHOLDERS.has(n.trim()));
+    this.names = [...new Set(names)].filter((n) => !PLACEHOLDERS.has(n.trim()));
+    this.words = this.names.filter(searchable);
   }
 
-  /** Whether some chat text names the player. */
-  mentions(text: unknown): boolean {
-    return typeof text === 'string' && replaceInText(text, this.words).count > 0;
+  /** Whether some chat text names the player (`keep`: others' names there that contain one of theirs). */
+  mentions(text: unknown, keep: Iterable<string> = []): boolean {
+    return typeof text === 'string' && replaceInText(text, this.words, keep).count > 0;
   }
 
   /** Whether one of the player's names is also someone else's here. */
   shared(place: Place): boolean {
-    return this.words.some((w) => place.keep.has(w));
+    return this.names.some((w) => place.keep.has(w));
   }
 
   private text(o: Obj, key: string, place: Place): number {
@@ -167,13 +211,13 @@ export class NameReplacer {
   private owner(o: Obj, key: string, ownerId: string | undefined, place: Place): number {
     const v = o[key];
     if (typeof v !== 'string') return 0;
-    const mine = ownerId !== undefined ? ownerId === this.playerId : place.there && this.words.includes(v);
+    const mine = ownerId !== undefined ? ownerId === this.playerId : place.there && this.names.includes(v);
     return mine ? put(o, key) : 0;
   }
 
   /** A chat message: its name when it is the player's, counted as a mention when someone else's words name them. */
-  private chat(o: Obj, tally: Tally) {
-    if (typeof o.playerId === 'string' && o.playerId !== this.playerId && this.mentions(o.text)) tally.mentions++;
+  private chat(o: Obj, tally: Tally, place: Place) {
+    if (typeof o.playerId === 'string' && o.playerId !== this.playerId && this.mentions(o.text, place.keep)) tally.mentions++;
   }
 
   /** A table's saved state (RuntimeState in runtime/types.ts), or one held in memory. */
@@ -198,7 +242,7 @@ export class NameReplacer {
     const tally = { names: 0, mentions: 0 };
     if (!isObj(item)) return tally;
     tally.names += replaceById(item, this.playerId);
-    if (kind === 'chat') this.chat(item, tally);
+    if (kind === 'chat') this.chat(item, tally, place);
     if (place.there && (kind === 'log' || (kind === 'chat' && item.playerId === null))) tally.names += this.text(item, 'text', place);
     return tally;
   }
@@ -213,10 +257,10 @@ export class NameReplacer {
     const tally = { names: 0, mentions: 0 };
     if (!isObj(item)) return tally;
     tally.names += replaceById(item, this.playerId);
-    if (item.kind === 'chat') this.chat(item, tally);
+    if (item.kind === 'chat') this.chat(item, tally, place);
     const event = item.event;
     if (!place.there || !isObj(event)) return tally;
-    const ours = (v: unknown) => typeof v === 'string' && this.words.includes(v);
+    const ours = (v: unknown) => typeof v === 'string' && this.names.includes(v);
     for (const key of EVENT_NAME_KEYS) {
       const v = event[key];
       if (ours(v)) tally.names += put(event, key);
@@ -262,6 +306,11 @@ export interface ReplaceReport {
   dryRun: boolean;
   /** How many different names the player went by: only the count, never the names. */
   names: number;
+  /**
+   * How many of those aren't looked for in lines of text with no id, because they could be mistaken for the server's
+   * own words or an amount there (see searchable): log and dealer lines keep them, everything else is replaced.
+   */
+  namesNotSearched: number;
   /** Rows changed (in a dry run, the rows that would change), by database table. */
   rows: Record<Where, number>;
   /** Names replaced in all, across those rows. */
@@ -406,7 +455,8 @@ export async function replacePlayerName(db: Db, playerId: string, opts: { dryRun
       const state = s.state as Obj;
       const t = names.table(state, placeOf.get(s.tableId)!);
       // Only chat no saved line has, so a message isn't counted twice.
-      t.mentions += list(state.chat).filter((m) => isObj(m) && !savedChat.has(chatKey(m)) && typeof m.playerId === 'string' && m.playerId !== playerId && names.mentions(m.text)).length;
+      const keep = placeOf.get(s.tableId)!.keep;
+      t.mentions += list(state.chat).filter((m) => isObj(m) && !savedChat.has(chatKey(m)) && typeof m.playerId === 'string' && m.playerId !== playerId && names.mentions(m.text, keep)).length;
       tallied('table_snapshots', t, () => tx.update(tableSnapshots).set({ state }).where(eq(tableSnapshots.tableId, s.tableId)));
     }
     for (const l of lines) {
@@ -430,7 +480,7 @@ export async function replacePlayerName(db: Db, playerId: string, opts: { dryRun
 
     if (!dryRun) for (const write of writes) await write();
     return {
-      report: { dryRun, names: names.words.length, rows, replaced, sharedNames, chatMentions },
+      report: { dryRun, names: names.names.length, namesNotSearched: names.names.length - names.words.length, rows, replaced, sharedNames, chatMentions },
       lobbies: [...tournamentsThere].map((id) => ({ id, change: (item: unknown) => void names.lobbyItem(item, tPlaceOf.get(id)!) })),
     };
   });

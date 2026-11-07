@@ -405,6 +405,8 @@ export function createApp(deps: AppDeps = {}) {
   const tables = new Map<string, TableRuntime>();
   /** Tables and tournaments read from the database while a player's name was being replaced are read again. */
   const gate = new LoadGate();
+  /** Set once the server starts shutting down: no name is replaced from then on. */
+  let closing = false;
   const watchers = new Map<string, Set<Sock>>();
   const tournamentWatchers = new Map<string, Set<Sock>>();
   const playerSockets = new Map<PlayerId, Set<Sock>>();
@@ -703,6 +705,8 @@ export function createApp(deps: AppDeps = {}) {
     const id = String(req.params.id);
     if (!/^[\w-]{4,40}$/.test(id)) return void res.status(404).json({ error: 'No player has that id.', code: 'not-found' });
     const dryRun = req.body?.dryRun !== false;
+    // Shutting down saves every table and tournament it holds: a change can't run alongside that, nor hold it up.
+    if (closing) return void res.status(409).json({ error: 'The server is restarting. Try again in a few minutes.', code: 'busy' });
     const saveLeftBehind = () => [...inFlight].filter(([tableId]) => !tables.has(tableId)).flatMap(([, saves]) => [...saves]);
     const replace = async () => {
       // The last saves of tables and tournaments let go of just now land first, so none can come after the change.
@@ -1938,6 +1942,7 @@ export function createApp(deps: AppDeps = {}) {
     /** `crash`: the error the server is stopping for, kept so the recap shows the restart after it as a crash. */
     async close(opts: { crash?: unknown } = {}) {
       const stopped = 'crash' in opts ? ops.crashing(opts.crash) : ops.stopping();
+      closing = true;
       // Everything goes quiet before anything is saved, so tournaments and their tables are saved as of the same moment:
       // no more input, the director acts on every hand already reported, and no table deals, runs a clock or saves again.
       // The server going down is not players leaving, so their tables never see them drop (and time them out).
@@ -1945,6 +1950,8 @@ export function createApp(deps: AppDeps = {}) {
       io.close();
       stopBackup();
       await backup;
+      // A name being replaced commits (or is undone) before the final saves, which would otherwise wait on it.
+      await gate.settled();
       tournaments.dispose();
       if (sweep) clearInterval(sweep);
       await Promise.allSettled([...unloading.values()]);

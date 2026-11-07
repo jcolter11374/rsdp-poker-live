@@ -56,6 +56,7 @@ jobs:
           jq -r '
             (if .dryRun then "Dry run: nothing was changed. This is what would change." else "Done: the name was replaced with \"Deleted player\"." end),
             "Different names they went by: \(.names)",
+            "Of those, names not looked for in log lines, as they could be mistaken for words or amounts the site writes itself: \(.namesNotSearched)",
             "Names replaced in all: \(.replaced)",
             "Rows, by place:",
             (.rows | to_entries[] | "  \(.key): \(.value)"),

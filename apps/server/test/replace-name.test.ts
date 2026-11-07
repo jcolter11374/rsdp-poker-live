@@ -5,6 +5,7 @@
 
 import { execFile, execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,22 +15,30 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { subjectRef, tableRef, type AuditEntry } from '@rsdp/engine';
 import { variants } from '@rsdp/engine/core';
-import { registerAllVariants } from '@rsdp/engine/variants';
-import type { TableView } from '@rsdp/engine/wire';
+import '@rsdp/engine/modifiers';
+import { BETTING_KINDS, listModifierSchemas } from '@rsdp/engine/settings';
+import { gameTitle, registerAllVariants, VARIANT_LIST } from '@rsdp/engine/variants';
+import { BOT_LEVELS, type TableView } from '@rsdp/engine/wire';
 import { defaultSettings } from '@rsdp/tournament';
 import { createApp, type TableStore } from '../src/app';
 import { AuditLog, dbAuditStore } from '../src/audit';
 import { closeDb, leaderboard, leaderData, profitSessions, queryRows, schema, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { dbFeedback } from '../src/feedback';
-import { DELETED_NAME, LoadGate, NameReplacer, replaceInText, type ReplaceReport } from '../src/replaceName';
+import { DELETED_NAME, LoadGate, NameReplacer, replaceInText, SERVER_WORDS, type ReplaceReport } from '../src/replaceName';
 import { dbSharedHands } from '../src/shared';
 import { dbIdentity, dbStore, type SavedHeader } from '../src/storage';
 import { dbLobbyStore } from '../src/tournament/lobby';
+import type { TournamentStore } from '../src/tournament/manager';
 import { dbTournamentStore } from '../src/tournament/store';
 import { socketClient, type Client } from './socket-client';
 
 beforeAll(() => registerAllVariants(variants));
+
+// Loaded by Node itself: it's large, and only read here.
+const ts = createRequire(import.meta.url)('typescript') as typeof import('typescript');
+type Node = import('typescript').Node;
+type SourceFile = import('typescript').SourceFile;
 
 const run = promisify(execFile);
 const root = path.resolve(__dirname, '../../..');
@@ -81,6 +90,47 @@ describe('finding a name in a line of text', () => {
     expect(elsewhere.log[0].text).toBe('Pat sat down');
   });
 
+  it('never looks in a line of text for a name that could be an amount or the server’s own words', () => {
+    // Lines the server writes, with amounts and fixed wording, at a table the player was at.
+    const lines = [
+      'Bob sat down in seat 3 with 100',
+      'Bob left the table with 2,000',
+      'Blinds are now 5/10',
+      'Ann made Bob a co-host',
+      'Game paused',
+      'Hand #4 had already ended when the server stopped, so it was closed with its saved result',
+      'Seat 2 is free: Bob is next on the waitlist',
+      'The host started the game',
+      'Nit game: 3 players are in. The last one to win a pot pays 10 to each of the others.',
+      "Couldn't deal: No-Limit Hold'em deals at most 10 players",
+      'Deleted player left the table with 20',
+    ];
+    const place = { there: true, keep: new Set(['Ann', 'Bob']) };
+    for (const name of ['100', '2', '5', '2,000', '#4', 'a', 'Z', '🎲', 'Game', 'game', 'Hand', 'Seat', 'Seat 2', 'Blinds', 'Nit', 'The', 'host', 'The host', 'Nit game', 'co-host', 'OK', 'player', 'Deleted']) {
+      const r = new NameReplacer('p1', [name]);
+      expect(r.names, name).toEqual([name]);
+      expect(r.words, name).toEqual([]);
+      const state = {
+        id: 't1',
+        seats: [{ playerId: 'p1', name }],
+        ledger: { p1: { playerId: 'p1', name, buyIn: 2000, cashOut: 0 } },
+        chat: [{ at: 1, playerId: null, name: 'Dealer', text: 'Game paused' }],
+        log: lines.map((text, at) => ({ at, text })),
+      };
+      // Beside the id it still goes: the seat and the ledger row.
+      expect(r.table(state, place).names, name).toBe(2);
+      expect(state.seats[0].name).toBe(DELETED_NAME);
+      expect(state.ledger.p1).toEqual({ playerId: 'p1', name: DELETED_NAME, buyIn: 2000, cashOut: 0 });
+      expect(state.log.map((l) => l.text)).toEqual(lines);
+      expect(state.chat[0].text).toBe('Game paused');
+      for (const text of lines) expect(r.tableLine('log', { at: 1, text }, place).names, `${name}: ${text}`).toBe(0);
+    }
+    // Names are still looked for, even short ones and ones with a word the server uses.
+    expect(new NameReplacer('p1', ['Al', 'Zoë', 'Big Game', 'Seat 2 Sam', '李雷']).words).toEqual(['Al', 'Zoë', 'Big Game', 'Seat 2 Sam', '李雷']);
+    // A "Deleted player" already in a line is never taken apart.
+    expect(replaceInText('Deleted player made Bob a co-host', ['Deleted', 'player'])).toEqual({ text: 'Deleted player made Bob a co-host', count: 0 });
+  });
+
   it('replaces a lobby event’s names only where the player was', () => {
     const r = new NameReplacer('p1', ['Pat']);
     const item = { kind: 'event', event: { type: 'eliminated', name: 'Pat', place: 3, by: ['Sam', 'Pat'], reason: 'busted' } };
@@ -92,6 +142,49 @@ describe('finding a name in a line of text', () => {
     const said = { kind: 'chat', playerId: 'p2', name: 'Sam', text: 'gl Pat' };
     expect(r.lobbyItem(said, { there: true, keep: new Set() })).toEqual({ names: 0, mentions: 1 });
     expect(said.text).toBe('gl Pat');
+    // Naming someone else whose name holds theirs isn't a mention.
+    const cheer = { kind: 'chat', playerId: 'p2', name: 'Sam', text: 'go Big Pat' };
+    expect(r.lobbyItem(cheer, { there: true, keep: new Set(['Big Pat']) })).toEqual({ names: 0, mentions: 0 });
+    // A lobby event holds a name whole, so even a name never looked for in text is replaced there.
+    const short = new NameReplacer('p1', ['5']);
+    const joined = { kind: 'event', event: { type: 'registered', name: '5', late: false, entryNo: 5 } };
+    expect(short.lobbyItem(joined, { there: true, keep: new Set() }).names).toBe(1);
+    expect(joined.event).toEqual({ type: 'registered', name: DELETED_NAME, late: false, entryNo: 5 });
+  });
+});
+
+describe('the server’s own words', () => {
+  // The words of every line the server writes in a table's log and the dealer's chat, read from the code, with
+  // what goes into those lines: game names, bot levels, side games and why a hand couldn't be dealt. A name made
+  // only of these is never looked for in a line of text (replaceName.ts, SERVER_WORDS).
+  const words = new Set<string>();
+  const add = (text: string) => {
+    for (const w of text.match(/[\p{L}\p{N}\p{M}_]+/gu) ?? []) if (/\p{L}/u.test(w)) words.add(w.toLowerCase());
+  };
+  const strings = (node: Node) => {
+    // Settings paths ("spectators.delaySeconds") are compared, never shown.
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && !/^[\w-]+(\.[\w-]+)+$/.test(node.text)) add(node.text);
+    else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) add(node.text);
+    ts.forEachChild(node, strings);
+  };
+  const source = (file: string) => ts.createSourceFile(file, readFileSync(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true);
+  const inside = (file: SourceFile, match: (n: Node) => boolean) => {
+    const visit = (n: Node): void => (match(n) ? strings(n) : ts.forEachChild(n, visit));
+    visit(file);
+  };
+  const thisCall = (names: string[]) => (n: Node) =>
+    ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.expression.kind === ts.SyntaxKind.ThisKeyword && names.includes(n.expression.name.text);
+
+  it('include every word of the table log and the dealer’s lines', () => {
+    inside(source('apps/server/src/runtime/table.ts'), thisCall(['log', 'dealerSays', 'nitPays']));
+    source('packages/engine/src/settings/notices.ts').statements.filter((st) => !ts.isImportDeclaration(st)).forEach(strings);
+    inside(source('packages/engine/src/core/hand.ts'), (n) => ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'ActionError');
+    for (const v of VARIANT_LIST) for (const b of BETTING_KINDS) add(gameTitle(v.id, b));
+    for (const level of BOT_LEVELS) add(level);
+    for (const m of listModifierSchemas()) add(m.id);
+    expect(words.size).toBeGreaterThan(150);
+    // A new word in a log line needs adding to SERVER_WORDS, or a player of that name would rewrite the line.
+    expect([...words].filter((w) => !SERVER_WORDS.has(w)).sort()).toEqual([]);
   });
 });
 
@@ -138,12 +231,12 @@ afterEach(async () => {
   server = db = undefined;
 });
 
-async function start(d: Db, store: TableStore = dbStore(d)) {
+async function start(d: Db, store: TableStore = dbStore(d), tournaments: TournamentStore = dbTournamentStore(d)) {
   const audit = await AuditLog.open(dbAuditStore(d), { log: () => {} });
   server = createApp({
     identity: dbIdentity(d),
     store,
-    tournaments: dbTournamentStore(d),
+    tournaments,
     lobby: dbLobbyStore(d),
     shared: dbSharedHands(d),
     feedback: dbFeedback(d),
@@ -156,10 +249,10 @@ async function start(d: Db, store: TableStore = dbStore(d)) {
   url = `http://localhost:${(server!.http.address() as AddressInfo).port}`;
 }
 
-async function restart(d: Db, store?: TableStore) {
+async function restart(d: Db, store?: TableStore, tournaments?: TournamentStore) {
   for (const c of clients.splice(0)) c.close();
   await server!.close();
-  await start(d, store);
+  await start(d, store, tournaments);
 }
 
 const client = (token: string) => socketClient(url, token, clients);
@@ -276,7 +369,7 @@ describe('replacing a deleted player’s name', () => {
     const dry = await replaceName(zekeId);
     expect(dry.status).toBe(200);
     const preview = (await dry.json()) as ReplaceReport;
-    expect(preview).toMatchObject({ dryRun: true, names: 2, sharedNames: 0, chatMentions: 2 });
+    expect(preview).toMatchObject({ dryRun: true, names: 2, namesNotSearched: 0, sharedNames: 0, chatMentions: 2 });
     expect(preview.rows).toMatchObject({ players: 0, table_snapshots: 1, tournaments: 1, shared_hands: 1, feedback: 0 });
     expect(preview.rows.table_log).toBeGreaterThanOrEqual(3);
     expect(preview.rows.tournament_log).toBeGreaterThanOrEqual(2);
@@ -398,6 +491,81 @@ describe('replacing a deleted player’s name', () => {
     expect(rt!.state.seats.find((s) => s?.playerId === patId)?.name).toBe(DELETED_NAME);
     expect(rt!.state.ledger[patId].name).toBe(DELETED_NAME);
   });
+
+  it('makes a tournament read before the change, and taken in after it, read again', { timeout: 30_000 }, async () => {
+    db = await createTestDb();
+    let hold: Promise<void> | null = null;
+    let reached!: () => void;
+    const inner = dbTournamentStore(db);
+    // The first load of the tournament reads, then waits, as a slow load would.
+    const slow: TournamentStore = {
+      ...inner,
+      async load(id) {
+        const saved = await inner.load(id);
+        const wait = hold;
+        hold = null;
+        if (wait) {
+          reached();
+          await wait;
+        }
+        return saved;
+      },
+    };
+    await start(db);
+    const hana = client(HANA);
+    const pat = client(ZEKE);
+    await pat.call('session:name', { name: 'Pat' });
+    const { id } = await hana.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Cup', startingStack: 1000 }) });
+    await pat.call('tournament:subscribe', { id });
+    await pat.call('tournament:command', { id, command: { type: 'register' } });
+    const patId = server!.tournaments.held().find((t) => t.id === id)!.entries[0].playerId;
+    await hana.call('tournament:command', { id, command: { type: 'end' } });
+    await pause(900);
+    await restart(db, undefined, slow);
+    expect(server!.tournaments.held()).toEqual([]);
+
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => (release = resolve));
+    const readIt = new Promise<void>((resolve) => (reached = resolve));
+    const loading = server!.tournaments.get(id);
+    await readIt;
+    const change = (await (await replaceName(patId, { dryRun: false })).json()) as ReplaceReport;
+    expect(change.rows.tournaments).toBe(1);
+    release();
+    const live = await loading;
+    expect(live!.state.entries.map((e) => [e.playerId, e.displayName])).toEqual([[patId, DELETED_NAME]]);
+  });
+
+  it('leaves amounts and the log’s own words alone when the name could be mistaken for them', { timeout: 30_000 }, async () => {
+    db = await createTestDb();
+    await start(db);
+    const hana = client(HANA);
+    const two = client(ZEKE);
+    await hana.call('session:name', { name: 'Hana' });
+    await two.call('session:name', { name: '2' });
+    const { tableId } = await hana.call<{ tableId: string }>('table:create', { settings: { table: { name: 'Twos' }, seating: { requireApproval: false } } });
+    for (const c of [hana, two]) await c.call('table:join', { tableId });
+    // $2 in seat 2, played as "2".
+    await two.call('seat:request', { seat: 1, name: '2', stack: 200 });
+    const twoId = two.view().me.playerId;
+    await hana.until((v) => v.seats.some((s) => s?.playerId === twoId));
+    two.socket.emit('seat:stand', {});
+    await hana.until((v) => !v.seats.some((s) => s?.playerId === twoId));
+    await pause(700);
+    await restart(db);
+    const logOf = async () =>
+      (await db!.select().from(schema.tableLog).where(eq(schema.tableLog.tableId, tableId)).orderBy(asc(schema.tableLog.n))).filter((l) => l.kind === 'log').map((l) => (l.item as { text: string }).text);
+    const logBefore = await logOf();
+    expect(logBefore).toEqual(expect.arrayContaining(['2 sat down in seat 2 with 2', '2 left the table with 2']));
+
+    const done = (await (await replaceName(twoId, { dryRun: false })).json()) as ReplaceReport;
+    expect(done).toMatchObject({ names: 1, namesNotSearched: 1, rows: { players: 1, table_snapshots: 1, table_log: 0 } });
+    // The log keeps every line as it was, amounts and all; the ledger and the name on file go.
+    expect(await logOf()).toEqual(logBefore);
+    const [snap] = await db.select().from(schema.tableSnapshots).where(eq(schema.tableSnapshots.tableId, tableId));
+    const state = snap.state as { ledger: Record<string, { name: string; buyIn: number }> };
+    expect(state.ledger[twoId]).toMatchObject({ name: DELETED_NAME, buyIn: 200 });
+  });
 });
 
 describe('the workflow that runs it', () => {
@@ -453,6 +621,7 @@ describe('the workflow that runs it', () => {
     expect(dry.code).toBe(0);
     expect(dry.out).toMatch(/Dry run: nothing was changed/);
     expect(dry.out).toMatch(/table_snapshots: 1/);
+    expect(dry.out).toMatch(/names not looked for in log lines, .*: 0$/m);
     const done = await step(patId, 'false');
     expect(done.out).toMatch(/Done: the name was replaced/);
     expect(readFileSync(path.join(dir, 'summary.md'), 'utf8')).toMatch(/Rows, by place/);

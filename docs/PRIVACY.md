@@ -101,8 +101,9 @@ cash-outs at each table, as amounts. It holds **no names, no cards and no
 table links**: a table and each player at it appear only as fingerprints that
 someone who already has the table's link can match up. When John takes a
 name out of old records (see *Deleting your data*), the record notes it with a
-fingerprint of that player's id, which only someone who knows the id can
-match. See [Checking John](/transparency)
+fingerprint of that player's id. A player id isn't secret from the people
+at that player's tables (a table's ledger download shows it, for one), so
+they could tell whose entry it is. Nobody else can. See [Checking John](/transparency)
 for how it works.
 
 ## Your browser
@@ -229,12 +230,20 @@ authority (in the UK, the ICO).
   public record's fingerprints, so he can replace yours with "Deleted
   player" without breaking it. That covers your name in hands, ledgers,
   table logs and chat, tournament entries and lobbies, and other players'
-  shared hand links. The words of your messages stay as you wrote them, and
-  so do other people's messages that mention you (he can tell you how many
-  there are). The public record notes that he did it, with only a
-  fingerprint of your player id. Copies in backups
-  disappear as the backups expire, within 90 days, and copies people
-  downloaded keep the old name.
+  shared hand links, at every table and tournament that kept your player
+  id. Where nothing but your name is left of you (a seat request that was
+  declined, a waitlist you left, a tournament you unregistered from), the
+  lines that name you can't be found, so they keep the name. So do table log
+  lines if your name could be mistaken for the site's own words or an
+  amount (a name like "100" or "Game"). The words of your messages stay as
+  you wrote them, and so do other people's messages that mention you. John
+  can tell you how many of those there are, and whether your name was one
+  that log lines keep. The public record notes that he did it, with a
+  fingerprint of your player id. Your id isn't secret from the people at
+  your tables (a table's ledger download shows it, for one), so they could
+  tell the entry is yours. Nobody else can. Copies in backups disappear as
+  the backups expire, within 90 days, and copies people downloaded keep the
+  old name.
 - **As a guest:** clear the site's data in your browser to start fresh. To
   have anything removed from the server, ask John. He can replace your name
   with "Deleted player" in the same way.
