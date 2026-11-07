@@ -24,7 +24,7 @@ _We're RSDP Live! now_
 
 ### New
 
-- **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name changed: the look, the games and the web address are the same. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
+- **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name is new: the site looks the same and the web address hasn't changed. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
 
 ### Fixed and changed
 

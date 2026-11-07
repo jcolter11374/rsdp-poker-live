@@ -25,15 +25,24 @@ const PLACES = [
   'Dockerfile',
   'fly.toml',
 ];
-// Release notes already published, the decision that records the rename, and the
-// upgrade rehearsal's rule for pages titled before it, which name the old one on purpose.
-const ALLOWED = new Set([
-  'apps/web/src/roadmap/changelog.json',
-  'apps/web/src/roadmap/whatsnew.json',
-  'docs/DECISIONS.md',
-  'scripts/upgrade/compare.mjs',
-]);
-const TEXT = /\.(tsx?|mjs|cjs|js|json|md|html|css|svg|webmanifest|ya?ml|toml|txt)$|^(Dockerfile)$/;
+const TEXT = /\.(tsx?|mts|mjs|cjs|js|json|md|html|css|svg|webmanifest|ya?ml|toml|txt|sh)$|^Dockerfile$/;
+const OLD = /RSDP\s+Poker/i;
+
+// The few places that name the old name on purpose, as narrowly as each allows.
+// The upgrade rehearsal's rule matches page titles made before the rename.
+const WHOLE_FILES = new Set(['scripts/upgrade/compare.mjs']);
+/** Lines of a file that may name the old name. */
+function allowed(file: string, lines: string[]): Set<number> {
+  const ok = new Set<number>();
+  // The first release's What's new title, already published on 2026-10-25 under the old name.
+  if (file === 'apps/web/src/roadmap/whatsnew.json') lines.forEach((l, i) => l.includes('"title": "RSDP Poker Live! is live"') && ok.add(i));
+  // D35, the decision that renamed the site, quotes John.
+  if (file === 'docs/DECISIONS.md') {
+    const start = lines.findIndex((l) => l.startsWith('## D35.'));
+    if (start >= 0) for (let i = start; i < lines.length && (i === start || !lines[i].startsWith('## ')); i++) ok.add(i);
+  }
+  return ok;
+}
 
 function files(rel: string): string[] {
   const abs = path.join(root, rel);
@@ -49,14 +58,21 @@ describe('the site name', () => {
     const found: string[] = [];
     for (const place of PLACES) {
       for (const f of files(place)) {
-        if (ALLOWED.has(f) || !TEXT.test(path.basename(f))) continue;
-        readFileSync(path.join(root, f), 'utf8')
-          .split('\n')
-          .forEach((line, i) => {
-            if (/RSDP\s+Poker/i.test(line)) found.push(`${f}:${i + 1}: ${line.trim()}`);
-          });
+        if (WHOLE_FILES.has(f) || !TEXT.test(path.basename(f))) continue;
+        const lines = readFileSync(path.join(root, f), 'utf8').split('\n');
+        const ok = allowed(f, lines);
+        lines.forEach((line, i) => {
+          if (OLD.test(line) && !ok.has(i)) found.push(`${f}:${i + 1}: ${line.trim()}`);
+        });
       }
     }
     expect(found, 'Say "RSDP Live!" (D35) instead of the old name in these lines').toEqual([]);
+  });
+
+  it('still allows the published first release title and D35, and nothing else in those files', () => {
+    const whatsnew = ['    {', '      "title": "RSDP Poker Live! is live",', '      "title": "RSDP Poker Live! is back"'];
+    expect([...allowed('apps/web/src/roadmap/whatsnew.json', whatsnew)]).toEqual([1]);
+    const decisions = ['## D34. x', 'RSDP Poker Live!', '## D35. The site is called RSDP Live!', 'RSDP Poker Live!', '## D36. y', 'RSDP Poker Live!'];
+    expect([...allowed('docs/DECISIONS.md', decisions)]).toEqual([2, 3]);
   });
 });
