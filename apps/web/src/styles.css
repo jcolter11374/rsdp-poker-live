@@ -15,6 +15,11 @@
   /* Buttons with white words on green (Create table, Sit down, Register): dark enough to read, at least 4.5:1 (WCAG AA). */
   --go-fill: #1d8049;
   --go-fill-hover: #1e874b;
+  /* Red behind white words (the host tag, a count of waiting requests, Fold when it asks for a second press): darkened
+     to 4.7:1. */
+  --red-fill: #cf4236;
+  /* Red words on a nameplate (the last seconds of a clock): lightened to at least 4.8:1. */
+  --bad-text: #f07a70;
   --call: #3a4a5c;
   --felt: #2d7b4f;
   --felt-edge: #23603e;
@@ -44,10 +49,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--go-fill); border-color: var(--go-fill); color: #fff; font-weight: 700; }
 button.primary:hover:not(:disabled) { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
-/* The table page (and the dialogs over it) keeps its brighter green for now: a change to the table's look waits for
-   John's before-and-after OK (D21). TablePage sets the class while the table is shown. Elsewhere, the hand replayer
-   (a shared hand, hand search) has the darker green like the rest of the site. */
-:root.on-table { --go-fill: var(--go); --go-fill-hover: var(--go-hover); }
 /* Words for screen readers only: off screen to the eye, still read aloud and still reachable with Tab. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* A dialog takes focus itself when it opens with nothing inside focused; the box needs no ring of its own. */
@@ -160,9 +161,10 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   padding: 8px 16px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  /* Light enough to read on the cloth: at least 4.5:1 (WCAG AA). */
+  color: rgba(255, 255, 255, 0.8);
 }
-.seat.empty button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); }
+.seat.empty button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.95); }
 .seat .hole { display: flex; gap: 2px; height: 48px; z-index: 1; position: absolute; bottom: calc(100% - 4px); left: 50%; translate: -50% 0; }
 /* Seats at the far left and right keep their cards over the felt instead of off the edge. */
 .seat.edge-left .hole { left: 0; translate: none; }
@@ -189,13 +191,13 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .nameplate > :not(.seat-avatar, .timer, .equity-tag, .note-badge, .seat-mood) { grid-column: 2; }
 .nameplate .name { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
 .nameplate .stack { font-variant-numeric: tabular-nums; color: #fff; font-weight: 800; font-size: 1rem; line-height: 1.2; }
-.nameplate .clock { font-size: 0.75rem; color: var(--bad); }
-.tag { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 5px; vertical-align: 1px; }
+.nameplate .clock { font-size: 0.75rem; color: var(--bad-text); }
+.tag { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: var(--red-fill); color: #fff; border-radius: 4px; padding: 1px 5px; margin-left: 5px; vertical-align: 1px; }
 .tag.bot { background: #5b6b7a; }
 /* On a nameplate a bot reads "Ace · Beth's bot". */
 .nameplate .name .bot-owner { margin-left: 5px; font-size: 0.72rem; font-weight: 400; line-height: 1; color: var(--muted); }
-.seat.empty .add-bot { font-size: 0.7rem; padding: 2px 8px; margin-top: 4px; opacity: 0.8; }
-.seat.empty .add-bot:hover { opacity: 1; }
+/* At least 24 pixels tall, so it's easy to tap (WCAG 2.5.8). */
+.seat.empty .add-bot { font-size: 0.7rem; padding: 2px 8px; margin-top: 4px; min-height: 24px; }
 .seat.acting .nameplate { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, 0.35); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 0 1px var(--good), 0 0 14px var(--good); }
 .seat.folded .hole { opacity: 0.25; }
@@ -318,11 +320,13 @@ select { width: 100%; }
 input[type='checkbox'],
 input[type='radio'] { width: auto; }
 .board-row { align-items: center; }
-.board-label { font-size: 0.7rem; color: rgba(255, 255, 255, 0.6); width: 46px; text-align: right; margin-right: 4px; }
+/* Words in the middle of the cloth, where it is lit brightest, sit on a dark backing like the pot's: even white
+   alone is under 4.5:1 there. */
+.board-label { font-size: 0.7rem; color: #fff; width: 46px; text-align: center; margin-right: 4px; padding: 1px 0; border-radius: 6px; background: rgba(0, 0, 0, 0.32); }
 .pots { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.pot.total { background: transparent; font-weight: 400; font-size: 0.85rem; color: rgba(255, 255, 255, 0.75); }
+.pot.total { background: rgba(0, 0, 0, 0.2); font-weight: 400; font-size: 0.85rem; color: #fff; }
 .pot.result { background: rgba(0, 0, 0, 0.5); color: var(--good); }
-.next-hand { font-size: 0.85rem; color: rgba(255, 255, 255, 0.75); }
+.next-hand { font-size: 0.85rem; color: #fff; background: rgba(0, 0, 0, 0.32); border-radius: 999px; padding: 2px 12px; }
 .seat .status { font-size: 0.7rem; color: var(--muted); }
 .seat .status.bank-text { color: var(--bank); }
 .seat.host-click .nameplate { cursor: pointer; }
@@ -423,7 +427,7 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .toggle { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
 .toggle input[type='checkbox'], .toggle input[type='radio'] { flex: none; }
 .hint { font-size: 0.75rem; color: var(--muted); }
-.badge { background: var(--accent); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 0.7rem; margin-left: 4px; }
+.badge { background: var(--red-fill); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 0.7rem; margin-left: 4px; }
 .log-table { color: var(--muted); }
 .hand-row { display: flex; gap: 4px; align-items: center; border-radius: 8px; }
 .hand-row:hover { background: var(--panel-2); }
@@ -469,8 +473,8 @@ button.danger { background: #3a2323; border-color: #5a3030; }
 .pill.away { background: #4a3a14; color: var(--accent-2); }
 .pill.offline { background: #4a1f1c; color: #ffb4ad; }
 .pill.offline::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-right: 4px; vertical-align: 1px; }
-.seat .status.low-text { color: var(--bad); font-weight: 700; }
-.action-bar .fold.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
+.seat .status.low-text { color: var(--bad-text); font-weight: 700; }
+.action-bar .fold.confirm { background: var(--red-fill); border-color: var(--red-fill); color: #fff; }
 /* All-in runouts (#308): the last card waits face down on the board with a soft glow, then turns over there. */
 .held-slot { display: flex; border-radius: 6px; animation: held-glow 1.3s ease-in-out 0.5s infinite alternate; }
 @keyframes held-glow { from { box-shadow: 0 0 0 0 rgba(255, 214, 120, 0); } to { box-shadow: 0 0 14px 2px rgba(255, 214, 120, 0.45); } }
@@ -676,7 +680,7 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .next-hand { font-weight: 600; letter-spacing: 0.02em; }
 .board .pots { flex-direction: column; align-items: center; gap: 2px; }
 .pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.pot.total { padding: 0; font-size: 0.8rem; }
+.pot.total { padding: 1px 10px; font-size: 0.8rem; }
 .pot.result { background: #1d6b41; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .pot.result { max-width: min(440px, 80%); }
 .felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }

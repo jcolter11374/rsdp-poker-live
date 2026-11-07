@@ -28,10 +28,8 @@ yet tried it with a real screen reader; see "Known and left".
 ## What was fixed
 
 - **Green buttons** (Create table, Sit down, Register, Sign in) had white
-  words on a green of only 3:1. They are a darker green now, 5:1. The table
-  keeps its brighter green until John has seen the change (below). The hand
-  replayer away from the table (a shared hand, hand search) has the darker
-  green, like the rest of the site.
+  words on a green of only 3:1. They are a darker green now, 5:1, on the
+  table and in the hand replayer too (below).
 - **The tournament lobby's clock card** had pale green words at 4:1 and
   3.4:1 on the green; they are lighter now.
 - **The lobby chat:** on your own messages, the time and the host's Hide,
@@ -83,21 +81,26 @@ yet tried it with a real screen reader; see "Known and left".
 None of these change how the table looks, apart from the white ring that
 shows where Tab is: before-and-after screenshots of the table match.
 
-## Waiting for John's OK
+## The table's colours and sizes
 
-Changes to the table's look wait until John has seen before-and-after
-pictures ([D21](DECISIONS.md#d21-look-and-feel)). They are ready in their own
-commit:
+These change the table's look, so they waited, in a commit of their own,
+until John had seen before-and-after pictures and OK'd them
+([D21](DECISIONS.md#d21-look-and-feel)):
 
-- **Colour contrast on the table:** the green buttons (Raise at 2.5:1 to
-  3.9:1; Start game, Sit down and Invite at 3:1); the red behind white
-  words (the "host" tag and the count of waiting requests at 3.4:1, Fold
-  when it asks for a second press at 3.3:1); the purple "NIT" tag at 4.3:1;
-  the red last seconds of a clock on a nameplate at 4.4:1; and the words on
-  the cloth (the empty seats' Sit and + Bot, "Next hand in", the game's
-  name, "Run 1", the total when there are side pots) at 2.7:1 to 3.9:1.
-- **Small tap targets:** + Bot (14 to 17 pixels tall), the quick chat
-  replies (21) and the Straddle and Wait for the big blind switches (23).
+- **Green buttons** (Raise, Start game, Sit down, Invite) were 2.5:1 to
+  3.9:1. They use the darker green of the other pages now, 4.6:1 or more.
+- **Red behind white words** (the "host" tag, the count of waiting
+  requests, Fold when it asks for a second press) was 3.3:1 to 3.4:1; a
+  darker red makes it 4.7:1. The purple "NIT" tag went from 4.3:1 to 5:1,
+  and the red last seconds of a clock on a nameplate from 4.4:1 to 4.8:1.
+- **Words on the cloth** were 2.7:1 to 3.9:1. The empty seats' "Sit" and
+  "+ Bot" are brighter (5:1). The middle of the cloth is lit so brightly
+  that even white words there are under 4.5:1, so "Next hand in", the
+  game's name, "Run 1" and the total when there are side pots sit on a dark
+  backing like the pot's, 7:1 or more.
+- **Tap targets** are at least 24 pixels tall: + Bot was 14 to 17, the
+  quick chat replies 21, and the Straddle and Wait for the big blind
+  switches 23.
 
 ## Known and left
 
@@ -121,6 +124,8 @@ commit:
 - **The "requests are waiting" notice** on the table opens the host panel
   only with a click; the Host & log button and the phone's menu do the same
   from the keyboard.
+- **Folded players** are dimmed on purpose, so a folded host's "host" tag is
+  3.7:1.
 
 ## The automatic check
 
@@ -130,9 +135,7 @@ tournament pages on a computer and a phone, a tournament lobby and its chat
 with messages in it (as the host and on a phone), and the table on your
 turn, while waiting and as a spectator, with axe's WCAG 2.2 AA
 rules. Any serious or critical problem fails the run. It also checks that a
-screen reader is told "Your turn". Until the table's colours are changed,
-the colour-contrast rule is left out on the table only (`TABLE` in the
-smoke test).
+screen reader is told "Your turn".
 
 The upgrade rehearsal (`.github/workflows/upgrade.yml`) runs `main`'s copy
 of the smoke test against `main`'s image, only to make data. It sets

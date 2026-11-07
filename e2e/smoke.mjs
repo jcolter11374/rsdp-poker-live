@@ -43,11 +43,6 @@ const browser = await chromium.launch();
 
 /** The WCAG 2.2 AA rules (with the 2.0 and 2.1 ones they build on) that axe checks. */
 const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
-/**
- * Rules left out on the table screen for now: its brighter green buttons and the red host tag are below 4.5:1, and
- * changing the table's look waits for John's before-and-after OK (D21). Take it out with that change.
- */
-const TABLE = { skip: ['color-contrast'] };
 
 /**
  * An accessibility check that isn't axe's (a screen reader hears "Your turn"). Failing, it fails the run at once,
@@ -66,7 +61,7 @@ async function a11yCheck(label, fn) {
  * Checks the page as it is now with axe, and notes every serious or critical problem; any fails the run at the end.
  * Short animations (cards being dealt, chips flying) finish first, so nothing is checked half faded in.
  */
-async function checkA11y(page, label, { skip = [] } = {}) {
+async function checkA11y(page, label) {
   await page.evaluate(() => {
     const short = document.getAnimations().filter((a) => {
       const t = a.effect?.getComputedTiming();
@@ -75,7 +70,7 @@ async function checkA11y(page, label, { skip = [] } = {}) {
     return Promise.race([Promise.all(short.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 4000))]);
   });
   await a11yCheck(`${label} (axe)`, async () => {
-    const result = await new AxeBuilder({ page }).withTags(WCAG_AA).disableRules(skip).analyze();
+    const result = await new AxeBuilder({ page }).withTags(WCAG_AA).analyze();
     for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
       a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
     }
@@ -194,12 +189,12 @@ try {
     for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
     // A screen reader hears that it's their turn, from a region nobody sees.
     await a11yCheck('table, your turn (read aloud)', () => first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' }));
-    await checkA11y(first, 'table, your turn', TABLE);
-    await checkA11y(first === host ? guest : host, 'table, waiting to act', TABLE);
+    await checkA11y(first, 'table, your turn');
+    await checkA11y(first === host ? guest : host, 'table, waiting to act');
     const watcher = await open('cash spectator');
     await watcher.goto(host.url());
     await watcher.waitForSelector('.seat .hole .playing-card');
-    await checkA11y(watcher, 'table, watching', TABLE);
+    await checkA11y(watcher, 'table, watching');
     await watcher.close();
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
@@ -443,7 +438,7 @@ try {
     await host.locator('.tn-strip:has-text("Level 1")').waitFor();
     await host.waitForSelector('.seat .hole .playing-card');
     await players[2].waitForSelector('.seat .hole .playing-card');
-    await checkA11y(players[2], 'tournament table (phone)', TABLE);
+    await checkA11y(players[2], 'tournament table (phone)');
     await playOut(players);
     const log = await host.locator('.side').innerText();
     for (const name of names) if (!log.includes(name)) throw new Error(`${name} was not in the first hand`);

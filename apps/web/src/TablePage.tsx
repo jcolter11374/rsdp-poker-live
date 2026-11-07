@@ -357,13 +357,6 @@ export function TablePage({ tableId }: { tableId: string }) {
     ro.observe(bar);
     return () => ro.disconnect();
   }, [wide, !!view]);
-  // The table keeps its brighter green buttons (styles.css), in browsers too old for :has().
-  const onTable = !error && !!view;
-  useLayoutEffect(() => {
-    if (!onTable) return;
-    document.documentElement.classList.add('on-table');
-    return () => document.documentElement.classList.remove('on-table');
-  }, [onTable]);
   if (error) {
     // A tournament table closes when it breaks; the lobby knows the new seat.
     const tournament = error === 'table not found' ? tournamentOfTable(tableId) : null;
