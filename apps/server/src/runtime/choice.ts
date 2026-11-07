@@ -238,6 +238,8 @@ export class DealersChoice {
   /** A hand was dealt (bomb pots included): counts it toward the pick, and opens picking on its last hand. */
   dealt(dealtIn: number) {
     const c = this.s.choice;
+    // The first hand's button has been placed: later hands (after a seat shuffle, say) draw the button as usual.
+    if (c) c.firstButton = null;
     if (!this.menu || !c || !c.current) return;
     c.hands++;
     const fixed = this.menu.hands;

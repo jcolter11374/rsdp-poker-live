@@ -653,6 +653,38 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .board .pots { order: -1; }
 .board .next-hand { order: 1; }
 .next-hand { font-weight: 600; letter-spacing: 0.02em; }
+/* Before a cash game starts, or after the host stops it, the middle of the table says what happens next: it takes no room
+   from the felt, so the seats stay put when the game starts (#383). Under the game's name. */
+.board .board-notice { order: 1; }
+.board-notice {
+  max-width: min(600px, 86%);
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.95rem;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
+}
+/* Clear of the nameplates at the ends of the table, level with the middle. */
+.felt:not(.compact) .board-notice { max-width: min(600px, calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
+.felt.grown .board-notice { max-width: min(760px, calc(100% - 2 * (150px * var(--seat-scale) + 12px))); font-size: calc(0.95rem * min(var(--k), 1.25)); }
+/* Phones: clear of the nameplates at the table's sides (100px at most). */
+.felt.compact .board-notice { max-width: calc(100% - 2 * 56px); padding: 6px 12px; font-size: 0.8rem; line-height: 1.3; }
+/* The host's, in the wide layout: it opens Host & log, where Start game is. */
+.board-notice.clickable { pointer-events: auto; cursor: pointer; }
+.board-notice.clickable:hover { background: rgba(0, 0, 0, 0.45); color: #fff; }
+/* After a stop the last hand stays on the felt: the note takes the place and size of the "Next hand in" line under its
+   result, so it stays clear of the cards at the bottom seat. */
+.felt .board-notice.after-hand { padding: 0 8px; background: none; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.75); line-height: 1.3; }
+.felt.compact .board-notice.after-hand { font-size: 0.75rem; }
+.board-notice.after-hand.clickable:hover { background: none; color: #fff; text-decoration: underline; }
+/* Phones: where the middle has no room for it, the note is laid out there unseen (to tell whether it fits) and shown
+   under the table instead (#383): before the first hand as the text of the empty bar, after a stop (the last hand still
+   on the table) above the buttons. */
+.board-notice.unseen { visibility: hidden; }
+.action-bar .bar-note { margin: auto 0; text-align: center; font-size: 0.85rem; line-height: 1.3; color: rgba(255, 255, 255, 0.88); }
 .board .pots { flex-direction: column; align-items: center; gap: 2px; }
 .pot-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .pot.total { padding: 0; font-size: 0.8rem; }
@@ -826,6 +858,28 @@ dl.shortcuts dd { margin: 0; }
 /* Hand extras and seat options share one row, so the area under the table stays short. */
 .dock-row { display: flex; gap: 10px 20px; justify-content: center; align-items: center; flex-wrap: wrap; }
 .dock-row:empty { display: none; }
+/* Notes about you (sitting out, a rebuy or bot waiting), the host's waiting requests, "stopping after this hand" and, on a
+   phone, "the game is stopped" while the last hand is still on the table (#383) sit in the area under the table, which
+   holds its height, instead of over the felt, where they took its height and moved every seat (#388). They go on the
+   side of that area with room to spare: under the buttons on a computer, above them on a phone and with coach tips (where
+   the buttons sit at the foot), so a note coming or going never moves a button. */
+.dock-notes { display: flex; flex-direction: column; gap: 8px; order: 1; }
+.portrait .dock-notes, .dock.tips .dock-notes { order: -1; }
+.dock-notes.your-turn { display: none; }
+.dock-notes .banner.clickable { cursor: pointer; }
+/* Windows too narrow for the side column (a laptop window at half width, a tablet on its side): the table's size comes
+   from the window there, not from this area, and under the buttons the notes would be at the bottom edge of the screen.
+   They go above the buttons, and stay on your turn so the buttons never move under a finger as it starts. */
+@media (max-width: 1180px) {
+  .table-page:not(.portrait) .dock-notes { order: -1; }
+  .table-page:not(.portrait) .dock-notes.your-turn { display: flex; }
+}
+.portrait .dock-notes .banner { border-radius: 8px; margin: 0 8px; }
+/* Connection lost: over the top of the table rather than above it, so the table keeps its size (#388). Until the
+   connection is back nothing at the table can be played anyway. */
+.table-page > .banner.warn { position: fixed; z-index: 9; top: calc(var(--topbar-h, 56px) + 8px); left: 50%; translate: -50% 0; width: max-content; max-width: calc(100vw - 24px); margin: 0; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+/* Over the table's column, not the window's middle, when the side column is beside it. */
+@media (min-width: 1181px) { .table-page:not(.wide):not(.portrait) > .banner.warn { left: calc(50% - 176px); } }
 .dock-row .hand-extras { margin-top: 0; }
 .bar-head { position: relative; min-height: 26px; display: flex; align-items: center; justify-content: center; }
 .bar-head .time-bank { position: absolute; right: 0; top: 50%; translate: 0 -50%; padding: 3px 10px; font-size: 0.8rem; border-radius: 999px; }
