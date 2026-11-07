@@ -215,6 +215,73 @@ describe("Dealer's choice", () => {
     expect(rt.state.requests).toHaveLength(1);
   });
 
+  it("doesn't count a waitlist offer to someone who still needs the host's OK, which only asks for the seat (#453)", () => {
+    // Nine seats, six seated, and the host approves newcomers. G joins the waitlist and is offered a free seat at once.
+    // Counting that offer would let G keep Badugi (six players) off the menu, rejoining each time it lapsed.
+    const { rt, clock } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    seat(rt, 6);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+    rt.start('host');
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(6);
+    pick(rt, 'badugi');
+    expect(hand(rt).input.game.id).toBe('badugi');
+    // Taking the offer while Badugi is on asks the host for the seat, as a seat request made before the pick would.
+    // It waits: the host can't seat G until the next game, and G isn't dropped from the table's queue for being late.
+    rt.requestSeat('g', { seat: rt.state.offers![0].seat, name: 'G', stack: 1000 });
+    expect(rt.state.requests.map((r) => r.playerId)).toEqual(['g']);
+    expect(rt.state.offers).toEqual([]);
+    expect(rt.state.seats.some((x) => x?.playerId === 'g')).toBe(false);
+    expect(() => rt.approve('host', rt.state.requests[0].id)).toThrow(/closed until the next game/);
+    expect(rt.state.requests).toHaveLength(1);
+    // A newcomer without an offer still can't ask for a closed seat.
+    expect(() => rt.requestSeat('h', { seat: 8, name: 'H', stack: 1000 })).toThrow(/closed until the next game/);
+  });
+
+  it("still counts a waitlist offer to someone who may approve seats, and to anyone once approval is off (#453)", () => {
+    const { rt, clock } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    seat(rt, 6);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.setCoHost('host', 'g', ['approve']);
+    rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+    rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g', 'h']);
+    // G can seat themselves, so G's offer counts; H still needs the host, so H's doesn't.
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(7);
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(8);
+    rt.start('host');
+    expect(() => pick(rt, 'badugi')).toThrow(/8 are sitting down/);
+  });
+
+  it("doesn't let an uncounted waitlist offer take the room a smaller game was picked with (#453)", () => {
+    // Five seated of nine, and the host approves newcomers. E asks for a seat; G joins the waitlist and is offered one.
+    // Neither counts, so Badugi (six players) fits, with room for one more.
+    const { rt, clock } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    seat(rt, 5);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.requestSeat('e', { seat: 7, name: 'E', stack: 1000 });
+    rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+    expect(tableView(rt, 'a', clock.now()).choice!.count).toBe(5);
+    rt.start('host');
+    pick(rt, 'badugi');
+    // The host can seat E: G's offer, like a seat request, doesn't hold that room.
+    rt.approve('host', rt.state.requests[0].id);
+    expect(rt.state.seats[7]?.playerId).toBe('e');
+    // Badugi is full now. G taking the offer asks for the seat, and the request waits for the next game.
+    rt.requestSeat('g', { seat: rt.state.offers![0].seat, name: 'G', stack: 1000 });
+    expect(() => rt.approve('host', rt.state.requests[0].id)).toThrow(/closed until the next game/);
+    expect(rt.state.requests.map((r) => r.playerId)).toEqual(['g']);
+  });
+
   it('skips a chooser who sits out, and gives the next player a fresh clock', () => {
     const { rt, clock } = table();
     seat(rt, 4);

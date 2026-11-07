@@ -453,7 +453,9 @@ export class TableRuntime {
     if (this.state.seats[seat]) throw new ActionError('that seat is taken');
     this.checkSeatFree(playerId, seat);
     this.checkSeatKept(seat, playerId);
-    this.checkRoom(playerId);
+    // Someone who needs the host's OK taking their waitlist offer only asks for the seat. Dealer's choice didn't count
+    // the offer (tableCount), so the request waits while a smaller game is on, and the host's approval checks the room.
+    if (!(offered && this.needsApproval(playerId))) this.checkRoom(playerId);
     this.checkBuyIn(playerId, stack);
     // A new request replaces your earlier one (which never holds a seat against you).
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
@@ -597,12 +599,25 @@ export class TableRuntime {
 
   /**
    * Dealer's choice counts these when checking a game fits: everyone sitting down, and anyone offered a seat from
-   * the waitlist. A seat request isn't counted, since only the host sees it; like the waitlist, it waits while a
-   * smaller game is on (seatRoom counts it).
+   * the waitlist (counted offers). A seat request isn't counted, since only the host sees it; like the waitlist, it
+   * waits while a smaller game is on (seatRoom counts it). Nor is an offer to someone who still needs the host's OK:
+   * taking it only asks for the seat, so it counts as the request it becomes (#453). Otherwise a spectator the host
+   * hasn't let sit could keep a smaller game off the menu by joining the waitlist.
    */
   private tableCount(): number {
-    const offered = new Set(this.offers().map((o) => o.playerId));
-    return this.seatedCount() + [...offered].filter((id) => !this.seatOf(id)).length;
+    return this.seatedCount() + this.countedOffers(null);
+  }
+
+  /** The players offered a seat from the waitlist whom tableCount counts, not counting `except`. */
+  private countedOffers(except: PlayerId | null): number {
+    const ids = new Set(this.offers().map((o) => o.playerId));
+    if (except !== null) ids.delete(except);
+    return [...ids].filter((id) => !this.seatOf(id) && !this.needsApproval(id)).length;
+  }
+
+  /** Someone who can only ask for a seat: the table needs the host's OK and they can't give it themselves. */
+  private needsApproval(playerId: PlayerId): boolean {
+    return this.settings.seating.requireApproval && !this.can(playerId, 'approve');
   }
 
   /** Everyone sitting down, and anyone who busted or left in an all-in runout browsers are still dealing out. */
@@ -615,14 +630,15 @@ export class TableRuntime {
   /**
    * Dealer's choice: how many more people may sit (or be promised a seat) while a smaller game is picked or played,
    * not counting `playerId`'s own held seat. Someone taking a seat held for them (a waitlist offer, or a seat request
-   * the host approves) counts only the other waitlist offers, as the check that the game fits did (tableCount): seat
-   * requests wait, so they can't take the room the game was picked with. Null when there is no limit.
+   * the host approves) counts only the other counted waitlist offers, as the check that the game fits did
+   * (tableCount): seat requests, and offers to people who still need the host's OK, wait, so they can't take the room
+   * the game was picked with. Null when there is no limit.
    */
   private seatRoom(playerId: PlayerId | null): number | null {
     const cap = this.isTournament ? null : this.choice.seatCap();
     if (!cap) return null;
     const holds = playerId !== null && (this.offers().some((o) => o.playerId === playerId) || this.state.requests.some((r) => r.kind === 'seat' && r.playerId === playerId));
-    const others = holds ? new Set(this.offers().map((o) => o.playerId).filter((id) => id !== playerId && !this.seatOf(id))).size : this.heldSeats(playerId);
+    const others = holds ? this.countedOffers(playerId) : this.heldSeats(playerId);
     return cap.cap - this.seatedCount() - others;
   }
 
