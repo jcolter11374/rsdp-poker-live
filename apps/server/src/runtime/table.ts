@@ -212,12 +212,12 @@ export class TableRuntime {
   /**
    * For someone watching on a delay (#435): what their view shows, or null when they see the table live. app.ts keeps
    * the delayed feed and replaces this when it attaches the table. Without it (unit tests), anyone unseated and not
-   * staff at a table with a delay is shown the live seats, the delay behind.
+   * staff at a table with a delay is shown the live seats, as they are now, with the delay's clocks.
    */
   shownTo: (playerId: PlayerId) => ShownTable | null = (playerId) => {
     const delayMs = this.settings.spectators.delaySeconds * 1000;
     if (delayMs <= 0 || this.seatOf(playerId) || this.isStaff(playerId)) return null;
-    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now() - delayMs, behindMs: delayMs, showsNowInMs: delayMs };
+    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now(), behindMs: delayMs, showsNowInMs: delayMs };
   };
 
   private readonly clock: Clock;
