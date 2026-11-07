@@ -346,8 +346,13 @@ export interface ChoicePick {
   betting: BettingKind;
   /** The chooser's name as shown, or null when nobody could pick. */
   by: string | null;
-  /** The chooser's seat, or null when nobody could pick. */
+  /** The chooser's seat when they picked, or null when nobody could pick. */
   seat: number | null;
+  /**
+   * The chooser's player id, or null when nobody could pick: the server's own, never sent to browsers (name
+   * replacement goes by it, replaceName.ts). Missing in saves from before 2026.11.07.4.
+   */
+  byId?: PlayerId | null;
   /** picked: a person chose it; bot: a practice bot did; kept: the current game, kept on purpose or by a missed pick; default: dealt because nobody picked. */
   how: 'picked' | 'bot' | 'kept' | 'default';
 }

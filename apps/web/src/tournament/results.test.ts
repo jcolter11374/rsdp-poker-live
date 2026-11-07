@@ -5,7 +5,7 @@ import { resultsCsv, resultsFileName, tableChatText } from './results';
 const T0 = Date.parse('2026-10-30T02:00:00Z');
 
 function field(names: string[]): TournamentState {
-  let s = createTournament({ id: 'R', hostId: 'host', settings: defaultSettings({ name: 'Friday/Night', lateRegistration: { enabled: false, throughLevel: null } }), now: T0, seed: '01'.repeat(32) });
+  let s = createTournament({ id: 'R', hostId: 'host', settings: defaultSettings({ name: 'Friday/Night', lateRegistration: { enabled: false, throughLevel: null } }), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
   names.forEach((n, i) => (s = apply(s, { type: 'register', playerId: `p${i}`, displayName: n }, T0).state));
   return apply(s, { type: 'startNow', by: 'host' }, T0).state;
 }

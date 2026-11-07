@@ -45,15 +45,31 @@ export interface TournamentClient {
   /** Lobby chat and events of a tournament being followed (see subscribe): now and on every change. */
   onLog(id: string, cb: (items: LobbyItem[]) => void): () => void;
   chat(id: string, text: string): Promise<void>;
+  /** Lobby chat moderation (the host, and co-hosts with the players power): mute someone, turn the chat off, delete a message. */
+  chatMute(id: string, playerId: string, value: boolean): Promise<void>;
+  chatOff(id: string, off: boolean): Promise<void>;
+  chatDelete(id: string, itemId: string): Promise<void>;
   /** Once the tournament is over: every table's chat and log (host, co-hosts and players only). */
   tableChat(id: string): Promise<TournamentTableChat[]>;
 }
+
+/** One followed lobby's chat and events in this tab. */
+interface FollowedLog {
+  items: LobbyItem[];
+  listeners: Set<(items: LobbyItem[]) => void>;
+  /** Chat messages the host deleted while this page was open: a full list that crossed the deletion still holds them. */
+  deleted: Set<string>;
+  /** Items appended since this tab last asked for the lobby, which can beat the full list here. */
+  since: Set<string>;
+}
+
+const newLog = (): FollowedLog => ({ items: [], listeners: new Set(), deleted: new Set(), since: new Set() });
 
 /** Tournaments run on the server; this tab follows the ones on screen. */
 export class SocketTournamentClient implements TournamentClient {
   private watchers = new Map<string, { onView: Set<(v: TournamentView) => void>; onError: Set<(m: string) => void>; last: TournamentView | null }>();
   /** Lobby items per followed tournament, and who wants them. */
-  private logs = new Map<string, { items: LobbyItem[]; listeners: Set<(items: LobbyItem[]) => void> }>();
+  private logs = new Map<string, FollowedLog>();
 
   constructor() {
     socket.on('tournament:state', ({ id, view }) => {
@@ -65,14 +81,25 @@ export class SocketTournamentClient implements TournamentClient {
     socket.on('tournament:log', ({ id, items, append }) => {
       const log = this.logs.get(id);
       if (!log) return;
+      // A full list read just before a deletion can still hold the deleted message.
+      const kept = items.filter((x) => !log.deleted.has(x.id));
       if (append) {
         const have = new Set(log.items.map((x) => x.id));
-        log.items = [...log.items, ...items.filter((x) => !have.has(x.id))];
+        log.items = [...log.items, ...kept.filter((x) => !have.has(x.id))];
+        for (const x of kept) log.since.add(x.id);
       } else {
-        // The full list may be older than appends that beat it here.
-        const fresh = new Set(items.map((x) => x.id));
-        log.items = [...items, ...log.items.filter((x) => !fresh.has(x.id) && x.at >= (items.at(-1)?.at ?? 0))];
+        // The full list may be older than appends that beat it here. Anything else it lacks is gone: deleted while
+        // the connection was down, say.
+        const fresh = new Set(kept.map((x) => x.id));
+        log.items = [...kept, ...log.items.filter((x) => !fresh.has(x.id) && log.since.has(x.id))];
       }
+      log.listeners.forEach((cb) => cb(log.items));
+    });
+    socket.on('tournament:chatDeleted', ({ id, itemId }) => {
+      const log = this.logs.get(id);
+      if (!log) return;
+      log.deleted.add(itemId);
+      log.items = log.items.filter((x) => x.id !== itemId);
       log.listeners.forEach((cb) => cb(log.items));
     });
     // The server forgets what a socket followed when it drops.
@@ -99,7 +126,7 @@ export class SocketTournamentClient implements TournamentClient {
       w = { onView: new Set(), onError: new Set(), last: null };
       this.watchers.set(id, w);
       // The server sends the lobby log right after the first view.
-      if (!this.logs.has(id)) this.logs.set(id, { items: [], listeners: new Set() });
+      if (!this.logs.has(id)) this.logs.set(id, newLog());
       if (socket.connected) this.follow(id);
     } else if (w.last) onView(w.last);
     w.onView.add(onView);
@@ -131,7 +158,7 @@ export class SocketTournamentClient implements TournamentClient {
   onLog(id: string, cb: (items: LobbyItem[]) => void) {
     let log = this.logs.get(id);
     if (!log) {
-      log = { items: [], listeners: new Set() };
+      log = newLog();
       this.logs.set(id, log);
     }
     const mine = log;
@@ -146,11 +173,25 @@ export class SocketTournamentClient implements TournamentClient {
     await call('tournament:chat', { id, text });
   }
 
+  async chatMute(id: string, playerId: string, value: boolean) {
+    await call('tournament:chatMute', { id, playerId, value });
+  }
+
+  async chatOff(id: string, off: boolean) {
+    await call('tournament:chatOff', { id, off });
+  }
+
+  async chatDelete(id: string, itemId: string) {
+    await call('tournament:chatDelete', { id, itemId });
+  }
+
   async tableChat(id: string) {
     return (await call<{ tables: TournamentTableChat[] }>('tournament:tableChat', { id })).tables;
   }
 
   private follow(id: string) {
+    const log = this.logs.get(id);
+    if (log) log.since = new Set();
     call('tournament:subscribe', { id }).catch((e: Error) => {
       // One lost to a dropped connection is sent again when it comes back.
       if (e instanceof NoAnswerError) return;
@@ -176,6 +217,14 @@ function randomId(bytes = 8): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** A secret state for the old seat-draw generator, apart from the seed (as on the server): never 0. */
+function randomLegacyRng(): number {
+  const buf = new Uint32Array(1);
+  do crypto.getRandomValues(buf);
+  while (buf[0] === 0);
+  return buf[0];
+}
+
 /**
  * Runs @rsdp/tournament in this tab. Tournaments are saved to localStorage so
  * a refresh keeps them, and a 1 s timer calls tick whenever nextWakeAt passes.
@@ -192,8 +241,8 @@ export class LocalTournamentClient implements TournamentClient {
     const store = storage();
     try {
       const saved = JSON.parse(store?.getItem(STORE_KEY) ?? '{}') as Record<string, TournamentState>;
-      // A demo saved before seat draws used a 32-byte seed, with its seats still to draw, gets a fresh one (as on the server).
-      for (const [id, s] of Object.entries(saved)) this.states.set(id, needsSeatSeed(s) ? withSeatSeed(s, randomId(32)) : s);
+      // A demo whose seats are still to draw gets a fresh seed each time it loads (as on the server).
+      for (const [id, s] of Object.entries(saved)) this.states.set(id, needsSeatSeed(s) ? withSeatSeed(s, randomId(32), randomLegacyRng()) : s);
     } catch {
       /* start empty */
     }
@@ -251,7 +300,7 @@ export class LocalTournamentClient implements TournamentClient {
     // The seat-draw seed: 32 bytes from the browser's secure generator.
     const seed = randomId(32);
     try {
-      this.commit(id, createTournament({ id, hostId: this.me.playerId, settings, now: Date.now(), seed }));
+      this.commit(id, createTournament({ id, hostId: this.me.playerId, settings, now: Date.now(), seed, legacyRng: randomLegacyRng() }));
     } catch (e) {
       throw new Error(e instanceof DirectorError ? e.message : String(e));
     }
@@ -317,6 +366,18 @@ export class LocalTournamentClient implements TournamentClient {
   }
 
   async chat() {
+    throw new Error('Chat needs the server');
+  }
+
+  async chatMute() {
+    throw new Error('Chat needs the server');
+  }
+
+  async chatOff() {
+    throw new Error('Chat needs the server');
+  }
+
+  async chatDelete() {
     throw new Error('Chat needs the server');
   }
 

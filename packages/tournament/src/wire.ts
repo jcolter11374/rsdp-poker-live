@@ -24,8 +24,16 @@ export interface TournamentClientToServer {
   'tournament:unsubscribe': (input: { id: string }) => void;
   /** Player and host commands. The server fills in who is acting from the connection. */
   'tournament:command': (input: { id: string; command: Command }, ack: Ack) => void;
-  /** Lobby chat; needs a display name and the tournament followed (subscribe). */
+  /** Lobby chat; needs a display name and the tournament followed (subscribe). Refused while muted or the chat is off. */
   'tournament:chat': (input: { id: string; text: string }, ack: Ack) => void;
+  /**
+   * Lobby chat moderation, for the host and co-hosts with the players power (CHAT_POWER), before, during and after the
+   * event. Muting or unmuting someone and turning the chat off or on change `lobbyChat` in the state everyone is sent.
+   */
+  'tournament:chatMute': (input: { id: string; playerId: string; value: boolean }, ack: Ack) => void;
+  'tournament:chatOff': (input: { id: string; off: boolean }, ack: Ack) => void;
+  /** Deletes a lobby chat message for good: it leaves the server's storage, and everyone watching is told. */
+  'tournament:chatDelete': (input: { id: string; itemId: string }, ack: Ack) => void;
   /**
    * Once a tournament is over: the chat and log of every table it used (tables that broke during play too), for its
    * host, co-hosts and players. Tables can't be opened once they close, so this is the only way to read them.
@@ -51,6 +59,8 @@ export interface TournamentServerToClient {
   'tournament:state': (input: { id: string; view: TournamentView }) => void;
   /** Lobby chat and events: the recent ones after subscribing (`append` false), then each new one. */
   'tournament:log': (input: { id: string; items: LobbyItem[]; append: boolean }) => void;
+  /** A lobby chat message the host deleted: browsers drop it, and keep it out of a full list that crossed this one. */
+  'tournament:chatDeleted': (input: { id: string; itemId: string }) => void;
 }
 
 /** A director table id (`abc:t3`) as the table's address in links (`abc-t3`). */

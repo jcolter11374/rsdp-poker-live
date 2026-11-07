@@ -178,7 +178,8 @@ export const EXTRAS: ExtraGuide[] = [
       "Start a cash game: pick Dealer's choice under Mixed games in the Game list. The menu starts with the 8-Game games.",
       "At a table: Table settings > Game, then How the game is chosen > Dealer's choice. Fill the menu in one tap (the 8-Game games, the HORSE games, Hold'em and Omaha, or every game), or pick each game and its betting.",
       'There too: how long each pick lasts (one orbit, or a number of hands) and the time to pick (10 to 60 seconds).',
-      'Changes to the menu apply from the next pick; a pick already made stands.',
+      'Changes to the menu apply from the next pick; a pick already made stands. A game taken off the menu during a hand can\'t be picked for the next one.',
+      "Switching the table to one game or a rotation ends Dealer's choice when the hand is over: nobody picks next, and a pick already made isn't dealt.",
       'Cash tables only, for now.',
     ],
     elsewhere: [

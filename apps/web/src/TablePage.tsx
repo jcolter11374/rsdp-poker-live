@@ -17,6 +17,7 @@ import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
+import { noteRealGame } from './components/table/Recap';
 import { PartBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
@@ -31,7 +32,7 @@ import { LookDialog } from './components/LookDialog';
 import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
-import { useDepartures, useRunoutReveal } from './runout';
+import { useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
@@ -132,8 +133,8 @@ const KEYS_TIP_MS = 20_000;
 export function TablePage({ tableId }: { tableId: string }) {
   const [live, setView] = useState<TableView | null>(null);
   // An all-in runout is dealt a street at a time; everything below sees the table as it is shown. A player knocked
-  // out stays in their seat until the next deal.
-  const view = useDepartures(useRunoutReveal(live));
+  // out stays in their seat until the next deal. `runningOut`: a runout is still being dealt.
+  const { view, runningOut } = useShownTable(live);
   const [skew, setSkew] = useState(0);
   const [error, setError] = useState('');
   /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
@@ -170,7 +171,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [noticeRoom, setNoticeRoom] = useState(true);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
-  const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
+  const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
   // Every game the table deals, so a mixed table is laid out once for all of them (#409). A tournament table's own
   // settings always say Hold'em: its games come from the tournament, asked for as the page opens (the table's address
   // names it), so they're mostly known by the first deal and the table isn't laid out twice. The page saying the table
@@ -190,7 +191,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   const allLimit = view?.tournamentId ? !eventNow.games.length || eventNow.allLimit : view?.mode === 'cash' ? tableAllLimit(view.settings) : true;
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.
   const mine = live?.me.seat != null ? live.seats[live.me.seat] : null;
-  const busy = view !== live || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
+  const busy = runningOut || (!!live?.hand && live.hand.phase !== 'complete' && !!mine?.inHand && !mine.folded);
   const busyNow = useRef(busy);
   busyNow.current = busy;
   useEffect(() => holdReloadWhile(() => busyNow.current), []);
@@ -390,6 +391,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     );
   }
   if (!view) return <main className="home">Connecting…</main>;
+  // Copy recap waits out a spectator's delay from here, whether or not the ledger is open (on a phone it's in a sheet).
+  noteRealGame(view);
 
   const copyLink = async () => {
     try {
@@ -725,7 +728,7 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} />}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
