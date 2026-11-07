@@ -149,7 +149,8 @@ function earlierDigests(hand: HandRecordView): string[] {
   const end = events.findIndex((e) => e.t === 'hand-end');
   if (end < 0) return [];
   const cuts: number[] = [];
-  for (let i = end + 1; i < events.length; i++) if (events[i].t === 'show' && events[i - 1].t !== 'show') cuts.push(i);
+  // Each show after the end is its own, recorded again with whatever it adds (a bounty or prize paid for it).
+  for (let i = end + 1; i < events.length; i++) if (events[i].t === 'show') cuts.push(i);
   return cuts.reverse().flatMap((i) => digestOf(hand, events.slice(0, i)) ?? []);
 }
 
@@ -165,11 +166,13 @@ export function handInRecord(hand: HandRecordView, record: HandEntries): { ok: b
   }
   const match = entries.find((e) => e.data.digest === digest);
   if (match) return { ok: true, detail: `entry ${match.seq}, written ${new Date(match.at).toLocaleString()}` };
-  // The hand as it was before a card shown after it is recorded, and that show isn't yet: at a table watched on a
-  // delay it goes in up to 10 minutes after it was shown (D38). The cards it shows are checked against the deck above.
-  const earlier = earlierDigests(hand).map((d) => entries.find((e) => e.data.digest === d)).find(Boolean);
-  if (earlier) return { ok: null, pending: true, detail: `entry ${earlier.seq} has the hand; a card shown after it goes in the record up to 10 minutes after it is shown` };
-  return { ok: false, detail: `entry ${entries.at(-1)!.seq} has a different fingerprint: this hand was changed after it was recorded` };
+  // The newest entry is the hand as it was before a card shown after it ended, and that show isn't in yet: at a table
+  // watched on a delay it goes in up to 10 minutes after it was shown (D38), always before the table's next hand does.
+  // So only the newest entry counts, and not once a later hand is in. The cards it shows are checked against the deck.
+  const newest = entries.at(-1)!;
+  if (!record.after && earlierDigests(hand).includes(String(newest.data.digest)))
+    return { ok: null, pending: true, detail: `entry ${newest.seq} has the hand as it ended; a card shown after that goes in the record up to 10 minutes after it was shown` };
+  return { ok: false, detail: `entry ${newest.seq} has a different fingerprint: this hand was changed after it was recorded` };
 }
 
 /** Rows of the ledger whose buy-ins or cash-outs differ from the latest ones in the public record (bots aren't recorded). */

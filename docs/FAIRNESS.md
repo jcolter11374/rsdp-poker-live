@@ -379,12 +379,12 @@ your cards to a player at the table, so the site makes it hard to miss:
 **Watching on a delay.** Spectators at a table with a delay see it as it was
 that long ago: the hand, the seats and stacks, the stakes, the waitlist and the
 table log. The server answers what they ask (a seat, a hand to share, the hand
-list, a link's preview) from that same moment, and sends them an update only
-when something they can see changes. A change to the delay starts for them at
-the first hand dealt under it. A few things stay live on purpose:
+list, hand search, a link's preview) from that same moment, and sends them an
+update only when something they can see changes. A change to the delay starts
+for them at the first hand dealt under it. A few things stay live on purpose:
 
-- Chat, gestures between players their view has seated, and who has the table
-  open.
+- Chat, gestures between players their view has seated, who has the table
+  open, the table's name and look, and whether watching is allowed.
 - The warning that spectators see every card. It can only be turned on between
   hands, so when it appears, someone watching on a delay can tell that the live
   table is between hands. Delaying it would let people sit down without seeing

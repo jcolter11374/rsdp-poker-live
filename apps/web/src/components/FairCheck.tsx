@@ -8,6 +8,8 @@ import { suitSymbol } from './PlayingCard';
 
 const cardText = (c: string) => `${c[0] === 'T' ? '10' : c[0]}${suitSymbol(c[1])}`;
 const when = (t: number) => new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+/** How many times, a minute apart, the public record is asked again for a card shown after the hand ended. */
+const TRIES = 15;
 
 /** "Check this hand": the hand's fairness record, and once it is revealed, the hand dealt again right here in the browser. */
 export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId: string | null; tableId?: string }) {
@@ -31,7 +33,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
   }, [tableId, digest, hand.handNumber, again]);
   const waiting = !!record && record !== 'failed' && !!handInRecord(hand, record).pending;
   useEffect(() => {
-    if (!waiting || again >= 15) return;
+    if (!waiting || again >= TRIES) return;
     const t = setTimeout(() => setAgain((n) => n + 1), 60_000);
     return () => clearTimeout(t);
   }, [waiting, again]);
@@ -40,7 +42,8 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;
     const live = liveRecordFor(fair.commit);
     // My own records from the table: the seed I sent, and everything I saw while the hand was played.
-    const extra: { label: string; ok: boolean; detail: string }[] = [];
+    // A check that is waiting (on the public record) neither passes nor fails yet.
+    const extra: { label: string; ok: boolean; wait?: boolean; detail: string }[] = [];
     const problem = myId ? seedProblem(fair.commit, fair.clientSeeds, myId, seat !== undefined, live?.at ?? null) : null;
     const mine = mySeedFor(fair.commit);
     if (problem || (mine && seat !== undefined)) extra.push({ label: 'Your browser saw nothing wrong with the seeds or commitments', ok: !problem, detail: problem ?? `your seed ${mine!}` });
@@ -92,14 +95,19 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     // Left out when the hand isn't from a table here, while it is looked up, or when the record can't be reached.
     if (tableId && record && record !== 'failed') {
       const inRecord = handInRecord(hand, record);
-      if (inRecord.ok !== null) extra.push({ label: 'It is in the public record, unchanged', ok: inRecord.ok, detail: inRecord.detail });
+      const label = 'It is in the public record, unchanged';
+      // Still not there after all the tries, well past the 10 minutes it can wait: it fails.
+      if (inRecord.pending)
+        extra.push(again < TRIES ? { label, ok: false, wait: true, detail: `${inRecord.detail}. Checking again each minute.` } : { label, ok: false, detail: `${inRecord.detail}, but it still isn\u2019t there ${TRIES} minutes later` });
+      else if (inRecord.ok !== null) extra.push({ label, ok: inRecord.ok, detail: inRecord.detail });
     }
     return { check, extra, missing, proof };
-  }, [fair, hand, myId, tableId, record]);
+  }, [fair, hand, myId, tableId, record, again]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
   const checks = [...(check?.checks ?? []), ...extra];
-  const ok = !!check?.ok && extra.every((c) => c.ok);
+  const ok = !!check?.ok && extra.every((c) => c.ok || c.wait);
+  const waitingOn = extra.some((c) => c.wait);
 
   const download = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(report.proof, null, 2)], { type: 'application/json' }));
@@ -117,6 +125,10 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
           🔒 <b>Sealed.</b> The deck was locked in before the deal. It can be checked{' '}
           {fair.revealsAt ? <>half an hour after the host stops the game, or {when(fair.revealsAt)} at the latest</> : 'half an hour after the host stops the game'}, so folded hands stay private while you play.
         </p>
+      ) : ok && waitingOn ? (
+        <p>
+          ⏳ <b>So far this hand checks out.</b> It was dealt again from the seeds and all {check.matched} cards match, but a card shown after it ended isn&rsquo;t in the public record yet.
+        </p>
       ) : ok ? (
         <p className="up">
           ✓ <b>This hand checks out.</b> It was dealt again from the seeds and all {check.matched} cards match, from a deck no single person could choose.
@@ -129,8 +141,8 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
       {checks.length > 0 && (
         <ul className="fair-list">
           {checks.map((c) => (
-            <li key={c.label} className={c.ok ? 'up' : 'down'}>
-              {c.ok ? '✓' : '✗'} {c.label}
+            <li key={c.label} className={c.ok ? 'up' : c.wait ? undefined : 'down'}>
+              {c.ok ? '✓' : c.wait ? '⏳' : '✗'} {c.label}
               <div className="muted fair-detail">{c.detail}</div>
             </li>
           ))}

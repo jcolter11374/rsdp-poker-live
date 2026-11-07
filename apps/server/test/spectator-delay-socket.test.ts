@@ -9,6 +9,7 @@ import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { createApp } from '../src/app';
+import { FAIR_REVEAL_AFTER_MS, FAIR_STOP_REVEAL_MS } from '../src/runtime/table';
 import { FakeClock } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
 
@@ -345,6 +346,71 @@ describe('what a spectator on a delay can fetch', () => {
     await fan.until((v) => (v.hand?.events ?? []).some((e) => e.t === 'show'));
     expect(await shows()).toBe(1);
     expect(await exported()).toBe(1);
+  }, 30_000);
+
+  it('cannot fetch or share the hand before when the host shortens the delay, until their view shows it end', async () => {
+    const { ann, ben, fan } = await table('shorter-fetch', 40);
+    clock.advance(40_000);
+    await fan.until((v) => v.hand?.handNumber === 1);
+    await ann.call('host:settings', { patch: { spectators: { delaySeconds: 5 } } });
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    const endedAt = clock.now();
+    await ann.until((v) => v.hand?.phase === 'complete');
+    clock.advance(1_000);
+    await ann.call('host:deal');
+    await ann.until((v) => v.hand?.handNumber === 2);
+    // Well past the new five seconds, but their view still has hand 1 being played.
+    clock.advance(10_000);
+    await settle();
+    expect(fan.view().hand?.phase).not.toBe('complete');
+    await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow(/that hand isn’t available/);
+    await expect(fan.call('hand:share', { handNumber: 1 })).rejects.toThrow(/that hand isn’t available/);
+    clock.advance(endedAt + 40_000 - clock.now());
+    await fan.until((v) => v.hand?.handNumber === 1 && v.hand.phase === 'complete');
+    expect((await fan.call<{ hand: { handNumber: number } }>('table:history', { handNumber: 1 })).hand.handNumber).toBe(1);
+    await fan.call('hand:share', { handNumber: 1 });
+  }, 30_000);
+
+  it('who never played can download the full log only once their view shows the game stopped', async () => {
+    const { ann, ben, fan } = await table('full-log', 30);
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    // Once their view has a real hand played, the game is on and downloads are closed to them.
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.phase === 'complete');
+    await expect(fan.call('table:fullLog')).rejects.toThrow(/downloads open/);
+    await ann.call('host:stop');
+    await ann.until((v) => !v.started);
+    await expect(fan.call('table:fullLog')).rejects.toThrow(/downloads open/);
+    clock.advance(30_000);
+    await fan.until((v) => !v.started);
+    const full = await fan.call<{ hands: unknown[] }>('table:fullLog');
+    expect(full.hands).toHaveLength(1);
+  }, 30_000);
+
+  it('is told when a hand opens as their view stands, when the host stops and starts again within the delay', async () => {
+    const { ann, ben, fan } = await table('reveal', 30);
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    const endedAt = clock.now();
+    await ann.until((v) => v.hand?.phase === 'complete');
+    clock.advance(1_000);
+    await ann.call('host:stop');
+    const stoppedAt = clock.now();
+    clock.advance(10_000);
+    await ann.call('host:start');
+    await ann.until((v) => v.hand?.handNumber === 2);
+    type Fair = { hand: { fair: { revealsAt: number | null } } };
+    const revealsAt = async () => (await fan.call<Fair>('table:history', { handNumber: 1 })).hand.fair.revealsAt;
+    // Live, starting again before the half hour keeps the hand private for its 12 hours.
+    expect((await ann.call<Fair>('table:history', { handNumber: 1 })).hand.fair.revealsAt).toBe(endedAt + FAIR_REVEAL_AFTER_MS);
+    // Their view shows the game stopped: it opens half an hour after the stop, as it would have then.
+    clock.advance(stoppedAt + 30_000 - clock.now());
+    await fan.until((v) => !v.started);
+    expect(await revealsAt()).toBe(stoppedAt + FAIR_STOP_REVEAL_MS);
+    // Once their view reaches the start, the 12 hours.
+    clock.advance(10_000);
+    await fan.until((v) => v.hand?.handNumber === 2);
+    expect(await revealsAt()).toBe(endedAt + FAIR_REVEAL_AFTER_MS);
   }, 30_000);
 
   it('can share a hand only once it has ended in their view, as the table it was played at (item 4)', async () => {

@@ -131,6 +131,24 @@ describe('a hand and a ledger against the record', () => {
     expect(handInRecord(late, rec([entry({ table: tableRef('t1'), hand: 3, digest: at(ended) }, 8), entry({ table: tableRef('t1'), hand: 3, digest: at(shown) })])).ok).toBe(true);
     // A hand changed before it ended still fails, show or not.
     expect(handInRecord(late, rec([entry({ table: tableRef('t1'), hand: 3, digest: 'other' })])).ok).toBe(false);
+    // Once a later hand is in the record, the show would be in too: it fails.
+    expect(handInRecord(late, { entries: [entry({ table: tableRef('t1'), hand: 3, digest: at(ended) })], before: false, after: true }).ok).toBe(false);
+  });
+
+  it('waits only on the newest entry: a hand changed after an earlier show fails', () => {
+    const rec = (entries: AuditEntry[]) => ({ entries, before: false, after: false });
+    const at = (evs: unknown[]) => handDigest({ handId: 'h3', commit: 'c', serverSeed: 's', button: 0, seats: [{ seat: 0, playerId: 'p1', stack: 100 }], events: evs as never });
+    const ended = [...events, { t: 'hand-end', stacks: { 0: 100 } }];
+    const first = [...ended, { t: 'show', seat: 0, cards: ['As'] }];
+    const both = [...first, { t: 'show', seat: 0, cards: ['Kd'] }];
+    const changed = [...ended, { t: 'show', seat: 0, cards: ['Qc'] }, { t: 'show', seat: 0, cards: ['Kd'] }];
+    // Recorded as it ended and after the first show; the second show is waiting.
+    const record = rec([entry({ table: tableRef('t1'), hand: 3, digest: at(ended) }, 8), entry({ table: tableRef('t1'), hand: 3, digest: at(first) })]);
+    expect(handInRecord({ ...hand, fair: { ...hand.fair!, events: both } } as HandRecordView, record).pending).toBe(true);
+    // The first show changed: only the older entry matches a cut of it, so it is a changed hand, not a wait.
+    const wrong = handInRecord({ ...hand, fair: { ...hand.fair!, events: changed } } as HandRecordView, record);
+    expect(wrong.ok).toBe(false);
+    expect(wrong.pending).toBeUndefined();
   });
 
   it('has no fingerprint for a hand until its server seed is revealed', () => {
