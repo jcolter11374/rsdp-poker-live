@@ -105,7 +105,10 @@ export function bot(p, style = 'call') {
           if (await approve.count()) await approve.first().click({ timeout: 2000 });
         }
       } catch {}
-      await p.waitForTimeout(300);
+      // A page closed mid-run (a player who left) ends its bot, rather than throwing where nothing catches it and
+      // stopping the whole run.
+      if (p.isClosed()) break;
+      await p.waitForTimeout(300).catch(() => {});
     }
   })();
   return b;
