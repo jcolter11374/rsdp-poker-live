@@ -116,6 +116,11 @@ export interface HandView {
    * that card goes on, so each shows a face-down card there until it turns over.
    */
   comingNext?: { run: number; board: number }[];
+  /**
+   * Set only in the browser, never by the server: while an all-in runout is being shown and more of it is still to
+   * come, so the last card out so far was dealt like the rest. Only the run's very last card turns over where it waited.
+   */
+  runoutToCome?: boolean;
 }
 
 export interface RequestView {
@@ -413,6 +418,11 @@ export interface CreateTableInput {
 export interface ClientToServer {
   /** The name other players see; also used to register for tournaments. */
   'session:name': (input: { name: string }, ack: Ack) => void;
+  /**
+   * Whether this tab is on screen, sent on connecting and whenever it changes. A phone alert for "your turn" goes
+   * out only while none of the player's tabs at that table is (a tab that never says counts as on screen).
+   */
+  'page:visible': (input: { visible: boolean }) => void;
   'table:create': (input: CreateTableInput, ack: Ack<{ tableId: string }>) => void;
   'table:join': (input: { tableId: string }, ack: Ack) => void;
   'table:leave': () => void;

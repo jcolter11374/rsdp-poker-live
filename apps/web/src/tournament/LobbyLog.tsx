@@ -177,7 +177,7 @@ export function LobbyChat({ id, items, session, state }: { id: string; items: Lo
           </button>
         </p>
       )}
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
     </div>
   );
 }

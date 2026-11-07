@@ -3,7 +3,7 @@ import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engin
 import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { departures, finishedOnScreen, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
+import { departures, finishedOnScreen, heldCards, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -379,8 +379,14 @@ describe('a player knocked out (#308)', () => {
     const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null };
     expect(holdBack(after, frozen, 1).hand!.comingNext).toBeUndefined();
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
+    // When the result shows, that card turns over where it lies.
+    expect(heldCards(after.hand)).toEqual(['3s']);
+    // It does from when it lands; the cards before it were dealt, even while each was the last out so far (#412).
+    expect([0, 1, 2, 3].map((n) => heldCards(holdBack(after, frozen, n).hand))).toEqual([[], [], [], ['3s']]);
+    expect(holdBack(after, frozen, 3).hand!.runoutToCome).toBeUndefined();
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
+    expect(heldCards(finished().hand)).toEqual([]);
   });
 });
 
@@ -424,7 +430,9 @@ describe('run it twice, street by street (#372)', () => {
       it(`deals each run's own cards one street at a time, all in ${street}${boards > 1 ? ', on two boards' : ''}`, () => {
         const s = allInWith(cards, { boards });
         const view = engineView(s);
-        const steps = runoutSteps(s.events);
+        // Hold'em runs out on the board alone (stud's steps also deal to the seats).
+        const steps = runoutSteps(s.events).map((step) => step.filter((e) => e.t === 'board'));
+        expect(steps.flat()).toHaveLength(runoutSteps(s.events).flat().length);
         const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
         // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
         const shared = s.runs[0].map((board) => board.slice(0, cards));

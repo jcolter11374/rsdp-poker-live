@@ -729,8 +729,10 @@ export function estimateDetail(view: Situation, rand: Rand, tuning: EquityTuning
 /**
  * How hard a coach tip thinks. Apart from botTuning (which tests turn down):
  * a tip is worked out once for a decision, when asked, so it deals out more.
- * Equity stops by 120 ms, the random-hands comparison by 45 ms, and the ways
- * to draw by drawMs (it is all on the event loop, so it holds up every table).
+ * It is worked out on the coach's own thread (coachWorker.ts), so it never
+ * holds up a table. Equity stops by 120 ms and the random-hands comparison by
+ * 45 ms, so the answer comes back quickly; the ways to draw always get every
+ * deal, so a draw tip is the same for the same spot however busy the server is.
  */
 export const coachTuning = {
   equity: { thinkMs: 40, minSims: 80, maxSims: 1600 },
@@ -741,8 +743,6 @@ export const coachTuning = {
   drawBet: { screen: 24, final: 96 },
   /** The comparison against hands given no credit for their betting only runs when the main one took less than this. */
   vsRandomUnderMs: 60,
-  /** Weighing the ways to draw stops dealing after this long, with fewer deals and so a rougher answer. */
-  drawMs: 100,
 };
 
 /** Deals for each way to draw (screen), and for the best few (final). */
@@ -797,10 +797,8 @@ function scaleToField(equity: number, from: number, to: number) {
 /**
  * Draw games: tries every allowed set of cards to throw away with a few
  * deals (the same ones for each, so they compare fairly), then looks harder
- * at the best few with more deals and keeps the best. Given a time budget (a
- * coach tip), it stops dealing once the screen has had half of it and the
- * finalists the rest, after at least one deal each, and says how many final
- * deals it made; without one it always makes them all.
+ * at the best few with more deals and keeps the best, saying how many final
+ * deals that was.
  */
 export function bestDraw(
   view: Situation,
@@ -808,9 +806,7 @@ export function bestDraw(
   rand: Rand,
   sims: DrawSims = { screen: botTuning.drawSims, final: botTuning.drawFinalSims },
   opponents = DRAW_OPPONENTS,
-  budgetMs?: number,
 ): { discard: number[]; equity: number; finalists: { discard: number[]; equity: number }[]; deals: number } {
-  const started = performance.now();
   const cards = view.mine.length;
   const field = drawField(view, opponents);
   const seeds = (n: number) => Array.from({ length: n }, () => Math.floor(rand() * 2 ** 31));
@@ -825,17 +821,12 @@ export function bestDraw(
     }
     return simulate(field, pool, mine, field.opponents);
   };
-  // Each deal is played for every option before the next, so options always share the same deals however many fit the
-  // budget. Each option's sum still runs in deal order, so with no budget the answer is what one option at a time gave.
-  const equities = (options: number[][], deals: number[], by: number) => {
+  // Every option is played on the same deals. Each option's sum runs in deal order, so the answer is what playing one
+  // option at a time gave.
+  const equities = (options: number[][], deals: number[]) => {
     const sums = options.map(() => 0);
-    let n = 0;
-    for (const seed of deals) {
-      if (n > 0 && performance.now() >= by) break;
-      options.forEach((discard, k) => (sums[k] += dealOnce(discard, seed)));
-      n++;
-    }
-    return { shares: sums.map((sum) => sum / n), n };
+    for (const seed of deals) options.forEach((discard, k) => (sums[k] += dealOnce(discard, seed)));
+    return sums.map((sum) => sum / deals.length);
   };
   // Hard in lowball games only weighs keeping its best few cards (keepOptions). That is quicker, and played better than
   // weighing every way to draw: the more ways it compares on a few deals each, the likelier a lucky-looking bad one wins.
@@ -846,17 +837,17 @@ export function bestDraw(
     if (discard.length <= maxDiscard) options.push(discard);
   }
   const screen = seeds(sims.screen);
-  const screened = equities(options, screen, budgetMs === undefined ? Infinity : started + budgetMs / 2);
+  const screened = equities(options, screen);
   // A stable sort keeps the smaller draw (standing pat comes first) on ties.
-  const ranked = options.map((discard, k) => ({ discard, equity: screened.shares[k] })).sort((a, b) => b.equity - a.equity);
+  const ranked = options.map((discard, k) => ({ discard, equity: screened[k] })).sort((a, b) => b.equity - a.equity);
   const final = seeds(sims.final);
   const picked = ranked.slice(0, DRAW_FINALISTS).map(({ discard }) => discard);
-  const finals = equities(picked, final, budgetMs === undefined ? Infinity : started + budgetMs);
-  const finalists = picked.map((discard, k) => ({ discard, equity: finals.shares[k] }));
+  const finals = equities(picked, final);
+  const finalists = picked.map((discard, k) => ({ discard, equity: finals[k] }));
   let best = { discard: [] as number[], equity: -1 };
   for (const f of finalists) if (f.equity > best.equity + 1e-9) best = f;
   // The one it picked first, then the others it looked at closely, best first.
-  return { ...best, finalists: [best, ...finalists.filter((f) => f !== best).sort((a, b) => b.equity - a.equity)], deals: finals.n };
+  return { ...best, finalists: [best, ...finalists.filter((f) => f !== best).sort((a, b) => b.equity - a.equity)], deals: final.length };
 }
 
 // ---------------------------------------------------------------- betting
