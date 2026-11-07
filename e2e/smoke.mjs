@@ -1213,13 +1213,15 @@ try {
     // A split pot's winners' lines sit side by side where the felt has room (#417). At a stud table a side seat's seven
     // cards reach in further than that room allows for, and the middle was drawn up to 30% smaller to clear them, where
     // the lines one under the other fit at full size. They're stacked there now (#474). Four players check or call every
-    // hand to the showdown; most Stud Hi-Lo hands then split. A watcher at 1440x900 reads the middle's scale every frame.
+    // hand to the showdown; about half of Stud Hi-Lo hands then split. Watchers at 1440x900 and 1600x900 read the middle's
+    // scale every frame.
     const players = [];
     try {
       for (const name of ['Ned', 'Bea', 'Cal', 'Dee']) {
         const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
         const call = (ev, ...args) => s.timeout(10_000).emitWithAck(ev, ...args).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
         let busy = false;
+        let seeded = '';
         const p = { s, call, latest: null };
         p.act = () => {
           const v = p.latest;
@@ -1234,6 +1236,12 @@ try {
         };
         s.on('table:state', (v) => {
           p.latest = v;
+          // A seed for each next hand, as a page sends: otherwise the deal waits up to 10 s for one (FAIR_SEED_WAIT_MS).
+          const commit = v.fair?.nextCommit;
+          if (commit && commit !== seeded && v.me?.seat != null) {
+            seeded = commit;
+            s.emit('fair:seed', { commit, seed: randomBytes(16).toString('hex') }, () => {});
+          }
           p.act();
         });
         players.push(p);
@@ -1267,11 +1275,11 @@ try {
         });
       }
       await host.call('host:start');
-      // Five split pots, which take about five hands (about 20 s each); on develop before the fix about half of them drew
-      // the middle smaller on one size or the other. Seven hands without five splits would be very unlikely.
+      // Four split pots, which take about eight hands (about 11 s each, with the seeds sent); before the fix more than half
+      // of them drew the middle smaller at one size or the other, so all four passing would be about a 1 in 40 chance.
       const splits = (page) => page.evaluate(() => [...window.__splits.entries()].map(([k, s]) => [k, [...s]]));
       const deadline = Date.now() + 150_000;
-      while ((await splits(pages[0])).length < 5) {
+      while ((await splits(pages[0])).length < 4) {
         if (Date.now() > deadline) throw new Error(`only ${(await splits(pages[0])).length} split pots in 150 s`);
         await pages[0].waitForTimeout(1000);
       }
