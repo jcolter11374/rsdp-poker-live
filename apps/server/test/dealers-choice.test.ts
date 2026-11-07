@@ -1906,7 +1906,7 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     });
   }
 
-  /** `leaver` goes all in against the host and everyone else folds; true when it ends in a runout with them gone. */
+  /** `leaver` goes all in against the host and everyone else folds; true when the hand ends in a runout. */
   function allInRunout(rt: TableRuntime, leaver: string) {
     for (let i = 0; i < 50 && live(rt); i++) {
       const h = hand(rt);
@@ -1916,7 +1916,7 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
       else if (id === 'host') rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
       else rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'fold' });
     }
-    return !live(rt) && runoutMs(hand(rt).events) > 0 && !rt.state.seats.some((x) => x?.playerId === leaver);
+    return !live(rt) && runoutMs(hand(rt).events) > 0;
   }
 
   /** Runs the clock on to the deal that waits for the pick; the view's count then is the one a missed pick uses. */
@@ -1996,6 +1996,51 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     }
     expect(checked).toBe(8);
   });
+
+  for (const sw of [
+    { who: 'a leaver who sits down again in another seat', leaver: true, waiters: ['f', 'g'] },
+    { who: 'a player who stands up during it and is offered another seat', leaver: false, waiters: ['f', 'g', 'h'] },
+  ]) {
+    it(`frees the runout seat of ${sw.who} (#459)`, () => {
+      // Six at a seven-seat table, in the last hand of a No-Limit Hold'em pick; A goes all in against the host. The
+      // waiting change makes eight seats with 6-Card Omaha (seats seven) or 5-Card Omaha. During the runout A moves to
+      // seat 6, so at the deal A's old seat and the new one go to people waiting: eight, and 5-Card Omaha.
+      let checked = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const { rt, clock } = table((s) => {
+          s.table.maxSeats = 7;
+          s.seating.waitlist = true;
+          s.play.runItTwice = 'off';
+          s.game.dealersChoice!.hands = 1;
+        }, seeded(seed));
+        seat(rt, 6);
+        rt.start('host');
+        pick(rt, 'nlhe');
+        if (sw.leaver) rt.stand('a', { afterHand: true });
+        rt.updateSettings('host', {
+          table: { maxSeats: 8 },
+          game: { dealersChoice: { games: [{ gameId: 'plo6', betting: 'pot-limit' }, { gameId: 'plo5', betting: 'pot-limit' }] } },
+        });
+        if (!allInRunout(rt, 'a')) continue;
+        checked++;
+        if (sw.leaver) {
+          rt.requestSeat('a', { seat: 6, name: 'A', stack: 1000 });
+          expect(rt.seatOf('a')?.seat).toBe(6);
+        } else {
+          rt.stand('a');
+          rt.joinWaitlist('a', { name: 'A', stack: 1000 });
+          expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['a', 6]]);
+        }
+        for (const id of sw.waiters) rt.joinWaitlist(id, { name: id.toUpperCase(), stack: 1000 });
+        expect(rt.state.offers!.filter((o) => o.playerId !== 'a')).toEqual([]);
+        expect(tableView(rt, 'b', clock.now()).choice).toMatchObject({ fallback: { gameId: 'plo5' } });
+        expect(toPickClock(rt, clock)).toBe(8);
+        clock.advance(25_000);
+        expect(hand(rt).input.game.id).toBe('plo5');
+      }
+      expect(checked).toBe(8);
+    });
+  }
 
   it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
     const { rt, clock } = lastHand(['f', 'g']);
