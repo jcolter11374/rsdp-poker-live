@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '@rsdp/engine/settings';
-import { dealtSizes } from './handSizes';
+import { dealtShapes } from './handSizes';
 import { dealableGames, tableAllLimit, tableGames, tournamentAllLimit, tournamentGames } from './tableGames';
 
 describe('the games a table is laid out for (#409)', () => {
@@ -30,10 +30,14 @@ describe('the games a table is laid out for (#409)', () => {
     expect(dealableGames(['nope', 'nlhe'], 2)).toEqual(['nlhe']);
   });
   it('sizes seats for every hand any of the games deals', () => {
-    expect(dealtSizes(['nlhe'])).toEqual([2]);
-    expect(dealtSizes(['nlhe', 'plo8', 'razz', 'stud', 'stud8'])).toEqual([2, 3, 4, 5, 6, 7]);
-    expect(dealtSizes(['td27', 'badugi', 'plo4'])).toEqual([4, 5]);
-    expect(dealtSizes([])).toEqual([]);
+    expect(dealtShapes(['nlhe'])).toEqual([2]);
+    // Stud's hand is a row over the nameplate from third street (#447): its longest row stands for the shorter ones, and
+    // the four cards tucked in are Omaha's.
+    expect(dealtShapes(['nlhe', 'plo8', 'razz', 'stud', 'stud8'])).toEqual([2, 4, 7]);
+    expect(dealtShapes(['stud'])).toEqual([7]);
+    expect(dealtShapes(['td27', 'badugi', 'plo4'])).toEqual([4, 5]);
+    expect(dealtShapes(['plo5', 'plo6', 'nlhe'])).toEqual([2, 6]);
+    expect(dealtShapes([])).toEqual([]);
   });
 });
 
