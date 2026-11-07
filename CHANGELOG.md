@@ -25,17 +25,17 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.
 - On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
 - Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
+- Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
+- Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
+- Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
+- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. A narrower window doesn't show it; the action buttons still show their keys.
+- One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
 
 ## [2026.11.07.5] - 2026-11-07
 
 ### Fixed and changed
 
 - Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The "every card face up" note starts with its hand too.
-- Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
-- Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
-- Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
-- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. A narrower window doesn't show it; the action buttons still show their keys.
-- One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
 
 ## [2026.11.07.4] - 2026-11-07
 
