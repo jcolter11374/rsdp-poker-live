@@ -34,10 +34,12 @@ export const PAGE_BYTES = 4 * 1_048_576;
 /**
  * Rows whose place and size are read per fetch in the first pass: SIZE_FIRST to begin with, then as many as hold
  * about PAGE_BYTES of JSON going by the last fetch (working out a row's size means making its JSON, and PGlite does
- * that on the server's own thread), up to SIZE_FETCH.
+ * that on the server's own thread), at most twice as many as the last fetch and never more than SIZE_FETCH. The last
+ * fetch can't see bigger rows coming (small saved tables first, then busy ones), so this is what bounds how long one
+ * fetch takes: at most SIZE_FETCH of the biggest rows.
  */
 const SIZE_FIRST = 16;
-const SIZE_FETCH = 1000;
+const SIZE_FETCH = 64;
 
 export interface BackupHeader {
   backup: typeof BACKUP_FORMAT;
@@ -153,9 +155,12 @@ function parseTid(text: string): { block: number; item: number } {
 /** Lets timers and sockets run between fetches: PGlite works on the server's own thread. */
 const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-/** The first pass's next fetch: rows enough for about PAGE_BYTES of JSON at the last fetch's sizes, 1 to SIZE_FETCH. */
+/**
+ * The first pass's next fetch, after one of `rows` rows with `bytes` of JSON: rows enough for about PAGE_BYTES at
+ * those sizes, but at most twice `rows`, and 1 to SIZE_FETCH.
+ */
 export function nextSizeFetch(rows: number, bytes: number): number {
-  return Math.max(1, Math.min(SIZE_FETCH, Math.floor((rows * PAGE_BYTES) / Math.max(1, bytes))));
+  return Math.max(1, Math.min(SIZE_FETCH, 2 * rows, Math.floor((rows * PAGE_BYTES) / Math.max(1, bytes))));
 }
 
 /** How many rows each fetch takes, in order: up to PAGE rows and PAGE_BYTES of JSON, and always at least one. */

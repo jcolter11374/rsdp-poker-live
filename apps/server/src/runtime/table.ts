@@ -705,6 +705,11 @@ export class TableRuntime {
 
   private seatPlayer(r: SeatRequest) {
     const { settings } = this;
+    // Dealer's choice: a Pick chip left on an empty seat (everyone had left the table) is the first seated player's
+    // round from it, before this one sits; at an empty table, this one's. So someone who sits down in that seat later
+    // doesn't take it from a player already waiting (D33).
+    const c = this.state.choice;
+    const holder = c && !this.state.seats[c.chip] ? this.seatedFrom(c.chip) : undefined;
     this.state.seats[r.seat!] = {
       seat: r.seat!,
       playerId: r.playerId,
@@ -734,6 +739,7 @@ export class TableRuntime {
       this.state.ledger[r.playerId] = { playerId: r.playerId, name: r.name, buyIn: r.amount, cashOut: 0, ...(bot ? { bot: true as const, owner: bot.ownerName, look: bot.look } : {}) };
     }
     delete this.state.departures[r.playerId];
+    if (c && holder !== undefined) c.chip = holder?.seat ?? r.seat!;
     const bot = this.botInfo(r.playerId);
     this.log(`${bot ? `${bot.ownerName}'s practice bot ` : ''}${r.name} sat down in seat ${r.seat! + 1} with ${this.money(r.amount)}`);
     if (!bot) this.giveWayTo(r.name);
@@ -775,11 +781,12 @@ export class TableRuntime {
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
     // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
-    // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). At
-    // a new table the first hand's button goes the same way, whether or not they still had the chip. A new table that
-    // everyone leaves before its first hand starts afresh: the next deal draws a new first chooser.
+    // pick in their place anyway, so whoever sits down there later, or a bot the host adds, doesn't take it (D33). With
+    // nobody left it waits for the first to sit down (seatPlayer). At a new table the first hand's button goes the same
+    // way, whether or not they still had the chip. A new table that everyone leaves before its first hand starts
+    // afresh: the next deal draws a new first chooser, with a fresh clock as soon as two are seated.
     const c = this.state.choice;
-    if (c && c.firstButton !== null && !this.state.seats.some(Boolean)) this.state.choice = undefined;
+    if (c && c.firstButton !== null && !this.state.seats.some(Boolean)) this.freshChoice();
     else if (c && (c.chip === seat.seat || c.firstButton === seat.seat)) {
       const next = this.seatedFrom(seat.seat);
       if (c.firstButton === seat.seat) c.firstButton = next?.seat ?? null;
@@ -1584,6 +1591,22 @@ export class TableRuntime {
       if (seat) return seat;
     }
     return null;
+  }
+
+  /**
+   * Dealer's choice starts afresh at a new table everyone has left (D33). The table may have been waiting for the first
+   * pick, its next deal due when that clock ran out (or kept for when a pause ends): it stops waiting, so the deal tried
+   * next, which finds nobody to deal to, clears it, and the next sit-down deals at once, drawing a new first chooser
+   * with a fresh clock.
+   */
+  private freshChoice() {
+    const s = this.state;
+    s.choice = undefined;
+    if (s.nextHandAt !== null) s.nextHandAt = this.clock.now();
+    if (s.pausedLeft) {
+      if (s.pausedLeft.nextHand !== null) s.pausedLeft.nextHand = 0;
+      s.pausedLeft.pick = null;
+    }
   }
 
   /**

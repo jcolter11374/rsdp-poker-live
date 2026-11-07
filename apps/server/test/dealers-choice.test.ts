@@ -1076,13 +1076,74 @@ describe("Dealer's choice: the first hand's button and a holder who is moved (th
       rt.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
       rt.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
       rt.requestSeat('e', { seat: 7, name: 'E', stack: 1000 });
-      clock.advance(30_000);
+      // A new first chooser at once, with a whole clock: the table doesn't wait out the old one (fifth review).
+      clock.advance(1);
       const first = chooser(rt);
+      expect(rt.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+      expect(tableView(rt, first.playerId, clock.now()).choice!.open).toBe(true);
       pick(rt, 'nlhe');
       clock.advance(10_000);
       expect(live(rt)).toBe(true);
       expect(hand(rt).input.button).toBe(first.seat);
     }
+  });
+
+  it('starts afresh when everyone leaves a new table while it is paused, with a fresh clock once the host resumes (fifth review)', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      clock.advance(5_000);
+      rt.pause('host', true);
+      pick(rt, 'razz');
+      rt.stand('a');
+      rt.stand('b');
+      expect(rt.state.choice).toBeUndefined();
+      rt.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      rt.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      rt.pause('host', false);
+      clock.advance(1);
+      // The leavers' pick is gone with them, and the new first chooser picks straight away, with a whole clock.
+      expect(live(rt)).toBe(false);
+      const first = chooser(rt);
+      expect(rt.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+      pick(rt, 'nlhe');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      expect(hand(rt).input.game.id).toBe('nlhe');
+      expect(hand(rt).input.button).toBe(first.seat);
+    }
+  });
+
+  it('gives the chip of a table everyone has left to the first player who sits down, wherever they sit (fifth review)', () => {
+    let checked = 0;
+    for (let n = 1; n <= 8; n++) {
+      for (const order of [['a', 'b', 'c'], ['c', 'b', 'a'], ['b', 'a', 'c']]) {
+        const { rt, clock } = table(() => {}, seeded(n));
+        rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+        rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+        rt.requestSeat('c', { seat: 7, name: 'C', stack: 1000 });
+        rt.start('host');
+        pick(rt, 'nlhe');
+        clock.advance(10_000);
+        checkDown(rt);
+        clock.advance(1);
+        for (const id of order) rt.stand(id);
+        expect(rt.state.seats.some(Boolean)).toBe(false);
+        const left = rt.state.choice!.chip;
+        // D sits down first, away from it; E then sits in the seat it was left on, and a bot next to it.
+        const away = (left + 4) % 9;
+        rt.requestSeat('d', { seat: away, name: 'D', stack: 1000 });
+        expect(chooser(rt).playerId).toBe('d');
+        rt.requestSeat('e', { seat: left, name: 'E', stack: 1000 });
+        expect(chooser(rt).playerId).toBe('d');
+        rt.addBot('host', { seat: (left + 1) % 9 });
+        expect(chooser(rt).playerId).toBe('d');
+        checked++;
+      }
+    }
+    expect(checked).toBe(24);
   });
 
   it("moves a first button left on an empty seat by older code to the next player, so a newcomer there doesn't get it (fourth review)", () => {

@@ -164,9 +164,30 @@ describe('backups', { timeout: 30_000 }, () => {
     expect(nextSizeFetch(16, 16 * 1.3 * MB)).toBe(3);
     expect(nextSizeFetch(3, 3 * 1.3 * MB)).toBe(3);
     expect(nextSizeFetch(1, 10 * MB)).toBe(1);
-    // Small rows go up to the most a fetch takes.
-    expect(nextSizeFetch(16, 16 * 2000)).toBe(1000);
-    expect(nextSizeFetch(1000, 0)).toBe(1000);
+    // Small rows: twice as many each time, up to the most a fetch takes, since the next rows may be far bigger.
+    expect(nextSizeFetch(16, 16 * 2000)).toBe(32);
+    expect(nextSizeFetch(32, 32 * 2000)).toBe(64);
+    expect(nextSizeFetch(64, 64 * 2000)).toBe(64);
+    expect(nextSizeFetch(64, 0)).toBe(64);
+  });
+
+  it("measures big rows after small ones a few at a time too, in writeBackup's own first pass", { timeout: 60_000 }, async () => {
+    // 40 small suggestions first, then 60 of about 600 KB. stopped() is asked once after each full fetch, so it counts
+    // them: 16 and 32 rows, then fewer and fewer as the big rows are measured (27, then 6 at a time) make seven.
+    // Sizing every fetch after the first by the small rows alone would make one, and only doubling would make two.
+    await resetTestDb(db);
+    await db.execute(sql`insert into suggestions (name, title) select 'n' || g, 't' || g from generate_series(1, 40) g`);
+    await db.execute(sql`insert into suggestions (name, title) select 'big' || g, repeat(md5(g::text), 19000) from generate_series(1, 60) g`);
+    let asked = 0;
+    const counting = () => {
+      asked++;
+      return false;
+    };
+    const lines: string[] = [];
+    const summary = await writeBackup(db, (l) => void lines.push(l), new Date(), counting);
+    expect(summary.rows.suggestions).toBe(100);
+    // Every other table is empty, so ends on its first fetch without being asked.
+    expect(asked).toBe(7);
   });
 
   it('stops in the first pass when the server is shutting down', async () => {

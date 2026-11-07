@@ -138,7 +138,8 @@ export function heldRotation(view: TableView, before: Frozen): TableView['rotati
  * Dealer's choice during the reveal. The PICK tag stays where it was: once the server has the result it passes over
  * anyone who busted, so moving it would give the result away. A chooser in the all-in picks once the cards are out:
  * a busted chooser would be refused, and a pick in their place shows who busted, so their pick waits for the result
- * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual.
+ * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual, but a
+ * pick made in their place (they left or sat out) waits too: the server may have passed over someone who busted.
  *
  * The seat count, the seat limit and closed seats are held the same way (D33): a busted bot leaving lowers the count
  * and can reopen seats, and a pick made in place of a busted chooser can change the limit. They are worked out from
@@ -161,19 +162,28 @@ export function heldChoice(view: TableView, before: Frozen): TableView['choice']
   // Players leaving show only with the result. Newcomers show at once.
   const count = Math.max(was.count, live.count);
   // A pick that has come in since, for a chooser in the all-in, can only be someone picking in their place (or a
-  // missed pick): it waits for the result, and so does the limit it sets.
-  const held = inHand && (one ? !!live.next : !samePick(live.next, was.next));
+  // missed pick): it waits for the result, and so does the limit it sets. For a chooser not in it, a pick shows only
+  // if they made it: anyone else's was made in their place (they left or sat out), and the server may have passed
+  // over someone who busted to get to them.
+  const fresh = one ? !!live.next : !samePick(live.next, was.next);
+  const theirs = !!live.next && chip !== null && live.next.by === before.seats[chip]?.name;
+  const held = inHand ? fresh : fresh && !!live.next && !theirs;
   const cap = !held ? live.cap : one ? capOf(live.current) : was.cap;
   // Closed: the held count fills the limit, or it was closed before the result for this same limit (a seat request,
   // which only the host sees, can close seats too), or the live table is closed for some other reason than the result:
   // the result only ever opens seats, unless a pick that waits closes them.
-  const closed = (cap !== null && count >= cap) || (!one && was.closed && cap === was.cap) || (!held && live.closed);
+  const closed = (cap !== null && count >= cap) || (was.closed && cap === was.cap) || (!held && live.closed);
+  if (held) {
+    // The rest of the pick as it was before the pick came in. In one update, the deal may have begun a pick: that
+    // much shows, as it doesn't depend on the result.
+    if (one) return { ...live, chip, count, cap, closed, open: false, next: null };
+    return { ...was, count, cap, closed, open: false };
+  }
   if (!inHand) {
     // Their panel stays open only while the tag is still theirs (not, say, for someone who sat down in their seat).
     return { ...live, chip, count, cap, closed, open: live.open && live.chip === chip, ...fallbackFor(view, live, was, count) };
   }
-  if (one) return { ...live, chip, count, cap, closed, open: false, ...(held ? { next: null } : {}) };
-  // The rest of the pick as it was too, unless a pick that can show has come in since.
+  if (one) return { ...live, chip, count, cap, closed, open: false };
   return { ...was, count, cap, closed, open: false };
 }
 
