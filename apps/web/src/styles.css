@@ -86,6 +86,26 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   flex-wrap: wrap;
 }
 .topbar .stakes { flex: 1; color: var(--muted); }
+/* On a desktop the line stays on one line, so the bar keeps its height whatever comes and goes in it (#408). When it
+   doesn't fit, the table's name gives way first, then the rest; each ends in "…" when cut. */
+.table-page:not(.portrait) .topbar .stakes:not(.game-line) { display: flex; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; container-type: inline-size; }
+.table-page:not(.portrait) .topbar .stakes-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.table-page:not(.portrait) .topbar .stakes-more { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+/* Too narrow for even "…": no line, rather than a stray dot. */
+@container (max-width: 18px) { .topbar .stakes-name, .topbar .stakes-more { visibility: hidden; } }
+/* Narrow desktop windows: a little tighter, so the Pick button fits on the bar's one row too (#408). */
+@media (max-width: 859px) {
+  .table-page:not(.portrait) .topbar { gap: 6px; }
+  .table-page:not(.portrait) .topbar > button:not(.units-toggle),
+  .table-page:not(.portrait) .topbar > .table-menu > button { padding-inline: 9px; }
+}
+@media (max-width: 799px) {
+  .table-page:not(.portrait) .topbar { gap: 4px; padding-inline: 8px; }
+  .table-page:not(.portrait) .topbar > button:not(.units-toggle),
+  .table-page:not(.portrait) .topbar > .table-menu > button { padding-inline: 6px; }
+  .table-page:not(.portrait) .topbar .units-toggle span { padding-inline: 6px; }
+  .table-page:not(.portrait) .topbar .logo.small { font-size: 1.05rem; }
+}
 .paused { color: var(--accent-2); }
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
 /* Below about 1180px wide the side column would squeeze the table, so it moves under it. */
