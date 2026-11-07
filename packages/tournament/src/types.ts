@@ -287,6 +287,22 @@ export interface TournamentState {
   invites?: InviteCode[];
   /** Check-in progress: when the first group opened, and how many groups are open. */
   checkIn?: { openedAt: number | null; groupsOpen: number };
+  /**
+   * What the host set for the lobby chat. Set by the server, never by the director, and still changed once the event is
+   * over, since its lobby chat stays open. Missing: nothing was ever set (or the state was saved before this was kept).
+   */
+  lobbyChat?: LobbyChatRules;
+}
+
+/** The host's switch for the lobby chat, and the people they muted in it. */
+export interface LobbyChatRules {
+  /** Nobody can send to the lobby chat while it is off. */
+  off?: boolean;
+  /**
+   * Players who can read the lobby chat but not send to it. A browser is sent the whole list only when its player may
+   * unmute them (viewFor); anyone else learns only whether they are on it.
+   */
+  muted?: PlayerId[];
 }
 
 // ---------------------------------------------------------------------------
