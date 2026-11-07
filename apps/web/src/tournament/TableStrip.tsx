@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { playerOptions, standings, summarize, tableAddress, type Command } from '@rsdp/tournament';
 import { tournamentClient } from './client';
 import { blinds, chips, countdown, ordinal } from './format';
-import { followMissedMove, navigate, useNow, useSession, useTournament } from './hooks';
+import { followMissedMove, navigate, useHeld, useNow, useSession, useTournament } from './hooks';
 
 /**
  * The tournament above a tournament table: level, blinds and clock, how many
@@ -28,9 +28,7 @@ export function TableStrip({
 }) {
   const { state: latest, skew } = useTournament(tournamentId);
   // While an all-in runout is dealt here the strip stays as it was: places, rebuy offers and moves are the result.
-  const kept = useRef(latest);
-  if (!holding) kept.current = latest;
-  const state = holding ? kept.current : latest;
+  const state = useHeld(latest, holding);
   const session = useSession();
   const now = useNow(500) + skew;
   const [error, setError] = useState('');

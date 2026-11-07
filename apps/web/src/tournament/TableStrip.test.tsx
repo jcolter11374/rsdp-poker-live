@@ -29,6 +29,7 @@ vi.mock('./hooks', () => ({
   useSession: () => ({ playerId: 'p1' }),
   useNow: () => 0,
   followMissedMove: () => false,
+  useHeld: <T,>(value: T) => value,
   navigate: vi.fn(),
 }));
 vi.mock('./client', () => ({ tournamentClient: () => ({ send }) }));
