@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HandRecordView, TableView } from '@rsdp/engine/wire';
 import { FairCheck } from './FairCheck';
 import { gameLabel, stakesLabel, type Fmt } from '../format';
@@ -9,6 +9,7 @@ import { usePortrait } from '../layout';
 import { explainNote, NOTES_FOOTNOTE } from '../coach';
 import { usePrefs } from '../prefs';
 import { reportError } from '../reportError';
+import { useDialogFocus } from './dialogFocus';
 
 const SPEEDS = [1, 2, 4];
 
@@ -23,15 +24,22 @@ class ReplayBoundary extends Component<{ onClose: () => void; children: ReactNod
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return (
-      <div className="replayer-backdrop" onClick={this.props.onClose}>
-        <div className="replayer" role="dialog" aria-label="Hand replay">
-          <p>This hand can’t be replayed.</p>
-          <button onClick={this.props.onClose}>Close</button>
-        </div>
-      </div>
-    );
+    return <ReplayFailed onClose={this.props.onClose} />;
   }
+}
+
+/** In place of a replay that broke: a dialog like any other, so focus moves in and goes back when it closes. */
+function ReplayFailed({ onClose }: { onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
+  return (
+    <div className="replayer-backdrop" onClick={onClose}>
+      <div ref={box} className="replayer" role="dialog" aria-modal="true" aria-label="Hand replay" tabIndex={-1}>
+        <p>This hand can’t be replayed.</p>
+        <button onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
 }
 
 export function Replayer(props: Parameters<typeof ReplayerView>[0]) {
@@ -90,6 +98,8 @@ function ReplayerView({
   const last = frames.length - 1;
   const reasons = usePrefs().botReasons && !!hand?.botNotes?.length;
   const whyNow = reasons && showWhy;
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
 
   const goTo = (i: number) => {
     setIndex(i);
@@ -143,7 +153,7 @@ function ReplayerView({
 
   return (
     <div className="replayer-backdrop">
-      <div className={`replayer ${compact ? 'compact' : ''}`} role="dialog" aria-label="Hand replay">
+      <div ref={box} className={`replayer ${compact ? 'compact' : ''}`} role="dialog" aria-modal="true" aria-label="Hand replay" tabIndex={-1}>
         <div className="replayer-head">
           <div>
             <b>Hand #{hand.handNumber}</b> · {gameLabel(view.hand!.gameId, hand.betting)} {stakesLabel(hand.stakes, family, hand.betting, fmt)}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TournamentListing } from '@rsdp/tournament';
-import { START_LEAD_MS, startAlertsDue, startKey } from './startAlerts';
+import { eventOnPage, ON_SCREEN_FOR_MS, onScreenNow, START_LEAD_MS, startAlertsDue, startKey } from './startAlerts';
 
 const NOW = 1_000_000_000;
 const MIN = 60_000;
@@ -38,5 +38,22 @@ describe('starting soon alerts', () => {
     expect(startAlertsDue([t], NOW, new Set([startKey(t)]))).toHaveLength(0);
     const moved = listing({ startAt: NOW + 4 * MIN });
     expect(startAlertsDue([moved], NOW, new Set([startKey(t)]))).toHaveLength(1);
+  });
+
+  it('waits while its lobby or one of its tables is on screen in some tab, and still comes once the player looks away', () => {
+    const t = listing();
+    expect(startAlertsDue([t], NOW, new Set(), new Set(['x']))).toHaveLength(0);
+    expect(startAlertsDue([t], NOW, new Set(), new Set(['other']))).toHaveLength(1);
+    expect(startAlertsDue([t], NOW + 15_000, new Set(), new Set())).toHaveLength(1);
+    // Which event a page shows: its lobby, or a table of it (the lobby moves the player there at the seat draw).
+    const of = (table: string) => (table.startsWith('x-') ? 'x' : null);
+    expect(eventOnPage('/tn/x', of)).toBe('x');
+    expect(eventOnPage('/t/x-t1', of)).toBe('x');
+    expect(eventOnPage('/t/cash1', of)).toBeNull();
+    expect(eventOnPage('/tn/new', of)).toBeNull();
+    expect(eventOnPage('/', of)).toBeNull();
+    // Another tab's note counts for two checks, then lapses once that tab is no longer showing it. A tab's own notes
+    // don't count for it: it knows whether it's on screen.
+    expect([...onScreenNow({ 'a|x': NOW - 20_000, 'a|y': NOW - ON_SCREEN_FOR_MS, 'me|z': NOW }, NOW, 'me')]).toEqual(['x']);
   });
 });
