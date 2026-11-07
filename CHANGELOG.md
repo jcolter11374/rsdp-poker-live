@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.4] - 2026-11-07
+
+### Fixed and changed
+
+- Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over.
+
 ## [2026.11.07.3] - 2026-11-07
 
 _Hands left in each game_
@@ -699,6 +705,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07

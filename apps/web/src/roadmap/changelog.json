@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.4",
+      "date": "2026-11-07",
+      "fixes": [
+        "Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over."
+      ]
+    },
+    {
       "id": "2026.11.07.3",
       "date": "2026-11-07",
       "fixes": [

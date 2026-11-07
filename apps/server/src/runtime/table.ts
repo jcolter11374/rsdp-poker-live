@@ -1444,6 +1444,11 @@ export class TableRuntime {
     if (JSON.stringify(before.game.rotation) !== JSON.stringify(s.settings.game.rotation)) {
       s.rotation = { step: 0, hands: 0, orbits: 0, anchor: null };
     }
+    // Dealer's choice turned off: a pick made for the next game isn't dealt (#423), unless the game dealt now is it.
+    if (choiceMenu(before) && !choiceMenu(s.settings)) {
+      const rot = s.settings.game.rotation;
+      this.choice.ended(rot.enabled && rot.steps.length ? rot.steps[s.rotation.step % rot.steps.length] : s.settings.game);
+    }
   }
 
   /**
