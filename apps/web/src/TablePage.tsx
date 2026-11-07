@@ -159,6 +159,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
+  // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
+  const [noticeRoom, setNoticeRoom] = useState(true);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
@@ -528,9 +530,10 @@ export function TablePage({ tableId }: { tableId: string }) {
         }
       : null;
   // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
-  // bottom seat), the middle is full: there the note goes under the table, with your buttons, where the area holds its
-  // height (Dock), so it still takes nothing from the table.
-  const noticeUnder = !!startNotice && portrait && !!view.hand;
+  // bottom seat), the middle is full, and on a small phone table it is too small for the note (Table's noticeRoom): there
+  // the note goes under the table, with your buttons, where the area holds its height (Dock), so it still takes nothing
+  // from the table.
+  const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -708,6 +711,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
             notice={noticeUnder ? null : startNotice}
+            onNoticeRoom={setNoticeRoom}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
               stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the

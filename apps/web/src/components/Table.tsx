@@ -351,6 +351,7 @@ export function Table({
   fill = false,
   wide = false,
   notice = null,
+  onNoticeRoom,
 }: {
   view: TableView;
   /** Server clock minus ours. */
@@ -372,6 +373,8 @@ export function Table({
    * no room from the felt, so the seats don't move when it goes. With `onClick` it opens what it points to.
    */
   notice?: { text: string; onClick?: () => void } | null;
+  /** Whether the middle of the table has room for `notice` (false on a small phone table: see below). */
+  onNoticeRoom?: (room: boolean) => void;
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
@@ -379,6 +382,14 @@ export function Table({
   const reach = useSeatReach(felt);
   const handFit = useHandFit(felt, compact);
   const room = useRoom(felt, fill && !compact);
+  // A small phone table (a 320px-wide phone, an iPhone SE in Safari standing up or on its side) has no room for the note
+  // between the game's name and the seats at the bottom, so the note would sit on their nameplates: there the page puts
+  // it under the table instead (#383). Measured on a local copy (the felt's inner size): standing up, the note overlapped
+  // the seats on felts 156-171px tall and fit from 203px; on its side (a wide felt), it overlapped at 97px and fit from
+  // 137px. Taking the note out of the middle doesn't change the felt's size for a player (the area under the table
+  // holds its height), and can only make it smaller for someone watching, so this settles at once.
+  const noticeRoom = !compact || !size.w || size.h >= (size.w < 400 ? 190 : 120);
+  useLayoutEffect(() => onNoticeRoom?.(noticeRoom), [noticeRoom, onNoticeRoom]);
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
   const offset = view.me.seat ?? 0;
