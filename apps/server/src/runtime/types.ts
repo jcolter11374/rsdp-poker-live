@@ -61,6 +61,12 @@ export interface SeatState {
   pendingChips: number;
   /** Host set the stack to this before the next hand. */
   pendingStack: number | null;
+  /**
+   * After a hand with an all-in runout this seat was dealt into: its stack and queued chips from before the result,
+   * plus chips added since. While browsers still deal the runout out, Add chips checks the most a player may have
+   * against this, so the answer doesn't give their result away (#463). Replaced when the next hand ends.
+   */
+  heldStack?: number;
 }
 
 export interface SeatRequest {

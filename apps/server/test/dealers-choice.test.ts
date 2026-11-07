@@ -390,9 +390,10 @@ describe("Dealer's choice", () => {
     expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['i', 'j']);
   });
 
-  it('counts a player who left in an all-in runout once, even if they join the waitlist before it has been dealt out', () => {
+  it('counts a player who left in an all-in runout until it has been dealt out, and only once', () => {
     // A leaves after this hand and goes all in; the host calls and B folds. Until browsers have dealt out the runout,
-    // A still counts as sitting down (#437). A joining the waitlist then, and being offered seat 4, doesn't count A twice.
+    // A still counts as sitting down (#437), and can't join the waitlist yet (#463). Joining once it has been shown, and
+    // being offered seat 4, counts A once.
     let checked = 0;
     for (let seed = 1; seed <= 6; seed++) {
       const { rt, clock } = table((s) => {
@@ -415,10 +416,13 @@ describe("Dealer's choice", () => {
       const reveal = runoutMs(hand(rt).events);
       if (!reveal || rt.state.seats.some((x) => x?.playerId === 'a')) continue;
       expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
-      rt.joinWaitlist('a', { name: 'A', stack: 1000 });
-      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['a']);
+      expect(() => rt.joinWaitlist('a', { name: 'A', stack: 1000 })).toThrow('the hand you left is still being dealt out');
+      expect(rt.state.offers).toEqual([]);
       expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
       clock.advance(reveal);
+      expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(2);
+      rt.joinWaitlist('a', { name: 'A', stack: 1000 });
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['a']);
       expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
       checked++;
     }
@@ -1101,6 +1105,46 @@ describe("Dealer's choice: the host can't move the pick (second review)", () => 
       kept++;
     }
     expect(kept).toBeGreaterThan(0);
+  });
+
+  it('passes on the chip of a bot that busts in an all-in runout as the hand ends, so a newcomer during the runout never takes it (#463)', () => {
+    // No rebuys: the host calls a bot on 3 chips, with the chip, all in, and A folds. The bot stays seated until the
+    // runout has been dealt out, but its chip goes on to A at once, as it would if the bot had left. D sitting down
+    // between them during the runout doesn't take it.
+    let checked = 0;
+    for (let n = 1; n <= 80 && checked < 4; n++) {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 6;
+        s.seating.allowRebuys = false;
+        s.play.runItTwice = 'off';
+      }, seeded(n));
+      rt.requestSeat('host', { seat: 0, name: 'HOST', stack: 1000 });
+      const bot = rt.addBot('host', { seat: 2, stack: 3 });
+      rt.requestSeat('a', { seat: 4, name: 'A', stack: 1000 });
+      rt.start('host');
+      pick(rt, 'nlhe');
+      rt.state.choice!.chip = 2;
+      for (let i = 0; i < 50 && live(rt); i++) {
+        const h = hand(rt);
+        if (h.toAct === null) break;
+        const id = toActId(rt);
+        const legal = engine.legalActions(h, h.toAct)!;
+        if (id === 'a') rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'fold' });
+        else if (id === 'host') rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
+        else clock.advance(500);
+      }
+      const reveal = live(rt) ? 0 : runoutMs(hand(rt).events);
+      if (!reveal || hand(rt).seats.find((hs) => hs.seat === 2)?.stack !== 0) continue;
+      expect(rt.seatOf(bot)).not.toBeNull();
+      expect(rt.state.choice!.chip).toBe(4);
+      rt.requestSeat('d', { seat: 3, name: 'D', stack: 1000 });
+      clock.advance(reveal);
+      expect(rt.seatOf(bot)).toBeNull();
+      expect(rt.state.choice!.chip).toBe(4);
+      expect(chooser(rt).playerId).toBe('a');
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   it('passes the chip on when its holder leaves, so a bot the host adds in their seat, or a newcomer, never takes it', () => {
