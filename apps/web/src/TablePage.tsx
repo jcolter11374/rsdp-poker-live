@@ -41,6 +41,7 @@ import { CashGameLine } from './components/table/GameLine';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
+import { pageTitle, usePageTitle } from './pageTitle';
 
 /**
  * Every turn alert at a table starts with this, the page's and a push's alike (apps/server/src/app.ts, watchTurn): the
@@ -54,7 +55,17 @@ export function useTableEffects(view: TableView | null, skew: number, preQueued:
   useEffect(() => {
     const before = prev.current;
     prev.current = view;
-    if (!view || !before) return;
+    if (!view) return;
+    const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+    // The server's phone alert for this turn carries the same tag (apps/server/src/app.ts, watchTurn), so a phone shows one.
+    const turnAlert = () =>
+      view.hand && notify('Your turn', view.name, { tag: `${turnAlerts(view.id)}${view.hand.handNumber}:${view.hand.events.length}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
+    // The first view says nothing (arriving mid-hand isn't news), but a table that opens on your turn in a tab in the
+    // background (following your seat from the lobby at the start) still calls you.
+    if (!before) {
+      if (myTurn && !preQueued.current) turnAlert();
+      return;
+    }
     if (newChat(before.chat, view.chat).some((m) => m.playerId && m.playerId !== view.me.playerId)) sounds.chat();
     if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     // Dealer's choice: the table waiting for my pick calls me like a turn to act.
@@ -83,14 +94,12 @@ export function useTableEffects(view: TableView | null, skew: number, preQueued:
     const won = hand.phase === 'complete' && before.hand?.phase !== 'complete';
     if (won && view.me.seat !== null && hand.awards.some((a) => a.seat === view.me.seat)) sounds.win();
     else if (won && hand.awards.length) sounds.pot();
-    const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
     const wasMyTurn = !!before.legal || !!before.canDraw || before.canVoteRunItTwice;
     // A queued move (check/fold, call any) answers for you, so there is nothing to call you for.
     if (myTurn && !wasMyTurn && !preQueued.current) {
       sounds.turn();
       buzz();
-      // The server's phone alert for this turn carries the same tag (apps/server/src/app.ts, watchTurn), so a phone shows one.
-      notify('Your turn', view.name, { tag: `${turnAlerts(view.id)}${hand.handNumber}:${hand.events.length}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
+      turnAlert();
     }
   }, [view]);
 
@@ -113,18 +122,17 @@ export function useTableEffects(view: TableView | null, skew: number, preQueued:
   const tableId = view?.id;
   useEffect(() => {
     if (!myTurn) return;
-    const original = document.title;
     badgeFavicon(true);
     let on = false;
     const t = setInterval(() => {
       if (document.hidden) {
         on = !on;
-        document.title = on ? '▶ Your turn!' : original;
-      } else document.title = original;
+        document.title = on ? '▶ Your turn!' : pageTitle();
+      } else document.title = pageTitle();
     }, 800);
     return () => {
       clearInterval(t);
-      document.title = original;
+      document.title = pageTitle();
       badgeFavicon(false);
       // Acted or picked (here or in another tab), or the time ran out: this table's alert is out of date.
       if (tableId) closeNotifications(turnAlerts(tableId));
@@ -143,8 +151,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [live, setView] = useState<TableView | null>(null);
   // An all-in runout is dealt a street at a time; everything below sees the table as it is shown. A player knocked
   // out stays in their seat until the next deal. `runningOut`: a runout is still being dealt.
-  const { view, runningOut } = useShownTable(live);
   const [skew, setSkew] = useState(0);
+  const { view, runningOut } = useShownTable(live, skew);
+  usePageTitle(view?.name);
   const [error, setError] = useState('');
   /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
   const [seatError, setSeatError] = useState('');

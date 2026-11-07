@@ -8,6 +8,7 @@ import '../components/table/extras.css';
 import { PracticeGraph, ProfitGraph } from './ProfitGraph';
 import './account.css';
 import { SiteHeader } from '../components/SiteHeader';
+import { usePageTitle } from '../pageTitle';
 
 /** The session the server sent, or null before it arrives. */
 export function useSession() {
@@ -15,9 +16,7 @@ export function useSession() {
 }
 
 export function Shell({ title, children, narrow = false }: { title: string; children: ReactNode; /** Sign-in style pages: a short centred column. */ narrow?: boolean }) {
-  useEffect(() => {
-    document.title = `${title} · RSDP Live!`;
-  }, [title]);
+  usePageTitle(title);
   return (
     <div className="site-page">
       <SiteHeader />

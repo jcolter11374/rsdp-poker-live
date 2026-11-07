@@ -102,6 +102,17 @@ describe('what the table says', () => {
     expect(announcements(off, on, fmt)).toEqual(['The game is back on.']);
   });
 
+  it('tells whoever can approve them about each new ask to sit or rebuy, and nobody else', () => {
+    const ask = (id: string, over: object = {}) => ({ id, kind: 'seat', playerId: 'p-' + id, name: 'Gil', seat: 4, amount: 200, at: 1, ...over });
+    const at = (requests: object[], powers: string[] = ['approve']) => tableView({ hand: null, view: { powers, requests } as Partial<TableView> });
+    expect(announcements(at([]), at([ask('r1')]), fmt)).toEqual(['Gil asks to sit down']);
+    // Already said; a second ask is new.
+    expect(announcements(at([ask('r1')]), at([ask('r1'), ask('r2', { kind: 'rebuy', name: 'Hal' })]), fmt)).toEqual([`Hal asks for a ${fmt(200)} rebuy`]);
+    expect(announcements(at([]), at([ask('r3', { name: 'Bot 3', bot: { ownerId: 'x', ownerName: 'Bo', level: 'easy' } })]), fmt)).toEqual(["Bot 3, Bo's bot, asks to sit down"]);
+    // A player without the power sees only their own ask, which they made.
+    expect(announcements(at([], []), at([ask('r1')], []), fmt)).toEqual([]);
+  });
+
   it("says who is picking the next game once the table waits for it (Dealer's choice), and once only", () => {
     const choice = (chip: number | null, deadline: number | null) => ({ chip, current: null, handsLeft: 0, next: null, open: deadline !== null, deadline, count: 3, cap: null, closed: false, defaultIndex: 0, canKeep: true });
     const at = (chip: number | null, deadline: number | null, over: Partial<TableView> = {}) => tableView({ hand: { phase: 'complete' }, view: { choice: choice(chip, deadline), ...over } });
@@ -211,5 +222,10 @@ describe('a stud all-in runout read aloud (#216)', () => {
     }
     expect(said.slice(0, -1).flat().filter((l) => / wins /.test(l))).toEqual([]);
     expect(said.at(-1)!.some((l) => / wins /.test(l))).toBe(true);
+    // Each street is named before its cards, so a listener knows which street they belong to.
+    for (let k = 1; k < steps.length; k++) {
+      expect(said[k + 1][0]).toMatch(/Street|River/);
+      expect(said[k + 1].slice(1).every((l) => / (gets|dealt) /.test(l))).toBe(true);
+    }
   });
 });

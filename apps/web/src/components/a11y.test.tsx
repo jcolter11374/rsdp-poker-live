@@ -9,6 +9,7 @@ import { Modal } from './SeatDialog';
 import { Sheet } from './Sheet';
 import { Table } from './Table';
 import { TableAnnouncer } from './table/Announcer';
+import { TableMenu } from './table/TableMenu';
 import { CHECKED_TO_ME, seatView, tableView } from '../test-table';
 
 // The table's parts that talk to the server load with the table; nothing is ever sent here.
@@ -134,6 +135,33 @@ describe('dialogs and the keyboard', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Rules' }));
     // The button that opened it went with the sheet: focus goes where the sheet would have put it back.
     fireEvent.click(screen.getByText('Done'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(menu);
+  });
+
+  it("gives focus back to a computer's Menu button when a dialog opened from its list closes", () => {
+    function Page() {
+      const [rules, setRules] = useState(false);
+      return (
+        <>
+          <TableMenu items={[{ label: 'How to play', onClick: () => setRules(true) }]} />
+          {rules && (
+            <Modal title="Rules" onClose={() => setRules(false)}>
+              <button onClick={() => setRules(false)}>Done</button>
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<Page />);
+    const menu = screen.getByRole('button', { name: /Menu/ });
+    menu.focus();
+    fireEvent.click(menu);
+    const item = screen.getByText('How to play').closest('button')!;
+    item.focus();
+    fireEvent.click(item);
+    expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Rules' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(menu);
   });

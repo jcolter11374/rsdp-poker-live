@@ -193,12 +193,19 @@ function seatsDuring(view: TableView, before: Frozen, shownEvents: readonly Hand
     const was = before.seats[i] ?? null;
     const start = dealt.find((d) => d.seat === i);
     // Someone dealt in who has since gone (left after the hand, knocked out) is still at the table until the result.
+    // In a hand dealt and run out in one update (the blinds put a short stack all in), the table before is the last
+    // hand's: their seat there has that hand's cards and fold, so it takes this hand's cards as dealt instead.
     const gone = !!start && live?.playerId !== start.playerId && was?.playerId === start.playerId;
-    const s = gone ? { ...was!, cards: withShown(was!.cards, events, i) } : live;
+    const fresh = before.sameHand === false;
+    const s = gone
+      ? fresh
+        ? { ...was!, cards: withShown(dealtTo(events, i), events, i), inHand: true, folded: false, bet: 0, lastAction: null }
+        : { ...was!, cards: withShown(was!.cards, events, i) }
+      : live;
     if (!s) return s;
     // Stud deals its runout to the seats (#216): each holds only the streets shown so far, every card as this viewer
     // sees it in the finished hand. That covers a player who has gone too, whose seat before had none of the runout.
-    const cards = stud && start?.playerId === s.playerId ? shownEvents.flatMap((e) => (e.t === 'deal' && e.seat === i ? e.cards : [])) : s.cards;
+    const cards = stud && start?.playerId === s.playerId ? dealtTo(shownEvents, i) : s.cards;
     const stack = start?.playerId === s.playerId ? start.stack - (paid.get(i) ?? 0) : s.stack - s.won;
     // Sitting out for being busted, leaving, coming off the nit and the like are the result too.
     // Players not in the hand change as they like.
@@ -219,6 +226,11 @@ function seatsDuring(view: TableView, before: Frozen, shownEvents: readonly Hand
   });
 }
 
+/** The cards a seat was dealt in the hand, as this viewer sees them. */
+function dealtTo(events: readonly HandEvent[], seat: number): SeatView['cards'] {
+  return events.flatMap((e) => (e.t === 'deal' && e.seat === seat ? e.cards : []));
+}
+
 /**
  * A seat's cards with those its player showed in the hand turned up. The table before the hand ended had them face
  * down; a player who has gone since (knocked out, left) has no seat in the finished table to show them (#308).
@@ -235,9 +247,9 @@ export function withShown(cards: SeatView['cards'], events: readonly HandEvent[]
  * at a table that breaks after that hand no next deal ever comes to clear it, and the players moved off it must still
  * go to their new seats.
  */
-export function useShownTable(live: TableView | null): { view: TableView | null; runningOut: boolean } {
+export function useShownTable(live: TableView | null, skew = 0): { view: TableView | null; runningOut: boolean } {
   const revealed = useRunoutReveal(live);
-  const view = useDepartures(revealed);
+  const view = useDepartures(revealed, skew);
   return { view, runningOut: revealed !== live };
 }
 
@@ -266,9 +278,9 @@ export const DEPART_FADE_MS = 1000;
  * A player who busts out of a tournament is gone from the server's table the moment the hand ends.
  * Taking them away just as the result shows felt abrupt (#308), so the table keeps them in their seat, cards up,
  * marked as out, through the result, and fades them just before the next deal. Display only: the seat is free
- * on the server, and anyone who sits in it takes it at once.
+ * on the server, and anyone who sits in it takes it at once. `skew` is the server's clock less this one's.
  */
-export function useDepartures(view: TableView | null): TableView | null {
+export function useDepartures(view: TableView | null, skew = 0): TableView | null {
   const [kept, setKept] = useState<Departures | null>(null);
   const [before, setBefore] = useState(view);
   if (view !== before) {
@@ -277,15 +289,18 @@ export function useDepartures(view: TableView | null): TableView | null {
     if (next !== kept) setKept(next);
   }
 
-  // Fade out a little before the next deal (or after a while if no deal is coming).
+  // Fade out a little before the next deal (or after a while if no deal is coming), counted from when the result
+  // shows: an all-in runout is still being dealt here for several seconds after the server finished the hand, and the
+  // seat must not fade before the result it is kept for (the table shown then has no next deal, as it waits).
+  // The time to the next deal is from this clock, not the view's own moment, which is as old as the runout by then.
+  const showing = !!kept && view?.hand?.handNumber === kept.handNumber && view.hand.phase === 'complete';
   const nextAt = view?.nextHandAt ?? null;
-  const serverNow = view?.serverNow ?? 0;
   useEffect(() => {
-    if (!kept || kept.fading || kept.seats.size === 0) return;
-    const wait = nextAt === null ? 8000 : Math.max(1500, nextAt - serverNow - DEPART_FADE_MS);
+    if (!kept || !showing || kept.fading || kept.seats.size === 0) return;
+    const wait = nextAt === null ? 8000 : Math.max(1500, nextAt - (Date.now() + skew) - DEPART_FADE_MS);
     const t = setTimeout(() => setKept((k) => (k && k.handNumber === kept.handNumber ? { ...k, fading: true } : k)), wait);
     return () => clearTimeout(t);
-  }, [kept, nextAt, serverNow]);
+  }, [kept, showing, nextAt, skew]);
 
   return useMemo(() => {
     if (!view || !kept || view.hand?.handNumber !== kept.handNumber) return view;

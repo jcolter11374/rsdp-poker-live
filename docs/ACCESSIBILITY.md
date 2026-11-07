@@ -42,8 +42,10 @@ yet tried it with a real screen reader; see "Known and left".
   jacks"), says "Your turn" with what you can do and the pot ("Your turn:
   call 40, raise to 80 up to 1000 or fold. Pot 200."), says when the game
   pauses, says who is picking the next game in Dealer's choice ("Bo is
-  picking the next game", or "Your pick"), and warns when 10 seconds are
-  left on your clock or on your pick. It reads only what your own screen
+  picking the next game", or "Your pick"), tells the host and co-hosts who
+  can let people in about each new request ("Gil asks to sit down"), and
+  warns when 10 seconds are left on your clock or on your pick. In stud each
+  street is named before its cards. It reads only what your own screen
   already shows.
 - **Seats in words.** Each nameplate says who is to act, who has folded and
   who has the dealer button. Empty seats' buttons say which seat ("Sit in
@@ -55,8 +57,8 @@ yet tried it with a real screen reader; see "Known and left".
   stayed behind, Tab wandered to the page underneath, and nothing put focus
   back when they closed. Now every dialog, phone sheet and the hand replayer
   (even its "can't be replayed" box) takes focus when it opens, keeps Tab
-  inside, and hands focus back to the button that opened it, or to the menu
-  button when it was opened from the phone's menu. A dialog that opens by
+  inside, and hands focus back to the button that opened it, or to the Menu
+  button when it was opened from the table's menu. A dialog that opens by
   itself under another (Dealer's choice's "Pick the next game" while
   Keyboard shortcuts, a phone's chat sheet or a hand replay is open) leaves
   focus and Escape with the one on top, and gets focus when that one
@@ -64,7 +66,9 @@ yet tried it with a real screen reader; see "Known and left".
 - **Boxes that scroll** (code and tables on the fairness, privacy and terms
   pages on a phone, and the table's log) couldn't be scrolled from the
   keyboard. Tab now stops on them while they scroll, so the arrow keys work.
-- **Page structure:** the table page has a main region and a page heading
+- **Page structure:** each table, tournament lobby and account page names
+  itself in the browser tab's title ("Friday game · RSDP Live!"), so tabs
+  can be told apart. The table page has a main region and a page heading
   (the table's name), and headings no longer skip a level (the fairness
   page's summary, How to play, the host controls). Empty column headings
   (leaderboard, lobby, invite codes) have words for screen readers.
@@ -101,7 +105,8 @@ until John had seen before-and-after pictures and OK'd them
   that even white words there are under 4.5:1, so "Next hand in", the
   game's name, "Run 1" and the total when there are side pots sit on a dark
   backing like the pot's, 7:1 or more.
-- **Tap targets** are at least 24 pixels tall: + Bot was 14 to 17, the
+- **Tap targets** are at least 24 pixels tall: + Bot was 14 to 17 (and
+  stays 24 when the seats are drawn smaller to fit a laptop's window), the
   quick chat replies 21, and the Straddle and Wait for the big blind
   switches 23.
 

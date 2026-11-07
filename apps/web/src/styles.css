@@ -198,6 +198,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .nameplate .name .bot-owner { margin-left: 5px; font-size: 0.72rem; font-weight: 400; line-height: 1; color: var(--muted); }
 /* At least 24 pixels tall, so it's easy to tap (WCAG 2.5.8). */
 .seat.empty .add-bot { font-size: 0.7rem; padding: 2px 8px; margin-top: 4px; min-height: 24px; }
+/* A computer's seats are scaled down to fit (--seat-scale, as low as 0.72): + Bot still ends up at least 24px tall. */
+.felt:not(.compact) .seat.empty .add-bot { min-height: max(24px, calc(24px / var(--seat-scale, 1))); }
 .seat.acting .nameplate { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, 0.35); }
 .seat.winner .nameplate { border-color: var(--good); box-shadow: 0 0 0 1px var(--good), 0 0 14px var(--good); }
 .seat.folded .hole { opacity: 0.25; }

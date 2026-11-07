@@ -11,7 +11,9 @@
         "All-in runouts: only the last card turns over now, and only once. Before, the flop turned over again when the turn landed, and the turn again when the river landed. The hand replayer works the same way.",
         "The table is easier to read. The green buttons (Raise, Start game, Sit down, Invite) now use the darker green the rest of the site uses, the red host tag, request counts and Fold anyway? are darker, and the empty seats' Sit and + Bot are brighter. The words in the middle of the felt (Next hand in, Paused, the game's name, Run 1, the side-pot total) sit on a dark backing. + Bot, the quick chat replies and the Straddle and Wait for the big blind switches are bigger and easier to tap.",
         "Tournaments: after a hand that knocks someone out, the top bar's level and the countdown to the next game keep going, instead of stopping until the next hand, or for good when that hand was the table's last.",
-        "Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees \"Next hand in 0\" there for good."
+        "Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees \"Next hand in 0\" there for good.",
+        "Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.",
+        "Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart."
       ]
     },
     {

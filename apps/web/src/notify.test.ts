@@ -213,6 +213,39 @@ describe('showing alerts', () => {
     expect(b.shown[2].closed).toBe(false);
   });
 
+  it('takes down an alert that was still on its way when its turn ended', async () => {
+    const b = fakeBrowser({ permission: 'granted' });
+    localStorage.setItem('rsdp.notify', 'on');
+    const notify = await load();
+    hide(true);
+    // The service worker is slow to show it, and the turn is over first (acted on from another device).
+    let release!: () => void;
+    const show = b.reg.showNotification;
+    b.reg.showNotification = async (title, options) => {
+      await new Promise<void>((r) => (release = r));
+      return show(title, options);
+    };
+    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:3:10', url: '/t/t1', replaces: 'turn:t1:' });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    notify.closeNotifications('turn:t1:');
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await vi.waitFor(() => expect(b.shown).toHaveLength(1));
+    await vi.waitFor(() => expect(b.shown[0].closed).toBe(true));
+    // Taken down before the show even began: never shown.
+    b.reg.showNotification = show;
+    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:4:2', url: '/t/t1', replaces: 'turn:t1:' });
+    notify.closeNotifications('turn:t1:');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(b.shown).toHaveLength(1);
+    // A later turn shows as usual, and another table's take-down leaves it be.
+    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:5:1', url: '/t/t1', replaces: 'turn:t1:' });
+    notify.closeNotifications('turn:t2:');
+    await vi.waitFor(() => expect(b.shown).toHaveLength(2));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(b.shown[1].closed).toBe(false);
+  });
+
   it("coming back to the tab takes down its own alerts and the ones for the page on screen, not another table's", async () => {
     const b = fakeBrowser({ permission: 'granted' });
     localStorage.setItem('rsdp.notify', 'on');

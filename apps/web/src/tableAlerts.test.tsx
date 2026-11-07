@@ -64,6 +64,16 @@ describe("the table page's alerts", () => {
     expect('turn:t2:pick:3'.startsWith(closed()[0])).toBe(false);
   });
 
+  it('calls me when the table opens on my turn (following my seat from the lobby in a tab behind), and only once', () => {
+    const dealt = tableView({ hand: { handNumber: 1, events: [] }, legal: CHECKED_TO_ME });
+    through(dealt, dealt);
+    expect(shown()).toEqual([{ title: 'Your turn', tag: 'turn:t1:1:0', replaces: 'turn:t1:' }]);
+    vi.clearAllMocks();
+    // Opening it on someone else's turn says nothing.
+    through(tableView({ hand: { handNumber: 1, toAct: 1, events: [] } }));
+    expect(shown()).toEqual([]);
+  });
+
   it("doesn't call me for someone else's pick", () => {
     through(waiting(null, 1), waiting(20_000, 1), waiting(null, 1));
     expect(shown()).toEqual([]);

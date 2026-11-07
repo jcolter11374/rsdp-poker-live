@@ -83,8 +83,8 @@ export function pickWait(view: TableView): { key: string; text: string } | null 
 
 /**
  * What to say for the change from `before` to `view`: the hand-log lines that are new since `before` (all of a hand
- * that has just been dealt), a pause or restart, who has just started picking the next game, then the turn when it has
- * just become yours. The first view of a
+ * that has just been dealt), a pause or restart, a new ask to sit or rebuy for whoever can approve it, who has just
+ * started picking the next game, then the turn when it has just become yours. The first view of a
  * table says nothing, so arriving mid-hand doesn't read out the whole hand. `preQueued`: a move ticked in advance will
  * answer the turn by itself, so it isn't called out.
  */
@@ -105,6 +105,15 @@ export function announcements(before: TableView | null, view: TableView, fmt: Fm
   }
   if (view.paused && !before.paused) out.push('The game is paused.');
   if (!view.paused && before.paused) out.push('The game is back on.');
+  // Whoever can let people in hears each new ask; the note on screen only counts them.
+  if (view.powers.includes('approve')) {
+    const had = new Set(before.requests.map((r) => r.id));
+    for (const r of view.requests) {
+      if (had.has(r.id) || r.playerId === view.me.playerId || r.bot?.ownerId === view.me.playerId) continue;
+      const who = r.bot ? `${r.name}, ${r.bot.ownerName}'s bot,` : r.name;
+      out.push(r.kind === 'rebuy' ? `${who} asks for a ${fmt(r.amount)} rebuy` : `${who} asks to sit down`);
+    }
+  }
   const pick = pickWait(view);
   if (pick && pick.key !== pickWait(before)?.key) out.push(pick.text);
   const turn = myTurnKey(view);

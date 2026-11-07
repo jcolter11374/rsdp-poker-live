@@ -200,8 +200,26 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   return (await navigator.serviceWorker.getRegistration().catch(() => undefined)) ?? null;
 }
 
+/**
+ * Showing an alert waits on the service worker, and so does taking alerts down: a turn that is over within moments
+ * (acted on from another device, or a move queued ahead) can have its alert still on the way when the table takes it
+ * down. Each show and each take-down gets the next number, and a show checks the take-downs that came after it began.
+ */
+let ticket = 0;
+const takenDown: { prefix: string; at: number }[] = [];
+const TAKEN_DOWN_MAX = 50;
+
+function takeDown(prefix: string) {
+  takenDown.push({ prefix, at: ++ticket });
+  if (takenDown.length > TAKEN_DOWN_MAX) takenDown.shift();
+}
+
+/** Whether alerts with this tag were taken down after ticket `at`. */
+const takenDownSince = (tag: string, at: number) => takenDown.some((c) => c.at > at && tag.startsWith(c.prefix));
+
 /** Takes down alerts whose tag starts with `prefix` (all of them for ''), including ones a push showed. */
 export function closeNotifications(prefix = '') {
+  takeDown(prefix);
   for (const [tag, n] of shown) {
     if (!tag.startsWith(prefix)) continue;
     n.close();
@@ -218,6 +236,8 @@ export function closeNotifications(prefix = '') {
  * screen. The rest stay: a turn at another table, open in another tab or on no tab, still needs its player.
  */
 function closeSeen() {
+  // This tab's own alerts still on the way are seen too.
+  takeDown('');
   for (const [tag, n] of shown) {
     n.close();
     shown.delete(tag);
@@ -296,14 +316,22 @@ function remember(tag: string) {
 }
 
 async function show(title: string, body: string, opts: NotifyOptions) {
+  // What this one replaces is out of date, even one still on the way.
+  if (opts.replaces) takeDown(opts.replaces);
+  const at = ++ticket;
+  const stale = () => takenDownSince(opts.tag, at);
   const reg = await registration();
+  if (stale()) return;
   if (reg) {
     remember(opts.tag);
     // A push for the same thing got here first.
     if ((await reg.getNotifications({ tag: opts.tag })).length) return;
     if (opts.replaces) for (const n of await reg.getNotifications()) if (n.tag.startsWith(opts.replaces)) n.close();
+    if (stale()) return;
     // renotify: a new alert with the tag of one still in the tray sounds again instead of replacing it silently.
     await reg.showNotification(title, { body, tag: opts.tag, icon: ICON, data: { url: opts.url ?? '/' }, renotify: true } as NotificationOptions);
+    // Taken down while it was being shown: the take-down found nothing yet, so this one goes now.
+    if (stale()) for (const n of await reg.getNotifications({ tag: opts.tag })) n.close();
     return;
   }
   if (opts.replaces) closeNotifications(opts.replaces);

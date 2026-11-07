@@ -28,6 +28,7 @@ import { AlertsToggle } from './TournamentAlerts';
 import { downloadResults, downloadTableChat } from './results';
 import { Activity, LobbyChat, useLobbyLog, useUnreadChat } from './LobbyLog';
 import { SiteHeader } from '../components/SiteHeader';
+import { usePageTitle } from '../pageTitle';
 import { initialsColor } from '../components/table/Persona';
 
 type Tab = 'players' | 'tables' | 'chat' | 'activity' | 'structure' | 'payouts' | 'host';
@@ -69,6 +70,7 @@ export function TournamentLobby({ id }: { id: string }) {
   useFollowSeat(null);
   const log = useLobbyLog(id);
   const unread = useUnreadChat(log, tab === 'chat', session?.playerId, skew);
+  usePageTitle(state?.settings.name);
 
   if (error || !state)
     return (

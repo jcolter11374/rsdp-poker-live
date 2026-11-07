@@ -39,4 +39,11 @@ describe('starting soon alerts', () => {
     const moved = listing({ startAt: NOW + 4 * MIN });
     expect(startAlertsDue([moved], NOW, new Set([startKey(t)]))).toHaveLength(1);
   });
+
+  it('waits while its lobby is in front, and still comes once the player looks away', () => {
+    const t = listing();
+    expect(startAlertsDue([t], NOW, new Set(), 'x')).toHaveLength(0);
+    expect(startAlertsDue([t], NOW, new Set(), 'other')).toHaveLength(1);
+    expect(startAlertsDue([t], NOW + 15_000, new Set(), null)).toHaveLength(1);
+  });
 });
