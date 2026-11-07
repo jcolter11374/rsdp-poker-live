@@ -4,7 +4,7 @@ import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } fr
 import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
-import { IMMEDIATE_FIELDS, spectatorsSeeCards, type TableSettings } from '@rsdp/engine/settings';
+import { applyAtNextHand, IMMEDIATE_FIELDS, spectatorsSeeCards, type TableSettings } from '@rsdp/engine/settings';
 
 const CHAT_SHOWN = 100;
 const LOG_SHOWN = 60;
@@ -395,12 +395,18 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer, now: number
 
 /** Game and stakes of the next cash hand, without moving the blind schedule. */
 function previewSetup(rt: TableRuntime): TableView['upcoming'] {
-  const settings = rt.state.settings;
+  const s = rt.state;
+  // The host's change ends Dealer's choice with this hand (#423): the next hand is dealt with it applied, and a new
+  // rotation starts at its first step, a new blind schedule at its first level (#444).
+  const ending = rt.choice.ending() && !!s.pendingSettings;
+  const settings = ending ? applyAtNextHand(s.settings, s.pendingSettings!).settings : s.settings;
   const rot = settings.game.rotation;
+  const at = ending ? 0 : rt.previewRotationStep();
   // Dealer's choice: the game picked (or what a missed pick would deal).
-  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[rt.previewRotationStep() % rot.steps.length] : null);
+  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
-  const stakes = cashHandStakes(settings, Math.min(rt.state.level.index, settings.blindSchedule.levels.length - 1), game);
+  const level = ending && !s.settings.blindSchedule.enabled ? 0 : s.level.index;
+  const stakes = cashHandStakes(settings, Math.min(level, settings.blindSchedule.levels.length - 1), game);
   const betting = step?.betting ?? settings.game.betting;
   return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes };
 }
