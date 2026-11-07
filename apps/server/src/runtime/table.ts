@@ -675,7 +675,7 @@ export class TableRuntime {
     if (this.state.offers?.some((o) => o.playerId === playerId)) this.state.offers = this.state.offers.filter((o) => o.playerId !== playerId);
   }
 
-  /** Join the waitlist of a full cash table, with the buy-in to sit with when a seat comes up. */
+  /** Join a cash table's waitlist, with the buy-in to sit with when a seat comes up. */
   joinWaitlist(playerId: PlayerId, input: { name: string; stack: number }) {
     if (this.isTournament) throw new ActionError('the tournament seats players');
     if (!this.settings.seating.waitlist) throw new ActionError('this table has no waitlist');
@@ -685,7 +685,7 @@ export class TableRuntime {
     if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
     // Queued even when a seat is free: upkeep offers it straight away. Refusing would tell someone pressing "Join the
     // waitlist" during an all-in runout that a player in it had busted and left before the cards were out (#437); the
-    // browser holds that offer back until the result.
+    // browser holds back any offer made since the result until the result shows (holdBack in runout.ts).
     this.checkBuyIn(playerId, input.stack);
     this.queue().push({ playerId, name, stack: input.stack, at: this.clock.now() });
     this.log(`${name} joined the waitlist`);
@@ -3162,10 +3162,12 @@ export class TableRuntime {
       this.log(`${this.queueName(o.playerId)} didn't take seat ${o.seat + 1} in time and left the waitlist`);
       this.leaveQueue(o.playerId);
     }
-    // Seats taken some other way (the host moved someone in) are no longer on offer.
-    // Nor are seats a smaller table is about to drop.
+    // Seats taken some other way (the host moved someone in) are no longer on offer. Nor are seats a smaller table is
+    // about to drop, or a seat it keeps for a player moving in (only taken when no other seat is free): whoever was
+    // offered one stays on the waitlist for the next seat.
     const limit = this.seatLimit();
-    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit);
+    const kept = new Set(this.moverSeats(limit, this.movers()));
+    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
     const open = this.openSeats();
     for (const entry of this.queue()) {
       if (!open.length) break;
@@ -3173,7 +3175,9 @@ export class TableRuntime {
       const room = this.seatRoom(null);
       if (room !== null && room <= 0) break;
       if (this.offers().some((o) => o.playerId === entry.playerId) || !this.isOnline(entry.playerId)) continue;
-      const seat = open.shift()!;
+      // A table that seats newcomers at random offers a random free seat too, so the waitlist isn't a way to pick one.
+      const random = s.settings.seating.randomSeats && !this.can(entry.playerId, 'players');
+      const seat = random ? open.splice(this.rng(open.length), 1)[0] : open.shift()!;
       this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }

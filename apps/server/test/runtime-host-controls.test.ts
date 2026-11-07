@@ -113,6 +113,51 @@ describe('waitlist', () => {
     expect(rt.state.waitlist).toEqual([]);
   });
 
+  it('offers a random free seat from the waitlist when the table seats newcomers at random', () => {
+    // Otherwise joining the waitlist at a table with free seats would be a way to pick the lowest one.
+    const seats = new Set<number>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const clock = new FakeClock();
+      const settings = defaultSettings('cash');
+      settings.seating.requireApproval = false;
+      settings.seating.waitlist = true;
+      settings.seating.randomSeats = true;
+      settings.table.maxSeats = 6;
+      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+      for (const p of PEOPLE) rt.connect(p);
+      rt.requestSeat('host', { seat: 0, name: 'H', stack: 100 });
+      rt.joinWaitlist('c', { name: 'Cat', stack: 150 });
+      const offer = rt.state.offers!.find((o) => o.playerId === 'c')!;
+      expect(offer.seat).toBeGreaterThan(0);
+      rt.requestSeat('c', { seat: 1, name: 'Cat', stack: 150 });
+      expect(seatOf(rt, 'c')).toBe(offer.seat);
+      seats.add(offer.seat);
+    }
+    expect(seats.size).toBeGreaterThan(1);
+  });
+
+  it('lets go of an offer on a seat a smaller table keeps for a player moving in, and keeps them waiting', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 6;
+      s.seating.waitlist = true;
+    });
+    // Seats 1, 2, 3, 4 and 6 are taken; Eve joins and is offered seat 5.
+    ['host', 'a', 'b', 'c'].forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+    rt.requestSeat('d', { seat: 5, name: 'D', stack: 200 });
+    rt.joinWaitlist('e', { name: 'Eve', stack: 150 });
+    expect(rt.state.offers).toEqual([{ seat: 4, playerId: 'e', expiresAt: clock.now() + SEAT_OFFER_MS }]);
+    // Mid-hand the host takes the table down to 5 seats: D, in seat 6, will move into seat 5, the only free one.
+    rt.start('host');
+    rt.updateSettings('host', { table: { maxSeats: 5 } });
+    expect(rt.state.offers).toEqual([]);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['e']);
+    expect(() => rt.requestSeat('e', { seat: 4, name: 'Eve', stack: 150 })).toThrow(/kept for a player moving into it/);
+    // A minute later Eve is still waiting, not dropped for letting an offer lapse.
+    clock.advance(SEAT_OFFER_MS + 1000);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['e']);
+    expect(rt.state.log.some((l) => /Eve didn't take/.test(l.text))).toBe(false);
+  });
+
   it('answers a waitlist join the same whether or not a player in the all-in busted and left', () => {
     // Three seats: the host and two bots on small stacks, no rebuys, so a busted bot leaves as the hand ends.
     const outcomes = new Set<string>();

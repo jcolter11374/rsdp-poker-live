@@ -246,11 +246,19 @@ describe('holdBack', () => {
     });
   });
 
-  it('holds back a waitlist offer for a seat someone in the hand had, until the result', () => {
+  it('holds back every waitlist offer made since the result, until it shows (#437)', () => {
     const offer = (seat: number) => ({ seat, playerId: `w${seat}`, name: `W${seat}`, expiresAt: 99 });
-    // Seat 1's player busted and left as the hand ended, and the waitlist was offered their seat; seat 4 was empty.
-    const live = { ...finished(), offers: [offer(1), offer(4)] } as TableView;
-    expect(holdBack(live, before(), 0).offers).toEqual([offer(4)]);
+    // Before the result, seat 4 (empty) was already offered to W4 and seat 2 to W2. Then seat 1's player busted and
+    // left, and the waitlist was offered their seat; the bust also opened seat 3, which a smaller Dealer's choice game
+    // had closed; and W2 turned seat 2 down.
+    const frozen = { ...before(), offers: [offer(4), offer(2)] };
+    const live = { ...finished(), offers: [offer(1), offer(4), offer(3)] } as TableView;
+    expect(holdBack(live, frozen, 0).offers).toEqual([offer(4)]);
+    // With no offers before the result, none show until it does, whatever the hand did.
+    expect(holdBack(live, before(), 0).offers).toEqual([]);
+    expect(holdBack({ ...finished(), offers: [offer(3)] } as TableView, before(), 0).offers).toEqual([]);
+    // The same seat offered to someone else (W4 turned it down and the next in line got it) waits too.
+    expect(holdBack({ ...live, offers: [{ ...offer(4), playerId: 'w9' }] }, frozen, 0).offers).toEqual([]);
   });
 
   it('keeps players at the table who bust or leave when the hand ends', () => {
