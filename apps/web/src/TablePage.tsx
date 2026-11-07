@@ -345,7 +345,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   useLayoutEffect(() => {
     const page = pageRef.current;
     const bar = page?.querySelector<HTMLElement>('.topbar');
-    if (!wide || !page || !bar) return;
+    // Every layout: "Connection lost" floats just under the bar too (#388).
+    if (!page || !bar) return;
     const measure = () => page.style.setProperty('--topbar-h', `${bar.offsetHeight}px`);
     measure();
     const ro = new ResizeObserver(measure);
@@ -540,6 +541,66 @@ export function TablePage({ tableId }: { tableId: string }) {
   // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
   // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
   const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
+  // Notes about you, the host's waiting requests and the host stopping the game go under the table with your buttons
+  // rather than above the felt, where they took its height: every seat moved when one came or went, often mid-hand
+  // (#388). The area under the table holds its height (Dock), so a note that fits in the room it already holds moves
+  // nothing. One note fits at a no-limit table for a seated player; a fixed-limit table on a laptop (whose room is kept
+  // for a shorter bar), several notes at once, or someone watching without a seat can still need more, once: the area
+  // then keeps that height. On your turn they give way to the betting buttons, which that room is kept for (except where
+  // the window is too narrow for the side column: see .dock-notes in styles.css); the host still sees the count in
+  // Host controls, on Host & log or on the menu.
+  const yourTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+  const dockNotes = [
+    noticeUnder && view.hand && (
+      <div className="banner" key="stopped">
+        {startNotice!.text}
+      </div>
+    ),
+    view.stopAfterHand && (
+      <div className="banner" key="stop">
+        The host is stopping the game after this hand.
+      </div>
+    ),
+    pending > 0 && (
+      <div className={`banner attention${portrait || wide ? ' clickable' : ''}`} key="requests" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
+        {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
+      </div>
+    ),
+    ...myBotRequests.map((r) => (
+      <div className="banner" key={r.id}>
+        Your bot {r.name} is waiting for the host to let it sit…{' '}
+        <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
+      </div>
+    )),
+    rebuyRequest && (
+      <div className="banner" key="rebuy">
+        Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…
+      </div>
+    ),
+    mySeat?.sittingOut && (
+      <div className="banner" key="away">
+        {mySeat.sitOutReason === 'busted'
+          ? "You're out of chips."
+          : mySeat.sitOutReason === 'timeouts'
+            ? 'You were marked away after running out of time.'
+            : mySeat.sitOutReason === 'host'
+              ? 'The host sat you out.'
+              : "You're sitting out."}
+        {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
+        {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
+          <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
+            Add chips
+          </button>
+        ) : canSitIn ? (
+          <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
+            I'm back
+          </button>
+        ) : (
+          mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
+        )}
+      </div>
+    ),
+  ].filter(Boolean);
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -667,50 +728,14 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
-          {pending > 0 && (
-            <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
-              {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
-            </div>
-          )}
           {seatRequest && (
             <div className="banner">
               Waiting for the host to let you sit…{' '}
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
-          {myBotRequests.map((r) => (
-            <div className="banner" key={r.id}>
-              Your bot {r.name} is waiting for the host to let it sit…{' '}
-              <button onClick={() => call('bot:remove', { playerId: r.playerId }).catch((e: Error) => alert(e.message))}>Cancel</button>
-            </div>
-          ))}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
           {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
-          {rebuyRequest && <div className="banner">Waiting for the host to approve your {fmt(rebuyRequest.amount)} rebuy…</div>}
-          {mySeat?.sittingOut && (
-            <div className="banner">
-              {mySeat.sitOutReason === 'busted'
-                ? "You're out of chips."
-                : mySeat.sitOutReason === 'timeouts'
-                  ? 'You were marked away after running out of time.'
-                  : mySeat.sitOutReason === 'host'
-                    ? 'The host sat you out.'
-                    : "You're sitting out."}
-              {mySeat.owesBlinds && ' You will post the blinds you missed when you come back.'}{' '}
-              {(mySeat.sitOutReason === 'busted' || !canSitIn) && canRebuy ? (
-                <button className="primary" onClick={() => setDialog({ kind: 'rebuy' })}>
-                  Add chips
-                </button>
-              ) : canSitIn ? (
-                <button className="primary" onClick={() => seatCall('seat:sitOut', { value: false })}>
-                  I'm back
-                </button>
-              ) : (
-                mySeat.sitOutReason !== 'busted' && 'You have no chips to play with.'
-              )}
-            </div>
-          )}
           {seatErrorLine}
           <Table
             view={view}
@@ -755,11 +780,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
-            {noticeUnder && view.hand && (
-              <div className="dock-notes">
-                <div className="banner">{startNotice!.text}</div>
-              </div>
-            )}
+            {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
             <ActionBar
               view={view}
               fmt={fmt}
