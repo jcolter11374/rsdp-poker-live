@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { betUnit, clock, type Fmt } from '../format';
-import { handStrength } from '../strength';
+import { handKind, handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { besideBet, clearOfRows, clearSideBands, fitHand, fitMiddle, fromVars, handRoom, handSpan, inFront, keepPlaced, lerp, placeHand, placePlayers, placeRow, placeSeats, playerFractions, px, seatFractions, seatsFine, stadiumPoint, type Box, type Extent, type HandFit, type Point, type Reach, type RowPlace } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
@@ -123,7 +123,7 @@ type RowSize = (typeof PHONE_ROW)['upright'];
 const PLATE_HALF_HEIGHT = 25;
 /**
  * How much taller a phone nameplate is while it shows a betting line under its stack ("Call 0.50"): 5.5px, half of it up
- * and half down, rounded up. (A hand's name at showdown adds about 10px.)
+ * and half down, rounded up. The result adds no line on a phone: a shown hand's name goes on a tab over the nameplate (#455).
  */
 const LINE_GROWTH = 6;
 /** Other players' cards on a phone don't follow a nameplate's width by this many pixels or fewer (see useRowSpots). */
@@ -210,7 +210,7 @@ function placeRows(seats: readonly PhoneSeat[], size: RowSize, mine?: Box): Map<
     // A seat drawn later covers an earlier one, and yours covers them all. So these cards may reach a little further into
     // the bottom of an earlier seat's nameplate above them (10px in all), and keep their size instead of bunching up: a
     // plain nameplate has nothing written there (its stack ends 12px above its bottom). While that nameplate also shows a
-    // line under the stack ("Call 0.50", a hand's name), the cards can cover the bottom of that line. The other way round,
+    // line under the stack ("Call 0.50"), the cards can cover the bottom of that line. The other way round,
     // a nameplate drawn over the cards would hide their rank and suit, so there the usual 4px holds. Both count plain
     // nameplates: while both show a line, one drawn over the cards can come a few pixels further down over them (#380 is
     // about the room between those seats). Counting the lines instead moved rows aside and back as lines came and went.
@@ -671,6 +671,12 @@ export interface DiscardPick {
   toggle: (index: number) => void;
 }
 
+/** The lines each phone nameplate showed in a hand's last live view, by seat: each line's classes and text (#455). */
+interface KeptLines {
+  hand: number;
+  lines: Map<number, [string, string][]>;
+}
+
 /** Chips flying across the felt: bets swept into the pot, the pot pushed to a winner. */
 interface Flight {
   id: number;
@@ -767,6 +773,27 @@ export function Table({
   const hand = view.hand;
   const done = hand?.phase === 'complete';
   const live = !!hand && !done;
+  // On a phone the result adds no line to a nameplate (#455): a shown hand's name goes on a tab over it, and "Knocked out"
+  // or "Busted" takes the chip count's place. The server clears each player's last move ("Bet", "Check") when the river's
+  // betting ends, so the lines each nameplate showed in the hand's last live view are kept, unseen, through the result:
+  // it keeps its size, and nothing beside it moves. Set before the first paint of the result (a layout effect).
+  const seenLines = useRef<KeptLines | null>(null);
+  const [keptLines, setKeptLines] = useState<KeptLines | null>(null);
+  useLayoutEffect(() => {
+    if (!compact || !hand || !felt.current) return;
+    if (live) {
+      const lines = new Map<number, [string, string][]>();
+      for (const s of felt.current.querySelectorAll<HTMLElement>('.seat[data-seat]')) {
+        const shown = [...s.querySelectorAll<HTMLElement>('.nameplate > :is(.last-action, .low-text, .bank-text)')].map((l): [string, string] => [l.className, l.textContent ?? '']);
+        if (shown.length) lines.set(Number(s.dataset.seat), shown);
+      }
+      seenLines.current = { hand: hand.handNumber, lines };
+    } else if (done && keptLines?.hand !== hand.handNumber) {
+      setKeptLines(seenLines.current?.hand === hand.handNumber ? seenLines.current : { hand: hand.handNumber, lines: new Map() });
+    }
+  });
+  // Seats that went all in this hand: their nameplate was the all-in stamp's width, which it keeps through the result.
+  const shoved = new Set(compact && hand ? hand.events.flatMap((e) => ((e.t === 'action' || e.t === 'post') && e.allIn ? [e.seat] : [])) : []);
   const ticking = !view.paused && (!!view.turn || view.nextHandAt !== null || !!hand?.runItTwice.deadline);
   // While paused the server sends each clock as the time left at the view's own moment, so it stands still.
   const clientNow = useNow(ticking) + skew;
@@ -1254,6 +1281,8 @@ export function Table({
           secondsLeft = Math.max(0, Math.ceil((view.turn.deadline - now) / 1000));
         }
         const badge = seatBadge(s, view.mode === 'tournament');
+        // On a phone, a player out of chips says so where their chips were (#455), instead of on a line or pill of its own.
+        const outMark = !compact ? null : s.departed ? 'Knocked out' : s.online && s.sittingOut && s.sitOutReason === 'busted' && s.stack === 0 ? 'Busted' : null;
         const classes = [
           'seat',
           pos.x < w * 0.18 ? 'edge-left' : pos.x > w * 0.82 ? 'edge-right' : '',
@@ -1268,6 +1297,7 @@ export function Table({
           s.cards.length > 4 && 'long-hand',
           s.departed && 'departed',
           s.departed === 'fading' && 'fading',
+          shoved.has(seat) && 'went-all-in',
           onSeatClick && !s.departed && 'host-click',
         ]
           .filter(Boolean)
@@ -1328,7 +1358,7 @@ export function Table({
                   />
                 )}
                 {state && <span className="sr-only">{state}</span>}
-                {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
+                {badge && badge.kind !== 'info' && !outMark && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
                   {s.name}
                   {s.playerId === view.hostId && <span className="tag">host</span>}
@@ -1337,10 +1367,15 @@ export function Table({
                   {/* The bot's own short name comes first, so a long owner name is what gets cut short. */}
                   {s.bot && <span className="bot-owner">· {botPlateLabel(s.bot)}</span>}
                 </div>
-                <div className="stack">{s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
-                {badge?.kind === 'info' && <div className="status">{badge.text}</div>}
+                <div className="stack">{outMark ? <span className="out-mark">{outMark}</span> : s.allIn ? 'ALL IN' : <CountUp value={s.stack} fmt={fmt} />}</div>
+                {badge?.kind === 'info' && !outMark && <div className="status">{badge.text}</div>}
                 {s.lastAction && live && <div className={`last-action a-${s.lastAction.split(' ')[0].toLowerCase()}`}>{s.lastAction}</div>}
-                {shown && <div className="status">{shown}</div>}
+                {compact && done && keptLines?.hand === hand!.handNumber && keptLines.lines.get(seat)?.map(([cls, text], i) => (
+                  <div key={`kept-${i}`} className={`${cls} kept`} aria-hidden="true">
+                    {text}
+                  </div>
+                ))}
+                {shown && !compact && <div className="status">{shown}</div>}
                 {timeFraction !== null && (
                   <TurnLine
                     key={`${view.turn!.startedAt}:${view.turn!.deadline}:${view.paused}:${skew}`}
@@ -1360,6 +1395,8 @@ export function Table({
                 )}
                 <SeatExtras view={view} seat={s} />
               </div>
+              {/* Not on your own seat: the bar under the table names your hand in full. */}
+              {compact && shown && !isMe && <div className="shown-tab">{handKind(shown)}</div>}
               {won && <div className="win-float">+{fmt(won.amount)}</div>}
             </div>
             {s.bet > 0 && (

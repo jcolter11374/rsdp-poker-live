@@ -574,6 +574,20 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .nameplate .stack { font-size: 0.85rem; }
 .felt.compact .nameplate .timer { left: 6px; right: 6px; bottom: 2px; height: 3px; }
 .felt.compact .seat .status, .felt.compact .last-action { font-size: 0.6rem; }
+/* At the result a shown hand's name sits on a tab where the cards meet the nameplate, not on a line that would widen the
+   nameplate into its neighbours (#455). Nothing in the nameplate changes size: the lines it showed last stay, unseen. */
+.felt.compact .shown-tab {
+  position: absolute; left: 50%; bottom: calc(100% - 5px); translate: -50% 0; z-index: 3;
+  padding: 0 4px; border-radius: 6px; background: #14171b;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 1px 3px rgba(0, 0, 0, 0.5);
+  font: 700 0.72rem/12px 'Barlow Condensed', 'Inter Variable', sans-serif; letter-spacing: 0.01em; color: #eef1f4;
+  white-space: nowrap; pointer-events: none;
+}
+@media (max-height: 500px) { .felt.compact .shown-tab { bottom: calc(100% - 7px); } }
+.felt.compact .seat.departed .shown-tab { animation: depart-dim 0.8s ease 1.2s both; }
+@media (prefers-reduced-motion: reduce) { .felt.compact .seat.departed .shown-tab { animation: none; opacity: 0.6; filter: grayscale(0.8); } }
+.felt.compact .nameplate .stack .out-mark { font-size: 0.7rem; color: #ffb4ad; letter-spacing: 0.01em; }
+.felt.compact .nameplate > .kept { visibility: hidden; }
 .felt.compact .seat .hole { height: 34px; bottom: calc(100% - 3px); }
 .felt.compact .playing-card.small { --cw: 24px; }
 .felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -6px; }
