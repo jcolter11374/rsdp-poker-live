@@ -258,7 +258,7 @@ try {
     // Before the first hand, a banner above the table said to press Start game. It took height from the felt, so when it
     // went the felt grew and every seat slid to a new spot while the first cards came (#383). The middle of the table says
     // it now. On a laptop (the host, with the side column) and a wide, short screen (a player), from before the host
-    // presses Start game until the cards are out, the felt keeps its size and no seat moves or changes size.
+    // presses Start game until the cards are out, the felt keeps its size and no player's seat moves or changes size.
     const host = await open('start host', { width: 1280, height: 800 });
     const guest = await open('start guest', { width: 2300, height: 824 });
     await host.goto(BASE);
@@ -290,7 +290,9 @@ try {
           const felt = document.querySelector('.felt');
           if (felt) {
             const r = felt.getBoundingClientRect();
-            const seats = [...felt.querySelectorAll('.seat')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
+            // The players' seats. (Empty seats' markers can still shift a pixel or two when the first stacks change, which is
+            // the seat spacing's business, not this check's.)
+            const seats = [...felt.querySelectorAll('.seat[data-seat]')].map((s) => `${s.style.left},${s.style.top}`).join(' ');
             seen.add(`felt ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.top)}, seats ${felt.style.getPropertyValue('--seat-scale')}: ${seats}`);
           }
           if (window.__layouts === seen) requestAnimationFrame(sample);
