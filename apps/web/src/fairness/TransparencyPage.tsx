@@ -120,7 +120,8 @@ export function TransparencyPage() {
         <h2>The public record</h2>
         <p>
           Every hand, every change to a player&rsquo;s buy-ins and cash-outs, every admin action that changes something, every chat John reads from the admin page, and every server start goes into a chain where each entry includes a fingerprint of the one
-          before. Editing or removing an old entry breaks every fingerprint after it. The record holds no names and no table links.
+          before. At a table whose spectators watch on a delay, each hand goes in that long after it ends (at most 10 minutes), so the record never shows a hand ending before the people watching see it end. A card shown after the hand goes in that long
+          after it is shown. Buy-ins, cash-outs and everything else go in at once. Editing or removing an old entry breaks every fingerprint after it. The record holds no names and no table links.
         </p>
         <ul>
           <li>The site&rsquo;s record has {head ? `${head.seq.toLocaleString()} entries` : '…'}.</li>

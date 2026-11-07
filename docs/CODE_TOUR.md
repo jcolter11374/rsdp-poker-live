@@ -117,7 +117,7 @@ and seasons (`season.ts`).
 | [`src/scheduler/scheduler.ts`](../apps/server/src/scheduler/scheduler.ts) | Timers that must survive a restart (a tournament's start time, for example) are kept as rows in a `jobs` table. |
 | [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
-| [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. |
+| [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. At a table whose spectators watch on a delay, a hand goes in that long after it ends (D38); until then it waits as an `audit-hand` row in `jobs`, which audit.ts puts in itself, not the scheduler. |
 | [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
 | [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
 | [`src/restore.ts`](../apps/server/src/restore.ts), [`db/backup.ts`](../apps/server/src/db/backup.ts) | Backups out, restores in. See [DEPLOY.md](DEPLOY.md#backups). |
@@ -194,7 +194,9 @@ Reading this path once is the fastest way to see how the parts fit.
    builds their own view, with `visibleEvents` filtering out cards they may
    not see, and sends it as `table:state`.
 6. Every browser redraws. When the hand ends, `onHandFinished` saves the
-   hand to the `hands` table and adds its fingerprint to the public record.
+   hand to the `hands` table and adds its fingerprint to the public record:
+   at once, or at a table whose spectators watch on a delay, once they have
+   seen it end.
 
 A new hand starts from `dealHand` in the runtime. The server published a
 fingerprint of this hand's secret one hand earlier; it now combines that

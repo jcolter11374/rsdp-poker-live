@@ -48,6 +48,7 @@ How this file works:
 | [D35](#d35-the-site-is-called-rsdp-live) | The site is called RSDP Live! | 2026-11-07 | John |
 | [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
 | [D37](#d37-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
+| [D38](#d38-hand-entries-go-into-the-public-record-after-the-spectator-delay) | Hand entries go into the public record after the spectator delay | 2026-11-07 | John; details Claude |
 
 ---
 
@@ -432,3 +433,14 @@ How this file works:
   - The hands come from the same filtered requests the Hands and Stats tabs use, and only when the recap is opened. Nothing new is sent by the server or stored.
 - **Why:** the recap is for a group chat, so it says only what anyone at the table could already see, with nothing that lets someone outside the group join or learn cards.
 - **Where:** `apps/web/src/recap.ts`, `apps/web/src/components/table/Recap.tsx`, issue #329.
+
+## D38. Hand entries go into the public record after the spectator delay
+
+- **Decided:** 2026-11-07, by John, in issue #435 (his comment of 18:20 UTC). The issue listed six ways a spectator on a delay could tell early that the live hand had ended or the next one had been dealt. One was the public record: it took each hand's entry the moment the hand ended, and anyone can read it (the entries, the newest entry, and the lookup "Check this hand" uses), so someone watching 2 minutes behind could see a hand end there first. John chose to fix all six, and asked for /transparency to say so in the same change. The details below are Claude's.
+- **Decision:** at a table whose spectators watch on a delay, each hand's entry goes in no sooner than they see the hand end: the delay after it ends, at most 10 minutes. A card shown after the hand makes a second entry, which goes in that long after it is shown. A table's hands go in in the order they ended, so after the host shortens the delay, the next hand waits behind the last one.
+  - **Until it goes in,** the entry is outside the chain. It has no number and no hash, and nothing the record shows (the entries, the newest entry, a hand's lookup and whether the table has hands after it) gives it away. It gets its number, time and hash when it goes in, so the chain never has a gap.
+  - **Everything else goes in at once,** as before: buy-ins and cash-outs, admin actions, deleted tables and server starts. So do hands at a table without a delay. Practice tables follow the same rule, and so does a table whose host has turned watching off, because the host can turn it back on at any time.
+  - **Across a restart or crash:** the waiting entry (the fingerprint only) is saved as a row in the `jobs` table, kind `audit-hand`. Cash tables aren't loaded again at start, so it waits with the record, not with its table. Putting it in adds its record entry and removes the row in one database transaction, so after a crash it is either in the record or still waiting, never both or neither. The next server's start comes first in the record, then any hands that came due while it was down.
+  - **A deleted table** puts its waiting hands in at once, just before the entry that says it was deleted. A table put away when idle, or moved on in a tournament, keeps them waiting.
+- **Why:** a record that ran ahead of the table would undo the delay for anyone who reads it. Leaving finished hands out of what the record shows instead would leave gaps in the chain, which GitHub's copy and every browser check, so the entry is held back whole.
+- **Where:** `AuditLog.hand`, `start`, `stop` and `deleted` in `apps/server/src/audit.ts`; `spectatorsSeeAt` and `attach` in `apps/server/src/app.ts`; tests in `apps/server/test/audit.test.ts` and `cash-crash-restart.test.ts`. /transparency (`apps/web/src/fairness/TransparencyPage.tsx`), [/fairness](FAIRNESS.md#checking-john) and [/privacy](PRIVACY.md#the-public-record) say so. Issue #435.
