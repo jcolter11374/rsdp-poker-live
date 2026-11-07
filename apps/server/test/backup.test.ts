@@ -276,6 +276,27 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
     }
   });
 
+  // Three databases, two of them on disk.
+  it('restore on start too, onto a server that then opens', { timeout: 60_000 }, async () => {
+    const before = await backupFromBefore(true);
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      const live = path.join(dir, 'pglite');
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync(before.text));
+      const logged: string[] = [];
+      await restoreIfWaiting(live, (m) => logged.push(m));
+      expect(logged.some((m) => m.startsWith('restored data is in place'))).toBe(true);
+      const reopened = await createDb({ ignoreEnv: true, pgliteDir: live });
+      try {
+        expect(await everything(reopened)).toEqual(before.rows);
+      } finally {
+        await closeDb(reopened);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('remakes them exactly as the old migrations made them', async () => {
     const before = await backupFromBefore(true);
     const old = await databaseBefore('0017_drop_unused_ledger');
