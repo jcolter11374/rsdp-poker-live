@@ -109,9 +109,52 @@ describe('spectators on a delay (#432)', () => {
     expect(shown.settings.stakes).toBe(past.settings.stakes);
   });
 
-  it('with nothing old enough to show yet, see the settings as they are', () => {
+  it('with nothing kept to show yet (just after a restart), see the settings as they are', () => {
     const { rt, clock } = table();
     const live = tableView(rt, 'watcher', clock.now());
     expect(behind(live, null, DELAY).settings).toBe(live.settings);
+  });
+
+  it('with nothing old enough to show yet, see the settings of the oldest snapshot kept, so they never go back', () => {
+    const { rt, clock } = table((s) => {
+      s.blindSchedule = {
+        enabled: true,
+        countdown: 'hands',
+        levels: [
+          { smallBlind: 1, bigBlind: 2, ante: 0, minutes: 20, hands: 4 },
+          { smallBlind: 2, bigBlind: 4, ante: 0, minutes: 20, hands: 4 },
+        ],
+      };
+    });
+    // The feed starts again mid-hand (the host stopped spectators seeing every card, or raised the delay).
+    const { past, live } = acrossTheDeal(rt, clock, () => rt.updateSettings('host', { stakes: { smallBlind: 5, bigBlind: 10 } }));
+    const waiting = behind(live, null, DELAY, past);
+    expect(waiting.hand).toBeNull();
+    expect(waiting.settings.stakes.bigBlind).toBe(2);
+    expect(waiting.pendingSettings).toMatchObject({ stakes: { bigBlind: 10 } });
+    expect(waiting.level?.handsLeft).toBe(past.level?.handsLeft);
+    // Once that snapshot is old enough, it shows the same.
+    const shown = behind(live, past, DELAY);
+    expect(shown.settings).toEqual(waiting.settings);
+    expect(shown.pendingSettings).toEqual(waiting.pendingSettings);
+    expect(shown.level).toEqual(waiting.level);
+  });
+
+  it('see "every card face up" start with the hand it starts with', () => {
+    const { rt, clock } = table((s) => {
+      s.spectators.delaySeconds = DELAY / 1000;
+    });
+    checkDown(rt);
+    // Between hands, so it applies at once, from the next hand dealt.
+    rt.updateSettings('host', { spectators: { seeAllCards: true } });
+    const past = delayedPart(tableView(rt, 'watcher', clock.now()));
+    rt.dealNext('host');
+    const live = tableView(rt, 'watcher', clock.now());
+    expect(live.spectator?.seeAll).toBe(true);
+    const shown = behind(live, past, DELAY);
+    expect(shown.hand?.handNumber).toBe(1);
+    expect(shown.spectator?.seeAll).toBe(false);
+    // Whether watching is blocked stays as it is now.
+    expect(shown.spectator?.blocked).toBe(live.spectator?.blocked);
   });
 });

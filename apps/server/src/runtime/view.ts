@@ -200,6 +200,7 @@ export type DelayedPart = Pick<
   | 'settings'
   | 'pendingSettings'
   | 'level'
+  | 'spectator'
 >;
 
 /**
@@ -232,6 +233,8 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   settings: view.settings,
   pendingSettings: view.pendingSettings,
   level: view.level,
+  // "With every card face up" starts with the first hand dealt after it was turned on, which would mark the live deal.
+  spectator: view.spectator,
 });
 
 /**
@@ -252,22 +255,48 @@ const NO_FAIR: TableView['fair'] = { nextCommit: '', handCommit: null, openThrou
 /** Spectators on a delay can't rabbit hunt: the button would show when the live hand ended (app.ts refuses it too). */
 const NO_RABBIT: TableView['rabbit'] = { available: false, cards: null };
 
+/** How far a snapshot's clocks move on: by the delay, but a paused snapshot's stand still, moving with the time shown. */
+const moveBy = (live: TableView, part: DelayedPart, delayMs: number) => (part.paused ? live.serverNow - part.serverNow : delayMs);
+
+/**
+ * What a spectator sees of the table's state from a snapshot: what changes as the live hand ends or the next is dealt.
+ * The settings keep what changes at once as it is now.
+ */
+function stateThen(live: TableView, part: DelayedPart, delayMs: number) {
+  const move = moveBy(live, part, delayMs);
+  return {
+    paused: part.paused,
+    bombPotNext: part.bombPotNext,
+    nit: part.nit,
+    rakeTotal: part.rakeTotal,
+    started: part.started,
+    stopAfterHand: part.stopAfterHand,
+    settings: settingsBehind(part.settings, live.settings),
+    pendingSettings: part.pendingSettings,
+    level: part.level && { ...part.level, endsAt: part.level.endsAt === null ? null : part.level.endsAt + move },
+    spectator: live.spectator && { ...live.spectator, seeAll: part.spectator?.seeAll ?? false },
+  };
+}
+
 /**
  * A spectator's view with the table as it was `delayMs` ago: seats, cards,
- * bets and the clock come from `past` (null when nothing is that old yet,
- * which shows the seats with no hand). Clocks move forward by the delay so
+ * bets and the clock come from `past`. Clocks move forward by the delay so
  * they count down in step with the live server clock. Chat, the log and
  * everything else stay live.
+ *
+ * `past` is null when nothing is that old yet, which shows the seats with no hand. That happens after a restart, or
+ * once the host stops spectators seeing every card or raises the delay. The table's state then comes from `oldest`,
+ * the oldest snapshot kept, if there is one: it will be shown next, so nothing jumps back when it is.
  */
-export function behind(live: TableView, past: DelayedPart | null, delayMs: number): TableView {
+export function behind(live: TableView, past: DelayedPart | null, delayMs: number, oldest: DelayedPart | null = null): TableView {
   // The table log runs behind too: "X left with 2350" would tell how the hand went.
   const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
   if (!past) {
     const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    return { ...live, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, rotation: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT, choice: live.choice && { ...live.choice, open: false, deadline: null, next: null } };
+    const then = oldest ? stateThen(live, oldest, delayMs) : {};
+    return { ...live, ...then, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, rotation: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT, choice: live.choice && { ...live.choice, open: false, deadline: null, next: null } };
   }
-  // A paused snapshot's clocks stand still: they move on with the time shown, not by the delay.
-  const move = past.paused ? live.serverNow - past.serverNow : delayMs;
+  const move = moveBy(live, past, delayMs);
   const later = (t: number | null) => (t === null ? null : t + move);
   const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + move, deadline: later(past.turn.deadline) };
   const hand = past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
@@ -284,22 +313,14 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     hand,
     turn,
     log,
+    ...stateThen(live, past, delayMs),
     ledger: past.ledger,
     history: past.history,
     nextHandAt: later(past.nextHandAt),
     upcoming: past.upcoming,
-    paused: past.paused,
     fair: past.fair,
-    bombPotNext: past.bombPotNext,
     choice: past.choice ? { ...past.choice, deadline: later(past.choice.deadline) } : (past.choice ?? null),
-    nit: past.nit,
-    rakeTotal: past.rakeTotal,
-    started: past.started,
-    stopAfterHand: past.stopAfterHand,
     rotation: past.rotation ?? null,
-    settings: settingsBehind(past.settings, live.settings),
-    pendingSettings: past.pendingSettings,
-    level: past.level && { ...past.level, endsAt: later(past.level.endsAt) },
     rabbit: NO_RABBIT,
   };
 }

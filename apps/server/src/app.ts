@@ -885,7 +885,7 @@ export function createApp(deps: AppDeps = {}) {
     let i = -1;
     while (i + 1 < feed.length && feed[i + 1].at <= now - delayMs) i++;
     if (i > 0) feed.splice(0, i);
-    return behind(live, i >= 0 ? feed[0].part : null, delayMs);
+    return behind(live, i >= 0 ? feed[0].part : null, delayMs, feed[0]?.part ?? null);
   }
 
   /** Everyone with a table open, once each, by the name they go by. */
