@@ -127,6 +127,13 @@
       "when": 1794008682978,
       "tag": "0017_drop_unused_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794023927403,
+      "tag": "0018_push_alerts",
+      "breakpoints": true
     }
   ]
 }

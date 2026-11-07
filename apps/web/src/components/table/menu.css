@@ -1,6 +1,6 @@
 /* ---- the table's top bar: Invite stands out, the rest lives in Menu */
-.topbar .invite-button { background: var(--go); border-color: var(--go); color: #fff; font-weight: 700; }
-.topbar .invite-button:hover:not(:disabled) { background: var(--go-hover); border-color: var(--go-hover); }
+.topbar .invite-button { background: var(--go-fill); border-color: var(--go-fill); color: #fff; font-weight: 700; }
+.topbar .invite-button:hover:not(:disabled) { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
 .table-menu { position: relative; }
 .table-menu > button span { font-size: 0.7em; margin-left: 2px; color: var(--muted); }
 .table-menu-list {
@@ -55,6 +55,6 @@
 
 /* On a computer: the same options as small chips under the action bar. */
 .seat-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.seat-chip { padding: 3px 11px; font-size: 0.8rem; font-weight: 500; border-radius: 999px; color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.seat-chip { min-height: 24px; padding: 3px 11px; font-size: 0.8rem; font-weight: 500; border-radius: 999px; color: var(--muted); background: transparent; border: 1px solid var(--line); }
 .seat-chip:hover:not(:disabled) { color: var(--text); }
 .seat-chip[aria-pressed='true'], .seat-chip[aria-pressed='true']:hover:not(:disabled) { color: #fff; background: rgba(46, 160, 92, 0.22); border-color: var(--go); }

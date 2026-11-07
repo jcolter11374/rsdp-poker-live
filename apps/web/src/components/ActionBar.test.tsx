@@ -756,3 +756,691 @@ describe('keyboard', () => {
     expect(moves()).toEqual([]);
   });
 });
+
+describe('all in with Shift+A pressed twice (#307)', () => {
+  const press = async (key: string, over: KeyboardEventInit = {}) => {
+    fireEvent.keyDown(window, { key, ...over });
+    await settle();
+  };
+  /** Shift+A, as a browser reports it with Shift held (Caps Lock off). */
+  const shiftA = () => press('A', { shiftKey: true });
+  /** Shift+A, then Shift+A again after a pause long enough to count as the go-ahead. */
+  const shiftATwice = async () => {
+    await shiftA();
+    await later(400);
+    await shiftA();
+  };
+  /** The line saying what the next Shift+A or Enter sends, or null when nothing is armed. */
+  const note = () => document.querySelector('.action-bar .armed-note')?.textContent ?? null;
+  /** The words on the button the next Shift+A or Enter presses, which is ringed. */
+  const armedButtons = () => labels('.buttons').filter((_, i) => document.querySelectorAll('.action-bar .buttons button')[i].classList.contains('armed'));
+  const slider = () => screen.getByRole('slider', { name: 'Bet size' }) as HTMLInputElement;
+  /** The bet box, the slider and the raise button as they stand. */
+  const sizing = () => ({ box: box().value, slider: slider().value, button: labels('.buttons').at(-1) });
+  const HOW = 'Shift+A or Enter sends it, Esc cancels';
+
+  afterEach(() => {
+    document.querySelectorAll('.test-extra').forEach((el) => el.remove());
+  });
+
+  it('puts every chip in the box with the first Shift+A, says what the second sends, and sends it with the second', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(box().value).toBe('1000');
+    expect(slider().value).toBe(slider().max);
+    expect(labels('.buttons')).toEqual(['Fold', 'Call 100', 'All in 1000']);
+    expect(armedButtons()).toEqual(['All in 1000']);
+    expect(note()).toBe(`All in 1000. ${HOW}`);
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+    expect(note()).toBeNull();
+  });
+
+  it('reads the armed all-in out from a live region already in the bar, and names Shift+A on the button it presses', async () => {
+    renderBar(facingBet(100));
+    // There, and empty, before the first press: a region that appears already holding its words is often not read.
+    // (R is on the bet box here, which this bar shows.)
+    const region = document.querySelector('.bar-head [role="status"]');
+    expect(region?.textContent).toBe('');
+    expect(document.querySelector('.action-bar .buttons button.primary')?.getAttribute('aria-keyshortcuts')).toBe('Shift+A');
+    await shiftA();
+    expect(document.querySelector('.bar-head [role="status"]')).toBe(region);
+    expect(region?.textContent).toBe('All in 1000. Shift+A or Enter sends it, Escape cancels.');
+    expect(document.querySelector('.armed-note')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('bets every chip when nobody has bet', async () => {
+    renderBar(checkedToMe());
+    await shiftATwice();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
+  });
+
+  it('takes Shift+A with Caps Lock on too, as the browser then reports a lower-case a with Shift held', async () => {
+    renderBar(facingBet(100));
+    await press('a', { shiftKey: true });
+    await later(400);
+    await press('a', { shiftKey: true });
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('never arms on a plain a, an A typed with Caps Lock, or with Ctrl, Alt or Cmd held', async () => {
+    renderBar(facingBet(100));
+    const before = sizing();
+    for (const over of [{ key: 'a' }, { key: 'A' }, { key: 'A', shiftKey: true, ctrlKey: true }, { key: 'A', shiftKey: true, altKey: true }, { key: 'A', shiftKey: true, metaKey: true }]) {
+      const { key, ...rest } = over;
+      await press(key, rest);
+      await later(400);
+      await press(key, rest);
+    }
+    expect(note()).toBeNull();
+    expect(sizing()).toEqual(before);
+    expect(moves()).toEqual([]);
+  });
+
+  it('does not count a second Shift+A straight after the first: it stays armed, and the pause starts again', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    // Two A's typed in a row, or three: none of them sends.
+    await later(100);
+    await shiftA();
+    await later(250);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(note()).toContain('All in 1000.');
+    // 350 ms after the first press but only 250 after the last: still not.
+    await later(250);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    await later(300);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('lets an Enter straight after the first press go to the page, and puts the box back', async () => {
+    const toChat = vi.fn();
+    const page = (e: KeyboardEvent) => e.key === 'Enter' && !e.defaultPrevented && toChat();
+    window.addEventListener('keydown', page);
+    try {
+      renderBar(facingBet(100));
+      const before = sizing();
+      await shiftA();
+      await later(100);
+      await press('Enter');
+      expect(moves()).toEqual([]);
+      expect(note()).toBeNull();
+      expect(sizing()).toEqual(before);
+      expect(toChat).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('keydown', page);
+    }
+  });
+
+  it('lets it go after about three seconds with no second press, putting the box back; the next Shift+A only arms it', async () => {
+    renderBar(facingBet(100));
+    fireEvent.change(box(), { target: { value: '300' } });
+    const before = sizing();
+    expect(before.button).toBe('Raise to 300');
+    await shiftA();
+    await later(2_900);
+    expect(note()).toContain('All in 1000.');
+    await later(200);
+    expect(note()).toBeNull();
+    expect(sizing()).toEqual(before);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(note()).toContain('All in 1000.');
+  });
+
+  it("says so on the bar's top line, in place of the hand's strength, so the bar grows no taller", async () => {
+    const view = facingBet(100);
+    view.turn = { seat: 0, startedAt: 0, deadline: 60_000, usingBank: false };
+    renderBar(view);
+    const bar = document.querySelector('.action-bar')!;
+    const lines = () => Array.from(bar.children, (c) => c.classList[0]);
+    const before = lines();
+    expect(document.querySelector('.bar-head .strength')?.textContent).toBe('Ace high');
+    await shiftA();
+    expect(lines()).toEqual(before);
+    expect(document.querySelector('.bar-head .armed-note')?.textContent).toContain('All in 1000.');
+    expect(document.querySelector('.bar-head .strength')).toBeNull();
+    expect(screen.getByRole('button', { name: /Time bank/ })).toBeTruthy();
+    await press('Escape');
+    expect(document.querySelector('.bar-head .strength')?.textContent).toBe('Ace high');
+  });
+
+  it('keeps that line on a turn with no Time bank, no Tip and nothing to say about the hand, so arming adds no line there either', async () => {
+    // Preflop, no turn clock, no coach: on the develop branch the bar had no top line at all here.
+    const view = facingBet(100);
+    view.hand = { ...view.hand!, street: 0, streetName: 'Preflop', boards: [[[]]] };
+    view.seats[0] = { ...view.seats[0]!, cards: [{ card: '9c', up: false }, { card: '4d', up: false }] };
+    renderBar(view);
+    const bar = document.querySelector('.action-bar')!;
+    const lines = () => Array.from(bar.children, (c) => c.classList[0]);
+    const before = lines();
+    expect(before[0]).toBe('bar-head');
+    expect(document.querySelector('.bar-head')?.textContent).toBe('');
+    await shiftA();
+    expect(lines()).toEqual(before);
+    expect(document.querySelector('.bar-head .armed-note')?.textContent).toContain('All in 1000.');
+    await press('Escape');
+    expect(lines()).toEqual(before);
+    expect(document.querySelector('.bar-head')?.textContent).toBe('');
+  });
+
+  it('has no top line to keep where Shift+A can do nothing: you may only call, and the call leaves you chips', () => {
+    const view = facingBet(100);
+    view.hand = { ...view.hand!, street: 0, streetName: 'Preflop', boards: [[[]]] };
+    view.seats[0] = { ...view.seats[0]!, cards: [{ card: '9c', up: false }, { card: '4d', up: false }] };
+    view.legal = { ...view.legal!, canRaise: false, minTo: 0, maxTo: 0 };
+    renderBar(view);
+    expect(document.querySelector('.bar-head')).toBeNull();
+  });
+
+  it('sends it with Enter too, which the page then leaves alone instead of starting a chat message', async () => {
+    // Like TablePage, which starts listening before the bar is drawn (while the table loads), and takes an Enter
+    // nobody has used to the chat box.
+    const toChat = vi.fn();
+    const page = (e: KeyboardEvent) => e.key === 'Enter' && !e.defaultPrevented && toChat();
+    window.addEventListener('keydown', page);
+    try {
+      renderBar(facingBet(100));
+      await shiftA();
+      await later(400);
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+      window.dispatchEvent(enter);
+      await settle();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+      expect(enter.defaultPrevented).toBe(true);
+      expect(toChat).not.toHaveBeenCalled();
+      // With nothing armed, Enter is the page's again.
+      await later(600);
+      await press('Enter');
+      expect(toChat).toHaveBeenCalledTimes(1);
+      expect(moves()).toHaveLength(1);
+    } finally {
+      window.removeEventListener('keydown', page);
+    }
+  });
+
+  it('lets it go with Escape, putting the box and slider back as they were, and leaves the records panel open', async () => {
+    const records = vi.fn();
+    // The page closes the records panel on an Escape nobody has used.
+    const page = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && records();
+    window.addEventListener('keydown', page);
+    try {
+      renderBar(facingBet(100));
+      fireEvent.change(box(), { target: { value: '200' } });
+      fireEvent.blur(box());
+      const before = sizing();
+      expect(before).toEqual({ box: '200', slider: expect.any(String), button: 'Raise to 200' });
+      await shiftA();
+      expect(sizing()).toEqual({ box: '1000', slider: slider().max, button: 'All in 1000' });
+      await press('Escape');
+      expect(note()).toBeNull();
+      expect(armedButtons()).toEqual([]);
+      expect(sizing()).toEqual(before);
+      expect(records).not.toHaveBeenCalled();
+      // The main button now sends what was there before, not the all-in.
+      await tap('Raise to 200');
+      expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 200 })]);
+    } finally {
+      window.removeEventListener('keydown', page);
+    }
+  });
+
+  it('puts back an amount half typed in the box, as typed', async () => {
+    renderBar(facingBet(100), { bigBlind: 20 });
+    const inBB = screen.getByRole('spinbutton', { name: 'Amount in big blinds' }) as HTMLInputElement;
+    fireEvent.change(inBB, { target: { value: '12.5' } });
+    await shiftA();
+    expect(inBB.value).toBe('50');
+    await press('Escape');
+    expect(inBB.value).toBe('12.5');
+    expect(labels('.buttons').at(-1)).toBe('Raise to 12.5 BB');
+  });
+
+  it('after Escape, the next Shift+A arms it again rather than sending', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    await later(400);
+    await press('Escape');
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(note()).toContain('All in 1000');
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('lets it go on a click anywhere, or when the window loses focus, putting the box back each time', async () => {
+    renderBar(facingBet(100));
+    const before = sizing();
+    await shiftA();
+    fireEvent.pointerDown(document.body);
+    await settle();
+    expect(note()).toBeNull();
+    expect(sizing()).toEqual(before);
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(note()).not.toBeNull();
+    fireEvent.blur(window);
+    await settle();
+    expect(note()).toBeNull();
+    expect(sizing()).toEqual(before);
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([]);
+  });
+
+  it('still sends from a click on the ringed button, which shows the all-in', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    const button = screen.getByRole('button', { name: /All in 1000/ });
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+    await settle();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('lets it go when another amount is picked, keeping that amount; the next Shift+A only arms it again', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    fireEvent.pointerDown(screen.getByRole('button', { name: '½ pot' }));
+    await tap('½ pot');
+    expect(note()).toBeNull();
+    expect(labels('.buttons')).toContain('Raise to 350');
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(box().value).toBe('1000');
+    // Picking the all-in again by hand doesn't arm it.
+    fireEvent.change(box(), { target: { value: '400' } });
+    fireEvent.change(box(), { target: { value: '1000' } });
+    await later(400);
+    await press('Enter');
+    expect(note()).toBeNull();
+    expect(moves()).toEqual([]);
+  });
+
+  it('lets any other key go and do its own job: C calls rather than going all in', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    await press('c');
+    expect(note()).toBeNull();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'call' })]);
+  });
+
+  it('R puts the box back first, so R and Enter send what was there before (#320)', async () => {
+    renderBar(facingBet(100));
+    fireEvent.change(box(), { target: { value: '300' } });
+    await shiftA();
+    await press('r');
+    expect(note()).toBeNull();
+    expect(document.activeElement).toBe(box());
+    expect(box().value).toBe('300');
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    await settle();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 300 })]);
+  });
+
+  it('is not let go by Shift on the way to the second press, and holding the keys down sends nothing', async () => {
+    renderBar(facingBet(100));
+    await shiftA();
+    await later(400);
+    await press('A', { shiftKey: true, repeat: true });
+    await press('A', { shiftKey: true, repeat: true });
+    await press('Enter', { repeat: true });
+    expect(moves()).toEqual([]);
+    await press('Shift', { shiftKey: true });
+    expect(note()).toContain('All in 1000');
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('never carries over to a later street, a later hand, or a later turn on the same street', async () => {
+    const bar = renderBar(checkedToMe());
+    await shiftA();
+    // Ann's time ran out and she checked; the view after brings her the next street, with its own bet box.
+    bar.update(checkedToMe({ street: 2, streetName: 'Turn' }));
+    await settle();
+    expect(note()).toBeNull();
+    expect(box().value).toBe('20');
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    bar.update(checkedToMe({ handNumber: 8 }));
+    await settle();
+    expect(note()).toBeNull();
+    expect(box().value).toBe('20');
+    await later(400);
+    await press('Enter');
+    await shiftA();
+    expect(moves()).toEqual([]);
+    // Someone else's turn comes between two of hers on one street: armed for the first, not the second, and the box
+    // is back as it was before the first press.
+    const between = waitingOn(0, 1);
+    between.hand = { ...between.hand!, handNumber: 8 };
+    bar.update(between);
+    await settle();
+    const next = facingBet(100);
+    next.hand = { ...next.hand!, handNumber: 8, events: [{ t: 'act' } as never] };
+    bar.update(next);
+    await settle();
+    expect(note()).toBeNull();
+    await later(400);
+    await press('Enter');
+    expect(moves()).toEqual([]);
+  });
+
+  it('when the turn passes and comes back on the same street, starts the box where a new turn always does, not all in', async () => {
+    const bar = renderBar(facingBet(100));
+    fireEvent.change(box(), { target: { value: '300' } });
+    await shiftA();
+    expect(box().value).toBe('1000');
+    // The turn passes (paused, say) and comes back on the same street.
+    bar.update(waitingOn(100));
+    await settle();
+    const again = facingBet(100);
+    again.hand = { ...again.hand!, events: [{ t: 'act' } as never] };
+    bar.update(again);
+    await settle();
+    expect(note()).toBeNull();
+    expect(box().value).toBe('200');
+  });
+
+  it('never carries an armed all-in call over either', async () => {
+    const shoved = (over: Partial<HandView>) => {
+      const view = facingBet(300, 150);
+      view.hand = { ...view.hand!, ...over };
+      return view;
+    };
+    const bar = renderBar(shoved({ events: [{ t: 'act' } as never] }));
+    await shiftA();
+    expect(note()).toContain('Call 150, all in.');
+    // Facing a shove again on the next street, and in the next hand.
+    bar.update(shoved({ street: 2, streetName: 'Turn', events: [{ t: 'act' } as never] }));
+    await settle();
+    expect(note()).toBeNull();
+    await later(400);
+    await shiftA();
+    bar.update(shoved({ handNumber: 8, events: [{ t: 'act' } as never] }));
+    await settle();
+    expect(note()).toBeNull();
+    await later(400);
+    await press('Enter');
+    expect(moves()).toEqual([]);
+  });
+
+  it('is let go by any move, even one made with the mouse', async () => {
+    const bar = renderBar(checkedToMe());
+    await shiftA();
+    await tap('Check');
+    expect(moves()).toEqual([expect.objectContaining({ type: 'check' })]);
+    expect(note()).toBeNull();
+    // The same turn's view again (the check refused, say): the Shift+A pressed before it is gone.
+    bar.update(checkedToMe());
+    await later(600);
+    await shiftA();
+    expect(moves()).toHaveLength(1);
+  });
+
+  it('in pot limit, puts in the most the pot allows and says that is not all in', async () => {
+    const view = facingBet(100);
+    view.hand!.betting = 'pot-limit';
+    view.legal = { ...view.legal!, maxTo: 600 };
+    renderBar(view);
+    await shiftA();
+    expect(box().value).toBe('600');
+    expect(armedButtons()).toEqual(['Raise to 600']);
+    expect(note()).toBe(`Raise to 600, the pot-limit most, not all in. ${HOW}`);
+    await later(400);
+    await press('Enter');
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 600 })]);
+  });
+
+  it('in pot limit with a short stack, says all in when the pot allows every chip', async () => {
+    const view = facingBet(100, 450);
+    view.hand!.betting = 'pot-limit';
+    renderBar(view);
+    await shiftA();
+    expect(note()).toContain('All in 450.');
+  });
+
+  it('when bets are trimmed to what others can call, says it is the most they can call, not all in', async () => {
+    const view = checkedToMe();
+    view.legal = { ...view.legal!, maxTo: 400 };
+    renderBar(view);
+    await shiftA();
+    expect(note()).toContain('Bet 400, the most others can call, not all in.');
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 400 })]);
+  });
+
+  it('works in big blinds too', async () => {
+    renderBar(facingBet(100), { bigBlind: 20 });
+    await shiftA();
+    expect((screen.getByRole('spinbutton', { name: 'Amount in big blinds' }) as HTMLInputElement).value).toBe('50');
+    expect(note()).toContain('All in 50 BB.');
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
+  });
+
+  it('arms the all-in when the smallest raise is every chip, with no bet box', async () => {
+    renderBar(facingBet(100, 180));
+    await shiftA();
+    expect(armedButtons()).toEqual(['All in 180']);
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 180 })]);
+  });
+
+  it('facing a bet of all your chips or more, arms the call', async () => {
+    renderBar(facingBet(300, 150));
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(armedButtons()).toEqual(['Call 150 (all in)']);
+    expect(note()).toBe(`Call 150, all in. ${HOW}`);
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'call' })]);
+  });
+
+  it('does nothing when you may only call and the call leaves you chips', async () => {
+    // Facing an all-in that was not a full raise, after Ann had already acted: she may call or fold, not raise.
+    const view = facingBet(100);
+    view.legal = { ...view.legal!, canRaise: false, minTo: 0, maxTo: 0 };
+    renderBar(view);
+    await shiftATwice();
+    expect(note()).toBeNull();
+    expect(moves()).toEqual([]);
+  });
+
+  it('does nothing in fixed limit, where a raise has only one size', async () => {
+    renderBar(
+      tableView({
+        hand: { betting: 'fixed-limit', toAct: 0, currentBet: 20, potTotal: 60 },
+        others: { 1: { bet: 20 }, 2: { bet: 20 } },
+        legal: { canFold: true, canCheck: false, callAmount: 20, canRaise: true, raiseKind: 'raise', minTo: 40, maxTo: 40, canBringIn: false },
+      }),
+    );
+    await shiftATwice();
+    await later(400);
+    await press('Enter');
+    expect(note()).toBeNull();
+    expect(moves()).toEqual([]);
+  });
+
+  it('before your turn, A still ticks and unticks Call any, and Shift+A does nothing', async () => {
+    const bar = renderBar(waitingOn(100));
+    expect(screen.getByRole('button', { name: /Call any/ }).querySelector('kbd')?.textContent).toBe('A');
+    await press('a');
+    expect(labels('.buttons')).toEqual(['Fold', 'Call 100', '✓ Call any']);
+    await press('a');
+    expect(labels('.buttons')).toEqual(['Fold', 'Call 100', 'Call any']);
+    // Shift+A ticks nothing, so a pair split by the turn coming plays nothing: the second press only arms it.
+    await shiftA();
+    expect(labels('.buttons')).toEqual(['Fold', 'Call 100', 'Call any']);
+    bar.update(facingBet(100));
+    await settle();
+    expect(moves()).toEqual([]);
+    expect(note()).toBeNull();
+    await later(400);
+    await shiftA();
+    expect(moves()).toEqual([]);
+    expect(note()).toContain('All in 1000');
+  });
+
+  it('plays Call any ticked with A when the turn comes, as before', async () => {
+    const bar = renderBar(waitingOn(0));
+    await press('A');
+    expect(labels('.buttons')).toEqual(['Check / Fold', 'Check', '✓ Call any']);
+    bar.update(facingBet(100));
+    await settle();
+    expect(moves()).toEqual([expect.objectContaining({ type: 'call' })]);
+  });
+
+  it('on your turn, a plain A does nothing, as before', async () => {
+    renderBar(facingBet(100));
+    await press('a');
+    expect(note()).toBeNull();
+    expect(box().value).toBe('200');
+    expect(moves()).toEqual([]);
+  });
+
+  it('never fires while typing in the chat box or another box, or behind a dialog', async () => {
+    renderBar(facingBet(100));
+    const chat = document.createElement('input');
+    chat.className = 'test-extra';
+    document.body.appendChild(chat);
+    chat.focus();
+    fireEvent.keyDown(chat, { key: 'A', shiftKey: true });
+    await later(400);
+    fireEvent.keyDown(chat, { key: 'A', shiftKey: true });
+    fireEvent.keyDown(chat, { key: 'Enter' });
+    await settle();
+    expect(note()).toBeNull();
+    expect(moves()).toEqual([]);
+    // In the bet box Shift+A is no shortcut either.
+    fireEvent.keyDown(box(), { key: 'A', shiftKey: true });
+    await settle();
+    expect(note()).toBeNull();
+    const dialog = document.createElement('div');
+    dialog.className = 'modal-backdrop test-extra';
+    document.body.appendChild(dialog);
+    await shiftA();
+    expect(note()).toBeNull();
+    // Armed, and then a dialog opens over the table: Enter there is the dialog's, and lets the all-in go.
+    dialog.remove();
+    await shiftA();
+    expect(note()).not.toBeNull();
+    document.body.appendChild(dialog);
+    await later(400);
+    await press('Enter');
+    dialog.remove();
+    expect(note()).toBeNull();
+    await shiftA();
+    expect(moves()).toEqual([]);
+  });
+
+  it('shows the key on the All in preset, and on Max in pot limit', () => {
+    const bar = renderBar(facingBet(100));
+    const allIn = screen.getByRole('button', { name: 'All in' });
+    expect(allIn.querySelector('kbd')?.textContent).toBe('⇧A');
+    expect(allIn.getAttribute('aria-keyshortcuts')).toBe('Shift+A');
+    const pl = facingBet(100);
+    pl.hand!.betting = 'pot-limit';
+    pl.legal = { ...pl.legal!, maxTo: 600 };
+    bar.update(pl);
+    expect(screen.getByRole('button', { name: 'Max' }).querySelector('kbd')?.textContent).toBe('⇧A');
+  });
+
+  describe('in every game it applies to', () => {
+    it('Omaha, pot limit', async () => {
+      const view = checkedToMe({ gameId: 'plo4', gameName: 'Pot Limit Omaha', betting: 'pot-limit' });
+      view.legal = { ...view.legal!, maxTo: 200 };
+      renderBar(view);
+      await shiftA();
+      expect(note()).toContain('Bet 200, the pot-limit most, not all in.');
+      await later(400);
+      await shiftA();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 200 })]);
+    });
+
+    const studBringIn = (betting: 'no-limit' | 'pot-limit', maxTo: number, potTotal: number) =>
+      tableView({
+        hand: { gameId: 'stud', family: 'stud', betting, street: 0, streetName: 'Third street', boards: [[[]]], potTotal, toAct: 0 },
+        me: {
+          cards: [
+            { card: '9c', up: false },
+            { card: '8d', up: false },
+            { card: '2h', up: true },
+          ],
+        },
+        legal: { canFold: false, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', minTo: 20, maxTo, canBringIn: true },
+      });
+
+    it('no-limit stud: the bring-in seat can open for every chip', async () => {
+      // An unusual pairing the game settings gently warn about, but allowed.
+      renderBar(studBringIn('no-limit', 1000, 15));
+      await shiftA();
+      expect(armedButtons()).toEqual(['All in 1000']);
+      await later(400);
+      await shiftA();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
+    });
+
+    it('pot-limit stud: a completion to the pot-limit most says Complete to, as its button does', async () => {
+      renderBar(studBringIn('pot-limit', 60, 60));
+      await shiftA();
+      expect(armedButtons()).toEqual(['Complete to 60']);
+      expect(note()).toBe(`Complete to 60, the pot-limit most, not all in. ${HOW}`);
+      await later(400);
+      await shiftA();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 60 })]);
+    });
+
+    it('no-limit draw, on a betting round; nothing while drawing', async () => {
+      const draw = { gameId: 'td27', family: 'draw' as const, betting: 'no-limit' as const, boards: [[[]]] as HandView['boards'] };
+      const drawing = {
+        ...tableView({ hand: { ...draw, phase: 'drawing', streetName: 'First draw', toAct: 0 }, me: { cards: ['2c', '3d', '4h', '7s', 'Kc'].map((card) => ({ card, up: false })) } }),
+        canDraw: { max: 5 },
+      };
+      const bar = renderBar(drawing);
+      await shiftATwice();
+      expect(note()).toBeNull();
+      expect(call).not.toHaveBeenCalled();
+      bar.update(checkedToMe({ ...draw, street: 2, streetName: 'Second betting round' }));
+      await shiftATwice();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
+    });
+
+    it('a bomb pot', async () => {
+      renderBar(checkedToMe({ bombPot: true }));
+      await shiftATwice();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
+    });
+
+    it("mixed games follow the hand being played, not the table's settings", async () => {
+      // The table's settings say no limit, but this hand of the mix is limit: nothing.
+      const bar = renderBar(
+        tableView({
+          hand: { betting: 'fixed-limit', toAct: 0 },
+          legal: { canFold: true, canCheck: true, callAmount: 0, canRaise: true, raiseKind: 'bet', minTo: 20, maxTo: 20, canBringIn: false },
+        }),
+      );
+      await shiftA();
+      expect(note()).toBeNull();
+      // The next hand of the mix is no limit, though the settings now say limit.
+      const nl = checkedToMe({ handNumber: 8 });
+      nl.settings.game.betting = 'fixed-limit';
+      bar.update(nl);
+      await shiftATwice();
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
+    });
+  });
+});

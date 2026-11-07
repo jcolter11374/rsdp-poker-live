@@ -33,8 +33,8 @@
 /* Buttons that are links. */
 a.button { display: inline-block; text-decoration: none; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
 a.button:hover { border-color: #4a525d; background: #2c323a; }
-a.button.primary { background: var(--go); border-color: var(--go); color: #fff; font-weight: 700; }
-a.button.primary:hover { background: var(--go-hover); border-color: var(--go-hover); }
+a.button.primary { background: var(--go-fill); border-color: var(--go-fill); color: #fff; font-weight: 700; }
+a.button.primary:hover { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
 
 /* ---- the signed-in dot by your name in the header */
 .account-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--go); vertical-align: 1px; }
