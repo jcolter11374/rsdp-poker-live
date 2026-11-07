@@ -917,6 +917,13 @@ dl.shortcuts dd { margin: 0; }
 /* The fair-dealing seed warning: a short line and a small Details button, so it stays within the room this area holds
    (#438). Details has the whole of it. */
 .dock-notes .seed-warning button { padding: 1px 10px; font-size: 0.85em; color: inherit; background: transparent; border-color: currentColor; vertical-align: baseline; }
+/* Phones on their side hold only the room the buttons need (Dock.tsx), so there it's one line, cut short if need be,
+   with Details always in view. */
+@media (max-height: 500px) {
+  .portrait .dock-notes .seed-warning { display: flex; align-items: center; gap: 8px; padding-top: 4px; padding-bottom: 4px; }
+  .portrait .dock-notes .seed-line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .portrait .dock-notes .seed-warning button { flex: none; }
+}
 /* Windows too narrow for the side column (a laptop window at half width, a tablet on its side): the table's size comes
    from the window there, not from this area, and under the buttons the notes would be at the bottom edge of the screen.
    They go above the buttons, and stay on your turn so the buttons never move under a finger as it starts. */

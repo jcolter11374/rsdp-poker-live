@@ -586,7 +586,7 @@ export function TablePage({ tableId }: { tableId: string }) {
     // Short, so it fits the area under the table without taking the table's height; Details has the whole of it (#438).
     seedWarning && (
       <div className="banner warn seed-warning" key="seed">
-        ⚠ Fair dealing: {seedWarning.line}.{' '}
+        <span className="seed-line">⚠ Fair dealing: {seedWarning.line}.</span>{' '}
         <button onClick={() => setDialog({ kind: 'seed', text: seedWarning.text })}>Details</button>
       </div>
     ),
