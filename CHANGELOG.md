@@ -18,7 +18,7 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.06.6] - 2026-11-06
+## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
 
@@ -34,7 +34,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
 - Tournament seats are now drawn with a stronger random generator, the same kind used to shuffle the cards, from a secret seed each tournament gets of its own.
 - Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.
-- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last saves and public record entries. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
+- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last public record entries and closing the database. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
 - Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.
 
 ## [2026.11.06.5] - 2026-11-06
@@ -672,7 +672,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
-[2026.11.06.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.6
+[2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4
 [2026.11.06.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.3

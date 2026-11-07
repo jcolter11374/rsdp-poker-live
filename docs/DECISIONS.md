@@ -43,6 +43,7 @@ How this file works:
 | [D30](#d30-a-definition-of-done) | A definition of done | 2026-11-06 | John asked; wording Claude |
 | [D31](#d31-mixed-game-details-settled-while-fixing-its-bugs) | Mixed-game details settled while fixing its bugs | 2026-11-06 | Claude |
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
+| [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
 
 ---
 
@@ -86,7 +87,7 @@ How this file works:
   - **2026-10-25, 21:12 UTC, on a choice card.** He picked "Yes, merge to develop": merge each fix into `develop` once CI is green and a review passes, and report afterwards. Merging into `main` still needed his OK then. (Minutes later he also wrote: "I'll leave all of this up to your discretion. Don't confuse my enthusiasm for impatience.")
   - **2026-10-26, 05:13 UTC.** "Feel free to push things as they are done without asking me." From then on, finished work may go live without asking him each time.
 - **Decision:** feature branch → `develop` → `main`, and a merge into `main` deploys. A review pass means one we run ourselves, recorded on the pull request (D22).
-- **Claude's own conditions** on the standing OK, not John's words: test each release on a copy first, prefer quiet times, and tell John after each release. Asking first about anything that costs money or changes the product is John's own rule (D04, D08). **Partly replaced by D25** (2026-11-05): a release of only light changes skips the copy test and the wait for a quiet time.
+- **Claude's own conditions** on the standing OK, not John's words: test each release on a copy first, prefer quiet times, and tell John after each release. Asking first about anything that costs money or changes the product is John's own rule (D04, D08). **Partly replaced by D25** (2026-11-05): a release of only light changes skips the copy test and the wait for a quiet time. **The quiet-time condition is gone altogether since [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time)** (2026-11-07).
 - **Settled 2026-11-05 by [D25](#d25-full-and-light-changes) ([#236](https://github.com/jcolter11374/rsdp-poker-live/issues/236)):** John approved Claude's two-path proposal, which keeps quiet times for releases with any full change and lets releases of only light changes go out whenever they're ready. (The question was whether John's "go ahead and push updates now. Don't worry about active tables" of 2026-10-26, 23:00 UTC, applied to every release or only to that one. He didn't say; the new rule replaces it.)
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CODE_TOUR.md](CODE_TOUR.md).
 
@@ -271,7 +272,7 @@ How this file works:
 
 - **Decided:** 2026-11-05, 16:10 UTC, by John, on Claude's proposal; the details are Claude's. Claude set out what each shortcut would risk: skipping the review pass lets more bugs reach players, skipping the play-test means problems show up in a real game instead, and releasing at any time means a game can pause for a few seconds while the server restarts. The checks on GitHub can't be skipped. Claude recommended keeping the full process for anything that touches the game itself, and for low-risk fixes like wording, layout or download buttons, "a lighter review plus releasing as soon as it's ready". John: "If you think it is reasonable yes. If you think it is reckless no". Claude judged it reasonable: the checks on GitHub still run on every change, and every change that could affect a game keeps every step.
 - **Decision:** a change takes one of two paths.
-  - **Full**, for anything that touches the game or players' data: dealing, chips and pots, timers, tournaments, hidden cards, privacy, fairness and the public record, sign-in, stored data, how the site runs, and the safety checks themselves. CI, a separate review pass, a play-test on a copy, and a release at a quiet time.
+  - **Full**, for anything that touches the game or players' data: dealing, chips and pots, timers, tournaments, hidden cards, privacy, fairness and the public record, sign-in, stored data, how the site runs, and the safety checks themselves. CI, a separate review pass, a play-test on a copy, and a release at a quiet time (**replaced by [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time)**: no quiet-time wait).
   - **Light**, for changes that can't affect a game, who is allowed to see what, or what's stored: displayed wording, layout, download buttons that offer only what people can already download, docs. CI and a shorter review pass, and live as soon as it's ready.
   - When unsure, full. A release takes the path of its riskiest change.
 - **Claude's calls**, not John's words: the exact lists and what a light review checks (in CONTRIBUTING.md), and dropping the copy test for light-only releases. The copy test was Claude's own condition in D05, and the proposal had already told John that skipping it means problems turn up in a real game.
@@ -359,3 +360,11 @@ How this file works:
 - **Why:** #259 put 0.5 in place of 0.2 in one step. Deployed, the server couldn't have opened the live database, and nothing in CI would have said so: every CI check starts from an empty database, and the upgrade rehearsal (`upgrade.yml`) runs only on releases. The rehearsal also starts the release before on the upgraded data, as a rollback would; a single-step move fails that on purpose, because the release before can't read Postgres 18. Step 1 is what makes the move in step 2 reversible.
 - **For next time:** Dependabot groups PGlite with Drizzle in a `database` group of its own (`.github/dependabot.yml`). A PGlite update that changes the Postgres major version (see `PGLITE_POSTGRES` in `apps/server/src/db/client.ts`, which `apps/server/test/pglite-versions.test.ts` checks) follows these three steps again.
 - **Where:** `apps/server/src/db/client.ts`, `apps/server/test/pglite-versions.test.ts`, issue #367.
+
+## D34. Releases go out when they're ready, not at a quiet time
+
+- **Decided:** 2026-11-07, 01:15 UTC, by John. A release was being held for a quiet time (after 04:00 UTC), as D05's conditions and D25 said. John: "Did I say to wait? is this a new policy of yours?" and "I've basically worked against that framing." The wait was Claude's own condition (D05), never his; on 2026-10-26 he had said "go ahead and push updates now. Don't worry about active tables".
+- **Decision:** a release goes out as soon as it's ready, whether or not tables are open or a tournament is running. A release with any full change still gets its review passes and a play-test on a copy first, and a light-only release still skips the play-test (D25). Changes that are ready at the same time still go out together, so players see one short pause, not several.
+- **Why:** a deploy restarts the server, but hands in progress resume and browsers reconnect by themselves, so players see a pause of a few seconds. John prefers that to finished work waiting.
+- **Replaces** the quiet-time condition in D05 and the "release at a quiet time" in D25's full path. Nothing else in them changes.
+- **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CONTRIBUTING.md](../CONTRIBUTING.md#full-or-light-how-much-checking-a-change-needs), [CLAUDE.md](../CLAUDE.md), [CODE_TOUR.md](CODE_TOUR.md).
