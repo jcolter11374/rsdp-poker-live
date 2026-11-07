@@ -163,7 +163,7 @@ export function handSearchRoutes(
      * A hand of a running table as `playerId` is shown it, when they now watch it on a delay: no card shown after it
      * that their view hasn't shown yet, and its reveal as of the moment they are shown (#435). Undefined otherwise.
      */
-    asShown?: (tableId: string, playerId: string, past: PastHand, hideMine: boolean) => HandRecordView | undefined;
+    asShown?: (tableId: string, ids: string[], past: PastHand) => { past: PastHand; view: (playerId: string, hideMine: boolean) => HandRecordView } | undefined;
   },
 ) {
   const { shared, now, log } = opts;
@@ -220,7 +220,7 @@ export function handSearchRoutes(
 
     (async () => {
       const { ids } = await me(req, db);
-      const found: { row: Row; past: PastHand; seat: number }[] = [];
+      const found: { row: Row; past: PastHand; seat: number; shownAs?: ReturnType<NonNullable<typeof opts.asShown>> }[] = [];
       let cursor = before ? { at: new Date(Number(before[0])), id: before[1] } : null;
       let scanned = 0;
       let done = false;
@@ -239,15 +239,18 @@ export function handSearchRoutes(
           read++;
           scanned++;
           cursor = { at: row.startedAt, id: row.id };
-          const past = pastHandFromRow(row);
-          const seat = past.seats.find((x) => ids.includes(x.playerId))?.seat;
-          if (seat !== undefined && matches(past, seat, nameIn(snaps.get(row.tableId)), { ...filter, cardTest })) found.push({ row, past, seat });
+          const whole = pastHandFromRow(row);
+          const seat = whole.seats.find((x) => ids.includes(x.playerId))?.seat;
+          // Someone now watching its table on a delay finds the hand as their view has it, filters and pot too (#435).
+          const shownAs = seat !== undefined ? opts.asShown?.(row.tableId, ids, whole) : undefined;
+          const past = shownAs?.past ?? whole;
+          if (seat !== undefined && matches(past, seat, nameIn(snaps.get(row.tableId)), { ...filter, cardTest })) found.push({ row, past, seat, shownAs });
           if (found.length >= PAGE) break;
         }
         // The oldest hand has been read.
         done = rows.length < BATCH && read === rows.length;
       }
-      const results = found.map(({ row, past }) => {
+      const results = found.map(({ row, past, shownAs }) => {
         const snap = snaps.get(row.tableId);
         const mine = past.seats.find((x) => ids.includes(x.playerId))!.playerId;
         return {
@@ -255,12 +258,13 @@ export function handSearchRoutes(
           tableId: row.tableId,
           tableName: snap?.settings?.table.name ?? '',
           centsMode: !!snap?.settings?.stakes.centsMode,
-          seatCount: snap?.seats?.length ?? 9,
+          // The table's size when the hand was played: the live one can tell someone on a delay what it did since.
+          seatCount: row.header.input.maxSeats ?? snap?.seats?.length ?? 9,
           felt: snap?.settings?.table.felt ?? null,
           myId: mine,
           pot: potOf(past),
           // Reveals follow the running table when it is loaded: its save can lag behind a game started again.
-          hand: opts.asShown?.(row.tableId, mine, past, false) ?? savedHandView(liveFairOf(snap, row.tableId), past, mine, { now: now() }),
+          hand: shownAs?.view(mine, false) ?? savedHandView(liveFairOf(snap, row.tableId), past, mine, { now: now() }),
         };
       });
       // The next page carries on after the last hand read (a search that stopped at SCAN_MAX too).
@@ -304,10 +308,12 @@ export function handSearchRoutes(
     (async () => {
       const { who, ids } = await me(req, db);
       const [row] = (await db.select().from(hands).where(eq(hands.id, handId))) as Row[];
-      const past = row && pastHandFromRow(row);
-      const mine = past?.seats.find((x) => ids.includes(x.playerId))?.playerId;
+      const whole = row && pastHandFromRow(row);
+      const mine = whole?.seats.find((x) => ids.includes(x.playerId))?.playerId;
       // Only a hand I played: anything else answers the same as a missing one.
       if (!row || !mine) return void res.status(404).json({ error: 'No such hand.' });
+      const shownAs = opts.asShown?.(row.tableId, ids, whole);
+      const past = shownAs?.past ?? whole;
       const snap = (await snapsOf([row.tableId])).get(row.tableId);
       const id = newId();
       const createdAt = now();
@@ -316,13 +322,13 @@ export function handSearchRoutes(
         id,
         tableName: snap?.settings?.table.name ?? '',
         centsMode: !!snap?.settings?.stakes.centsMode,
-        seatCount: snap?.seats?.length ?? 9,
+        seatCount: row.header.input.maxSeats ?? snap?.seats?.length ?? 9,
         felt: snap?.settings?.table.felt ?? null,
         sharedBy: who.player.displayName || nameIn(snap)(mine),
         // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
         ...(hideMine ? {} : { sharerSeat: past.seats.find((x) => x.playerId === mine)!.seat }),
         createdAt,
-        hand: { ...(opts.asShown?.(row.tableId, mine, past, hideMine) ?? savedHandView(snap, past, mine, { hideMine })), fair: null },
+        hand: { ...(shownAs?.view(mine, hideMine) ?? savedHandView(snap, past, mine, { hideMine })), fair: null },
       };
       await shared.create({ id, tableId: row.tableId, handNumber: row.number, createdBy: who.player.id, snapshot });
       res.json({ id });

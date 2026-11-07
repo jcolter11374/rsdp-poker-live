@@ -160,6 +160,45 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     expect(rt.seatOf('watcher')?.seat).toBe(3);
   });
 
+  it('hears "closed" for a seat their view shows free that someone sat in and left live, until their view gets there', () => {
+    const { rt, clock } = table();
+    const shown = freezeView(rt, clock);
+    clock.advance(1_000);
+    rt.requestSeat('d', { seat: 4, name: 'D', stack: 10_000 });
+    expect(ask(rt, 4)).toBe(CLOSED);
+    clock.advance(1_000);
+    rt.stand('d');
+    expect(rt.state.seats[4]).toBeNull();
+    clock.advance(1_000);
+    // Free live and in their view all along, but a yes now would tell them D has come and gone.
+    expect(ask(rt, 4)).toBe(CLOSED);
+    expect(rt.seatOf('watcher')).toBeNull();
+    // Their view reaches the table after D left: the seat is theirs.
+    shown.at = clock.now();
+    expect(ask(rt, 4)).toBe('accepted');
+  });
+
+  it('is not seated from the waitlist in a seat someone sat in and left live, until their view gets there', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 5;
+      s.seating.waitlist = true;
+    });
+    const shown = freezeView(rt, clock);
+    clock.advance(1_000);
+    rt.requestSeat('d', { seat: 4, name: 'D', stack: 10_000 });
+    expect(ask(rt, 4)).toBe(CLOSED);
+    rt.joinWaitlist('watcher', { name: 'Watcher', stack: 10_000 });
+    clock.advance(1_000);
+    rt.stand('d');
+    expect(rt.state.offers).toEqual([expect.objectContaining({ playerId: 'watcher', seat: 4 })]);
+    clock.advance(1_000);
+    expect(ask(rt, 4)).toBe(CLOSED);
+    expect(rt.seatOf('watcher')).toBeNull();
+    shown.at = clock.now();
+    expect(ask(rt, 4)).toBe('accepted');
+    expect(rt.seatOf('watcher')?.seat).toBe(4);
+  });
+
   it('tells a player who has just left live, and is still shown in their seat, what they heard before it', () => {
     const { rt, clock } = table();
     rt.stand('c', { afterHand: true });

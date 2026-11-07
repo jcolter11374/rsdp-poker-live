@@ -18,14 +18,30 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
   const digest = useMemo(() => digestOf(hand), [hand]);
   // The public record of this hand, to check it against once it is revealed.
   const [record, setRecord] = useState<HandEntries | 'failed' | null>(null);
-  // Asked again a minute later while a card shown after the hand is still waiting to go in the record (D38).
+  // Asked again a minute later while a card shown after the hand is still waiting to go in the record (D38), and
+  // which try the record held was fetched on.
   const [again, setAgain] = useState(0);
+  const [fetchedOn, setFetchedOn] = useState(-1);
+  // Another hand, or this one with another card shown since: its record is looked up afresh, with every try.
+  const checking = `${tableId}:${hand.handNumber}:${digest}`;
+  const [checked, setChecked] = useState(checking);
+  if (checked !== checking) {
+    setChecked(checking);
+    setRecord(null);
+    setAgain(0);
+    setFetchedOn(-1);
+  }
   useEffect(() => {
     if (!tableId || !digest) return;
     let live = true;
     tableHand(tableId, hand.handNumber).then(
-      (r) => live && setRecord(r),
-      () => live && setRecord('failed'),
+      (r) => {
+        if (!live) return;
+        setRecord(r);
+        setFetchedOn(again);
+      },
+      // Not reached this time: what was found before stands, so a check that is waiting goes on waiting and asking.
+      () => live && setRecord((r) => (r && r !== 'failed' ? r : 'failed')),
     );
     return () => {
       live = false;
@@ -96,13 +112,14 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     if (tableId && record && record !== 'failed') {
       const inRecord = handInRecord(hand, record);
       const label = 'It is in the public record, unchanged';
-      // Still not there after all the tries, well past the 10 minutes it can wait: it fails.
+      // Still not there on the last try, well past the 10 minutes it can wait: it fails. Until a record fetched on that
+      // try says so, it waits.
       if (inRecord.pending)
-        extra.push(again < TRIES ? { label, ok: false, wait: true, detail: `${inRecord.detail}. Checking again each minute.` } : { label, ok: false, detail: `${inRecord.detail}, but it still isn\u2019t there ${TRIES} minutes later` });
+        extra.push(fetchedOn < TRIES ? { label, ok: false, wait: true, detail: `${inRecord.detail}. Checking again each minute.` } : { label, ok: false, detail: `${inRecord.detail}, but it still isn\u2019t there ${TRIES} minutes later` });
       else if (inRecord.ok !== null) extra.push({ label, ok: inRecord.ok, detail: inRecord.detail });
     }
     return { check, extra, missing, proof };
-  }, [fair, hand, myId, tableId, record, again]);
+  }, [fair, hand, myId, tableId, record, fetchedOn]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
   const checks: { label: string; ok: boolean; wait?: boolean; detail: string }[] = [...(check?.checks ?? []), ...extra];

@@ -302,8 +302,10 @@ the repository (and pulling the `transparency` branch now and then).
   as the hand finished; a hand waiting for a spectator delay is saved, and
   goes in before any later hand of its table). A card shown after the hand
   at a table watched on a delay goes in up to 10 minutes after it is shown;
-  until then the check finds the hand as it ended and asks the record again
-  each minute. The ledger checks every
+  until then the check finds the hand as it was before that card, shows it as
+  waiting (never as passed), and asks the record again each minute for 15
+  minutes. It fails if the card still isn't there, or once a later hand of the
+  table is in the record. The ledger checks every
   buy-in and cash-out against the record, and says so if a player's totals
   were found changed when a closed table was opened again. Those two compare with the record as the
   site shows it now; it's GitHub's regular check of the whole record that shows
@@ -319,7 +321,10 @@ git clone -b transparency https://github.com/jcolter11374/rsdp-poker-live copy
 node scripts/verify-audit.mjs --copy copy --proof hand-12-proof.json
 ```
 
-It uses Node's own SHA-256 and nothing from the app. To be told when a check
+It uses Node's own SHA-256 and nothing from the app. Like the browser, it
+says a hand is still waiting, rather than different, when the record has it as
+it was before a card shown after it ended and no later hand of that table is in
+yet: run it again 10 minutes later. To be told when a check
 fails, press **Watch** on the repository's GitHub page (custom: Issues).
 
 What these checks can't do:
@@ -389,9 +394,21 @@ for them at the first hand dealt under it. A few things stay live on purpose:
   hands, so when it appears, someone watching on a delay can tell that the live
   table is between hands. Delaying it would let people sit down without seeing
   the warning.
+
+And a few gaps are still open, each with its issue:
+
 - After a server restart (every release is one), a spectator's view starts
   again from the table as it is then, so it can jump ahead by up to the delay
-  once.
+  once (#470).
+- The public leaderboard counts a running table's hands as they end live, so
+  it can show a result about a minute after the live hand ends, before someone
+  on a longer delay sees it (#469).
+- Sitting down shows the table live, so someone who takes a free seat sees it
+  as it is now, ahead of their view, even if they stand up again straight away
+  (#472). At a table where the host approves new players, that needs the
+  host's OK.
+- A buy-in or cash-out made as a hand ends goes in the public record at once
+  (see "Checking John" above), so it can show that the hand is over (#471).
 
 ## HUDs and tracking software
 

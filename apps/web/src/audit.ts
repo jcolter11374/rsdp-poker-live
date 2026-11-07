@@ -171,7 +171,7 @@ export function handInRecord(hand: HandRecordView, record: HandEntries): { ok: b
   // So only the newest entry counts, and not once a later hand is in. The cards it shows are checked against the deck.
   const newest = entries.at(-1)!;
   if (!record.after && earlierDigests(hand).includes(String(newest.data.digest)))
-    return { ok: null, pending: true, detail: `entry ${newest.seq} has the hand as it ended; a card shown after that goes in the record up to 10 minutes after it was shown` };
+    return { ok: null, pending: true, detail: `entry ${newest.seq} has the hand as it was before a card shown after it ended; that card goes in the record up to 10 minutes after it was shown` };
   return { ok: false, detail: `entry ${newest.seq} has a different fingerprint: this hand was changed after it was recorded` };
 }
 

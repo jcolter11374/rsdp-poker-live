@@ -255,6 +255,8 @@ export class TableRuntime {
    * Who added each bot that has left in the last few minutes, so its owner watching on a delay, still shown it, is
    * answered as if it were here (goneOwnBotShown, #435). In memory only, like the delayed feed.
    */
+  /** When each seat last had someone in it, as this server saw it (see takenSince). */
+  private seatTakenAt: number[] = [];
   private goneBots = new Map<PlayerId, { ownerId: PlayerId; at: number }>();
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
   readonly choice: DealersChoice;
@@ -506,7 +508,7 @@ export class TableRuntime {
     // waitlist takes that seat, as below, once their view has it free: before, the offer would tell them it came free.
     const offer = this.state.offers?.find((o) => o.playerId === playerId);
     const view = this.shownTo(playerId);
-    const shown = offer && view && offer.seat < view.seats.length && !view.seats[offer.seat] ? null : view;
+    const shown = offer && view && offer.seat < view.seats.length && !view.seats[offer.seat] && !this.takenSince(offer.seat, view.at) ? null : view;
     if (shown) seat = this.shownSeat(playerId, seat, stack, shown);
     else {
       if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -561,11 +563,13 @@ export class TableRuntime {
     if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
       if (!shown.seats.some((x) => !x)) throw new ActionError('every seat is taken');
       // Only a seat free both live and in their view: one they can see is free, that the live table can give.
-      const open = this.openSeats(playerId).filter(free);
+      const open = this.openSeats(playerId).filter((i) => free(i) && !this.takenSince(i, shown.at));
       if (!open.length) throw new ActionError(SEAT_CLOSED);
       seat = open[this.rng(open.length)];
     } else if (!free(seat)) throw new ActionError('that seat is taken');
-    if (seat >= this.state.seats.length) throw new ActionError(SEAT_CLOSED);
+    // Someone has sat there live since the moment they are shown, though it may be free again: it stays closed until
+    // their view gets there, or a yes now would tell them that player has gone.
+    if (seat >= this.state.seats.length || this.takenSince(seat, shown.at)) throw new ActionError(SEAT_CLOSED);
     try {
       this.checkSeatLive(playerId, seat);
     } catch (e) {
@@ -3232,14 +3236,33 @@ export class TableRuntime {
    * tells listeners. Every public mutation ends here.
    */
   private sync() {
+    this.noteSeats();
     this.upkeep();
     for (let guard = 0; guard < 20; guard++) {
       if (!this.step()) break;
     }
     // A hand that just ended may have freed seats.
     this.upkeep();
+    this.noteSeats();
     this.armTimers();
     this.onChange();
+  }
+
+  /** Notes the time on every seat with someone in it (see takenSince). */
+  private noteSeats() {
+    const now = this.clock.now();
+    this.state.seats.forEach((x, i) => {
+      if (x) this.seatTakenAt[i] = now;
+    });
+  }
+
+  /**
+   * Someone has been in the seat, live, since `at`, though it may be free again (#435): a spectator on a delay shown
+   * the table as it was then is answered as if it were still taken. Only what this server has seen since it started.
+   */
+  private takenSince(seat: number, at: number): boolean {
+    this.noteSeats();
+    return (this.seatTakenAt[seat] ?? -Infinity) > at;
   }
 
   /** Does one due thing. True if something changed and another pass is needed. */

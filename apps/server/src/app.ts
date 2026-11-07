@@ -596,12 +596,16 @@ export function createApp(deps: AppDeps = {}) {
     log,
     liveFair: (id) => (tables.has(id) ? (tables.get(id)!.state.fair ?? null) : undefined),
     // Someone who played a hand and now watches its table on a delay finds it as their view shows the table (#435).
-    asShown: (tableId, playerId, past, hideMine) => {
+    asShown: (tableId, ids, past) => {
       const rt = tables.get(tableId);
-      const shown = rt ? shownTo(rt, playerId, clock.now()) : null;
-      if (!rt || !shown) return undefined;
-      const last = (shown.moment ?? shown.oldest)?.lastHand;
-      return handRecordView(rt, past, playerId, { hideMine, asOf: shown.at, eventsOf: last ? (n) => (n === last.handNumber ? last.events : undefined) : undefined });
+      // Any of theirs who sees the table live (in a seat, or staff) finds it whole.
+      if (!rt || ids.some((id) => rt.seatOf(id) || rt.isStaff(id))) return undefined;
+      const player = past.seats.find((x) => ids.includes(x.playerId))?.playerId;
+      const shown = player ? shownTo(rt, player, clock.now()) : null;
+      if (!shown) return undefined;
+      const upTo = eventsShown(shown, past);
+      const cut = upTo === undefined || upTo >= past.events.length ? past : { ...past, events: past.events.slice(0, upTo) };
+      return { past: cut, view: (playerId, hideMine) => handRecordView(rt, cut, playerId, { hideMine, asOf: shown.at }) };
     },
   });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
@@ -928,7 +932,8 @@ export function createApp(deps: AppDeps = {}) {
       const bare = tableView(rt, '', now, null, [], avatarOf, { hideCards: true });
       plain = { ...part, seats: bare.seats, hand: bare.hand, spectator: bare.spectator };
     }
-    const last = rt.state.hand;
+    // Only a finished hand's count: cards shown after it ended add to it, and a hand still being played isn't listed.
+    const last = rt.state.hand?.phase === 'complete' ? rt.state.hand : null;
     const moment = feed.add(now, delayMs, part, plain, last ? { handNumber: last.input.handNumber, events: last.events.length } : undefined);
     feed.shown(now);
     return moment;
@@ -1093,6 +1098,21 @@ export function createApp(deps: AppDeps = {}) {
     const shown = shownTo(rt, s.data.playerId, clock.now());
     const last = (shown?.moment ?? shown?.oldest)?.lastHand;
     return last ? (n) => (n === last.handNumber ? last.events : undefined) : undefined;
+  }
+
+  /**
+   * How many of a finished hand's events someone on a delay is shown (undefined: all of them). A hand that ended after
+   * the moment they are shown is one they were dealt into, so in a seat until it ended live (nobody dealt in leaves
+   * before the end): all of it up to its end, but no card shown after that until their view gets there. Hand search
+   * lists such hands, where the table's own lists wait for them (#435).
+   */
+  function eventsShown(shown: { moment: Moment | null; oldest: Moment | null; at: number }, past: PastHand): number | undefined {
+    if (past.endedAt > shown.at) {
+      const end = past.events.findIndex((e) => e.t === 'hand-end');
+      return end < 0 ? undefined : end + 1;
+    }
+    const last = (shown.moment ?? shown.oldest)?.lastHand;
+    return last?.handNumber === past.handNumber ? last.events : undefined;
   }
 
   /** Whether downloads are closed to this person: for a spectator on a delay, as the table they are shown has it. */
