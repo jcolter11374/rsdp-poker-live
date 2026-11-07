@@ -45,6 +45,7 @@ _Bigger tournament tables on wide screens_
 - Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
 - Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
 - Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
+- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.5] - 2026-11-07
 
@@ -72,7 +73,6 @@ _Lobby chat moderation and a recap of the night_
 - Tournaments: the seat draw stays secret even if the site ever has to go back to an older version before the seats are drawn. The server now picks new secret numbers for the draw each time it loads a tournament whose seats aren't drawn yet, so nothing an older version shows can be used to work the draw out.
 - Backups: the nightly backup now works however big the saved tables get. Before, very large saved tables could make the backup fail and stop the site saving until it restarted. The site isn't near that size today.
 - Dealer's choice: at a new table, the first hand's button goes to the player who makes the first pick, and if they leave or sit out first, to the next player round. During an all-in runout, the seat count, closed seats, the fallback game and seat offers now wait for the result like the PICK tag, so none of them shows who busted before the cards are out.
-- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.3] - 2026-11-07
 
