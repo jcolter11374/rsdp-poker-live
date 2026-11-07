@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
-import { applyAtNextHand, getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
+import { getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, mixedGameMaxPlayers, mixedGameOf, MIXED_GAMES, VARIANT_LIST, type MixedGame } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -13,7 +13,7 @@ import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
 import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
-import { choiceOf, DEFAULT_MENU, levelStudAnte, levelStudAntes, menuSeats, repeatsOf, stakesForGames, stakesStart, type StakesStart } from './settings/dealersChoice';
+import { choiceOf, comingSettings, DEFAULT_MENU, levelStudAnte, levelStudAntes, menuSeats, repeatsOf, stakesForGames, stakesStart, type StakesStart } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
@@ -25,19 +25,6 @@ const dealtIn = (d: TableSettings, mode: Mode): readonly ChoiceGame[] =>
 const levelAntes = (d: TableSettings) => d.blindSchedule.levels.map((l) => l.ante);
 /** Where the stakes stand at `d` before any change of the games dealt (#414). */
 const startOf = (d: TableSettings): StakesStart => stakesStart(d.stakes, levelAntes(d), dealtIn(d, modeOf(d)));
-/**
- * The table's settings as the next hand will deal them. A change saved earlier in this hand waits for the next one
- * (applyAtNextHand), and the dialog starts from it and is saved on top of it, so the host sees what will be dealt, and
- * the change that waits ends up with what the dialog showed.
- */
-const comingSettings = (settings: TableSettings, pending: SettingsPatch | null): TableSettings => {
-  if (!pending) return settings;
-  try {
-    return applyAtNextHand(settings, pending).settings;
-  } catch {
-    return settings;
-  }
-};
 const TABS: { id: Tab; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'stakes', label: 'Stakes' },

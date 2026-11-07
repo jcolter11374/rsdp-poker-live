@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.5] - 2026-11-07
+
+### Fixed and changed
+
+- Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The "every card face up" note starts with its hand too.
+
 ## [2026.11.07.4] - 2026-11-07
 
 _Lobby chat moderation and a recap of the night_
@@ -725,6 +731,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2

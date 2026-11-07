@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.5",
+      "date": "2026-11-07",
+      "fixes": [
+        "Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The \"every card face up\" note starts with its hand too."
+      ]
+    },
+    {
       "id": "2026.11.07.4",
       "date": "2026-11-07",
       "fixes": [
