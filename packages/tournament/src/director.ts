@@ -37,8 +37,8 @@ import {
 } from './formats';
 import { MAX_PRIZE_AMOUNT, placePrizes, prizePool, prizesForPlaces, rangeFor, validatePayoutStructure, type PrizeMoney } from './payouts';
 import { nextOccurrence, validateSchedule } from './recurrence';
-import { drawSeats, nextBalanceStep, seatToFill, seatToMove, type TableLoad } from './seating';
-import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type LevelRow, type StructureRow } from './structure';
+import { drawSeats, isSeatSeed, legacyRngFor, legacySeatRng, nextBalanceStep, seatRng, seatToFill, seatToMove, type TableLoad } from './seating';
+import { clockAt, levelEndMs, MAX_CHIPS, presetStructure, rowStartMs, validateStructure, type AnteType, type LevelRow, type StructureRow } from './structure';
 import { cleanText, hasUnstorableText, isId } from './text';
 import {
   STATE_VERSION,
