@@ -30,7 +30,7 @@ export {
   type TableMode,
   type TableSettings,
 } from './schema';
-export { SettingsError, dealersChoiceOff, defaultSettings, issuesFromZod, parseSettings, type SettingsIssue } from './parse';
+export { SettingsError, defaultSettings, issuesFromZod, parseSettings, type SettingsIssue } from './parse';
 export { settingsErrorMap } from './messages';
 export { migrateSettings, type MigrateOptions } from './migrate';
 export {

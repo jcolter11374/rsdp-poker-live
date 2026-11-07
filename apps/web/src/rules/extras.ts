@@ -160,7 +160,7 @@ export const EXTRAS: ExtraGuide[] = [
       'If the chooser runs out of time, the game being played carries on for another orbit. At a new table, the first game on the menu that fits is dealt.',
       "A game that seats fewer players than are at the table is greyed out. While a game that seats fewer is picked or being played, the table seats no more than that game deals: once it's full, the empty seats show as Closed until the next game, so nobody can sit down, ask for a seat or add a bot there. If the host has turned on the waitlist, newcomers can join it.",
       'Anyone sitting out, away or offline is skipped, and picks next time round. The same game can be picked again.',
-      'The chip stays with its player if the host moves them to another seat or shuffles the seats.',
+      'The chip stays with the player who has the PICK tag when the host moves players or shuffles the seats. A player who leaves the table gives it up to the next player.',
       'Practice bots pick at random from the games that fit, so you get to try them all.',
       'The stakes stay the same for every game. With a stud game on the menu, only the stud games ante; the others play on the blinds. The Limit games bet the Limit small and big bets.',
     ],

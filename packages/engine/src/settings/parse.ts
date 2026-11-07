@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { formatPath, joinPath } from './json';
 import { settingsErrorMap } from './messages';
 import { defaultModifierSections } from './modifiers';
-import { SETTINGS_VERSION, TableSettingsSchema, type DealersChoiceSettings, type TableMode, type TableSettings } from './schema';
+import { SETTINGS_VERSION, TableSettingsSchema, type TableMode, type TableSettings } from './schema';
 
 /** One bad field: `path` is printed like "stakes.bigBlind" or "blindSchedule.levels[2].ante". */
 export interface SettingsIssue {
@@ -58,9 +58,6 @@ export function parseSettings(input: unknown): TableSettings {
   return result.data;
 }
 
-/** Dealer's choice switched off: what a missing section stands for, and the defaults for its fields. */
-export const dealersChoiceOff = (): DealersChoiceSettings => ({ enabled: false, games: [], hands: 0, pickSeconds: 20 });
-
 /**
  * Fresh defaults for a new table. Tournament defaults already pass the
  * tournament gates (run it twice off, modifiers off) and deal to away players.
@@ -73,9 +70,7 @@ export function defaultSettings(mode: TableMode): TableSettings {
   return {
     version: SETTINGS_VERSION,
     table: { name: tournament ? 'Tournament table' : 'Poker night', maxSeats: 10, mode, felt: 'green' },
-    // No dealersChoice until a host turns it on (missing means off), so tables that never used it carry nothing an
-    // older server can't read if a release is undone.
-    game: { gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] } },
+    game: { gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] }, dealersChoice: { enabled: false, games: [], hands: 0, pickSeconds: 20 } },
     stakes: {
       smallBlind: 1,
       bigBlind: 2,

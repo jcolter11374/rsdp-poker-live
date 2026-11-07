@@ -1,6 +1,6 @@
 import { cloneJson, getOwn, isPlainObject, joinPath, type JsonObject } from './json';
 import { getModifierSchema } from './modifiers';
-import { SettingsError, dealersChoiceOff, defaultSettings, parseSettings } from './parse';
+import { SettingsError, defaultSettings, parseSettings } from './parse';
 import { SETTINGS_VERSION, type TableMode, type TableSettings } from './schema';
 
 /**
@@ -77,11 +77,7 @@ export function migrateSettings(raw: unknown, options: MigrateOptions = {}): Tab
   const table = getOwn(data, 'table');
   const mode: TableMode = isPlainObject(table) && table.mode === 'tournament' ? 'tournament' : 'cash';
   const dropped: string[] = [];
-  const template = defaultSettings(mode);
-  // Dealer's choice is kept, with its missing fields filled, only where it is there already (defaultSettings leaves it out).
-  const game = getOwn(data, 'game');
-  if (isPlainObject(game) && getOwn(game, 'dealersChoice') !== undefined) template.game.dealersChoice = dealersChoiceOff();
-  const filled = conform(template, data, '', dropped);
+  const filled = conform(defaultSettings(mode), data, '', dropped);
   if (dropped.length > 0) options.onDropped?.(dropped);
   return parseSettings(filled);
 }

@@ -763,6 +763,13 @@ export class TableRuntime {
     if (row) row.cashOut += stack;
     this.state.departures[seat.playerId] = { stack, at: this.clock.now() };
     this.state.seats[seat.seat] = null;
+    // Dealer's choice: leaving gives up the Pick chip. It goes on to the next player round from the seat, who would
+    // pick in their place anyway, so whoever sits down there later (or a bot the host adds) doesn't take it (D33).
+    const c = this.state.choice;
+    if (c?.chip === seat.seat) {
+      const next = this.seatedFromChip();
+      if (next) c.chip = next.seat;
+    }
     // A rebuy they asked for has nobody to go to now.
     this.state.requests = this.state.requests.filter((r) => r.playerId !== seat.playerId);
     this.log(`${seat.name} left the table with ${this.money(stack)}`);
@@ -1528,10 +1535,16 @@ export class TableRuntime {
   }
 
   /**
-   * Dealer's choice: the player the Pick chip stands for. An empty seat holding it stands for the next player round
-   * from it, who would pick anyway (as when the table is made smaller). Null without Dealer's choice or players.
+   * Dealer's choice: the player the PICK tag is on, who keeps the chip through a host move or a seat shuffle (D33).
+   * While its holder is sitting out or away, that is whoever picks in their place. Failing anyone who can pick, the
+   * first player round from the chip's seat. Null without Dealer's choice or players.
    */
   private chipHolder(): SeatState | null {
+    return this.state.choice ? (this.choice.chooser() ?? this.seatedFromChip()) : null;
+  }
+
+  /** The first player round from the Pick chip's seat (to the left), the seat itself included. */
+  private seatedFromChip(): SeatState | null {
     const s = this.state;
     const c = s.choice;
     if (!c) return null;

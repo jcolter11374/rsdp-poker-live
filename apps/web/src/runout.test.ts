@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { departures, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
+import { departures, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -71,12 +71,25 @@ describe('holdBack', () => {
     expect(all.hand!.events.map((e) => e.seq)).toEqual([0, 1, 1.5, 1.7, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it("keeps Dealer's choice as it was until the result, so a busted chooser's PICK tag doesn't move first", () => {
-    const choice = (chip: number, open: boolean) => ({ chip, current: null, handsLeft: 0, next: null, open, deadline: null, count: 2, cap: null, closed: false, defaultIndex: 0, canKeep: false });
-    // The server has already moved the chip on from seat 0, who busted.
-    const after = { ...finished(), choice: choice(1, true) } as TableView;
+  it("keeps the PICK tag where it was until the result, so a busted chooser's doesn't move first, and holds picks back", () => {
+    const choice = (chip: number, open: boolean, extra = {}) => ({ chip, current: null, handsLeft: 0, next: null, open, deadline: null, count: 2, cap: null, closed: false, defaultIndex: 0, canKeep: false, ...extra });
+    // The server has already moved the chip on from seat 0, who busted, and a newcomer has filled the table.
+    const after = { ...finished(), choice: choice(1, true, { count: 3, closed: true }) } as TableView;
     const frozen = { ...before(), choice: choice(0, true) };
-    for (let shown = 0; shown <= runoutSteps(after.hand!.events).length; shown++) expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, true));
+    for (let shown = 0; shown <= runoutSteps(after.hand!.events).length; shown++) {
+      // The tag stays put, nobody can pick until the cards are out, and the rest is as it is now.
+      expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, false, { count: 3, closed: true }));
+    }
+  });
+
+  it('shows a pick that comes in during the reveal', () => {
+    const pickView = { gameId: 'razz', betting: 'fixed-limit', by: 'Bot', how: 'picked' };
+    const live = { chip: 1, current: null, handsLeft: 0, next: pickView, open: false, deadline: null, count: 2, cap: null, closed: false, defaultIndex: 0, canKeep: false } as unknown as NonNullable<TableView['choice']>;
+    const was = { ...live, chip: 0, next: null, open: true };
+    expect(heldChoice(live, was)).toEqual({ ...live, open: false });
+    // No Dealer's choice: nothing to hold.
+    expect(heldChoice(undefined, undefined)).toBeUndefined();
+    expect(heldChoice(live, undefined)).toBe(live);
   });
 
   it('keeps players at the table who bust or leave when the hand ends', () => {

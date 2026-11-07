@@ -1419,6 +1419,6 @@ settings: settings must be a JSON object
 ## export preset: name with a tab
 name: must not contain control characters
 ## export preset: good
-ok, 2527 characters
+ok, 2654 characters
 ## export preset: invalid settings
 table.maxSeats: must be at least 2

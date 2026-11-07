@@ -105,13 +105,26 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
     nit: before.nit,
-    choice: before.choice,
+    choice: heldChoice(view.choice, before.choice),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
     nextHandAt: null,
     rabbit: { available: false, cards: null },
   };
+}
+
+/**
+ * Dealer's choice during the reveal: the PICK tag stays where it was, so a busted chooser's doesn't move on before the
+ * result, unless a pick has come in since. Nobody picks until the cards are out: a chooser who busted would be refused,
+ * which would tell them the result. The pick clock only starts after the reveal, so nobody loses time. The rest
+ * (the game, the next pick, closed seats) is as it is now.
+ */
+export function heldChoice(live: TableView['choice'], before: TableView['choice']): TableView['choice'] {
+  if (!live || !before) return live;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const picked = !same(live.next, before.next) || !same(live.current, before.current);
+  return { ...live, chip: picked ? live.chip : before.chip, open: false };
 }
 
 /** Seats as they stand with everything in the middle and nothing paid out yet. */

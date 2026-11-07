@@ -170,16 +170,12 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   };
 
   const save = () => {
-    const { dealersChoice: dc, ...game } = draft.game;
-    const fixed: TableSettings = {
+    const dc = draft.game.dealersChoice;
+    const fixed = {
       ...draft,
       table: { ...draft.table, maxSeats: Math.min(draft.table.maxSeats, seatLimit) },
-      // A table that has never had Dealer's choice on is saved without it, even after a look at it (D33). Saved
-      // straight from the pick time field, before it lost focus: the lowest it can be.
-      game:
-        dc && (dc.enabled || view.settings.game.dealersChoice)
-          ? { ...game, dealersChoice: { ...dc, pickSeconds: Math.max(SETTINGS_LIMITS.pickSeconds.min, dc.pickSeconds) } }
-          : game,
+      // Saved straight from the pick time field, before it lost focus: the lowest it can be.
+      game: dc ? { ...draft.game, dealersChoice: { ...dc, pickSeconds: Math.max(SETTINGS_LIMITS.pickSeconds.min, dc.pickSeconds) } } : draft.game,
     };
     const patch = diff(view.settings, fixed) as SettingsPatch | undefined;
     if (!patch) return onClose();

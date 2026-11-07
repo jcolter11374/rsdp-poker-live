@@ -801,3 +801,62 @@ describe("Dealer's choice: the host can't move the pick (release review)", () =>
     expect(moved).toBeGreaterThan(0);
   });
 });
+
+describe("Dealer's choice: the host can't move the pick (second review)", () => {
+  function between(rng = seeded()) {
+    const { rt, clock } = table(() => {}, rng);
+    seat(rt, 4);
+    rt.start('host');
+    pick(rt, 'nlhe');
+    checkDown(rt);
+    expect(live(rt)).toBe(false);
+    return { rt, clock };
+  }
+
+  it('draws the button afresh after a mid-game shuffle, rather than giving it to the first chooser', () => {
+    const buttons = new Set<string>();
+    for (let n = 1; n <= 24; n++) {
+      const { rt, clock } = between(seeded(n));
+      expect(rt.state.choice!.firstButton).toBeNull();
+      rt.shuffleSeats('host');
+      clock.advance(10_000);
+      expect(live(rt)).toBe(true);
+      buttons.add(rt.state.seats[hand(rt).input.button]!.playerId);
+    }
+    // Every player gets it some of the time.
+    expect(buttons.size).toBe(4);
+  });
+
+  it('keeps the PICK tag on whoever picks in place of a holder who is sitting out, through a move or a shuffle', () => {
+    for (let n = 1; n <= 12; n++) {
+      const { rt } = between(seeded(n));
+      const holder = chooser(rt);
+      rt.sitOut(holder.playerId, true);
+      const standIn = chooser(rt).playerId;
+      expect(standIn).not.toBe(holder.playerId);
+      if (holder.playerId !== 'host') {
+        const empty = rt.state.seats.findIndex((x, i) => !x && i > holder.seat);
+        rt.moveSeat('host', holder.playerId, empty >= 0 ? empty : rt.state.seats.indexOf(null));
+        expect(chooser(rt).playerId).toBe(standIn);
+      }
+      rt.shuffleSeats('host');
+      expect(chooser(rt).playerId).toBe(standIn);
+      expect(tableView(rt, 'a', 0).choice!.chip).toBe(rt.seatOf(standIn)!.seat);
+    }
+  });
+
+  it('passes the chip on when its holder leaves, so a bot the host adds in their seat, or a newcomer, never takes it', () => {
+    for (let n = 1; n <= 8; n++) {
+      const { rt } = between(seeded(n));
+      const holder = chooser(rt);
+      if (holder.playerId === 'host') continue;
+      rt.stand(holder.playerId);
+      const next = chooser(rt).playerId;
+      rt.addBot('host', { seat: holder.seat });
+      expect(chooser(rt).playerId).toBe(next);
+      rt.stand(rt.state.seats[holder.seat]!.playerId);
+      rt.requestSeat('h', { seat: holder.seat, name: 'H', stack: 1000 });
+      expect(chooser(rt).playerId).toBe(next);
+    }
+  });
+});
