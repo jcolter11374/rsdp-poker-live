@@ -159,6 +159,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
+  // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
+  const [noticeRoom, setNoticeRoom] = useState(true);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
@@ -506,6 +508,32 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The panel starts open for a host whose game hasn't started, so Start game is in view; after that it's the player's pick.
   const drawer = wide && (drawerPick ?? (!!hostPanel && !view.started));
   const openDrawer = () => setDrawer(true);
+  // Before a cash game starts (or after the host stops it), the middle of the table says what happens next. It used to be
+  // a banner above the table, which took height from the felt: when it went away at the start, the felt grew and every
+  // seat slid to a new spot while the first cards were dealt (#383). Before the first hand the middle is empty; after a
+  // stop the note goes under the last hand's result, where "Next hand in" would be (see .board-notice.after-hand).
+  const canRun = view.powers.includes('run');
+  const startNotice =
+    cash && !view.started
+      ? {
+          text:
+            view.history.length > 0
+              ? canRun
+                ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
+                : 'The game is stopped. Waiting for the host to start it again.'
+              : canRun
+                ? portrait
+                  ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
+                  : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
+                : 'Waiting for the host to start the game.',
+          onClick: wide && canRun ? openDrawer : undefined,
+        }
+      : null;
+  // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
+  // bottom seat), the middle is full, and on a small phone table the note doesn't fit there (Table's onNoticeRoom): then
+  // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
+  // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
+  const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
 
   // The one-time keyboard tip never covers the table (#399): in the wide layout it takes the bottom-right corner, across
   // from the chat, where the action bar keeps clear; beside the side column, or with the wide layout's drawer open over
@@ -649,19 +677,6 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
           )}
-          {cash && !view.started && (
-            <div className="banner" onClick={wide && view.powers.includes('run') ? openDrawer : undefined}>
-              {view.history.length > 0
-                ? view.powers.includes('run')
-                  ? `The game is stopped. ${portrait ? 'Start it again from the ☰ menu' : wide ? 'Press Start game under Host & log to deal again' : 'Press Start game to deal again'}.`
-                  : 'The game is stopped. Waiting for the host to start it again.'
-                : view.powers.includes('run')
-                  ? portrait
-                    ? 'Take a seat and invite friends, then start the game from the ☰ menu.'
-                    : `Take a seat, send friends the invite link, then press Start game${wide ? ' under Host & log' : ''}.`
-                  : 'Waiting for the host to start the game.'}
-            </div>
-          )}
           {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
           {pending > 0 && (
             <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
@@ -718,6 +733,9 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
+            notice={noticeUnder && view.hand ? null : startNotice}
+            noticeHidden={noticeUnder}
+            onNoticeRoom={setNoticeRoom}
           />
           <Dock
             reset={`${portrait}:${view.me.seat}`}
@@ -725,6 +743,11 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
+            {noticeUnder && view.hand && (
+              <div className="dock-notes">
+                <div className="banner">{startNotice!.text}</div>
+              </div>
+            )}
             <ActionBar
               view={view}
               fmt={fmt}
@@ -737,6 +760,7 @@ export function TablePage({ tableId }: { tableId: string }) {
                 preQueued.current = q;
               }}
               onRules={() => setDialog({ kind: 'rules' })}
+              note={noticeUnder && !view.hand ? startNotice!.text : null}
             />
             <div className="dock-row">
               <HandExtras view={view} />
