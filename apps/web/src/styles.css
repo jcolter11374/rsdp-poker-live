@@ -835,8 +835,8 @@ kbd {
 .tip-toast button { padding: 4px 10px; font-size: 0.82rem; }
 @keyframes tip-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .tip-toast { animation: none; } }
-dl.shortcuts { display: grid; gap: 8px; margin: 4px 0 12px; }
-dl.shortcuts > div { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px; }
+dl.shortcuts { display: grid; grid-template-columns: minmax(44px, max-content) 1fr; align-items: center; gap: 8px 10px; margin: 4px 0 12px; }
+dl.shortcuts > div { display: contents; }
 dl.shortcuts dt kbd { font-size: 0.95rem; min-width: 2em; }
 dl.shortcuts dd { margin: 0; }
 .portrait .topbar .units-toggle { padding: 2px; }
