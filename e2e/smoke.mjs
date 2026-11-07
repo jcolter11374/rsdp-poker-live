@@ -57,8 +57,10 @@ function watch(p, label) {
 /**
  * Checks or calls for whoever is to act until the hand is over, for up to `seconds`. When everyone is all in it runs
  * the board once: the table does that anyway once nobody has answered for 12 seconds, so the hand ends the same way.
+ * A hand here takes up to about 20 s. The limit stays under one turn that runs out (30 s, then the 30 s time bank),
+ * so a move that never reaches the table fails here instead of passing when the table acts for the player.
  */
-async function playOut(players, seconds = 90) {
+async function playOut(players, seconds = 45) {
   const until = Date.now() + seconds * 1000;
   while (Date.now() < until) {
     let acted = false;
