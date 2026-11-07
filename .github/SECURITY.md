@@ -1,6 +1,6 @@
 # Security policy
 
-RSDP Poker Live! is a free hobby site for a group of friends, run by John. The code is public so that players can check it. If you find a way to break it, thank you: please tell John privately first.
+RSDP Live! is a free hobby site for a group of friends, run by John. The code is public so that players can check it. If you find a way to break it, thank you: please tell John privately first.
 
 ## What counts
 
