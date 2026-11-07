@@ -21,3 +21,13 @@ export function handSizes(gameId: string): number[] {
 export function dealtSizes(games: readonly string[]): number[] {
   return [...new Set(games.flatMap(handSizes))].sort((a, b) => a - b);
 }
+
+/** Whether a showdown in this game names two hands, a high and a low ("Two Pair, Kings and Fives · Eight-Six low"). */
+export function splitsPot(gameId: string): boolean {
+  try {
+    const { high, low } = getVariant(gameId).showdown;
+    return !!high && !!low;
+  } catch {
+    return false;
+  }
+}
