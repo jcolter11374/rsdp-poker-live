@@ -133,6 +133,31 @@ describe('backups', { timeout: 30_000 }, () => {
     }
   });
 
+  it('backs up every row once when updates and deletes have moved rows around the table, over many fetches', { timeout: 120_000 }, async () => {
+    // 2500 suggestions (more than one first-pass fetch), then updates that move rows to new places, deletes that
+    // leave gaps, and new rows that may fill them: the rows' order on disk no longer follows their ids.
+    await resetTestDb(db);
+    for (let i = 0; i < 2500; i += 250) {
+      const values = Array.from({ length: 250 }, (_, k) => sql`(${`N${i + k}`}, ${`T${i + k}`})`);
+      await db.execute(sql`insert into suggestions (name, title) values ${sql.join(values, sql`, `)}`);
+    }
+    await db.execute(sql`update suggestions set title = title || repeat('y', 3000) where id % 7 = 0`);
+    await db.execute(sql`delete from suggestions where id % 11 = 0`);
+    await db.execute(sql`insert into suggestions (name, title) select 'late' || g, 'L' || g from generate_series(1, 300) g`);
+    const want = await queryRows<{ id: number; title: string }>(db, sql`select id::int as id, title from suggestions order by id`);
+    const { text, summary } = await backupOf(db);
+    expect(summary.rows.suggestions).toBe(want.length);
+    const ids = text.split('\n').filter((l) => l.startsWith('{"t":"suggestions"')).map((l) => JSON.parse(l).r.id as number);
+    expect(new Set(ids).size).toBe(want.length);
+    const copy = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(text));
+      expect(await queryRows(copy, sql`select id::int as id, title from suggestions order by id`)).toEqual(want);
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
   it('fetches as many rows at a time as fit, and at least one', () => {
     const MB = 1_048_576;
     expect(pageCounts([])).toEqual([]);

@@ -31,6 +31,8 @@ const INSERT_BATCH = 200;
  * live site runs, fails on a result much over 16 MB, and a page of saved tables can get that big (#403).
  */
 export const PAGE_BYTES = 4 * 1_048_576;
+/** Rows whose place and size are read per fetch in the first pass. */
+const SIZE_FETCH = 1000;
 
 export interface BackupHeader {
   backup: typeof BACKUP_FORMAT;
@@ -86,24 +88,33 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
       const rows: Record<string, number> = {};
       for (const table of tables) {
         rows[table] = 0;
-        // Cursors read the table in pages, all inside this one snapshot and in the same order (ctid doesn't change
-        // within it). First how big each row's JSON is, then the rows, as many per fetch as fit in PAGE_BYTES.
-        const sizes: number[] = [];
-        await tx.execute(sql.raw(`declare backup_sizes no scroll cursor for select octet_length(row_to_json(t)::text) as n from ${ident(table)} t order by ctid`));
+        // First where each row is and how big its JSON is, read in small fetches with a breath between them. Then
+        // the rows, a page at a time: a run of neighbouring rows whose JSON fits in PAGE_BYTES, read as a ctid
+        // range. All of it inside this one snapshot, where a row's ctid can't change. Nothing sorts the rows'
+        // JSON, so a big table needs no temporary files and never holds the server for long in one go.
+        const found: { block: number; item: number; size: number }[] = [];
+        await tx.execute(sql.raw(`declare backup_sizes no scroll cursor for select ctid::text as c, octet_length(row_to_json(t)::text) as n from ${ident(table)} t`));
         for (;;) {
-          const page = await queryRows<{ n: number }>(tx, sql.raw('fetch 10000 from backup_sizes'));
-          for (const { n } of page) sizes.push(Number(n));
-          if (page.length < 10000) break;
+          const page = await queryRows<{ c: string; n: number }>(tx, sql.raw(`fetch ${SIZE_FETCH} from backup_sizes`));
+          for (const { c, n } of page) found.push({ ...parseTid(c), size: Number(n) });
+          if (page.length < SIZE_FETCH) break;
+          await breathe();
         }
         await tx.execute(sql.raw('close backup_sizes'));
-        await tx.execute(sql.raw(`declare backup_rows no scroll cursor for select row_to_json(t)::text as j from ${ident(table)} t order by ctid`));
-        for (const count of pageCounts(sizes)) {
-          const page = await queryRows<{ j: string }>(tx, sql.raw(`fetch ${count} from backup_rows`));
+        found.sort((a, b) => a.block - b.block || a.item - b.item);
+        let at = 0;
+        for (const count of pageCounts(found.map((f) => f.size))) {
+          const first = found[at]!;
+          const last = found[at + count - 1]!;
+          const page = await queryRows<{ j: string }>(
+            tx,
+            sql.raw(`select row_to_json(t)::text as j from ${ident(table)} t where ctid >= '(${first.block},${first.item})'::tid and ctid <= '(${last.block},${last.item})'::tid`),
+          );
           if (page.length !== count) throw new Error(`${table} changed while it was being backed up`);
           for (const { j } of page) await write(`{"t":${JSON.stringify(table)},"r":${j}}\n`);
-          rows[table] += page.length;
+          rows[table] += count;
+          at += count;
         }
-        await tx.execute(sql.raw('close backup_rows'));
       }
       // Where each counter had got to: ids of rows deleted before the backup must not be handed out again. A counter
       // that hasn't handed out last_value yet (as a restore leaves it, or a new one) has got to the id before it.
@@ -119,6 +130,16 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
 }
+
+/** A row's place, from `ctid::text`: "(block,item)". */
+function parseTid(text: string): { block: number; item: number } {
+  const m = /^\((\d+),(\d+)\)$/.exec(text);
+  if (!m) throw new Error(`unexpected ctid ${text}`);
+  return { block: Number(m[1]), item: Number(m[2]) };
+}
+
+/** Lets timers and sockets run between fetches: PGlite works on the server's own thread. */
+const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /** How many rows each fetch takes, in order: up to PAGE rows and PAGE_BYTES of JSON, and always at least one. */
 export function pageCounts(sizes: number[]): number[] {
