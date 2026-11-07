@@ -121,19 +121,48 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
  * anyone who busted, so moving it would give the result away. A chooser in the all-in picks once the cards are out:
  * a busted chooser would be refused, and a pick in their place shows who busted, so their pick waits for the result
  * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual.
+ *
+ * The seat count and closed seats are held the same way: a busted bot leaving lowers the count and can reopen seats,
+ * and a pick made in place of a busted chooser can close them (D33).
  */
 export function heldChoice(view: TableView, before: Frozen): TableView['choice'] {
   const live = view.choice;
   const was = before.choice;
   if (!live || !was) return live;
-  const chip = was.chip;
   const events = view.hand?.events ?? [];
   const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
+  // A hand dealt and run out in one update, whose deal began a pick nobody had made yet (it was made, or missed, just
+  // before the deal): the chip moved on from the seat that had it, to the next player round from it who could pick.
+  const movedOn = before.sameHand === false && was.chip !== null && !was.next && !samePick(live.current, was.current);
+  const chip = movedOn ? nextPicker(was.chip!, before, dealt) : was.chip;
   const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
-  if (!inHand) return { ...live, chip };
-  // The rest of the pick as it was too, but who can sit down as it is now.
-  const held = before.sameHand === false ? { ...live, chip } : { ...was, count: live.count, cap: live.cap, closed: live.closed };
-  return { ...held, open: false };
+  // Players leaving show only with the result. Newcomers show at once.
+  const count = Math.max(was.count, live.count);
+  if (!inHand) {
+    // Their panel stays open only while the tag is still theirs (not, say, for someone who sat down in their seat).
+    return { ...live, chip, count, closed: was.closed || live.closed, open: live.open && live.chip === chip };
+  }
+  if (before.sameHand === false) {
+    // A pick that has come in since can only be someone picking in place of a chooser who busted.
+    const picked = !!live.next;
+    return { ...live, chip, count, open: false, ...(picked ? { next: null, cap: was.cap, closed: was.closed } : {}) };
+  }
+  // The rest of the pick as it was too. Who can sit down as it is now, unless a pick has come in since.
+  const picked = !samePick(live.next, was.next);
+  return { ...was, count, cap: picked ? was.cap : live.cap, closed: picked ? was.closed : was.closed || live.closed, open: false };
+}
+
+type Pick = NonNullable<TableView['choice']>['current'];
+const samePick = (a: Pick, b: Pick) => a === b || (!!a && !!b && a.gameId === b.gameId && a.betting === b.betting && a.by === b.by && a.how === b.how);
+
+/** The next player round from `seat` who could pick before the result: dealt in, or seated and not sitting out. */
+function nextPicker(seat: number, before: Frozen, dealt: { seat: number }[]): number | null {
+  const n = before.seats.length;
+  for (let i = 1; i <= n; i++) {
+    const at = (seat + i) % n;
+    if (dealt.some((d) => d.seat === at) || (before.seats[at] && !before.seats[at]!.sittingOut)) return at;
+  }
+  return null;
 }
 
 /** Seats as they stand with everything in the middle and nothing paid out yet. */

@@ -312,6 +312,9 @@ export class DealersChoice {
     c.deadline = null;
     c.clockFor = null;
     c.botAt = null;
+    // At a new table the first hand's button goes to whoever made the first pick, as when their clock started: a
+    // player picking in the first chooser's place while the table is paused or stopped (no clock) gets it too.
+    if (c.firstButton !== null) c.firstButton = chooser.seat;
     this.passChip(chooser.seat);
     const title = gameTitle(g.gameId, g.betting);
     this.host.log(kept ? `${chooser.name} kept ${title} going` : `${chooser.name} picked ${title}`);
