@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUNOUT_LAST_STEP_MS, RUNOUT_SETTLE_MS, RUNOUT_STEP_MS, runoutMs, type HandEvent } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { equityInput } from './components/table/Equity';
-import { departures, holdBack, useRunoutReveal, type Frozen } from './runout';
+import { departures, heldCards, holdBack, useRunoutReveal, type Frozen } from './runout';
 
 type Card = { card: string; up: boolean };
 const down = (card: string): Card => ({ card, up: false });
@@ -115,6 +115,9 @@ describe('a stud all-in runout, a street at a time (#216)', () => {
     expect(cardsOf(holdBack(view, frozen(), 3), 1)).toBe('Kc Kd Kh 4h 6h 8h');
     expect(holdBack(view, frozen(), 3).hand!.comingNext).toBeUndefined();
     expect(holdBack(view, frozen(), 4).hand!.boards).toEqual([[['9s']]]);
+    // Nothing waited face down for it, so it is dealt as usual. Were it hold'em's river, it would turn over instead.
+    expect(heldCards(view.hand)).toEqual([]);
+    expect(heldCards({ ...view.hand!, family: 'flop' })).toEqual(['9s']);
   });
 
   it('never shows a card the finished hand hides from this viewer', () => {

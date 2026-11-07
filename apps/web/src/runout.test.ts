@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HandEvent } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
-import { departures, holdBack, withShown, type Frozen } from './runout';
+import { departures, heldCards, holdBack, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -134,7 +134,10 @@ describe('a player knocked out (#308)', () => {
     const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null };
     expect(holdBack(after, frozen, 1).hand!.comingNext).toBeUndefined();
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
+    // When the result shows, that card turns over where it lies.
+    expect(heldCards(after.hand)).toEqual(['3s']);
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
+    expect(heldCards(finished().hand)).toEqual([]);
   });
 });

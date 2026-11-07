@@ -114,6 +114,15 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
 }
 
 /**
+ * The last card of a single all-in run: it waited face down on the board before turning over (#308). Stud's last
+ * street goes to the seats, with no card waiting on the board, so it is dealt as usual.
+ */
+export function heldCards(hand: TableView['hand']): string[] {
+  if (!hand || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
+  return runoutSteps(hand.events).at(-1)?.flatMap((e) => (e.t === 'board' ? e.cards : [])) ?? [];
+}
+
+/**
  * Seats as they stand with everything in the middle and nothing paid out yet. `shownEvents` are the hand's events
  * as far as the runout has been shown.
  */

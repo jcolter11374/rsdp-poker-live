@@ -496,8 +496,14 @@ describe('host settings', () => {
       const runout = 3 * RUNOUT_STEP_MS + RUNOUT_LAST_STEP_MS + RUNOUT_SETTLE_MS;
       expect(runoutMs(h.events)).toBe(runout);
       expect(rt.state.nextHandAt! - clock.now()).toBe(rt.state.settings.timing.showdownSeconds * 1000 + runout);
+      // Chips for whoever busted, so a next hand can be dealt: it comes at nextHandAt and not a moment sooner.
+      for (const s of rt.state.seats) if (s && s.stack === 0) rt.setStack('host', s.playerId, 200);
       clock.advance(rt.state.nextHandAt! - clock.now() - 1);
+      expect(rt.state.handNumber).toBe(1);
       expect(hand(rt)).toBe(h);
+      clock.advance(1);
+      expect(rt.state.handNumber).toBe(2);
+      expect(hand(rt).phase).not.toBe('complete');
     });
   }
 

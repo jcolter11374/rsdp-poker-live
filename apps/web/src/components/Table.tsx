@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
@@ -10,6 +9,7 @@ import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
 import { botOwnerLabel, botPlateLabel } from './table/BotLevels';
+import { heldCards } from '../runout';
 
 /** What a player who showed down made, when every card of theirs is face up to us. */
 const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
@@ -168,15 +168,6 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
     if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
   });
   return reach;
-}
-
-/**
- * The last card of a single all-in run: it waited face down on the board before turning over (#308). Stud's last
- * street goes to the seats, with no card waiting on the board, so it is dealt as usual.
- */
-function heldCards(hand: TableView['hand']): string[] {
-  if (!hand || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
-  return runoutSteps(hand.events).at(-1)?.flatMap((e) => (e.t === 'board' ? e.cards : [])) ?? [];
 }
 
 /** A short badge for a seat that is not playing, or null when it is. */
