@@ -683,9 +683,10 @@ export class TableRuntime {
     if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
     if (this.queue().some((w) => w.playerId === playerId)) throw new ActionError("you're already on the waitlist");
     if (this.state.requests.some((r) => r.playerId === playerId && r.kind === 'seat')) throw new ActionError('you have already asked for a seat');
-    // Queued even when a seat is free: upkeep offers it straight away. Refusing would tell someone pressing "Join the
-    // waitlist" during an all-in runout that a player in it had busted and left before the cards were out (#437); the
-    // browser holds back any offer made since the result until the result shows (holdBack in runout.ts).
+    // Queued even when a seat is free: upkeep offers it straight away, or once an all-in runout has been dealt out.
+    // Refusing would tell someone pressing "Join the waitlist" during the runout that a player in it had busted and
+    // left before the cards were out (#437). The browser also holds back any offer made since the result until the
+    // result shows (holdBack in runout.ts), in case its runout ends a little later than the server's.
     this.checkBuyIn(playerId, input.stack);
     this.queue().push({ playerId, name, stack: input.stack, at: this.clock.now() });
     this.log(`${name} joined the waitlist`);
@@ -3168,6 +3169,10 @@ export class TableRuntime {
     const limit = this.seatLimit();
     const kept = new Set(this.moverSeats(limit, this.movers()));
     s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    // No new offers while browsers still deal out the last hand's all-in runout: a seat freed by a bust would be offered
+    // straight away, and whether it was would give the result away to anyone waiting, or to anyone pressing Sit or
+    // joining then (#437). Upkeep runs again when the runout has had time to show (upkeepDue).
+    if (this.revealUntil() > now) return;
     const open = this.openSeats();
     for (const entry of this.queue()) {
       if (!open.length) break;
@@ -3183,11 +3188,20 @@ export class TableRuntime {
     }
   }
 
-  /** When upkeep next has something to do: an offer running out, or an offline seat to release. */
+  /** When the last hand's all-in runout, if it had one, has been dealt out in the browsers (0 when it hadn't). */
+  private revealUntil(): number {
+    const last = this.state.history.at(-1);
+    const ms = last ? runoutMs(last.hand.events) : 0;
+    return ms ? last!.endedAt + ms : 0;
+  }
+
+  /** When upkeep next has something to do: an offer running out, an offline seat to release, or a runout shown. */
   private upkeepDue(): number | null {
     if (this.isTournament) return null;
     const s = this.state;
     const times = this.offers().map((o) => o.expiresAt);
+    const reveal = this.revealUntil();
+    if (reveal > this.clock.now() && this.queue().length) times.push(reveal);
     const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
     if (releaseMs > 0 && !s.paused) {
       const now = this.clock.now();

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { variants } from '@rsdp/engine/core';
+import { runoutMs, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { HOST_HANDOFF_MS, SEAT_OFFER_MS, TableRuntime } from '../src/runtime/table';
@@ -184,14 +184,59 @@ describe('waitlist', () => {
       }
       expect(rt.state.hand?.phase).toBe('complete');
       const busted = rt.state.seats.filter(Boolean).length < 3;
+      const reveal = runoutMs(rt.state.hand!.events);
       // Asking to join gives the same answer either way: no error, on the waitlist.
       expect(() => rt.joinWaitlist('e', { name: 'Eve', stack: 100 })).not.toThrow();
       expect(rt.state.waitlist!.some((w) => w.playerId === 'e')).toBe(true);
+      if (reveal) {
+        // And nothing else changes while the runout is dealt out: no seat is offered, even a busted player's.
+        expect(rt.state.offers).toEqual([]);
+        expect(rt.state.log.at(-1)?.text).toBe('Eve joined the waitlist');
+        clock.advance(reveal);
+        outcomes.add(busted ? 'busted after a runout' : 'full after a runout');
+      }
+      // Once it has been shown (or at once, with no runout), a seat that came free is offered.
       expect(rt.state.offers!.some((o) => o.playerId === 'e')).toBe(busted);
       outcomes.add(busted ? 'busted' : 'full');
     }
-    // Both cases came up among the seeds.
-    expect([...outcomes].sort()).toEqual(['busted', 'full']);
+    // Every case came up among the seeds.
+    expect([...outcomes].sort()).toEqual(['busted', 'busted after a runout', 'full', 'full after a runout']);
+  });
+
+  it('offers no seat while a runout is dealt out, so where someone sits then says nothing about the result', () => {
+    // Four seats: the host and two bots on small stacks, no rebuys, and seat 4 empty all along. During the runout Eve
+    // joins the waitlist and Fay presses Sit on seat 4: Fay gets it whether or not a bot busted, and Eve has no offer
+    // (a hidden one on the busted bot's seat would have sent Fay's press, or Eve's own, somewhere else).
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const clock = new FakeClock();
+      const settings = defaultSettings('cash');
+      settings.seating.requireApproval = false;
+      settings.seating.waitlist = true;
+      settings.seating.allowRebuys = false;
+      settings.play.runItTwice = 'off';
+      settings.table.maxSeats = 4;
+      settings.stakes = { ...settings.stakes, smallBlind: 1, bigBlind: 2 };
+      const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
+      for (const p of PEOPLE) rt.connect(p);
+      rt.requestSeat('host', { seat: 0, name: 'H', stack: 200, consent: true });
+      rt.addBot('host', { seat: 1, stack: 2 });
+      rt.addBot('host', { seat: 2, stack: 2 });
+      rt.start('host');
+      for (let i = 0; i < 200 && rt.state.handNumber === 1 && rt.state.hand && rt.state.hand.phase !== 'complete'; i++) {
+        const h = rt.state.hand;
+        if (h.toAct !== null && rt.state.seats[h.toAct]?.playerId === 'host') rt.act('host', { type: 'call' });
+        else clock.advance(500);
+      }
+      if (!runoutMs(rt.state.hand!.events)) continue;
+      const busted = rt.state.seats.filter(Boolean).length < 3;
+      rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
+      rt.requestSeat('d', { seat: 3, name: 'Fay', stack: 100 });
+      expect(seatOf(rt, 'd')).toBe(3);
+      expect(rt.state.offers).toEqual([]);
+      outcomes.add(busted);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
   });
 
   it('clears the queue when the waitlist is turned off', () => {
