@@ -141,12 +141,63 @@ describe('holdBack', () => {
       // dealt next was all in from the start. Seat 1 busted, so the server's chip came back to seat 0.
       const was = choice(0, true, { current: nlhe, handsLeft: 0, deadline: 5 });
       const kept = { ...nlhe, by: null, how: 'kept' };
-      const live = { ...finished(), choice: choice(0, false, { current: kept, handsLeft: 1 }) } as TableView;
-      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1 }));
-      // A bot picking in place of seat 1 while it's dealt out is held back too.
+      const live = { ...finished(), choice: choice(0, false, { current: kept, handsLeft: 1, cap: 10 }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1, cap: 10 }));
+      // A bot picking in place of seat 1 while it's dealt out is held back too, with the limit Razz would set.
       const picked = { ...live, choice: choice(0, false, { current: kept, handsLeft: 1, next: razz, cap: 3, closed: true }) } as TableView;
-      expect(holdBack(picked, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1 }));
+      expect(holdBack(picked, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: kept, handsLeft: 1, cap: 10 }));
+      // Missed again, with the same game carrying on again: the pick looks the same, but the tag still moved on.
+      const again = choice(0, true, { current: kept, handsLeft: 0, deadline: 5, cap: 10 });
+      expect(holdBack(live, { ...before(), choice: again, sameHand: false }, 0).choice?.chip).toBe(1);
     });
+
+    // Fourth review: the seat limit and closed seats during the reveal.
+    const badugi = { gameId: 'badugi', betting: 'fixed-limit', by: 'A', how: 'picked' };
+    const nlheB = { gameId: 'nlhe', betting: 'no-limit', by: 'B', how: 'picked' };
+
+    it('keeps the seats closed in a hand dealt and run out in one update while busted bots leave', () => {
+      // Badugi seats 6: six seated, so the empty seats are closed. The chooser, seat 0, is in the all-in bomb pot;
+      // three bots in it bust and leave as the hand ends.
+      const was = choice(0, false, { current: badugi, handsLeft: 3, count: 6, cap: 6, closed: true });
+      const live = { ...finished(), choice: choice(0, false, { current: badugi, handsLeft: 2, count: 3, cap: 6, closed: false }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(0, false, { current: badugi, handsLeft: 2, count: 6, cap: 6, closed: true }));
+    });
+
+    it("keeps the seat limit of the game being dealt when a stand-in picks for a busted chooser in a hand run out in one update", () => {
+      // During Badugi, A picked No-Limit Hold'em and the chip passed to seat 1. The hold'em hand (one hand a pick) was a
+      // bomb pot run out at once, and seat 1 busted: a bot picked Razz in their place.
+      const was = choice(1, false, { current: badugi, next: nlheB, handsLeft: 0, count: 6, cap: 6, closed: true });
+      const live = { ...finished(), choice: choice(0, false, { current: nlheB, next: razz, handsLeft: 0, count: 6, cap: 8, closed: false }) } as TableView;
+      // Before the result the table was open for hold'em's 10 seats: so it stays, with the bot's pick held back.
+      expect(holdBack(live, { ...before(), choice: was, sameHand: false }, 0).choice).toEqual(choice(1, false, { current: nlheB, handsLeft: 0, count: 6, cap: 10, closed: false }));
+    });
+
+    it("keeps seats a newcomer closed during the runout closed when a stand-in's pick comes in", () => {
+      // Badugi with five seated: a newcomer takes the sixth seat during the runout, which closes the rest. Then a bot
+      // picks in place of the busted chooser.
+      const was = choice(0, false, { current: badugi, handsLeft: 0, count: 5, cap: 6, closed: false });
+      const live = { ...finished(), choice: choice(1, false, { current: badugi, next: razz, handsLeft: 0, count: 6, cap: 6, closed: true }) } as TableView;
+      expect(holdBack(live, { ...before(), choice: was, sameHand: true }, 0).choice).toEqual(choice(0, false, { current: badugi, handsLeft: 0, count: 6, cap: 6, closed: true }));
+    });
+
+    it("shows a folded chooser the fallback game for the count before the result", () => {
+      // Seat 2 folded with the panel open. Hold'em is no longer on the menu, which starts Badugi (6), Razz (8). Seven
+      // were seated; a bot in the all-in busts and leaves, so the server's fallback turns to Badugi.
+      const base = finished();
+      const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
+      events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
+      const settings = { game: { dealersChoice: { enabled: true, games: [{ gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 } } };
+      const live = { ...base, settings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0 }) } as unknown as TableView;
+      const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 1 }), sameHand: true };
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 1, canKeep: false }));
+    });
+  });
+
+  it('holds back a waitlist offer for a seat someone in the hand had, until the result', () => {
+    const offer = (seat: number) => ({ seat, playerId: `w${seat}`, name: `W${seat}`, expiresAt: 99 });
+    // Seat 1's player busted and left as the hand ended, and the waitlist was offered their seat; seat 4 was empty.
+    const live = { ...finished(), offers: [offer(1), offer(4)] } as TableView;
+    expect(holdBack(live, before(), 0).offers).toEqual([offer(4)]);
   });
 
   it('keeps players at the table who bust or leave when the hand ends', () => {
