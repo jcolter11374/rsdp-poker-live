@@ -141,7 +141,7 @@ export function stakesForGames(
   start: StakesStart | null,
   scheduleOn: boolean,
   limit = to.some((g) => g.betting === 'fixed-limit'),
-): { stakes: Stakes; antes: number[]; start: StakesStart } {
+): { stakes: Stakes; antes: number[]; start: StakesStart; studAnteOn: boolean } {
   const antes = levels.map((l) => l.ante);
   const s = start ?? stakesStart(stakes, antes, from);
   const changed = (group: Group) => !sameGroup(stakes, s.auto, group) || (group[0] === 'ante' && !sameAntes(antes, s.autoAntes));
@@ -175,8 +175,9 @@ export function stakesForGames(
     nextAntes = nextAntes.map((a, i) => (off || i >= ownAntes.length ? 0 : a));
   }
   // The stud ante went on (stakesForMenu, with the first stud game): the levels' antes go with it (#426).
-  else if (studAnteOn(to, own[ante].games)) nextAntes = levelStudAntes(next, levels);
-  return { stakes: next, antes: nextAntes, start: { own, ownAntes, auto: next, autoAntes: nextAntes } };
+  const studOn = next.anteType !== 'none' && studAnteOn(to, own[ante].games);
+  if (studOn) nextAntes = levelStudAntes(next, levels);
+  return { stakes: next, antes: nextAntes, start: { own, ownAntes, auto: next, autoAntes: nextAntes }, studAnteOn: studOn };
 }
 
 /** Whether stakesForMenu puts the stud ante on for dealing `to` in place of `before`: the first stud game goes on. */

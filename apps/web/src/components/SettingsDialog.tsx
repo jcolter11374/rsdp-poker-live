@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
 import { applyAtNextHand, getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
@@ -13,7 +13,7 @@ import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
 import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
-import { choiceOf, DEFAULT_MENU, levelStudAntes, menuSeats, repeatsOf, stakesForGames, stakesStart, type StakesStart } from './settings/dealersChoice';
+import { choiceOf, DEFAULT_MENU, levelStudAnte, levelStudAntes, menuSeats, repeatsOf, stakesForGames, stakesStart, type StakesStart } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
@@ -68,7 +68,9 @@ function diff(prev: unknown, next: unknown): unknown {
 const maxSeatsFor = (gameIds: string[]) => Math.min(...gameIds.map((id) => getVariant(id).maxPlayers));
 
 export function SettingsDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
-  const base = useMemo(() => comingSettings(view.settings, view.pendingSettings), [view.settings, view.pendingSettings]);
+  // Taken once, as the dialog opens: a save sends only what this host changed here, so a change someone else saves
+  // in the meantime (a co-host, say) isn't undone.
+  const [base] = useState(() => comingSettings(view.settings, view.pendingSettings));
   const [draft, setDraft] = useState<TableSettings>(() => structuredClone(base));
   const [tab, setTab] = useState<Tab>('game');
   const [error, setError] = useState('');
@@ -128,8 +130,14 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
     const { levels } = d.blindSchedule;
     const limit = [...to, game].some((g) => g.betting === 'fixed-limit');
     const next = stakesForGames(d.stakes, levels, dealtIn(d, mode), to, started.current ?? startOf(base), d.blindSchedule.enabled, limit);
-    const stakes = adjust(next.stakes);
-    const antes = next.stakes.ante === 0 && stakes.ante > 0 ? levelStudAntes(stakes, levels) : next.antes;
+    let stakes = adjust(next.stakes);
+    let antes = next.antes;
+    // A stud ante put on now is worked out from the small bet: from the one `adjust` sets (a standard mix's), if it
+    // changes it. One that `adjust` puts on goes on the levels too.
+    if (next.studAnteOn && stakes.smallBet !== next.stakes.smallBet) {
+      stakes = { ...stakes, ante: defaultStudAnte(stakes) };
+      antes = levelStudAntes(stakes, levels);
+    } else if (next.stakes.ante === 0 && stakes.ante > 0) antes = levelStudAntes(stakes, levels);
     started.current = { ...next.start, auto: stakes, autoAntes: antes };
     const blindSchedule = antes.every((a, i) => a === levels[i].ante) ? d.blindSchedule : { ...d.blindSchedule, levels: levels.map((l, i) => ({ ...l, ante: antes[i] })) };
     return { stakes, blindSchedule };
@@ -146,6 +154,13 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       // Stud is meant to be played with antes; without one the pot starts with the bring-in alone.
       ...forGames(d, [{ gameId, betting: spec.defaultBetting }], (st) => (stud && st.ante === 0 ? { ...st, ante: defaultStudAnte(st), anteType: 'per-player' } : st), { gameId, betting: spec.defaultBetting }),
     });
+  };
+
+  /** The one game's betting, and the stakes it needs: Limit bets, and a bring-in that fits them. */
+  const setBetting = (betting: BettingKind) => {
+    const d = draft;
+    const game = { gameId: d.game.gameId, betting };
+    setDraft({ ...d, game: { ...d.game, betting }, ...forGames(d, [game], undefined, game) });
   };
 
   /** Fills the rotation with a standard mix, one orbit per game, and sets up the stud ante and bring-in it needs. */
@@ -190,6 +205,18 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
     const rotation = { ...d.game.rotation, steps };
     // A step's length or unit doesn't change the games dealt.
     setDraft({ ...d, game: { ...d.game, rotation }, ...(same ? {} : forGames(d, steps)) });
+  };
+  /**
+   * The levels kept when the schedule is turned on or off. While it's on, each level's ante is the one posted: with
+   * No ante, they have none (the server refuses one), and with stud dealt and a stud ante set, a level with none
+   * gets a stud ante for its own blinds, or the stud games would have none there (#426).
+   */
+  const scheduleLevels = (enabled: boolean) => {
+    const { levels } = draft.blindSchedule;
+    if (!enabled) return levels;
+    if (draft.stakes.anteType === 'none') return levels.map((l) => ({ ...l, ante: 0 }));
+    const stud = dealtIn(draft, mode).some((g) => getVariant(g.gameId).forcedBets === 'ante-bring-in');
+    return stud && draft.stakes.ante > 0 ? levels.map((l) => (l.ante === 0 ? { ...l, ante: levelStudAnte(draft.stakes, l) } : l)) : levels;
   };
   /** Takes a level off the schedule. The antes kept for switching back stay with their levels (#414). */
   const removeLevel = (i: number) => {
@@ -291,7 +318,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                     </select>
                   </Field>
                   <Field label="Betting">
-                    <select value={draft.game.betting} onChange={(e) => set('game', { betting: e.target.value as BettingKind })}>
+                    <select value={draft.game.betting} onChange={(e) => setBetting(e.target.value as BettingKind)}>
                       {BETTINGS.map((b) => (
                         <option key={b} value={b}>
                           {BETTING_NAME[b]}
@@ -301,7 +328,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                   </Field>
                 </div>
                 )}
-                {mode === 'one' && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={(betting) => set('game', { betting })} />}
+                {mode === 'one' && <BettingNudge gameId={draft.game.gameId} betting={draft.game.betting} onSwitch={setBetting} />}
                 {numberField('Seats', Math.min(draft.table.maxSeats, seatLimit), (v) => set('table', { maxSeats: v }), Math.max(2, seated), seatLimit, mode === 'choice' ? `Up to ${seatLimit}, for the biggest game on the menu.` : `Up to ${seatLimit} for ${games.length > 1 ? 'these games' : 'this game'}.`)}
                 {seatNote && !tooMany && <p className="hint">{seatNote}</p>}
                 {mode === 'choice' && <DealersChoiceFields choice={choice} seated={seated} onChange={setChoice} setMenu={setMenu} />}
@@ -414,10 +441,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               set('blindSchedule', {
                 enabled,
                 levels: sched.levels.length
-                  ? // With no ante, the levels have none either (the server refuses one).
-                    enabled && draft.stakes.anteType === 'none'
-                    ? sched.levels.map((l) => ({ ...l, ante: 0 }))
-                    : sched.levels
+                  ? scheduleLevels(enabled)
                   : [{ smallBlind: draft.stakes.smallBlind, bigBlind: draft.stakes.bigBlind, ante: draft.stakes.ante, minutes: 20, hands: 30 }],
               }),
             )}

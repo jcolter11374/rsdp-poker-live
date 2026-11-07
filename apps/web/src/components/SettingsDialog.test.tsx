@@ -564,6 +564,52 @@ describe("Table settings: the ante when switching to or from Dealer's choice (#4
     expect(saved.stakes.bringIn).toBeLessThanOrEqual(saved.stakes.smallBet);
   });
 
+  it("a change someone else saves while the dialog is open isn't undone by this host's save", () => {
+    const settings = defaultSettings('cash');
+    const during = { ...viewOf(settings), hand: { phase: 'betting' }, pendingSettings: null } as unknown as TableView;
+    const { rerender } = render(<SettingsDialog view={during} onClose={() => {}} />);
+    // A co-host raises the blinds for the next hand.
+    rerender(<SettingsDialog view={{ ...during, pendingSettings: { stakes: { smallBlind: 5, bigBlind: 10 } } } as unknown as TableView} onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Table name'), { target: { value: 'Renamed' } });
+    save();
+    expect(sentPatch()).toEqual({ table: { name: 'Renamed' } });
+  });
+
+  it("a standard mix's button works the stud ante out from the mix's own Limit bets, on the levels too", () => {
+    const settings = defaultSettings('cash');
+    settings.stakes = { ...settings.stakes, smallBet: 20, bigBet: 40 };
+    threeLevels(settings, [0, 0, 0]);
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    mix('horse');
+    save();
+    const saved = savedFrom(settings);
+    // The mix bets the big blind and twice it: about a quarter of the small bet of 2, not of the old 20.
+    expect(saved.stakes).toMatchObject({ smallBet: 2, bigBet: 4, ante: 1, anteType: 'per-player' });
+    expect(saved.blindSchedule.levels.map((l) => l.ante)).toEqual([1, 1, 2]);
+  });
+
+  it('turning the schedule on at a stud table gives its levels with no ante a stud ante', () => {
+    const settings = defaultSettings('cash');
+    settings.game = { ...settings.game, gameId: 'razz', betting: 'fixed-limit' };
+    settings.table.maxSeats = 8;
+    settings.stakes = { ...settings.stakes, ante: 1, anteType: 'per-player', bringIn: 1 };
+    threeLevels(settings, [0, 0, 0]).blindSchedule.enabled = false;
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    stakesTab();
+    fireEvent.click(screen.getByLabelText('Raise the blinds on a schedule'));
+    save();
+    expect(savedFrom(settings).blindSchedule.levels.map((l) => l.ante)).toEqual([1, 1, 2]);
+  });
+
+  it("changing the one game's betting to Limit brings a bring-in above the small bet down to fit", () => {
+    const settings = defaultSettings('cash');
+    settings.stakes = { ...settings.stakes, smallBet: 4, bigBet: 8, bringIn: 10 };
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Betting'), { target: { value: 'fixed-limit' } });
+    save();
+    expect(savedFrom(settings).stakes).toMatchObject({ smallBet: 4, bringIn: 1 });
+  });
+
   describe('a second save in the same hand', () => {
     /** Saves in the dialog during a hand, with `pending` already waiting for the next hand, and returns what waits after. */
     const saveDuringHand = (settings: TableSettings, pending: SettingsPatch | null, act: () => void): SettingsPatch => {
