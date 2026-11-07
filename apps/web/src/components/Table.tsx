@@ -495,15 +495,23 @@ export function Table({
   const players = view.seats.filter(Boolean).length;
   const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + (n - players) * 130));
   // On a big window the whole table grows with it (#317): k is the table's scale, from the room the felt has. Below k = 1
-  // (laptops, and the replayer) the sizes above stay as they were.
+  // (laptops, and the replayer) the sizes above stay as they were, except in the wide layout (below).
   // A short, very wide window (an ultrawide screen, or a big one with tall browser bars) has the width but not the height:
   // there the wide layout packs the table tighter from top to bottom, so it still grows a little instead of shrinking (#347).
   const kTall = Math.min(1.9, room.h / 560, room.w / 1180);
   const kShort = wide ? Math.min(1.25, room.h / 470, room.w / 1180) : 0;
-  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort) * 100) / 100;
+  // A window just too short for k = 1 keeps that packed table, a little smaller, down to the smallest seats' size (0.72),
+  // rather than dropping to the laptop layout and its smallest seats: a few pixels of height (a tournament's strip, a
+  // banner over the table) took a 2300x824 window from full-size seats and cards to the smallest (#385).
+  const packed = wide && fill && !compact && !!room.w;
+  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort, packed ? 0.72 : 0) * 100) / 100;
+  const grown = k > 1 || packed;
+  // The wide layout's bigger cards (styles.css), except on a window so short (under about 620px, or a little taller with
+  // a row above the table) that the table is held at that smallest size in less room than it needs: there your own big
+  // cards would cover the board, so the seats keep their usual cards.
+  const bigCards = grown && wide && Math.max(kTall, kShort) >= 0.72;
   // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
-  const short = kShort > kTall && k > 1;
-  const grown = k > 1;
+  const short = kShort > kTall && grown;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
@@ -513,7 +521,9 @@ export function Table({
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
   const dealtKey = [...new Set([...dealableGames(games ?? [], players), gameId].filter(Boolean))].sort().join(',');
   const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
-  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi'].includes(g));
+  // The stud games tuck their cards in the same way on third and fourth street, before the row goes over the nameplate:
+  // counted with them, so a side seat's three or four cards don't run off the window's edge (#385).
+  const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi', 'stud', 'razz', 'stud8'].includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
   const longGame = wide && dealt.some((g) => ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(g));
@@ -536,7 +546,7 @@ export function Table({
   const sizes = useMemo(() => dealtSizes(dealt), [dealt]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
   // The hand sizes, the seats' scale, then the layout (the placement below leaves the scale out of its key).
-  const boxKey = (of: readonly number[]) => `${of.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`;
+  const boxKey = (of: readonly number[]) => `${of.join('-')}|${seatScale}|${bigCards ? 'big-cards' : ''}|${short ? 'short' : ''}`;
   const sizedKey = boxKey(sizes);
   const sized = useSeatBoxes(felt, sizedKey, sizes, seating, view.me.seat, !compact);
   // A table too full to give every game's hands their room at once is spaced for the game on now instead, as before #409:
@@ -613,8 +623,9 @@ export function Table({
   const boardCard = compact
     ? null
     : grown
-      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it.
-        Math.round(Math.max(short ? 44 : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
+      ? // With a row of big cards above and below it (#331), the board gives up a little height so bets don't reach it,
+        // and a little more on a window too short for the big cards, so your own cards stay off it.
+        Math.round(Math.max(short ? (bigCards ? 44 : 38) : 60, Math.min((wide ? 80 : 68) * k, w * 0.085, h * (longGame ? 0.19 : 0.21) * (short ? 0.82 : 1))))
       : Math.round(Math.max(60, Math.min(88, w * 0.062, h * 0.17)));
   // Bets sit just inside each seat's nameplate and cards, on the way to the middle.
   const guess: Reach = compact ? { l: 50, r: 50, u: 55, d: 25 } : { l: 100, r: 100, u: 70, d: 32 };
@@ -780,7 +791,7 @@ export function Table({
   return (
     <div
       ref={felt}
-      className={['felt', compact && 'compact', grown && 'grown', grown && wide && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
+      className={['felt', compact && 'compact', grown && 'grown', bigCards && 'big-cards', short && 'short', handFit && 'hand-fit', done && hand!.awards.length > 0 && 'showdown', view.me.seat !== null && 'seated-view', myTurn && 'my-turn', view.cardsWatched && 'cards-watched'].filter(Boolean).join(' ')}
       style={{ ...feltStyle(prefs, view.settings.table.felt), '--seat-scale': seatScale, ...(grown ? { '--k': k, '--sk': seatScale, '--side-margin': `${sideMargin}px`, '--top-margin': `${topMargin}px` } : {}), ...(boardCard ? { '--board-cw': `${boardCard}px` } : {}), ...(handFit ? { '--fit-cw': `${handFit.cw}px`, '--fit-overlap': `${-handFit.overlap}px` } : {}) } as CSSProperties}
     >
       <FeltEmblem />
