@@ -7,9 +7,9 @@
  * ledger's numbers, the leaderboard and everyone's profit graph.
  *
  * Where names are kept beside the player's id (seats, ledger rows, chat, waitlists, co-hosts, tournament entries,
- * hand seeds in shared hands, feedback), the id decides. Lines with no id (the table log, the dealer's chat lines,
- * tournament lobby events) are matched by the names the player went by, and only at tables and tournaments where
- * the player's id is found, so someone else of the same name elsewhere is left alone. A name is looked for inside a
+ * hand seeds in shared hands, feedback), the id decides. Names kept with no id (the table log, the dealer's chat
+ * lines, tournament lobby events, a Dealer's choice chooser's) are matched by the names the player went by, and only
+ * at tables and tournaments where the player's id is found, so someone else of the same name elsewhere is left alone. A name is looked for inside a
  * line of text only when it can't be mistaken for the server's own words there: it has a letter, at least two
  * characters and a word the server never writes itself, so a name like "100", "a" or "Game" never rewrites an amount
  * or "Game paused" (those names are counted, and still replaced wherever they sit beside the id). What people typed
@@ -233,6 +233,9 @@ export class NameReplacer {
       for (const line of list(state.log)) if (isObj(line)) tally.names += this.text(line, 'text', place);
       // The dealer's lines (no player id) repeat some log lines, such as a settings change and who made it.
       for (const m of list(state.chat)) if (isObj(m) && m.playerId === null) tally.names += this.text(m, 'text', place);
+      // Dealer's choice keeps the chooser's name with the game being played and the next one ("Pat's pick" in the
+      // top bar), beside a seat but no id: matched by the names the player went by, as a bot's owner is.
+      if (isObj(state.choice)) for (const k of ['current', 'next']) if (isObj(state.choice[k])) tally.names += this.owner(state.choice[k], 'by', undefined, place);
     }
     return tally;
   }

@@ -151,6 +151,27 @@ describe('finding a name in a line of text', () => {
     expect(short.lobbyItem(joined, { there: true, keep: new Set() }).names).toBe(1);
     expect(joined.event).toEqual({ type: 'registered', name: DELETED_NAME, late: false, entryNo: 5 });
   });
+
+  it('replaces a Dealer’s choice chooser’s name only where the player was', () => {
+    const r = new NameReplacer('p1', ['Pat', '5']);
+    const pick = (by: string | null, seat: number | null) => ({ gameId: 'razz', betting: 'fixed-limit', by, seat, how: by ? 'picked' : 'default' });
+    const choiceOf = (current: ReturnType<typeof pick>, next: ReturnType<typeof pick> | null) => ({ chip: 1, firstButton: null, current, hands: 2, length: 3, next, deadline: null, clockFor: null, botAt: null });
+    // The top bar's "Pat's pick" and the next game's chooser: names kept beside a seat, with no id.
+    const state = { id: 't1', seats: [{ playerId: 'p1', name: 'Pat' }, { playerId: 'p2', name: 'Sam' }], ledger: {}, choice: choiceOf(pick('Pat', 0), pick('Sam', 1)) };
+    expect(r.table(state, { there: true, keep: new Set(['Sam']) }).names).toBe(2);
+    expect(state.choice.current).toEqual(pick(DELETED_NAME, 0));
+    expect(state.choice.current.how).toBe('picked');
+    expect(state.choice.next).toEqual(pick('Sam', 1));
+    // A pick the player made for the next game, after leaving their seat; a name made of digits goes too, whole.
+    const left = { id: 't2', seats: [null, { playerId: 'p2', name: 'Sam' }], ledger: { p1: { playerId: 'p1', name: '5', buyIn: 100, cashOut: 100 } }, choice: choiceOf(pick(null, null), pick('5', 0)) };
+    expect(r.table(left, { there: true, keep: new Set(['Sam']) }).names).toBe(2);
+    expect(left.choice.next).toEqual(pick(DELETED_NAME, 0));
+    expect(left.choice.current).toEqual(pick(null, null));
+    // At a table the player was never at, someone else's pick under the same name stays.
+    const elsewhere = { id: 't3', seats: [{ playerId: 'p3', name: 'Pat' }], ledger: {}, choice: choiceOf(pick('Pat', 0), null) };
+    expect(r.table(elsewhere, { there: false, keep: new Set() }).names).toBe(0);
+    expect(elsewhere.choice.current.by).toBe('Pat');
+  });
 });
 
 describe('the server’s own words', () => {
