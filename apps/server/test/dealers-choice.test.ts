@@ -925,3 +925,193 @@ describe("Dealer's choice: the host can't move the pick (second review)", () => 
   });
 });
 
+
+// #423: the host switches a Dealer's choice table to one game, or to a rotation, during the last hand of a pick. The
+// change waits for the next hand, so nobody may pick a game that would never be dealt.
+describe("Dealer's choice: a switch to another game that waits for the next hand (#423)", () => {
+  const ROTATION = {
+    enabled: true,
+    steps: [
+      { gameId: 'razz', betting: 'fixed-limit' as const, length: 1, unit: 'hands' as const },
+      { gameId: 'plo4', betting: 'pot-limit' as const, length: 1, unit: 'hands' as const },
+    ],
+  };
+  const SWITCHES = [
+    { name: 'one game', patch: { game: { dealersChoice: { enabled: false }, gameId: 'plo4', betting: 'pot-limit' as const } }, dealt: 'plo4' },
+    { name: 'a rotation', patch: { table: { maxSeats: 8 }, game: { dealersChoice: { enabled: false }, rotation: ROTATION } }, dealt: 'razz' },
+  ];
+
+  /** Three players; the last hand of the first pick is being played, so picking the next game is open. */
+  function lastHand() {
+    const { rt, clock } = table();
+    seat(rt, 3);
+    rt.start('host');
+    pick(rt, 'nlhe');
+    checkDown(rt);
+    clock.advance(10_000);
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(live(rt)).toBe(true);
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ open: true, handsLeft: 0 });
+    return { rt, clock };
+  }
+
+  for (const sw of SWITCHES) {
+    it(`closes picking once the host switches to ${sw.name} mid-hand, and refuses a pick`, () => {
+      const { rt, clock } = lastHand();
+      const who = chooser(rt);
+      const picks = rt.state.log.filter((l) => / picked /.test(l.text)).length;
+      rt.updateSettings('host', sw.patch);
+      // Still Dealer's choice until the hand ends, but there's no next game to pick, and no clock.
+      expect(rt.settings.game.dealersChoice!.enabled).toBe(true);
+      for (const viewer of [who.playerId, 'a', 'host']) expect(tableView(rt, viewer, clock.now()).choice).toMatchObject({ open: false, deadline: null });
+      expect(rt.choice.pickOpen()).toBe(false);
+      expect(() => pick(rt, 'razz')).toThrow(/the host has changed how the game is chosen from the next hand/);
+      expect(rt.state.log.filter((l) => / picked /.test(l.text)).length).toBe(picks);
+      expect(rt.state.choice!.next).toBeNull();
+      checkDown(rt);
+      clock.advance(10_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+      expect(rt.state.choice).toBeUndefined();
+      expect(tableView(rt, 'a', clock.now()).choice).toBeNull();
+    });
+  }
+
+  it('opens picking again if the host switches back to Dealer’s choice before the hand ends', () => {
+    const { rt, clock } = lastHand();
+    rt.updateSettings('host', SWITCHES[0].patch);
+    expect(tableView(rt, 'a', clock.now()).choice!.open).toBe(false);
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: true } } });
+    expect(tableView(rt, 'a', clock.now()).choice!.open).toBe(true);
+    pick(rt, 'razz');
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('razz');
+  });
+
+  it('keeps picking open for a change that leaves Dealer’s choice on (the stakes, say)', () => {
+    const { rt, clock } = lastHand();
+    rt.updateSettings('host', { stakes: { smallBlind: 2, bigBlind: 4 } });
+    expect(rt.state.pendingSettings).not.toBeNull();
+    expect(tableView(rt, 'a', clock.now()).choice!.open).toBe(true);
+    pick(rt, 'razz');
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('razz');
+  });
+
+  for (const sw of SWITCHES) {
+    it(`a bot holding the chip doesn't pick once the host switches to ${sw.name} mid-hand`, () => {
+      const { rt, clock } = table();
+      seat(rt, 1);
+      rt.addBot('host', { seat: 1 });
+      rt.addBot('host', { seat: 2 });
+      rt.start('host');
+      let found = false;
+      for (let i = 0; i < 30 && !found; i++) {
+        if (!live(rt)) {
+          if (rt.isBot(chooser(rt).playerId)) clock.advance(BOT_PICK_MS);
+          else pick(rt, 'nlhe');
+        }
+        // The last hand of a pick, with a bot to choose next, before its moment comes.
+        if (live(rt) && rt.choice.pickOpen() && rt.isBot(chooser(rt).playerId) && rt.state.choice!.botAt! > clock.now()) {
+          found = true;
+          break;
+        }
+        checkDown(rt);
+        for (let t = 0; t < 100 && !live(rt) && rt.state.choice!.deadline === null; t++) clock.advance(100);
+      }
+      expect(found).toBe(true);
+      const picks = rt.state.log.filter((l) => / picked /.test(l.text)).length;
+      rt.updateSettings('host', sw.patch);
+      expect(rt.choice.due()).toBeNull();
+      clock.advance(BOT_PICK_MS * 2);
+      expect(rt.state.choice!.next).toBeNull();
+      expect(rt.state.log.filter((l) => / picked /.test(l.text)).length).toBe(picks);
+      checkDown(rt);
+      clock.advance(10_000);
+      expect(hand(rt).input.game.id).toBe(sw.dealt);
+    });
+  }
+});
+
+// #423 too: the host takes a game off the menu during the last hand of a pick. The new menu waits for the next hand,
+// so that game can't be picked for it.
+describe("Dealer's choice: a game taken off the menu that waits for the next hand (#423)", () => {
+  const WITHOUT_RAZZ = { game: { dealersChoice: { games: [MENU[0], MENU[2], MENU[3]] } } };
+
+  /** Three players (or the host and two bots); the last hand of the first pick is being played. */
+  function lastHand(rng = seeded(), bots = false) {
+    const { rt, clock } = table(() => {}, rng);
+    seat(rt, bots ? 1 : 3);
+    if (bots) {
+      rt.addBot('host', { seat: 1 });
+      rt.addBot('host', { seat: 2 });
+    }
+    rt.start('host');
+    for (let i = 0; i < 30; i++) {
+      if (!live(rt)) {
+        if (rt.isBot(chooser(rt).playerId)) clock.advance(BOT_PICK_MS);
+        else pick(rt, 'razz');
+      }
+      if (live(rt) && rt.choice.pickOpen() && (!bots || (rt.isBot(chooser(rt).playerId) && rt.state.choice!.botAt! > clock.now()))) return { rt, clock };
+      checkDown(rt);
+      for (let t = 0; t < 100 && !live(rt) && rt.state.choice!.deadline === null; t++) clock.advance(100);
+    }
+    throw new Error('never reached the last hand of a pick');
+  }
+
+  it('refuses a pick of the game the host is taking off, and deals another one picked instead', () => {
+    const { rt, clock } = lastHand();
+    expect(rt.state.choice!.current).toMatchObject({ gameId: 'razz' });
+    expect(tableView(rt, 'a', clock.now()).choice!.canKeep).toBe(true);
+    rt.updateSettings('host', WITHOUT_RAZZ);
+    // Picking stays open for the games that stay, but Razz can't be kept going.
+    const view = tableView(rt, 'a', clock.now()).choice!;
+    expect(view).toMatchObject({ open: true, canKeep: false });
+    expect(() => pick(rt, 'razz')).toThrow(/the host is taking Razz off the menu from the next hand: pick another game/);
+    expect(() => rt.chooseGame(chooser(rt).playerId, { index: 1, gameId: 'razz', betting: 'fixed-limit' })).toThrow(/taking Razz off the menu/);
+    pick(rt, 'badugi');
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('badugi');
+    expect(rt.settings.game.dealersChoice!.games.map((g) => g.gameId)).toEqual(['nlhe', 'badugi', 'plo4']);
+  });
+
+  it('keeps a pick made before the host took that game off the menu', () => {
+    const { rt, clock } = lastHand();
+    pick(rt, 'plo4');
+    rt.updateSettings('host', { game: { dealersChoice: { games: [MENU[0], MENU[1]] } } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('plo4');
+  });
+
+  it('a bot holding the chip only picks from the games that stay on the menu', () => {
+    let checked = 0;
+    for (let n = 1; n <= 8; n++) {
+      const { rt, clock } = lastHand(seeded(n), true);
+      rt.updateSettings('host', { game: { dealersChoice: { games: [MENU[0], MENU[3]] } } });
+      clock.advance(BOT_PICK_MS * 2);
+      const next = rt.state.choice!.next!;
+      expect(next).toMatchObject({ how: 'bot' });
+      expect(['nlhe', 'plo4']).toContain(next.gameId);
+      checkDown(rt);
+      clock.advance(10_000);
+      expect(hand(rt).input.game.id).toBe(next.gameId);
+      checked++;
+    }
+    expect(checked).toBe(8);
+  });
+
+  it('says in the log when a pick made before the host turned Dealer’s choice off isn’t dealt', () => {
+    const { rt, clock } = lastHand();
+    const who = chooser(rt);
+    pick(rt, 'badugi');
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: false }, gameId: 'plo4', betting: 'pot-limit' } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(hand(rt).input.game.id).toBe('plo4');
+    expect(rt.state.log.some((l) => l.text === `Dealer's choice is over, so ${who.name}'s pick, Badugi, isn't dealt`)).toBe(true);
+  });
+});

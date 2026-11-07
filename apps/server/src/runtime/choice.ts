@@ -17,7 +17,7 @@
  * view (view).
  */
 import { variants, type BettingKind, type PlayerId } from '@rsdp/engine/core';
-import type { DealersChoiceSettings, TableSettings } from '@rsdp/engine/settings';
+import { applyAtNextHand, type DealersChoiceSettings, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { gameTitle } from '@rsdp/engine/variants';
 import type { ChoicePickView, ChoiceView } from '@rsdp/engine/wire';
 import type { ChoiceState, ChoicePick, RuntimeState, SeatState } from './types';
@@ -62,12 +62,47 @@ const same = (a: { gameId: string; betting: BettingKind }, b: { gameId: string; 
 export class DealersChoice {
   constructor(private readonly host: ChoiceHost) {}
 
+  /** The settings the next hand is dealt with, worked out once for each change the host makes (see coming()). */
+  private comingCache: { settings: TableSettings; pending: SettingsPatch; next: TableSettings } | null = null;
+
   private get s() {
     return this.host.state;
   }
 
   get menu() {
     return choiceMenu(this.s.settings);
+  }
+
+  /** The settings the next hand is dealt with: the table's, with any change the host made during this hand. */
+  private coming(): TableSettings {
+    const { settings, pendingSettings } = this.s;
+    if (!pendingSettings) return settings;
+    const hit = this.comingCache;
+    if (hit && hit.settings === settings && hit.pending === pendingSettings) return hit.next;
+    let next: TableSettings;
+    try {
+      next = applyAtNextHand(settings, pendingSettings).settings;
+    } catch {
+      // The change was checked when the host made it; if it somehow no longer reads, the deal finds out, not the view.
+      next = settings;
+    }
+    this.comingCache = { settings, pending: pendingSettings, next };
+    return next;
+  }
+
+  /**
+   * The host has switched the table to one game, or to a rotation, during this hand: Dealer's choice ends when the
+   * hand does (game.dealersChoice and game.rotation wait for the next hand), so there is no next game to pick (#423).
+   */
+  ending(): boolean {
+    return !!this.menu && !!this.s.pendingSettings && !choiceMenu(this.coming());
+  }
+
+  /** The host has taken `g` off the menu during this hand, so it can't be picked for the next one (#423). */
+  private leaving(g: { gameId: string; betting: BettingKind }): boolean {
+    if (!this.s.pendingSettings) return false;
+    const coming = choiceMenu(this.coming());
+    return !!coming && !coming.games.some((x) => same(x, g));
   }
 
   /** The state, made on first use. The chip starts with the next button, or with a random player at a fresh table. */
@@ -155,7 +190,7 @@ export class DealersChoice {
     const menu = this.menu;
     const cur = this.keepable();
     if (!menu || !cur) return false;
-    return menu.games.some((g) => same(g, cur) && this.fits(g.gameId));
+    return menu.games.some((g) => same(g, cur) && this.fits(g.gameId) && !this.leaving(g));
   }
 
   /** The current pick has had all its hands. A pick that hasn't dealt yet hasn't. */
@@ -167,12 +202,12 @@ export class DealersChoice {
   }
 
   /**
-   * The chooser may pick now: the last hand of the current pick has been dealt (or the pick is over), and
-   * nobody has picked the next game yet.
+   * The chooser may pick now: the last hand of the current pick has been dealt (or the pick is over), nobody has
+   * picked the next game yet, and the host isn't switching the table to another game from the next hand.
    */
   pickOpen(): boolean {
     const c = this.s.choice;
-    if (!this.menu || !c || c.next) return false;
+    if (!this.menu || !c || c.next || this.ending()) return false;
     return this.pickDone();
   }
 
@@ -183,8 +218,11 @@ export class DealersChoice {
   gate(candidates: SeatState[], dealtIn: number): 'go' | 'changed' | 'wait' {
     const menu = this.menu;
     const s = this.s;
-    // Turned off: forget the chip, so turning it on again starts afresh.
+    // Turned off: forget the chip, so turning it on again starts afresh. A pick made before the host turned it off
+    // isn't dealt, and the log says so.
     if (!menu) {
+      const next = s.choice?.next;
+      if (next?.by) this.host.log(`Dealer's choice is over, so ${next.by}'s pick, ${gameTitle(next.gameId, next.betting)}, isn't dealt`);
       if (s.choice) s.choice = undefined;
       return 'go';
     }
@@ -295,6 +333,7 @@ export class DealersChoice {
   pick(playerId: PlayerId, index: number, asked?: { gameId: string; betting: BettingKind }): string | null {
     const menu = this.menu;
     if (!menu) return "this table isn't playing Dealer's choice";
+    if (this.ending()) return 'the host has changed how the game is chosen from the next hand, so there is no game to pick';
     if (!this.pickOpen()) return "it isn't time to pick the next game yet";
     const chooser = this.chooser();
     if (!chooser || chooser.playerId !== playerId) return "it isn't your pick";
@@ -302,6 +341,7 @@ export class DealersChoice {
     const g = menu.games[index];
     // The host changed the menu while the click was on its way: never deal a game the chooser didn't tap.
     if (asked && !same(g, asked)) return 'the host has just changed the menu: pick again';
+    if (this.leaving(g)) return `the host is taking ${gameTitle(g.gameId, g.betting)} off the menu from the next hand: pick another game`;
     if (!this.fits(g.gameId)) return `${gameTitle(g.gameId, g.betting)} seats at most ${seatsOf(g.gameId)} players, and ${this.host.tableCount()} are sitting down`;
     const c = this.s.choice!;
     const cur = this.keepable();
@@ -357,7 +397,7 @@ export class DealersChoice {
       return true;
     }
     if (now < c.botAt) return false;
-    const fitting = menu.games.flatMap((g, i) => (this.fits(g.gameId) ? [i] : []));
+    const fitting = menu.games.flatMap((g, i) => (this.fits(g.gameId) && !this.leaving(g) ? [i] : []));
     const index = fitting.length ? fitting[this.host.rng(fitting.length)] : this.defaultIndex();
     // Nothing it can pick (no game fits): it tries again in a moment, and the clock deals the default meanwhile.
     if (this.pick(chooser.playerId, index) !== null) c.botAt = now + BOT_PICK_MS;
@@ -421,8 +461,9 @@ export class DealersChoice {
     const c = s.choice ?? null;
     const now = this.host.now();
     const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, how: g.how };
-    // While paused the clock stands still: it shows what resuming now would give. Once the pick is made there is none.
-    const deadline = c?.deadline == null ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;
+    // While paused the clock stands still: it shows what resuming now would give. Once the pick is made there is none,
+    // nor once the host has switched the table to another game from the next hand.
+    const deadline = c?.deadline == null || this.ending() ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;
     return {
       chip: c ? (this.chooser()?.seat ?? null) : null,
       current: pickView(c?.current ?? null),
