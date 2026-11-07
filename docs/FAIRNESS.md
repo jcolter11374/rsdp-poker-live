@@ -164,10 +164,12 @@ when they deal at a home game.
   record now shows: in "Check this hand", in the ledger's check against the
   record, in a warning from any browser that saw the record before, and in
   the GitHub copy. What it doesn't stop: a false entry written at the time
-  (say, a changed server recording a wrong hand as it happens; you'd see the
-  hand play out differently), an edit in the hours before GitHub next copies
-  it that no browser saw, and the leaderboard, which is worked out from hands
-  and isn't checked separately. If amounts matter, keep your own tally too.
+  (say, a changed server recording a wrong hand as it happens, or changing a
+  hand's entry while it waits out a table's spectator delay, at most 10
+  minutes; you'd see the hand play out differently), an edit in the hours
+  before GitHub next copies it that no browser saw, and the leaderboard,
+  which is worked out from hands and isn't checked separately. If amounts
+  matter, keep your own tally too.
 - **Read table chat.** Since November 2026 (issue #300) the admin page can
   read any table's chat, cash or tournament, while it is open or long after it
   has closed. That includes everything said at the table, by players and
@@ -268,10 +270,18 @@ the repository (and pulling the `transparency` branch now and then).
   someone at that table can work out. A hand's entry is the fingerprint of the
   whole hand as "Check this hand" sees it once revealed (a hand shown after it
   ends is recorded again). It includes the hand's secret server seed, so it
-  can't be used to work out folded cards while the hand is still sealed. Anyone can read the record at `/api/audit/entries`.
+  can't be used to work out folded cards while the hand is still sealed. At a
+  table whose spectators watch on a delay, each hand goes in that long after
+  it ends (at most 10 minutes), and a card shown after the hand that long
+  after it is shown, so the record never shows a hand ending before the
+  people watching see it end. Until then the server keeps the entry, saved,
+  outside the chain: it gets its number and time when it goes in, and a
+  table's hands go in in the order they ended. Buy-ins, cash-outs and
+  everything else go in at once. Anyone can read the record at `/api/audit/entries`.
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
-  without names, and anyone can see when hands were played.
+  without names, and anyone can see when hands were played (at a table
+  watched on a delay, when its spectators saw them end).
 - **GitHub's copy of the record.** Each time the watcher runs, it reads the whole
   record again, checks every entry it ever copied is still there unchanged
   and that the chain is unbroken, and copies the new entries to the
@@ -285,9 +295,10 @@ the repository (and pulling the `transparency` branch now and then).
   If not, every page shows a warning. "Check this hand" checks a revealed hand
   against its entry, and marks a hand that is missing while hands before and
   after it are recorded (an honest server only does that if it crashed just
-  as the hand finished). The ledger checks every buy-in and cash-out against
-  the record, and says so if a player's totals were found changed when a
-  closed table was opened again. Those two compare with the record as the
+  as the hand finished; a hand waiting for a spectator delay is saved, and
+  goes in before any later hand of its table). The ledger checks every
+  buy-in and cash-out against the record, and says so if a player's totals
+  were found changed when a closed table was opened again. Those two compare with the record as the
   site shows it now; it's GitHub's regular check of the whole record that shows
   whether those entries were edited since they were copied. These checks are
   code the site sends you, so they are only as honest as that code; GitHub's
@@ -316,6 +327,9 @@ What these checks can't do:
 - The server saves each entry before showing it, but a hosting failure that
   loses the last few writes would make it reuse their numbers. Browsers and
   the watcher would report that as a changed record, as they should.
+- A hand waiting for a table's spectator delay is saved on the server too,
+  and goes in on time after a restart. A hosting failure that lost it would
+  leave that hand out of the record, a gap "Check this hand" marks as above.
 - If the database were lost, the record would start again from entry 1, and
   the watcher would report it as a problem. That is the right call; John would
   owe everyone an explanation.

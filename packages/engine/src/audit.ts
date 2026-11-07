@@ -54,9 +54,10 @@ export const playerRef = (tableId: string, playerId: string) => sha256Hex(`${AUD
 /**
  * What a hand's fingerprint covers: everything "Check this hand" sees once the
  * hand is revealed. The secret server seed is in it, so the fingerprint, which
- * is public as soon as the hand ends, can't be used to work out folded cards by
- * trying every possible hand: without the seed there are 2^256 to try. Once the
- * hand is revealed, the seed is published and anyone can check it.
+ * is public soon after the hand ends (as soon as it ends, or once spectators on a
+ * delay see it end), can't be used to work out folded cards by trying every
+ * possible hand: without the seed there are 2^256 to try. Once the hand is
+ * revealed, the seed is published and anyone can check it.
  */
 export interface HandDigestInput {
   handId: string;
