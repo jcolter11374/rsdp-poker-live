@@ -118,6 +118,7 @@ and seasons (`season.ts`).
 | [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
 | [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. |
+| [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
 | [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
 | [`src/restore.ts`](../apps/server/src/restore.ts), [`db/backup.ts`](../apps/server/src/db/backup.ts) | Backups out, restores in. See [DEPLOY.md](DEPLOY.md#backups). |
 
@@ -132,7 +133,9 @@ opens the connection and keeps your browser's secret.
   `table:state` and draws the table with the components in
   [`src/components/`](../apps/web/src/components): `Table.tsx` (the felt and
   seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, hands, stats), `table/Chat.tsx`,
-  `Replayer.tsx` and `FairCheck.tsx`.
+  `Replayer.tsx` and `FairCheck.tsx`. The ledger's Copy recap (`table/Recap.tsx`) shows a few lines
+  about a cash game to paste into the group chat; [`src/recap.ts`](../apps/web/src/recap.ts) writes
+  them from the ledger and the hands the viewer can already see.
 - [`components/ErrorBoundary.tsx`](../apps/web/src/components/ErrorBoundary.tsx)
   shows "Something broke" and a Reload button when a page crashes, instead
   of a blank screen (the table's side panel and chat have their own, so the
@@ -316,7 +319,7 @@ don't.
 | **director** | The tournament logic in `packages/tournament`. |
 | **commit / commitment** | A fingerprint of a secret, published before the secret is used, so it can't be swapped later. |
 | **server seed, client seed, hand seed** | The server's secret for a hand, each browser's contribution, and the two combined into the deck. |
-| **public record / audit log** | The append-only hash chain of hands, chip movements and admin actions. |
+| **public record / audit log** | The append-only hash chain of hands, chip totals and admin actions. |
 | **snapshot** | A table's whole state saved as JSON, so a restart resumes it. |
 | **PGlite** | Postgres compiled to run inside the Node process, used when no separate database is set up. |
 | **host / co-host / staff** | The table's creator, and people they gave some host powers. |

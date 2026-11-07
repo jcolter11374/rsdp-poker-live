@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engine/core';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { departures, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
+import { departures, finishedOnScreen, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -219,5 +219,22 @@ describe('sharedWithFirstRun', () => {
     expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [['Ah', 'Kd', '2c']]], 1, 0)).toBe(3);
     expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']], [[]]], 1, 0)).toBe(0);
     expect(sharedWithFirstRun([[['Ah', 'Kd', '2c']]], 1, 0)).toBe(0);
+  });
+});
+
+describe('finishedOnScreen', () => {
+  it('leaves out a hand the server has finished while its runout is still being dealt here', () => {
+    const hands = [{ handNumber: 1 }, { handNumber: 2 }, { handNumber: 3 }];
+    // The table on screen still deals hand 3's runout: its history ends at hand 2.
+    expect(finishedOnScreen(hands, { history: [{ handNumber: 1 }, { handNumber: 2 }] })).toEqual([{ handNumber: 1 }, { handNumber: 2 }]);
+    // Once the result shows, hand 3 is there too, and the list is the same one.
+    const done = { history: [{ handNumber: 2 }, { handNumber: 3 }] };
+    expect(finishedOnScreen(hands, done)).toBe(hands);
+    expect(finishedOnScreen(null, done)).toBeNull();
+  });
+
+  it('goes by hand number, since the table only lists its newest hands', () => {
+    const hands = Array.from({ length: 40 }, (_, i) => ({ handNumber: i + 1 }));
+    expect(finishedOnScreen(hands, { history: [{ handNumber: 39 }, { handNumber: 40 }] })).toBe(hands);
   });
 });

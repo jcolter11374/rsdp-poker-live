@@ -20,15 +20,21 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ## [2026.11.07.2] - 2026-11-07
 
-_Dealer's choice_
+_Dealer's choice, lobby chat moderation and a recap of the night_
 
 ### New
 
 - **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
+- **Moderate a tournament's lobby chat.** Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. A muted player, or everyone while the chat is off, is told why they can't send. Mute and Delete ask first, and on a phone the buttons sit under each message, big enough to tap. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too.
+- **Copy a recap of the night.** At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself.
 
 ### Fixed and changed
 
 - Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables as soon as the hand's result shows, instead of sometimes staying on the old table until they reload.
+- The Hands and Stats tabs no longer show a hand's result while its all-in runout is still being dealt on the table, if you open them for the first time just then.
+- If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
+- The Checking John page now shows each time John takes a name out of old records, without the name itself.
 
 ## [2026.11.07] - 2026-11-07
 
