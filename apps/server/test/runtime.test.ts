@@ -693,6 +693,18 @@ describe('host settings', () => {
     expect(total(rt)).toBe(4000);
   });
 
+  it('a stud cash table with its bring-in left at 0 brings in a round third of the small bet (#398)', () => {
+    const { rt } = table((s) => {
+      s.table.maxSeats = 8;
+      s.game = { ...s.game, gameId: 'razz', betting: 'fixed-limit' };
+      s.stakes = { ...s.stakes, smallBlind: 0, bigBlind: 2000, ante: 100, anteType: 'per-player', bringIn: 0, smallBet: 2000, bigBet: 4000 };
+    });
+    seatPlayers(rt, 3, 100_000);
+    rt.start('host');
+    // A third of 2,000 rounded down to a round amount: 600, not 666.
+    expect(hand(rt).input.stakes.bringIn).toBe(600);
+  });
+
   it('HORSE by orbits with regular bomb pots gives every game its full orbit, and never a stud game without stud hands', () => {
     const { rt, clock } = table((s) => {
       s.table.maxSeats = 8;

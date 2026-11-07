@@ -30,6 +30,7 @@ _Dealer's choice_
 
 - Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
 - Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes.
+- Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
 
 ## [2026.11.07] - 2026-11-07
 
