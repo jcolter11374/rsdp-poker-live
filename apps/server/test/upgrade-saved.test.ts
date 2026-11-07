@@ -23,7 +23,7 @@ import { socketClient, type Client } from './socket-client';
 const run = promisify(execFile);
 const root = path.resolve(__dirname, '../../..');
 const KEY = 'test-admin-key-0123456789';
-const INDEX = '<!doctype html><html><head><title>RSDP Poker Live!</title></head><body><div id="root"></div></body></html>';
+const INDEX = '<!doctype html><html><head><title>RSDP Live!</title></head><body><div id="root"></div></body></html>';
 
 let db: Db;
 let dir = '';
@@ -104,7 +104,7 @@ describe('upgrade rehearsal: saved tables and tournaments', { timeout: 30_000 },
 
     const saved = await answers('before.json');
     expect(saved.tables).toEqual([expect.objectContaining({ id: tableId, name: 'Friday game', mode: 'cash', hands: 1, players: expect.arrayContaining(['Host', 'Jo']) })]);
-    expect(saved.tournaments).toEqual([expect.objectContaining({ id: tournamentId, status: 'registering', title: 'Upgrade Cup · RSDP Poker Live!' })]);
+    expect(saved.tournaments).toEqual([expect.objectContaining({ id: tournamentId, status: 'registering', title: 'Upgrade Cup · RSDP Live!' })]);
   });
 
   it('passes a restart that reads them all back', async () => {
@@ -125,11 +125,11 @@ describe('upgrade rehearsal: saved tables and tournaments', { timeout: 30_000 },
     });
     const saved = await answers('after.json', path.join(dir, 'before.json'));
     expect(saved.tables).toEqual([{ id: tableId, missing: true }]);
-    expect(saved.tournaments[0].title).toBe('RSDP Poker Live!');
+    expect(saved.tournaments[0].title).toBe('RSDP Live!');
     const r = await script('compare.mjs', path.join(dir, 'before.json'), path.join(dir, 'after.json'));
     expect(r.code).toBe(1);
     expect(r.out).toContain(`Friday game (${tableId}) can't be read any more`);
-    expect(r.out).toContain(`${tournamentId}: its page showed "Upgrade Cup · RSDP Poker Live!", now "RSDP Poker Live!"`);
+    expect(r.out).toContain(`${tournamentId}: its page showed "Upgrade Cup · RSDP Live!", now "RSDP Live!"`);
   });
 
   it('never runs against the live site', async () => {

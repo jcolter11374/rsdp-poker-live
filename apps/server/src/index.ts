@@ -40,7 +40,7 @@ serverLog = server.log;
 // Unfinished tournaments carry on, and scheduled ones keep their start time.
 await server.resume();
 
-server.http.listen(PORT, () => console.log(`RSDP Poker Live! server on http://localhost:${PORT}`));
+server.http.listen(PORT, () => console.log(`RSDP Live! server on http://localhost:${PORT}`));
 
 let stopping = false;
 /**

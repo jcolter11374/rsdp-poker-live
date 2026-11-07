@@ -33,7 +33,7 @@ export function SiteHeader() {
   return (
     <header className={`site-header ${open ? 'open' : ''}`}>
       <a className="logo small" href="/" title="Home">
-        RSDP Poker <span>Live!</span>
+        RSDP <span>Live!</span>
       </a>
       <button className="site-menu-button" aria-expanded={open} aria-controls="site-nav" aria-label="Menu" onClick={() => setOpen(!open)}>
         <span aria-hidden>{open ? '✕' : '☰'}</span>

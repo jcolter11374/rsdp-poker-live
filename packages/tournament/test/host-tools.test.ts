@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
   apply,
   autoArchive,
+  CHAT_POWER,
+  chatModerationRefusal,
   copySettings,
   createTournament,
   defaultSettings,
   isTournamentStaff,
   lastActivityAt,
+  lobbyChatRefusal,
   logEvent,
   namesIn,
   mayCommand,
   standings,
   tick,
+  viewFor,
   type Command,
   type DirectorEvent,
   type TournamentSettings,
@@ -31,6 +35,7 @@ class Sim {
       settings: defaultSettings({ startingStack: 1000, lateRegistration: { enabled: false, throughLevel: null }, ...overrides }),
       now: this.now,
       seed: '07'.repeat(32),
+      legacyRng: 7,
     });
   }
   do(cmd: Command) {
@@ -335,5 +340,61 @@ describe('activity log', () => {
     expect(lines).toContainEqual({ type: 'stackSet', name: 'P0', stack: 50, previous: 1000 });
     expect(lines).toContainEqual({ type: 'seatsSwapped', names: [name(x), name(y)] });
     expect(logEvent({ type: 'moveSeat', entryId: 'e', playerId: 'p1', from: { tableId: 't', seat: 0 }, to: { tableId: 'u', seat: 0 }, stack: 1 }, name)).toBeNull();
+  });
+});
+
+describe('lobby chat moderation', () => {
+  /** An event with a plain player (bob), a co-host who may manage chat (ann) and one who may not (cal). */
+  function staffed() {
+    const sim = new Sim();
+    for (const [playerId, displayName] of [['ann', 'Ann'], ['bob', 'Bob'], ['cal', 'Cal']]) sim.do({ type: 'register', playerId, displayName });
+    sim.do({ type: 'setCoHost', by: 'host', playerId: 'ann', powers: [CHAT_POWER] });
+    sim.do({ type: 'setCoHost', by: 'host', playerId: 'cal', powers: ['approve'] });
+    return sim;
+  }
+
+  it('is for the host and co-hosts with the players power, and only the host acts on the host or a co-host', () => {
+    const { state } = staffed();
+    // The power that mutes chat at a cash table too: one co-host model (D17).
+    expect(CHAT_POWER).toBe('players');
+    expect(chatModerationRefusal(state, 'host')).toBeNull();
+    expect(chatModerationRefusal(state, 'host', 'ann')).toBeNull();
+    expect(chatModerationRefusal(state, 'ann')).toBeNull();
+    expect(chatModerationRefusal(state, 'ann', 'bob')).toBeNull();
+    // A co-host's own messages are theirs to delete.
+    expect(chatModerationRefusal(state, 'ann', 'ann')).toBeNull();
+    expect(chatModerationRefusal(state, 'ann', 'host')).toBe('only the host can do that to the host or a co-host');
+    expect(chatModerationRefusal(state, 'ann', 'cal')).toBe('only the host can do that to the host or a co-host');
+    expect(chatModerationRefusal(state, 'cal', 'bob')).toBe('the host has not given you that power');
+    expect(chatModerationRefusal(state, 'bob')).toBe('only the host can do that');
+    expect(chatModerationRefusal(state, 'stranger', 'bob')).toBe('only the host can do that');
+  });
+
+  it('refuses messages while the chat is off or the player is muted, and old states chat as before', () => {
+    const { state } = staffed();
+    expect(state.lobbyChat).toBeUndefined();
+    expect(lobbyChatRefusal(state, 'bob')).toBeNull();
+    const muted = { ...state, lobbyChat: { muted: ['bob'] } };
+    expect(lobbyChatRefusal(muted, 'bob')).toBe('the host has muted you in this chat');
+    expect(lobbyChatRefusal(muted, 'ann')).toBeNull();
+    const off = { ...state, lobbyChat: { off: true, muted: ['bob'] } };
+    expect(lobbyChatRefusal(off, 'ann')).toBe('the host has turned chat off');
+    expect(lobbyChatRefusal(off, 'host')).toBe('the host has turned chat off');
+  });
+
+  it('shows the whole mute list only to those who can unmute, and keeps the rules through director steps', () => {
+    const sim = staffed();
+    sim.state = { ...sim.state, lobbyChat: { off: false, muted: ['bob', 'dee'] } };
+    expect(viewFor(sim.state, 'host').lobbyChat).toEqual({ off: false, muted: ['bob', 'dee'] });
+    expect(viewFor(sim.state, 'ann').lobbyChat).toEqual({ off: false, muted: ['bob', 'dee'] });
+    expect(viewFor(sim.state, 'cal').lobbyChat).toEqual({ off: false, muted: [] });
+    expect(viewFor(sim.state, 'bob').lobbyChat).toEqual({ off: false, muted: ['bob'] });
+    expect(viewFor(sim.state, 'someone').lobbyChat).toEqual({ off: false, muted: [] });
+    // The server sets them; the director only carries them along, to the end of the event.
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.do({ type: 'pause', by: 'host' });
+    sim.do({ type: 'end', by: 'host' });
+    expect(sim.state.status).toBe('finished');
+    expect(sim.state.lobbyChat).toEqual({ off: false, muted: ['bob', 'dee'] });
   });
 });

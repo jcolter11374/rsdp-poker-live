@@ -127,7 +127,7 @@ export function licenseSummary(list) {
 export function licenseText(list) {
   const rule = '='.repeat(72);
   const head = [
-    'RSDP Poker Live! uses the open-source packages below. Each is the work of its',
+    'RSDP Live! uses the open-source packages below. Each is the work of its',
     'own authors and comes under its own license, reproduced here in full as the',
     'authors ship it. The plain-English credits are at /credits.',
     '',

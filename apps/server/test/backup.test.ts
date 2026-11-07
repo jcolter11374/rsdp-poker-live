@@ -9,10 +9,10 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore } from '../src/audit';
 import { closeDb, createDb, dbCause, queryRows, type Db } from '../src/db';
-import { BackupError, backupLines, restoreBackup } from '../src/db/backup';
+import { BackupError, backupLines, nextSizeFetch, PAGE_BYTES, pageCounts, restoreBackup, RETIRED, writeBackup } from '../src/db/backup';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { RESTORE_FILE, restoreIfWaiting } from '../src/db/restoreOnStart';
-import { backupOf, BIG, everything, fill, linesOf } from './backup-fixture';
+import { backupOf, BIG, databaseBefore, everything, fill, fillLedger, journal, linesOf } from './backup-fixture';
 
 const KEY = 'test-admin-key-0123456789';
 let db: Db;
@@ -31,7 +31,7 @@ describe('backups', { timeout: 30_000 }, () => {
     await fill(db);
     const { text, summary } = await backupOf(db);
     expect(summary.rows.players).toBe(2);
-    expect(Object.keys(summary.rows)).toHaveLength(24);
+    expect(Object.keys(summary.rows)).toHaveLength(22);
 
     const copy = await createTestDb();
     try {
@@ -41,8 +41,6 @@ describe('backups', { timeout: 30_000 }, () => {
       // Counters carry on after the restored rows, and the append-only guards still guard.
       await copy.execute(sql`insert into suggestions (name, title) values ('Al', 'Badugi')`);
       expect((await queryRows<{ id: number }>(copy, sql`select max(id)::int as id from suggestions`))[0].id).toBe(3);
-      await copy.execute(sql`insert into chip_movements (id, table_id, player_id, kind, amount, stack_before, stack_after) values ('m2', 't1', 'p2', 'rebuy', 100, 200, 300)`);
-      expect((await queryRows<{ seq: number }>(copy, sql`select seq::int from chip_movements where id = 'm2'`))[0].seq).toBe(2);
       await expect(
         copy.execute(sql`update audit_log set kind = 'x'`).catch((e) => {
           throw dbCause(e);
@@ -109,6 +107,106 @@ describe('backups', { timeout: 30_000 }, () => {
       await closeDb(copy);
       await closeDb(again);
     }
+  });
+
+  it('backs up and restores saved tables too big for one round trip on PGlite 0.2 (#403)', { timeout: 120_000 }, async () => {
+    // 36 saved tables of about 512 KB each: 18 MB, which PGlite 0.2 can't return in one result (it fails over about
+    // 16 MB). In-memory test databases run PGlite 0.2, as the live site does.
+    await resetTestDb(db);
+    await db.execute(sql`insert into players (id) values ('p1')`);
+    const blob = 'x'.repeat(512 * 1024);
+    for (let i = 0; i < 36; i++) {
+      await db.execute(sql`insert into tables (id, owner_player_id, settings, mode) values (${`big${i}`}, 'p1', '{}', 'cash')`);
+      await db.execute(sql`insert into table_snapshots (table_id, version, state) values (${`big${i}`}, 1, ${JSON.stringify({ i, blob })}::jsonb)`);
+    }
+    const { text, summary } = await backupOf(db);
+    expect(summary.rows.table_snapshots).toBe(36);
+    const copy = await createTestDb();
+    try {
+      expect((await restoreBackup(copy, linesOf(text))).rows).toEqual(summary.rows);
+      const got = await queryRows<{ id: string; n: number; i: number }>(copy, sql`select table_id as id, length(state->>'blob')::int as n, (state->>'i')::int as i from table_snapshots order by i`);
+      expect(got).toEqual(Array.from({ length: 36 }, (_, i) => ({ id: `big${i}`, n: blob.length, i })));
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it('backs up every row once when updates and deletes have moved rows around the table, over many fetches', { timeout: 120_000 }, async () => {
+    // 2500 suggestions (more than one first-pass fetch), then updates that move rows to new places, deletes that
+    // leave gaps, and new rows that may fill them: the rows' order on disk no longer follows their ids.
+    await resetTestDb(db);
+    for (let i = 0; i < 2500; i += 250) {
+      const values = Array.from({ length: 250 }, (_, k) => sql`(${`N${i + k}`}, ${`T${i + k}`})`);
+      await db.execute(sql`insert into suggestions (name, title) values ${sql.join(values, sql`, `)}`);
+    }
+    await db.execute(sql`update suggestions set title = title || repeat('y', 3000) where id % 7 = 0`);
+    await db.execute(sql`delete from suggestions where id % 11 = 0`);
+    await db.execute(sql`insert into suggestions (name, title) select 'late' || g, 'L' || g from generate_series(1, 300) g`);
+    const want = await queryRows<{ id: number; title: string }>(db, sql`select id::int as id, title from suggestions order by id`);
+    const { text, summary } = await backupOf(db);
+    expect(summary.rows.suggestions).toBe(want.length);
+    const ids = text.split('\n').filter((l) => l.startsWith('{"t":"suggestions"')).map((l) => JSON.parse(l).r.id as number);
+    expect(new Set(ids).size).toBe(want.length);
+    const copy = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(text));
+      expect(await queryRows(copy, sql`select id::int as id, title from suggestions order by id`)).toEqual(want);
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it("sizes the first pass's fetches by the JSON they make, so big rows are measured a few at a time", () => {
+    const MB = 1_048_576;
+    // Saved tables of 1.3 MB each: three at a time after the first fetch, not up to a thousand in one go.
+    expect(nextSizeFetch(16, 16 * 1.3 * MB)).toBe(3);
+    expect(nextSizeFetch(3, 3 * 1.3 * MB)).toBe(3);
+    expect(nextSizeFetch(1, 10 * MB)).toBe(1);
+    // Small rows: twice as many each time, up to the most a fetch takes, since the next rows may be far bigger.
+    expect(nextSizeFetch(16, 16 * 2000)).toBe(32);
+    expect(nextSizeFetch(32, 32 * 2000)).toBe(64);
+    expect(nextSizeFetch(64, 64 * 2000)).toBe(64);
+    expect(nextSizeFetch(64, 0)).toBe(64);
+  });
+
+  it("measures big rows after small ones a few at a time too, in writeBackup's own first pass", { timeout: 60_000 }, async () => {
+    // 40 small suggestions first, then 60 of about 600 KB. stopped() is asked once after each full fetch, so it counts
+    // them: 16 and 32 rows, then fewer and fewer as the big rows are measured (27, then 6 at a time) make seven.
+    // Sizing every fetch after the first by the small rows alone would make one, and only doubling would make two.
+    await resetTestDb(db);
+    await db.execute(sql`insert into suggestions (name, title) select 'n' || g, 't' || g from generate_series(1, 40) g`);
+    await db.execute(sql`insert into suggestions (name, title) select 'big' || g, repeat(md5(g::text), 19000) from generate_series(1, 60) g`);
+    let asked = 0;
+    const counting = () => {
+      asked++;
+      return false;
+    };
+    const lines: string[] = [];
+    const summary = await writeBackup(db, (l) => void lines.push(l), new Date(), counting);
+    expect(summary.rows.suggestions).toBe(100);
+    // Every other table is empty, so ends on its first fetch without being asked.
+    expect(asked).toBe(7);
+  });
+
+  it('stops in the first pass when the server is shutting down', async () => {
+    await resetTestDb(db);
+    await db.execute(sql`insert into suggestions (name, title) select 'n' || g, 't' || g from generate_series(1, 100) g`);
+    const lines: string[] = [];
+    let asked = 0;
+    // Stopped after the first fetch of the first table with more rows than that.
+    await expect(writeBackup(db, (l) => void lines.push(l), new Date(), () => ++asked > 0)).rejects.toThrow(/stopped/);
+    expect(asked).toBe(1);
+    expect(lines.filter((l) => l.startsWith('{"t":'))).toEqual([]);
+  });
+
+  it('fetches as many rows at a time as fit, and at least one', () => {
+    const MB = 1_048_576;
+    expect(pageCounts([])).toEqual([]);
+    expect(pageCounts(Array(1200).fill(10))).toEqual([500, 500, 200]);
+    expect(pageCounts(Array(10).fill(MB))).toEqual([4, 4, 2]);
+    // A row bigger than the budget goes on its own.
+    expect(pageCounts([10, 6 * MB, 10, 10])).toEqual([1, 1, 2]);
+    expect(pageCounts([PAGE_BYTES])).toEqual([1]);
   });
 
   it('refuses to restore over data', async () => {
@@ -192,6 +290,132 @@ describe('backups', { timeout: 30_000 }, () => {
   });
 });
 
+// Migration 0017 dropped the unused chip ledger tables where they were empty. Backups from before it still list them.
+// Each restores into one or two fresh databases (some on disk), which takes seconds on a busy machine.
+describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () => {
+  const LEDGER = ['chip_movements', 'seat_sessions'];
+  const without = (all: Record<string, string[]>, names: string[]) => Object.fromEntries(Object.entries(all).filter(([t]) => !names.includes(t)));
+
+  /** Columns, indexes, constraints and triggers of the ledger tables, as Postgres prints them. */
+  async function ledgerShape(target: Db) {
+    const rows = await queryRows<{ s: string }>(
+      target,
+      sql`select table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') || ' ' || is_identity as s from information_schema.columns where table_schema = 'public' and table_name in ('chip_movements', 'seat_sessions')
+          union all select indexdef from pg_indexes where schemaname = 'public' and tablename in ('chip_movements', 'seat_sessions')
+          union all select conrelid::regclass::text || ' ' || conname || ' ' || pg_get_constraintdef(oid) from pg_constraint where conrelid in ('chip_movements'::regclass, 'seat_sessions'::regclass)
+          union all select tgrelid::regclass::text || ' ' || tgname from pg_trigger where not tgisinternal and tgrelid = 'chip_movements'::regclass`,
+    );
+    return rows.map((r) => r.s).sort();
+  }
+
+  /** A backup made by a release from before 0017, with the ledger tables empty (as on the site) or with rows. */
+  async function backupFromBefore(withLedgerRows: boolean) {
+    const old = await databaseBefore('0017_drop_unused_ledger');
+    try {
+      await fill(old.db);
+      if (withLedgerRows) await fillLedger(old.db);
+      const { text, summary } = await backupOf(old.db);
+      return { text, summary, rows: await everything(old.db), shape: await ledgerShape(old.db) };
+    } finally {
+      await old.close();
+    }
+  }
+
+  let empty: Awaited<ReturnType<typeof backupFromBefore>>;
+  let withRows: Awaited<ReturnType<typeof backupFromBefore>>;
+  beforeAll(async () => {
+    empty = await backupFromBefore(false);
+    withRows = await backupFromBefore(true);
+  }, 60_000);
+
+  it('are listed with migrations that exist, the drop after the ones that made them', () => {
+    const tags = journal.entries.map((e) => e.tag);
+    for (const group of RETIRED) {
+      for (const tag of group.madeBy) expect(tags.indexOf(tag)).toBeGreaterThanOrEqual(0);
+      expect(tags.indexOf(group.droppedBy)).toBeGreaterThan(Math.max(...group.madeBy.map((tag) => tags.indexOf(tag))));
+    }
+  });
+
+  it('restore, leaving out the empty ones as the migration did', async () => {
+    const before = empty;
+    expect(before.summary.rows).toMatchObject({ chip_movements: 0, seat_sessions: 0 });
+    const copy = await createTestDb();
+    try {
+      const restored = await restoreBackup(copy, linesOf(before.text));
+      expect(restored.rows).toEqual(before.summary.rows);
+      const after = await everything(copy);
+      expect(Object.keys(after)).not.toContain('chip_movements');
+      expect(Object.keys(after)).not.toContain('seat_sessions');
+      expect(after).toEqual(without(before.rows, LEDGER));
+      // The append-only function went with chip_movements.
+      expect(await queryRows(copy, sql`select 1 from pg_proc where proname = 'chip_movements_append_only'`)).toHaveLength(0);
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it('restore with their rows, keeping those tables as they were', async () => {
+    const before = withRows;
+    expect(before.summary.rows).toMatchObject({ chip_movements: 1, seat_sessions: 1 });
+    const copy = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(before.text));
+      expect(await everything(copy)).toEqual(before.rows);
+      // Still append-only, and the ledger's counter carries on after the restored row.
+      await expect(
+        copy.execute(sql`delete from chip_movements`).catch((e) => {
+          throw dbCause(e);
+        }),
+      ).rejects.toThrow(/append-only/);
+      await copy.execute(sql`insert into chip_movements (id, table_id, player_id, kind, amount, stack_before, stack_after) values ('m2', 't1', 'p2', 'rebuy', 100, 200, 300)`);
+      expect((await queryRows<{ seq: number }>(copy, sql`select seq::int from chip_movements where id = 'm2'`))[0].seq).toBe(2);
+
+      // A backup of that copy (this release, with the tables kept) restores the same way.
+      const again = await createTestDb();
+      try {
+        const { text } = await backupOf(copy);
+        await restoreBackup(again, linesOf(text));
+        expect(await everything(again)).toEqual(await everything(copy));
+      } finally {
+        await closeDb(again);
+      }
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it('restore on start too, onto a server that then opens', async () => {
+    const before = withRows;
+    const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
+    try {
+      const live = path.join(dir, 'pglite');
+      await writeFile(path.join(dir, RESTORE_FILE), gzipSync(before.text));
+      const logged: string[] = [];
+      await restoreIfWaiting(live, (m) => logged.push(m));
+      expect(logged.some((m) => m.startsWith('restored data is in place'))).toBe(true);
+      const reopened = await createDb({ ignoreEnv: true, pgliteDir: live });
+      try {
+        expect(await everything(reopened)).toEqual(before.rows);
+      } finally {
+        await closeDb(reopened);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('remakes them exactly as the old migrations made them', async () => {
+    const copy = await createTestDb();
+    try {
+      await restoreBackup(copy, linesOf(withRows.text));
+      expect(withRows.shape.length).toBeGreaterThan(20);
+      expect(await ledgerShape(copy)).toEqual(withRows.shape);
+    } finally {
+      await closeDb(copy);
+    }
+  });
+});
+
 // Each opens several PGlite databases on disk, which takes seconds on a busy machine.
 describe('restoring the live site on start', { timeout: 30_000 }, () => {
   it('swaps a waiting backup in before the database opens, keeping the old data', async () => {
@@ -247,8 +471,9 @@ describe('restoring the live site on start', { timeout: 30_000 }, () => {
     await resetTestDb(db);
     await fill(db);
     const { text } = await backupOf(db);
-    // A movement the ledger's check constraint refuses.
-    const bad = text.replace('"kind":"buy-in"', '"kind":"not-a-kind"');
+    // Feedback that the kind's check constraint refuses.
+    expect(text.split('"kind":"problem"')).toHaveLength(2);
+    const bad = text.replace('"kind":"problem"', '"kind":"not-a-kind"');
     const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
     try {
       await writeFile(path.join(dir, RESTORE_FILE), gzipSync(bad));

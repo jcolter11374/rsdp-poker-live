@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { HIDDEN_CARD, RUNOUT_SETTLE_MS, runoutSteps, runoutWaits, type HandEvent } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
+import { getVariant } from '@rsdp/engine/variants';
+import { choiceOf } from './components/settings/dealersChoice';
 
 interface Reveal {
   handNumber: number;
@@ -111,6 +113,8 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     nit: before.nit,
     rotation: heldRotation(view, before),
     choice: heldChoice(view, before),
+    // A seat offered from the waitlist that someone in it had before the result: they busted or left, so it waits too.
+    ...(view.offers ? { offers: view.offers.filter((o) => !before.seats[o.seat]) } : {}),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],
@@ -134,20 +138,90 @@ export function heldRotation(view: TableView, before: Frozen): TableView['rotati
  * Dealer's choice during the reveal. The PICK tag stays where it was: once the server has the result it passes over
  * anyone who busted, so moving it would give the result away. A chooser in the all-in picks once the cards are out:
  * a busted chooser would be refused, and a pick in their place shows who busted, so their pick waits for the result
- * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual.
+ * too. The pick clock only starts after the reveal, so nobody loses time. A chooser not in it picks as usual, but a
+ * pick made in their place (they left or sat out) waits too: the server may have passed over someone who busted.
+ *
+ * The seat count, the seat limit and closed seats are held the same way (D33): a busted bot leaving lowers the count
+ * and can reopen seats, and a pick made in place of a busted chooser can change the limit. They are worked out from
+ * what the table held before the result: the count with nobody gone (newcomers count at once), and the limit of the
+ * game being dealt, or of a pick that can show. Seats that close for a newcomer, or for a pick that shows, close.
  */
 export function heldChoice(view: TableView, before: Frozen): TableView['choice'] {
   const live = view.choice;
   const was = before.choice;
   if (!live || !was) return live;
-  const chip = was.chip;
+  const one = before.sameHand === false;
   const events = view.hand?.events ?? [];
   const dealt = events.find((e) => e.t === 'hand-start')?.seats ?? [];
+  // A hand dealt and run out in one update, whose deal began a pick nobody had made yet: the chip moved on from the
+  // seat that had it, to the next player round from it who could pick. The table only deals while the pick clock runs
+  // once the pick is made or the time is up, and either moves the chip, even when the same game carries on again.
+  const movedOn = one && was.chip !== null && !was.next && (was.deadline !== null || !samePick(live.current, was.current));
+  const chip = movedOn ? nextPicker(was.chip!, before, dealt) : was.chip;
   const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
-  if (!inHand) return { ...live, chip };
-  // The rest of the pick as it was too, but who can sit down as it is now.
-  const held = before.sameHand === false ? { ...live, chip } : { ...was, count: live.count, cap: live.cap, closed: live.closed };
-  return { ...held, open: false };
+  // Players leaving show only with the result. Newcomers show at once.
+  const count = Math.max(was.count, live.count);
+  // A pick that has come in since, for a chooser in the all-in, can only be someone picking in their place (or a
+  // missed pick): it waits for the result, and so does the limit it sets. For a chooser not in it, a pick shows only
+  // if they made it: anyone else's was made in their place (they left or sat out), and the server may have passed
+  // over someone who busted to get to them.
+  const fresh = one ? !!live.next : !samePick(live.next, was.next);
+  // Theirs: picked from the seat with the tag, by the player who had it before the result and still has it. (Names
+  // aren't unique. A server from before the pick's seat was sent leaves it out: the pick then waits, which is safe.)
+  const theirs = !!live.next && chip !== null && live.next.seat === chip && !!before.seats[chip] && view.seats[chip]?.playerId === before.seats[chip]!.playerId;
+  const held = inHand ? fresh : fresh && !!live.next && !theirs;
+  const cap = !held ? live.cap : one ? capOf(live.current) : was.cap;
+  // Closed: the held count fills the limit, or it was closed before the result for this same limit (a seat request,
+  // which only the host sees, can close seats too), or the live table is closed for some other reason than the result:
+  // the result only ever opens seats, unless a pick that waits closes them.
+  const closed = (cap !== null && count >= cap) || (was.closed && cap === was.cap) || (!held && live.closed);
+  if (held) {
+    // The rest of the pick as it was before the pick came in. In one update, the deal may have begun a pick: that
+    // much shows, as it doesn't depend on the result.
+    if (one) return { ...live, chip, count, cap, closed, open: false, next: null };
+    return { ...was, count, cap, closed, open: false };
+  }
+  if (!inHand) {
+    // Their panel stays open only while the tag is still theirs (not, say, for someone who sat down in their seat).
+    return { ...live, chip, count, cap, closed, open: live.open && live.chip === chip, ...fallbackFor(view, live, was, count) };
+  }
+  if (one) return { ...live, chip, count, cap, closed, open: false };
+  return { ...was, count, cap, closed, open: false };
+}
+
+/** The seat limit a game sets while it is picked or played (the server's seatCap), or none without one. */
+function capOf(game: Pick): number | null {
+  return game ? getVariant(game.gameId).maxPlayers : null;
+}
+
+/**
+ * What a missed pick deals, and whether "Keep playing" shows, for the held count: from the server's they would tell
+ * a chooser looking at the panel that someone busted. As the server works them out (DealersChoice.defaultIndex).
+ */
+function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, was: NonNullable<TableView['choice']>, count: number) {
+  if (count === live.count) return {};
+  const cur = live.current;
+  if (!cur) return { defaultIndex: was.defaultIndex, canKeep: was.canKeep };
+  const menu = choiceOf(view.settings).games;
+  const seats = (g: { gameId: string }) => getVariant(g.gameId).maxPlayers;
+  const fits = (g: { gameId: string }) => seats(g) >= count;
+  const kept = menu.findIndex((g) => g.gameId === cur.gameId && g.betting === cur.betting && fits(g));
+  const first = menu.findIndex(fits);
+  const defaultIndex = kept >= 0 ? kept : first >= 0 ? first : menu.reduce((best, g, i) => (seats(g) > seats(menu[best]) ? i : best), 0);
+  return { defaultIndex, canKeep: kept >= 0 };
+}
+
+type Pick = NonNullable<TableView['choice']>['current'];
+const samePick = (a: Pick, b: Pick) => a === b || (!!a && !!b && a.gameId === b.gameId && a.betting === b.betting && a.by === b.by && a.how === b.how);
+
+/** The next player round from `seat` who could pick before the result: dealt in, or seated and not sitting out. */
+function nextPicker(seat: number, before: Frozen, dealt: { seat: number }[]): number | null {
+  const n = before.seats.length;
+  for (let i = 1; i <= n; i++) {
+    const at = (seat + i) % n;
+    if (dealt.some((d) => d.seat === at) || (before.seats[at] && !before.seats[at]!.sittingOut)) return at;
+  }
+  return null;
 }
 
 /** Seats as they stand with everything in the middle and nothing paid out yet. */
@@ -193,6 +267,30 @@ function seatsDuring(view: TableView, before: Frozen): TableView['seats'] {
 export function withShown(cards: SeatView['cards'], events: readonly HandEvent[], seat: number): SeatView['cards'] {
   const shown = events.flatMap((e) => (e.t === 'show' && e.seat === seat ? e.cards : []));
   return cards.map((c) => (c.card === HIDDEN_CARD && !c.up && shown.length ? { ...c, card: shown.shift()! } : c));
+}
+
+/**
+ * The table as it is shown (an all-in runout dealt a street at a time, a player knocked out kept in their seat), and
+ * whether a runout is still being dealt. Only that holds back what waits for the result (following a move to another
+ * table, the tournament strip, a reload into a new build). A knocked-out player kept in their seat is only for show:
+ * at a table that breaks after that hand no next deal ever comes to clear it, and the players moved off it must still
+ * go to their new seats.
+ */
+export function useShownTable(live: TableView | null): { view: TableView | null; runningOut: boolean } {
+  const revealed = useRunoutReveal(live);
+  const view = useDepartures(revealed);
+  return { view, runningOut: revealed !== live };
+}
+
+/**
+ * Hands as the table on screen has them: none newer than its own hand list. While an all-in runout is still being
+ * dealt here, the server already counts that hand as finished and sends it, result and all, to anyone who asks; the
+ * table shown leaves it out of its history until the result shows (holdBack). Same list back when nothing is cut.
+ */
+export function finishedOnScreen<H extends { handNumber: number }>(hands: H[] | null, view: { history: readonly { handNumber: number }[] }): H[] | null {
+  if (!hands) return hands;
+  const upTo = view.history.reduce((n, h) => Math.max(n, h.handNumber), 0);
+  return hands.every((h) => h.handNumber <= upTo) ? hands : hands.filter((h) => h.handNumber <= upTo);
 }
 
 /** Who went out in the hand being shown, kept in their seats until the next deal. */

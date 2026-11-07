@@ -7,10 +7,12 @@ export const canAddGame = (steps: readonly RotationStep[]) => steps.length < SET
 /** Whether "Add level" may add another level: the server takes at most SETTINGS_LIMITS.blindLevels.max. */
 export const canAddLevel = (levels: readonly BlindLevel[]) => levels.length < SETTINGS_LIMITS.blindLevels.max;
 
-/** The level "Add level" adds after `last`: blinds and ante doubled, but never past MAX_CHIPS, which the server refuses. */
+/** An amount doubled, but never past MAX_CHIPS, which the server refuses. */
+export const doubled = (v: number) => Math.min(v * 2, MAX_CHIPS);
+
+/** The level "Add level" adds after `last`: blinds and ante doubled. */
 export function nextBlindLevel(last: BlindLevel): BlindLevel {
-  const double = (v: number) => Math.min(v * 2, MAX_CHIPS);
-  return { ...last, smallBlind: double(last.smallBlind), bigBlind: double(last.bigBlind), ante: double(last.ante) };
+  return { ...last, smallBlind: doubled(last.smallBlind), bigBlind: doubled(last.bigBlind), ante: doubled(last.ante) };
 }
 
 /** For a blind schedule at a table with Limit or stud games (in its rotation or on its Dealer's choice menu): those amounts rise with the blinds too. Null when there are none. */
