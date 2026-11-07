@@ -202,6 +202,13 @@ export class TableRuntime {
   private tipSlowLogged = false;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
+  /**
+   * Who left as hand `handNumber` ended because they had said they would before the result (leaveAfterHand: they
+   * stood up, were removed, or had their seat released while offline). While that hand's runout is dealt out,
+   * Dealer's choice can count them as gone (comingCount): that gives nothing away. Never saved: after a restart they
+   * are counted like the runout's other players until it has been shown.
+   */
+  private leftAfterHand: { handNumber: number; players: Set<PlayerId> } | null = null;
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
   readonly choice: DealersChoice;
 
@@ -621,17 +628,21 @@ export class TableRuntime {
    * then, and their seats are offered too. (The waitlist itself is switched at once, never with the next hand; a
    * smaller table has already let go of offers in the seats it drops.) While an all-in runout is still being dealt
    * out, its players' seats stay taken, as tableCount still counts them (revealSeats): the answer doesn't change with
-   * whether one of them busted.
+   * whether one of them busted. Only those who said before the result that they were leaving count as gone then.
    */
   private comingCount(next: TableSettings): number {
     const s = this.state;
     const count = this.tableCount();
     if (!next.seating.waitlist || next.table.maxSeats <= s.seats.length) return count;
-    const leaving = new Set(s.seats.flatMap((x, i) => (x?.leaveAfterHand ? [i] : [])));
+    const reveal = this.revealSeats();
+    const last = s.history.at(-1);
+    const left = this.leftAfterHand;
+    const gone = reveal.size && last && left?.handNumber === last.handNumber ? last.hand.seats.filter((hs) => left.players.has(hs.playerId) && !this.seatOf(hs.playerId)).map((hs) => hs.seat) : [];
+    const leaving = new Set([...s.seats.flatMap((x, i) => (x?.leaveAfterHand ? [i] : [])), ...gone]);
     const held = new Set([
       ...this.offers().map((o) => o.seat),
       ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!),
-      ...this.revealSeats(),
+      ...[...reveal].filter((i) => !leaving.has(i)),
     ]);
     let open = 0;
     for (let i = 0; i < next.table.maxSeats; i++) if ((!s.seats[i] || leaving.has(i)) && !held.has(i)) open++;
@@ -2545,6 +2556,7 @@ export class TableRuntime {
   /** After a hand: leavers go, and busted players sit out (a bot buys back in). */
   private leaversGo() {
     const s = this.state;
+    this.leftAfterHand = { handNumber: s.handNumber, players: new Set(s.seats.flatMap((x) => (x?.leaveAfterHand ? [x.playerId] : []))) };
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.leaveAfterHand) {

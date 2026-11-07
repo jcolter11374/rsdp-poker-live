@@ -409,6 +409,43 @@ describe('waitlist', () => {
     expect([...outcomes].sort()).toEqual([false, true]);
   });
 
+  it('counts a player who said before the result that they were leaving as gone during the runout (#459)', () => {
+    // Four seats: the host, two bots on small stacks and Al, who stands up and folds once the hand is dealt. Bo and Cy
+    // wait. With six seats, the table will have the host, both bots and the two waiting players in Al's seat and a
+    // new one, five in all, if nobody busted. During the runout the answer is five either way: Al counts as gone,
+    // since his leaving showed before the result, and a bot that busted is still counted.
+    const coming = (rt: TableRuntime) => {
+      const next = structuredClone(rt.state.settings);
+      next.table.maxSeats = 6;
+      return (rt as unknown as { comingCount(next: TableSettings): number }).comingCount(next);
+    };
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const t = afterRunout(
+        seed,
+        4,
+        (rt) => {
+          rt.requestSeat('a', { seat: 3, name: 'Al', stack: 100 });
+          rt.joinWaitlist('b', { name: 'Bo', stack: 100 });
+          rt.joinWaitlist('c', { name: 'Cy', stack: 100 });
+        },
+        () => {},
+        { during: (rt) => rt.stand('a') },
+      );
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      expect(seatOf(rt, 'a')).toBeNull();
+      expect(rt.state.offers).toEqual([]);
+      expect(coming(rt)).toBe(5);
+      clock.advance(left);
+      // Once it has been shown: Al's seat, and any busted bot's, go to Bo and Cy.
+      expect(rt.state.offers!.length).toBe(Math.min(2, 1 + busted.length));
+      expect(coming(rt)).toBe(5 - busted.length);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
   it('clears the queue when the waitlist is turned off', () => {
     const { rt } = full();
     expect(() => rt.joinWaitlist('host', { name: 'H', stack: 100 })).toThrow(/already have a seat/);

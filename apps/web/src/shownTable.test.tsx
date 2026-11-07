@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HandEvent } from '@rsdp/engine/core';
+import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { useShownTable } from './runout';
 
@@ -59,5 +60,43 @@ describe('the table as shown, and what waits for it', () => {
     act(() => void vi.advanceTimersByTime(60_000));
     expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b' });
     expect(result.current.runningOut).toBe(false);
+  });
+});
+
+describe("Dealer's choice while a runout is dealt out (#459)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the most people coming since the runout began until the result shows', () => {
+    // A cash table: the chooser, c, folded with the pick panel open. The host's waiting change makes the table bigger,
+    // with the menu Badugi (6), Razz (8), Pot-Limit Omaha (9). Eight were coming before the result; someone joins the
+    // waitlist during the runout (nine); then, before the cards are all out here, the server gives a busted player's
+    // seat to someone waiting (eight). The nine stay until the result.
+    const { before, after } = table();
+    const fold = { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent;
+    const withFold = (h: TableView['hand']) => ({ ...h!, events: [h!.events[0], fold, ...h!.events.slice(1)] });
+    const table6 = defaultSettings('cash');
+    const nlhe = { gameId: 'nlhe', betting: 'no-limit' } as const;
+    const settings = parseSettings({ ...table6, table: { ...table6.table, maxSeats: 6 }, seating: { ...table6.seating, waitlist: true }, game: { ...table6.game, dealersChoice: { enabled: true, games: [nlhe, { gameId: 'badugi', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 } } });
+    const pendingSettings = { table: { maxSeats: 9 }, game: { dealersChoice: { games: [{ gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }, { gameId: 'plo4', betting: 'pot-limit' }] } } };
+    const game = (gameId: string, gameName: string) => ({ gameId, betting: gameId === 'plo4' ? 'pot-limit' : 'fixed-limit', gameName });
+    const choice = (comingCount: number, fallback: ReturnType<typeof game>) => ({ chip: 2, current: { ...nlhe, by: 'A', how: 'picked' }, handsLeft: 0, next: null, open: true, deadline: null, count: 3, cap: null, closed: false, defaultIndex: 0, canKeep: false, comingCount, fallback });
+    const cash = (v: TableView, coming: number, fallback: ReturnType<typeof game>) => ({ ...v, mode: 'cash', tournamentId: null, settings, pendingSettings, hand: withFold(v.hand), choice: choice(coming, fallback) }) as unknown as TableView;
+    const razz = game('razz', 'Razz');
+    const omaha = game('plo4', 'Pot-Limit Omaha');
+    const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: cash(before, 8, razz) } });
+    rerender({ live: cash(after, 8, razz) });
+    expect(result.current.runningOut).toBe(true);
+    expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'razz' });
+    rerender({ live: cash(after, 9, omaha) });
+    expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
+    act(() => void vi.advanceTimersByTime(1_000));
+    rerender({ live: cash(after, 8, razz) });
+    expect(result.current.runningOut).toBe(true);
+    expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
+    // Newer counts don't hold up the cards: the runout ends when it would have.
+    for (let i = 0; i < 10 && result.current.runningOut; i++) act(() => void vi.advanceTimersByTime(5_000));
+    expect(result.current.runningOut).toBe(false);
+    expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'razz' });
   });
 });
