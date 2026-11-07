@@ -661,7 +661,8 @@ export class TableRuntime {
    * gone by then, and their seats are offered too. (The waitlist itself is switched at once, never with the next hand; a
    * smaller table has already let go of offers in the seats it drops.) While an all-in runout is still being dealt
    * out, its players' seats stay taken, as tableCount still counts them (revealSeats): the answer doesn't change with
-   * whether one of them busted. Only those who said before the result that they were leaving count as gone then.
+   * whether one of them busted. Only those who said before the result that they were leaving count as gone then,
+   * and one of them who has asked for a seat again since counts as holding it.
    */
   private comingCount(next: TableSettings): number {
     const s = this.state;
@@ -670,8 +671,8 @@ export class TableRuntime {
     const reveal = this.revealSeats();
     const last = s.history.at(-1);
     const left = this.leftAfterHand;
-    const gone = reveal.size && last && left?.handNumber === last.handNumber ? last.hand.seats.filter((hs) => left.players.has(hs.playerId) && !this.seatOf(hs.playerId)).map((hs) => hs.seat) : [];
-    const leaving = new Set([...s.seats.flatMap((x, i) => (x?.leaveAfterHand ? [i] : [])), ...gone]);
+    const gone = reveal.size && last && left?.handNumber === last.handNumber ? last.hand.seats.filter((hs) => left.players.has(hs.playerId) && !this.seatOf(hs.playerId)) : [];
+    const leaving = new Set([...s.seats.flatMap((x, i) => (x?.leaveAfterHand ? [i] : [])), ...gone.map((hs) => hs.seat)]);
     const held = new Set([
       ...this.offers().map((o) => o.seat),
       ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!),
@@ -681,11 +682,17 @@ export class TableRuntime {
     for (let i = 0; i < next.table.maxSeats; i++) if ((!s.seats[i] || leaving.has(i)) && !held.has(i)) open++;
     const offered = new Set(this.offers().map((o) => o.playerId));
     const waiting = this.queue().filter((w) => !offered.has(w.playerId) && this.isOnline(w.playerId));
+    // A leaver gone in the runout who has since been offered a seat, or asked for one, holds it once the runout has
+    // been dealt out: tableCount counts their offer then, if it counts, and seatRoom takes their hold off the room.
+    // Until then goneInRunout hides both, and counts them as sitting down instead.
+    const requested = new Set(s.requests.filter((r) => r.kind === 'seat').map((r) => r.playerId));
+    const back = gone.filter((hs) => offered.has(hs.playerId) && !this.needsApproval(hs.playerId)).length;
+    const holding = gone.filter((hs) => offered.has(hs.playerId) || requested.has(hs.playerId)).length;
     // Leavers count toward the room the game being played leaves (seatRoom) until they go.
     const room = this.seatRoom(null);
-    const fill = Math.max(0, Math.min(open, waiting.length, room === null ? Infinity : room + leaving.size));
+    const fill = Math.max(0, Math.min(open, waiting.length, room === null ? Infinity : room + leaving.size - holding));
     // Seats are offered in queue order, and one offered to someone who still needs the host's OK isn't counted (#453).
-    return count - leaving.size + waiting.slice(0, fill).filter((w) => !this.needsApproval(w.playerId)).length;
+    return count - leaving.size + back + waiting.slice(0, fill).filter((w) => !this.needsApproval(w.playerId)).length;
   }
 
   /**

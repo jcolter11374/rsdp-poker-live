@@ -1906,6 +1906,97 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     });
   }
 
+  /** `leaver` goes all in against the host and everyone else folds; true when it ends in a runout with them gone. */
+  function allInRunout(rt: TableRuntime, leaver: string) {
+    for (let i = 0; i < 50 && live(rt); i++) {
+      const h = hand(rt);
+      const id = toActId(rt);
+      const legal = engine.legalActions(h, h.toAct!)!;
+      if (id === leaver) rt.act(id, { type: legal.raiseKind, to: legal.maxTo });
+      else if (id === 'host') rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
+      else rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'fold' });
+    }
+    return !live(rt) && runoutMs(hand(rt).events) > 0 && !rt.state.seats.some((x) => x?.playerId === leaver);
+  }
+
+  /** Runs the clock on to the deal that waits for the pick; the view's count then is the one a missed pick uses. */
+  function toPickClock(rt: TableRuntime, clock: FakeClock) {
+    for (let i = 0; i < 30 && (live(rt) || rt.state.choice?.deadline == null); i++) clock.advance(1000);
+    expect(live(rt)).toBe(false);
+    return tableView(rt, 'host', clock.now()).choice!.count;
+  }
+
+  it('counts a leaver who is offered a seat again during the runout as coming back (#468)', () => {
+    // Seven at an eight-seat table, in the last hand of a No-Limit Hold'em pick. A stands after this hand and goes
+    // all in; the host's waiting change makes nine seats with Badugi (seats six) or 5-Card Omaha. During the runout A
+    // joins the waitlist and is offered seat 7, so seven are at the table when a missed pick is dealt.
+    let checked = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 8;
+        s.seating.waitlist = true;
+        s.play.runItTwice = 'off';
+        s.game.dealersChoice!.hands = 1;
+      }, seeded(seed));
+      seat(rt, 7);
+      rt.start('host');
+      pick(rt, 'nlhe');
+      rt.stand('a', { afterHand: true });
+      rt.updateSettings('host', { table: { maxSeats: 9 }, game: { dealersChoice: { games: [MENU[2], { gameId: 'plo5', betting: 'pot-limit' }] } } });
+      if (!allInRunout(rt, 'a')) continue;
+      checked++;
+      rt.joinWaitlist('a', { name: 'A', stack: 1000 });
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['a']);
+      const during = tableView(rt, 'b', clock.now()).choice!;
+      expect(during).toMatchObject({ count: 7, fallback: { gameId: 'plo5' } });
+      expect(during.comingCount).toBeUndefined();
+      expect(toPickClock(rt, clock)).toBe(7);
+      clock.advance(25_000);
+      expect(hand(rt).input.game.id).toBe('plo5');
+    }
+    expect(checked).toBe(8);
+  });
+
+  it("counts the place a leaver's seat request takes under the game's limit during the runout (#468)", () => {
+    // Six at a seven-seat table, in the last hand of a Pot-Limit 6-Card Omaha pick (seats seven), and the host
+    // approves newcomers. A stands after this hand and goes all in; the waiting change makes nine seats with Badugi
+    // or No-Limit Hold'em. During the runout A asks for seat 6, then G and H (who may approve seats) join the
+    // waitlist. A's request takes the last place under the limit, so only G is offered a seat at the deal: six.
+    let checked = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 7;
+        s.seating.waitlist = true;
+        s.play.runItTwice = 'off';
+        s.game.dealersChoice = { enabled: true, games: [...MENU, { gameId: 'plo6', betting: 'pot-limit' }], hands: 1, pickSeconds: 20 };
+      }, seeded(seed));
+      // A's stack is small enough to be all in before the river at pot limit.
+      PEOPLE.slice(0, 6).forEach((id, i) => rt.requestSeat(id, { seat: i, name: id.toUpperCase(), stack: id === 'a' ? 30 : 1000 }));
+      rt.updateSettings('host', { seating: { requireApproval: true } });
+      rt.setCoHost('host', 'g', ['approve']);
+      rt.setCoHost('host', 'h', ['approve']);
+      rt.start('host');
+      pick(rt, 'plo6');
+      rt.stand('a', { afterHand: true });
+      rt.updateSettings('host', { table: { maxSeats: 9 }, game: { dealersChoice: { games: [MENU[2], MENU[0]] } } });
+      if (!allInRunout(rt, 'a')) continue;
+      checked++;
+      rt.requestSeat('a', { seat: 6, name: 'A', stack: 1000 });
+      expect(rt.state.requests.map((r) => r.playerId)).toEqual(['a']);
+      rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+      rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+      expect(rt.state.offers).toEqual([]);
+      const during = tableView(rt, 'b', clock.now()).choice!;
+      expect(during).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+      expect(during.comingCount).toBeUndefined();
+      expect(toPickClock(rt, clock)).toBe(6);
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+      clock.advance(25_000);
+      expect(hand(rt).input.game.id).toBe('badugi');
+    }
+    expect(checked).toBe(8);
+  });
+
   it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
     const { rt, clock } = lastHand(['f', 'g']);
     rt.disconnect('f');
