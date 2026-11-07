@@ -169,6 +169,17 @@ export function useShownTable(live: TableView | null): { view: TableView | null;
   return { view, runningOut: revealed !== live };
 }
 
+/**
+ * Hands as the table on screen has them: none newer than its own hand list. While an all-in runout is still being
+ * dealt here, the server already counts that hand as finished and sends it, result and all, to anyone who asks; the
+ * table shown leaves it out of its history until the result shows (holdBack). Same list back when nothing is cut.
+ */
+export function finishedOnScreen<H extends { handNumber: number }>(hands: H[] | null, view: { history: readonly { handNumber: number }[] }): H[] | null {
+  if (!hands) return hands;
+  const upTo = view.history.reduce((n, h) => Math.max(n, h.handNumber), 0);
+  return hands.every((h) => h.handNumber <= upTo) ? hands : hands.filter((h) => h.handNumber <= upTo);
+}
+
 /** Who went out in the hand being shown, kept in their seats until the next deal. */
 interface Departures {
   handNumber: number;

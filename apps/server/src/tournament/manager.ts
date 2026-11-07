@@ -249,6 +249,11 @@ export class TournamentManager {
     return [...this.live.values()].map((l) => l.state);
   }
 
+  /** Whether the final save of an event let go of is still under way: it would write over a name being replaced. */
+  get saving(): boolean {
+    return this.evicting.size > 0;
+  }
+
   /** Resolves once the final saves of the events let go of so far are in. */
   async settled() {
     await Promise.allSettled([...this.evicting.values()]);

@@ -13,6 +13,7 @@ import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
 import { RecapDialog, useRecapOffered } from './table/Recap';
+import { finishedOnScreen } from '../runout';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -309,7 +310,9 @@ function useAllHands(view: TableView, active: boolean) {
       live = false;
     };
   }, [active, latest, dealing, tries, view.started, view.fair.openThrough]);
-  return { hands, error, retry: () => setTries((t) => t + 1), setHands };
+  // Never ahead of the table on screen: the Hands and Stats tabs and the recap don't give away a runout still being dealt.
+  const shown = useMemo(() => finishedOnScreen(hands, view), [hands, view.history]);
+  return { hands: shown, error, retry: () => setTries((t) => t + 1), setHands };
 }
 
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {

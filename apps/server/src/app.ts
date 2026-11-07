@@ -730,7 +730,8 @@ export function createApp(deps: AppDeps = {}) {
       return replacePlayerName(db, id, {
         dryRun,
         inMemory: (would) => {
-          if (unloading.size || saveLeftBehind().length) return 'busy';
+          // Also a tournament the hourly cleanup let go of since the wait above: its final save would come after the change.
+          if (unloading.size || saveLeftBehind().length || tournaments.saving) return 'busy';
           return { tables: [...tables.values()].filter((rt) => would.table(rt.state)).length, tournaments: tournaments.held().filter((s) => would.tournament(s)).length };
         },
       });
@@ -738,7 +739,7 @@ export function createApp(deps: AppDeps = {}) {
     (dryRun ? replace() : gate.run(replace))
       .then(async ({ report, lobbies }) => {
         if (!report.dryRun) {
-          // Lobby items are only ever added to storage, so the ones held in memory are changed the same way here.
+          // Lobby items are never saved again once added (only deleted), so the ones held in memory are changed the same way here.
           for (const l of lobbies) await lobby.rewrite(l.id, l.change);
           audit.admin('replace-name', subjectRef('player', id));
           const rows = Object.values(report.rows).reduce((a, b) => a + b, 0);
@@ -1931,6 +1932,9 @@ export function createApp(deps: AppDeps = {}) {
           const itemId = String(input?.itemId ?? '');
           const live = await tournaments.get(id);
           if (!live) throw new ActionError('tournament not found');
+          // Only someone who may manage the chat gets storage looked through, or learns whether a message is there.
+          const cannot = chatModerationRefusal(live.state, me);
+          if (cannot) throw new ActionError(cannot);
           // Ids are short; a long one was never a message.
           const item = itemId && itemId.length <= 64 ? await lobby.find(id, itemId) : null;
           if (item?.kind !== 'chat') throw new ActionError('that message is already gone');

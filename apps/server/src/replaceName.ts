@@ -35,12 +35,12 @@ const PLACEHOLDERS = new Set(['', 'Guest', 'A player', 'Dealer', DELETED_NAME]);
 export const SERVER_WORDS: ReadonlySet<string> = new Set(
   `a action add added after all already amount and anyone anything are aren as asked at away back badugi be been
   behind better betting blind blinds board bomb bot bought bounties bounty bring call can cancelled cannot card cards
-  changed chat check clocks closed co collects come complete could couldn deal dealer deals dealt deck declined delay
+  carries changed chat check clocks closed co collects come complete could couldn deal dealer deals dealt deck declined delay
   deleted didn discard double down draw each early easy em ended ends enough every everyone flop folded for free from
-  game games given guest had hand hands hard has have here hi hidden hold holding hole host hunting if in into invalid
-  is it its joined last least leave left let level limit link live lo longer look losing made min minute minutes
-  modifiers most moved mucked muted need needs next nit no normal not nothing now of off offline ok omaha on one only
-  options or others out pass paused pays people play player players post pot practice rabbit raise rake ran razz re
+  game games given going guest had hand hands hard has have here hi hidden hold holding hole host hunting if in into invalid
+  is it its joined kept last least leave left let level limit link live lo longer look losing made min minute minutes
+  modifiers most moved mucked muted need needs next nit no nobody normal not nothing now of off offline ok omaha on one only
+  options or others out pass paused pays people pick picked play player players post pot practice rabbit raise rake ran razz re
   rebuy released removed request result resumed right round run running s sat saved say schedule seat seated seating
   seats second see seeing sees server set settings seven show showdown shown shuffled side sitting so someone
   spectators stack stakes started stay stepped stopped stud such switching t table take taken that the their them they
@@ -415,7 +415,7 @@ export async function replacePlayerName(db: Db, playerId: string, opts: { dryRun
         table: (state) => isObj(state) && names.table(structuredClone(state), tablePlace(String(state.id), state)).names > 0,
         tournament: (state) => isObj(state) && names.tournament(structuredClone(state)).names > 0,
       });
-      if (held === 'busy') throw new ReplaceNameError('busy', 'A table is being put away right now. Try again in a minute.');
+      if (held === 'busy') throw new ReplaceNameError('busy', 'A table or tournament is being put away right now. Try again in a minute.');
       if (held.tables || held.tournaments) {
         throw new ReplaceNameError(
           'in-memory',

@@ -174,9 +174,18 @@ describe('the server’s own words', () => {
   };
   const thisCall = (names: string[]) => (n: Node) =>
     ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.expression.kind === ts.SyntaxKind.ThisKeyword && names.includes(n.expression.name.text);
+  /** `this.host.log(...)`: Dealer's choice writes its lines in the table's log through its host (choice.ts). */
+  const hostCall = (names: string[]) => (n: Node) =>
+    ts.isCallExpression(n) &&
+    ts.isPropertyAccessExpression(n.expression) &&
+    names.includes(n.expression.name.text) &&
+    ts.isPropertyAccessExpression(n.expression.expression) &&
+    n.expression.expression.name.text === 'host' &&
+    n.expression.expression.expression.kind === ts.SyntaxKind.ThisKeyword;
 
   it('include every word of the table log and the dealer’s lines', () => {
     inside(source('apps/server/src/runtime/table.ts'), thisCall(['log', 'dealerSays', 'nitPays']));
+    inside(source('apps/server/src/runtime/choice.ts'), hostCall(['log']));
     source('packages/engine/src/settings/notices.ts').statements.filter((st) => !ts.isImportDeclaration(st)).forEach(strings);
     inside(source('packages/engine/src/core/hand.ts'), (n) => ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'ActionError');
     for (const v of VARIANT_LIST) for (const b of BETTING_KINDS) add(gameTitle(v.id, b));
@@ -533,6 +542,41 @@ describe('replacing a deleted player’s name', () => {
     expect(change.rows.tournaments).toBe(1);
     release();
     const live = await loading;
+    expect(live!.state.entries.map((e) => [e.playerId, e.displayName])).toEqual([[patId, DELETED_NAME]]);
+  });
+
+  it('waits while a tournament let go of by the cleanup is still being saved', { timeout: 30_000 }, async () => {
+    db = await createTestDb();
+    await start(db);
+    const hana = client(HANA);
+    const pat = client(ZEKE);
+    await pat.call('session:name', { name: 'Pat' });
+    const { id } = await hana.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Cup', startingStack: 1000 }) });
+    await pat.call('tournament:subscribe', { id });
+    await pat.call('tournament:command', { id, command: { type: 'register' } });
+    const state = server!.tournaments.held().find((t) => t.id === id)!;
+    const patId = state.entries[0].playerId;
+    // Cancelled before anyone was seated, and over long enough ago for the cleanup to let it go.
+    await hana.call('tournament:command', { id, command: { type: 'end' } });
+    await pause(900);
+    const over = server!.tournaments.held().find((t) => t.id === id)!;
+    over.finishedAt = 1;
+    over.createdAt = 1;
+    // The cleanup runs after the route has waited for earlier saves, just as the change starts.
+    const transaction = db.transaction.bind(db);
+    db.transaction = ((...a: Parameters<typeof transaction>) => {
+      server!.tournaments.sweep();
+      return transaction(...a);
+    }) as typeof db.transaction;
+    const res = await replaceName(patId, { dryRun: false });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'busy' });
+    db.transaction = transaction as typeof db.transaction;
+    await server!.tournaments.settled();
+    // Run again once the save is in, the change holds.
+    const change = (await (await replaceName(patId, { dryRun: false })).json()) as ReplaceReport;
+    expect(change.rows.tournaments).toBe(1);
+    const live = await server!.tournaments.get(id);
     expect(live!.state.entries.map((e) => [e.playerId, e.displayName])).toEqual([[patId, DELETED_NAME]]);
   });
 
