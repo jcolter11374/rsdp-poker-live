@@ -33,7 +33,7 @@ import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
 import { TableAnnouncer } from './components/table/Announcer';
-import { useShownTable } from './runout';
+import { myPlace, useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
@@ -438,6 +438,8 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
+  // Your seat, or the one kept for you, marked out, after a knockout until the next deal (#445).
+  const place = myPlace(view);
   // Worked out once per render: it reads this browser's saved notes.
   const seedWarning = liveSeedProblem(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
@@ -835,7 +837,16 @@ export function TablePage({ tableId }: { tableId: string }) {
           {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
               with the other notes about you, so the table keeps its height (#385). */}
           {view.tournamentId && (
-            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+            <TableStrip
+              tournamentId={view.tournamentId}
+              tableId={tableId}
+              seatedHere={view.me.seat !== null}
+              keptHere={view.me.seat === null && place !== null}
+              emptyHere={!!live && live.seats.every((s) => !s)}
+              holding={runningOut}
+              corner={wide}
+              asksIn={wide ? tournamentAsks : null}
+            />
           )}
           {readyTable && (
             <div className="banner attention" role="status">
@@ -883,8 +894,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             onNoticeRoom={setNoticeRoom}
           />
           <Dock
-            reset={`${portrait}:${view.me.seat}`}
-            seated={view.me.seat !== null}
+            reset={`${portrait}:${place}`}
+            seated={place !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >

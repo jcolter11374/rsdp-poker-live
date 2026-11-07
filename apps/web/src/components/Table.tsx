@@ -7,7 +7,7 @@ import { besideBet, clearOfRows, clearSideBands, fitHand, fitMiddle, fromVars, h
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
-import { dealtSizes, splitsPot } from '../handSizes';
+import { dealtShapes, rowHand, splitsPot } from '../handSizes';
 import { FOUR_CARD_GAMES, LONG_HAND_GAMES, dealableGames, layoutOf } from '../tableGames';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
@@ -816,6 +816,8 @@ export function Table({
   // leave a game out mid-hand. The new layout comes with the next deal, a single move, not one now and one then. A layout
   // made before the page knew the table's games (a tournament's come a moment after the table) isn't kept.
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
+  // A stud hand is a row of cards over the nameplate from its first card, not only from fifth street (#447).
+  const rowNow = rowHand(gameId);
   const handNo = hand?.handNumber ?? null;
   const listed = dealableGames(games ?? [], players);
   const covered = !gameId || listed.includes(gameId) || (listed.length > 0 && layoutOf(listed) === layoutOf([...listed, gameId]));
@@ -829,8 +831,8 @@ export function Table({
     laidOut.current = { hand: handNo, key: dealtKey, known };
   }, [handNo, dealtKey, known]);
   const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
-  // The stud games tuck their cards in the same way on third and fourth street, before the row goes over the nameplate:
-  // counted with them, so a side seat's three or four cards don't run off the window's edge (#385).
+  // Four cards tucked in (four-card Omaha, Badugi) widen the nameplate. Stud's three or four don't: its hand is a row over
+  // the nameplate from third street (#447).
   const fourCard = dealt.some((g) => FOUR_CARD_GAMES.includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
   // cards are bigger too (#331), so the row stands taller and the felt leaves more room above the top seats.
@@ -851,7 +853,7 @@ export function Table({
   // Everyone but you shares the biggest of their boxes, so a long name or a folded hand doesn't move anyone either.
   // Before a tournament table's first hand the view has no game yet (its settings say Hold'em whatever the event plays),
   // so there's nothing to size for until the deal, unless the page knows the tournament's games.
-  const sizes = useMemo(() => dealtSizes(dealt), [dealt]);
+  const sizes = useMemo(() => dealtShapes(dealt), [dealt]);
   // Hi-lo games name two hands at a showdown ("… · Eight-Six low"), a longer line to make room for (#427).
   const hiLo = useMemo(() => dealt.some((g) => splitsPot(g)), [dealt]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
@@ -861,7 +863,7 @@ export function Table({
   const sized = useSeatBoxes(felt, sizedKey, sizes, hiLo, seating, view.me.seat, !compact);
   // A table too full to give every game's hands their room at once is spaced for the game on now instead, as before #409:
   // its seats move when the game changes, but nobody's nameplate covers another's.
-  const nowSizes = useMemo(() => dealtSizes(gameId ? [gameId] : []), [gameId]);
+  const nowSizes = useMemo(() => dealtShapes(gameId ? [gameId] : []), [gameId]);
   const nowHiLo = useMemo(() => splitsPot(gameId), [gameId]);
   const nowKey = boxKey(nowSizes, nowHiLo);
   // Games with the same hand sizes can still differ in their boxes: one hi-lo, one not (Omaha 5 and Omaha 5 hi-lo).
@@ -1264,8 +1266,9 @@ export function Table({
           won && 'winner',
           isMe && 'me',
           s.cards.length > 0 && (isMe || !s.folded) && 'has-cards',
-          // Stud and five-card draw hands are too long to tuck beside the nameplate.
-          s.cards.length > 4 && 'long-hand',
+          // Stud and five-card draw hands are too long to tuck beside the nameplate. A stud hand is a row over it from its
+          // first card, so the cards don't move up and the nameplate doesn't narrow at fifth street (#447).
+          (s.cards.length > 4 || (s.cards.length > 0 && rowNow)) && 'long-hand',
           s.departed && 'departed',
           s.departed === 'fading' && 'fading',
           onSeatClick && !s.departed && 'host-click',

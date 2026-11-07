@@ -284,6 +284,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .seat.me .playing-card.small .rank { left: calc(var(--cw) * 0.1); font-size: calc(var(--cw) * 0.54); }
 .seat.me .playing-card.small .suit { top: calc(var(--cw) * 0.64); width: calc(var(--cw) * 0.3); height: calc(var(--cw) * 0.3); }
 .seat.me .hole:is(.n4, .n5, .n6, .n7) .playing-card.small .pip { display: none; }
+/* On a computer, your stud row over the nameplate overlaps its cards from the third one on (#447): no pip to be cut off. */
+.felt:not(.compact) .seat.me.long-hand .playing-card.small .pip { display: none; }
 .playing-card.suit-h, .playing-card.suit-d { color: #d8352b; }
 .playing-card.back {
   background: var(--back-a, #d84a3e);

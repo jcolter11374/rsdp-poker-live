@@ -418,6 +418,19 @@ export function useDepartures(view: TableView | null, skew = 0): TableView | nul
   }, [view, kept]);
 }
 
+/**
+ * The viewer's place at the table on screen: their seat, or after they are knocked out of a tournament the seat kept for
+ * them, marked out, until the next deal (#308). The room under the table and the strip above it stay as they were until
+ * it goes, so the table doesn't jump as the result shows (#445). A kept seat that fades with no deal coming (a table
+ * that broke, or one waiting for a break) has gone: nothing else will take it away.
+ */
+export function myPlace(view: TableView): number | null {
+  if (view.me.seat !== null) return view.me.seat;
+  if (view.mode !== 'tournament') return null;
+  const kept = view.seats.findIndex((s) => !!s?.departed && s.playerId === view.me.playerId && (s.departed !== 'fading' || view.nextHandAt !== null));
+  return kept >= 0 ? kept : null;
+}
+
 /** Who to keep at the table after `view` arrives, `before` being the table as last shown. */
 export function departures(before: TableView | null, view: TableView | null, kept: Departures | null): Departures | null {
   const hand = view?.hand;
