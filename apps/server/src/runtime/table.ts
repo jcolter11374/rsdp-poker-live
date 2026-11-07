@@ -26,6 +26,7 @@ import {
   MAX_CHIPS,
   mergePatches,
   parseSettings,
+  SETTINGS_LIMITS,
   SettingsError,
   settingsNotices,
   spectatorsSeeCards,
@@ -82,7 +83,8 @@ export const FAIR_STOP_REVEAL_MS = 30 * 60 * 1000;
 /**
  * When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours
  * after it ended. With `asOf`, a stop made after that time is left out: a spectator on a delay sees the table as it
- * was then, and a reveal time that moved when the live hand ended would tell them it had (#435).
+ * was then, and a reveal time that moved when the live hand ended would tell them it had (#435). A stop lifted since
+ * is gone from `fair`: TableRuntime.fairRevealsAt puts it back.
  */
 export function fairRevealsAt(
   fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined,
@@ -235,6 +237,12 @@ export class TableRuntime {
   private tipSlowLogged = false;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
+  /**
+   * Stops the host has lifted lately, oldest first, as they stood before the game went on. A spectator on a delay
+   * sees the table as it was up to the longest delay ago, so their reveal times come from these (fairAsOf) and don't
+   * move when the game starts again live (#435). Kept in memory only: a restart starts the delayed feed afresh too.
+   */
+  private fairLifts: { through: number; at: number; liftedAt: number; revealedBefore: number }[] = [];
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
   readonly choice: DealersChoice;
 
@@ -526,7 +534,8 @@ export class TableRuntime {
    * against what they are shown; then anything the live table refuses gets one answer, the same whatever the reason.
    */
   private shownSeat(playerId: PlayerId, asked: number, stack: number, shown: ShownTable): number {
-    if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+    // Someone who has just left live is still shown in their seat, so they hear what they heard before it.
+    if (this.seatOf(playerId) || shown.seats.includes(playerId)) throw new ActionError('you already have a seat');
     this.checkBuyIn(playerId, stack);
     if (!Number.isInteger(asked) || asked < 0 || asked >= shown.seats.length) throw new ActionError('no such seat');
     const free = (i: number) => i < shown.seats.length && !shown.seats[i];
@@ -1120,8 +1129,18 @@ export class TableRuntime {
   private fairResumed() {
     const f = this.state.fair;
     if (!f?.stopped) return;
-    if (this.clock.now() >= f.stopped.at + this.fairStopRevealMs) f.revealedThrough = Math.max(f.revealedThrough, f.stopped.through);
+    const now = this.clock.now();
+    // Kept while a spectator on a delay may still be shown the game stopped (see fairLifts).
+    const shownSince = now - SETTINGS_LIMITS.spectatorDelaySeconds.max * 1000;
+    this.fairLifts = [...this.fairLifts.filter((l) => l.liftedAt >= shownSince), { ...f.stopped, liftedAt: now, revealedBefore: f.revealedThrough }];
+    if (now >= f.stopped.at + this.fairStopRevealMs) f.revealedThrough = Math.max(f.revealedThrough, f.stopped.through);
     delete f.stopped;
+  }
+
+  /** The stop and the hands opened as they stood at `asOf`: from before the first stop lifted since, if any (#435). */
+  private fairAsOf(asOf: number): Pick<FairState, 'revealedThrough' | 'stopped'> | undefined {
+    const lift = this.fairLifts.find((l) => l.liftedAt > asOf);
+    return lift ? { revealedThrough: lift.revealedBefore, stopped: { through: lift.through, at: lift.at } } : this.state.fair;
   }
 
   /** When the hands the last stop covers open, while that's still to come. */
@@ -1140,9 +1159,14 @@ export class TableRuntime {
     return Math.max(f.revealedThrough, stopOpen);
   }
 
-  /** When a finished hand's server seed may be shown (see fairRevealsAt), leaving out a stop made after `asOf`. */
+  /**
+   * When a finished hand's server seed may be shown (see fairRevealsAt). With `asOf`, as the table stood then: a stop
+   * made later is left out, and one lifted later still counts (#435). Compare that answer with `asOf`, not now: a stop
+   * lifted before its half hour was up still shows that half hour, and the live table keeps those hands private.
+   */
   fairRevealsAt(handNumber: number, endedAt: number, asOf?: number): number {
-    return fairRevealsAt(this.state.fair, handNumber, endedAt, this.fairStopRevealMs, asOf);
+    const fair = asOf === undefined ? this.state.fair : this.fairAsOf(asOf);
+    return fairRevealsAt(fair, handNumber, endedAt, this.fairStopRevealMs, asOf);
   }
 
   fairRevealed(handNumber: number, endedAt: number): boolean {
@@ -1936,8 +1960,10 @@ export class TableRuntime {
   /** The bot's owner or the host takes a bot away (after folding its hand). */
   removeBot(by: PlayerId, botId: PlayerId) {
     const bot = this.botInfo(botId);
-    // Someone who may not remove it hears that whether or not it is still here: a spectator on a delay could
-    // otherwise learn early that a bot left the live table (busted out when its hand ended, say) (#435).
+    // Someone who sees the table live can see it has gone. A spectator on a delay who may not remove it hears that
+    // whether or not it is still here: they could otherwise learn early that a bot left the live table (busted out
+    // when its hand ended, say) (#435).
+    if (!bot && this.shownTo(by) === null) throw new ActionError('no such bot');
     if (bot?.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (!bot) throw new ActionError('no such bot');
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can remove a bot the host or a co-host added");
@@ -1959,9 +1985,9 @@ export class TableRuntime {
   /** The bot's owner or the host changes how well it plays, from its next move on. */
   setBotLevel(by: PlayerId, botId: PlayerId, level: BotLevel) {
     const bot = this.botInfo(botId);
-    // As removeBot: someone who may not change it hears the same whether or not it is still here (#435).
+    // As removeBot: a spectator on a delay who may not change it hears the same whether or not it is still here (#435).
     const allowed = bot?.ownerId === by || this.can(by, 'players');
-    if (allowed && !bot) throw new ActionError('no such bot');
+    if (!bot && (allowed || this.shownTo(by) === null)) throw new ActionError('no such bot');
     if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
     if (!allowed || !bot) throw new ActionError("only its owner or the host can change a bot's level");
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
