@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
@@ -534,7 +534,21 @@ export function Table({
         {view.paused && <div className="next-hand">Paused</div>}
         {!hand && view.upcoming && <div className="next-hand muted">{view.upcoming.gameName}</div>}
         {notice && (
-          <div className={`board-notice${notice.onClick ? ' clickable' : ''}`} role="status" onClick={notice.onClick}>
+          <div
+            className={['board-notice', hand && 'after-hand', notice.onClick && 'clickable'].filter(Boolean).join(' ')}
+            {...(notice.onClick
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  onClick: notice.onClick,
+                  onKeyDown: (e: ReactKeyboardEvent) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    notice.onClick!();
+                  },
+                }
+              : { role: 'status' })}
+          >
             {notice.text}
           </div>
         )}
@@ -663,7 +677,8 @@ export function Table({
         );
       })}
 
-      {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+      {/* Not once the game is stopped: the last hand stays on the felt, but its button means nothing, and it would sit on the note (#383). */}
+      {hand && !stud && !notice && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
 
       <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 

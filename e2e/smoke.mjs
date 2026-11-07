@@ -254,7 +254,7 @@ try {
     await stopGame(host, [host, guest]);
   });
 
-  await step("cash table: the seats stay put when the game starts", async () => {
+  await step('cash table: the seats stay put when the game starts', async () => {
     // Before the first hand, a banner above the table said to press Start game. It took height from the felt, so when it
     // went the felt grew and every seat slid to a new spot while the first cards came (#383). The middle of the table says
     // it now. On a laptop (the host, with the side column) and a wide, short screen (a player), from before the host
@@ -279,11 +279,14 @@ try {
       [guest, 'Waiting for the host to start the game'],
     ]) {
       await p.locator('.felt .board-notice', { hasText: says }).waitFor();
-      if (await p.locator('.felt-area > .banner').count()) throw new Error(`a banner above the table: ${await p.locator('.felt-area > .banner').first().innerText()}`);
+      // (The host's "1 request is waiting" banner goes once the approval reaches the host's page.)
+      await p.waitForFunction(() => !document.querySelector('.felt-area > .banner')).catch(async () => {
+        throw new Error(`a banner above the table: ${await p.locator('.felt-area > .banner').first().innerText()}`);
+      });
     }
     // The request banner has just gone, and seats glide to new spots in 0.4s.
     await host.waitForTimeout(900);
-    const watch = (p) =>
+    const sampleLayouts = (p) =>
       p.evaluate(() => {
         const seen = (window.__layouts = new Set());
         const sample = () => {
@@ -299,7 +302,7 @@ try {
         };
         requestAnimationFrame(sample);
       });
-    await Promise.all([watch(host), watch(guest)]);
+    await Promise.all([sampleLayouts(host), sampleLayouts(guest)]);
     await host.click('button:has-text("Start game")');
     for (const p of [host, guest]) await p.waitForSelector('.seat .hole .playing-card');
     await host.waitForTimeout(1000);
@@ -317,9 +320,11 @@ try {
     }
     await host.screenshot({ path: path.join(OUT, 'started.png') });
     await stopGame(host, [host, guest]);
-    // Stopped, the middle of the table says so, and the seats are where they were.
+    // Stopped, the middle of the table says so, under the last hand's result, and the dealer button (which would sit on
+    // the note) is gone.
     await host.locator('.felt .board-notice', { hasText: 'The game is stopped' }).waitFor();
     await guest.locator('.felt .board-notice', { hasText: 'Waiting for the host to start it again' }).waitFor();
+    for (const p of [host, guest]) if (await p.locator('.felt .dealer').count()) throw new Error('the dealer button is still on the table after the game stopped');
   });
 
   await step('practice: a hand against bots, with a coach tip on your turn', async () => {

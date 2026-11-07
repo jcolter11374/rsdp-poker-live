@@ -486,7 +486,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const openDrawer = () => setDrawer(true);
   // Before a cash game starts (or after the host stops it), the middle of the table says what happens next. It used to be
   // a banner above the table, which took height from the felt: when it went away at the start, the felt grew and every
-  // seat slid to a new spot while the first cards were dealt (#383). The middle is empty until a hand is dealt.
+  // seat slid to a new spot while the first cards were dealt (#383). Before the first hand the middle is empty; after a
+  // stop the note goes under the last hand's result, where "Next hand in" would be (see .board-notice.after-hand).
   const canRun = view.powers.includes('run');
   const startNotice =
     cash && !view.started
@@ -504,6 +505,10 @@ export function TablePage({ tableId }: { tableId: string }) {
           onClick: wide && canRun ? openDrawer : undefined,
         }
       : null;
+  // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
+  // bottom seat), the middle is full: there the note goes under the table, with your buttons, where the area holds its
+  // height (Dock), so it still takes nothing from the table.
+  const noticeUnder = !!startNotice && portrait && !!view.hand;
 
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
@@ -674,7 +679,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
-            notice={startNotice}
+            notice={noticeUnder ? null : startNotice}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
               stays even with no tip, so the felt's height doesn't change when the tip comes and goes, which made the
@@ -704,6 +709,11 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
+            {noticeUnder && (
+              <div className="dock-notes">
+                <div className="banner">{startNotice!.text}</div>
+              </div>
+            )}
             <ActionBar
               view={view}
               fmt={fmt}

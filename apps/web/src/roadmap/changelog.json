@@ -18,7 +18,7 @@
         "Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.",
         "Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last saves and public record entries. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.",
         "Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.",
-        "Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes. The same goes for the note after the host stops the game."
+        "Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes."
       ]
     },
     {
