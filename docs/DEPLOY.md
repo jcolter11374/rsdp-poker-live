@@ -37,7 +37,7 @@ On the live site, the plain settings live in `fly.toml` under `[env]`. The secre
 | Secret | Used by | What it is |
 | --- | --- | --- |
 | `FLY_API_TOKEN` | `deploy.yml`, `fly-setup.yml`, `transparency.yml` | A Fly API token for the app (see [Fly.io](#flyio-production)). The watcher also uses it as its fingerprint key (`WATCH_KEY`), so a new token changes every published secret fingerprint once. The public record then says the app's secrets changed, which is expected. |
-| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
+| `ADMIN_KEY` | `deploy.yml` (copies it to Fly), `backup.yml` (downloads the daily backup), `replace-name.yml` (takes a deleted player's name out of old records, run by hand: [RUNBOOK.md](RUNBOOK.md#someone-asks-for-their-name-to-be-taken-out)) | The admin key above. Removing the secret turns the admin page off at the next deploy, and stops the backups too, because they need it. |
 | `REPORT_KEY` | `deploy.yml` (copies it to Fly) | The read-only recap key above. The same value goes in the Claude project's cloud environment as `RSDP_REPORT_KEY`, where the scheduled recap reads it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `deploy.yml` (copies them to Fly) | The Google sign-in client, from the Google Cloud console. |
 

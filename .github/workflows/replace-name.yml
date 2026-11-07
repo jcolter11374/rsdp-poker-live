@@ -1,0 +1,65 @@
+name: Replace a deleted player's name
+
+# Run by hand, on main, when someone who deleted their account (or played as a guest) asks John to take their name
+# out of old hands, ledgers, table logs, chat and tournament records: it puts "Deleted player" in its place
+# (apps/server/src/replaceName.ts). docs/RUNBOOK.md, "Someone asks for their name to be taken out", has the steps.
+# Start it from Actions → Replace a deleted player's name → Run workflow. It counts first (dry run) unless that box
+# is unticked. This log is public: it shows only counts, never a name, and hides the player id.
+on:
+  workflow_dispatch:
+    inputs:
+      player_id:
+        description: "The player id (the player_id column of a ledger download from a table they played at)"
+        required: true
+        type: string
+      dry_run:
+        description: "Only count what would change (untick to make the change)"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: replace-name
+  cancel-in-progress: false
+
+env:
+  SITE: https://rsdp-poker-live.fly.dev
+
+jobs:
+  replace:
+    name: Replace the name
+    # Only main's own scripts may hold the admin key.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the site
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # The id isn't secret (everyone at their tables could see it), but it needn't be in a public log either. It is
+          # read from the event rather than passed in env, which the log shows above each step, and hidden from here on.
+          PLAYER_ID=$(jq -r '.inputs.player_id // ""' "$GITHUB_EVENT_PATH")
+          echo "::add-mask::$PLAYER_ID"
+          if ! [[ "$PLAYER_ID" =~ ^[A-Za-z0-9_-]{4,40}$ ]]; then echo "::error::A player id is 4 to 40 letters, digits, - and _."; exit 1; fi
+          [ "$DRY_RUN" = false ] && dry=false || dry=true
+          # One try: a refusal isn't worth repeating, and wrong keys count towards the site's lockout.
+          code=$(curl -sS --max-time 120 -X POST -H "X-Admin-Key: $ADMIN_KEY" -H 'Content-Type: application/json' \
+            -d "{\"dryRun\":$dry}" "$SITE/api/admin/players/$PLAYER_ID/replace-name" -o answer.json -w '%{http_code}') \
+            || { echo "::error::The site couldn't be reached, or didn't answer in time. Run it again with the dry run ticked to see whether anything is left to change."; exit 1; }
+          # Only the fixed words of a refusal, which never hold a name, and only the counts of an answer.
+          if [ "$code" != 200 ]; then echo "::error::The site answered $code: $(jq -r '.error // "no reason given"' answer.json 2>/dev/null | head -c 300)"; exit 1; fi
+          jq -r '
+            (if .dryRun then "Dry run: nothing was changed. This is what would change." else "Done: the name was replaced with \"Deleted player\"." end),
+            "Different names they went by: \(.names)",
+            "Of those, names not looked for in log lines, as they could be mistaken for words or amounts the site writes itself: \(.namesNotSearched)",
+            "Names replaced in all: \(.replaced)",
+            "Rows, by place:",
+            (.rows | to_entries[] | "  \(.key): \(.value)"),
+            "Tables and tournaments where someone else used one of the same names: \(.sharedNames)",
+            "Chat messages others typed that name them (left as typed): \(.chatMentions)"
+          ' answer.json | tee -a "$GITHUB_STEP_SUMMARY"
