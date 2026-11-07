@@ -5,6 +5,7 @@ import { defaultSettings } from '@rsdp/engine/settings';
 import type { HandRecordView, LedgerView, SeatView, TableView } from '@rsdp/engine/wire';
 import { chipFormat } from '../../format';
 import { SidePanel } from '../SidePanel';
+import { noteRealGame } from './Recap';
 
 // The ledger reaches the server only through call() (the hands, for the recap): a spy answers here.
 const { call } = vi.hoisted(() => ({ call: vi.fn() }));
@@ -93,6 +94,16 @@ describe('Copy recap in the ledger', () => {
     expect(screen.getByRole('button', { name: 'Copy recap' })).toBeTruthy();
   });
 
+  it("counts a delayed spectator's wait from when the table opened, not from when the ledger did", () => {
+    vi.useFakeTimers();
+    const view = tableView({ me: { playerId: 'id-Cy', seat: null }, spectator: { delaySeconds: 60, seeAll: false, blocked: false } });
+    // TablePage notes it with each view, whether or not the ledger is open (on a phone it's in a sheet).
+    noteRealGame(view);
+    vi.advanceTimersByTime(61_000);
+    ledgerOf(view);
+    expect(screen.getByRole('button', { name: 'Copy recap' })).toBeTruthy();
+  });
+
   it('shows the recap from the ledger and the hands, and copies it', async () => {
     const hands = [handRecord(1, 0, 400), handRecord(2, 1, 900)];
     call.mockImplementation(async (event: string, args?: { handNumber: number }) =>
@@ -135,12 +146,16 @@ describe('Copy recap in the ledger', () => {
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
   });
 
-  it('leaves out the hands when they cannot be loaded, and says so', async () => {
+  it('leaves out the hands when they cannot be loaded, says so, and still dates it by the night played', async () => {
     call.mockRejectedValue(new Error('the host has turned watching off'));
-    ledgerOf(tableView({ me: { playerId: 'id-Cy', seat: null }, spectator: { delaySeconds: 0, seeAll: false, blocked: true }, history: [{ handNumber: 1, endedAt: START, gameName: 'x' }] }));
+    const history = [START, START + 600_000].map((endedAt, i) => ({ handNumber: i + 1, endedAt, gameName: 'x' }));
+    ledgerOf(tableView({ me: { playerId: 'id-Cy', seat: null }, spectator: { delaySeconds: 0, seeAll: false, blocked: true }, history }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
     expect(await screen.findByText(/Couldn't get the hands \(the host has turned watching off\)/)).toBeTruthy();
     expect(box().value).not.toMatch(/hands in|Biggest pot|No hands/);
     expect(box().value).toContain('Ann +$5');
+    // The hand list's night, read where this browser is, rather than today.
+    const night = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(START);
+    expect(box().value.split('\n')[0]).toBe(`Thursday game · ${night}`);
   });
 });

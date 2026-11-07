@@ -13,10 +13,19 @@ import { Modal } from '../SeatDialog';
 /** When this browser first saw each table with people playing each other (view.realGame), by its own clock. */
 const realSeen = new Map<string, number>();
 
+/**
+ * Notes when this browser first saw people playing each other at the table. TablePage calls it with every view, so a
+ * spectator's wait on a delay runs from when the table opened here, even on a phone, where the ledger is only there
+ * while the Table sheet is open. It isn't kept, so the wait starts again after a reload.
+ */
+export function noteRealGame(view: Pick<TableView, 'id' | 'realGame'>): void {
+  if (view.realGame && !realSeen.has(view.id)) realSeen.set(view.id, Date.now());
+}
+
 /** Whether to offer Copy recap to this viewer (recapOffered). For a spectator on a delay it turns on by itself once the delay is up. */
 export function useRecapOffered(view: TableView): boolean {
   const [, wake] = useState(0);
-  if (view.realGame && !realSeen.has(view.id)) realSeen.set(view.id, Date.now());
+  noteRealGame(view);
   const seen = realSeen.get(view.id);
   const offered = recapOffered(view, seen, Date.now());
   const delay = (view.spectator?.delaySeconds ?? 0) * 1000;
@@ -75,7 +84,10 @@ export function RecapDialog({
   const waiting = shown === null && !error;
   // Two people in their seats at a game that hasn't been stopped: the results may still change.
   const running = view.started && view.seats.filter((s) => s && !s.sittingOut).length >= 2;
-  const text = cashRecap({ tableName: view.name, ledger: view.ledger, hands: shown, running, centsMode: view.settings.stakes.centsMode, fmt, now: Date.now() });
+  // Without the hands, the hand list still dates the night played (it ends with the newest hands only).
+  const ends = view.history.map((h) => h.endedAt);
+  const dates = ends.length ? { from: Math.min(...ends), to: Math.max(...ends) } : undefined;
+  const text = cashRecap({ tableName: view.name, ledger: view.ledger, hands: shown, running, centsMode: view.settings.stakes.centsMode, fmt, dates, now: Date.now() });
   // A new hand changes the text, so "Copied" would no longer be true.
   useEffect(() => setCopied(null), [text]);
 

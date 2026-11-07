@@ -29,7 +29,12 @@ export interface RecapInput {
   centsMode: boolean;
   /** Amounts as the ledger shows them (chipFormat). */
   fmt: Fmt;
-  /** The date to show when there are no hands to date it by. */
+  /**
+   * When the hands couldn't be loaded: when the first and last of the hands this viewer's table lists ended
+   * (view.history, which a spectator the host has blocked still gets), so the recap still names the night played.
+   */
+  dates?: { from: number; to: number };
+  /** The date to show when there are neither hands nor dates to date it by. */
   now: number;
   /** Where the dates are read: the browser's own unless given (tests give them). */
   locale?: string;
@@ -46,8 +51,9 @@ export function cashRecap(input: RecapInput): string {
 
   const first = hands?.[0];
   const last = hands?.at(-1);
-  const from = day.format(first?.startedAt ?? input.now);
-  const to = last ? day.format(last.endedAt) : from;
+  const span = first && last ? { from: first.startedAt, to: last.endedAt } : (input.dates ?? { from: input.now, to: input.now });
+  const from = day.format(span.from);
+  const to = day.format(span.to);
   const lines = [`${input.tableName} · ${from === to ? from : `${from} to ${to}`}${input.running ? ' (still playing)' : ''}`];
 
   if (hands) {

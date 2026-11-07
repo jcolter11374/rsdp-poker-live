@@ -122,8 +122,14 @@ describe('the cash game recap', () => {
     expect(recap({ hands: late }).split('\n')[0]).toBe('Thursday game · Thu, Nov 5 to Fri, Nov 6');
   });
 
-  it('dates the recap today when there are no hands to date it by', () => {
-    expect(recap({ hands: null, now: Date.UTC(2026, 10, 7, 12) }).split('\n')[0]).toBe('Thursday game · Sat, Nov 7');
+  it('dates the recap by the hand list when the hands could not be loaded, and today only when there is nothing to date it by', () => {
+    const now = Date.UTC(2026, 10, 7, 12);
+    const dates = { from: Date.UTC(2026, 10, 5, 23, 50), to: Date.UTC(2026, 10, 6, 0, 30) };
+    expect(recap({ hands: null, dates, now }).split('\n')[0]).toBe('Thursday game · Thu, Nov 5 to Fri, Nov 6');
+    expect(recap({ hands: null, dates: { from: EIGHT_PM, to: EIGHT_PM + 30 * MIN }, now }).split('\n')[0]).toBe('Thursday game · Thu, Nov 5');
+    // The hands themselves come first when there are any.
+    expect(recap({ hands: evening(2), dates, now }).split('\n')[0]).toBe('Thursday game · Thu, Nov 5');
+    expect(recap({ hands: null, now }).split('\n')[0]).toBe('Thursday game · Sat, Nov 7');
   });
 
   it('has no links and no cards', () => {

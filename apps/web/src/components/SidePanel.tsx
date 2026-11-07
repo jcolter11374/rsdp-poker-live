@@ -21,8 +21,6 @@ const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'H
 export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; fmt: Fmt; initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const scroller = useRef<HTMLDivElement>(null);
-  // Here rather than in the ledger, so a spectator's wait on a delay starts as the table opens.
-  const recap = useRecapOffered(view);
 
   const names = useMemo(() => {
     const m = new Map<number, string>();
@@ -60,7 +58,7 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
             ))}
           </>
         )}
-        {tab === 'ledger' && <Ledger view={view} fmt={fmt} recap={recap} />}
+        {tab === 'ledger' && <Ledger view={view} fmt={fmt} />}
         {tab === 'hands' && <Hands view={view} fmt={fmt} />}
         {tab === 'stats' && <Stats view={view} fmt={fmt} />}
       </div>
@@ -71,8 +69,8 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
 type SortKey = 'name' | 'buyIn' | 'cashOut' | 'stack' | 'net';
 const SORT_KEY = 'rsdp.ledgerSort';
 
-/** The cash ledger and settle-up. `recap` offers Copy recap (useRecapOffered). */
-function Ledger({ view, fmt, recap }: { view: TableView; fmt: Fmt; recap: boolean }) {
+/** The cash ledger, settle-up and Copy recap. */
+function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(() => {
     try {
       return JSON.parse(localStorage.getItem(SORT_KEY) ?? '') as { key: SortKey; desc: boolean };
@@ -82,6 +80,9 @@ function Ledger({ view, fmt, recap }: { view: TableView; fmt: Fmt; recap: boolea
   });
   const [settle, setSettle] = useState(false);
   const [copied, setCopied] = useState(false);
+  // A spectator on a delay waits it out from when the table opened in this browser (TablePage notes it), not from
+  // when this tab opened.
+  const recap = useRecapOffered(view);
   const [recapOpen, setRecapOpen] = useState(false);
   // The hands the Hands tab shows, loaded only once the recap is open.
   const recapHands = useAllHands(view, recap && recapOpen);
