@@ -338,6 +338,9 @@ interface Flight {
   kind: 'sweep' | 'award';
 }
 
+/** How much smaller seats get at each step when they can't be placed apart (#415). */
+const FIT_STEP = 0.03;
+
 let flightId = 0;
 
 export function Table({
@@ -459,13 +462,21 @@ export function Table({
   const longGame = wide && dealt.some((g) => ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'].includes(g));
   const topMargin = longGame ? 106 : 84;
   const podWidth = (wide ? 320 : 290) + (fourCard ? 50 : 0);
-  // The felt's side margins hold half a side seat's nameplate.
-  const sideMargin = 140 + (fourCard ? 30 : 0);
+  // The felt's side margins hold half a side seat's nameplate, so a seat at either end of the table stays in the window.
+  // Four tucked cards need more: Omaha's and Badugi's, and a stud hand's on its fourth street (#415).
+  const sideMargin = 140 + (fourCard || dealt.some((g) => ['stud', 'razz', 'stud8'].includes(g)) ? 30 : 0);
   const estW = room.w - 2 * sideMargin * k;
   const estH = room.h - (topMargin + 46) * k;
   const estPerimeter = 2 * Math.abs(estW - estH) + Math.PI * Math.min(estW, estH);
   const grownScale = Math.round(Math.max(0.72, Math.min(k, (estPerimeter * 0.92) / (players * podWidth + (n - players) * 130))) * 100) / 100;
-  const seatScale = compact ? 1 : grown ? grownScale : Math.round(Math.max(0.72, roomy) * 100) / 100;
+  // That's only an estimate (a stud hand on its fourth street is as wide as four-card Omaha's, though most of the time
+  // stud's are narrower): seats that can't then be placed apart come down a step at a time until they can (#415). The
+  // steps last while the table's games, its seating and the room it has stay the same, and they only ever go down, so
+  // the seats can't flip back and forth. Each step is measured and placed before the browser paints.
+  const fitKey = `${dealtKey}|${view.seats.map((s) => (s ? 1 : 0)).join('')}|${grownScale}|${wide}|${short}`;
+  const [fit, setFit] = useState({ key: '', steps: 0 });
+  const steps = grown && fit.key === fitKey ? fit.steps : 0;
+  const seatScale = compact ? 1 : grown ? Math.max(0.72, Math.round((grownScale - steps * FIT_STEP) * 100) / 100) : Math.round(Math.max(0.72, roomy) * 100) / 100;
   // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been (starting from their size once
   // dealt in, in every game the table deals) since the table's games or the seats' size last changed: they shrink when a
   // player folds and between hands, and the seats mustn't move then, when the cards come (#363) or when a mixed game
@@ -501,9 +512,9 @@ export function Table({
   const mine = view.me.seat;
   const placed = useRef<{ key: string; w: number; h: number; at: readonly number[] } | null>(null);
   const measured = size.w > 0;
-  const spread = useMemo(() => {
+  const placement = useMemo(() => {
     const taken = [...takenKey].map((c) => c === '1');
-    if (compact) return seatFractions(taken, offset, { clear, minGap });
+    if (compact) return { at: seatFractions(taken, offset, { clear, minGap }), fine: true, current: false };
     const was = placed.current;
     // They stay through a small change to the felt's size too (the dock or the top bar a few pixels taller mid-hand),
     // since placed afresh, a few pixels could send seats a long way. A bigger change (a banner coming or going, a new
@@ -524,13 +535,15 @@ export function Table({
       return { at, record, kept, current: b.key === current, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
     };
     let at: readonly number[];
+    let fine = true;
+    let current = false;
     try {
       // A mixed table spaced for the game on now (below) stays that way while its seats are kept: trying every game's
       // boxes first would swap it between the two spacings whenever a few pixels tipped those in or out of fitting.
       const stay = mixed ? place(sizedNow, clearNow, nowKey, sizes.join('-')) : null;
       let done = stay?.kept && stay.fine ? stay : place(sized, clear, sizedKey);
       if (mixed && !done.fine) done = stay!;
-      at = done.at;
+      ({ at, fine, current } = done);
       // Seats placed with boxes from before this size and scale (the render before they're measured again) aren't
       // kept: the first measure of the felt would otherwise keep a spacing worked out for boxes at another scale.
       if (!measured) placed.current = null;
@@ -541,8 +554,13 @@ export function Table({
       at = seatFractions(taken, offset, { clear, minGap });
       placed.current = null;
     }
-    return at;
+    return { at, fine, current: measured && current };
   }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, sizes, sizedKey, nowKey]);
+  const spread = placement.at;
+  // Seats measured at this size that still cover each other: a step smaller (see fitKey).
+  useLayoutEffect(() => {
+    if (grown && placement.current && !placement.fine && seatScale > 0.72) setFit({ key: fitKey, steps: steps + 1 });
+  }, [grown, placement, seatScale, fitKey, steps]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
