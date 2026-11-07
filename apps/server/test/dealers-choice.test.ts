@@ -1617,6 +1617,25 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     });
   }
 
+  it('counts a player leaving after this hand as gone, with their seat going to someone waiting', () => {
+    // One person waits. A player stands after this hand: their seat is offered as the hand ends, so nobody is left
+    // for the new seats, and six are at the table when a missed pick is dealt. Badugi fits.
+    const { rt, clock } = lastHand(['f']);
+    const who = chooser(rt);
+    const leaver = rt.state.seats.find((x) => x && x.playerId !== who.playerId && x.playerId !== 'host')!.playerId;
+    rt.stand(leaver, { afterHand: true });
+    rt.updateSettings('host', BIGGER);
+    const during = tableView(rt, 'a', clock.now()).choice!;
+    expect(during).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+    expect(during.comingCount).toBeUndefined();
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['f']);
+    expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ count: 6, fallback: { gameId: 'badugi' } });
+    clock.advance(25_000);
+    expect(hand(rt).input.game.id).toBe('badugi');
+  });
+
   it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
     const { rt, clock } = lastHand(['f', 'g']);
     rt.disconnect('f');

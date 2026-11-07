@@ -252,6 +252,17 @@ describe('holdBack', () => {
       expect(holdBack(bigger, { ...frozen, choice: { ...frozen.choice, comingCount: 9 } }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4', gameName: 'Pot-Limit Omaha' } });
       // With nobody waiting, Razz seats the seven.
       expect(holdBack({ ...bigger, choice: live.choice } as TableView, frozen, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
+      // As it really happens: the seat the busted bot left goes at once to someone waiting, so the count stays at seven
+      // and only the count once the change applies drops, to eight. The fallback still waits for the result.
+      const razz = { gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' };
+      const nine = { ...frozen, choice: { ...frozen.choice, comingCount: 9 } };
+      const refilled = { ...bigger, choice: { ...live.choice!, count: 7, comingCount: 8, fallback: razz } } as unknown as TableView;
+      expect(holdBack(refilled, nine, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
+      // The host saves again once the hand is over, so the change applies before the result shows: the table is held
+      // at the nine it was going to have, not the eight it has.
+      const nineSeats = parseSettings({ ...table, table: { ...table.table, maxSeats: 9 }, game: { ...table.game, dealersChoice: { enabled: true, games: [menu[1], menu[2], plo4], hands: 0, pickSeconds: 20 } } });
+      const applied = { ...live, settings: nineSeats, pendingSettings: null, choice: { ...live.choice!, count: 8, fallback: razz } } as unknown as TableView;
+      expect(holdBack(applied, nine, 0).choice).toMatchObject({ count: 9, fallback: { gameId: 'plo4' } });
       // A change that ends Dealer's choice takes no game off: the result shows no next pick.
       const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
       expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true, fallback: { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" } }));

@@ -163,8 +163,10 @@ export function heldChoice(view: TableView, before: Frozen): TableView['choice']
   const movedOn = one && was.chip !== null && !was.next && (was.deadline !== null || !samePick(live.current, was.current));
   const chip = movedOn ? nextPicker(was.chip!, before, dealt) : was.chip;
   const inHand = chip !== null && dealt.some((d) => d.seat === chip) && !events.some((e) => e.t === 'action' && e.seat === chip && e.action === 'fold');
-  // Players leaving show only with the result. Newcomers show at once.
-  const count = Math.max(was.count, live.count);
+  // Players leaving show only with the result. Newcomers show at once. A change that was waiting may have applied
+  // since (the host saved again once the hand was over): the table is then counted as it was going to be (#459).
+  const applied = !view.pendingSettings && was.comingCount !== undefined;
+  const count = Math.max(was.count, live.count, applied ? was.comingCount! : 0);
   // A pick that has come in since, for a chooser in the all-in, can only be someone picking in their place (or a
   // missed pick): it waits for the result, and so does the limit it sets. For a chooser not in it, a pick shows only
   // if they made it: anyone else's was made in their place (they left or sat out), and the server may have passed
@@ -205,7 +207,10 @@ function capOf(game: Pick): number | null {
  * pick, and while that change waits, the game a missed pick deals comes from the menu it brings (#444).
  */
 function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, was: NonNullable<TableView['choice']>, count: number) {
-  if (count === live.count) return {};
+  // Counted as the table will be once a waiting change applies (#459), held like the count: a seat a busted player
+  // left can go to someone waiting at once, so the count stays the same while this one drops.
+  const then = Math.max(was.comingCount ?? was.count, live.comingCount ?? live.count);
+  if (count === live.count && then === (live.comingCount ?? live.count)) return {};
   const cur = live.current;
   if (!cur) return { defaultIndex: was.defaultIndex, canKeep: was.canKeep, fallback: was.fallback };
   const menu = choiceOf(view.settings).games;
@@ -214,8 +219,6 @@ function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, wa
   const defaultIndex = missedPickIndex(menu, cur, count, leaving);
   const canKeep = menu.some((g) => g.gameId === cur.gameId && g.betting === cur.betting && getVariant(g.gameId).maxPlayers >= count && !leaving(g));
   const coming = comingMenu(view.settings, pending);
-  // Counted as the table will be once the change applies (#459), held like the count.
-  const then = Math.max(was.comingCount ?? was.count, live.comingCount ?? live.count);
   const g = coming ? coming[missedPickIndex(coming, cur, then)] : menu[defaultIndex];
   return { defaultIndex, canKeep, ...(g ? { fallback: { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting) } } : {}) };
 }
