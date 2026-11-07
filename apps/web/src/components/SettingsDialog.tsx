@@ -13,10 +13,15 @@ import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
 import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
-import { choiceOf, DEFAULT_MENU, MENU_STAKES, menuSeats, repeatsOf, stakesForMenu } from './settings/dealersChoice';
+import { choiceOf, DEFAULT_MENU, menuSeats, repeatsOf, stakesForGames, type StakesStart } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
+type Mode = 'one' | 'rotate' | 'choice';
+/** The games dealt in each way of choosing the game: the one game, the rotation's games, or the menu. */
+const dealtIn = (d: TableSettings, mode: Mode): readonly ChoiceGame[] =>
+  mode === 'choice' ? choiceOf(d).games : mode === 'rotate' && d.game.rotation.steps.length ? d.game.rotation.steps : [d.game];
+const levelAntes = (d: TableSettings) => d.blindSchedule.levels.map((l) => l.ante);
 const TABS: { id: Tab; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'stakes', label: 'Stakes' },
@@ -68,7 +73,10 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
 
   const rot = draft.game.rotation;
   const choice = choiceOf(draft);
-  const mode: 'one' | 'rotate' | 'choice' = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
+  const mode: Mode = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
+  // Each part of the stakes' own value (the table's, or what the host typed) and the games it was for, so a change of
+  // the games dealt works the stakes out from it, and a look at other games and back undoes itself (#414).
+  const started = useRef<StakesStart | null>(null);
   const games = draft.game.rotation.enabled && draft.game.rotation.steps.length ? draft.game.rotation.steps.map((s) => s.gameId) : [draft.game.gameId];
   // Dealer's choice keeps the table's seats, up to the menu's biggest game; smaller games are greyed out when picking (D33).
   const seatLimit = mode === 'choice' ? menuSeats(choice.games) : maxSeatsFor(games);
@@ -88,85 +96,80 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       ? `The table goes down to ${newSeats} seats. ${moving.length === 1 ? 'The player' : 'Players'} in seat${moving.length === 1 ? '' : 's'} ${moving.join(' and ').replace(/ and (?=.* and )/g, ', ')} will move to ${moving.length === 1 ? 'a free seat' : 'free seats'}${handLive ? ' when this hand ends' : ''}.`
       : '';
 
+  /**
+   * The stakes and the blind schedule for dealing `to` in place of the games dealt now (#414), with `adjust` laid on
+   * top (a standard mix's own Limit bets, say), which counts as set up by the dialog too.
+   */
+  const forGames = (d: TableSettings, to: readonly ChoiceGame[], adjust = (st: TableSettings['stakes']) => st): Pick<TableSettings, 'stakes' | 'blindSchedule'> => {
+    const { levels } = d.blindSchedule;
+    const next = stakesForGames(d.stakes, levelAntes(d), dealtIn(d, mode), to, started.current, d.blindSchedule.enabled);
+    const stakes = adjust(next.stakes);
+    started.current = { ...next.start, auto: stakes };
+    const blindSchedule = next.antes.every((a, i) => a === levels[i].ante) ? d.blindSchedule : { ...d.blindSchedule, levels: levels.map((l, i) => ({ ...l, ante: next.antes[i] })) };
+    return { stakes, blindSchedule };
+  };
+
   const pickGame = (gameId: string) => {
     const spec = getVariant(gameId);
-    setDraft((d) => {
+    const d = draft;
+    const stud = spec.forcedBets === 'ante-bring-in';
+    setDraft({
+      ...d,
+      game: { ...d.game, gameId, betting: spec.defaultBetting },
+      table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
       // Stud is meant to be played with antes; without one the pot starts with the bring-in alone.
-      const needsAnte = spec.forcedBets === 'ante-bring-in' && d.stakes.ante === 0;
-      return {
-        ...d,
-        game: { ...d.game, gameId, betting: spec.defaultBetting },
-        table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
-        stakes: {
-          ...d.stakes,
-          ...(needsAnte ? { ante: defaultStudAnte(d.stakes), anteType: 'per-player' as const } : {}),
-          ...(spec.forcedBets === 'ante-bring-in' && d.stakes.bringIn === 0 ? { bringIn: studBringIn(d.stakes.smallBet || d.stakes.bigBlind, d.stakes.centsMode) } : {}),
-        },
-      };
+      ...forGames(d, [{ gameId, betting: spec.defaultBetting }], (st) => (stud && st.ante === 0 ? { ...st, ante: defaultStudAnte(st), anteType: 'per-player' } : st)),
     });
   };
 
   /** Fills the rotation with a standard mix, one orbit per game, and sets up the stud ante and bring-in it needs. */
-  const pickMix = (mix: MixedGame) =>
-    setDraft((d) => {
-      const stud = mix.steps.some((st) => getVariant(st.gameId).forcedBets === 'ante-bring-in');
-      const first = mix.steps[0];
-      // The Limit games bet the big blind and twice it, as on a new table, so older Limit amounts don't linger.
-      const smallBet = Math.max(1, d.stakes.bigBlind);
-      const stakes = { ...d.stakes, smallBet, bigBet: smallBet * 2 };
-      return {
-        ...d,
-        game: {
-          ...d.game,
-          gameId: first.gameId,
-          betting: first.betting,
-          rotation: { enabled: true, steps: mix.steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) },
-          ...(d.game.dealersChoice ? { dealersChoice: { ...d.game.dealersChoice, enabled: false } } : {}),
-        },
-        table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
-        stakes: {
-          ...stakes,
-          // A stud table has no small blind; the hold'em and Omaha rounds need one.
-          ...(d.stakes.smallBlind === 0 && d.stakes.bigBlind > 1 ? { smallBlind: Math.floor(d.stakes.bigBlind / 2) } : {}),
-          // The ante is the stud ante: everyone posts it in the stud games.
-          ...(stud ? { ante: d.stakes.ante || defaultStudAnte(stakes), anteType: 'per-player' as const, bringIn: studBringIn(smallBet, d.stakes.centsMode) } : {}),
-        },
-      };
+  const pickMix = (mix: MixedGame) => {
+    const d = draft;
+    const stud = mix.steps.some((st) => getVariant(st.gameId).forcedBets === 'ante-bring-in');
+    const first = mix.steps[0];
+    const steps = mix.steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const }));
+    // The Limit games bet the big blind and twice it, as on a new table, so older Limit amounts don't linger, and the
+    // stud bring-in goes with them.
+    const bets = (st: TableSettings['stakes']) => {
+      const smallBet = Math.max(1, st.bigBlind);
+      return { ...st, smallBet, bigBet: smallBet * 2, ...(stud ? { bringIn: studBringIn(smallBet, st.centsMode) } : {}) };
+    };
+    setDraft({
+      ...d,
+      game: {
+        ...d.game,
+        gameId: first.gameId,
+        betting: first.betting,
+        rotation: { enabled: true, steps },
+        ...(d.game.dealersChoice ? { dealersChoice: { ...d.game.dealersChoice, enabled: false } } : {}),
+      },
+      table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
+      // The ante is the stud ante (everyone posts it in the stud games), and the hold'em and Omaha rounds need a small blind.
+      ...forGames(d, steps, bets),
     });
+  };
   const currentMix = rot.enabled ? mixedGameOf(rot.steps) : null;
   const menuBad = mode === 'choice' && (choice.games.length < 2 || repeatsOf(choice.games).length > 0);
 
   const setChoice = (patch: Partial<DealersChoiceSettings>) => setDraft((d) => ({ ...d, game: { ...d.game, dealersChoice: { ...choiceOf(d), ...patch } } }));
   /** A new menu, and the stakes its games need (Limit bets, a stud ante), as for HORSE. */
-  const setMenu = (menu: ChoiceGame[]) =>
-    setDraft((d) => ({
-      ...d,
-      game: { ...d.game, dealersChoice: { ...choiceOf(d), games: menu } },
-      stakes: stakesForMenu(d.stakes, menu, choiceOf(d).games),
-    }));
-  // The stakes before and after switching to Dealer's choice in this dialog set them up for its menu, so switching
-  // back before saving undoes that (each field the host hasn't changed since).
-  const choiceStakes = useRef<{ before: TableSettings['stakes']; after: TableSettings['stakes'] } | null>(null);
-  const setMode = (next: 'one' | 'rotate' | 'choice') => {
+  const setMenu = (menu: ChoiceGame[]) => {
+    const d = draft;
+    setDraft({ ...d, game: { ...d.game, dealersChoice: { ...choiceOf(d), games: menu } }, ...forGames(d, menu) });
+  };
+  const setMode = (next: Mode) => {
+    if (next === mode) return;
     const d = draft;
     const dc = choiceOf(d);
     const rotation = { ...d.game.rotation, enabled: next === 'rotate' };
     if (next === 'rotate' && !rotation.steps.length) rotation.steps = [{ gameId: d.game.gameId, betting: d.game.betting, length: 1, unit: 'orbits' }];
     // A new menu starts with the 8-Game games, and the stakes they need.
     const menu = next === 'choice' && dc.games.length < 2 ? DEFAULT_MENU : dc.games;
-    let stakes = d.stakes;
-    if (next === 'choice' && !dc.enabled) {
-      // The games dealt now: a stud ante the table already has (a HORSE rotation, a stud game) is kept.
-      const dealing = d.game.rotation.enabled && d.game.rotation.steps.length ? d.game.rotation.steps : [d.game];
-      stakes = stakesForMenu(d.stakes, menu, dealing);
-      choiceStakes.current = { before: d.stakes, after: stakes };
-    } else if (next !== 'choice' && dc.enabled && choiceStakes.current) {
-      const { before, after } = choiceStakes.current;
-      stakes = { ...d.stakes };
-      for (const k of MENU_STAKES) if (d.stakes[k] === after[k]) (stakes as Record<string, unknown>)[k] = before[k];
-      choiceStakes.current = null;
-    }
-    setDraft({ ...d, game: { ...d.game, rotation, dealersChoice: { ...dc, enabled: next === 'choice', games: menu } }, stakes });
+    // The stakes the new games need: a stud ante goes on with the first stud game (one the table already has, from a
+    // HORSE rotation or a stud game, is kept) and comes off with the last, and what a look at another mode set up is
+    // undone on the way back.
+    const to = next === 'choice' ? menu : next === 'rotate' ? rotation.steps : [d.game];
+    setDraft({ ...d, game: { ...d.game, rotation, dealersChoice: { ...dc, enabled: next === 'choice', games: menu } }, ...forGames(d, to) });
   };
 
   const save = () => {
@@ -513,7 +516,15 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
           </>
         )}
 
-        {tab === 'presets' && <PresetsTab draft={draft} onApply={(next) => setDraft(next)} tournament={tournament} />}
+        {tab === 'presets' && <PresetsTab
+            draft={draft}
+            onApply={(next) => {
+              // A preset is a new start: switching back afterwards doesn't undo onto the stakes from before it.
+              started.current = null;
+              setDraft(next);
+            }}
+            tournament={tournament}
+          />}
 
         {tab === 'side' && tournament && <p className="muted">Side games are for cash tables.</p>}
         {tab === 'side' && !tournament && <SideGamesTab draft={draft} cents={cents} setModifier={setModifier} />}
