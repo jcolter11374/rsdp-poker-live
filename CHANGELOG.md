@@ -47,6 +47,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: once an event is over, the bar over its tables shows only who won, not a stopped clock with the next blinds. Someone still looking at a table that broke is told it has closed and that play goes on at the other tables.
 - Seven Card Stud, Stud Hi-Lo and Razz on a computer: each player's cards sit in a row over their nameplate from the first card, instead of tucked into the nameplate until fifth street. The cards no longer jump up and every nameplate no longer narrows at fifth street, and on some screens a table that only deals stud now has bigger seats and cards.
 - Practice tables against bots, on a computer or a phone held upright: the table keeps its size. Before, in fixed-limit games such as Seven Card Stud, Razz and 2-7 Triple Draw, it got smaller as the first hand was dealt (by up to 97 pixels on a phone), and again the first time "Why did the bots play last hand?" showed under your buttons. On a phone or a touch screen that could happen in Hold'em too. The space under the table now has room for both from the start, and keeps it if a friend joins in.
+- Dealer's choice: when the host adds seats during a hand while people are on the waitlist, "If time runs out" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.
 
 ## [2026.11.07.6] - 2026-11-07
 
