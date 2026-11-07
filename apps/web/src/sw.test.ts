@@ -24,7 +24,25 @@ interface Tab {
   postMessage: ReturnType<typeof vi.fn>;
 }
 
-function worker(opts: { tabs?: { path: string; visible?: boolean }[] } = {}) {
+/** The browser's cache storage, as far as the worker uses it: named caches of keys, in the order they were put. */
+function cacheStorage() {
+  const named = new Map<string, Map<string, Response>>();
+  const cache = (entries: Map<string, Response>) => ({
+    put: async (key: string, value: Response) => void entries.set(key, value),
+    delete: async (key: string) => entries.delete(key),
+    keys: async () => [...entries.keys()],
+    match: async (key: string) => entries.get(key),
+  });
+  return {
+    named,
+    open: async (name: string) => {
+      if (!named.has(name)) named.set(name, new Map());
+      return cache(named.get(name)!);
+    },
+  };
+}
+
+function worker(opts: { tabs?: { path: string; visible?: boolean }[]; caches?: ReturnType<typeof cacheStorage> } = {}) {
   const alerts: Alert[] = [];
   const handlers = new Map<string, (event: unknown) => void>();
   const tabs: Tab[] = (opts.tabs ?? []).map((t) => ({
@@ -44,7 +62,7 @@ function worker(opts: { tabs?: { path: string; visible?: boolean }[] } = {}) {
     },
     clients: { matchAll: async () => tabs, openWindow },
   };
-  runInNewContext(SOURCE, { self, URL, Response, fetch: () => Promise.reject(new Error('offline')) });
+  runInNewContext(SOURCE, { self, URL, Response, fetch: () => Promise.reject(new Error('offline')), ...(opts.caches ? { caches: opts.caches } : {}) });
 
   /** Fires an event at the worker and waits for what it asked the browser to wait for. */
   async function fire(type: string, event: object) {
@@ -90,6 +108,21 @@ describe('a push', () => {
     await w.push({ title: 'Your turn', body: 'Friday', url: '/t/t1', tag: 'turn:t1:4:2', replaces: 'turn:t1:' });
     await w.push({ title: "You've been moved", body: 'The tournament moved you to another table.', url: '/t/tn-t2', tag: 'seat:tn:tn-t2', replaces: 'seat:tn:' });
     expect(w.alerts.filter((a) => !a.closed).map((a) => a.options.tag)).toEqual(['turn:t2:1:4', 'turn:t1:4:2', 'seat:tn:tn-t2']);
+  });
+
+  it('notes the tags of the alerts it showed, the newest 50, so an open page knows a push already gave one', async () => {
+    const caches = cacheStorage();
+    const w = worker({ caches });
+    await w.push({ title: 'Starting soon', body: 'Friday starts in 5 minutes.', url: '/tn/abc', tag: 'start:abc:1700000000000' });
+    const noted = () => [...(caches.named.get('rsdp-alerts-shown')?.keys() ?? [])];
+    expect(noted()).toEqual(['/__alert-shown/start%3Aabc%3A1700000000000']);
+    for (let i = 0; i < 60; i++) await w.push({ title: 'Your turn', url: '/t/t1', tag: `turn:t1:${i}:0` });
+    expect(noted()).toHaveLength(50);
+    expect(noted()[49]).toBe('/__alert-shown/turn%3At1%3A59%3A0');
+    // Without cache storage (an older browser), the alert still shows.
+    const bare = worker();
+    await bare.push({ title: 'Starting soon', url: '/tn/abc', tag: 'start:abc:1' });
+    expect(bare.alerts).toHaveLength(1);
   });
 
   it("still shows something for a push that isn't one of ours, and never a page of another site", async () => {

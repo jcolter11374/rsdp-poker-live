@@ -7,7 +7,9 @@
  * It also shows the alerts the server pushes to a device that turned them on
  * (a tournament starting soon, seated, moved, your turn), and opens the right
  * page when one is tapped. Each push is encrypted for this browser alone; it
- * carries only the alert's words, the page to open and a tag.
+ * carries only the alert's words, the page to open and a tag. It notes the
+ * tags of the alerts it showed (the newest 50), so an open page of the site
+ * doesn't give the same alert again later (TournamentAlerts.tsx).
  */
 const OFFLINE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RSDP Live!</title><body style="margin:0;background:#10161d;color:#e8eef4;font:16px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center">
@@ -35,6 +37,23 @@ const pageOf = (url) => {
 };
 const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 
+/** Where the tags of the alerts shown here are noted; notify.ts reads the same place. */
+const SHOWN = 'rsdp-alerts-shown';
+const SHOWN_MAX = 50;
+async function noteShown(tag) {
+  if (!tag || typeof caches === 'undefined') return;
+  try {
+    const cache = await caches.open(SHOWN);
+    const key = `/__alert-shown/${encodeURIComponent(tag)}`;
+    await cache.delete(key);
+    await cache.put(key, new Response(''));
+    const keys = await cache.keys();
+    for (const old of keys.slice(0, Math.max(0, keys.length - SHOWN_MAX))) await cache.delete(old);
+  } catch {
+    // Only a repeat alert is at stake.
+  }
+}
+
 self.addEventListener('push', (event) => {
   let alert = {};
   try {
@@ -60,6 +79,7 @@ self.addEventListener('push', (event) => {
         icon: '/icon-192.png',
         data: { url: pageOf(alert.url) },
       });
+      await noteShown(tag);
     })(),
   );
 });

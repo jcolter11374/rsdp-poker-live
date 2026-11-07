@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { TournamentListing } from '@rsdp/tournament';
-import { disableNotifications, enableNotifications, notify, pushReachedNow, syncPush, useNotifyState, usePushAvailable } from '../notify';
+import { disableNotifications, enableNotifications, notify, shownByPush, syncPush, useNotifyState, usePushAvailable } from '../notify';
 import { socket } from '../socket';
 import { tournamentClient } from './client';
 import { tournamentOfTable } from './hooks';
@@ -49,7 +49,7 @@ function loadFired(): string[] {
 
 function saveFired(keys: string[]) {
   try {
-    localStorage.setItem(FIRED_KEY, JSON.stringify(keys.slice(-FIRED_MAX)));
+    localStorage.setItem(FIRED_KEY, JSON.stringify([...new Set(keys)].slice(-FIRED_MAX)));
   } catch {
     /* ignore */
   }
@@ -100,36 +100,45 @@ export function TournamentAlerts() {
           if (!alive) return;
           list = r.tournaments;
           skew = r.serverNow - Date.now();
-          check();
+          void check();
         })
         .catch(() => {});
-    const check = () => {
-      const fired = loadFired();
-      // An event's lobby or table on screen, in this tab or another, already counts down, so its alert is held back.
-      // Without push, only alerts that went out count as fired, so one held back still comes once the player looks
-      // away. With push, the server's own Starting soon reaches this device whatever is on screen: one held back here
-      // has had its alert, and isn't shown again later.
+    /** Alerts this tab is showing now, so a check that comes meanwhile doesn't raise one twice. */
+    const showing = new Set<string>();
+    const check = async () => {
+      const fired = new Set(loadFired());
+      // An event's lobby or table on screen, in this tab or another, already counts down, so its alert is held back
+      // and comes if the player looks away before the start.
       const here = document.hidden ? null : eventOnPage(location.pathname, tournamentOfTable);
       noteOnScreen(here);
       const held = onScreenNow(loadOnScreen(), Date.now(), TAB);
       if (here) held.add(here);
-      const all = startAlertsDue(list, Date.now() + skew, new Set(fired));
-      const due = all.filter((t) => !held.has(t.id));
-      const covered = pushReachedNow() ? all.filter((t) => held.has(t.id)) : [];
-      if (!due.length && !covered.length) return;
-      for (const t of due) {
+      const all = startAlertsDue(list, Date.now() + skew, fired).filter((t) => !showing.has(startKey(t)));
+      if (!all.length) return;
+      // The server's Starting soon reaches a device with push whatever is on screen. One a push already showed here
+      // has been had, and isn't given again (the service worker notes what it showed).
+      const pushed = await shownByPush(all.map(startKey));
+      if (!alive) return;
+      if (pushed.size) saveFired([...loadFired(), ...pushed]);
+      for (const t of all) {
+        const key = startKey(t);
+        if (pushed.has(key) || held.has(t.id)) continue;
         const minutes = Math.max(1, Math.round((t.startAt! - Date.now() - skew) / 60_000));
-        // Shown even with the tab in front: the player may be on another page of the site.
-        notify('Starting soon', `${t.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, { tag: startKey(t), url: `/tn/${t.id}`, whenVisible: true });
+        showing.add(key);
+        // Shown even with the tab in front: the player may be on another page of the site. It counts as had only once
+        // it is shown: a tab that closes as it looks away never shows it, and another tab, or the next visit, gives it.
+        void notify('Starting soon', `${t.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, { tag: key, url: `/tn/${t.id}`, whenVisible: true }).then((ok) => {
+          showing.delete(key);
+          if (ok) saveFired([...loadFired(), key]);
+        });
       }
-      saveFired([...fired, ...due.map(startKey), ...covered.map(startKey)]);
     };
     // Looking away (or closing the tab) ends this tab's note at once, and is checked straight away.
-    const onVisibility = () => check();
+    const onVisibility = () => void check();
     const onHide = () => noteOnScreen(null);
     load();
     const a = setInterval(load, LIST_EVERY_MS);
-    const b = setInterval(check, CHECK_EVERY_MS);
+    const b = setInterval(() => void check(), CHECK_EVERY_MS);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onHide);
     return () => {

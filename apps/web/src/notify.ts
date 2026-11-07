@@ -66,8 +66,6 @@ function setReached(v: boolean | null) {
  * busy moment).
  */
 export const pushAvailable = () => canPush() && pushReached !== false;
-/** Whether this device is set up for push now, so the server's alerts (Starting soon among them) reach it whatever is open. */
-export const pushReachedNow = () => pushReached === true;
 export const usePushAvailable = () => useSyncExternalStore(subscribe, pushAvailable);
 
 /** Asks the browser for permission if needed, then turns alerts on, and push with them where the browser has it. */
@@ -299,12 +297,34 @@ export interface NotifyOptions {
 }
 
 /** Shows an alert if the player turned them on and this tab is in the background. */
-export function notify(title: string, body: string, opts: NotifyOptions) {
-  if (notifyState() !== 'on') return;
-  if (!document.hidden && !opts.whenVisible) return;
-  void show(title, body, opts).catch(() => {
+/**
+ * Raises an alert. Resolves to whether it is on the device now (shown, or one with its tag already was), and never
+ * rejects; it doesn't resolve if the page goes before the browser has shown it.
+ */
+export function notify(title: string, body: string, opts: NotifyOptions): Promise<boolean> {
+  if (notifyState() !== 'on') return Promise.resolve(false);
+  if (!document.hidden && !opts.whenVisible) return Promise.resolve(false);
+  return show(title, body, opts).catch(() => {
     // Some phone browsers only show notifications from an installed app.
+    return false;
   });
+}
+
+/** Where the service worker notes the tags of the alerts it showed from a push (public/sw.js). */
+const SHOWN_BY_PUSH = 'rsdp-alerts-shown';
+
+/** Which of `tags` a push has already shown on this device, whatever was open then. */
+export async function shownByPush(tags: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!tags.length || typeof caches === 'undefined') return out;
+  try {
+    if (!(await caches.has(SHOWN_BY_PUSH))) return out;
+    const cache = await caches.open(SHOWN_BY_PUSH);
+    for (const tag of tags) if (await cache.match(`/__alert-shown/${encodeURIComponent(tag)}`)) out.add(tag);
+  } catch {
+    /* none known */
+  }
+  return out;
 }
 
 /** Notes that this tab raised the alert with this tag (the newest MINE_MAX are kept). */
@@ -317,24 +337,28 @@ function remember(tag: string) {
   }
 }
 
-async function show(title: string, body: string, opts: NotifyOptions) {
+/** Shows an alert; whether it is on the device now. */
+async function show(title: string, body: string, opts: NotifyOptions): Promise<boolean> {
   // What this one replaces is out of date, even one still on the way.
   if (opts.replaces) takeDown(opts.replaces);
   const at = ++ticket;
   const stale = () => takenDownSince(opts.tag, at);
   const reg = await registration();
-  if (stale()) return;
+  if (stale()) return false;
   if (reg) {
     remember(opts.tag);
     // A push for the same thing got here first.
-    if ((await reg.getNotifications({ tag: opts.tag })).length) return;
+    if ((await reg.getNotifications({ tag: opts.tag })).length) return true;
     if (opts.replaces) for (const n of await reg.getNotifications()) if (n.tag.startsWith(opts.replaces)) n.close();
-    if (stale()) return;
+    if (stale()) return false;
     // renotify: a new alert with the tag of one still in the tray sounds again instead of replacing it silently.
     await reg.showNotification(title, { body, tag: opts.tag, icon: ICON, data: { url: opts.url ?? '/' }, renotify: true } as NotificationOptions);
     // Taken down while it was being shown: the take-down found nothing yet, so this one goes now.
-    if (stale()) for (const n of await reg.getNotifications({ tag: opts.tag })) n.close();
-    return;
+    if (stale()) {
+      for (const n of await reg.getNotifications({ tag: opts.tag })) n.close();
+      return false;
+    }
+    return true;
   }
   if (opts.replaces) closeNotifications(opts.replaces);
   const n = new Notification(title, { body, tag: opts.tag, icon: ICON, renotify: true } as NotificationOptions);
@@ -345,4 +369,5 @@ async function show(title: string, body: string, opts: NotifyOptions) {
     else window.focus();
     n.close();
   };
+  return true;
 }

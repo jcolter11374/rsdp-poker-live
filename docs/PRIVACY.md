@@ -124,7 +124,10 @@ for how it works.
   site's data in your browser removes them, and makes you a new guest.
 - With alerts on, your browser also holds its push subscription (the push
   address and keys above), and the site's background helper (a "service
-  worker") shows the alerts that arrive while the site is closed.
+  worker") shows the alerts that arrive while the site is closed. It notes in
+  your browser's cache storage which alerts it showed (their labels, such as
+  a tournament's id and start time, the newest 50), so an open page of the
+  site doesn't give you the same alert again.
 - While a page of the site is open, your browser tells the server whether
   that tab is on screen, so the server doesn't send "Your turn" (or "Your
   pick" in Dealer's choice) while you're looking at the table, or a seat

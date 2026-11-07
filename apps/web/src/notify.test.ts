@@ -195,12 +195,12 @@ describe('showing alerts', () => {
     localStorage.setItem('rsdp.notify', 'on');
     const notify = await load();
     hide(true);
-    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:3:10', url: '/t/t1', replaces: 'turn:t1:' });
-    await vi.waitFor(() => expect(b.shown).toHaveLength(1));
+    // It says once it is on the device.
+    await expect(notify.notify('Your turn', 'Friday', { tag: 'turn:t1:3:10', url: '/t/t1', replaces: 'turn:t1:' })).resolves.toBe(true);
+    expect(b.shown).toHaveLength(1);
     expect(b.shown[0]).toMatchObject({ title: 'Your turn', options: { body: 'Friday', tag: 'turn:t1:3:10', renotify: true, data: { url: '/t/t1' } } });
-    // Already showing (a push for the same turn got there first): the page doesn't show it again.
-    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:3:10', url: '/t/t1', replaces: 'turn:t1:' });
-    await new Promise((r) => setTimeout(r, 10));
+    // Already showing (a push for the same turn got there first): the page doesn't show it again, and it is on the device.
+    await expect(notify.notify('Your turn', 'Friday', { tag: 'turn:t1:3:10', url: '/t/t1', replaces: 'turn:t1:' })).resolves.toBe(true);
     expect(b.shown).toHaveLength(1);
     // The next turn replaces it.
     notify.notify('Your turn', 'Friday', { tag: 'turn:t1:4:2', url: '/t/t1', replaces: 'turn:t1:' });
@@ -232,11 +232,11 @@ describe('showing alerts', () => {
     release();
     await vi.waitFor(() => expect(b.shown).toHaveLength(1));
     await vi.waitFor(() => expect(b.shown[0].closed).toBe(true));
-    // Taken down before the show even began: never shown.
+    // Taken down before the show even began: never shown, and it says so.
     b.reg.showNotification = show;
-    notify.notify('Your turn', 'Friday', { tag: 'turn:t1:4:2', url: '/t/t1', replaces: 'turn:t1:' });
+    const late = notify.notify('Your turn', 'Friday', { tag: 'turn:t1:4:2', url: '/t/t1', replaces: 'turn:t1:' });
     notify.closeNotifications('turn:t1:');
-    await new Promise((r) => setTimeout(r, 10));
+    await expect(late).resolves.toBe(false);
     expect(b.shown).toHaveLength(1);
     // A later turn shows as usual, and another table's take-down leaves it be.
     notify.notify('Your turn', 'Friday', { tag: 'turn:t1:5:1', url: '/t/t1', replaces: 'turn:t1:' });
@@ -244,6 +244,16 @@ describe('showing alerts', () => {
     await vi.waitFor(() => expect(b.shown).toHaveLength(2));
     await new Promise((r) => setTimeout(r, 10));
     expect(b.shown[1].closed).toBe(false);
+  });
+
+  it('knows which alerts a push already showed on this device, from what the service worker noted', async () => {
+    fakeBrowser({ permission: 'granted' });
+    const notify = await load();
+    // No note kept yet (or a browser without cache storage): none known.
+    expect(await notify.shownByPush(['start:tn:1'])).toEqual(new Set());
+    const kept = new Set(['/__alert-shown/start%3Atn%3A1']);
+    vi.stubGlobal('caches', { has: async (name: string) => name === 'rsdp-alerts-shown', open: async () => ({ match: async (key: string) => (kept.has(key) ? new Response('') : undefined) }) });
+    expect(await notify.shownByPush(['start:tn:1', 'start:tn:2'])).toEqual(new Set(['start:tn:1']));
   });
 
   it("coming back to the tab takes down its own alerts and the ones for the page on screen, not another table's", async () => {
