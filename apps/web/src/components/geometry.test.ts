@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apart, besideBet, clearSideBands, fitHand, fitMiddle, handRoom, inFront, placeSeats, seatFractions, seatsApart, spreadByBoxes, stadiumLength, stadiumPoint, type Extent } from './geometry';
+import { apart, besideBet, clearSideBands, FELT_SLACK, fitHand, fitMiddle, handRoom, inFront, keepPlaced, placeSeats, seatFractions, seatsApart, spreadByBoxes, stadiumLength, stadiumPoint, type Extent } from './geometry';
 
 const seats = (n: number, taken: number[]) => Array.from({ length: n }, (_, i) => taken.includes(i));
 
@@ -322,6 +322,27 @@ describe('handRoom and fitHand (#304: your cards covering a neighbour on a phone
     expect(fitHand(4, 20, natural)!.cw).toBe(30);
   });
 });
+
+describe('keepPlaced (#410: seats kept through a small change to the felt)', () => {
+  const was = { key: '2-4|0|0|111100000|0', w: 646, h: 402 };
+  it('keeps them through a change of a few pixels, and the 17px #410 measured', () => {
+    expect(keepPlaced(was, was.key, 646, 402)).toBe(true);
+    expect(keepPlaced(was, was.key, 646, 396)).toBe(true);
+    expect(keepPlaced(was, was.key, 646, 385)).toBe(true);
+    expect(keepPlaced(was, was.key, 640, 410)).toBe(true);
+  });
+  it('keeps them through 20px on a small felt, where that is more than 5% (a laptop window with its browser bars)', () => {
+    const small = { ...was, h: 320 };
+    expect(keepPlaced(small, was.key, 646, 303)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 300)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 299)).toBe(false);
+  });
+  it('places them afresh after a bigger change, a new key, or before anything was placed or measured', () => {
+    expect(keepPlaced(was, was.key, 646, Math.floor(402 * (1 - FELT_SLACK)) - 1)).toBe(false);
+    expect(keepPlaced(was, was.key, 700, 402)).toBe(false);
+    expect(keepPlaced(was, '2-3-4-5-6-7|0|0|111100000|0', 646, 402)).toBe(false);
+    expect(keepPlaced(null, was.key, 646, 402)).toBe(false);
+    expect(keepPlaced({ ...was, w: 0, h: 0 }, was.key, 0, 0)).toBe(false);
 
 describe('fitMiddle', () => {
   const centre = { x: 500, y: 200 };
