@@ -44,7 +44,16 @@ describe('settingsNotices', () => {
     expect(settingsNotices(seeing(120), seeing(0), 'Ann', false)[0].loud).toBe(true);
     expect(settingsNotices(seeing(0), seeing(120), 'Ann', false)[0].loud).toBe(false);
     const plain = (d: number) => cash((s) => (s.spectators.delaySeconds = d));
-    expect(settingsNotices(plain(120), plain(0), 'Ann', false)).toEqual([{ text: 'Ann set spectators to watch live, with no delay (it was 2 minutes behind).', loud: false }]);
+    expect(settingsNotices(plain(120), plain(0), 'Ann', false)).toEqual([{ text: 'Ann set spectators to watch live, with no delay from the next hand (it was 2 minutes behind).', loud: false }]);
+  });
+
+  it('words a new delay the same mid-hand or between hands, since the loud copy reaches chat at once (#435)', () => {
+    const seeing = (d: number) => cash((s) => ((s.spectators.seeAllCards = true), (s.spectators.delaySeconds = d)));
+    const between = settingsNotices(seeing(120), seeing(30), 'Ann', false);
+    expect(between).toEqual([{ text: '⚠️ Ann set spectators to watch 30 seconds behind the table from the next hand (it was 2 minutes behind). They see every hole card.', loud: true }]);
+    expect(settingsNotices(seeing(120), seeing(30), 'Ann', true)).toEqual(between);
+    const plain = (d: number) => cash((s) => (s.spectators.delaySeconds = d));
+    expect(settingsNotices(plain(0), plain(60), 'Ann', true)).toEqual(settingsNotices(plain(0), plain(60), 'Ann', false));
   });
 
   it('never lets a change go by silently', () => {

@@ -1874,11 +1874,12 @@ export function createApp(deps: AppDeps = {}) {
           const kind = String(input?.kind ?? '') as GestureKind;
           if (!GESTURES.includes(kind)) throw new ActionError('unknown gesture');
           const to = String(input?.to ?? '');
-          rt.checkGesture(me, to);
+          // Counted before the table is asked, refused or not, so who may be thrown at can't be asked without limit (#435).
           const now = clock.now();
           const recent = (gestureTimes.get(me) ?? []).filter((t) => now - t < GESTURE_WINDOW_MS);
           if (recent.length >= GESTURE_BURST) throw new ActionError('easy there: a few seconds between gestures');
           gestureTimes.set(me, [...recent, now]);
+          rt.checkGesture(me, to);
           for (const s of watchers.get(rt.state.id) ?? []) s.emit('table:gesture', { from: me, to, kind, at: now });
         },
         log,
