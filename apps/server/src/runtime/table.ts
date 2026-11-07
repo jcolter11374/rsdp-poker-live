@@ -2638,57 +2638,70 @@ export class TableRuntime {
 
   /**
    * Mixed games: the game the rotation is on, how many more hands of it there are, and the game after it, for the
-   * table view (#373). Later steps that play the same game count as more of it. Null at a tournament, without a
-   * rotation, or when every step plays the same game. Changes nothing.
+   * table view (#373). Later steps that play the same game count as more of it. A change to the rotation made during
+   * a hand starts it afresh at the next deal, so that is the one counted. Null at a tournament, without a rotation, or
+   * when every step plays the same game. Changes nothing.
    */
   rotationProgress(): RotationView | null {
     const s = this.state;
-    const rot = s.settings.game.rotation;
-    if (this.isTournament || !rot.enabled || !rot.steps.length) return null;
-    const at = s.rotation.step % rot.steps.length;
+    if (this.isTournament) return null;
+    const pending = s.pendingSettings ? applyAtNextHand(s.settings, s.pendingSettings).settings.game.rotation : null;
+    const fresh = !!pending && JSON.stringify(pending) !== JSON.stringify(s.settings.game.rotation);
+    const rot = fresh ? pending! : s.settings.game.rotation;
+    const r: RotationState = fresh ? { step: 0, hands: 0, orbits: 0, anchor: null } : s.rotation;
+    if (!rot.enabled || !rot.steps.length) return null;
+    const at = r.step % rot.steps.length;
     const step = rot.steps[at];
     const stepAt = (i: number) => rot.steps[(at + i) % rot.steps.length];
     let ahead = 1;
     while (ahead < rot.steps.length && stepAt(ahead).gameId === step.gameId && stepAt(ahead).betting === step.betting) ahead++;
     if (ahead >= rot.steps.length) return null;
     const next = stepAt(ahead);
-    const players = this.dealCandidates().length;
-    let left = this.handsLeftInStep(players);
-    for (let i = 1; i < ahead && left !== null; i++) left += stepAt(i).unit === 'hands' ? stepAt(i).length : stepAt(i).length * players;
     return {
       gameId: step.gameId,
       betting: step.betting,
       gameName: gameTitle(step.gameId, step.betting),
-      dealt: s.rotation.hands,
-      handsLeft: left,
+      dealt: r.hands,
+      handsLeft: this.handsLeftInGame(rot, { ...r, step: at }, ahead),
       next: { gameId: next.gameId, betting: next.betting, gameName: gameTitle(next.gameId, next.betting) },
     };
   }
 
   /**
-   * Hands of the rotation's current step still to deal. A step counted in hands has its count. One counted in orbits
-   * is played forward with the forced-bet planner from the button as it stands, with the players who would be dealt
-   * in now, the way the deal moves it, until the step ends or its orbit comes round; any orbits after that are a hand
-   * for each player. Nobody coming or going is assumed. Null with fewer than two players to deal to.
+   * Hands still to deal before the rotation moves to another game: the rest of step `r.step` and of the `steps - 1`
+   * steps after it, which play the same game. A step counted in hands has its count. Orbits are played forward with
+   * the forced-bet planner from the button as it stands, with the players who would be dealt in now, the way the deal
+   * moves it. A seat that has just emptied can make the button stand on it or skip a seat, but only in the first two
+   * hands; once those are past, each orbit still to come is a hand for each player. Nobody coming or going is assumed.
+   * Null with fewer than two players to deal to.
    */
-  private handsLeftInStep(players: number): number | null {
+  private handsLeftInGame(rot: RotationSettings, r: RotationState, steps: number): number | null {
     const s = this.state;
-    const rot = s.settings.game.rotation;
-    const r = s.rotation;
-    const step = rot.steps[r.step % rot.steps.length];
-    if (step.unit === 'hands') return Math.max(0, step.length - r.hands);
+    const stepAt = (i: number) => rot.steps[(r.step + i) % rot.steps.length];
+    const players = this.dealCandidates().length;
     if (players < 2) return null;
+    /** The hands of steps `from` to the last of this game, played from their start. */
+    const rest = (from: number) => {
+      let n = 0;
+      for (let i = from; i < steps; i++) n += stepAt(i).unit === 'hands' ? stepAt(i).length : stepAt(i).length * players;
+      return n;
+    };
+    /** The hands of step `i` still to deal, its progress being `st`, and whole orbits left. */
+    const left = (st: RotationState, i: number) => Math.max(0, stepAt(i).length - (stepAt(i).unit === 'hands' ? st.hands : st.orbits)) * (stepAt(i).unit === 'hands' ? 1 : players);
+    /** Steps `from` on are all counted in hands, so the button doesn't matter. */
+    const handsOnly = (from: number) => Array.from({ length: steps - from }, (_, k) => stepAt(from + k)).every((x) => x.unit === 'hands');
+    if (handsOnly(0)) return left(r, 0) + rest(1);
     // The orbit starts with the next hand (a new table, a reshuffle, or a smaller table): whole orbits are left.
-    if (!s.positions || r.anchor === null) return Math.max(0, step.length - r.orbits) * players;
+    if (!s.positions || r.anchor === null) return left(r, 0) + rest(1);
     const seats = this.plannerSeatsOf(this.dealCandidates());
     // As the deal does: when nobody has played yet, everyone is dealt in free.
     if (seats.filter((x) => !x.isNew).length < 2) for (const x of seats) x.isNew = false;
-    const game = variants.get(step.gameId).spec;
     let positions = { ...s.positions };
     let state = { ...r };
+    let i = 0;
     const planNext = () =>
       planForcedBets({
-        game,
+        game: variants.get(stepAt(i).gameId).spec,
         stakes: s.settings.stakes,
         maxSeats: s.seats.length,
         seats,
@@ -2699,7 +2712,8 @@ export class TableRuntime {
         straddles: 'off',
         bombPot: null,
       });
-    for (let count = 0; count <= players + 1; count++) {
+    // Enough for the first two hands, then an orbit that may pass every seat of the table, twice over.
+    for (let count = 0; count < 3 * (s.seats.length + 2); count++) {
       let plan = planNext();
       // As the deal does: a hand the usual rules would deal to fewer than two is dealt to everyone, free.
       if (plan.dealtIn.length < 2) {
@@ -2707,11 +2721,18 @@ export class TableRuntime {
         plan = planNext();
       }
       if (plan.dealtIn.length < 2) return null;
+      const settled = count >= 2;
       const moved = nextRotation(rot, state, positions.button, plan.button, s.seats.length);
-      if (moved.switched) return count;
-      // This hand comes round to the orbit's first seat and plays on: then whole orbits are left, ending with the
-      // hand that comes round again.
-      if (moved.state.orbits > state.orbits) return count + Math.max(0, step.length - moved.state.orbits) * players;
+      if (moved.switched) {
+        // This hand starts the next step: another game's, or more of this one.
+        if (i + 1 >= steps) return count;
+        i++;
+        if (settled || handsOnly(i)) return count + rest(i);
+      } else if (stepAt(i).unit === 'hands' ? settled || handsOnly(i) : settled && moved.state.orbits > state.orbits) {
+        // From this hand on, whole orbits (or the step's own count of hands) are left: an orbit ends with the hand
+        // that comes round to its first seat again.
+        return count + left(moved.state, i) + rest(i + 1);
+      }
       state = { ...moved.state, hands: moved.state.hands + 1 };
       positions = { button: plan.button, smallBlind: plan.smallBlindSeat, bigBlind: plan.bigBlindSeat };
       for (const x of seats) {

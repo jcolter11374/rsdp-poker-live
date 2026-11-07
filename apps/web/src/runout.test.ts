@@ -46,7 +46,7 @@ function finished(): TableView {
 
 /** The table just before the runout. */
 const before_ = (): Frozen => before();
-const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null });
+const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null, rotation: null });
 
 describe('holdBack', () => {
   it('shows no runout cards before the first step, and keeps the result back', () => {
@@ -79,6 +79,13 @@ describe('holdBack', () => {
     expect(v.seats[0]).toMatchObject({ playerId: 'a', sittingOut: false, sitOutReason: null, stack: 0, allIn: true });
     expect(v.seats[1]).toMatchObject({ playerId: 'b', stack: 20 });
   });
+
+  it("keeps a game rotation's count as it was: one player fewer in the orbit would tell who busted", () => {
+    const razz = (handsLeft: number) => ({ gameId: 'razz', betting: 'fixed-limit' as const, gameName: 'Razz', dealt: 2, handsLeft, next: { gameId: 'stud', betting: 'fixed-limit' as const, gameName: 'Seven Card Stud' } });
+    const done = { ...finished(), rotation: razz(1) };
+    const v = holdBack(done, { ...before(), rotation: razz(2) }, 0);
+    expect(v.rotation?.handsLeft).toBe(2);
+  });
 });
 
 /** Three-handed tournament hand: seat 1 is all in before the flop, loses and is knocked out. */
@@ -108,7 +115,7 @@ describe('a player knocked out (#308)', () => {
       { card: 'Kd', up: false },
     ]);
     // Their cards during the runout, too.
-    const v = holdBack(after, { logCut: 0, seats: knockout().before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null }, 0);
+    const v = holdBack(after, { logCut: 0, seats: knockout().before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null }, 0);
     expect(v.seats[1]!.cards.map((c) => c.card)).toEqual(['Kc', 'Kd']);
   });
 
@@ -132,7 +139,7 @@ describe('a player knocked out (#308)', () => {
 
   it('puts a face-down card on the board while the last card of one run waits', () => {
     const { before, after } = knockout();
-    const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null };
+    const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null };
     expect(holdBack(after, frozen, 1).hand!.comingNext).toBeUndefined();
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
     // Run it twice deals at its own pace, without the wait.
@@ -172,7 +179,7 @@ function allInWith(boardCards: number, options: Parameters<typeof start>[0]['opt
   return s;
 }
 
-const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null });
+const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null, rotation: null });
 
 describe('run it twice, street by street (#372)', () => {
   for (const boards of [1, 2] as const) {

@@ -24,7 +24,7 @@ _Hands left before the game changes_
 
 ### New
 
-- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz". When the new game starts, a banner on the table says so for a few seconds. In mixed-game tournaments the bar counts down to the next game instead ("Razz next, in 3:20"), and a banner marks each new level. (Suggested by John.)
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
 
 ### Fixed and changed
 

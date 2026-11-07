@@ -41,6 +41,18 @@ describe('nextGame: the countdown to the next game in a mixed event (#305)', () 
     expect(nextGameText(next!)).toBe('LO8 next hand');
   });
 
+  it("doesn't call the game that just ended the next one when this page's clock runs a moment behind (#305 review)", () => {
+    // A hand of level 2 (Omaha Hi-Lo) is on the table, but this page's clock still reads 0.7s before level 2.
+    const { s, now } = event(HORSE, 10 * MIN - 700);
+    expect(nextGame(s, now, { gameId: 'plo8', betting: L })).toEqual({ gameId: 'razz', betting: L, inMs: 10 * MIN });
+    // Further from the boundary, the hand on the table is the earlier level's, and the new game starts next hand.
+    const early = event(HORSE, 10 * MIN - 20_000);
+    expect(nextGame(early.s, early.now, { gameId: 'nlhe', betting: L })).toEqual({ gameId: 'plo8', betting: L, inMs: 20_000 });
+    // Paused just before the boundary, with the next level's hand already dealt: the clock stands still, read from the level.
+    const paused = event(HORSE, 10 * MIN - 700, 'paused');
+    expect(nextGame(paused.s, paused.now + 5 * MIN, { gameId: 'plo8', betting: L })?.inMs).toBe(10 * MIN);
+  });
+
   it('skips levels that play the same game, adding up their time', () => {
     const { s, now } = event({ games: ['nlhe', 'nlhe', 'plo4'], gameBetting: ['no-limit', 'no-limit', 'pot-limit'] }, 4 * MIN);
     expect(nextGameText(nextGame(s, now, { gameId: 'nlhe', betting: 'no-limit' })!)).toBe('PLO in 16:00');

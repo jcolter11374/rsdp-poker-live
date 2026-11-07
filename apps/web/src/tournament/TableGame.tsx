@@ -4,15 +4,19 @@ import { stakesLabel, type Fmt } from '../format';
 import { familyOf, GameLine, usualBetting } from '../components/table/GameLine';
 import { gameName } from '../components/table/gameChange';
 import { levelGameNow, levelNow, levelStakes, nextGame, nextGameText } from './gameClock';
-import { useNow, useTournament } from './hooks';
+import { useHeld, useNow, useTournament } from './hooks';
 
 /**
  * The top bar at a tournament table (#305): the game first, in big type, then in a mixed game how long until the
- * next one ("Razz next, in 3:20"), then its stakes, the level and the table in small type.
+ * next one ("Razz next, in 3:20"), then its stakes, the level and the table in small type. While an all-in runout is
+ * dealt here (`holding`) it keeps the tournament as it was, as the strip under it does: an event that ends with this
+ * hand would otherwise lose its level and countdown before the cards show who won.
  */
-export function TournamentGameLine({ view, fmt, portrait }: { view: TableView; fmt: Fmt; portrait: boolean }) {
-  const { state, skew } = useTournament(view.tournamentId!);
-  const now = useNow(1000) + skew;
+export function TournamentGameLine({ view, fmt, portrait, narrow, holding }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; holding: boolean }) {
+  const { state: latest, skew } = useTournament(view.tournamentId!);
+  const state = useHeld(latest, holding);
+  // The strip's clock ticks every 500ms too, on the same timer, so the two countdowns turn over together.
+  const now = useNow(500) + skew;
   const hand = view.hand;
   // The hand on the felt says what is being played; before the first one, the clock says what will be.
   const fromClock = !hand && state ? levelGameNow(state, now) : null;
@@ -28,9 +32,11 @@ export function TournamentGameLine({ view, fmt, portrait }: { view: TableView; f
   return (
     <GameLine
       portrait={portrait}
+      narrow={narrow}
       game={game ? gameName(game.gameId, game.betting) : null}
       chip={next ? { full: nextGameText(next, 'full'), short: nextGameText(next, 'short') } : null}
-      more={[stakes, level ? `Level ${level.number}` : '', table]}
+      // On a break the stakes are still the last hand's, so the bar says Break rather than the coming level's number.
+      more={[stakes, level ? (level.onBreak ? 'Break' : `Level ${level.number}`) : '', table]}
       flags={view.paused && <b className="game-flag paused"> · Paused</b>}
     />
   );

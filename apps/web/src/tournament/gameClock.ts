@@ -22,6 +22,9 @@ function levelBefore(rows: StructureRow[], rowIndex: number): number {
   return -1;
 }
 
+/** How far behind the server's clock this page's may be. */
+const CLOCK_SLACK_MS = 3000;
+
 export interface NextGame extends GameStep {
   /** Running time until it starts on the tournament clock, or null when it starts with the next hand. */
   inMs: number | null;
@@ -36,7 +39,15 @@ export interface NextGame extends GameStep {
 export function nextGame(s: TournamentState, now: number, playing: GameStep | null): NextGame | null {
   if (s.status !== 'running' && s.status !== 'paused') return null;
   const rows = s.settings.structure;
-  const p = clockAt(rows, clockElapsed(s, now));
+  let p = clockAt(rows, clockElapsed(s, now));
+  // This page's clock can run a moment behind the server's: it ticks every half second, and its offset from the
+  // server's is an estimate. A hand in the next level's game, dealt in the last moments of this one by this clock,
+  // was really dealt in the next level, so read the clock from there (rather than calling the game that just ended
+  // the next one).
+  const ahead = rows[p.rowIndex + 1];
+  if (playing && !p.onBreak && p.msLeft !== null && p.msLeft <= CLOCK_SLACK_MS && ahead?.kind === 'level' && !sameGame(rowGame(s, p.rowIndex), playing) && sameGame(rowGame(s, p.rowIndex + 1), playing)) {
+    p = clockAt(rows, clockElapsed(s, now) + p.msLeft);
+  }
   const level = rowGame(s, p.rowIndex);
   // On a break no hands are dealt: until one is, the game is the last level's.
   const last = p.onBreak ? levelBefore(rows, p.rowIndex) : p.rowIndex;

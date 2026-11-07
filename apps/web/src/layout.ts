@@ -16,15 +16,20 @@ export function usePortrait() {
 /** Desktop windows at least this wide have room for chat beside the action bar, so the table drops its side column. */
 export const WIDE_MIN = 1440;
 
-/** The wide desktop layout: chat in the bottom-left corner, the records behind the top bar's Log button. */
-export function useWide(portrait: boolean) {
-  const query = `(min-width: ${WIDE_MIN}px)`;
-  const [wide, setWide] = useState(() => matchMedia(query).matches);
+/** True while the window is at least `px` wide. */
+export function useMinWidth(px: number) {
+  const query = `(min-width: ${px}px)`;
+  const [match, setMatch] = useState(() => matchMedia(query).matches);
   useEffect(() => {
     const mq = matchMedia(query);
-    const onChange = () => setWide(mq.matches);
+    const onChange = () => setMatch(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, [query]);
-  return wide && !portrait;
+  return match;
+}
+
+/** The wide desktop layout: chat in the bottom-left corner, the records behind the top bar's Log button. */
+export function useWide(portrait: boolean) {
+  return useMinWidth(WIDE_MIN) && !portrait;
 }

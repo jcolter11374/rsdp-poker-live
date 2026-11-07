@@ -6,7 +6,7 @@ import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
-import { usePortrait, useWide } from './layout';
+import { useMinWidth, usePortrait, useWide } from './layout';
 import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
@@ -141,6 +141,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
+  // Below this the top bar's count of hands left, or time to the next game, takes its short wording (#373).
+  const narrowBar = !useMinWidth(1280);
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
@@ -504,9 +506,9 @@ export function TablePage({ tableId }: { tableId: string }) {
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
             At a tournament the strip under the bar names the event, so the bar just says which table. */}
         {view.tournamentId ? (
-          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} />
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} holding={view !== live} />
         ) : view.rotation ? (
-          <CashGameLine view={view} fmt={fmt} portrait={portrait} levelText={levelText} />
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} levelText={levelText} />
         ) : (
           <span className="stakes">
             <b>{view.name}</b>

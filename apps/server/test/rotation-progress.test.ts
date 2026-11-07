@@ -191,6 +191,75 @@ describe('hands left before the game changes (#373)', () => {
     expect(after).toBeLessThan(before);
   });
 
+  it('stays right after a player sits out, in steps longer than an orbit and steps followed by the same game (#373 review)', () => {
+    const rotations = [
+      [
+        { gameId: 'nlhe', betting: 'fixed-limit' as const, length: 2, unit: 'orbits' as const },
+        { gameId: 'stud', betting: 'fixed-limit' as const, length: 1, unit: 'orbits' as const },
+      ],
+      [
+        { gameId: 'plo8', betting: 'fixed-limit' as const, length: 1, unit: 'orbits' as const },
+        { gameId: 'plo8', betting: 'fixed-limit' as const, length: 3, unit: 'orbits' as const },
+        { gameId: 'plo4', betting: 'pot-limit' as const, length: 1, unit: 'orbits' as const },
+      ],
+      [
+        { gameId: 'nlhe', betting: 'no-limit' as const, length: 2, unit: 'hands' as const },
+        { gameId: 'nlhe', betting: 'no-limit' as const, length: 1, unit: 'orbits' as const },
+        { gameId: 'razz', betting: 'fixed-limit' as const, length: 1, unit: 'orbits' as const },
+      ],
+    ];
+    let checked = 0;
+    for (const [r, steps] of rotations.entries()) {
+      for (let before = 0; before < 6; before++) {
+        for (const out of ['a', 'b', 'c']) {
+          const { rt, clock } = table((s) => {
+            s.table.maxSeats = 6;
+            s.game.rotation = { enabled: true, steps };
+          }, 10 * r + before + 1);
+          seat(rt, 5);
+          rt.start('host');
+          play(rt, clock, before);
+          // Sits out from the next hand on; nobody else comes or goes.
+          rt.sitOut(out, true);
+          checked += checkCounts(play(rt, clock, 24));
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(500);
+  });
+
+  it('still counts when the button and both blinds sit out in one hand, so the button has many seats to pass', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const { rt, clock } = table((s) => (s.game.rotation = { enabled: true, steps: horse('orbits') }), seed);
+      seat(rt, [0, 1, 2, 3, 5, 6, 7]);
+      rt.start('host');
+      const p = rt.state.positions!;
+      for (const at of [p.button, p.smallBlind, p.bigBlind]) {
+        const id = at === null ? null : rt.state.seats[at]?.playerId;
+        if (id) rt.sitOut(id, true);
+      }
+      expect(tableView(rt, 'host', clock.now()).rotation?.handsLeft).not.toBeNull();
+      expect(checkCounts(play(rt, clock, 20))).toBeGreaterThan(10);
+    }
+  });
+
+  it('counts a rotation changed during a hand from its start, as the next deal begins it', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 6;
+      s.game.rotation = { enabled: true, steps: horse('orbits') };
+    });
+    seat(rt, 4);
+    rt.start('host');
+    rt.updateSettings('host', { game: { rotation: { enabled: true, steps: eightGame('orbits') } } });
+    // 2-7 Triple Draw comes next, for a whole orbit of four, though a hand of Limit Hold'em is on the table.
+    expect(tableView(rt, 'a', clock.now()).rotation).toMatchObject({ gameId: 'td27', dealt: 0, handsLeft: 4, next: { gameId: 'nlhe', betting: 'fixed-limit' } });
+    checkDown(rt);
+    clock.advance(10_000);
+    expect(tableView(rt, 'a', clock.now()).hand?.gameId).toBe('td27');
+    rt.updateSettings('host', { game: { rotation: { enabled: false, steps: eightGame('orbits') } } });
+    expect(tableView(rt, 'a', clock.now()).rotation).toBeNull();
+  });
+
   it('has nothing to say without a rotation, with one game in it, or with too few players', () => {
     const plain = table(() => {});
     seat(plain.rt, 3);
