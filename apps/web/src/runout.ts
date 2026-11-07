@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { HIDDEN_CARD, RUNOUT_SETTLE_MS, runoutSteps, runoutWaits, type HandEvent } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { getVariant } from '@rsdp/engine/variants';
-import { choiceOf } from './components/settings/dealersChoice';
+import { choiceOf, comingSettings } from './components/settings/dealersChoice';
 
 interface Reveal {
   handNumber: number;
@@ -196,7 +196,8 @@ function capOf(game: Pick): number | null {
 
 /**
  * What a missed pick deals, and whether "Keep playing" shows, for the held count: from the server's they would tell
- * a chooser looking at the panel that someone busted. As the server works them out (DealersChoice.defaultIndex).
+ * a chooser looking at the panel that someone busted. As the server works them out (DealersChoice.defaultIndex),
+ * a game the host's waiting change takes off the menu included: it is neither kept nor dealt by a missed pick.
  */
 function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, was: NonNullable<TableView['choice']>, count: number) {
   if (count === live.count) return {};
@@ -205,10 +206,24 @@ function fallbackFor(view: TableView, live: NonNullable<TableView['choice']>, wa
   const menu = choiceOf(view.settings).games;
   const seats = (g: { gameId: string }) => getVariant(g.gameId).maxPlayers;
   const fits = (g: { gameId: string }) => seats(g) >= count;
-  const kept = menu.findIndex((g) => g.gameId === cur.gameId && g.betting === cur.betting && fits(g));
+  const leaving = leavingGames(view);
+  const kept = menu.findIndex((g) => g.gameId === cur.gameId && g.betting === cur.betting && fits(g) && !leaving(g));
+  const staying = menu.findIndex((g) => fits(g) && !leaving(g));
   const first = menu.findIndex(fits);
-  const defaultIndex = kept >= 0 ? kept : first >= 0 ? first : menu.reduce((best, g, i) => (seats(g) > seats(menu[best]) ? i : best), 0);
+  const defaultIndex = kept >= 0 ? kept : staying >= 0 ? staying : first >= 0 ? first : menu.reduce((best, g, i) => (seats(g) > seats(menu[best]) ? i : best), 0);
   return { defaultIndex, canKeep: kept >= 0 };
+}
+
+/**
+ * Whether the host's change waiting for the next hand takes a game off the Dealer's choice menu (the server's
+ * DealersChoice.leaving). A change that ends Dealer's choice takes none off: there is no next pick then.
+ */
+function leavingGames(view: TableView): (g: { gameId: string; betting: string }) => boolean {
+  if (!view.pendingSettings) return () => false;
+  const coming = comingSettings(view.settings, view.pendingSettings);
+  const dc = coming.game.dealersChoice;
+  const menu = dc?.enabled && coming.table.mode === 'cash' && !coming.game.rotation.enabled && dc.games.length >= 2 ? dc.games : null;
+  return (g) => !!menu && !menu.some((x) => x.gameId === g.gameId && x.betting === g.betting);
 }
 
 type Pick = NonNullable<TableView['choice']>['current'];
