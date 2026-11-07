@@ -29,6 +29,7 @@ _Dealer's choice_
 ### Fixed and changed
 
 - Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (Paused, or a tournament level's clock). When the line doesn't fit, the table's name is shortened with "…" first; point at the line to see all of it.
 
 ## [2026.11.07] - 2026-11-07
 
