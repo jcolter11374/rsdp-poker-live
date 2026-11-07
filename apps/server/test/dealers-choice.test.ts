@@ -2042,6 +2042,48 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     });
   }
 
+  for (const sw of [
+    { holds: 'a seat request', join: false },
+    { holds: "a waitlist offer that needs the host's OK", join: true },
+  ]) {
+    it(`counts a player who stands up during the runout and holds only ${sw.holds} as gone (#459, #453)`, () => {
+      // As above, but the host approves newcomers and F, G and H may approve seats. A stands up during the runout and
+      // asks for seat 6, which waits for the host. At the deal A's old seat and the new one go to F and G: seven, and
+      // 6-Card Omaha.
+      let checked = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const { rt, clock } = table((s) => {
+          s.table.maxSeats = 7;
+          s.seating.waitlist = true;
+          s.play.runItTwice = 'off';
+          s.game.dealersChoice!.hands = 1;
+        }, seeded(seed));
+        seat(rt, 6);
+        rt.updateSettings('host', { seating: { requireApproval: true } });
+        for (const id of ['f', 'g', 'h']) rt.setCoHost('host', id, ['approve']);
+        rt.start('host');
+        pick(rt, 'nlhe');
+        rt.updateSettings('host', {
+          table: { maxSeats: 8 },
+          game: { dealersChoice: { games: [{ gameId: 'plo6', betting: 'pot-limit' }, { gameId: 'plo5', betting: 'pot-limit' }] } },
+        });
+        if (!allInRunout(rt, 'a')) continue;
+        checked++;
+        rt.stand('a');
+        if (sw.join) rt.joinWaitlist('a', { name: 'A', stack: 1000 });
+        else rt.requestSeat('a', { seat: 6, name: 'A', stack: 1000 });
+        expect(rt.state.offers!.map((o) => o.playerId)).toEqual(sw.join ? ['a'] : []);
+        expect(rt.state.requests.map((r) => r.playerId)).toEqual(sw.join ? [] : ['a']);
+        for (const id of ['f', 'g', 'h']) rt.joinWaitlist(id, { name: id.toUpperCase(), stack: 1000 });
+        expect(tableView(rt, 'b', clock.now()).choice).toMatchObject({ fallback: { gameId: 'plo6' } });
+        expect(toPickClock(rt, clock)).toBe(7);
+        clock.advance(25_000);
+        expect(hand(rt).input.game.id).toBe('plo6');
+      }
+      expect(checked).toBe(8);
+    });
+  }
+
   it("doesn't count waiting players who are offline: they aren't offered a seat", () => {
     const { rt, clock } = lastHand(['f', 'g']);
     rt.disconnect('f');
