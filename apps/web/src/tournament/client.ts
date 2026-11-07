@@ -51,11 +51,23 @@ export interface TournamentClient {
   tableChat(id: string): Promise<TournamentTableChat[]>;
 }
 
+/** One followed lobby's chat and events in this tab. */
+interface FollowedLog {
+  items: LobbyItem[];
+  listeners: Set<(items: LobbyItem[]) => void>;
+  /** Chat messages the host deleted while this page was open: a full list that crossed the deletion still holds them. */
+  deleted: Set<string>;
+  /** Items appended since this tab last asked for the lobby, which can beat the full list here. */
+  since: Set<string>;
+}
+
+const newLog = (): FollowedLog => ({ items: [], listeners: new Set(), deleted: new Set(), since: new Set() });
+
 /** Tournaments run on the server; this tab follows the ones on screen. */
 export class SocketTournamentClient implements TournamentClient {
   private watchers = new Map<string, { onView: Set<(v: TournamentView) => void>; onError: Set<(m: string) => void>; last: TournamentView | null }>();
-  /** Lobby items per followed tournament, who wants them, and chat messages the host deleted while this page was open. */
-  private logs = new Map<string, { items: LobbyItem[]; listeners: Set<(items: LobbyItem[]) => void>; deleted: Set<string> }>();
+  /** Lobby items per followed tournament, and who wants them. */
+  private logs = new Map<string, FollowedLog>();
 
   constructor() {
     socket.on('tournament:state', ({ id, view }) => {
@@ -72,10 +84,12 @@ export class SocketTournamentClient implements TournamentClient {
       if (append) {
         const have = new Set(log.items.map((x) => x.id));
         log.items = [...log.items, ...kept.filter((x) => !have.has(x.id))];
+        for (const x of kept) log.since.add(x.id);
       } else {
-        // The full list may be older than appends that beat it here.
+        // The full list may be older than appends that beat it here. Anything else it lacks is gone: deleted while
+        // the connection was down, say.
         const fresh = new Set(kept.map((x) => x.id));
-        log.items = [...kept, ...log.items.filter((x) => !fresh.has(x.id) && x.at >= (items.at(-1)?.at ?? 0))];
+        log.items = [...kept, ...log.items.filter((x) => !fresh.has(x.id) && log.since.has(x.id))];
       }
       log.listeners.forEach((cb) => cb(log.items));
     });
@@ -110,7 +124,7 @@ export class SocketTournamentClient implements TournamentClient {
       w = { onView: new Set(), onError: new Set(), last: null };
       this.watchers.set(id, w);
       // The server sends the lobby log right after the first view.
-      if (!this.logs.has(id)) this.logs.set(id, { items: [], listeners: new Set(), deleted: new Set() });
+      if (!this.logs.has(id)) this.logs.set(id, newLog());
       if (socket.connected) this.follow(id);
     } else if (w.last) onView(w.last);
     w.onView.add(onView);
@@ -142,7 +156,7 @@ export class SocketTournamentClient implements TournamentClient {
   onLog(id: string, cb: (items: LobbyItem[]) => void) {
     let log = this.logs.get(id);
     if (!log) {
-      log = { items: [], listeners: new Set(), deleted: new Set() };
+      log = newLog();
       this.logs.set(id, log);
     }
     const mine = log;
@@ -174,6 +188,8 @@ export class SocketTournamentClient implements TournamentClient {
   }
 
   private follow(id: string) {
+    const log = this.logs.get(id);
+    if (log) log.since = new Set();
     call('tournament:subscribe', { id }).catch((e: Error) => {
       // One lost to a dropped connection is sent again when it comes back.
       if (e instanceof NoAnswerError) return;

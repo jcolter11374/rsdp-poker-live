@@ -40,7 +40,25 @@ describe('the lobby log in the browser', () => {
     expect(shown.map((x) => x.id)).toEqual(['b', 'c']);
   });
 
+  it('keeps a message that beat the full list here, and drops one deleted while the connection was down', () => {
+    const client = new SocketTournamentClient();
+    client.subscribe('T', () => {}, () => {});
+    let shown: LobbyItem[] = [];
+    client.onLog('T', (items) => (shown = items));
+    receive('connect', undefined);
+    // Said while the lobby loaded: it comes before the list, which was read without it.
+    receive('tournament:log', { id: 'T', items: [said('c', 3)], append: true });
+    receive('tournament:log', { id: 'T', items: [said('a', 1), said('b', 2)], append: false });
+    expect(shown.map((x) => x.id)).toEqual(['a', 'b', 'c']);
+    // The connection drops, and meanwhile the host deletes the newest message: the list sent on the way back lacks it.
+    receive('connect', undefined);
+    receive('tournament:log', { id: 'T', items: [said('a', 1), said('b', 2)], append: false });
+    expect(shown.map((x) => x.id)).toEqual(['a', 'b']);
+    expect(fake.call).toHaveBeenCalledWith('tournament:subscribe', { id: 'T' });
+  });
+
   it('sends the host tools for the lobby chat to the server', async () => {
+    fake.call.mockClear();
     const client = new SocketTournamentClient();
     await client.chatMute('T', 'p', true);
     await client.chatOff('T', true);
