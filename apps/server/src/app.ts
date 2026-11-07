@@ -983,7 +983,7 @@ export function createApp(deps: AppDeps = {}) {
    */
   function spectatorsSeeAt(rt: TableRuntime, now: number): number {
     const delayMs = rt.settings.spectators.delaySeconds * 1000;
-    const feed = feeds.get(rt.state.id);
+    const feed = feedOf(rt, now);
     return feed ? feed.showAtFor(now, delayMs) : now + delayMs;
   }
 
@@ -1044,6 +1044,18 @@ export function createApp(deps: AppDeps = {}) {
       audit.safely('a hand', () => audit.hand(id, record));
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
+    };
+    // What the table answers a spectator on a delay comes from the seats their view shows (#435). Read only: this is
+    // asked in the middle of a move, so a table without a feed yet (none watching) answers from the seats as they are,
+    // which is what its feed will start from.
+    const liveShownTo = rt.shownTo;
+    rt.shownTo = (playerId) => {
+      const now = clock.now();
+      const shown = shownTo(rt, playerId, now);
+      if (!shown) return liveShownTo(playerId);
+      const part = (shown.moment ?? shown.oldest)?.part;
+      if (!part) return liveShownTo(playerId);
+      return { seats: part.seats.map((x) => x?.playerId ?? null), at: shown.at, behindMs: shown.behindMs };
     };
     // Log and chat lines are saved in order too, the ones that come in while a save runs together in the next.
     // First the ones the table has now, if none are saved for it yet (a table saved before every line was kept).

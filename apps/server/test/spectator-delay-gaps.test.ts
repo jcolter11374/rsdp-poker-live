@@ -240,7 +240,7 @@ describe('the delay banner (item 2)', () => {
 describe('the rest of the view (what the read-through of #435 found)', () => {
   it('keeps the log as it was even once the live log has more lines than are sent', () => {
     const { rt, clock } = table();
-    for (let i = 0; i < 70; i++) rt.log(`line ${i}`);
+    for (let i = 0; i < 70; i++) rt.requestBombPot('host', i % 2 === 0);
     const past = snap(rt, clock);
     const before = behind(watcherNow(rt, clock), past, DELAY).log;
     // The live hand ends: more lines, which would push the oldest ones out of a log cut by time.
@@ -341,7 +341,7 @@ describe('when a spectator on a delay is sent a view (item 6)', () => {
 
   it('a paused moment shown at two different times is the same', () => {
     const { rt, clock } = table();
-    rt.pause('host');
+    rt.pause('host', true);
     const past = snap(rt, clock);
     const v1: TableView = behind(watcherNow(rt, clock), past, DELAY);
     clock.advance(5_000);
