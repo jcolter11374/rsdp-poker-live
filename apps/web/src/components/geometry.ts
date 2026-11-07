@@ -107,6 +107,25 @@ export function seatFractions(taken: readonly boolean[], anchor: number, { clear
   return out;
 }
 
+/**
+ * Where each seat sits when empty seats aren't drawn (a tournament table, #303): the players evenly round the
+ * table in seat order, with the anchor seat (yours) at the bottom. When the anchor seat is empty (someone
+ * watching, who is anchored on seat 1), the first player from it on goes to the bottom, so no gap is left there.
+ * Empty seats still get a place (between their neighbours), for a dead button to sit in front of, but nothing
+ * is drawn there.
+ */
+export function playerFractions(taken: readonly boolean[], anchor: number): number[] {
+  const n = taken.length;
+  let first = anchor;
+  for (let k = 0; k < n; k++) {
+    if (taken[(anchor + k) % n]) {
+      first = (anchor + k) % n;
+      break;
+    }
+  }
+  return seatFractions(taken, first);
+}
+
 /** Part of the way from `a` to `b`. */
 export const lerp = (a: Point, b: Point, f: number): Point => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
 
