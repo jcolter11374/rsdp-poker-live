@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore } from '../src/audit';
 import { closeDb, createDb, dbCause, queryRows, type Db } from '../src/db';
-import { BackupError, backupLines, restoreBackup } from '../src/db/backup';
+import { BackupError, backupLines, PAGE_BYTES, pageCounts, restoreBackup } from '../src/db/backup';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { RESTORE_FILE, restoreIfWaiting } from '../src/db/restoreOnStart';
 import { backupOf, BIG, everything, fill, linesOf } from './backup-fixture';
@@ -109,6 +109,38 @@ describe('backups', { timeout: 30_000 }, () => {
       await closeDb(copy);
       await closeDb(again);
     }
+  });
+
+  it('backs up and restores saved tables too big for one round trip on PGlite 0.2 (#403)', { timeout: 120_000 }, async () => {
+    // 36 saved tables of about 512 KB each: 18 MB, which PGlite 0.2 can't return in one result (it fails over about
+    // 16 MB). In-memory test databases run PGlite 0.2, as the live site does.
+    await resetTestDb(db);
+    await db.execute(sql`insert into players (id) values ('p1')`);
+    const blob = 'x'.repeat(512 * 1024);
+    for (let i = 0; i < 36; i++) {
+      await db.execute(sql`insert into tables (id, owner_player_id, settings, mode) values (${`big${i}`}, 'p1', '{}', 'cash')`);
+      await db.execute(sql`insert into table_snapshots (table_id, version, state) values (${`big${i}`}, 1, ${JSON.stringify({ i, blob })}::jsonb)`);
+    }
+    const { text, summary } = await backupOf(db);
+    expect(summary.rows.table_snapshots).toBe(36);
+    const copy = await createTestDb();
+    try {
+      expect((await restoreBackup(copy, linesOf(text))).rows).toEqual(summary.rows);
+      const got = await queryRows<{ id: string; n: number; i: number }>(copy, sql`select table_id as id, length(state->>'blob')::int as n, (state->>'i')::int as i from table_snapshots order by i`);
+      expect(got).toEqual(Array.from({ length: 36 }, (_, i) => ({ id: `big${i}`, n: blob.length, i })));
+    } finally {
+      await closeDb(copy);
+    }
+  });
+
+  it('fetches as many rows at a time as fit, and at least one', () => {
+    const MB = 1_048_576;
+    expect(pageCounts([])).toEqual([]);
+    expect(pageCounts(Array(1200).fill(10))).toEqual([500, 500, 200]);
+    expect(pageCounts(Array(10).fill(MB))).toEqual([4, 4, 2]);
+    // A row bigger than the budget goes on its own.
+    expect(pageCounts([10, 6 * MB, 10, 10])).toEqual([1, 1, 2]);
+    expect(pageCounts([PAGE_BYTES])).toEqual([1]);
   });
 
   it('refuses to restore over data', async () => {

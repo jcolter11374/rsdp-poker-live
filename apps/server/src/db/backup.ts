@@ -22,10 +22,15 @@ import { errorText } from './errors';
 
 export const BACKUP_FORMAT = 'rsdp';
 export const BACKUP_VERSION = 1;
-/** Rows read per round trip, so a big table never sits in memory whole. */
+/** Rows read per round trip at most, so a big table never sits in memory whole. */
 const PAGE = 500;
-/** Rows written per insert on restore. */
+/** Rows written per insert on restore, at most. */
 const INSERT_BATCH = 200;
+/**
+ * The most row JSON one round trip carries either way (unless one row is bigger on its own). PGlite 0.2, which the
+ * live site runs, fails on a result much over 16 MB, and a page of saved tables can get that big (#403).
+ */
+export const PAGE_BYTES = 4 * 1_048_576;
 
 export interface BackupHeader {
   backup: typeof BACKUP_FORMAT;
@@ -81,13 +86,22 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
       const rows: Record<string, number> = {};
       for (const table of tables) {
         rows[table] = 0;
-        // A cursor reads the table in pages, all inside this one snapshot.
-        await tx.execute(sql.raw(`declare backup_rows no scroll cursor for select row_to_json(t)::text as j from ${ident(table)} t`));
+        // Cursors read the table in pages, all inside this one snapshot and in the same order (ctid doesn't change
+        // within it). First how big each row's JSON is, then the rows, as many per fetch as fit in PAGE_BYTES.
+        const sizes: number[] = [];
+        await tx.execute(sql.raw(`declare backup_sizes no scroll cursor for select octet_length(row_to_json(t)::text) as n from ${ident(table)} t order by ctid`));
         for (;;) {
-          const page = await queryRows<{ j: string }>(tx, sql.raw(`fetch ${PAGE} from backup_rows`));
+          const page = await queryRows<{ n: number }>(tx, sql.raw('fetch 10000 from backup_sizes'));
+          for (const { n } of page) sizes.push(Number(n));
+          if (page.length < 10000) break;
+        }
+        await tx.execute(sql.raw('close backup_sizes'));
+        await tx.execute(sql.raw(`declare backup_rows no scroll cursor for select row_to_json(t)::text as j from ${ident(table)} t order by ctid`));
+        for (const count of pageCounts(sizes)) {
+          const page = await queryRows<{ j: string }>(tx, sql.raw(`fetch ${count} from backup_rows`));
+          if (page.length !== count) throw new Error(`${table} changed while it was being backed up`);
           for (const { j } of page) await write(`{"t":${JSON.stringify(table)},"r":${j}}\n`);
           rows[table] += page.length;
-          if (page.length < PAGE) break;
         }
         await tx.execute(sql.raw('close backup_rows'));
       }
@@ -104,6 +118,24 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
     // Postgres: one consistent moment, and nothing written by mistake. PGlite has one connection, so it is anyway.
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
+}
+
+/** How many rows each fetch takes, in order: up to PAGE rows and PAGE_BYTES of JSON, and always at least one. */
+export function pageCounts(sizes: number[]): number[] {
+  const counts: number[] = [];
+  let rows = 0;
+  let bytes = 0;
+  for (const size of sizes) {
+    if (rows && (rows >= PAGE || bytes + size > PAGE_BYTES)) {
+      counts.push(rows);
+      rows = 0;
+      bytes = 0;
+    }
+    rows++;
+    bytes += size;
+  }
+  if (rows) counts.push(rows);
+  return counts;
 }
 
 /**
@@ -140,7 +172,7 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
     let end: { rows: Record<string, number>; sequences?: Record<string, number> } | null = null;
     const counts: Record<string, number> = {};
     // Rows stay as the backup's own text: parsing them in JavaScript would round bigints past 2^53.
-    let batch: { table: string; rows: string[] } | null = null;
+    let batch: { table: string; rows: string[]; bytes: number } | null = null;
 
     const flush = async () => {
       if (!batch || !batch.rows.length) return;
@@ -180,9 +212,11 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
       }
       const table = row[1]!;
       if (!(table in counts)) throw new BackupError(`The backup has rows for a table it didn't list: ${table}.`);
-      if (batch && (batch.table !== table || batch.rows.length >= INSERT_BATCH)) await flush();
-      batch ??= { table, rows: [] };
-      batch.rows.push(line.slice(row[0].length, -1));
+      const json = line.slice(row[0].length, -1);
+      if (batch && (batch.table !== table || batch.rows.length >= INSERT_BATCH || batch.bytes + json.length > PAGE_BYTES)) await flush();
+      batch ??= { table, rows: [], bytes: 0 };
+      batch.rows.push(json);
+      batch.bytes += json.length;
       counts[table]++;
     }
     if (!header) throw new BackupError('The backup is empty.');
