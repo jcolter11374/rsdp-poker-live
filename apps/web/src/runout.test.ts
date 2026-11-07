@@ -220,7 +220,7 @@ describe('holdBack', () => {
       const settings = { game: { dealersChoice: { enabled: true, games: [{ gameId: 'badugi', betting: 'fixed-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 } } };
       const live = { ...base, settings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0 }) } as unknown as TableView;
       const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 1 }), sameHand: true };
-      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 1, canKeep: false }));
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 1, canKeep: false, fallback: { gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' } }));
     });
 
     it("never offers to keep, or names as the fallback, a game the host is taking off the menu", () => {
@@ -236,13 +236,17 @@ describe('holdBack', () => {
       const pendingSettings = { game: { dealersChoice: { games: [menu[1], menu[2]] } } };
       const live = { ...base, settings, pendingSettings, hand: { ...base.hand!, events }, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 1 }) } as unknown as TableView;
       const frozen = { ...before(), choice: choice(2, true, { current: nlheB, count: 7, defaultIndex: 2 }), sameHand: true };
-      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 2, canKeep: false }));
+      expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 2, canKeep: false, fallback: { gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' } }));
       // Without the change, Hold'em is kept and is what a missed pick deals, both before and after the result.
       const staying = { ...live, pendingSettings: null, choice: choice(2, true, { current: nlheB, count: 6, defaultIndex: 0, canKeep: true }) } as TableView;
-      expect(holdBack(staying, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
+      expect(holdBack(staying, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true, fallback: { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" } }));
+      // A waiting menu with a game added in front: a missed pick deals from it, so the held fallback is its first game
+      // that seats seven, not the current menu's (#444).
+      const addedInFront = { ...live, pendingSettings: { game: { dealersChoice: { games: [{ gameId: 'stud', betting: 'fixed-limit' }, menu[1], menu[2]] } } } } as unknown as TableView;
+      expect(holdBack(addedInFront, frozen, 0).choice).toMatchObject({ defaultIndex: 2, canKeep: false, fallback: { gameId: 'stud', gameName: 'Seven Card Stud' } });
       // A change that ends Dealer's choice takes no game off: the result shows no next pick.
       const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
-      expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true }));
+      expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true, fallback: { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" } }));
     });
   });
 

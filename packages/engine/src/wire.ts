@@ -324,10 +324,18 @@ export interface ChoiceView {
   cap: number | null;
   /** Every seat it can deal is taken or held (counting seat requests), so the empty seats are closed. */
   closed: boolean;
-  /** The menu entry a missed pick deals. */
+  /**
+   * The menu entry a missed pick deals. While the host's change to the menu waits for the next hand, see `fallback`
+   * instead: the game it deals can be one the current menu doesn't have.
+   */
   defaultIndex: number;
   /** The current game is on the menu and fits, so the chooser can keep it going. */
   canKeep: boolean;
+  /**
+   * The game a missed pick deals: the menu entry at defaultIndex, or while the host's change to the menu waits for the
+   * next hand, the game on the menu it brings (#444). Missing from servers before it was added.
+   */
+  fallback?: { gameId: string; betting: BettingKind; gameName: string };
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */

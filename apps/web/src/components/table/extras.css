@@ -62,6 +62,9 @@
 .felt.compact .seat-avatar .pick-badge { display: block; position: absolute; left: 50%; top: -6px; translate: -50% 0; font-size: 0.45rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; padding: 1px 3px; border-radius: 3px; background: #c98a1b; color: #fff; }
 .seat.empty .closed { opacity: 0.7; cursor: default; }
 .topbar .pick-button { white-space: nowrap; }
+/* Just "Pick" on phones and narrow windows, so the button doesn't push the bar's buttons onto a second row (#408). */
+.portrait .topbar .pick-more { display: none; }
+@media (max-width: 999px) { .topbar .pick-more { display: none; } }
 .game-picker { display: flex; flex-direction: column; gap: 10px; }
 .game-picker p { margin: 0; }
 .game-picker-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

@@ -42,6 +42,14 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
 - Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
 - Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+- Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (the Pick next game button at a Dealer's choice table, Paused, or a blind level's clock). When the line doesn't fit, the table's name is shortened with "…" first; point at the line to see all of it.
+- Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
+- Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
+- Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
+- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. A narrower window doesn't show it; the action buttons still show their keys.
+- One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
+- Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
+- Dealer's choice: when the host changes the menu during a hand, the pick panel's "If time runs out" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.
 
 ## [2026.11.07.5] - 2026-11-07
 

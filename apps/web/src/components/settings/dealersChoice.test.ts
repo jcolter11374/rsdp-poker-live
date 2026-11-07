@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSettings } from '@rsdp/engine/settings';
-import { CHOICE_FILLS, DEFAULT_MENU, levelStudAnte, menuSeats, nextMenuGame, repeatsOf, stakesForGames, stakesForMenu } from './dealersChoice';
+import { defaultSettings, type SettingsPatch } from '@rsdp/engine/settings';
+import { CHOICE_FILLS, DEFAULT_MENU, leavingMenu, levelStudAnte, menuSeats, nextMenuGame, repeatsOf, stakesForGames, stakesForMenu } from './dealersChoice';
 
 /** Blind levels with these antes, the first at big blind `bigBlind` and each one after at twice the one before. */
 const levels = (antes: readonly number[], bigBlind = 2) => antes.map((ante, i) => ({ bigBlind: bigBlind * 2 ** i, ante }));
@@ -96,5 +96,25 @@ describe("Dealer's choice settings helpers", () => {
     expect(stakesForGames(off.stakes, levels([0, 0, 0, 0]), holdem, DEFAULT_MENU, off.start, true).antes).toEqual([4, 8, 16, 32]);
     // One whose ante the host typed keeps it.
     expect(stakesForGames(off.stakes, levels([0, 0, 3]), holdem, DEFAULT_MENU, off.start, true).antes).toEqual([4, 8, 3]);
+  });
+
+  it("tell which games the host is taking off the menu from the next hand, as the server does (#441)", () => {
+    const s = defaultSettings('cash');
+    const menu = [
+      { gameId: 'nlhe', betting: 'no-limit' as const },
+      { gameId: 'razz', betting: 'fixed-limit' as const },
+      { gameId: 'stud', betting: 'fixed-limit' as const },
+    ];
+    s.game.dealersChoice = { enabled: true, games: menu, hands: 0, pickSeconds: 20 };
+    const leavingOf = (pending: SettingsPatch | null) => menu.filter(leavingMenu(s, pending)).map((g) => g.gameId);
+    expect(leavingOf(null)).toEqual([]);
+    expect(leavingOf({ game: { dealersChoice: { games: [menu[0], menu[2]] } } } as SettingsPatch)).toEqual(['razz']);
+    expect(leavingOf({ table: { name: 'Friday night' } } as SettingsPatch)).toEqual([]);
+    // When the next hand doesn't play Dealer's choice, there's no next pick (the server closes it), so nothing is "leaving".
+    expect(leavingOf({ game: { dealersChoice: { enabled: false } } } as SettingsPatch)).toEqual([]);
+    const rotation = { enabled: true, steps: [{ gameId: 'nlhe', betting: 'no-limit' as const, length: 1, unit: 'orbits' as const }] };
+    expect(leavingOf({ game: { dealersChoice: { enabled: false }, rotation } } as SettingsPatch)).toEqual([]);
+    // A change the settings check refuses (a rotation with Dealer's choice still on) leaves the menu as it is, as on the server.
+    expect(leavingOf({ game: { rotation, dealersChoice: { games: [menu[0], menu[2]] } } } as SettingsPatch)).toEqual([]);
   });
 });
