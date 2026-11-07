@@ -261,6 +261,9 @@
   .felt-emblem text { fill: currentColor; font-family: 'Barlow Condensed', 'Inter Variable', sans-serif; font-weight: 700; }
   .felt-emblem .emblem-mark { font-style: italic; font-size: 54px; letter-spacing: -2px; }
   .felt.compact .felt-emblem { height: auto; width: 78%; }
+  /* Phones on their side (#382): a wide, short table, so the crest fits its height, as on a computer, instead of spilling
+     over the top bar and the betting controls. */
+  @media (max-height: 500px) { .felt.compact .felt-emblem { width: auto; height: 74%; } }
 
   /* Numbers that matter in a tall, tight display face. */
   .nameplate .stack, .pot:not(.total, .result), .bet, .win-float, .board-label, .next-hand {

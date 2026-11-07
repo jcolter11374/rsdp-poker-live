@@ -884,8 +884,9 @@ dl.shortcuts dd { margin: 0; }
 .portrait .dock.seated.limit.tips { min-height: max(212px, var(--held, 0px)); }
 @media (max-height: 760px) { .portrait .dock.seated.limit.tips { min-height: max(198px, var(--held, 0px)); } }
 /* Phones on their side (#382): room for the two-line action bar below, in every game, so the table is the same height from
-   the moment you sit, on your turn or not, and when a mixed game moves between limit and no-limit games. Between hands it
-   also holds the bar and the line under it (rabbit hunt, the bots' reasons). Last, so it wins over the rules above. */
+   the moment you sit, on your turn or not, and when a mixed game moves between limit and no-limit games. Between your turns
+   the same room holds the shorter bar and the line over it (rabbit hunt, the Nit game, the bots' reasons: see below).
+   Last, so it wins over the rules above. */
 @media (max-height: 500px) {
   .portrait .dock.seated, .portrait .dock.seated.limit { min-height: max(89px, var(--held, 0px)); }
   /* A coach tip's verdict can take two lines. */
@@ -899,34 +900,59 @@ dl.shortcuts dd { margin: 0; }
    The pills (time bank, Tip) share a line with the bet sizes, slider and amount, or with the tip in their place, and the
    move buttons go under them. A turn with nothing to size (fixed limit, a draw, run it twice) is one line. */
 @media (max-height: 500px) {
-  .portrait .action-bar { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 6px 10px; gap: 6px 8px; min-height: 52px; }
+  .portrait .action-bar { position: relative; z-index: 4; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 6px 10px; gap: 6px 8px; min-height: 52px; }
   .portrait .action-bar > * { flex: 1 1 100%; min-width: 0; }
   .portrait .action-bar > .bar-head { flex: 0 0 auto; min-height: 0; }
   .portrait .action-bar > :is(.sizing, .play-tip, .play-tip-slot, .prompt) { flex: 1 1 0; }
-  /* A message goes under that line rather than between the pills and the bet sizes. */
-  .portrait .action-bar > :is(.error, .sending-note) { order: 1; margin: 0; text-align: center; }
+  /* A message (an error, "Sending… your connection seems slow") floats just above the bar instead of adding a line to it,
+     which would make the table shorter for the rest of the session. */
+  .portrait .action-bar > :is(.error, .sending-note) {
+    position: absolute; bottom: calc(100% + 6px); left: 50%; translate: -50% 0; z-index: 3; width: max-content; max-width: calc(100% - 24px);
+    margin: 0; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    font-size: 0.8rem; text-align: center; pointer-events: none;
+  }
   /* Under the bet sizes the buttons have a line of their own, at most 780px of it, in the middle. */
   .portrait .action-bar > .buttons { order: 2; max-width: none; margin: 0; padding-inline: max(0px, calc((100% - 780px) / 2)); }
   .portrait .action-bar:not(:has(> :is(.sizing, .play-tip, .play-tip-slot))) > .buttons { flex: 1 1 0; padding-inline: 0; max-width: 780px; margin: 0 auto; }
-  .portrait .action-bar > .prompt { font-size: 0.85rem; line-height: 1.25; }
+  .portrait .action-bar .prompt { font-size: 0.85rem; line-height: 1.25; }
   .portrait .action-bar .buttons button { padding: 9px 6px; }
+  /* With a mouse (a short computer window) the shortcut letters show, top-aligned so they don't make the buttons taller. */
+  .portrait .action-bar .key-hint { vertical-align: top; }
   .portrait .action-bar.pre .buttons button { padding: 9px 4px; }
+  /* "Show cards" and a button for each card stay on one line, even for six Omaha cards on most phones (they wrap if not). */
+  .portrait .action-bar .buttons.small { flex-wrap: wrap; justify-content: center; gap: 4px; }
+  .portrait .action-bar .buttons.small button { padding: 5px; font-size: 0.8rem; white-space: nowrap; }
   .portrait .sizing { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; }
-  .portrait .sizing .presets { flex: 1 1 0; min-width: 0; gap: 5px; }
-  .portrait .sizing .presets button { min-width: 0; padding: 6px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The bet sizes keep their words ("½ pot", "¾ pot"): on a narrow phone the slider gives up the room. */
+  .portrait .sizing .presets { flex: 1 1 0; gap: 5px; }
+  .portrait .sizing .presets button { padding: 6px 4px; white-space: nowrap; }
   .portrait .sizing .slider { flex: 1.25 1 0; }
   .portrait .sizing input[type='number'] { width: 76px; padding: 4px 6px; }
-  .portrait .sizing input[type='range'] { height: 26px; margin: 0; }
+  .portrait .sizing input[type='range'] { flex: 1 1 0; min-width: 48px; height: 26px; margin: 0; }
   /* The tip is its verdict and Why? on one line (two if the verdict is long), about as tall as the bet sizes it stands in for. */
   .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; }
-  .portrait .play-tip { flex-direction: row; align-items: center; justify-content: center; gap: 8px; }
+  /* The tip is as tall as its own line here, not as tall as the bet sizes standing up (ActionBar.tsx sets that inline, and keeps
+     it when the phone is turned with the tip open). */
+  .portrait .play-tip { flex-direction: row; align-items: center; justify-content: center; gap: 8px; min-height: 0 !important; }
   .portrait .play-tip-verdict { flex: 0 1 auto; min-width: 0; }
   .portrait .play-tip-basis { flex: none; }
   .portrait .play-tip-slot { min-height: 30px; }
   .portrait .play-tip-slot .play-tip { margin-bottom: 0; }
   .portrait .play-tip-basis button { margin: 0; min-height: 30px; padding-block: 3px; }
-  /* On your turn the line under the bar (the Nit game, the bots' reasons) waits until you've acted: the bar has the room. */
-  .portrait .dock-inner:has(> .action-bar.my-turn) > .dock-row { display: none; }
+  /* The line with the Nit game, the rabbit hunt and the bots' reasons goes over the bar here, not under it. On your turn it
+     waits until you've acted, so the bar has the room: then the bet sizes take its place, and the move buttons stay where
+     the pre-move buttons were, so a tap meant for that line can't land on Fold or Call. Hidden but kept, so the Nit game's
+     rules, if open, stay open over the table. */
+  .portrait .dock-row { order: -1; }
+  .portrait .dock-inner:has(> .action-bar.my-turn) > .dock-row { position: absolute; height: 0; overflow: hidden; visibility: hidden; }
+  .portrait .dock-row .modal-backdrop { visibility: visible; }
+  /* Between your turns that line has the room the bar takes on your turn: the rabbit hunt's cards are the table's small size,
+     and the Nit game's line runs on as one short paragraph, two lines on most phones. */
+  .portrait .hand-extras .playing-card.small { --cw: 24px; }
+  .portrait .nit-row { display: block; font-size: 0.75rem; line-height: 1.35; }
+  .portrait .nit-row > :not(.modal-backdrop), .portrait .nit-line > * { display: inline; margin: 0 6px 0 0; font-size: inherit; }
+  .portrait .nit-line .toggle input { vertical-align: middle; margin: 0 4px 0 0; }
+  .portrait .nit-help-button { display: inline-block; width: 18px; height: 18px; line-height: 16px; font-size: 11px; vertical-align: middle; }
 }
 
 /* "Are you sure?" under a game picker set to unusual betting. */

@@ -288,14 +288,29 @@ try {
     await p.waitForTimeout(1500);
     await p.evaluate(() => {
       const seen = (window.__feltHeights = new Set());
+      window.__waiting = false;
       const sample = () => {
         const felt = document.querySelector('.felt');
         if (felt) seen.add(Math.round(felt.getBoundingClientRect().height));
+        if (!document.querySelector('.action-bar.my-turn')) window.__waiting = true;
         requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
     });
     const bar = p.locator('.action-bar.my-turn');
+    // Sol checks or calls, and that turn is over when its bar goes. A call that closes the betting can make him first to act
+    // on the next street straight away: then the bar stays, on the next street.
+    const act = async () => {
+      const street = await bar.getAttribute('data-street');
+      await bar.locator('.buttons button').filter({ hasText: /^(Check|Call|Run it once)/ }).first().click();
+      await p.locator(street ? `.action-bar.my-turn[data-street="${street}"]` : '.action-bar.my-turn').waitFor({ state: 'detached' });
+    };
+    // The heights must include the table's before a turn. If Sol was first to act and his turn began before the sampling
+    // did, he plays it and the next one is measured.
+    for (let i = 0; i < 5 && !(await p.evaluate(() => window.__waiting)); i++) {
+      if (await bar.count()) await act();
+      else await p.waitForTimeout(100);
+    }
     // A hand folded round to Sol's big blind ends without a turn, so allow a few hands.
     await bar.waitFor({ timeout: 60_000 });
     await p.waitForTimeout(600);
@@ -307,8 +322,7 @@ try {
     );
     if (offScreen.length) throw new Error(`on Sol's turn these are off the screen: ${offScreen.join(', ')}`);
     await p.screenshot({ path: path.join(OUT, 'sideways-turn.png') });
-    await bar.locator('.buttons button').filter({ hasText: /^(Check|Call)/ }).first().click();
-    await bar.waitFor({ state: 'detached' });
+    await act();
     await p.waitForTimeout(600);
     const heights = await p.evaluate(() => [...window.__feltHeights]);
     if (heights.length !== 1) throw new Error(`the table changed height around Sol's turn: ${heights.join(' / ')} px`);
