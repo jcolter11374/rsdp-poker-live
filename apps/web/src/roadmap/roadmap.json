@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-06",
+  "lastUpdated": "2026-11-07",
   "intro": "What's live, what's coming next, and what's further out. Everything here is free for everyone at the table, with no paid tiers.",
   "sections": [
     {
@@ -40,7 +40,8 @@
       "title": "Coming in the next release",
       "blurb": "Done, or being finished now.",
       "items": [
-        { "title": "Nothing waiting right now", "detail": "Everything finished so far is already live. When the next pieces of work are done, they'll show here until they go live." }
+        { "title": "A recap for WhatsApp", "detail": "A Copy recap button in a cash game's ledger: a few lines about the night (the games, how many hands, everyone's result and the biggest pot), ready to paste into the WhatsApp group." },
+        { "title": "Lobby chat moderation", "detail": "Tournament hosts can mute someone, delete a message for everyone, or turn the lobby chat off, and anyone can hide someone's messages just for themselves." }
       ]
     },
     {
@@ -53,7 +54,6 @@
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the big moments, like a final table mode." },
         { "title": "Phone alerts", "detail": "An alert on your phone when it's your turn or a tournament is about to start." },
         { "title": "Dealer's choice", "detail": "When the button comes to you, you pick the game for the next orbit from the games the host allows, with the How to play guide for whatever you choose." },
-        { "title": "A recap for WhatsApp", "detail": "After a session, a short recap ready to paste into the WhatsApp group." },
         { "title": "The long tail", "detail": "High hand prizes, accessibility improvements and lots of small touches." },
         { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }
       ]

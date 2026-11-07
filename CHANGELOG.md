@@ -18,6 +18,23 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.2] - 2026-11-07
+
+_Lobby chat moderation and a recap of the night_
+
+### New
+
+- **Moderate a tournament's lobby chat.** Tournament hosts can now mute someone, delete a message for everyone, or turn the lobby chat off and back on. Co-hosts can too if the host gave them the power to move and remove players, which now also covers chat. And you can hide someone's messages just for yourself, as at the tables: hiding someone in one place hides them in the other too.
+- **Copy a recap of the night.** At cash games, the ledger has a new Copy recap button. It gives you a few lines about the night, ready to paste into the group chat: the date, the games played, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot. The results are the same dollars-and-cents figures Settle up uses, and the recap never includes a link to the table or anyone's cards. You see it before you copy it, and if your phone won't let the site copy it, the text is selected so you can copy it yourself.
+
+### Fixed and changed
+
+- Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables straight away, instead of sometimes staying on the old table until they reload.
+- Tournament lobby chat: a muted player, or everyone while the host has turned the chat off, is told why they can't send.
+- On a phone, the Hide, Mute and Delete buttons in the tournament lobby chat sit under each message and are big enough to tap, and the site asks before muting someone or deleting a message.
+- If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
+- The Checking John page now shows each time John takes a name out of old records, without the name itself.
+
 ## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
@@ -672,6 +689,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4

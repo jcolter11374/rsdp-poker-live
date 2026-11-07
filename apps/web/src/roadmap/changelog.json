@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.2",
+      "date": "2026-11-07",
+      "fixes": [
+        "Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables straight away, instead of sometimes staying on the old table until they reload.",
+        "Tournament lobby chat: a muted player, or everyone while the host has turned the chat off, is told why they can't send.",
+        "On a phone, the Hide, Mute and Delete buttons in the tournament lobby chat sit under each message and are big enough to tap, and the site asks before muting someone or deleting a message.",
+        "If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with \"Deleted player\" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.",
+        "The Checking John page now shows each time John takes a name out of old records, without the name itself."
+      ]
+    },
+    {
       "id": "2026.11.07",
       "date": "2026-11-07",
       "fixes": [
