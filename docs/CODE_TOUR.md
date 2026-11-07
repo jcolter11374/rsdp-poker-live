@@ -108,7 +108,7 @@ and seasons (`season.ts`).
 
 | Where | What it does |
 | --- | --- |
-| [`src/index.ts`](../apps/server/src/index.ts) | Start-up: open the database, open the public record, build the app, resume saved tables and tournaments, and save everything on shutdown. Short, and a good first read. |
+| [`src/index.ts`](../apps/server/src/index.ts) | Start-up: open the database, open the public record, build the app, resume saved tables and tournaments, and save everything on shutdown (each step timed in the log, with a 10-second limit: [`src/shutdown.ts`](../apps/server/src/shutdown.ts)). Short, and a good first read. |
 | [`src/app.ts`](../apps/server/src/app.ts) | Wires everything together: the HTTP routes (`/api/...`) and every socket message handler (`on('hand:act', …)`, `on('table:create', …)` and so on). Also `broadcast`, which sends each watcher their own view after a change. |
 | [`src/runtime/table.ts`](../apps/server/src/runtime/table.ts) | `TableRuntime`: one per table. Seat requests and approvals, host controls, timers, the time bank, bots, and the steps between hands (apply queued settings, handle busts, plan blinds, shuffle, deal). The largest file, so read it by method name rather than top to bottom. |
 | [`src/runtime/view.ts`](../apps/server/src/runtime/view.ts) | `tableView`: builds what one particular person sees. This is where hidden information is filtered out. |
@@ -226,7 +226,7 @@ Library, as `components/ActionBar.test.tsx` does for the betting bar.
 
 ## Running it on your own computer
 
-You need [Node.js](https://nodejs.org) 22 (20 or later works for the
+You need [Node.js](https://nodejs.org) 22.12 or later (20 or later works for the
 stand-alone checkers) and git.
 
 ```bash
@@ -273,8 +273,8 @@ The same production image the live site runs can be built with Docker; see
 
 | Step | Where |
 | --- | --- |
-| Every piece of work starts as a GitHub issue. Work happens on branches whose pull requests name their issue ("Closes #123") and are merged into `develop`; releases then go from `develop` to `main`. A fix that can't wait goes straight into `main` the same way. A change that touches the game or players' data is play-tested on a copy and released at a quiet time; a light one (wording, layout, docs) can go live as soon as it's ready. | [CONTRIBUTING.md](../CONTRIBUTING.md) |
-| Every pull request, and every push to `main` or `develop`, runs the checks: typecheck, all tests (including fuzz tests that deal up to 3,000 random hands across every game through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, and a backup restore drill. | [`ci.yml`](../.github/workflows/ci.yml) |
+| Every piece of work starts as a GitHub issue. Work happens on branches whose pull requests name their issue ("Closes #123") and are merged into `develop`; releases then go from `develop` to `main`. A fix that can't wait goes straight into `main` the same way. A change that touches the game or players' data is play-tested on a copy first; a light one (wording, layout, docs) isn't. Either goes live as soon as it's ready. | [CONTRIBUTING.md](../CONTRIBUTING.md) |
+| Every pull request, and every push to `main` or `develop`, runs the checks: typecheck, all tests (including fuzz tests that deal up to 3,000 random hands across every game through the engine and random games through whole tables), a production build, the browser smoke test against the Docker image, a backup restore drill, and a restart in which the server must shut down by itself in good time. | [`ci.yml`](../.github/workflows/ci.yml) |
 | Every pull request is also checked for a linked issue, and a release into `main` for exactly one new changelog entry with a version. When a pull request is merged into `develop`, the issues it closes are labelled `status: on develop`. | [`pr-checks.yml`](../.github/workflows/pr-checks.yml), [`issue-status.yml`](../.github/workflows/issue-status.yml), [`scripts/release/`](../scripts/release) |
 | A pull request into `main` (a release) also rehearses the upgrade: `main`'s image makes data, the new image starts on it and must give the same leaderboard and public record and read back every saved table and tournament, and `main`'s image must do the same on the upgraded data (a rollback). | [`upgrade.yml`](../.github/workflows/upgrade.yml), [`scripts/upgrade/`](../scripts/upgrade) |
 | When those pass on `main`, GitHub builds the image, signs a record of which commit it came from, and tells Fly.io to run exactly that image. | [`deploy.yml`](../.github/workflows/deploy.yml) |
@@ -283,6 +283,7 @@ The same production image the live site runs can be built with Docker; see
 | Once a day (scheduled for 09:41 UTC; GitHub starts it hours late), a GitHub job takes an encrypted backup and test-restores it. | [`backup.yml`](../.github/workflows/backup.yml), [DEPLOY.md](DEPLOY.md#backups) |
 | Once a day (scheduled for 06:23 UTC; GitHub starts it hours late), a GitHub job runs the fuzz tests on `main` far deeper than CI does (400 random cash tables, 400 random tournaments played four ways each, 30,000 random hands), on GitHub's machine. A failure opens an issue naming the failing seeds; the next run that passes closes it. | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) |
 | A GitHub job scheduled every 5 minutes checks the site and its database are up. GitHub starts it hours late, so it is a slow backstop; a quick alert needs an outside monitor (see [DEPLOY.md](DEPLOY.md#site-down-alert)). | [`uptime.yml`](../.github/workflows/uptime.yml) |
+| Once a day (scheduled for 14:47 UTC; GitHub starts it hours late), a GitHub job reads the live server's memory and data disk use from `/api/health`. While memory is over 800 MB or the disk over 70% full, an issue stays open for John (see [DEPLOY.md](DEPLOY.md#memory-and-disk-check)). | [`resources.yml`](../.github/workflows/resources.yml) |
 
 The live site is a single small machine on Fly.io. It must stay a single
 copy, because the live tables exist in that one process's memory; see

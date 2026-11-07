@@ -12,8 +12,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 /** Where each part of the site starts its dependency tree. */
 export const PARTS = { browser: 'apps/web', server: 'apps/server' };
 
-/** Build tools that put a little of their own code into what browsers download (Vite's preload helper). */
-export const BUNDLED_TOOLS = { browser: ['vite'] };
+/**
+ * Build tools that put a little of their own code into what browsers download: Vite's preload helper, the helpers
+ * Rolldown (the bundler inside Vite) adds to wrap the CommonJS packages, React among them, and Babel's class-field
+ * helpers. Oxc, inside Rolldown, copies those from @babel/runtime to rewrite class fields for the older browsers in
+ * vite.config.ts. Oxc carries its own copy, so the @babel/runtime credited is the one installed here, a devDependency
+ * kept for its license (the same MIT text in every version). Oxc's copy is from a slightly older Babel, as /credits says.
+ */
+export const BUNDLED_TOOLS = { browser: ['vite', 'rolldown', '@babel/runtime'] };
 
 function readJson(file) {
   return JSON.parse(readFileSync(file, 'utf8'));
@@ -55,10 +61,10 @@ function homepageOf(pkg) {
   return `https://www.npmjs.com/package/${pkg.name}`;
 }
 
-/** The license and notice files the authors ship with the package, in full. */
+/** The license and notice files the authors ship with the package, in full (Rolldown's credits Rollup in a third-party one). */
 function noticeFiles(dir) {
   return readdirSync(dir)
-    .filter((f) => /^(licen[cs]e|copying|notice)(\b|[-_.]|$)/i.test(f))
+    .filter((f) => /^(licen[cs]e|copying|notice|third-party-licen[cs]e)(\b|[-_.]|$)/i.test(f))
     .sort()
     .map((f) => ({ file: f, text: readFileSync(path.join(dir, f), 'utf8').trim() }));
 }

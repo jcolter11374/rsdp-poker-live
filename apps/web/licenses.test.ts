@@ -19,8 +19,10 @@ describe('the /credits package list', () => {
     expect(list.some((p) => p.name.startsWith('@rsdp/'))).toBe(false);
   });
 
-  it('leaves out tools only used to build and test, but credits the one that adds code to the bundle', () => {
+  it('leaves out tools only used to build and test, but credits the ones that add code to the bundle', () => {
     expect(named('vite')?.parts).toEqual(['browser']);
+    expect(named('rolldown')?.parts).toEqual(['browser']);
+    expect(named('@babel/runtime')?.parts).toEqual(['browser']);
     for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
   });
 
@@ -34,6 +36,8 @@ describe('the /credits package list', () => {
     expect(text).toContain('Copyright (c) Facebook, Inc. and its affiliates.');
     expect(text).toContain('SIL OPEN FONT LICENSE');
     expect(text).toContain('The Inter Project Authors');
+    // Babel's helpers, which Oxc copies into the bundle for older browsers.
+    expect(text).toContain('Sebastian McKenzie and other contributors');
   });
 
   it('gives the page a short list without the license texts', () => {
@@ -57,7 +61,7 @@ describe('/credits', () => {
 
   it('names every main building block the app depends on directly', () => {
     const direct = ['apps/web', 'apps/server', 'packages/engine'].flatMap((d) => Object.keys(JSON.parse(readFileSync(new URL(`../../${d}/package.json`, import.meta.url), 'utf8')).dependencies));
-    const names: Record<string, string> = { react: 'React', 'react-dom': 'React', 'socket.io': 'Socket.IO', 'socket.io-client': 'Socket.IO', express: 'Express', '@electric-sql/pglite': 'PGlite', pg: 'node-postgres', 'drizzle-orm': 'Drizzle', zod: 'Zod', nanoid: 'nanoid', tsx: 'tsx', '@fontsource-variable/inter': 'Inter', '@fontsource/barlow-condensed': 'Barlow Condensed' };
+    const names: Record<string, string> = { react: 'React', 'react-dom': 'React', 'socket.io': 'Socket.IO', 'socket.io-client': 'Socket.IO', express: 'Express', '@electric-sql/pglite': 'PGlite', 'pglite-0.2': 'PGlite', pg: 'node-postgres', 'drizzle-orm': 'Drizzle', zod: 'Zod', nanoid: 'nanoid', tsx: 'tsx', '@fontsource-variable/inter': 'Inter', '@fontsource/barlow-condensed': 'Barlow Condensed' };
     for (const dep of direct.filter((d) => !d.startsWith('@rsdp/'))) {
       expect(names[dep], `${dep} needs a line in docs/CREDITS.md`).toBeDefined();
       expect(credits).toContain(names[dep]);

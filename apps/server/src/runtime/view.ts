@@ -1,7 +1,7 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
-import { fairRevealsAt, fillStakes, rabbitCards, type TableRuntime } from './table';
+import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
 import { spectatorsSeeCards } from '@rsdp/engine/settings';
@@ -317,16 +317,11 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer, now: number
 function previewSetup(rt: TableRuntime): TableView['upcoming'] {
   const settings = rt.state.settings;
   const rot = settings.game.rotation;
-  const step = rot.enabled && rot.steps.length ? rot.steps[rt.state.rotation.step % rot.steps.length] : null;
+  const step = rot.enabled && rot.steps.length ? rot.steps[rt.previewRotationStep() % rot.steps.length] : null;
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
-  const { centsMode: _c, ...stakes } = settings.stakes;
-  const sched = settings.blindSchedule;
-  if (sched.enabled && sched.levels.length) {
-    const level = sched.levels[Math.min(rt.state.level.index, sched.levels.length - 1)];
-    Object.assign(stakes, { smallBlind: level.smallBlind, bigBlind: level.bigBlind, ante: level.ante });
-  }
+  const stakes = cashHandStakes(settings, Math.min(rt.state.level.index, settings.blindSchedule.levels.length - 1), game);
   const betting = step?.betting ?? settings.game.betting;
-  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes: fillStakes(stakes, game) };
+  return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes };
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {

@@ -148,7 +148,7 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         const before = boardCount.get(key) ?? 0;
         const total = before + e.cards.length;
         boardCount.set(key, total);
-        // A whole board at once (a second run, or a bomb pot runout) is just "Board".
+        // Anything else (stud's one shared card when the deck runs short) is just "Board".
         const label = before === 0 && total === 3 ? 'Flop' : e.cards.length === 1 && total === 4 ? 'Turn' : e.cards.length === 1 && total === 5 ? 'River' : 'Board';
         const where = (runs > 1 ? ` (run ${e.run + 1})` : '') + (e.board > 0 ? ` (board ${e.board + 1})` : '');
         lines.push(`${label}${where}: ${cardsText(e.cards)}`);
@@ -191,6 +191,8 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         break;
       case 'run-it':
         runs = e.times;
+        // The second run starts with the cards out so far, so its next card is named as the first run's would be (#372).
+        if (e.times === 2) for (const [key, n] of [...boardCount]) if (key.startsWith('0:')) boardCount.set(`1:${key.slice(2)}`, n);
         lines.push(e.times === 2 ? 'Running it twice' : 'Running it once');
         break;
       case 'show':
