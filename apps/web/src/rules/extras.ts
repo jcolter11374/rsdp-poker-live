@@ -121,7 +121,8 @@ export const EXTRAS: ExtraGuide[] = [
     steps: [
       "HORSE is five Limit games: Hold'em, Omaha Hi-Lo, Razz, Seven Card Stud and Stud Hi-Lo (the first letters spell it).",
       "8-Game plays 2-7 Triple Draw, Limit Hold'em, Omaha Hi-Lo, Razz, Seven Card Stud, Stud Hi-Lo, No-Limit Hold'em and Pot-Limit Omaha.",
-      'Each game lasts one orbit to start with: once the button has gone all the way round, the next game starts. The table log says when the game changes, and the table shows the game being played.',
+      'Each game lasts one orbit to start with: once the button has gone all the way round, the next game starts.',
+      'The top bar shows the game being played, how many more hands of it there are and the game after it ("3 more hands, then Razz"), and a banner on the table says when a new game starts. A game counted in orbits follows the button, so its count changes if players sit down, sit out or leave.',
       "The blind games (hold'em, Omaha and Triple Draw) use the table's blinds. The stud games have no blinds: everyone antes, and the lowest up card (the highest in Razz) brings in.",
       `Only the stud games ante. The ante you set is the stud ante; the blind games are played without it. Stud has no big blind, so a big-blind ante is paid there by everyone, at about an eighth of it each (300 becomes ${studAnteForBigBlindAnte(300)}).`,
       'In the Limit games every bet and raise is a fixed size: the small bet on the early rounds and the big bet, twice as much, on the later ones.',
@@ -138,7 +139,7 @@ export const EXTRAS: ExtraGuide[] = [
     ],
     settings: [
       'Start a cash game: pick HORSE or 8-Game under Mixed games in the Game list.',
-      "Host a tournament: tap HORSE or 8-Game next to Mixed under Game. The game changes every level; each level's blinds, and its ante for the stud games, come from the structure.",
+      "Host a tournament: tap HORSE or 8-Game next to Mixed under Game. The game changes every level, and the top bar counts down to the next one (\"Razz next, in 3:20\"); each level's blinds, and its ante for the stud games, come from the structure.",
       'At a table: Table settings > Game, then tap HORSE or 8-Game. You can then change how long each game lasts, drop games or add others.',
       'Table settings > Stakes sets the blinds, the Limit small and big bets, the stud ante and the bring-in. With "Raise the blinds on a schedule", the Limit bets and the bring-in rise with the blinds, keeping their size to the big blind.',
     ],

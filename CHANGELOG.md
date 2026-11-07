@@ -20,6 +20,12 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ## [2026.11.06.6] - 2026-11-06
 
+_Hands left before the game changes_
+
+### New
+
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz". When the new game starts, a banner on the table says so for a few seconds. In mixed-game tournaments the bar counts down to the next game instead ("Razz next, in 3:20"), and a banner marks each new level. (Suggested by John.)
+
 ### Fixed and changed
 
 - Stud games with a big-blind ante (tournaments with stud levels, cash stud tables, and the stud games of HORSE and 8-Game): everyone now antes about an eighth of it (300 becomes 40 each, 0.50 becomes 0.06), instead of every player putting in the full amount. In tournaments the lobby clock and the structure table show the ante each level really deals, and the structure editor says how it works.

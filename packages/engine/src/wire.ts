@@ -215,6 +215,8 @@ export interface TableView {
   bombPotNext: boolean;
   /** Game and stakes of the next hand when no hand is running (cash tables). */
   upcoming: { gameId: string; gameName: string; betting: BettingKind; stakes: Stakes } | null;
+  /** A cash table's game rotation: the game now, how many more hands of it, and the game after it (#373). */
+  rotation?: RotationView | null;
   /** Blind schedule: current level and when it ends. */
   level: { index: number; count: number; endsAt: number | null; handsLeft: number | null } | null;
   /** The host sees all requests; everyone else sees their own. */
@@ -254,6 +256,30 @@ export interface TableView {
    * moves when that happens, so browsers fetch the hands again).
    */
   fair: { nextCommit: string; handCommit: string | null; openThrough: number };
+}
+
+/** A game as the rotation names it: its id, betting and full name. */
+export interface RotationGameView {
+  gameId: string;
+  betting: BettingKind;
+  gameName: string;
+}
+
+/**
+ * Where a cash table's mixed-game rotation has got to (#373). Absent at tournaments, at tables without a rotation,
+ * and when every step of the rotation plays the same game.
+ */
+export interface RotationView extends RotationGameView {
+  /** Hands of this game dealt so far; 0 when the next hand starts it (a new table, or the rotation was changed). */
+  dealt: number;
+  /**
+   * Hands of this game still to deal after those dealt (later steps of the same game included). A step counted in
+   * orbits is worked out from the button and the players sitting in now, so the count moves when people come or go.
+   * Null when it can't be worked out (fewer than two players to deal to).
+   */
+  handsLeft: number | null;
+  /** The game after it. */
+  next: RotationGameView;
 }
 
 /** A finished hand for the log and replayer, filtered for the viewer. */

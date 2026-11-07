@@ -34,6 +34,8 @@ import { Dock } from './components/table/Dock';
 import { useDepartures, useRunoutReveal } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
+import { TournamentGameLine } from './tournament/TableGame';
+import { CashGameLine } from './components/table/GameLine';
 import { navigate, tournamentOfTable, useFollowSeat } from './tournament/hooks';
 
 /** Plays sounds, buzzes and badges the tab for what changed between two views. */
@@ -499,19 +501,26 @@ export function TablePage({ tableId }: { tableId: string }) {
             </>
           )}
         </a>
-        <span className="stakes">
-          {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
-          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
-          {game && (
-            <>
-              {portrait ? <br /> : ' · '}
-              {game.label} {game.stakes}
-            </>
-          )}
-          {levelText && <> · {levelText}</>}
-          {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
-          {view.paused && <b className="paused"> · Paused</b>}
-        </span>
+        {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
+            At a tournament the strip under the bar names the event, so the bar just says which table. */}
+        {view.tournamentId ? (
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} />
+        ) : view.rotation ? (
+          <CashGameLine view={view} fmt={fmt} portrait={portrait} levelText={levelText} />
+        ) : (
+          <span className="stakes">
+            <b>{view.name}</b>
+            {game && (
+              <>
+                {portrait ? <br /> : ' · '}
+                {game.label} {game.stakes}
+              </>
+            )}
+            {levelText && <> · {levelText}</>}
+            {view.hand?.bombPot && view.hand.phase !== 'complete' && <b> · Bomb pot</b>}
+            {view.paused && <b className="paused"> · Paused</b>}
+          </span>
+        )}
         {bigBlind > 0 && (
           <button
             className="units-toggle"
