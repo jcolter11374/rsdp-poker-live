@@ -80,7 +80,7 @@ function beforeView(): TableView {
 
 const frozen = (): Frozen => {
   const b = beforeView();
-  return { logCut: 10, seats: b.seats, ledger: [], me: b.me, nit: null };
+  return { logCut: 10, seats: b.seats, ledger: [], me: b.me, nit: null, rotation: null };
 };
 const cardsOf = (v: TableView, seat: number) => v.seats[seat]!.cards.map((c) => c.card).join(' ');
 

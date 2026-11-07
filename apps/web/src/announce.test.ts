@@ -148,7 +148,7 @@ describe('an all-in runout read aloud', () => {
       const live = tableView({ hand: { handNumber: 1, phase: 'complete', showdown: true, boards: s.runs, pots: [], potTotal: 0, awards: [], events: s.events } });
       const steps = runoutSteps(s.events);
       expect(steps.length).toBeGreaterThan(1);
-      const frozen: Frozen = { logCut: 0, seats: live.seats, ledger: [], me: live.me, nit: null };
+      const frozen: Frozen = { logCut: 0, seats: live.seats, ledger: [], me: live.me, nit: null, rotation: null };
       // What TablePage hands the announcer: the table just before the last call, the runout as it is revealed a
       // step at a time (useRunoutReveal's holdBack), then the finished hand once the reveal ends.
       const called = s.events.map((e) => e.t).lastIndexOf('action');
@@ -189,7 +189,7 @@ describe('a stud all-in runout read aloud (#216)', () => {
     const live = tableView({ hand, seats });
     const steps = runoutSteps(events);
     expect(steps).toHaveLength(4);
-    const frozen: Frozen = { logCut: 0, seats: live.seats, ledger: [], me: live.me, nit: null };
+    const frozen: Frozen = { logCut: 0, seats: live.seats, ledger: [], me: live.me, nit: null, rotation: null };
     const called = events.map((e) => e.t).lastIndexOf('action');
     const pre: TableView = { ...live, hand: { ...live.hand!, phase: 'betting', events: events.slice(0, called) } };
     const shown = [pre, ...Array.from({ length: steps.length + 1 }, (_, n) => holdBack(live, frozen, n)), live];
