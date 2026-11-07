@@ -883,16 +883,50 @@ dl.shortcuts dd { margin: 0; }
 @media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(169px, var(--held, 0px)); } }
 .portrait .dock.seated.limit.tips { min-height: max(212px, var(--held, 0px)); }
 @media (max-height: 760px) { .portrait .dock.seated.limit.tips { min-height: max(198px, var(--held, 0px)); } }
-/* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
-@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips { min-height: var(--held, 0px); } }
+/* Phones on their side (#382): room for the two-line action bar below, in every game, so the table is the same height from
+   the moment you sit, on your turn or not, and when a mixed game moves between limit and no-limit games. Between hands it
+   also holds the bar and the line under it (rabbit hunt, the bots' reasons). Last, so it wins over the rules above. */
+@media (max-height: 500px) {
+  .portrait .dock.seated, .portrait .dock.seated.limit { min-height: max(89px, var(--held, 0px)); }
+  /* A coach tip's verdict can take two lines. */
+  .portrait .dock.seated.tips, .portrait .dock.seated.limit.tips { min-height: max(92px, var(--held, 0px)); }
+}
 /* On phones the time bank and the Tip pill sit beside the hand line instead of over it. */
 .portrait .bar-head { gap: 8px; flex-wrap: nowrap; }
 .portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { flex-shrink: 0; }
 .portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { position: static; translate: none; }
-/* ...and on their side, the tip is the verdict and Why? only. */
+/* Phones on their side (#382): the table is short and the screen is wide, so the action bar goes across rather than down.
+   The pills (time bank, Tip) share a line with the bet sizes, slider and amount, or with the tip in their place, and the
+   move buttons go under them. A turn with nothing to size (fixed limit, a draw, run it twice) is one line. */
 @media (max-height: 500px) {
+  .portrait .action-bar { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 6px 10px; gap: 6px 8px; min-height: 52px; }
+  .portrait .action-bar > * { flex: 1 1 100%; min-width: 0; }
+  .portrait .action-bar > .bar-head { flex: 0 0 auto; min-height: 0; }
+  .portrait .action-bar > :is(.sizing, .play-tip, .play-tip-slot, .prompt) { flex: 1 1 0; }
+  /* A message goes under that line rather than between the pills and the bet sizes. */
+  .portrait .action-bar > :is(.error, .sending-note) { order: 1; margin: 0; text-align: center; }
+  /* Under the bet sizes the buttons have a line of their own, at most 780px of it, in the middle. */
+  .portrait .action-bar > .buttons { order: 2; max-width: none; margin: 0; padding-inline: max(0px, calc((100% - 780px) / 2)); }
+  .portrait .action-bar:not(:has(> :is(.sizing, .play-tip, .play-tip-slot))) > .buttons { flex: 1 1 0; padding-inline: 0; max-width: 780px; margin: 0 auto; }
+  .portrait .action-bar > .prompt { font-size: 0.85rem; line-height: 1.25; }
+  .portrait .action-bar .buttons button { padding: 9px 6px; }
+  .portrait .action-bar.pre .buttons button { padding: 9px 4px; }
+  .portrait .sizing { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; }
+  .portrait .sizing .presets { flex: 1 1 0; min-width: 0; gap: 5px; }
+  .portrait .sizing .presets button { min-width: 0; padding: 6px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .portrait .sizing .slider { flex: 1.25 1 0; }
+  .portrait .sizing input[type='number'] { width: 76px; padding: 4px 6px; }
+  .portrait .sizing input[type='range'] { height: 26px; margin: 0; }
+  /* The tip is its verdict and Why? on one line (two if the verdict is long), about as tall as the bet sizes it stands in for. */
   .portrait .play-tip-basis > span, .portrait .play-tip-basis [data-act='set'], .portrait .play-tip-basis [data-act='mark'] { display: none; }
-  .portrait .play-tip-slot { min-height: 58px; }
+  .portrait .play-tip { flex-direction: row; align-items: center; justify-content: center; gap: 8px; }
+  .portrait .play-tip-verdict { flex: 0 1 auto; min-width: 0; }
+  .portrait .play-tip-basis { flex: none; }
+  .portrait .play-tip-slot { min-height: 30px; }
+  .portrait .play-tip-slot .play-tip { margin-bottom: 0; }
+  .portrait .play-tip-basis button { margin: 0; min-height: 30px; padding-block: 3px; }
+  /* On your turn the line under the bar (the Nit game, the bots' reasons) waits until you've acted: the bar has the room. */
+  .portrait .dock-inner:has(> .action-bar.my-turn) > .dock-row { display: none; }
 }
 
 /* "Are you sure?" under a game picker set to unusual betting. */
