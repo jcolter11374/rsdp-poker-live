@@ -451,7 +451,9 @@ export function Table({
     const taken = [...takenKey].map((c) => c === '1');
     if (compact) return seatFractions(taken, offset, { clear, minGap });
     const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? sized.empty : seat === mine ? sized.me : sized.others);
-    const key = `${sized.key}|${takenKey}|${offset}`;
+    // A new felt size is placed afresh: seats kept from the size before the felt was measured (or before a banner came or
+    // went) would depend on what happened before, and two players with the same window could see different tables.
+    const key = `${sized.key}|${takenKey}|${offset}|${Math.round(w)}x${Math.round(h)}`;
     const keep = placed.current?.key === key ? placed.current.at : undefined;
     let at: readonly number[];
     try {
