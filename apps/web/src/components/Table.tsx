@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
@@ -92,7 +92,16 @@ function useSize(ref: RefObject<HTMLElement>) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [ref]);
-  return size;
+  // The observer reports a new size only after the browser has painted the frame. Called from a layout effect, this
+  // reads it before the paint instead, and leaves the size as it is (no render) when it hasn't changed.
+  const remeasure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
+  }, [ref]);
+  return [size, remeasure] as const;
 }
 
 /**
@@ -393,7 +402,7 @@ export function Table({
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
-  const size = useSize(felt);
+  const [size, remeasureFelt] = useSize(felt);
   const reach = useSeatReach(felt);
   const handFit = useHandFit(felt, compact);
   const room = useRoom(felt, fill && !compact);
@@ -479,6 +488,10 @@ export function Table({
   const [fit, setFit] = useState({ key: '', steps: 0 });
   const steps = grown && fit.key === fitKey ? fit.steps : 0;
   const seatScale = compact ? 1 : grown ? Math.max(0.72, Math.round((grownScale - steps * FIT_STEP) * 100) / 100) : Math.round(Math.max(0.72, roomy) * 100) / 100;
+  // On a big window the felt's margins are these sizes times the seats' scale (styles.css), so a new scale or margin is a
+  // new felt size: it's read before the browser paints, so the seats are placed (and made a step smaller, or not) for the
+  // felt they're drawn on, not the one from before.
+  useLayoutEffect(remeasureFelt, [remeasureFelt, grown, seatScale, sideMargin, topMargin]);
   // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been (starting from their size once
   // dealt in, in every game the table deals) since the table's games or the seats' size last changed: they shrink when a
   // player folds and between hands, and the seats mustn't move then, when the cards come (#363) or when a mixed game
@@ -559,10 +572,14 @@ export function Table({
     return { at, fine, current: measured && current };
   }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, sizes, sizedKey, nowKey]);
   const spread = placement.at;
-  // Seats measured at this size that still cover each other: a step smaller (see fitKey).
+  // Seats measured at this size that still cover each other: a step smaller (see fitKey). Only when they were placed for
+  // the felt as it is now: a step's new margins, or the felt's when the room was first known, come in the next render.
   useLayoutEffect(() => {
-    if (grown && placement.current && !placement.fine && seatScale > 0.72 && steps < FIT_STEPS_MAX) setFit({ key: fitKey, steps: steps + 1 });
-  }, [grown, placement, seatScale, fitKey, steps]);
+    if (!grown || !placement.current || placement.fine || seatScale <= 0.72 || steps >= FIT_STEPS_MAX) return;
+    const el = felt.current;
+    if (!el || el.clientWidth !== size.w || el.clientHeight !== size.h) return;
+    setFit({ key: fitKey, steps: steps + 1 });
+  }, [grown, placement, seatScale, fitKey, steps, size]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
