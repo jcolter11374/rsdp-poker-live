@@ -12,6 +12,7 @@ import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
 import { Table, useNow } from './components/Table';
 import { HandExtras } from './components/table/HandExtras';
+import { soloPractice } from './coach';
 import { PlayerExtras } from './components/table/Persona';
 import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
@@ -450,6 +451,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const canRebuy = cash && !!mySeat && view.settings.seating.allowRebuys;
   // The server's own rule (chips, or chips coming after this hand). A server from before it sent this: chips shown.
   const canSitIn = view.me.canSitIn ?? (!!mySeat && mySeat.stack > 0);
+  // Coach tips and the bots' reasons come with each hand at a practice table where you're the only person. The server
+  // turns them on at the deal (view.tips), but the area under the table makes room for them from the start, so neither
+  // the first deal nor the first "Why did the bots play…?" pushes the table up (#476).
+  const practice = !!view.tips || soloPractice(view);
   // Like run() in the host panel: a refusal or a lost answer shows, instead of the button seeming dead.
   const seatCall = (event: 'seat:sitOut' | 'seat:prefs', payload: object) =>
     call(event, payload)
@@ -897,7 +902,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             reset={`${portrait}:${place}`}
             seated={place !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
-            tips={!!view.tips && prefs.tips}
+            tips={practice && prefs.tips}
+            why={practice && prefs.botReasons}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
             {/* TableStrip's asks, while there is one (empty, it takes no room: .dock-notes:empty). */}

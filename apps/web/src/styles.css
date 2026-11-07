@@ -1010,8 +1010,29 @@ dl.shortcuts dd { margin: 0; }
 @media (max-height: 820px) { .dock.seated.limit.tips { min-height: max(169px, var(--held, 0px)); } }
 .portrait .dock.seated.limit.tips { min-height: max(212px, var(--held, 0px)); }
 @media (max-height: 760px) { .portrait .dock.seated.limit.tips { min-height: max(198px, var(--held, 0px)); } }
+/* A practice table where you're the only person (#476): from the end of the first hand on, the bots' reasons button
+   ("Why did the bots play last hand?") sits in a row under the action bar, on your turns too. The area under the table
+   has room for that row from the start, so the first one doesn't push the table up: the tallest bar plus the row's
+   34 px, and on a computer the 14 px gap above it. (Measured: on a computer the fixed-limit bar is 136 px, 168 px on
+   taller windows, or 93 and 119 px without tips; on a phone 195 px, 207 px on taller ones, or 105 px without tips, and
+   the no-limit bar 213 px, 229 px on taller ones, when its buttons take two lines.) The other seeds have room for the row already. */
+.dock.seated.limit.why { min-height: max(167px, var(--held, 0px)); }
+.dock.seated.limit.tips.why { min-height: max(218px, var(--held, 0px)); }
+@media (max-height: 820px) {
+  .dock.seated.limit.why { min-height: max(141px, var(--held, 0px)); }
+  .dock.seated.limit.tips.why { min-height: max(186px, var(--held, 0px)); }
+}
+.portrait .dock.seated.why { min-height: max(264px, var(--held, 0px)); }
+@media (max-height: 760px) { .portrait .dock.seated.why { min-height: max(248px, var(--held, 0px)); } }
+.portrait .dock.seated.limit.why { min-height: max(139px, var(--held, 0px)); }
+.portrait .dock.seated.limit.tips.why { min-height: max(246px, var(--held, 0px)); }
+@media (max-height: 760px) { .portrait .dock.seated.limit.tips.why { min-height: max(232px, var(--held, 0px)); } }
 /* Phones on their side: no seed, the table needs every pixel. Last, so it wins over the rules above. */
-@media (max-height: 500px) { .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips { min-height: var(--held, 0px); } }
+@media (max-height: 500px) {
+  .portrait .dock.seated, .portrait .dock.seated.limit, .portrait .dock.seated.limit.tips, .portrait .dock.seated.why, .portrait .dock.seated.limit.why, .portrait .dock.seated.limit.tips.why {
+    min-height: var(--held, 0px);
+  }
+}
 /* On phones the time bank and the Tip pill sit beside the hand line instead of over it. */
 .portrait .bar-head { gap: 8px; flex-wrap: nowrap; }
 .portrait .bar-head .time-bank, .portrait .bar-head .play-tip-button { flex-shrink: 0; }

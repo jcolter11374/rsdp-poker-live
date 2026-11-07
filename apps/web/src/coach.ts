@@ -562,3 +562,15 @@ export function linesWithWhy(hand: HandRecordView, name: (seat: number) => strin
   }
   return lines;
 }
+
+/**
+ * A practice table where you're the only person seated, among bots: the next hand comes with coach tips and the bots'
+ * reasons. The server decides that at each deal (view.tips: you're the only person dealt in, at a cash table where no
+ * two people have played a hand); this is the same rule worked out from the seats, so the page can make room for them
+ * before the first deal (#476).
+ */
+export function soloPractice(view: Pick<TableView, 'mode' | 'realGame' | 'me' | 'seats'>): boolean {
+  if (view.mode !== 'cash' || view.realGame || view.me.seat === null) return false;
+  const others = view.seats.filter((s) => s && s.playerId !== view.me.playerId);
+  return others.length > 0 && others.every((s) => !!s!.bot);
+}

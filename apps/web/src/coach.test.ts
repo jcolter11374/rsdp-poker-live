@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, type BettingKind, type HandEvent, type HandState } from '@rsdp/engine/core';
 import { BOT_NOTE_RULES, COACH_RULES, type BotNote, type CoachMove, type CoachRule, type CoachTip, type HandRecordView, type TableView } from '@rsdp/engine/wire';
 import { STAKES, start } from '../../../packages/engine/test/core/harness';
-import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
+import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, soloPractice, tipText, VERDICT_CAP, type FactCode } from './coach';
 import { bbExactFormat, eventLines } from './format';
 import { frameView, type Frame } from './replay';
 
@@ -600,4 +600,24 @@ it('has a verdict for every tip rule', () => {
     const move: CoachMove = rule === 'draw' || rule === 'pat' ? { type: 'draw', discard: rule === 'draw' ? [1] : [] } : rule === 'bring-in' ? { type: 'bring-in' } : { type: 'call' };
     expect(tipText(tipOf({ rule, move, kind: move.type === 'draw' ? 'draw' : 'bet' }), view, fmt).verdict).not.toBe('');
   }
+});
+
+describe('soloPractice (#476)', () => {
+  type Seats = TableView['seats'];
+  const bot = { ownerId: 'me', ownerName: 'Me', look: 0 };
+  const person = (playerId: string) => ({ playerId }) as NonNullable<Seats[number]>;
+  const robot = (playerId: string) => ({ playerId, bot }) as NonNullable<Seats[number]>;
+  const view = (seats: Seats, over: Partial<Pick<TableView, 'mode' | 'realGame' | 'me'>> = {}) => ({ mode: 'cash' as const, realGame: false, me: { playerId: 'me', seat: 0 }, seats, ...over });
+
+  it('is on when you sit among bots only, before any hand is dealt', () => {
+    expect(soloPractice(view([person('me'), robot('b1'), null, robot('b2')]))).toBe(true);
+  });
+
+  it('is off with another person seated, alone, watching, at a tournament, or where two people have played', () => {
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2')]))).toBe(false);
+    expect(soloPractice(view([person('me'), null]))).toBe(false);
+    expect(soloPractice(view([null, robot('b1')], { me: { playerId: 'me', seat: null } }))).toBe(false);
+    expect(soloPractice(view([person('me'), robot('b1')], { mode: 'tournament' }))).toBe(false);
+    expect(soloPractice(view([person('me'), robot('b1')], { realGame: true }))).toBe(false);
+  });
 });

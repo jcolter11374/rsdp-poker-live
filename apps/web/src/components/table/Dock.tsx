@@ -9,13 +9,15 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
  * with room for a full action bar (see .dock.seated), so even the first turn of
  * the session doesn't move the table.
  * In a hand with coach tips it keeps the action bar at its foot, so a tip
- * opening above the buttons never moves them.
+ * opening above the buttons never moves them. At a practice table it also starts
+ * with room for the bots' reasons button under the bar (#476).
  */
 export function Dock({
   reset,
   seated,
   limit,
   tips = false,
+  why = false,
   children,
 }: {
   reset: unknown;
@@ -23,8 +25,10 @@ export function Dock({
   seated: boolean;
   /** Fixed-limit games have no bet slider, so their full bar is shorter. */
   limit: boolean;
-  /** Coach tips are on for this hand: room for the tip from the deal (see .dock.tips). */
+  /** Coach tips come with this table's hands (a practice table): room for the tip from the start (see .dock.tips). */
   tips?: boolean;
+  /** A practice table: room from the start for the bots' reasons button under the action bar (see .dock.why). */
+  why?: boolean;
   children: ReactNode;
 }) {
   const outer = useRef<HTMLDivElement>(null);
@@ -64,7 +68,7 @@ export function Dock({
     };
   }, [reset]);
   return (
-    <div className={['dock', seated && 'seated', limit && 'limit', tips && 'tips'].filter(Boolean).join(' ')} ref={outer}>
+    <div className={['dock', seated && 'seated', limit && 'limit', tips && 'tips', why && 'why'].filter(Boolean).join(' ')} ref={outer}>
       <div className="dock-inner" ref={inner}>
         {children}
       </div>
