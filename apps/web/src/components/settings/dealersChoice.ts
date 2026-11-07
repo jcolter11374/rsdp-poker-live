@@ -1,6 +1,7 @@
-import { SETTINGS_LIMITS, type ChoiceGame, type DealersChoiceSettings, type TableSettings } from '@rsdp/engine/settings';
+import { MAX_CHIPS, SETTINGS_LIMITS, type BlindLevel, type ChoiceGame, type DealersChoiceSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, MIXED_GAMES, VARIANT_LIST } from '@rsdp/engine/variants';
 import { defaultStudAnte, studBringIn } from '../../format';
+import { doubled } from './lists';
 
 /** Dealer's choice settings, filled in for tables saved before it existed (D33). */
 export const choiceOf = (settings: TableSettings): DealersChoiceSettings => settings.game.dealersChoice ?? { enabled: false, games: [], hands: 0, pickSeconds: 20 };
@@ -46,10 +47,11 @@ export const MENU_STAKE_GROUPS = [['smallBlind'], ['smallBet', 'bigBet'], ['ante
 
 /**
  * The stakes a menu needs, as for HORSE: Limit bets of the big blind and twice it when a Limit game is added and
- * none are set, a small blind for the blind games, and the stud ante and bring-in when the first stud game goes
- * on (in place of any other ante: with stud on the menu, only the stud games ante, D29). When the last stud game
- * comes off, so does that ante (no ante): it would be posted in every blind game instead. Switching how the game is
- * chosen uses it too, with the games dealt before and after.
+ * none are set, a small blind when the first blind game goes on (a table that already deals blind games keeps the
+ * small blind it has, even none), and the stud ante and bring-in when the first stud game goes on (in place of any
+ * other ante: with stud on the menu, only the stud games ante, D29). When the last stud game comes off, so does that
+ * ante (no ante): it would be posted in every blind game instead. stakesForGames uses it for each part of the stakes,
+ * with `before` the games that part's own value was for.
  */
 export function stakesForMenu(stakes: TableSettings['stakes'], games: readonly ChoiceGame[], before: readonly ChoiceGame[]): TableSettings['stakes'] {
   const next = { ...stakes };
@@ -57,7 +59,8 @@ export function stakesForMenu(stakes: TableSettings['stakes'], games: readonly C
     next.smallBet = Math.max(1, next.bigBlind);
     next.bigBet = next.smallBet * 2;
   }
-  if (games.some((g) => !isStud(g.gameId)) && next.smallBlind === 0 && next.bigBlind > 1) next.smallBlind = Math.floor(next.bigBlind / 2);
+  const blinds = (gs: readonly ChoiceGame[]) => gs.some((g) => !isStud(g.gameId));
+  if (blinds(games) && !blinds(before) && next.smallBlind === 0 && next.bigBlind > 1) next.smallBlind = Math.floor(next.bigBlind / 2);
   const stud = games.some((g) => isStud(g.gameId));
   if (stud && !before.some((g) => isStud(g.gameId))) {
     next.ante = defaultStudAnte(next);
@@ -92,26 +95,55 @@ const sameAntes = (a: readonly number[], b: readonly number[]) => a.every((x, i)
  */
 export type StakesStart = { own: { stakes: Stakes; games: readonly ChoiceGame[] }[]; ownAntes: readonly number[]; auto: Stakes; autoAntes: readonly number[] };
 
+/** Where the stakes stand before any change of the games dealt: each part is the table's own, for the games it deals. */
+export const stakesStart = (stakes: Stakes, antes: readonly number[], games: readonly ChoiceGame[]): StakesStart => ({
+  own: MENU_STAKE_GROUPS.map(() => ({ stakes, games })),
+  ownAntes: antes,
+  auto: stakes,
+  autoAntes: antes,
+});
+
+/**
+ * The stud ante for a level of a blind schedule: about a quarter of the level's small bet, as `defaultStudAnte`
+ * works it out for the Stakes tab. While the schedule is on, the level's ante is the one posted, and the server sizes
+ * the level's Limit bets to its big blind (`cashHandStakes`: in step with the table's own big blind, or the level's
+ * when the table has none), so the ante is worked out from those (#426). A level with no big blind (a stud schedule
+ * that only raises the antes) has nothing to go by, and gets the Stakes tab's ante.
+ */
+export function levelStudAnte(stakes: Stakes, level: Pick<BlindLevel, 'bigBlind'>): number {
+  if (level.bigBlind <= 0) return stakes.ante;
+  const smallBet = stakes.bigBlind > 0 && stakes.smallBet > 0 ? Math.max(1, Math.round((stakes.smallBet * level.bigBlind) / stakes.bigBlind)) : 0;
+  return Math.min(MAX_CHIPS, defaultStudAnte({ smallBet, bigBlind: level.bigBlind, centsMode: stakes.centsMode }));
+}
+
 /**
  * The stakes, and the blind schedule's level antes, for dealing `to` in place of `from` (#414).
  *
  * Each part of the stakes is worked out from its own value, the one the table had or the host last typed, for the
  * games it was for, with stakesForMenu (a stud ante goes on with the first stud game and comes off with the last;
- * Limit bets for a Limit game; a small blind for the blind games). Coming back to those games gives that value back
- * exactly, so a look at other games and back undoes itself, whichever way the host comes back. A part the host
- * changes becomes its own value from then on. The parts: the small blind; the two Limit bets; the ante, who antes
+ * Limit bets for a Limit game; a small blind for the first blind game). Coming back to those games gives that value
+ * back, so a look at other games and back undoes itself, whichever way the host comes back (a standard mix's button
+ * is the exception: it sets that mix's own Limit bets and bring-in, D29). A part the host changes becomes its own value
+ * from then on. `start` is where the last call left things, or with none, `stakesStart` for
+ * `stakes` and `from`; give the dialog's starting point there, so what the host typed before the first change counts
+ * as theirs. `limit` says whether the settings deal a Limit game: one in `to`, or the table's one game, which the
+ * server counts in a rotation or Dealer's choice too. The parts: the small blind; the two Limit bets; the ante, who antes
  * and the level antes; the bring-in. With no ante, no level of a schedule that's on has one either (the server
- * refuses that), nor does any level when the ante comes off.
+ * refuses that), nor does any level when the ante comes off. When the stud ante goes on, each level gets a stud
+ * ante for its own blinds (`levelStudAnte`), in place of any it had: while the schedule is on, the level's ante is
+ * the one posted, so a level with none would deal the stud games with no ante (#426).
  */
 export function stakesForGames(
   stakes: Stakes,
-  antes: readonly number[],
+  levels: readonly Pick<BlindLevel, 'bigBlind' | 'ante'>[],
   from: readonly ChoiceGame[],
   to: readonly ChoiceGame[],
   start: StakesStart | null,
   scheduleOn: boolean,
+  limit = to.some((g) => g.betting === 'fixed-limit'),
 ): { stakes: Stakes; antes: number[]; start: StakesStart } {
-  const s = start ?? { own: MENU_STAKE_GROUPS.map(() => ({ stakes, games: from })), ownAntes: antes, auto: stakes, autoAntes: antes };
+  const antes = levels.map((l) => l.ante);
+  const s = start ?? stakesStart(stakes, antes, from);
   const changed = (group: Group) => !sameGroup(stakes, s.auto, group) || (group[0] === 'ante' && !sameAntes(antes, s.autoAntes));
   const own = MENU_STAKE_GROUPS.map((group, i) => (changed(group) ? { stakes, games: from } : s.own[i]));
   const ante = MENU_STAKE_GROUPS.findIndex((group) => group[0] === 'ante');
@@ -125,14 +157,30 @@ export function stakesForGames(
     copyGroup(base, o.stakes, group);
     copyGroup(next, stakesForMenu(base, to, o.games), group);
   });
-  // A bring-in above the small bet makes no sense (the server refuses it with a Limit game), unless the host typed both.
+  // With a Limit game dealt, the server refuses a bring-in above the small bet: one left above it comes down to fit,
+  // unless the host typed both, the bring-in and the small bet it ends up with (changed them from the table's, or
+  // from what the dialog set). The server then says what's wrong, rather than the dialog changing what they typed.
   const bets = MENU_STAKE_GROUPS.findIndex((group) => group[0] === 'smallBet');
   const bringIn = MENU_STAKE_GROUPS.findIndex((group) => group[0] === 'bringIn');
-  if (next.smallBet >= 1 && next.bringIn > next.smallBet && !(changed(MENU_STAKE_GROUPS[bets]) && changed(MENU_STAKE_GROUPS[bringIn]))) {
-    next.bringIn = studBringIn(next.smallBet, next.centsMode);
+  const typedBoth = changed(MENU_STAKE_GROUPS[bets]) && changed(MENU_STAKE_GROUPS[bringIn]) && next.smallBet === own[bets].stakes.smallBet;
+  if (limit && next.smallBet >= 1 && next.bringIn > next.smallBet && !typedBoth) next.bringIn = studBringIn(next.smallBet, next.centsMode);
+  // The level antes go with the own ante. A level added since keeps its own, but one that still has the ante
+  // "Add level" gave it, double the level before's, goes on following the level before.
+  let nextAntes: number[] = [];
+  antes.forEach((a, i) => nextAntes.push(i < ownAntes.length ? ownAntes[i] : i > 0 && a === doubled(antes[i - 1]) ? doubled(nextAntes[i - 1]) : a));
+  if (next.anteType === 'none') {
+    // No level of a schedule that's on may have an ante then (the server refuses that). With the schedule off, the
+    // levels keep the antes they had with no ante, unless the ante comes off now; a level added since has none to keep.
+    const off = scheduleOn || own[ante].stakes.anteType !== 'none';
+    nextAntes = nextAntes.map((a, i) => (off || i >= ownAntes.length ? 0 : a));
   }
-  // The level antes go with the own ante; a level added since keeps its own.
-  let nextAntes = antes.map((a, i) => (i < ownAntes.length ? ownAntes[i] : a));
-  if (next.anteType === 'none' && (scheduleOn || own[ante].stakes.anteType !== 'none')) nextAntes = antes.map(() => 0);
+  // The stud ante went on (stakesForMenu, with the first stud game): the levels' antes go with it (#426).
+  else if (studAnteOn(to, own[ante].games)) nextAntes = levelStudAntes(next, levels);
   return { stakes: next, antes: nextAntes, start: { own, ownAntes, auto: next, autoAntes: nextAntes } };
 }
+
+/** Whether stakesForMenu puts the stud ante on for dealing `to` in place of `before`: the first stud game goes on. */
+const studAnteOn = (to: readonly ChoiceGame[], before: readonly ChoiceGame[]) => !sameGames(to, before) && to.some((g) => isStud(g.gameId)) && !before.some((g) => isStud(g.gameId));
+
+/** A stud ante for each level of the blind schedule, for its own blinds (#426). */
+export const levelStudAntes = (stakes: Stakes, levels: readonly Pick<BlindLevel, 'bigBlind'>[]) => levels.map((l) => levelStudAnte(stakes, l));

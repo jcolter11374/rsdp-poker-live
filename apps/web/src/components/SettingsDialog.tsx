@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import '@rsdp/engine/modifiers';
 import type { BettingKind } from '@rsdp/engine/core';
-import { getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
+import { applyAtNextHand, getModifierSchema, SETTINGS_LIMITS, type SettingsPatch, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, mixedGameMaxPlayers, mixedGameOf, MIXED_GAMES, VARIANT_LIST, type MixedGame } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -13,15 +13,31 @@ import { SideGamesTab } from './settings/SideGamesTab';
 import { PresetsTab } from './settings/PresetsTab';
 import { canAddGame, canAddLevel, nextBlindLevel, scheduleBetsNote } from './settings/lists';
 import { DealersChoiceFields } from './settings/DealersChoiceFields';
-import { choiceOf, DEFAULT_MENU, menuSeats, repeatsOf, stakesForGames, type StakesStart } from './settings/dealersChoice';
+import { choiceOf, DEFAULT_MENU, levelStudAntes, menuSeats, repeatsOf, stakesForGames, stakesStart, type StakesStart } from './settings/dealersChoice';
 import type { ChoiceGame, DealersChoiceSettings } from '@rsdp/engine/settings';
 
 type Tab = 'game' | 'stakes' | 'clock' | 'seats' | 'rules' | 'side' | 'chat' | 'presets';
 type Mode = 'one' | 'rotate' | 'choice';
+const modeOf = (d: TableSettings): Mode => (choiceOf(d).enabled ? 'choice' : d.game.rotation.enabled ? 'rotate' : 'one');
 /** The games dealt in each way of choosing the game: the one game, the rotation's games, or the menu. */
 const dealtIn = (d: TableSettings, mode: Mode): readonly ChoiceGame[] =>
   mode === 'choice' ? choiceOf(d).games : mode === 'rotate' && d.game.rotation.steps.length ? d.game.rotation.steps : [d.game];
 const levelAntes = (d: TableSettings) => d.blindSchedule.levels.map((l) => l.ante);
+/** Where the stakes stand at `d` before any change of the games dealt (#414). */
+const startOf = (d: TableSettings): StakesStart => stakesStart(d.stakes, levelAntes(d), dealtIn(d, modeOf(d)));
+/**
+ * The table's settings as the next hand will deal them. A change saved earlier in this hand waits for the next one
+ * (applyAtNextHand), and the dialog starts from it and is saved on top of it, so the host sees what will be dealt, and
+ * the change that waits ends up with what the dialog showed.
+ */
+const comingSettings = (settings: TableSettings, pending: SettingsPatch | null): TableSettings => {
+  if (!pending) return settings;
+  try {
+    return applyAtNextHand(settings, pending).settings;
+  } catch {
+    return settings;
+  }
+};
 const TABS: { id: Tab; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'stakes', label: 'Stakes' },
@@ -52,7 +68,8 @@ function diff(prev: unknown, next: unknown): unknown {
 const maxSeatsFor = (gameIds: string[]) => Math.min(...gameIds.map((id) => getVariant(id).maxPlayers));
 
 export function SettingsDialog({ view, onClose }: { view: TableView; onClose: () => void }) {
-  const [draft, setDraft] = useState<TableSettings>(() => structuredClone(view.settings));
+  const base = useMemo(() => comingSettings(view.settings, view.pendingSettings), [view.settings, view.pendingSettings]);
+  const [draft, setDraft] = useState<TableSettings>(() => structuredClone(base));
   const [tab, setTab] = useState<Tab>('game');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,7 +90,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
 
   const rot = draft.game.rotation;
   const choice = choiceOf(draft);
-  const mode: Mode = choice.enabled ? 'choice' : rot.enabled ? 'rotate' : 'one';
+  const mode = modeOf(draft);
   // Each part of the stakes' own value (the table's, or what the host typed) and the games it was for, so a change of
   // the games dealt works the stakes out from it, and a look at other games and back undoes itself (#414).
   const started = useRef<StakesStart | null>(null);
@@ -98,14 +115,23 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
 
   /**
    * The stakes and the blind schedule for dealing `to` in place of the games dealt now (#414), with `adjust` laid on
-   * top (a standard mix's own Limit bets, say), which counts as set up by the dialog too.
+   * top (a standard mix's own Limit bets, say), which counts as set up by the dialog too. A stud ante that `adjust`
+   * puts on goes on the levels too, as one stakesForGames puts on does (#426). `game` is the table's one game
+   * afterwards, which the server's check on the Limit bets counts even in a rotation or Dealer's choice.
    */
-  const forGames = (d: TableSettings, to: readonly ChoiceGame[], adjust = (st: TableSettings['stakes']) => st): Pick<TableSettings, 'stakes' | 'blindSchedule'> => {
+  const forGames = (
+    d: TableSettings,
+    to: readonly ChoiceGame[],
+    adjust = (st: TableSettings['stakes']) => st,
+    game: ChoiceGame = d.game,
+  ): Pick<TableSettings, 'stakes' | 'blindSchedule'> => {
     const { levels } = d.blindSchedule;
-    const next = stakesForGames(d.stakes, levelAntes(d), dealtIn(d, mode), to, started.current, d.blindSchedule.enabled);
+    const limit = [...to, game].some((g) => g.betting === 'fixed-limit');
+    const next = stakesForGames(d.stakes, levels, dealtIn(d, mode), to, started.current ?? startOf(base), d.blindSchedule.enabled, limit);
     const stakes = adjust(next.stakes);
-    started.current = { ...next.start, auto: stakes };
-    const blindSchedule = next.antes.every((a, i) => a === levels[i].ante) ? d.blindSchedule : { ...d.blindSchedule, levels: levels.map((l, i) => ({ ...l, ante: next.antes[i] })) };
+    const antes = next.stakes.ante === 0 && stakes.ante > 0 ? levelStudAntes(stakes, levels) : next.antes;
+    started.current = { ...next.start, auto: stakes, autoAntes: antes };
+    const blindSchedule = antes.every((a, i) => a === levels[i].ante) ? d.blindSchedule : { ...d.blindSchedule, levels: levels.map((l, i) => ({ ...l, ante: antes[i] })) };
     return { stakes, blindSchedule };
   };
 
@@ -118,7 +144,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       game: { ...d.game, gameId, betting: spec.defaultBetting },
       table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, spec.maxPlayers) },
       // Stud is meant to be played with antes; without one the pot starts with the bring-in alone.
-      ...forGames(d, [{ gameId, betting: spec.defaultBetting }], (st) => (stud && st.ante === 0 ? { ...st, ante: defaultStudAnte(st), anteType: 'per-player' } : st)),
+      ...forGames(d, [{ gameId, betting: spec.defaultBetting }], (st) => (stud && st.ante === 0 ? { ...st, ante: defaultStudAnte(st), anteType: 'per-player' } : st), { gameId, betting: spec.defaultBetting }),
     });
   };
 
@@ -145,7 +171,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       },
       table: { ...d.table, maxSeats: Math.min(d.table.maxSeats, mixedGameMaxPlayers(mix)) },
       // The ante is the stud ante (everyone posts it in the stud games), and the hold'em and Omaha rounds need a small blind.
-      ...forGames(d, steps, bets),
+      ...forGames(d, steps, bets, first),
     });
   };
   const currentMix = rot.enabled ? mixedGameOf(rot.steps) : null;
@@ -156,6 +182,20 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
   const setMenu = (menu: ChoiceGame[]) => {
     const d = draft;
     setDraft({ ...d, game: { ...d.game, dealersChoice: { ...choiceOf(d), games: menu } }, ...forGames(d, menu) });
+  };
+  /** New rotation steps, and the stakes their games need, as for a new menu: a stud ante comes off with the last stud game. */
+  const setSteps = (steps: TableSettings['game']['rotation']['steps']) => {
+    const d = draft;
+    const same = steps.length === d.game.rotation.steps.length && steps.every((st, i) => st.gameId === d.game.rotation.steps[i].gameId && st.betting === d.game.rotation.steps[i].betting);
+    const rotation = { ...d.game.rotation, steps };
+    // A step's length or unit doesn't change the games dealt.
+    setDraft({ ...d, game: { ...d.game, rotation }, ...(same ? {} : forGames(d, steps)) });
+  };
+  /** Takes a level off the schedule. The antes kept for switching back stay with their levels (#414). */
+  const removeLevel = (i: number) => {
+    const s = started.current ?? startOf(base);
+    started.current = { ...s, ownAntes: s.ownAntes.filter((_, j) => j !== i), autoAntes: s.autoAntes.filter((_, j) => j !== i) };
+    set('blindSchedule', { levels: draft.blindSchedule.levels.filter((_, j) => j !== i) });
   };
   const setMode = (next: Mode) => {
     if (next === mode) return;
@@ -180,10 +220,10 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
       // Saved straight from the pick time field, before it lost focus: the lowest it can be.
       game: dc ? { ...draft.game, dealersChoice: { ...dc, pickSeconds: Math.max(SETTINGS_LIMITS.pickSeconds.min, dc.pickSeconds) } } : draft.game,
     };
-    const patch = diff(view.settings, fixed) as SettingsPatch | undefined;
+    const patch = diff(base, fixed) as SettingsPatch | undefined;
     if (!patch) return onClose();
-    // How the game is chosen: a change queued earlier in this hand isn't shown here (the dialog starts from the table as
-    // it is now), so send both switches, and the queue ends up with the mode shown.
+    // How the game is chosen: send both switches, so the mode shown is the one dealt even if someone else's change
+    // was saved for the next hand since the dialog opened.
     const g = patch.game as { rotation?: object; dealersChoice?: object } | undefined;
     if (g && (g.rotation || g.dealersChoice)) {
       g.rotation = { ...g.rotation, enabled: fixed.game.rotation.enabled };
@@ -296,8 +336,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                 {rot.enabled && (
                   <div className="list-editor">
                     {rot.steps.map((st, i) => {
-                      const update = (p: Partial<typeof st>) =>
-                        set('game', { rotation: { ...rot, steps: rot.steps.map((x, j) => (j === i ? { ...x, ...p } : x)) } });
+                      const update = (p: Partial<typeof st>) => setSteps(rot.steps.map((x, j) => (j === i ? { ...x, ...p } : x)));
                       return (
                         <div key={i}>
                           <div className="row">
@@ -323,7 +362,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                             <button
                               type="button"
                               disabled={rot.steps.length <= 1}
-                              onClick={() => set('game', { rotation: { ...rot, steps: rot.steps.filter((_, j) => j !== i) } })}
+                              onClick={() => setSteps(rot.steps.filter((_, j) => j !== i))}
                             >
                               ✕
                             </button>
@@ -337,7 +376,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                       type="button"
                       disabled={!canAddGame(rot.steps)}
                       title={canAddGame(rot.steps) ? undefined : `A rotation holds up to ${SETTINGS_LIMITS.rotationSteps.max} games`}
-                      onClick={() => set('game', { rotation: { ...rot, steps: [...rot.steps, { ...rot.steps[rot.steps.length - 1] }] } })}
+                      onClick={() => setSteps([...rot.steps, { ...rot.steps[rot.steps.length - 1] }])}
                     >
                       Add game
                     </button>
@@ -375,7 +414,10 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
               set('blindSchedule', {
                 enabled,
                 levels: sched.levels.length
-                  ? sched.levels
+                  ? // With no ante, the levels have none either (the server refuses one).
+                    enabled && draft.stakes.anteType === 'none'
+                    ? sched.levels.map((l) => ({ ...l, ante: 0 }))
+                    : sched.levels
                   : [{ smallBlind: draft.stakes.smallBlind, bigBlind: draft.stakes.bigBlind, ante: draft.stakes.ante, minutes: 20, hands: 30 }],
               }),
             )}
@@ -409,7 +451,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
                       ) : (
                         <input type="number" min={2} value={lv.minutes} onChange={(e) => update({ minutes: Math.max(2, Math.round(+e.target.value)) })} />
                       )}
-                      <button type="button" disabled={sched.levels.length <= 1} onClick={() => set('blindSchedule', { levels: sched.levels.filter((_, j) => j !== i) })}>
+                      <button type="button" disabled={sched.levels.length <= 1} onClick={() => removeLevel(i)}>
                         ✕
                       </button>
                     </div>
@@ -520,7 +562,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
             draft={draft}
             onApply={(next) => {
               // A preset is a new start: switching back afterwards doesn't undo onto the stakes from before it.
-              started.current = null;
+              started.current = startOf(next);
               setDraft(next);
             }}
             tournament={tournament}
