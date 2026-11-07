@@ -457,22 +457,71 @@ export interface Box {
 }
 
 /**
- * On a phone, how wide your own hand may be before it covers a neighbour's nameplate (#304).
- * Standing up, your cards sit centred above your nameplate, so the room is twice the
- * distance to the nearest plate either side, among the plates level with your cards.
- * On its side, your cards sit just left of your nameplate, so the room is the gap to
- * the nearest plate on the left. Infinity when nothing is in the way.
+ * On a phone on its side, how wide your own hand may be before it covers a neighbour's nameplate
+ * (#304). Your cards sit just left of your nameplate, centred on it from top to bottom, so the room
+ * is the gap to the nearest plate on the left among those level with the cards. Infinity when
+ * nothing is in the way.
  */
-export function handRoom(mine: Box, others: readonly Box[], sideways: boolean, cardHeight: number, margin = 6): number {
-  if (sideways) {
-    const edge = Math.max(-Infinity, ...others.filter((o) => o.bottom > mine.top && o.top < mine.bottom && o.right <= mine.left + margin).map((o) => o.right));
-    return mine.left - margin - edge - margin;
-  }
-  const top = mine.top - cardHeight;
-  const level = others.filter((o) => o.bottom > top && o.top < mine.top + 8);
+export function handRoom(mine: Box, others: readonly Box[], cardHeight: number, margin = 6): number {
+  const middle = (mine.top + mine.bottom) / 2;
+  const top = Math.min(mine.top, middle - cardHeight / 2);
+  const bottom = Math.max(mine.bottom, middle + cardHeight / 2);
+  const edge = Math.max(-Infinity, ...others.filter((o) => o.bottom > top && o.top < bottom && o.right <= mine.left + margin).map((o) => o.right));
+  return mine.left - margin - edge - margin;
+}
+
+/**
+ * On a phone standing up, the stretch your own hand may take above your nameplate (`mine`) without
+ * covering anyone (#304, #318): from the nearest nameplate on the left to the nearest on the right,
+ * among those level with your cards (`cardHeight` tall), and never past the screen's `edges`.
+ */
+export function handSpan(mine: Box, others: readonly Box[], cardHeight: number, edges: { left: number; right: number }, margin = 6): { left: number; right: number } {
+  const level = others.filter((o) => o.bottom > mine.top - cardHeight && o.top < mine.top + 8);
   const cx = (mine.left + mine.right) / 2;
-  const near = Math.min(...level.map((o) => (o.right <= cx ? cx - o.right : o.left >= cx ? o.left - cx : Infinity)));
-  return 2 * (near - margin);
+  return {
+    left: Math.max(edges.left + 3, ...level.filter((o) => o.right <= cx).map((o) => o.right + margin)),
+    right: Math.min(edges.right - 3, ...level.filter((o) => o.left >= cx).map((o) => o.left - margin)),
+  };
+}
+
+/**
+ * On a phone standing up, the part of your hand's `span` (from handSpan) that also keeps clear of other players'
+ * rows of cards level with it (#318). Each row in `rows` is where it would go without your cards, with the
+ * middle of its player's nameplate (`from`): a row counts on its player's side, even one that has moved
+ * over your nameplate. A row is level with your cards when it reaches more than 4px into their height, as
+ * placeRow counts it. Your cards hang down to 8px into your nameplate (styles.css), `cardHeight` tall, and
+ * count `lift` pixels higher, as the rows count them (a line on your nameplate lifts them).
+ */
+export function clearOfRows(
+  mine: Box,
+  rows: readonly { box: Box; from: number }[],
+  cardHeight: number,
+  span: { left: number; right: number },
+  lift = 0,
+  margin = 6,
+): { left: number; right: number } {
+  const bottom = mine.top + 8;
+  const level = rows.filter(({ box }) => box.bottom > bottom - cardHeight - lift + 4 && box.top < bottom - 4);
+  const cx = (mine.left + mine.right) / 2;
+  return {
+    left: Math.max(span.left, ...level.filter((r) => r.from < cx).map((r) => r.box.right + margin)),
+    right: Math.min(span.right, ...level.filter((r) => r.from >= cx).map((r) => r.box.left - margin)),
+  };
+}
+
+/**
+ * Where your hand's left edge goes on a phone standing up, `w` wide: centred over your nameplate (at `cx`),
+ * moved only as far as it must into `span`, the room clear of nameplates. When it can, it also keeps inside
+ * `clear` (from clearOfRows), so the rows beside it keep their usual look. When it can't, it sits where it
+ * leaves the rows on either side equally short of that, still inside `span`; when there's a row on only
+ * one side, that's as far from it as `span` allows. A hand wider than `span` sits in the middle of it.
+ */
+export function placeHand(cx: number, w: number, span: { left: number; right: number }, clear: { left: number; right: number } = span): number {
+  if (w > span.right - span.left) return (span.left + span.right - w) / 2;
+  const left = Math.max(span.left, clear.left);
+  const right = Math.min(span.right, clear.right);
+  if (w <= right - left) return Math.min(Math.max(cx - w / 2, left), right - w);
+  return Math.min(Math.max((left + right - w) / 2, span.left), span.right - w);
 }
 
 /** A card width and how much each card covers the one before it, in pixels. */
@@ -494,6 +543,69 @@ export function fitHand(cards: number, room: number, natural: HandFit, minShow =
   if (bunched >= show * natural.cw) return { cw: natural.cw, overlap: Math.round(natural.cw - bunched) };
   const cw = Math.max(minCw, Math.min(natural.cw, Math.floor(room / (1 + (cards - 1) * show))));
   return { cw, overlap: Math.round(cw * (1 - show)) };
+}
+
+/** Another player's row of cards on a phone, as `placeRow` sets it out. */
+export interface RowPlace {
+  /** How far the row moves sideways from centred over the nameplate, in pixels (left is negative). */
+  shift: number;
+  /** The card's width: less than usual only when even bunched up the row can't fit. */
+  cw: number;
+  /** From one card's left edge to the next one's: less than usual when the row is bunched up. */
+  step: number;
+}
+
+/**
+ * On a phone, where another player's row of cards goes so it covers nobody else (#318). The row sits
+ * above the player's nameplate (`plate`), from `row.top` to `row.bottom`. Anything in `blocks` that
+ * reaches more than a few pixels into that height (another nameplate, your own cards, the line between
+ * this row and a neighbour's) closes it in on the side where its middle lies, and so do the screen's
+ * edges (`edges`). The row keeps its usual look and moves sideways into the room it has. Only when the
+ * room is narrower than the row do its cards bunch up, still showing `minShow` of each card (its rank
+ * and suit, for when it's turned up), and then get smaller, down to `minCw`. A row that still can't
+ * fit sits in the middle of its room, but never off the screen. Null when the row fits centred over
+ * the nameplate as it is.
+ */
+export function placeRow(
+  plate: Box,
+  row: { top: number; bottom: number },
+  blocks: readonly Box[],
+  edges: { left: number; right: number },
+  natural: { cards: number; cw: number; step: number },
+  { minShow = 0.5, minCw = 24, margin = 3 } = {},
+): RowPlace | null {
+  const { cards } = natural;
+  if (cards < 1) return null;
+  const cx = (plate.left + plate.right) / 2;
+  let left = edges.left + margin;
+  let right = edges.right - margin;
+  for (const b of blocks) {
+    // Only what reaches more than a sliver into the row: touching the rounded edge of a nameplate above is better than
+    // bunching up. Not more, though: a seat drawn later covers an earlier one, so on one side of the table the nameplate
+    // above would hide the top of the cards, where their rank and suit are.
+    if (!(b.bottom > row.top + 4 && b.top < row.bottom - 4)) continue;
+    if ((b.left + b.right) / 2 < cx) left = Math.max(left, b.right + margin);
+    else right = Math.min(right, b.left - margin);
+  }
+  const room = right - left;
+  const width = (f: { cw: number; step: number }) => f.cw + (cards - 1) * f.step;
+  let fit = { cw: natural.cw, step: natural.step };
+  if (cards > 1 && width(fit) > room) {
+    const bunched = Math.floor((room - natural.cw) / (cards - 1));
+    if (bunched >= Math.ceil(natural.cw * minShow)) fit = { cw: natural.cw, step: Math.min(natural.step, bunched) };
+    else {
+      const floor = Math.min(minCw, natural.cw);
+      let cw = Math.max(floor, Math.min(natural.cw, Math.floor(room / (1 + (cards - 1) * minShow))));
+      while (cw > floor && width({ cw, step: Math.ceil(cw * minShow) }) > room) cw--;
+      fit = { cw, step: Math.min(natural.step, Math.ceil(cw * minShow)) };
+    }
+  }
+  const w = width(fit);
+  // Centred over the nameplate, then moved into the room; one that can't fit sits in the middle of it, on the screen.
+  const from =
+    w <= room ? Math.min(Math.max(cx - w / 2, left), right - w) : Math.min(Math.max((left + right - w) / 2, edges.left + margin), edges.right - margin - w);
+  const shift = Math.round(from - (cx - w / 2));
+  return shift === 0 && fit.step === natural.step && fit.cw === natural.cw ? null : { shift, ...fit };
 }
 
 /** How much two boxes overlap, in px². */

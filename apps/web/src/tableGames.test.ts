@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { bombPotSchema } from '@rsdp/engine/modifiers';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { dealtSizes } from './handSizes';
-import { dealableGames, tableAllLimit, tableGames, tournamentAllLimit, tournamentGames } from './tableGames';
+import { dealableGames, layoutOf, tableAllLimit, tableGames, tournamentAllLimit, tournamentGames } from './tableGames';
 
 describe('the games a table is laid out for (#409)', () => {
   it("is a cash table's one game, its rotation, or its Dealer's choice menu", () => {
@@ -16,6 +17,54 @@ describe('the games a table is laid out for (#409)', () => {
     // A menu that is off doesn't count.
     s.game.dealersChoice.enabled = false;
     expect(tableGames(s)).toEqual(['plo4']);
+  });
+  it('takes in the game bomb pots are dealt in, when they come on their own (#418)', () => {
+    const s = defaultSettings('cash');
+    s.game.gameId = 'nlhe';
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'plo4' };
+    expect(tableGames(s)).toEqual(['nlhe', 'plo4']);
+    // Only from the host's button: a one-off, not laid out for.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: false, gameId: 'plo4' };
+    expect(tableGames(s)).toEqual(['nlhe']);
+    // In the table's own game, or a game already on the list.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: '' };
+    expect(tableGames(s)).toEqual(['nlhe']);
+    s.game.rotation = { enabled: true, steps: [{ gameId: 'nlhe', betting: 'no-limit', length: 1, unit: 'hands' }, { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'hands' }] };
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'plo4' };
+    expect(tableGames(s)).toEqual(['nlhe', 'plo4']);
+  });
+  it("leaves out bomb pots that can't come on their own, or can't be dealt in their game (#418)", () => {
+    const s = defaultSettings('cash');
+    s.game.gameId = 'nlhe';
+    // On, but with no chance and no count of hands: only the host's button deals one.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, chancePercent: 0, everyHands: 0, gameId: 'plo4' };
+    expect(tableGames(s)).toEqual(['nlhe']);
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, chancePercent: 0, everyHands: 10, gameId: 'plo4' };
+    expect(tableGames(s)).toEqual(['nlhe', 'plo4']);
+    // Bomb pots are only dealt in flop games with blinds, and a game that doesn't exist is no game.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'stud' };
+    expect(tableGames(s)).toEqual(['nlhe']);
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'nope' };
+    expect(tableGames(s)).toEqual(['nlhe']);
+  });
+  it('keeps room for the big-bet bar when bomb pots come on their own in a No-Limit or Pot-Limit game (#418)', () => {
+    const s = defaultSettings('cash');
+    s.game.gameId = 'nlhe';
+    s.game.betting = 'fixed-limit';
+    expect(tableAllLimit(s)).toBe(true);
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'plo4', betting: 'pot-limit' };
+    expect(tableAllLimit(s)).toBe(false);
+    // The same game, at another betting, counts too; the list of games doesn't change.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'nlhe', betting: 'no-limit' };
+    expect(tableAllLimit(s)).toBe(false);
+    expect(tableGames(s)).toEqual(['nlhe']);
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: 'plo4', betting: 'fixed-limit' };
+    expect(tableAllLimit(s)).toBe(true);
+    // Only from the host's button, or in the table's own game and betting: no change.
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: false, gameId: 'plo4', betting: 'pot-limit' };
+    expect(tableAllLimit(s)).toBe(true);
+    s.modifiers[bombPotSchema.id] = { ...bombPotSchema.defaults(), enabled: true, gameId: '', betting: 'pot-limit' };
+    expect(tableAllLimit(s)).toBe(true);
   });
   it("is a tournament's rotation, with any level that names its own game", () => {
     const level = { kind: 'level' as const, sb: 25, bb: 50, ante: 0, anteType: 'per-player' as const, minutes: 10 };
@@ -64,5 +113,24 @@ describe('whether a table only deals Limit games, so the bar under it needs less
     expect(tournamentAllLimit({ games: ['nlhe', 'stud'], gameBetting: ['fixed-limit', null], structure: [level] })).toBe(true);
     expect(tournamentAllLimit({ games: ['stud', 'razz'], structure: [level, { ...level, gameId: 'plo4' }] })).toBe(false);
     expect(tournamentAllLimit({ games: ['stud', 'razz'], structure: [level, { ...level, gameId: 'stud8' }] })).toBe(true);
+  });
+});
+
+describe("what a table's layout takes from its games (#418)", () => {
+  const horse = ['nlhe', 'plo8', 'razz', 'stud', 'stud8'];
+  it('is the same when a game adds nothing to it', () => {
+    // A one-off four-card Omaha bomb pot at HORSE: Omaha hi-lo already has four cards, stud a row over the nameplate.
+    expect(layoutOf([...horse, 'plo4'])).toBe(layoutOf(horse));
+    expect(layoutOf(['plo4', 'plo8'])).toBe(layoutOf(['plo8']));
+  });
+  it('changes when a game needs more room', () => {
+    expect(layoutOf(['nlhe', 'plo4'])).not.toBe(layoutOf(['nlhe']));
+    expect(layoutOf(['nlhe', 'plo5'])).not.toBe(layoutOf(['nlhe', 'plo4']));
+    // Hold'em at an Omaha table: a smaller hand is a hand size the layout hasn't measured.
+    expect(layoutOf(['plo4', 'nlhe'])).not.toBe(layoutOf(['plo4']));
+    // Razz at a table of Badugi and Omaha: a row over the nameplate.
+    expect(layoutOf(['badugi', 'plo4', 'razz'])).not.toBe(layoutOf(['badugi', 'plo4']));
+    // An Omaha hi-lo bomb pot at a four-card Omaha table: the same hand size, but a longer showdown line (#427).
+    expect(layoutOf(['plo4', 'plo8'])).not.toBe(layoutOf(['plo4']));
   });
 });

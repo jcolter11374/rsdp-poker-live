@@ -158,6 +158,30 @@ describe('waitlist', () => {
     expect(rt.state.log.some((l) => /Eve didn't take/.test(l.text))).toBe(false);
   });
 
+  it('offers the seats again in queue order when an offer is let go, so nobody behind takes the next seat first (#453)', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 6;
+      s.seating.waitlist = true;
+    });
+    for (const id of ['f', 'g']) rt.connect(id);
+    // Seats 1 to 5 are taken. Fay joins and is offered seat 6; then C stands, and Gus, who joined after her, is offered
+    // seat 4.
+    ['host', 'a', 'b', 'c', 'd'].forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+    rt.joinWaitlist('f', { name: 'Fay', stack: 150 });
+    rt.joinWaitlist('g', { name: 'Gus', stack: 150 });
+    rt.stand('c');
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['f', 5], ['g', 3]]);
+    // Mid-hand the host takes the table down to 5 seats for the next hand. Fay's seat 6 goes, so Gus's offer is let go
+    // too, and seat 4 is offered to Fay: she was first. Gus waits, and nobody is dropped from the waitlist.
+    rt.start('host');
+    rt.updateSettings('host', { table: { maxSeats: 5 } });
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['f', 3]]);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['f', 'g']);
+    expect(() => rt.requestSeat('g', { seat: 3, name: 'Gus', stack: 150 })).toThrow(/held for Fay/);
+    clock.advance(1000);
+    expect(rt.state.log.some((l) => /didn't take/.test(l.text))).toBe(false);
+  });
+
   it('answers a waitlist join the same whether or not a player in the all-in busted and left', () => {
     // Three seats: the host and two bots on small stacks, no rebuys, so a busted bot leaves as the hand ends.
     const outcomes = new Set<string>();
