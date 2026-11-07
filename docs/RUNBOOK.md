@@ -100,10 +100,11 @@ If a public issue only says someone found a security problem, don't ask for deta
 
 ## Coach tips keep saying "the coach is busy"
 
-Coach tips are worked out on a thread of their own inside the server, so this never holds up a table. One "busy" now and then is normal when several tips are asked for at once. If players see it again and again, look in the server logs (or the game-night recap) for lines that start "the coach's thread" or "a coach tip ran past":
+Coach tips are worked out on a thread of their own inside the server, so this never holds up a table. One "busy" now and then is normal when several tips are asked for at once. If players see it again and again, look in the server logs (or the game-night recap) for lines that start "the coach" or "a coach tip":
 
 - **"…; a fresh thread is starting"**: a tip crashed the thread or ran past 3 seconds, and the thread started again by itself. If it keeps happening, open an issue with the game and the time.
 - **"…; the next tip starts a fresh thread", again and again**: the thread can't start at all, most likely because of a broken release (a missing file). Tables play on normally; see "A bad release".
+- **"the coach turned away N tips in the last hour"**: more tips were asked for at once than the coach could take (more than 8 waiting, or one waiting over 4 seconds). It is written at most once an hour, with the count. A few is normal on a busy night; if it's large night after night, open an issue: the coach may need a second thread.
 
 ## Someone asks about their data
 

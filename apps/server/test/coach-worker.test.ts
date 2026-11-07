@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { engine, variants, type HandState, type PlannedPost } from '@rsdp/engine/core';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { getVariant, registerAllVariants } from '@rsdp/engine/variants';
@@ -220,13 +220,18 @@ describe("the coach's own thread", () => {
   });
 
   it('tells the tips past a full line that the coach is busy, and answers the rest', async () => {
-    const pool = coachWorker({ tuning: TUNING, queue: 2, waitMs: 60_000, runMs: 60_000 });
+    const logged: string[] = [];
+    const pool = coachWorker({ tuning: TUNING, queue: 2, waitMs: 60_000, runMs: 60_000, busyLogMs: 300, log: (m) => logged.push(m) });
+    const counts = () => logged.filter((m) => m.startsWith('the coach turned away'));
     try {
       await warm(pool);
       // One being worked out, two waiting, and the two after them turned away at once.
       const asked = Array.from({ length: 5 }, (_, i) => pool.work(slow(i + 1)));
       const turnedAway = await Promise.allSettled([asked[3], asked[4]]);
       expect(turnedAway.map((r) => r.status === 'rejected' && (r.reason as Error).message)).toEqual([COACH_BUSY, COACH_BUSY]);
+      // Counted rather than logged one by one, so a busy evening is one line an hour (here, 300 ms).
+      expect(counts()).toEqual([]);
+      await vi.waitFor(() => expect(counts()).toEqual(['the coach turned away 2 tips in the last hour (its line was full, or they waited too long)']));
       const answered = await Promise.allSettled(asked.slice(0, 3));
       expect(answered.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
       // Once the line has cleared, a tip is answered again.
@@ -237,16 +242,22 @@ describe("the coach's own thread", () => {
   });
 
   it('tells a tip that has waited too long that the coach is busy', async () => {
-    const pool = coachWorker({ tuning: TUNING, waitMs: 50, runMs: 60_000 });
+    const logged: string[] = [];
+    const pool = coachWorker({ tuning: TUNING, waitMs: 50, runMs: 60_000, log: (m) => logged.push(m) });
+    const counts = () => logged.filter((m) => m.startsWith('the coach turned away'));
     try {
       await warm(pool);
       const first = pool.work(slow());
       const second = pool.work(quick());
       await expect(second).rejects.toThrow(COACH_BUSY);
       expect((await first).kind).toBe('draw');
+      expect(counts()).toEqual([]);
     } finally {
       await pool.close();
     }
+    // The count so far is logged when the coach stops (warming up may have turned some away too, while the thread loaded).
+    expect(counts()).toHaveLength(1);
+    expect(counts()[0]).toMatch(/^the coach turned away \d+ tips? in the last hour \(its line was full, or they waited too long\)$/);
   });
 
   it('stops a tip that runs too long, and starts a fresh thread for the next one', async () => {

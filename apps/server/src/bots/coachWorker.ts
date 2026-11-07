@@ -39,6 +39,8 @@ export interface CoachWorkerOptions {
   startMs?: number;
   /** A tip slower than this is logged, once, since it means the server is struggling. */
   slowMs?: number;
+  /** Tips turned away for a full line or a long wait are logged as a count at most this often (tests shorten it). */
+  busyLogMs?: number;
   /** Changes to coachTuning on the thread (tests turn the deals down, as they do on the main thread). */
   tuning?: Partial<typeof coachTuning>;
   /** The script the thread runs (tests swap in one that fails). */
@@ -84,13 +86,37 @@ interface Thread {
  * waiting that the coach is busy.
  */
 export function coachWorker(opts: CoachWorkerOptions = {}): TipWorker & { close(): Promise<void> } {
-  const { threads = 1, queue = 8, waitMs = 4_000, runMs = 3_000, startMs = 30_000, slowMs = 1_000, tuning = {}, entry = ENTRY, log = () => {} } = opts;
+  const { threads = 1, queue = 8, waitMs = 4_000, runMs = 3_000, startMs = 30_000, slowMs = 1_000, busyLogMs = 60 * 60_000, tuning = {}, entry = ENTRY, log = () => {} } = opts;
   const line: Waiting[] = [];
   const live: Thread[] = [];
   let ids = 0;
   let closed = false;
   let slowLogged = false;
   const busy = () => new ActionError(COACH_BUSY);
+  /** Tips turned away since the last count was logged, and the timer that logs the next count. */
+  let turnedAway = 0;
+  let turnedAwayTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function logTurnedAway() {
+    clearTimeout(turnedAwayTimer);
+    turnedAwayTimer = undefined;
+    if (!turnedAway) return;
+    log(`the coach turned away ${turnedAway} tip${turnedAway === 1 ? '' : 's'} in the last hour (its line was full, or they waited too long)`);
+    turnedAway = 0;
+  }
+
+  /**
+   * A tip turned away because the coach had too much to do (a full line or a long wait). Those are counted, not logged
+   * one by one: the first starts the clock, and the count is logged when it runs out (or the coach stops).
+   */
+  function tooBusy() {
+    turnedAway++;
+    if (!turnedAwayTimer) {
+      turnedAwayTimer = setTimeout(logTurnedAway, busyLogMs);
+      turnedAwayTimer.unref();
+    }
+    return busy();
+  }
 
   function start() {
     const worker = new Worker(entry, {
@@ -189,14 +215,14 @@ export function coachWorker(opts: CoachWorkerOptions = {}): TipWorker & { close(
   return {
     work(job) {
       if (closed) return Promise.reject(busy());
-      if (!live.some((t) => t.ready && !t.job) && line.length >= queue) return Promise.reject(busy());
+      if (!live.some((t) => t.ready && !t.job) && line.length >= queue) return Promise.reject(tooBusy());
       return new Promise<CoachTip>((resolve, reject) => {
         const w: Waiting = { id: ++ids, job, resolve, reject };
         w.timer = setTimeout(() => {
           const at = line.indexOf(w);
           if (at < 0) return;
           line.splice(at, 1);
-          reject(busy());
+          reject(tooBusy());
         }, waitMs);
         line.push(w);
         next();
@@ -204,6 +230,7 @@ export function coachWorker(opts: CoachWorkerOptions = {}): TipWorker & { close(
     },
     async close() {
       closed = true;
+      logTurnedAway();
       for (const w of line.splice(0)) {
         clearTimeout(w.timer);
         w.reject(busy());

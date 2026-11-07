@@ -38,7 +38,7 @@ import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
 import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
-import { coachWorker, type TipWorker } from './bots/coachWorker';
+import { COACH_BUSY, coachWorker, type TipWorker } from './bots/coachWorker';
 import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
@@ -277,12 +277,20 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
 export function tipLimits(now: () => number) {
   const times = new Map<PlayerId, number[]>();
   return {
-    /** Throws if this player has had enough for now; otherwise counts the tip. */
-    admit(playerId: PlayerId) {
+    /** Throws if this player has had enough for now; otherwise counts the tip, and returns what hands it back. */
+    admit(playerId: PlayerId): () => void {
       const t = now();
       const recent = (times.get(playerId) ?? []).filter((x) => t - x < TIP_WINDOW_MS);
       if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
       times.set(playerId, [...recent, t]);
+      let back = false;
+      return () => {
+        if (back) return;
+        back = true;
+        const mine = times.get(playerId);
+        const at = mine?.indexOf(t) ?? -1;
+        if (at >= 0) mine!.splice(at, 1);
+      };
     },
     forget(playerId: PlayerId) {
       times.delete(playerId);
@@ -1464,9 +1472,18 @@ export function createApp(deps: AppDeps = {}) {
           const at = Number(input?.at);
           if (!Number.isSafeInteger(handNumber) || !Number.isSafeInteger(at)) throw new ActionError('that turn is over');
           // Only a tip that is about to be worked out counts: a refused request, or one already asked for this turn, costs
-          // nothing. It is worked out on the coach's own thread, so no table waits for it.
-          const tip = await current().coachTip(me, handNumber, at, () => tips.admit(me));
-          return { tip };
+          // nothing. It is worked out on the coach's own thread, so no table waits for it, and one the coach was too busy
+          // to work out is handed back, so asking again in a moment never runs into the player's own limit.
+          let handBack = () => {};
+          try {
+            const tip = await current().coachTip(me, handNumber, at, () => {
+              handBack = tips.admit(me);
+            });
+            return { tip };
+          } catch (err) {
+            if (err instanceof ActionError && err.message === COACH_BUSY) handBack();
+            throw err;
+          }
         },
         log,
       ),
@@ -1888,7 +1905,8 @@ export function createApp(deps: AppDeps = {}) {
       await Promise.allSettled([...unloading.values()]);
       const open = [...tables.values()];
       for (const rt of open) rt.dispose();
-      await coach?.close();
+      // Tips still waiting are told the coach is busy now; the saves don't wait for its thread to stop.
+      const coachStopped = coach?.close().catch((err) => log("the coach's thread didn't stop", err));
       for (const t of saveTimers.values()) clearTimeout(t);
       saveTimers.clear();
       await tournaments.flush();
@@ -1896,6 +1914,7 @@ export function createApp(deps: AppDeps = {}) {
       await Promise.all(open.map((rt) => (created.get(rt.state.id) ?? Promise.resolve()).then(() => store.saveTable(rt.state)).catch(() => {})));
       await new Promise<void>((resolve) => http.close(() => resolve()));
       await audit.flush();
+      await coachStopped;
       await stopped;
     },
   };
