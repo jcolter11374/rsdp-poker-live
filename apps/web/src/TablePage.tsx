@@ -264,6 +264,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
+  // The tip names Shift+A only where it does something: the hand being played (or the next one) isn't fixed limit.
+  const bettingNow = view ? ((view.hand ?? view.upcoming)?.betting ?? view.settings.game.betting) : null;
   // The tip floats over the corner instead of pushing the table down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
@@ -675,7 +677,13 @@ export function TablePage({ tableId }: { tableId: string }) {
             {keysTip && !dialog && (
               <div className="tip-toast" role="status">
                 <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises, <kbd>A</kbd> twice goes all in{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises
+                  {bettingNow !== 'fixed-limit' && (
+                    <>
+                      , <kbd>Shift</kbd>+<kbd>A</kbd> twice {bettingNow === 'pot-limit' ? 'bets the most the pot allows' : 'goes all in'}
+                    </>
+                  )}
+                  {bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
                   {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
                 </span>
                 <button

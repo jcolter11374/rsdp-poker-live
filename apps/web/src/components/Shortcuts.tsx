@@ -6,14 +6,15 @@ const KEYS: [string, string][] = [
   ['C', 'Call'],
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
   ['0-9', 'On your turn: start typing a bet amount (then Enter)'],
+  ['A', 'Call any (before your turn)'],
   [
-    'A',
-    "All in, on your turn in no limit and pot limit games. The first press puts the most you can bet in the box and says what it will send. Press A again or Enter to send it, or Esc to cancel. In pot limit it's the most the pot allows, which can be less than all in. Facing a bet of all your chips, it picks the call. Not in limit games, and it does nothing before your turn.",
+    'Shift+A',
+    'Twice, on your turn: the most you can bet (all in). In pot limit, or with Trim bets nobody can call on, the most can be less, and it says so. The first press says what the second will send; Enter sends it too, Esc cancels. Not in fixed limit.',
   ],
   ['B', 'Show amounts in chips or big blinds'],
   ['T', 'Tip on your turn (hands with only bots)'],
   ['W', 'In the replayer: why the bots played'],
-  ['Enter', 'Type in the chat. Enter again sends it and takes you back to the table (Esc leaves without sending). Just after A, Enter sends the all-in instead'],
+  ['Enter', 'Type in the chat. Enter again sends it and takes you back to the table (Esc leaves without sending). Just after Shift+A, Enter sends the all-in instead'],
   ['?', 'Show this list'],
 ];
 
@@ -32,8 +33,8 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         ))}
       </dl>
       <p className="hint">
-        Before your turn, F, K and C tick a pre-move instead (Check / Fold or Fold, Check, Call), which plays the moment your
-        turn comes. Press the same key again to untick it. Call any has no key: click it.
+        Before your turn, F, K, C and A tick a pre-move instead (Check / Fold, Check, Call, Call any), which plays the moment
+        your turn comes. Press the same key again to untick it.
       </p>
       <p className="hint">They work whenever you're not typing in a box. In the hand replayer, the arrow keys step and Space plays.</p>
       <div className="row">

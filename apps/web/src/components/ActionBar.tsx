@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import type { Action, LegalActions } from '@rsdp/engine/core';
 import type { CoachTip, HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { call } from '../socket';
@@ -19,10 +20,14 @@ const cardName = (c: string | undefined) => (c ? `${c[0] === 'T' ? '10' : c[0]}$
 const SEND_TIMEOUT_MS = 8_000;
 /** Two taps closer than this are one double tap: the second is ignored, not sent as a move on the next turn. */
 const DOUBLE_TAP_MS = 500;
-/** Keys that are only held with another: pressing Shift on the way to a capital A doesn't let an armed all-in go. */
+/** Keys that are only held with another: pressing Shift on the way to the second Shift+A doesn't let an armed all-in go. */
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph', 'Fn', 'OS']);
+/** A second Shift+A this soon after the last is part of the first (two a's typed in a row), not the go-ahead. */
+const ALL_IN_GAP_MS = 300;
+/** An armed all-in not sent within this long is let go, and the bet box put back. */
+const ALL_IN_WINDOW_MS = 3_000;
 
-/** What the A key puts in on your turn: a bet or raise to the most allowed, or a call that takes every chip. */
+/** What Shift+A puts in on your turn: a bet or raise to the most allowed, or a call that takes every chip. */
 interface MostIn {
   kind: 'raise' | 'call';
   /** The bet or raise's total, or for a call, the chips it puts in. */
@@ -32,7 +37,7 @@ interface MostIn {
 }
 
 /**
- * The most you can put in on your turn, for the A key: a bet or raise to the most no limit or pot limit allows,
+ * The most you can put in on your turn, for Shift+A: a bet or raise to the most no limit or pot limit allows,
  * or a call when the bet you face is all of your chips or more. Null when there is nothing more than C or R offers
  * (you can't raise and the call leaves you chips), and always in fixed limit, where a raise has only one size.
  */
@@ -44,15 +49,29 @@ function mostIn(hand: HandView, legal: LegalActions, me: SeatView): MostIn | nul
 }
 
 /**
- * What an armed A sends, in words. When the most allowed stops short of every chip (the pot-limit most, or bets
- * trimmed to what others can call), it says so rather than calling it all in.
+ * What an armed Shift+A sends, in words, in the words of the button it presses. When the most allowed stops short of
+ * every chip (the pot-limit most, or bets trimmed to what others can call), it says so rather than calling it all in.
  */
 function mostWords(m: MostIn, hand: HandView, legal: LegalActions, me: SeatView, fmt: Fmt): string {
   if (m.kind === 'call') return `Call ${fmt(m.to)}, all in`;
   if (m.allIn) return `All in ${fmt(m.to)}`;
   const toCall = hand.currentBet - me.bet;
   const potMost = hand.betting === 'pot-limit' && m.to >= hand.currentBet + hand.potTotal + toCall;
-  return `${legal.raiseKind === 'bet' ? 'Bet' : 'Raise to'} ${fmt(m.to)}, ${potMost ? 'the pot-limit most' : 'the most others can call'}, not all in`;
+  const verb = legal.canBringIn ? 'Complete to' : legal.raiseKind === 'bet' ? 'Bet' : 'Raise to';
+  return `${verb} ${fmt(m.to)}, ${potMost ? 'the pot-limit most' : 'the most others can call'}, not all in`;
+}
+
+/** An all-in armed with Shift+A, waiting for the second press. */
+interface Armed {
+  /** The turn it is for: its hand number, street and event count. */
+  turn: string;
+  most: MostIn;
+  /** When it was armed, and when Shift+A was last pressed. */
+  at: number;
+  last: number;
+  /** The bet box as it was before the first press, put back if it is let go. */
+  amount: number;
+  typed: string | null;
 }
 
 export function ActionBar({
@@ -90,9 +109,12 @@ export function ActionBar({
   const [amount, setAmountRaw] = useState(0);
   // What's typed in the bet box, kept as text while typing so "2." or "0.5" isn't rewritten mid-word.
   const [typed, setTyped] = useState<string | null>(null);
+  // An all-in armed with Shift+A (see below). Picking an amount any other way lets it go, keeping the amount picked.
+  const [arming, setArming] = useState<Armed | null>(null);
   const setAmount = (chips: number) => {
     setTyped(null);
     setAmountRaw(chips);
+    setArming(null);
   };
   // Switching units (here or in another tab) redraws the box in the new unit.
   useEffect(() => setTyped(null), [bigBlind]);
@@ -103,8 +125,6 @@ export function ActionBar({
   const pre = queued?.key === streetKey ? queued.action : null;
   const setPre = (action: PreAction | null) => setQueued(action && { key: streetKey, action });
   const [confirmFold, setConfirmFold] = useState(false);
-  // The turn an all-in was armed on with A (its hand number, street and event count), waiting for a second A or Enter.
-  const [armedFor, setArmedFor] = useState<string | null>(null);
   const amountBox = useRef<HTMLInputElement>(null);
   useEffect(() => {
     onPreAction?.(!!pre);
@@ -115,20 +135,18 @@ export function ActionBar({
   const waiting =
     !legal && !!hand && hand.phase === 'betting' && !runningOut && !view.canVoteRunItTwice && !view.canDraw && !!me && me.inHand && !me.folded && !me.allIn;
   const waitToCall = waiting ? Math.min(hand.currentBet - me.bet, me.stack) : 0;
-  // Call any has no key. A is all in on your turn, and A before your turn does nothing: a key that ticked Call any
-  // there would let the first A of an all-in, pressed a moment before the turn came, play a call or a check unasked.
-  const preOpts: { label: string; key?: string; value: PreAction }[] | null = !waiting
+  const preOpts: { label: string; key: string; value: PreAction }[] | null = !waiting
     ? null
     : waitToCall === 0
       ? [
           { label: 'Check / Fold', key: 'F', value: { kind: 'checkFold' } },
           { label: 'Check', key: 'K', value: { kind: 'check' } },
-          { label: 'Call any', value: { kind: 'callAny' } },
+          { label: 'Call any', key: 'A', value: { kind: 'callAny' } },
         ]
       : [
           { label: 'Fold', key: 'F', value: { kind: 'fold' } },
           { label: `Call ${fmt(waitToCall)}`, key: 'C', value: { kind: 'call', amount: waitToCall } },
-          { label: 'Call any', value: { kind: 'callAny' } },
+          { label: 'Call any', key: 'A', value: { kind: 'callAny' } },
         ];
   const isPre = (v: PreAction) => !!pre && JSON.stringify(pre) === JSON.stringify(v);
   const togglePre = (v: PreAction) => settled() && setPre(isPre(v) ? null : v);
@@ -212,8 +230,6 @@ export function ActionBar({
   const run = (p: () => Promise<unknown>) => {
     // The next turn's view arrives before the answer to this move, and frees the buttons: a tap within half a second
     // of a move is still the second half of a double tap, not a move on the next street.
-    // Any move, even one held back here, lets an armed all-in go.
-    setArmedFor(null);
     if (inFlight.current || Date.now() - lastSent.current < DOUBLE_TAP_MS) return;
     setTipAt(null);
     setWhyAt(null);
@@ -243,6 +259,9 @@ export function ActionBar({
   const onScreen = useRef(view);
   onScreen.current = view;
   const send = (action: Action) => {
+    // Any move, even one held back as a double tap, lets an armed all-in go: the box is put back unless the move is
+    // the all-in itself (the second Shift+A, Enter, or a click on the ringed button).
+    if (arming) letGo(!(armed && sendsMost(action)));
     const sentFor = turnKey(onScreen.current);
     run(() => call('hand:act', { ...action, ...sentFor }));
   };
@@ -265,6 +284,73 @@ export function ActionBar({
   /** Taps on pre-moves within half a second of a move are the second half of a double tap. */
   const settled = () => !inFlight.current && Date.now() - lastSent.current > DOUBLE_TAP_MS;
 
+  // All in from the keyboard: on your turn in no limit or pot limit, the first Shift+A puts the most you can in the bet
+  // box (or, facing a bet of all your chips, picks the call) and says what the second press sends. A second Shift+A
+  // (not straight after the first) or Enter sends it. Escape, a click anywhere but the ringed button, leaving the
+  // window, any other key, any move, the turn passing, or a few seconds with no second press let it go, and put the
+  // bet box and slider back as they were. Plain A is still Call any before your turn, and Shift+A does nothing then.
+  const most =
+    legal && hand && me && me.inHand && !me.folded && !me.allIn && hand.phase === 'betting' && !runningOut && !view.canVoteRunItTwice && !view.canDraw
+      ? mostIn(hand, legal, me)
+      : null;
+  const turnNow = `${turnHand}:${hand?.street}:${turnAt}`;
+  // Armed for this turn and this amount only: changing the amount by any other way lets it go too.
+  const armed =
+    !!most && !!arming && arming.turn === turnNow && arming.most.kind === most.kind && arming.most.to === most.to && (most.kind === 'call' || amount === most.to);
+  const sendsMost = (action: Action) =>
+    !!most && (most.kind === 'call' ? action.type === 'call' : (action.type === 'bet' || action.type === 'raise') && action.to === most.to);
+  /** Lets an armed all-in go, putting the bet box back as it was before the first press if it still holds the all-in. */
+  const letGo = (putBack = true) => {
+    if (!arming) return;
+    setArming(null);
+    if (putBack && arming.most.kind === 'raise' && amount === arming.most.to) {
+      setAmountRaw(arming.amount);
+      setTyped(arming.typed);
+    }
+  };
+  const letGoNow = useRef(letGo);
+  letGoNow.current = letGo;
+  const arm = () => {
+    if (!most || !settled()) return;
+    setTipAt(null);
+    setConfirmFold(false);
+    if (most.kind === 'raise') {
+      setTyped(null);
+      setAmountRaw(most.to);
+    }
+    const now = Date.now();
+    setArming({ turn: turnNow, most, at: now, last: now, amount, typed });
+  };
+  const sendMost = () => {
+    if (!most || !legal) return;
+    send(most.kind === 'call' ? { type: 'call' } : { type: legal.raiseKind, to: most.to });
+  };
+  // A new turn, street or hand lets it go. This runs before the reset below, so the next turn's bet box starts where it
+  // always does.
+  useEffect(() => {
+    letGoNow.current();
+  }, [!!legal, turnHand, hand?.street, turnAt]);
+  useEffect(() => {
+    if (!arming) return;
+    const t = setTimeout(() => letGoNow.current(), Math.max(0, arming.at + ALL_IN_WINDOW_MS - Date.now()));
+    return () => clearTimeout(t);
+  }, [arming?.at]);
+  // A click or tap anywhere lets it go, except on the ringed button: that still sends what it says, as it always does.
+  useEffect(() => {
+    if (!arming) return;
+    const onPointer = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest('.action-bar .buttons button.armed')) return;
+      letGoNow.current();
+    };
+    const onBlur = () => letGoNow.current();
+    window.addEventListener('pointerdown', onPointer, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('pointerdown', onPointer, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [!!arming]);
+
   useEffect(() => {
     if (legal) setAmount(legal.minTo);
     setError('');
@@ -283,44 +369,9 @@ export function ActionBar({
     send({ type: 'fold' });
   };
 
-  // All in from the keyboard: on your turn in no limit or pot limit, A puts the most you can in the bet box (or, facing a
-  // bet of all your chips, picks the call) and says the next press sends it. A second A or Enter sends it; Escape,
-  // a click anywhere, leaving the window, any other key or any move lets it go. It is armed for the turn on screen
-  // only, so it never carries over to a later street or hand, and A before your turn does nothing.
-  const most =
-    legal && hand && me && me.inHand && !me.folded && !me.allIn && hand.phase === 'betting' && !runningOut && !view.canVoteRunItTwice && !view.canDraw
-      ? mostIn(hand, legal, me)
-      : null;
-  const turnNow = `${turnHand}:${hand?.street}:${turnAt}`;
-  // Changing the amount after arming (the slider, a preset, the box) lets it go too.
-  const armed = !!most && armedFor === turnNow && (most.kind === 'call' || amount === most.to);
-  useEffect(() => setArmedFor(null), [!!legal, turnHand, hand?.street, turnAt]);
-  const arm = () => {
-    if (!most) return;
-    setTipAt(null);
-    setConfirmFold(false);
-    if (most.kind === 'raise') setAmount(most.to);
-    setArmedFor(turnNow);
-  };
-  const sendMost = () => {
-    if (!most || !legal) return;
-    send(most.kind === 'call' ? { type: 'call' } : { type: legal.raiseKind, to: most.to });
-  };
-  // A click or tap anywhere lets it go: one on the highlighted button still sends it, as that button always does.
-  useEffect(() => {
-    if (!armed) return;
-    const letGo = () => setArmedFor(null);
-    window.addEventListener('pointerdown', letGo, true);
-    window.addEventListener('blur', letGo);
-    return () => {
-      window.removeEventListener('pointerdown', letGo, true);
-      window.removeEventListener('blur', letGo);
-    };
-  }, [armed]);
-
-  // Keyboard: F fold, K check, C call, R raise box (Enter sends it), a digit starts typing the amount there, A all in.
-  // The bar hears keys before the page does, so Enter and Escape on an armed all-in are used here, not taken to start
-  // a chat message or close the records panel.
+  // Keyboard: F fold, K check, C call, R raise box (Enter sends it), a digit starts typing the amount there, Shift+A
+  // twice all in; before your turn F, K, C and A tick a pre-move. The bar hears keys before the page does, so Enter and
+  // Escape on an armed all-in are used here, not taken to start a chat message or close the records panel.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => keys.current(e);
@@ -333,18 +384,36 @@ export function ActionBar({
     // Keys never act while typing, with Ctrl, Alt or Cmd held, or behind an open dialog or sheet.
     const free = !e.ctrlKey && !e.metaKey && !e.altKey && !typing && !document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop');
     const k = e.key.toLowerCase();
-    if (armed) {
-      if (free && (k === 'a' || e.key === 'Enter')) {
+    // Only with Shift held: a plain a, or an A typed with Caps Lock on, is never the all-in key.
+    const shiftA = free && e.shiftKey && k === 'a';
+    if (arming) {
+      const now = Date.now();
+      if (armed && shiftA && now - arming.last < ALL_IN_GAP_MS) {
+        // Too soon to be the go-ahead: still armed, and the pause starts again.
+        e.preventDefault();
+        setArming({ ...arming, last: now });
+        return;
+      }
+      if (armed && now - arming.last >= ALL_IN_GAP_MS && (shiftA || (free && e.key === 'Enter'))) {
         e.preventDefault();
         sendMost();
         return;
       }
-      // Any other key lets it go, and then does its own job; Escape only lets it go.
-      setArmedFor(null);
-      if (free && e.key === 'Escape') {
+      // Any other key lets it go, puts the box back (drawn now, before R or a digit selects what is in it), and then
+      // does its own job; Escape only lets it go. So does a Shift+A that finds an arm left from a turn just gone.
+      flushSync(() => letGo());
+      if ((free && e.key === 'Escape') || shiftA) {
         e.preventDefault();
         return;
       }
+    }
+    if (shiftA) {
+      // Shift+A does nothing but arm the all-in on your turn: before it, it ticks no pre-move.
+      if (most) {
+        e.preventDefault();
+        arm();
+      }
+      return;
     }
     if ((!legal && !preOpts && !tipOn) || !free) return;
     // T opens the tip on draw turns too, so it comes before the betting keys.
@@ -356,7 +425,7 @@ export function ActionBar({
     if (!legal && !preOpts) return;
     // Before your turn the same keys tick (or untick) a pre-move.
     if (!legal) {
-      const o = preOpts?.find((o) => o.key?.toLowerCase() === k);
+      const o = preOpts?.find((o) => o.key.toLowerCase() === k);
       if (o) togglePre(o.value);
       return;
     }
@@ -377,10 +446,7 @@ export function ActionBar({
       boxWanted.current = true;
       setTipAt(null);
     } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
-    else if (k === 'a' && most) {
-      e.preventDefault();
-      arm();
-    } else return;
+    else return;
   };
 
   // When it becomes your turn, play the queued move if it still applies.
@@ -397,19 +463,23 @@ export function ActionBar({
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
   const hint = strength && <div className="strength">{strength}</div>;
-  // An armed all-in says what the next A or Enter sends on the bar's top line, standing in for the hand's strength, so
-  // the bar (and the table above it) doesn't move when A is pressed.
+  // An armed all-in says what the next Shift+A or Enter sends on the bar's top line, standing in for the hand's strength.
   const armedWords = armed && most && hand && legal && me ? mostWords(most, hand, legal, me, fmt) : '';
   const armedNote = armedWords && (
-    <div className="armed-note" role="status" title={`${armedWords}: press A again or Enter to send, Esc to cancel`}>
-      <b>{armedWords}:</b> press <kbd>A</kbd> again or <kbd>Enter</kbd> to send, <kbd>Esc</kbd> to cancel
+    <div className="armed-note" role="status" title={`${armedWords}. Shift+A or Enter sends it, Esc cancels`}>
+      <b>{armedWords}.</b>{' '}
+      <span className="how">
+        <kbd>Shift</kbd>+<kbd>A</kbd> or <kbd>Enter</kbd> sends it, <kbd>Esc</kbd> cancels
+      </span>
     </div>
   );
   // On your turn (betting or drawing) the tip and the time bank sit on the bar's top line, so the bar is no taller for them.
+  // Whenever Shift+A can arm an all-in the line is there too, empty or holding the hand's strength, so the note that
+  // takes its place never makes the bar taller or moves the table.
   const canBank = !view.paused && !!me && !!view.turn && view.turn.seat === me.seat && !view.turn.usingBank && view.turn.deadline !== null && me.timeBank > 0;
   const head =
-    canBank || tipOn ? (
-      <div className="bar-head">
+    canBank || tipOn || most ? (
+      <div className={`bar-head${tipOn ? ' with-tip' : ''}${canBank ? ' with-bank' : ''}${armedNote ? ' armed' : ''}`}>
         {tipOn && (
           <button className="play-tip-button" aria-expanded={tipOpen} aria-controls="play-tip" aria-keyshortcuts="T" title="Tip (T)" onClick={toggleTip}>
             Tip
@@ -424,7 +494,7 @@ export function ActionBar({
         )}
       </div>
     ) : (
-      armedNote || hint
+      hint
     );
   // The sizing block's height, so a tip in its place takes just as much room and nothing below it moves.
   const sizingBox = useRef<HTMLDivElement>(null);
@@ -566,11 +636,11 @@ export function ActionBar({
                 key={o.label}
                 className={on ? 'queued' : ''}
                 aria-pressed={on}
-                title={`${on ? 'Click again to cancel' : 'Do this as soon as it is your turn'}${o.key ? `. Shortcut: ${o.key}` : ''}`}
+                title={`${on ? 'Click again to cancel' : 'Do this as soon as it is your turn'}. Shortcut: ${o.key}`}
                 onClick={() => togglePre(o.value)}
               >
                 <span className="box">{on ? '✓' : ''}</span> {o.label}
-                {o.key && <Key k={o.key} />}
+                <Key k={o.key} />
               </button>
             );
           })}
@@ -607,9 +677,9 @@ export function ActionBar({
               <button onClick={() => setAmount(potRaise(0.5))}>½ pot</button>
               <button onClick={() => setAmount(potRaise(0.75))}>¾ pot</button>
               <button onClick={() => setAmount(potRaise(1))}>Pot</button>
-              <button onClick={() => setAmount(legal.maxTo)} title="Shortcut: A, then A again to send" aria-keyshortcuts="A">
+              <button onClick={() => setAmount(legal.maxTo)} title="Shortcut: Shift+A, then Shift+A again to send" aria-keyshortcuts="Shift+A">
                 {legal.maxTo >= allInTo ? 'All in' : 'Max'}
-                <Key k="A" />
+                <Key k="⇧A" />
               </button>
             </div>
           )}
@@ -643,6 +713,7 @@ export function ActionBar({
               step={bigBlind ? 'any' : centsMode ? 0.01 : 1}
               value={typed ?? betToInput(unit, amount)}
               onChange={(e) => {
+                setArming(null);
                 setTyped(e.target.value);
                 // Text the browser can't read as a number leaves the amount as it was.
                 if (!e.target.validity.badInput) setAmountRaw(betFromInput(unit, e.target.value === '' ? NaN : +e.target.value));

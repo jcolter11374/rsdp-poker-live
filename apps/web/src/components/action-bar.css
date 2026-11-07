@@ -5,12 +5,18 @@
   opacity: 0.6;
 }
 .action-bar .sending-note { text-align: center; }
-/* An all-in armed with A: the button the next A or Enter presses is ringed, and the bar's top line, where the hand's
-   strength goes, says so. It keeps to that one line, clear of the Tip and Time bank buttons at its ends: on a narrow
-   bar the end of the how-to is cut short rather than the bar growing taller. */
+/* An all-in armed with Shift+A: the button the next Shift+A or Enter presses is ringed, and the bar's top line (there on
+   every turn Shift+A can arm, see ActionBar) says what it sends, in place of the hand's strength. The note is one line
+   only, clear of the Tip and Time bank pills at its ends: the how-to wraps onto a second line, which is cut off, when
+   there's no room for it beside what will be sent, and that is cut short only on the narrowest bars (its title has it
+   all). On a phone the pills step aside for the few seconds it is armed; a tap on either would let it go anyway. */
 .action-bar .buttons button.armed { outline: 3px solid var(--accent-2); outline-offset: 2px; }
-.action-bar .armed-note { text-align: center; font-size: 0.85rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.action-bar .armed-note b { color: var(--accent-2); }
-.action-bar .armed-note kbd { padding: 0 4px; line-height: 1.2; }
-.bar-head .armed-note { max-width: calc(100% - 270px); }
-.portrait .bar-head .armed-note { max-width: none; min-width: 0; }
+.bar-head .armed-note {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 0.4em;
+  height: 20px; line-height: 20px; overflow: hidden; min-width: 0; max-width: 100%; font-size: 0.85rem; white-space: nowrap;
+}
+.bar-head .armed-note b { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--accent-2); }
+.bar-head .armed-note kbd { padding: 0 4px; line-height: 1.2; }
+.bar-head:is(.with-tip, .with-bank) .armed-note { max-width: calc(100% - 270px); }
+.portrait .bar-head.armed :is(.play-tip-button, .time-bank) { display: none; }
+.portrait .bar-head.armed .armed-note { max-width: 100%; font-size: 0.8rem; }

@@ -20,21 +20,20 @@ function says(key: string) {
 }
 
 describe('the keyboard shortcuts list', () => {
-  it('lists A as all in, with the second press, the pot-limit most, and where it does nothing (#307)', () => {
+  it('keeps A as Call any before your turn', () => {
     render(<ShortcutsDialog onClose={() => {}} />);
-    const a = says('A');
-    expect(a).toMatch(/^All in, on your turn in no limit and pot limit games\./);
-    expect(a).toContain('Press A again or Enter to send it, or Esc to cancel.');
-    expect(a).toContain('In pot limit');
-    expect(a).toContain('less than all in');
-    expect(a).toContain('Not in limit games, and it does nothing before your turn.');
-    // Enter after A sends the all-in rather than starting a chat message.
-    expect(says('Enter')).toContain('Just after A, Enter sends the all-in instead');
+    expect(says('A')).toBe('Call any (before your turn)');
+    expect(screen.getByText(/Before your turn, F, K, C and A tick a pre-move/).textContent).toContain('Call any');
   });
 
-  it('no longer gives Call any a key, and says to click it', () => {
+  it('lists Shift+A twice as the most you can bet, with the second press, the pot-limit most, and where it does nothing (#307)', () => {
     render(<ShortcutsDialog onClose={() => {}} />);
-    expect(screen.queryByText(/Call any \(before your turn\)/)).toBeNull();
-    expect(screen.getByText(/Before your turn, F, K and C tick a pre-move/).textContent).toContain('Call any has no key: click it.');
+    const shiftA = says('Shift+A');
+    expect(shiftA).toMatch(/^Twice, on your turn: the most you can bet \(all in\)\./);
+    expect(shiftA).toContain('In pot limit, or with Trim bets nobody can call on, the most can be less, and it says so.');
+    expect(shiftA).toContain('The first press says what the second will send; Enter sends it too, Esc cancels.');
+    expect(shiftA).toContain('Not in fixed limit.');
+    // Enter after Shift+A sends the all-in rather than starting a chat message.
+    expect(says('Enter')).toContain('Just after Shift+A, Enter sends the all-in instead');
   });
 });
