@@ -390,7 +390,9 @@ export function useDepartures(view: TableView | null, skew = 0): TableView | nul
 
   // Fade out a little before the next deal (or after a while if no deal is coming), counted from when the result
   // shows: an all-in runout is still being dealt here for several seconds after the server finished the hand, and the
-  // seat must not fade before the result it is kept for (the table shown then has no next deal, as it waits).
+  // seat must not fade before the result it is kept for (the table shown then has no next deal, as it waits). A result
+  // that shows here less than that before the deal (a slow device) fades at once, rather than the seat vanishing
+  // mid-fade or with none when the deal comes.
   // The time to the next deal is from this clock, not the view's own moment, which is as old as the runout by then.
   // The moment is set once, when the result first shows (and again only if the next deal moves): every update
   // after it (a chat line, a new clock skew) must not start the wait over.
@@ -404,7 +406,7 @@ export function useDepartures(view: TableView | null, skew = 0): TableView | nul
     let f = fade.current;
     if (!f || f.hand !== kept.handNumber || f.nextAt !== nextAt) {
       const shownAt = f && f.hand === kept.handNumber ? f.shownAt : Date.now();
-      const at = nextAt === null ? shownAt + 8000 : Math.max(shownAt + 1500, nextAt - skewNow.current - DEPART_FADE_MS);
+      const at = nextAt === null ? shownAt + 8000 : Math.max(shownAt, nextAt - skewNow.current - DEPART_FADE_MS);
       f = fade.current = { hand: kept.handNumber, shownAt, nextAt, at };
     }
     const t = setTimeout(() => setKept((k) => (k && k.handNumber === kept.handNumber ? { ...k, fading: true } : k)), Math.max(0, f.at - Date.now()));

@@ -23,7 +23,6 @@ export function startAlertsDue(list: TournamentListing[], now: number, fired: Re
 /** One alert per start time: a host who moves the start gets the player a fresh one. */
 export const startKey = (t: TournamentListing) => `start:${t.id}:${t.startAt}`;
 
-
 /** How long a tab's note that it has an event on screen holds that event's alert back in the site's other tabs: two checks. */
 export const ON_SCREEN_FOR_MS = 35_000;
 
@@ -35,7 +34,15 @@ export function eventOnPage(path: string, tournamentOf: (table: string) => strin
   return table ? tournamentOf(table) : null;
 }
 
-/** Events some tab of this browser has on screen, from the note each tab leaves (event id, and when it last had it). */
-export function onScreenNow(notes: Record<string, number>, now: number): Set<string> {
-  return new Set(Object.entries(notes).flatMap(([id, at]) => (now - at < ON_SCREEN_FOR_MS && at <= now + 1000 ? [id] : [])));
+/**
+ * Events another tab of this browser has on screen, from the notes the tabs leave: `<tab>|<event id>` and when that tab
+ * last had it. This tab's own notes are left out (`ownTab`): it knows whether it is on screen now.
+ */
+export function onScreenNow(notes: Record<string, number>, now: number, ownTab: string): Set<string> {
+  return new Set(
+    Object.entries(notes).flatMap(([key, at]) => {
+      const [tab, id] = key.split('|');
+      return id && tab !== ownTab && now - at < ON_SCREEN_FOR_MS && at <= now + 1000 ? [id] : [];
+    }),
+  );
 }

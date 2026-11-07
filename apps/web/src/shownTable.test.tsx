@@ -145,6 +145,21 @@ describe('the table as shown, and what waits for it', () => {
     expect(result.current.view!.seats[1]?.departed).toBe('fading');
   });
 
+  it('fades a knocked-out seat at once when the result shows here less than a second before the next deal', () => {
+    const { before, after } = table();
+    vi.setSystemTime(1000);
+    const ms = runoutMs(after.hand!.events);
+    // This device took longer over the runout than the server held the deal for.
+    const late = { ...after, nextHandAt: 1000 + ms + 700 } as TableView;
+    const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: before } });
+    rerender({ live: late });
+    for (let t = 0; result.current.runningOut && t < 60_000; t += 100) act(() => void vi.advanceTimersByTime(100));
+    act(() => void vi.advanceTimersByTime(0));
+    // Fading before the deal, not cut off by it.
+    expect(Date.now()).toBeLessThan(late.nextHandAt!);
+    expect(result.current.view!.seats[1]).toMatchObject({ playerId: 'b', departed: 'fading' });
+  });
+
   it('shows a player knocked out in a hand dealt and run out in one update with that hand, not the last one', () => {
     const { before, after } = table();
     // The table before is the last hand's finished table: b folded it, and showed nothing new since.

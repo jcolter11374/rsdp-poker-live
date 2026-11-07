@@ -66,6 +66,8 @@ function setReached(v: boolean | null) {
  * busy moment).
  */
 export const pushAvailable = () => canPush() && pushReached !== false;
+/** Whether this device is set up for push now, so the server's alerts (Starting soon among them) reach it whatever is open. */
+export const pushReachedNow = () => pushReached === true;
 export const usePushAvailable = () => useSyncExternalStore(subscribe, pushAvailable);
 
 /** Asks the browser for permission if needed, then turns alerts on, and push with them where the browser has it. */

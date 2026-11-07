@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { TournamentListing } from '@rsdp/tournament';
-import { disableNotifications, enableNotifications, notify, syncPush, useNotifyState, usePushAvailable } from '../notify';
+import { disableNotifications, enableNotifications, notify, pushReachedNow, syncPush, useNotifyState, usePushAvailable } from '../notify';
 import { socket } from '../socket';
 import { tournamentClient } from './client';
 import { tournamentOfTable } from './hooks';
-import { eventOnPage, onScreenNow, startAlertsDue, startKey } from './startAlerts';
+import { eventOnPage, ON_SCREEN_FOR_MS, onScreenNow, startAlertsDue, startKey } from './startAlerts';
 
 /** How often the list of the player's tournaments is fetched while alerts are on. */
 const LIST_EVERY_MS = 60_000;
@@ -14,24 +14,25 @@ const FIRED_KEY = 'rsdp.notified';
 const FIRED_MAX = 50;
 /** Events a tab of the site has on screen now, so the other tabs hold their Starting soon back too. */
 const ON_SCREEN_KEY = 'rsdp.notified.onScreen';
+/** This tab, in those notes. */
+const TAB = Math.random().toString(36).slice(2, 10);
 
 function loadOnScreen(): Record<string, number> {
   try {
     const v = JSON.parse(localStorage.getItem(ON_SCREEN_KEY) ?? '{}');
-    return v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, at]) => typeof at === 'number')) as Record<string, number> : {};
+    return v && typeof v === 'object' && !Array.isArray(v) ? (Object.fromEntries(Object.entries(v).filter(([, at]) => typeof at === 'number')) as Record<string, number>) : {};
   } catch {
     return {};
   }
 }
 
-/** Notes that this tab has `id` on screen, dropping notes too old to count. */
-function noteOnScreen(id: string) {
+/** Notes that this tab has `id` on screen (or nothing, with null), dropping its other notes and any too old to count. */
+function noteOnScreen(id: string | null) {
   try {
     const now = Date.now();
-    const notes = loadOnScreen();
-    notes[id] = now;
-    const fresh = onScreenNow(notes, now);
-    localStorage.setItem(ON_SCREEN_KEY, JSON.stringify(Object.fromEntries(Object.entries(notes).filter(([k]) => fresh.has(k)))));
+    const notes = Object.fromEntries(Object.entries(loadOnScreen()).filter(([key, at]) => !key.startsWith(`${TAB}|`) && now - at < ON_SCREEN_FOR_MS));
+    if (id) notes[`${TAB}|${id}`] = now;
+    localStorage.setItem(ON_SCREEN_KEY, JSON.stringify(notes));
   } catch {
     /* ignore */
   }
@@ -104,26 +105,40 @@ export function TournamentAlerts() {
         .catch(() => {});
     const check = () => {
       const fired = loadFired();
-      // An event's lobby or table on screen, in this tab or another, already counts down. Only alerts that went out
-      // count as fired, so one held back still comes once the player looks away.
+      // An event's lobby or table on screen, in this tab or another, already counts down, so its alert is held back.
+      // Without push, only alerts that went out count as fired, so one held back still comes once the player looks
+      // away. With push, the server's own Starting soon reaches this device whatever is on screen: one held back here
+      // has had its alert, and isn't shown again later.
       const here = document.hidden ? null : eventOnPage(location.pathname, tournamentOfTable);
-      if (here) noteOnScreen(here);
-      const due = startAlertsDue(list, Date.now() + skew, new Set(fired), onScreenNow(loadOnScreen(), Date.now()));
-      if (!due.length) return;
+      noteOnScreen(here);
+      const held = onScreenNow(loadOnScreen(), Date.now(), TAB);
+      if (here) held.add(here);
+      const all = startAlertsDue(list, Date.now() + skew, new Set(fired));
+      const due = all.filter((t) => !held.has(t.id));
+      const covered = pushReachedNow() ? all.filter((t) => held.has(t.id)) : [];
+      if (!due.length && !covered.length) return;
       for (const t of due) {
         const minutes = Math.max(1, Math.round((t.startAt! - Date.now() - skew) / 60_000));
         // Shown even with the tab in front: the player may be on another page of the site.
         notify('Starting soon', `${t.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, { tag: startKey(t), url: `/tn/${t.id}`, whenVisible: true });
       }
-      saveFired([...fired, ...due.map(startKey)]);
+      saveFired([...fired, ...due.map(startKey), ...covered.map(startKey)]);
     };
+    // Looking away (or closing the tab) ends this tab's note at once, and is checked straight away.
+    const onVisibility = () => check();
+    const onHide = () => noteOnScreen(null);
     load();
     const a = setInterval(load, LIST_EVERY_MS);
     const b = setInterval(check, CHECK_EVERY_MS);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onHide);
     return () => {
       alive = false;
       clearInterval(a);
       clearInterval(b);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onHide);
+      noteOnScreen(null);
     };
   }, [on]);
 

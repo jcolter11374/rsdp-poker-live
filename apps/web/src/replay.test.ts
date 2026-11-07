@@ -37,13 +37,18 @@ describe('replayFrames', () => {
   it("names each stud street once, before that street's cards, in the captions", () => {
     const s = start({ game: 'stud', betting: 'fixed-limit', stacks: [500, 500, 500], stakes: { ante: 1, anteType: 'per-player', bringIn: 2, smallBet: 4, bigBet: 8 } });
     passive(s);
-    const captions = replayFrames(record(s, 0), 'p0', fmt).map((f) => f.caption);
-    for (const street of ['Fourth Street', 'Fifth Street', 'Sixth Street', 'Seventh Street']) {
-      const at = captions.filter((c) => c.includes(street));
+    const frames = replayFrames(record(s, 0), 'p0', fmt);
+    const captions = frames.map((f) => f.caption);
+    ['Fourth Street', 'Fifth Street', 'Sixth Street', 'Seventh Street'].forEach((street, i) => {
+      const at = frames.filter((f) => f.caption.includes(street));
       expect(at).toHaveLength(1);
       // The street's name, then who gets what.
-      expect(at[0]).toMatch(new RegExp(`^— ${street} — · .*(gets|dealt)`));
-    }
+      expect(at[0].caption).toMatch(new RegExp(`^— ${street} — · .*(gets|dealt)`));
+      // That step is the street's start: the last street's bets (third street's bring-in and calls) are in the pot.
+      expect(at[0].street).toBe(i + 1);
+      expect([...at[0].seats.values()].map((x) => x.bet)).toEqual([0, 0, 0]);
+      expect(at[0].pot).toBeGreaterThanOrEqual(i === 0 ? 9 : 0);
+    });
     // No step repeats the one before it.
     expect(captions.filter((c, i) => i > 0 && c && c === captions[i - 1])).toEqual([]);
   });

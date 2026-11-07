@@ -52,7 +52,8 @@ describe('starting soon alerts', () => {
     expect(eventOnPage('/t/cash1', of)).toBeNull();
     expect(eventOnPage('/tn/new', of)).toBeNull();
     expect(eventOnPage('/', of)).toBeNull();
-    // Another tab's note counts for two checks, then lapses once that tab is no longer showing it.
-    expect([...onScreenNow({ x: NOW - 20_000, y: NOW - ON_SCREEN_FOR_MS }, NOW)]).toEqual(['x']);
+    // Another tab's note counts for two checks, then lapses once that tab is no longer showing it. A tab's own notes
+    // don't count for it: it knows whether it's on screen.
+    expect([...onScreenNow({ 'a|x': NOW - 20_000, 'a|y': NOW - ON_SCREEN_FOR_MS, 'me|z': NOW }, NOW, 'me')]).toEqual(['x']);
   });
 });

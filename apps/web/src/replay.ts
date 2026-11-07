@@ -107,10 +107,13 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
   };
   const frames: Frame[] = [];
   let lineCount = 0;
+  let stud = false;
   hand.events.forEach((e, i) => {
+    if (e.t === 'hand-start') stud = isStud(e.gameId);
     const prev = hand.events[i - 1];
-    // Deals to every seat show as one step.
-    const merge = e.t === 'deal' && prev?.t === 'deal' && frames.length > 0;
+    // Deals to every seat show as one step. Stud deals a street's cards before the street begins: the step that names
+    // the street and deals its cards also gathers the bets, as the table does.
+    const merge = frames.length > 0 && ((e.t === 'deal' && prev?.t === 'deal') || (stud && e.t === 'street' && (prev?.t === 'deal' || prev?.t === 'board')));
     f = merge ? f : clone(f);
     apply(f, e, gather, ownSeat);
     f.upTo = i + 1;
@@ -137,6 +140,14 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     from = fr.upTo;
   }
   return shown;
+}
+
+function isStud(gameId: string): boolean {
+  try {
+    return getVariant(gameId).family === 'stud';
+  } catch {
+    return false;
+  }
 }
 
 function apply(f: Frame, e: HandEvent, gather: () => void, ownSeat: number | null) {
