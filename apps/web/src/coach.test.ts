@@ -603,11 +603,18 @@ it('has a verdict for every tip rule', () => {
 });
 
 describe('soloPractice (#476)', () => {
-  type Seats = TableView['seats'];
+  type Seat = NonNullable<TableView['seats'][number]>;
   const bot = { ownerId: 'me', ownerName: 'Me', look: 0 };
-  const person = (playerId: string) => ({ playerId }) as NonNullable<Seats[number]>;
-  const robot = (playerId: string) => ({ playerId, bot }) as NonNullable<Seats[number]>;
-  const view = (seats: Seats, over: Partial<Pick<TableView, 'mode' | 'realGame' | 'me'>> = {}) => ({ mode: 'cash' as const, realGame: false, me: { playerId: 'me', seat: 0 }, seats, ...over });
+  const person = (playerId: string, over: Partial<Seat> = {}) => ({ playerId, stack: 100, sittingOut: false, online: true, ...over }) as Seat;
+  const robot = (playerId: string) => ({ ...person(playerId), bot }) as Seat;
+  const view = (seats: TableView['seats'], over: Partial<Pick<TableView, 'mode' | 'realGame' | 'me'>> = {}, dealToAway = false) => ({
+    mode: 'cash' as const,
+    realGame: false,
+    me: { playerId: 'me', seat: 0 },
+    seats,
+    settings: { seating: { dealToAway } } as TableView['settings'],
+    ...over,
+  });
 
   it('is on when you sit among bots only, before any hand is dealt', () => {
     expect(soloPractice(view([person('me'), robot('b1'), null, robot('b2')]))).toBe(true);
@@ -619,5 +626,12 @@ describe('soloPractice (#476)', () => {
     expect(soloPractice(view([null, robot('b1')], { me: { playerId: 'me', seat: null } }))).toBe(false);
     expect(soloPractice(view([person('me'), robot('b1')], { mode: 'tournament' }))).toBe(false);
     expect(soloPractice(view([person('me'), robot('b1')], { realGame: true }))).toBe(false);
+  });
+
+  it("leaves out another person the deal leaves out: sitting out, out of chips, or away where the table doesn't deal to away players", () => {
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { sittingOut: true })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { stack: 0 })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })], {}, true))).toBe(false);
   });
 });

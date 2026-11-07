@@ -564,13 +564,15 @@ export function linesWithWhy(hand: HandRecordView, name: (seat: number) => strin
 }
 
 /**
- * A practice table where you're the only person seated, among bots: the next hand comes with coach tips and the bots'
- * reasons. The server decides that at each deal (view.tips: you're the only person dealt in, at a cash table where no
- * two people have played a hand); this is the same rule worked out from the seats, so the page can make room for them
- * before the first deal (#476).
+ * A practice table where you're the only person who'll be dealt in, among bots: the next hand comes with coach tips and
+ * the bots' reasons. The server decides that at each deal (view.tips: you're the only person dealt in, at a cash table
+ * where no two people have played a hand); this works it out from the seats, so the page can make room for them before
+ * the first deal (#476). Like the deal, it leaves out a person sitting out, out of chips or away (unless the table deals
+ * to away players).
  */
-export function soloPractice(view: Pick<TableView, 'mode' | 'realGame' | 'me' | 'seats'>): boolean {
+export function soloPractice(view: Pick<TableView, 'mode' | 'realGame' | 'me' | 'seats' | 'settings'>): boolean {
   if (view.mode !== 'cash' || view.realGame || view.me.seat === null) return false;
+  const dealtIn = (s: NonNullable<TableView['seats'][number]>) => s.stack > 0 && !s.sittingOut && (s.online || view.settings.seating.dealToAway);
   const others = view.seats.filter((s) => s && s.playerId !== view.me.playerId);
-  return others.length > 0 && others.every((s) => !!s!.bot);
+  return others.some((s) => !!s!.bot) && others.every((s) => !!s!.bot || !dealtIn(s!));
 }
