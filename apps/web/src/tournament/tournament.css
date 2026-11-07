@@ -38,7 +38,8 @@
 .tn-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
 .tn-tabs::-webkit-scrollbar { display: none; }
 .tn-tabs button { flex: none; border-radius: 999px; min-height: 40px; white-space: nowrap; }
-.tn-tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+/* The selected tab keeps its look under the mouse and after a tap: the plain button hover rule is just as specific (#399). */
+.tn-tabs button.on, .tn-tabs button.on:hover:not(:disabled) { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .tn-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 .tn-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; padding: 4px 6px; }

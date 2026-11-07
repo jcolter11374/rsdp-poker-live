@@ -282,8 +282,9 @@ try {
     // ...and the big blind folds.
     await press(blind, /^Fold/);
     await host.waitForSelector('.pot.result');
-    // Read the log before stopping: if the next hand is dealt first, the stop plays it out and the log moves on.
-    const log = await host.locator('.side').innerText();
+    // Read the log before stopping: if the next hand is dealt first, the stop plays it out and the log moves on. Only
+    // the log: the keyboard tip heads the side column for its first 20 s, and its own text says " folds".
+    const log = await host.locator('.side-panel').innerText();
     for (const words of [' bets ', ' raises to ', ' folds']) if (!log.includes(words)) throw new Error(`the hand log has no "${words.trim()}"`);
     await host.screenshot({ path: path.join(OUT, 'betting.png') });
     // Stop the game: left running, the table would keep dealing and timing out after the run, and CI's backup
@@ -771,6 +772,74 @@ try {
     });
     if (spots !== 1) throw new Error(`the seats moved ${spots - 1} times in eight seconds of play`);
     await p.screenshot({ path: path.join(OUT, 'omaha-laptop.png') });
+    await stopGame(p, [p]);
+    await p.close();
+  });
+
+  await step("Dealer's choice: the Pick button leaves the top bar the same height", async () => {
+    // The next chooser's Pick next game button once squeezed the top bar's line onto a second line, so the bar grew and
+    // the table shrank and moved mid-hand (#408). At each window size the bar must be as tall with the button as without.
+    const p = await open('pick button', { width: 1280, height: 800 });
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Pia');
+    await p.selectOption('label:has-text("Game") select', 'choice');
+    await p.selectOption('.home-practice label:has-text("Bots") select', '1');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    const picker = p.locator('.modal[aria-label="Pick the next game"]');
+    const pickButton = p.locator('.topbar .pick-button');
+    // Pia picks when it's her turn to, and checks or folds, until the bot's pick is on its last hand and she picks next.
+    const buttons = p.locator('.action-bar.my-turn .buttons button');
+    // When Pia's own pick starts, the button can show for a frame before the picker opens by itself, so it only counts
+    // if it is still there, with no picker, a moment later.
+    const pickShowing = async () => (await pickButton.count()) > 0 && !(await picker.count());
+    const pickReady = async () => {
+      if (!(await pickShowing())) return false;
+      await p.waitForTimeout(300);
+      return pickShowing();
+    };
+    for (const end = Date.now() + 150_000; !(await pickReady()); ) {
+      if (Date.now() > end) throw new Error('Pia never got the Pick next game button');
+      if (await picker.count()) {
+        await picker.locator('.game-picker-pick:not(:disabled)').first().click().catch(() => {});
+      } else {
+        const texts = await buttons.allInnerTexts().catch(() => []);
+        let i = texts.findIndex((t) => /^(Check|Stand pat|Bring in|Run it once)/.test(t));
+        if (i < 0) i = texts.findIndex((t) => /^Fold/.test(t));
+        if (i >= 0) await buttons.nth(i).click({ timeout: 2000 }).catch(() => {});
+      }
+      await p.waitForTimeout(250);
+    }
+    if (await p.locator('.side.drawer.open').count()) await p.keyboard.press('Escape');
+    // Narrow computer windows too, where the bar is tighter and the button just says Pick.
+    const sizes = [
+      [760, 800],
+      [900, 800],
+      [1000, 800],
+      [1280, 800],
+      [2300, 824],
+    ];
+    const bars = async () => {
+      const out = [];
+      for (const [width, height] of sizes) {
+        await p.setViewportSize({ width, height });
+        await p.waitForTimeout(300);
+        out.push(await p.locator('.topbar').evaluate((bar) => Math.round(bar.getBoundingClientRect().height)));
+      }
+      return out;
+    };
+    const withButton = await bars();
+    if (!(await pickButton.count())) throw new Error('the Pick next game button went before the bar was measured');
+    await pickButton.click();
+    await picker.waitFor();
+    const without = await bars();
+    sizes.forEach(([width, height], i) => {
+      if (withButton[i] !== without[i]) throw new Error(`at ${width}x${height} the Pick button changed the top bar's height: ${withButton[i]}px with it, ${without[i]}px without`);
+    });
+    await picker.locator('.game-picker-pick:not(:disabled)').first().click();
+    await picker.waitFor({ state: 'detached' });
+    // Back to a laptop window, where Stop game is in the side column.
+    await p.setViewportSize({ width: 1280, height: 800 });
     await stopGame(p, [p]);
     await p.close();
   });
