@@ -511,7 +511,7 @@ describe('seeds that nobody checks', () => {
     expect(liveSeedProblem(view([{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }]))).toMatch(/same seed \(aa\)/);
   });
 
-  it('gives the table a short line, which says so in the one case that can be harmless (#438)', () => {
+  it('gives the bar a short line, which says so in the one case that can be harmless (#438)', () => {
     sent({ seed: 'aa', at: 0, table: 't1', player: 'me' });
     accepted('aa');
     const view = (clientSeeds: { playerId: string; seed: string }[]) =>
@@ -525,7 +525,8 @@ describe('seeds that nobody checks', () => {
     expect(liveSeedWarning(view([{ playerId: 'me', seed: 'aa' }]))).toBeNull();
     // A seed from my other device: the short line says that's expected; the whole warning is kept for its details.
     const other = liveSeedWarning(view([{ playerId: 'me', seed: 'bb' }]))!;
-    expect(other.line).toMatch(/wasn't sent from this browser \(expected if you're on two devices\)/);
+    expect(other.line).toBe('Seed not from this browser: expected on two devices');
+    expect(other.otherDevice).toBe(true);
     expect(other.text).toBe(liveSeedProblem(view([{ playerId: 'me', seed: 'bb' }])));
     expect(other.text).toMatch(/\(bb\).*If you aren't, the deck may have been steered/);
     // Anything else says the deck may have been steered, and never that it's expected.
@@ -537,8 +538,8 @@ describe('seeds that nobody checks', () => {
     ]) {
       const warning = liveSeedWarning(view(seeds))!;
       expect(warning.text).toBe(liveSeedProblem(view(seeds)));
-      expect(warning.line).toMatch(/may have been steered\. Tell the table$/);
-      expect(warning.line).not.toMatch(/expected/);
+      expect(warning.line).toBe('Deck may have been steered: tell the table');
+      expect(warning.otherDevice).toBe(false);
     }
   });
 

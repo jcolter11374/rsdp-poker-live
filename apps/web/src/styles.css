@@ -914,17 +914,6 @@ dl.shortcuts dd { margin: 0; }
 /* A spot kept for notes that come and go (a tournament's asks, #385) takes no room while it's empty. */
 .dock-notes:empty { display: none; }
 .dock-notes .banner.clickable { cursor: pointer; }
-/* The fair-dealing seed warning: one short line and a small Details button, so it stays within the room this area holds
-   (#438): on a laptop that's what the buttons between turns leave, with the seat options under them. Details has the
-   whole of it. A line too long for a narrow window is cut short; on a phone held upright, where there's room, it wraps. */
-.dock-notes .seed-warning { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.85rem; padding-top: 6px; padding-bottom: 6px; }
-.dock-notes .seed-line { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dock-notes .seed-warning button { flex: none; padding: 1px 10px; font-size: 0.9em; color: inherit; background: transparent; border-color: currentColor; }
-.portrait .dock-notes .seed-line { white-space: normal; }
-@media (max-height: 500px) {
-  .portrait .dock-notes .seed-warning { padding-top: 4px; padding-bottom: 4px; }
-  .portrait .dock-notes .seed-line { white-space: nowrap; }
-}
 /* Windows too narrow for the side column (a laptop window at half width, a tablet on its side): the table's size comes
    from the window there, not from this area, and under the buttons the notes would be at the bottom edge of the screen.
    They go above the buttons, and stay on your turn so the buttons never move under a finger as it starts. */
@@ -965,6 +954,28 @@ dl.shortcuts dd { margin: 0; }
 }
 /* The hand line gives way (cut short) rather than wrap the head onto two lines mid-hand. */
 .bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The fair-dealing warning (#438) takes the hand line's place on the bar's top line, at exactly its height (17px; 15px on
+   a phone), or the head line's 26px on your turn, between the Tip pill and the time bank. So the bar is never taller with
+   it than with a hand's name, and the room kept under the table already holds that: no seat moves. Solid red, so it
+   reads as an alarm; a tap anywhere on it opens Details. Phones held sideways have no hand line: there it takes the
+   logo's and the table name's place in the top bar, at the buttons' height. */
+.seed-alarm { position: relative; display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; margin: 0 auto; padding: 0 12px; border: 0; border-radius: 999px; background: #8c1d16; box-shadow: inset 0 0 0 1px #ff7a6e; color: #fff; font-weight: 600; text-align: center; white-space: nowrap; cursor: pointer; }
+.seed-alarm:hover { background: #a1231b; }
+.seed-alarm-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.seed-alarm-text u { font-weight: 500; text-underline-offset: 1px; }
+.action-bar .seed-alarm { height: 17px; max-width: 100%; font-size: 0.8rem; line-height: 17px; }
+/* A bigger target than it looks, without taking room. */
+.action-bar .seed-alarm::after { content: ''; position: absolute; inset: -6px 0 -2px; }
+.bar-head .seed-alarm { height: 26px; max-width: calc(100% - 272px); white-space: normal; line-height: 13px; }
+.bar-head .seed-alarm-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.portrait .action-bar .seed-alarm { height: 15px; line-height: 15px; padding: 0 8px; font-size: 0.72rem; }
+.portrait .bar-head .seed-alarm { height: 26px; line-height: 13px; max-width: none; flex: 0 1 auto; min-width: 0; }
+.topbar > .seed-alarm { display: none; }
+@media (max-height: 500px) {
+  .portrait .topbar > .seed-alarm { display: flex; flex: 1 1 0; min-width: 0; height: 34px; margin: 0; border-radius: 8px; font-size: 0.72rem; line-height: 15px; justify-content: flex-start; }
+  .portrait .topbar > .seed-alarm ~ :is(.logo, .stakes) { display: none; }
+  .portrait .action-bar .seed-alarm { display: none; }
+}
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(218px, var(--held, 0px)); }

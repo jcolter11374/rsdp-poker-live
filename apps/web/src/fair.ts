@@ -370,21 +370,17 @@ function notSentHere(seed: string): string {
 }
 
 /**
- * The live warning for the hand in progress, if any: `text` is the whole of it, for its details, and `line` a short
- * form that fits the area under the table, which holds its height, so the warning never takes the table's and moves
- * every seat (#438). The one case that can be harmless says so in the short form too.
+ * The live warning for the hand in progress, if any: `text` is the whole of it, for its details, and `line` a short form
+ * for the top line of the bar under the table, where the hand's name goes, so it shows straight away, on your own turn
+ * too, and never takes the table's height (#438). The one case that can be harmless (`otherDevice`) says so in the short
+ * form too; every other one says the deck may have been steered.
  */
-export function liveSeedWarning(view: TableView): { line: string; text: string } | null {
+export function liveSeedWarning(view: TableView): { line: string; text: string; otherDevice: boolean } | null {
   const text = liveSeedProblem(view);
   if (!text) return null;
   const mine = view.hand!.fair!.clientSeeds.filter((c) => c.playerId === view.me.playerId);
   const otherDevice = mine.length === 1 && text === notSentHere(mine[0].seed);
-  return {
-    text,
-    line: otherDevice
-      ? "a seed under your name wasn't sent from this browser (expected if you're on two devices)"
-      : "this hand failed your browser's checks, so the deck may have been steered. Tell the table",
-  };
+  return { text, otherDevice, line: otherDevice ? 'Seed not from this browser: expected on two devices' : 'Deck may have been steered: tell the table' };
 }
 
 /** The live warning for the hand in progress, if the seeds listed for it don't add up for me. */

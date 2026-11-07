@@ -1120,8 +1120,9 @@ try {
   await step('laptop, one player on two devices: the fair-dealing warning leaves the seats where they are', async () => {
     // Each device sends its own seed and the table keeps the newest, so the other device warns that a seed under your
     // name wasn't sent from it (#209). The warning was a banner over the table and took the table's height, so every seat
-    // moved when it came or went (#438). It now sits under the buttons, in room that's kept there.
-    const laptop = { width: 1280, height: 800 };
+    // moved when it came or went (#438). It now takes the hand line's place on the bar under the table, your own turn
+    // included. 1366x768: there the table's size comes from the window's height, so anything taller under it shows.
+    const laptop = { width: 1366, height: 768 };
     const first = await open('two devices, first', laptop);
     await first.goto(BASE);
     await first.fill('input[required]', 'Ned');
@@ -1166,17 +1167,19 @@ try {
         await first.locator('.request button:has-text("Approve")').first().click();
         await first.locator(`.seat[data-seat="${i + 3}"]:not(.empty)`).waitFor();
       }
-      // Every frame on both devices, from before the first deal: the layout, and each time the warning comes or goes. It
-      // comes with a hand's deal on the device whose seed wasn't used, and on a computer it waits under the buttons during
-      // your own turn, so it comes and goes then too.
+      // Every frame on both devices, from before the first deal: the layout, each time the warning comes or goes (it comes
+      // with a hand's deal on the device whose seed wasn't used, and goes with the next deal), and the frames of your own
+      // turn that show it.
       for (const p of [first, second]) {
         await sampleLayouts(p);
         await p.evaluate(() => {
           window.__warnings = 0;
+          window.__onTurn = 0;
           let was = null;
           const look = () => {
-            const shown = [...document.querySelectorAll('.banner.warn')].some((b) => /Fair dealing/.test(b.textContent ?? '') && b.getClientRects().length > 0);
+            const shown = [...document.querySelectorAll('.seed-alarm')].some((b) => b.getClientRects().length > 0);
             if (was !== null && shown !== was) window.__warnings++;
+            if (shown && document.querySelector('.action-bar.my-turn')) window.__onTurn++;
             was = shown;
             if (window.__layouts) requestAnimationFrame(look);
           };
@@ -1187,7 +1190,9 @@ try {
       for (const p of [first, second]) await p.waitForSelector('.seat.me .hole .playing-card');
       // Hands until the warning has come or gone. Only the first device plays: a move made on both at once would be turned
       // down on one.
-      const warnings = async () => (await Promise.all([first, second].map((p) => p.evaluate(() => window.__warnings)))).reduce((a, b) => a + b);
+      const sum = async (fn) => (await Promise.all([first, second].map((p) => p.evaluate(fn)))).reduce((a, b) => a + b);
+      const warnings = () => sum(() => window.__warnings);
+      const onTurn = () => sum(() => window.__onTurn);
       let hands = 0;
       do {
         await playOut([first], 60);
@@ -1195,11 +1200,13 @@ try {
         await first.locator('.pot.result').first().waitFor({ state: 'detached', timeout: 30_000 });
         await first.waitForSelector('.seat.me .hole .playing-card');
         await first.waitForTimeout(900);
-      } while (hands < 6 && (await warnings()) < 1);
+      } while (hands < 6 && ((await warnings()) < 1 || (await onTurn()) < 1));
       const seen = [await layoutsSeen(first), await layoutsSeen(second)];
       const moved = seen.findIndex((s) => s.length !== 1);
       if (moved >= 0) throw new Error(`the seats moved on the ${moved ? 'second' : 'first'} device in ${hands} hands:\n  ${seen[moved].join('\n  ')}`);
       if ((await warnings()) < 1) throw new Error(`in ${hands} hands the fair-dealing warning never came or went, so this step checked nothing`);
+      // It stays in view on your own turn, when you decide whether to put chips in.
+      if ((await onTurn()) < 1) throw new Error(`in ${hands} hands the fair-dealing warning never showed on your own turn`);
       await second.screenshot({ path: path.join(OUT, 'two-devices-laptop.png') });
       await stopGame(first, [first, second]);
     } finally {
