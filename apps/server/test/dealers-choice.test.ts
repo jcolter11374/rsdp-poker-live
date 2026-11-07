@@ -282,6 +282,78 @@ describe("Dealer's choice", () => {
     expect(rt.state.requests.map((r) => r.playerId)).toEqual(['g']);
   });
 
+  it('lets go of an offer that starts to count when a smaller game has no room for it, and keeps its holder waiting (#453)', () => {
+    // G's offer didn't count, so Badugi was picked with six seated. Once G no longer needs the host's OK, the offer
+    // counts and doesn't fit: it is let go, and G stays first on the waitlist instead of being refused until it lapses.
+    for (const change of ['approval off', 'co-host'] as const) {
+      const { rt, clock } = table((s) => {
+        s.seating.waitlist = true;
+        s.game.dealersChoice!.hands = 1;
+      });
+      seat(rt, 6);
+      rt.updateSettings('host', { seating: { requireApproval: true } });
+      rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+      rt.start('host');
+      pick(rt, 'badugi');
+      if (change === 'approval off') rt.updateSettings('host', { seating: { requireApproval: false } });
+      else rt.setCoHost('host', 'g', ['approve']);
+      expect(rt.state.offers).toEqual([]);
+      expect(tableView(rt, 'a', clock.now()).choice).toMatchObject({ count: 6, cap: 6 });
+      clock.advance(61_000);
+      expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['g']);
+      // Once a game with room is dealt, the seat is offered to G again.
+      checkDown(rt);
+      pick(rt, 'nlhe');
+      clock.advance(10_000);
+      expect(hand(rt).input.game.id).toBe('nlhe');
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+    }
+  });
+
+  it('keeps the earliest offers that fit when offers start to count, so nobody behind them gets a seat first (#453)', () => {
+    const { rt } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    rt.connect('i');
+    seat(rt, 5);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+    rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+    rt.start('host');
+    pick(rt, 'badugi');
+    rt.joinWaitlist('i', { name: 'I', stack: 1000 });
+    // Badugi has room for one more: G keeps the offer and can take it; H waits, still ahead of I, who isn't offered one.
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['g', 'h', 'i']);
+    rt.requestSeat('g', { seat: rt.state.offers![0].seat, name: 'G', stack: 1000 });
+    expect(rt.state.seats.some((x) => x?.playerId === 'g')).toBe(true);
+    expect(rt.state.offers).toEqual([]);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['h', 'i']);
+  });
+
+  it('lets someone who needs the host take their offer as a request while a smaller table keeps a seat for a mover (#453)', () => {
+    // Six seated (E in the ninth seat), approval on, G offered seat 6. Badugi is picked, then the host makes the table
+    // seven seats from the next hand: E will move into seat 7, which is kept. G's seat isn't, so G's take is a request.
+    const { rt } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    seat(rt, 5);
+    rt.requestSeat('e', { seat: 8, name: 'E', stack: 1000 });
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['g', 5]]);
+    rt.start('host');
+    pick(rt, 'badugi');
+    rt.updateSettings('host', { table: { maxSeats: 7 } });
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['g', 5]]);
+    rt.requestSeat('g', { seat: 5, name: 'G', stack: 1000 });
+    expect(rt.state.requests.map((r) => [r.playerId, r.seat])).toEqual([['g', 5]]);
+    // Someone else asking for the kept seat is still told it's kept.
+    rt.updateSettings('host', { seating: { requireApproval: false } });
+    expect(() => rt.requestSeat('h', { seat: 6, name: 'H', stack: 1000 })).toThrow(/kept for a player moving into it/);
+  });
+
   it('skips a chooser who sits out, and gives the next player a fresh clock', () => {
     const { rt, clock } = table();
     seat(rt, 4);

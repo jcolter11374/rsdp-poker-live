@@ -565,7 +565,9 @@ export class TableRuntime {
   private checkSeatKept(seat: number, newcomer: PlayerId | null) {
     const limit = this.seatLimit();
     if (seat >= limit) throw new ActionError(`the table is going down to ${limit} seats after this hand; pick seat ${limit} or lower`);
-    if (newcomer !== null && this.movers() > 0 && !this.openSeats(newcomer).includes(seat)) {
+    // Tested on the kept seats themselves: openSeats is empty while a smaller Dealer's choice game has no room, which
+    // checkRoom reports (or, for someone taking a waitlist offer as a seat request, lets wait).
+    if (newcomer !== null && this.movers() > 0 && this.moverSeats(limit, this.movers()).includes(seat)) {
       const open = this.openSeats(newcomer);
       throw new ActionError(
         `the table is going down to ${limit} seats after this hand, and that seat is kept for a player moving into it${open.length ? `; seat ${open.map((i) => i + 1).join(', ')} is free` : ''}`,
@@ -3212,6 +3214,7 @@ export class TableRuntime {
     const limit = this.seatLimit();
     const kept = new Set(this.moverSeats(limit, this.movers()));
     s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    this.letGoOffersOverCap();
     // While browsers still deal out the last hand's all-in runout, the seats of the players in it aren't offered
     // (openSeats leaves them out, see revealSeats); upkeep runs again when the runout has had time to show (upkeepDue).
     const open = this.openSeats();
@@ -3227,6 +3230,25 @@ export class TableRuntime {
       this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
+  }
+
+  /**
+   * Dealer's choice: a game is only picked when everyone counted fits (tableCount), and seats and approvals keep it
+   * that way. An offer can still start to count after the pick: the host turns approval off, or gives its holder the
+   * approve power (#453). Counted offers the smaller game has no room for are let go, the latest in the queue first,
+   * and their holders stay on the waitlist for the next seat, rather than being refused until the offer lapses.
+   */
+  private letGoOffersOverCap() {
+    const cap = this.choice.seatCap();
+    if (!cap) return;
+    const room = cap.cap - this.seatedCount();
+    const place = new Map(this.queue().map((w, i) => [w.playerId, i]));
+    const counted = this.offers()
+      .filter((o) => !this.seatOf(o.playerId) && !this.needsApproval(o.playerId))
+      .sort((a, b) => (place.get(a.playerId) ?? Infinity) - (place.get(b.playerId) ?? Infinity));
+    if (counted.length <= room) return;
+    const over = new Set(counted.slice(Math.max(0, room)));
+    this.state.offers = this.offers().filter((o) => !over.has(o));
   }
 
   /** When the last hand's all-in runout, if it had one, has been dealt out in the browsers (0 when it hadn't). */
