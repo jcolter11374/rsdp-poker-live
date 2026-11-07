@@ -124,6 +124,18 @@ describe('the delayed feed (item 2: the delay itself changes at the live deal)',
     expect(feed.size).toBe(1);
   });
 
+  it('never goes back to an earlier moment, though a timer fired early and the next ask comes a moment sooner', () => {
+    const feed = new SpectatorFeed();
+    feed.add(s(0), s(30), fake(s(0)));
+    feed.add(s(10), s(30), fake(s(10)));
+    // The timer for the second moment fires a millisecond early and shows it, counted as due.
+    expect(feed.shown(s(40))?.at).toBe(s(10));
+    // A live change in that millisecond asks with the real time: still the second moment, not none and not the first.
+    expect(feed.shown(s(40) - 1)?.at).toBe(s(10));
+    expect(feed.shown(s(40) - 1, true)?.at).toBe(s(10));
+    expect(feed.caughtUp(s(40) - 1)).toBe(true);
+  });
+
   it('turning off "see every card" plays on the moments still to come without the cards, and drops none', () => {
     const feed = new SpectatorFeed();
     const withCards = { serverNow: 1, spectator: { delaySeconds: 30, seeAll: true, blocked: false } } as unknown as DelayedPart;
@@ -212,6 +224,24 @@ describe('before anything is old enough to show (item 3)', () => {
     expect(waiting.seats.every((x) => !x || (x.bet === 0 && !x.inHand && x.cards.length === 0))).toBe(true);
     // Every seat the oldest snapshot had, and only those.
     expect(waiting.seats.map((x) => x?.playerId ?? null)).toEqual(oldest.seats.map((x) => x?.playerId ?? null));
+  });
+
+  it('stays the same as time passes and the live table plays on, so no live change sends anything new', () => {
+    const { rt, clock } = table();
+    checkDown(rt);
+    // The delay is turned on between hands, a while after the hand: the oldest snapshot is taken now, shown in 30 s.
+    clock.advance(20_000);
+    const oldest = snap(rt, clock);
+    const at = (ms: number) => {
+      clock.advance(ms);
+      return shownKey(behind(watcherNow(rt, clock), null, DELAY, oldest));
+    };
+    const first = at(0);
+    // Live, the next hand is dealt and played, with lines in the log, up to just before the oldest snapshot is due.
+    rt.dealNext('host');
+    expect(at(10_000)).toBe(first);
+    checkDown(rt);
+    expect(at(19_000)).toBe(first);
   });
 
   it('takes Dealer’s choice from that snapshot too, with no pick clock and no next game', () => {
