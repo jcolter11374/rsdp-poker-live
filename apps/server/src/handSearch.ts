@@ -8,7 +8,7 @@ import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import type { BettingKind } from '@rsdp/engine/core';
 import { BETTING_KINDS } from '@rsdp/engine/settings';
 import { gameTitle, getVariant } from '@rsdp/engine/variants';
-import type { SharedHandView } from '@rsdp/engine/wire';
+import type { HandRecordView, SharedHandView } from '@rsdp/engine/wire';
 import { schema, type Db } from './db';
 import { playersForAccount, whoIs } from './identity';
 import { clientAddress, limiter } from './admin';
@@ -154,7 +154,17 @@ type Snap = Partial<RuntimeState> & { settings?: RuntimeState['settings'] };
 export function handSearchRoutes(
   app: express.Express,
   db: Db | null,
-  opts: { shared: SharedHandStore; now: () => number; log: (message: string, err?: unknown) => void; liveFair?: (tableId: string) => RuntimeState['fair'] | null | undefined },
+  opts: {
+    shared: SharedHandStore;
+    now: () => number;
+    log: (message: string, err?: unknown) => void;
+    liveFair?: (tableId: string) => RuntimeState['fair'] | null | undefined;
+    /**
+     * A hand of a running table as `playerId` is shown it, when they now watch it on a delay: no card shown after it
+     * that their view hasn't shown yet, and its reveal as of the moment they are shown (#435). Undefined otherwise.
+     */
+    asShown?: (tableId: string, playerId: string, past: PastHand, hideMine: boolean) => HandRecordView | undefined;
+  },
 ) {
   const { shared, now, log } = opts;
   const searches = limiter(SEARCHES_PER_MINUTE, 60_000, now);
@@ -250,7 +260,7 @@ export function handSearchRoutes(
           myId: mine,
           pot: potOf(past),
           // Reveals follow the running table when it is loaded: its save can lag behind a game started again.
-          hand: savedHandView(liveFairOf(snap, row.tableId), past, mine, { now: now() }),
+          hand: opts.asShown?.(row.tableId, mine, past, false) ?? savedHandView(liveFairOf(snap, row.tableId), past, mine, { now: now() }),
         };
       });
       // The next page carries on after the last hand read (a search that stopped at SCAN_MAX too).
@@ -312,7 +322,7 @@ export function handSearchRoutes(
         // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
         ...(hideMine ? {} : { sharerSeat: past.seats.find((x) => x.playerId === mine)!.seat }),
         createdAt,
-        hand: savedHandView(snap, past, mine, { hideMine }),
+        hand: { ...(opts.asShown?.(row.tableId, mine, past, hideMine) ?? savedHandView(snap, past, mine, { hideMine })), fair: null },
       };
       await shared.create({ id, tableId: row.tableId, handNumber: row.number, createdBy: who.player.id, snapshot });
       res.json({ id });

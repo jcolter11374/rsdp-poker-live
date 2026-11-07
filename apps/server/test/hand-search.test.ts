@@ -147,6 +147,53 @@ describe('hand search and a stopped game', () => {
   });
 });
 
+describe('hand search for someone now watching on a delay (#435)', () => {
+  it('keeps the reveal time their view has when the host stops the game at the end of the live hand', { timeout: 30_000 }, async () => {
+    const FAY = 'hs-ivy-secret-0123456789';
+    const GUS = 'hs-jon-secret-0123456789';
+    const HAL = 'hs-kim-secret-0123456789';
+    const fay = client(FAY);
+    const gus = client(GUS);
+    const hal = client(HAL);
+    const { tableId } = await fay.call<{ tableId: string }>('table:create', {
+      settings: { table: { name: 'Delayed search' }, seating: { requireApproval: false }, spectators: { allowed: true, delaySeconds: 60 }, timing: { autoStartNextHand: false } },
+    });
+    for (const c of [fay, gus, hal]) await c.call('table:join', { tableId });
+    await fay.call('seat:request', { seat: 0, name: 'Fay', stack: 100 });
+    await gus.call('seat:request', { seat: 1, name: 'Gus', stack: 100 });
+    await hal.call('seat:request', { seat: 2, name: 'Hal', stack: 100 });
+    await fay.until((v) => v.seats.filter(Boolean).length === 3);
+    await fay.call('host:start');
+    const players = [fay, gus, hal];
+    const playOut = async (n: number) => {
+      for (let i = 0; i < 10; i++) {
+        const v = await fay.until((h) => h.hand?.handNumber === n);
+        if (v.hand!.phase === 'complete') return;
+        const mover = players.find((c) => c.view()?.legal && c.view()?.hand?.handNumber === n);
+        if (mover) await mover.call('hand:act', { type: 'fold' }).catch(() => {});
+        await pause(50);
+      }
+    };
+    await playOut(1);
+    await fay.until((h) => h.hand?.phase === 'complete');
+    // Hal stands up and watches, a minute behind; hand 2 is dealt without him and the host stops the game in it.
+    (hal.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+    await fay.until((v) => !v.seats[2]);
+    await fay.call('host:deal');
+    await fay.until((h) => h.hand?.handNumber === 2 && h.hand.phase !== 'complete');
+    await fay.call('host:stop');
+    await pause(900);
+    const revealsAt = async () => (await search('', HAL)).hands.find((h) => h.tableId === tableId)!.hand.fair as { revealsAt: number | null; serverSeed: string | null };
+    const before = await revealsAt();
+    expect(before.serverSeed).toBeNull();
+    // The live hand ends and the stop takes effect: a minute behind, Hal's search still has the reveal time as it was.
+    await playOut(2);
+    await fay.until((h) => !h.started);
+    await pause(900);
+    expect(await revealsAt()).toEqual(before);
+  });
+});
+
 describe('hand search by game and betting', () => {
   it("keeps Limit and No-Limit Hold'em apart, and counts an older hand with no betting saved as No-Limit", { timeout: 40_000 }, async () => {
     const FAY = 'hs-fay-secret-0123456789';

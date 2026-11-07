@@ -211,6 +211,43 @@ describe('a spectator on a delay', () => {
   }, 30_000);
 });
 
+describe('a spectator on a delay on the waitlist, after the host lengthens the delay (#452)', () => {
+  it('still gets the whole minute from when their view shows the seat free', async () => {
+    const { ann, ben, fan } = await table('offer-longer', 10, { table: { maxSeats: 2 }, seating: { requireApproval: false, waitlist: true } });
+    clock.advance(10_000);
+    await fan.until((v) => v.hand?.handNumber === 1);
+    await fan.call('waitlist:join', { name: 'Fan', stack: 10_000 });
+    // Forty seconds from the next hand; Ben leaves after that one.
+    await ann.call('host:settings', { patch: { spectators: { delaySeconds: 40 } } });
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    clock.advance(1_000);
+    await ann.call('host:deal');
+    await ann.until((v) => v.hand?.handNumber === 2);
+    (ben.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', { afterHand: true });
+    await ann.until((v) => !!v.seats[1]?.leaving);
+    clock.advance(2_000);
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    const freedAt = clock.now();
+    await ann.until((v) => !v.seats[1] && v.offers.some((o) => o.name === 'Fan'));
+    // The hand it came free in is shown forty seconds on, and so is the offer, with a minute to go.
+    clock.advance(39_999);
+    await settle();
+    expect(fan.view().offers).toEqual([]);
+    clock.advance(1);
+    const offered = await fan.until((v) => v.offers.some((o) => o.playerId === v.me.playerId));
+    expect(offered.seats[1]).toBeNull();
+    const mine = offered.offers.find((o) => o.playerId === offered.me.playerId)!;
+    expect(mine.expiresAt - offered.serverNow).toBe(60_000);
+    expect(mine.expiresAt).toBe(freedAt + 100_000);
+    clock.advance(59_000);
+    await settle();
+    expect(fan.view().waitlist.some((w) => w.playerId === offered.me.playerId)).toBe(true);
+    await fan.call('seat:request', { seat: 1, name: 'Fan', stack: 10_000 });
+    await fan.until((v) => v.seats[1]?.name === 'Fan');
+  }, 30_000);
+});
+
 describe('gestures, seen by a spectator on a delay', () => {
   it('only between players their view has seated, so one at a player who just sat down tells them nothing', async () => {
     const { ann, ben, fan } = await table('gesture', 30);
@@ -242,7 +279,7 @@ describe('a spectator on a delay on the waitlist (#452)', () => {
     await fan.until((v) => v.waitlist.some((w) => w.name === 'Fan'));
     // Ben leaves after this hand; it ends, and seat 2 is the fan's at the live table.
     (ben.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', { afterHand: true });
-    await settle();
+    await ann.until((v) => !!v.seats[1]?.leaving);
     await toAct(ann, ben).call('hand:act', { type: 'fold' });
     const freedAt = clock.now();
     await ann.until((v) => !v.seats[1] && v.offers.some((o) => o.name === 'Fan'));
@@ -283,6 +320,31 @@ describe('what a spectator on a delay can fetch', () => {
     expect(await preview()).not.toContain('5/10');
     clock.advance(60_000);
     expect(await preview()).toContain('5/10');
+  }, 30_000);
+
+  it("sees a card shown after the hand in its hand list and downloads only when their view shows it", async () => {
+    const { ann, ben, fan } = await table('late-show', 30);
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.handNumber === 1);
+    const folder = toAct(ann, ben);
+    const winner = folder === ann ? ben : ann;
+    await folder.call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.phase === 'complete');
+    type Hand = { hand: { events: { t: string }[] } };
+    const shows = async () => (await fan.call<Hand>('table:history', { handNumber: 1 })).hand.events.filter((e) => e.t === 'show').length;
+    const exported = async () => (await fan.call<{ hands: { events: { t: string }[] }[] }>('table:export')).hands[0].events.filter((e) => e.t === 'show').length;
+    expect(await shows()).toBe(0);
+    // The winner shows a card live, thirty seconds after the hand ended.
+    await winner.call('hand:show', { cards: [0], handNumber: 1 });
+    await winner.until((v) => (v.hand?.events ?? []).some((e) => e.t === 'show'));
+    expect(await shows()).toBe(0);
+    expect(await exported()).toBe(0);
+    clock.advance(30_000);
+    await fan.until((v) => (v.hand?.events ?? []).some((e) => e.t === 'show'));
+    expect(await shows()).toBe(1);
+    expect(await exported()).toBe(1);
   }, 30_000);
 
   it('can share a hand only once it has ended in their view, as the table it was played at (item 4)', async () => {

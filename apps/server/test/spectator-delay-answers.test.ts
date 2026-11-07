@@ -49,7 +49,7 @@ function checkDown(rt: TableRuntime) {
  * goes on showing them until the delay has passed.
  */
 function freezeView(rt: TableRuntime, clock: FakeClock): ShownTable {
-  const shown = { seats: rt.state.seats.map((x) => x?.playerId ?? null), at: clock.now(), behindMs: DELAY };
+  const shown = { seats: rt.state.seats.map((x) => x?.playerId ?? null), at: clock.now(), behindMs: DELAY, showsNowInMs: DELAY };
   rt.shownTo = (id) => (rt.seatOf(id) || rt.isStaff(id) ? null : shown);
   return shown;
 }
@@ -138,7 +138,7 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     expect(before).toEqual([CLOSED, 'no such seat']);
   });
 
-  it('may take a seat offered from the waitlist, though their view still shows it taken', () => {
+  it('takes a seat offered from the waitlist once their view shows it free, and hears the same as before until then', () => {
     const { rt, clock } = table((s) => {
       s.table.maxSeats = 4;
       s.seating.waitlist = true;
@@ -146,9 +146,16 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
     rt.joinWaitlist('watcher', { name: 'Watcher', stack: 10_000 });
     rt.stand('c', { afterHand: true });
     const shown = freezeView(rt, clock);
+    const before = ask(rt, 3);
     checkDown(rt);
     expect(rt.state.offers).toEqual([expect.objectContaining({ playerId: 'watcher', seat: 3 })]);
     expect(shown.seats[3]).toBe('c');
+    // Still shown in seat 3: the offer they can't see yet gives nothing away.
+    expect(ask(rt, 3)).toBe(before);
+    expect(before).toBe('that seat is taken');
+    expect(rt.seatOf('watcher')).toBeNull();
+    // Their view reaches the seat coming free (and the offer): it is theirs.
+    shown.seats[3] = null;
     expect(ask(rt, 3)).toBe('accepted');
     expect(rt.seatOf('watcher')?.seat).toBe(3);
   });
@@ -221,6 +228,25 @@ describe('touching a bot (#435)', () => {
     // The host still hears that it has gone.
     expect(answer(() => rt.removeBot('host', bot))).toBe('no such bot');
     expect(answer(() => rt.setBotLevel('host', bot, 'hard'))).toBe('no such bot');
+  });
+
+  it("answers its owner, watching on a delay, as if the bot were still there while their view shows it", () => {
+    const { rt, clock } = table();
+    const bot = rt.addBot('a', { seat: 5 });
+    // A stands up after the hand and watches on the delay; their view still shows their bot seated.
+    rt.stand('a', { afterHand: true });
+    checkDown(rt);
+    expect(rt.seatOf('a')).toBeNull();
+    freezeView(rt, clock);
+    const tries = () => [answer(() => rt.setBotLevel('a', bot, 'normal')), answer(() => rt.setBotLevel('a', bot, 'nope' as 'hard'))];
+    const here = tries();
+    // The bot leaves the live table.
+    rt.removeBot('host', bot);
+    if (rt.botInfo(bot)) checkDown(rt);
+    expect(rt.botInfo(bot)).toBeNull();
+    expect(tries()).toEqual(here);
+    expect(here).toEqual(['accepted', 'no such level']);
+    expect(answer(() => rt.removeBot('a', bot))).toBe('accepted');
   });
 
   it('tells anyone who sees the table live that a bot has gone, its owner tapping again included', () => {

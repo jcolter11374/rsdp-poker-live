@@ -178,6 +178,11 @@ export interface ShownTable {
   at: number;
   /** How far behind the table that view runs, in ms. */
   behindMs: number;
+  /**
+   * How long until what happens now shows in that view, in ms. Usually the delay; after the host lengthens it, the
+   * new one, which their view reaches at the first hand dealt under it (D39).
+   */
+  showsNowInMs: number;
 }
 
 /** The one answer a spectator on a delay gets for a seat the live table won't give them, whatever the reason (#435). */
@@ -211,7 +216,7 @@ export class TableRuntime {
   shownTo: (playerId: PlayerId) => ShownTable | null = (playerId) => {
     const delayMs = this.settings.spectators.delaySeconds * 1000;
     if (delayMs <= 0 || this.seatOf(playerId) || this.isStaff(playerId)) return null;
-    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now() - delayMs, behindMs: delayMs };
+    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now() - delayMs, behindMs: delayMs, showsNowInMs: delayMs };
   };
 
   private readonly clock: Clock;
@@ -243,6 +248,11 @@ export class TableRuntime {
    * move when the game starts again live (#435). Kept in memory only: a restart starts the delayed feed afresh too.
    */
   private fairLifts: { through: number; at: number; liftedAt: number; revealedBefore: number }[] = [];
+  /**
+   * Who added each bot that has left in the last few minutes, so its owner watching on a delay, still shown it, is
+   * answered as if it were here (goneOwnBotShown, #435). In memory only, like the delayed feed.
+   */
+  private goneBots = new Map<PlayerId, { ownerId: PlayerId; at: number }>();
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
   readonly choice: DealersChoice;
 
@@ -489,8 +499,10 @@ export class TableRuntime {
     let { seat } = input;
     const { stack } = input;
     // A spectator on a delay is answered from the seats they are shown. Someone holding a seat offered from the
-    // waitlist takes that seat, as below.
-    const shown = this.state.offers?.some((o) => o.playerId === playerId) ? null : this.shownTo(playerId);
+    // waitlist takes that seat, as below, once their view has it free: before, the offer would tell them it came free.
+    const offer = this.state.offers?.find((o) => o.playerId === playerId);
+    const view = this.shownTo(playerId);
+    const shown = offer && view && offer.seat < view.seats.length && !view.seats[offer.seat] ? null : view;
     if (shown) seat = this.shownSeat(playerId, seat, stack, shown);
     else {
       if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
@@ -1962,8 +1974,9 @@ export class TableRuntime {
     const bot = this.botInfo(botId);
     // Someone who sees the table live can see it has gone. A spectator on a delay who may not remove it hears that
     // whether or not it is still here: they could otherwise learn early that a bot left the live table (busted out
-    // when its hand ended, say) (#435).
+    // when its hand ended, say) (#435). Its owner, whose view still shows it, is answered as if it were: removed.
     if (!bot && this.shownTo(by) === null) throw new ActionError('no such bot');
+    if (!bot && this.goneOwnBotShown(by, botId)) return;
     if (bot?.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (!bot) throw new ActionError('no such bot');
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can remove a bot the host or a co-host added");
@@ -1989,6 +2002,7 @@ export class TableRuntime {
     const allowed = bot?.ownerId === by || this.can(by, 'players');
     if (!bot && (allowed || this.shownTo(by) === null)) throw new ActionError('no such bot');
     if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
+    if (!bot && this.goneOwnBotShown(by, botId)) return;
     if (!allowed || !bot) throw new ActionError("only its owner or the host can change a bot's level");
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
     if ((bot.level ?? 'normal') === level) return;
@@ -1996,6 +2010,15 @@ export class TableRuntime {
     const name = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name ?? 'The bot';
     this.log(`${this.nameOf(by)} set ${name} to ${level[0].toUpperCase()}${level.slice(1)}`);
     this.sync();
+  }
+
+  /**
+   * A bot gone from the live table that its owner, watching on a delay, is still shown seated: what they do to it is
+   * answered as if it were still there, so the answer can't tell them it has left (#435).
+   */
+  private goneOwnBotShown(by: PlayerId, botId: PlayerId): boolean {
+    const shown = this.shownTo(by);
+    return !!shown && shown.seats.includes(botId) && this.goneBots.get(botId)?.ownerId === by;
   }
 
   /** A sensible stack (what a bot sits with): the table's minimum or maximum buy-in if set, else 100 big blinds. */
@@ -2065,6 +2088,10 @@ export class TableRuntime {
   /** A bot gone from the table entirely leaves no trace but its ledger row. */
   private forgetBot(playerId: PlayerId) {
     if (!this.isBot(playerId) || this.seatOf(playerId) || this.state.requests.some((r) => r.playerId === playerId)) return;
+    const now = this.clock.now();
+    const keepMs = SETTINGS_LIMITS.spectatorDelaySeconds.max * 1000;
+    for (const [id, g] of this.goneBots) if (now - g.at > keepMs) this.goneBots.delete(id);
+    this.goneBots.set(playerId, { ownerId: this.state.bots![playerId].ownerId, at: now });
     delete this.state.bots![playerId];
   }
 
@@ -3322,8 +3349,8 @@ export class TableRuntime {
       const random = s.settings.seating.randomSeats && !this.can(entry.playerId, 'players');
       const seat = random ? open.splice(this.rng(open.length), 1)[0] : open.shift()!;
       // Someone watching on a delay sees the seat come free, and the offer, that much later: they get the same minute.
-      const behindMs = this.shownTo(entry.playerId)?.behindMs ?? 0;
-      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS + behindMs });
+      const laterMs = this.shownTo(entry.playerId)?.showsNowInMs ?? 0;
+      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS + laterMs });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
   }

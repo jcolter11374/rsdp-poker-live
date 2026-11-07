@@ -364,7 +364,9 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     // Chips in front of a player in the hand are theirs until it ends: the ledger has what they had before it.
     const before = new Map(from.ledger.map((r) => [r.playerId, r.stack]));
     const seats = from.seats.map((x) => x && { ...noHand(x), stack: x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack });
-    const cutoff = live.serverNow - delayMs;
+    // Lines from the delay before the oldest snapshot: a fixed time, so this view stays the same until that snapshot
+    // comes due. Cut on the time now, a live change would send it with more lines at the moment it happened (#435).
+    const cutoff = (oldest ? oldest.serverNow : live.serverNow) - delayMs;
     const then = stateThen(live, from, delayMs, opts);
     return {
       ...live,
@@ -549,10 +551,15 @@ export function handRecordView(
   rt: TableRuntime,
   record: HandRecord | PastHand,
   playerId: PlayerId,
-  /** asOf: the moment a spectator on a delay is shown, so a reveal time the live table has moved since doesn't show (#435). */
-  opts: { hideMine?: boolean; notes?: boolean; asOf?: number } = {},
+  /**
+   * asOf: the moment a spectator on a delay is shown, so a reveal time the live table has moved since doesn't show;
+   * eventsOf: how many of a hand's events their view has, leaving out cards shown since (#435).
+   */
+  opts: { hideMine?: boolean; notes?: boolean; asOf?: number; eventsOf?: (handNumber: number) => number | undefined } = {},
 ): HandRecordView {
-  const past = 'hand' in record ? pastHand(record) : record;
+  const whole = 'hand' in record ? pastHand(record) : record;
+  const upTo = opts.eventsOf?.(whole.handNumber);
+  const past = upTo !== undefined && upTo < whole.events.length ? { ...whole, events: whole.events.slice(0, upTo) } : whole;
   // hideMine: as someone who wasn't in the hand sees it, so only shown cards are face up.
   const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
   // Why the bots played as they did, for the one person in the hand, and only where the caller asks: a caller that
@@ -582,14 +589,12 @@ export function handRecordView(
  * A finished hand's fair-dealing record for someone who sees the table at `asOf` (a spectator on a delay; live without
  * it). Revealed only once it was revealed at the moment they are shown: the live table may have moved the reveal since
  * (a stop lifted), and a seed shown on the time now could show them cards the live table still keeps hidden (#435).
- * Its time to reveal is on their clock, which runs that far behind.
+ * Its time to reveal is the table's as of that moment, so it doesn't move as the live table plays on.
  */
 function fairOf(rt: TableRuntime, past: PastHand, asOf?: number): FairRecordView | null {
   const revealsAt = rt.fairRevealsAt(past.handNumber, past.endedAt, asOf);
-  const nameOf = (id: PlayerId) => rt.nameOf(id);
-  if (asOf === undefined || !Number.isFinite(asOf)) return fairRecordView(past, revealsAt, rt.now(), nameOf);
-  const view = fairRecordView(past, revealsAt, asOf, nameOf);
-  return view?.revealsAt != null ? { ...view, revealsAt: view.revealsAt + Math.max(0, rt.now() - asOf) } : view;
+  const at = asOf === undefined || !Number.isFinite(asOf) ? rt.now() : asOf;
+  return fairRecordView(past, revealsAt, at, (id) => rt.nameOf(id));
 }
 
 function fairRecordView(past: PastHand, revealsAt: number, now: number, nameOf: (id: PlayerId) => string): FairRecordView | null {

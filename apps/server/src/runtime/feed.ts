@@ -11,6 +11,8 @@ export interface Moment {
   part: DelayedPart;
   /** The same moment without the hole cards spectators seeing every card were shown, for when the host turns that off. */
   plain?: DelayedPart;
+  /** The table's latest hand then, and how many events it had: cards shown after it ends add more (#435). */
+  lastHand?: { handNumber: number; events: number };
 }
 
 /**
@@ -23,6 +25,8 @@ export interface Moment {
  */
 export class SpectatorFeed {
   private moments: Moment[] = [];
+  /** The latest time the feed has been asked to show: it never goes back from there (a timer can fire early). */
+  private through = -Infinity;
 
   /**
    * When a moment taken at `at`, under a delay of `delayMs`, may be shown: once it is that old, never before the moment
@@ -36,8 +40,8 @@ export class SpectatorFeed {
     return Math.max(at + Math.max(0, delayMs, last.delayMs), last.showAt);
   }
 
-  add(at: number, delayMs: number, part: DelayedPart, plain?: DelayedPart): Moment {
-    const moment: Moment = { at, showAt: this.showAtFor(at, delayMs), delayMs, part, ...(plain ? { plain } : {}) };
+  add(at: number, delayMs: number, part: DelayedPart, plain?: DelayedPart, lastHand?: Moment['lastHand']): Moment {
+    const moment: Moment = { at, showAt: this.showAtFor(at, delayMs), delayMs, part, ...(plain ? { plain } : {}), ...(lastHand ? { lastHand } : {}) };
     this.moments.push(moment);
     return moment;
   }
@@ -47,6 +51,9 @@ export class SpectatorFeed {
    * before it are dropped: nobody is shown them again.
    */
   shown(now: number, keep = false): Moment | null {
+    // A view sent for a moment that came due must not be followed by an older one, whatever time the next ask has.
+    this.through = Math.max(this.through, now);
+    now = this.through;
     let i = -1;
     while (i + 1 < this.moments.length && this.moments[i + 1].showAt <= now) i++;
     if (i > 0 && !keep) this.moments.splice(0, i);
@@ -61,7 +68,7 @@ export class SpectatorFeed {
   /** Every moment taken has been shown by `now`. */
   caughtUp(now: number): boolean {
     const last = this.moments.at(-1);
-    return !last || last.showAt <= now;
+    return !last || last.showAt <= Math.max(now, this.through);
   }
 
   /**
