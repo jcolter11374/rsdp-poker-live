@@ -1,10 +1,11 @@
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
-import { variants } from '@rsdp/engine/core';
+import { ActionError, variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { ClientToServer, CoachTip, HandRecordView, ServerToClient } from '@rsdp/engine/wire';
 import { createApp, tipLimits } from '../src/app';
+import { COACH_BUSY, inThreadTips, type TipWorker } from '../src/bots/coachWorker';
 import { socketClient } from './socket-client';
 
 type Client = Socket<ServerToClient, ClientToServer>;
@@ -292,24 +293,54 @@ describe('socket server', () => {
 });
 
 describe('coach tip limits', () => {
-  it('lets one player work out ten tips in 20 s, across their tabs, and the server 300 ms of them a second', () => {
+  it('lets one player work out ten tips in 20 s, across their tabs', () => {
     let now = 0;
     const limits = tipLimits(() => now);
-    for (let i = 0; i < 10; i++) limits.admit('ann')(1);
+    for (let i = 0; i < 10; i++) limits.admit('ann');
     expect(() => limits.admit('ann')).toThrow(/between tips/);
-    // Someone else has their own ten.
-    limits.admit('bo')(1);
+    // Someone else has their own ten: how many the server works out at once is the coach's thread's business
+    // (coach-worker.test.ts), not a share of time that one player's tips could use up for everyone.
+    for (let i = 0; i < 10; i++) limits.admit('bo');
     now += 20_000;
-    limits.admit('ann')(1);
+    limits.admit('ann');
+    // Forgotten once their last tab has gone.
+    for (let i = 0; i < 9; i++) limits.admit('ann');
+    expect(() => limits.admit('ann')).toThrow(/between tips/);
+    limits.forget('ann');
+    limits.admit('ann');
 
-    // Tips that took 300 ms between them in the last second keep everyone waiting a moment, whoever asked.
-    now += 20_000;
-    limits.admit('cy')(150);
-    limits.admit('dee')(150);
-    expect(() => limits.admit('eve')).toThrow(/coach is busy/);
-    now += 1_000;
-    limits.admit('eve')(10);
+    // One handed back (the coach was too busy to work it out) is as if it had never been asked for, once only.
+    for (let i = 0; i < 9; i++) limits.admit('cy');
+    const back = limits.admit('cy');
+    expect(() => limits.admit('cy')).toThrow(/between tips/);
+    back();
+    back();
+    limits.admit('cy');
+    expect(() => limits.admit('cy')).toThrow(/between tips/);
   });
+
+  it("hands a tip back when the coach is too busy to work it out, so asking again isn't held against the player", async () => {
+    let busy = true;
+    const coach: TipWorker = { work: (job) => (busy ? Promise.reject(new ActionError(COACH_BUSY)) : inThreadTips.work(job)) };
+    const app = createApp({ tips: coach, log: () => {} });
+    await new Promise<void>((resolve) => app.http.listen(0, resolve));
+    const mine: Client[] = [];
+    try {
+      const host = socketClient(`http://localhost:${(app.http.address() as AddressInfo).port}`, 'busy-tip-host-0123456789', mine);
+      const settings = { seating: { requireApproval: false }, timing: { decisionSeconds: 0 } };
+      const { tableId } = await host.call<{ tableId: string }>('table:create', { settings, practice: { name: 'John', bots: 2 } });
+      await host.call('table:join', { tableId });
+      const v = await host.until((x) => !!x.tips && x.legal !== null);
+      const input = { handNumber: v.hand!.handNumber, at: v.hand!.events.length };
+      // More tries than the player's own limit (ten in 20 s), every one told the coach is busy, not to slow down.
+      for (let i = 0; i < 12; i++) await expect(host.call('hand:tip', input)).rejects.toThrow(COACH_BUSY);
+      busy = false;
+      expect((await host.call<{ tip: CoachTip }>('hand:tip', input)).tip).toMatchObject({ ...input, kind: 'bet' });
+    } finally {
+      for (const c of mine) c.close();
+      await app.close();
+    }
+  }, 30_000);
 });
 
 describe('operator cleanup', () => {

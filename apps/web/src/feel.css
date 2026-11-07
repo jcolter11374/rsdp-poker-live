@@ -91,7 +91,8 @@
   /* The action bar sits on the same lit surface. */
   .action-bar:not(.idle) { background: linear-gradient(180deg, #23282e, #1b1f24); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35); }
   .action-bar .buttons button { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 0 rgba(0, 0, 0, 0.35); }
-  .action-bar .buttons button.primary { background: linear-gradient(180deg, #38b874, #279257); }
+  /* Dark enough at its lightest for white words at 4.5:1 (WCAG AA). */
+  .action-bar .buttons button.primary { background: linear-gradient(180deg, #1f8650, #1a7343); }
 }
 
 /* ======================================================================

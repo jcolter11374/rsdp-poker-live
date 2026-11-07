@@ -56,7 +56,7 @@ import { cleanName as cleanDisplayName } from '../names';
 import { handOver, hasPower, isStaff, powersOf, RoleError, withCoHost, withoutCoHost, type HostPower } from '@rsdp/engine/roles';
 import { maskProfanity } from './profanity';
 import { explainMove, readPlayers, seededRand, seenBy, type MoveWhy } from '../bots/strategy';
-import { coachTip as buildCoachTip } from '../bots/coach';
+import { inThreadTips, type TipWorker } from '../bots/coachWorker';
 import { botNote, plainNote } from '../bots/reasons';
 import { choiceMenu, DealersChoice } from './choice';
 
@@ -103,9 +103,7 @@ export const HOST_HANDOFF_MS = 3 * 60_000;
 export const SEAT_OFFER_MS = 60_000;
 /** A practice bot takes this long, plus up to BOT_THINK_SPREAD_MS, to act. */
 export const BOT_THINK_MS = 700;
-/** A coach tip slower than this is worth knowing about: it is worked out on the event loop, so it holds up every table. */
-const TIP_SLOW_MS = 150;
-const BOT_THINK_SPREAD_MS = 1100;
+export const BOT_THINK_SPREAD_MS = 1100;
 
 /** A whole number from a turn key, the same on every server: how long a bot thinks, and the deals behind a coach tip. */
 export function hashKey(key: string): number {
@@ -156,6 +154,8 @@ export interface RuntimeDeps {
   fairLeadMs?: number;
   /** How long a stopped game waits before its hands open (FAIR_STOP_REVEAL_MS unless a test says otherwise). */
   fairStopRevealMs?: number;
+  /** Works out coach tips: the server passes the coach's own thread (coachWorker.ts); without it, tips are worked out here. */
+  tips?: TipWorker;
 }
 
 /** The game, betting and stakes the next hand is dealt with. */
@@ -196,10 +196,12 @@ export class TableRuntime {
   private hostTimer: unknown = null;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
   private seedWait = false;
-  /** The coach tip for one turn, so asking again (or from another tab) costs nothing. Never saved. */
-  private tipCache: { key: string; playerId: PlayerId; tip: CoachTip } | null = null;
-  /** A slow tip is reported once, not on every turn. */
-  private tipSlowLogged = false;
+  /**
+   * The coach tip for one turn, so asking again (or from another tab) costs nothing, even while it is still being
+   * worked out. Never saved.
+   */
+  private tipCache: { key: string; playerId: PlayerId; tip: Promise<CoachTip> } | null = null;
+  private readonly tips: TipWorker;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
@@ -213,6 +215,7 @@ export class TableRuntime {
     this.fairStopRevealMs = deps.fairStopRevealMs ?? FAIR_STOP_REVEAL_MS;
     this.tournament = deps.tournament ?? null;
     this.logError = deps.log ?? ((m, e) => console.error(m, e ?? ''));
+    this.tips = deps.tips ?? inThreadTips;
     this.upSince = this.clock.now();
     this.choice = new DealersChoice({
       state,
@@ -2338,8 +2341,13 @@ export class TableRuntime {
    * would have. `beforeWork` runs only when a tip is about to be worked out
    * (every check passed, nothing cached), so limits count real work only; it
    * refuses by throwing.
+   *
+   * Every refusal throws at once. The tip itself comes back as a promise: it
+   * is worked out on the coach's own thread (`deps.tips`), from the hand as
+   * this seat sees it and nothing else, and it fails with "the coach is busy"
+   * when that thread can't answer in time.
    */
-  coachTip(playerId: PlayerId, handNumber: number, at: number, beforeWork: () => void = () => {}): CoachTip {
+  coachTip(playerId: PlayerId, handNumber: number, at: number, beforeWork: () => void = () => {}): Promise<CoachTip> {
     const s = this.state;
     if (this.isTournament) throw new ActionError('no tips in tournaments');
     const hand = this.liveHandFor(playerId);
@@ -2357,21 +2365,22 @@ export class TableRuntime {
     const legal = drawing ? null : engine.legalActions(hand, hs.seat);
     if (!drawing && !legal) throw new ActionError('not your turn');
     beforeWork();
-    const started = performance.now();
-    const tip = buildCoachTip(seenBy(hand, hs.seat), hs.seat, {
+    const tip = this.tips.work({
+      seen: seenBy(hand, hs.seat),
+      seat: hs.seat,
       legal,
       drawMax: drawing ? (hand.input.game.streets[hand.street]?.drawMaxDiscard ?? 0) : 0,
       // Its own stream, from the turn and the player: the table's randomness is for the deal and the bots.
-      rand: seededRand(hashKey(`${turn.key}|${playerId}`)),
+      seed: hashKey(`${turn.key}|${playerId}`),
       handNumber,
       at,
     });
-    const spent = performance.now() - started;
-    if (spent > TIP_SLOW_MS && !this.tipSlowLogged) {
-      this.tipSlowLogged = true;
-      this.logError(`table ${s.id}: a coach tip took ${Math.round(spent)} ms`);
-    }
-    this.tipCache = { key: turn.key, playerId, tip };
+    const entry = { key: turn.key, playerId, tip };
+    this.tipCache = entry;
+    // One that couldn't be worked out (the coach was busy) is asked for afresh next time.
+    tip.catch(() => {
+      if (this.tipCache === entry) this.tipCache = null;
+    });
     return tip;
   }
 

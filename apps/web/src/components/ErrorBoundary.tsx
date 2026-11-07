@@ -70,3 +70,12 @@ export function PartBoundary({ name, children }: { name: string; children: React
     </Boundary>
   );
 }
+
+/** Around a part nobody sees (the screen-reader announcer): if it crashes it goes quiet, and the table carries on. */
+export function QuietBoundary({ children }: { children: ReactNode }) {
+  return (
+    <Boundary kind="part" fallback={() => null}>
+      {children}
+    </Boundary>
+  );
+}

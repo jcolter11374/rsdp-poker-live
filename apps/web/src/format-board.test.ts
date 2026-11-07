@@ -34,3 +34,37 @@ describe('log lines for run it twice (#372)', () => {
     expect(boardLines(ranTwice(0))).toEqual(['Flop (run 1)', 'Turn (run 1)', 'River (run 1)', 'Flop (run 2)', 'Turn (run 2)', 'River (run 2)']);
   });
 });
+
+describe('stud streets in the log', () => {
+  it("names the street before its cards, also when the deck runs short and seventh street's card is shared", () => {
+    const deal = (seat: number, card: string, up = true) => ({ t: 'deal', seat, cards: [{ card, up }], pos: [] });
+    const events = [
+      { t: 'hand-start', handNumber: 1, gameId: 'stud', betting: 'fixed-limit', stakes: { smallBet: 2, bigBet: 4, ante: 0, bringIn: 1 } },
+      { t: 'deal', seat: 0, cards: [{ card: 'As', up: false }, { card: 'Ad', up: false }, { card: '9c', up: true }], pos: [] },
+      { t: 'action', seat: 0, action: 'check', amount: 0, to: 0, allIn: false, auto: false },
+      deal(0, '8c'),
+      { t: 'street', street: 1, name: 'Fourth Street' },
+      deal(0, '7c'),
+      { t: 'street', street: 2, name: 'Fifth Street' },
+      deal(0, '6c'),
+      { t: 'street', street: 3, name: 'Sixth Street' },
+      { t: 'board', run: 0, board: 0, cards: ['5h'], pos: [48] },
+      { t: 'street', street: 4, name: 'Seventh Street' },
+    ] as unknown as Parameters<typeof eventLines>[0];
+    const lines = eventLines(events, (seat) => `P${seat}`, String, 0).slice(1);
+    expect(lines).toEqual([
+      'You are dealt [As] [Ad] [9c]',
+      'P0 checks',
+      '— Fourth Street —',
+      'You are dealt [8c]',
+      '— Fifth Street —',
+      'You are dealt [7c]',
+      '— Sixth Street —',
+      'You are dealt [6c]',
+      '— Seventh Street —',
+      'Board: [5h]',
+    ]);
+    // Cut short anywhere, it reads the same as far as it goes (a replay's step, a runout shown a street at a time).
+    for (let n = 1; n <= events.length; n++) expect(lines.slice(0, Math.max(0, eventLines(events.slice(0, n), (seat) => `P${seat}`, String, 0).length - 1))).toEqual(eventLines(events.slice(0, n), (seat) => `P${seat}`, String, 0).slice(1));
+  });
+});

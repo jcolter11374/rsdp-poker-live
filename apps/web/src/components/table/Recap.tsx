@@ -105,7 +105,7 @@ export function RecapDialog({
           <>
             <textarea ref={box} readOnly value={text} rows={Math.min(text.split('\n').length, 16)} aria-label="Recap" />
             {error && (
-              <p className="muted">
+              <p className="muted" role="alert">
                 Couldn't get the hands ({error}), so the games, hands and biggest pot are left out. <button onClick={onRetry}>Try again</button>
               </p>
             )}

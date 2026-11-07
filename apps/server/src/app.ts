@@ -42,6 +42,9 @@ import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo }
 import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
 import { quietSteps, type ShutdownSteps } from './shutdown';
+import { COACH_BUSY, coachWorker, type TipWorker } from './bots/coachWorker';
+import { memoryPushStore, PushAlerts, pushRoutes, type PushConfig, type PushStore } from './push/alerts';
+import { StartAlerts } from './push/starts';
 import { subjectRef } from '@rsdp/engine';
 import { LoadGate, ReplaceNameError, replacePlayerName } from './replaceName';
 
@@ -205,11 +208,19 @@ export interface AppDeps {
   checkDb?: () => Promise<unknown>;
   /** The folder the database keeps its files in (PGlite), for /api/health's disk fields. Without it they are left out. */
   dataDir?: string;
+  /** Works out coach tips. Defaults to the coach's own thread (coachWorker.ts), which close() stops. */
+  tips?: TipWorker;
+  /**
+   * Phone alerts (push/alerts.ts): off when `config` is missing (production turns them on with PUBLIC_URL). The
+   * subscriptions are kept in memory unless a store is given; tests pass a fake `fetch` for the push services.
+   */
+  push?: { config: PushConfig | null; store?: PushStore; fetch?: typeof fetch };
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; lastExport?: number; lastFullLog?: number }>;
+/** `visible`: what the tab last said about being on screen (page:visible); unknown counts as on screen. */
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; visible?: boolean; lastExport?: number; lastFullLog?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -228,16 +239,12 @@ const CHAT_WINDOW_MS = 10_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
-/** Coach tips one player may ask for per window, across all their tabs. */
+/**
+ * Coach tips one player may ask for per window, across all their tabs. How many the whole server works out at once is
+ * up to the coach's own thread (coachWorker.ts), which tells the rest the coach is busy.
+ */
 const TIP_BURST = 10;
 const TIP_WINDOW_MS = 20_000;
-/**
- * Time the whole server may spend working out coach tips per window. A tip
- * holds the event loop for up to about 150 ms, so tips tapped at once at
- * several practice tables could otherwise hold up turns at every table.
- */
-const TIP_BUDGET_MS = 300;
-const TIP_BUDGET_WINDOW_MS = 1_000;
 /** Share links one player may make per window. */
 const SHARE_BURST = 20;
 const SHARE_WINDOW_MS = 60_000;
@@ -259,6 +266,20 @@ const CREATE_WINDOW_MS = 10 * 60_000;
  */
 const OPEN_TOURNAMENTS = 10;
 const NAME_MAX = 20;
+/**
+ * A "your turn" phone alert waits this long and goes only if it is still the same turn: a move queued in the
+ * page (check/fold, call any) or a quick tap answers first, and nobody's phone buzzes for it.
+ */
+export const TURN_ALERT_DELAY_MS = 2_000;
+/** How long a push service may hold each alert for a phone that is off, in seconds. */
+const TURN_ALERT_TTL_S = 60;
+const SEAT_ALERT_TTL_S = 300;
+/**
+ * After a restart, tabs take a few seconds to reconnect, join their table again and say whether they are on
+ * screen. Turn and seat alerts due in that time wait for it to pass, so a player whose screen is only reconnecting
+ * isn't sent one.
+ */
+export const RESTART_QUIET_MS = 10_000;
 
 /**
  * Which build of the web app a page is: the entry script it loads, whose name
@@ -281,24 +302,24 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
   }
 }
 
-/**
- * The limits on working out coach tips: TIP_BURST per player per
- * TIP_WINDOW_MS (across their tabs), and TIP_BUDGET_MS of work per
- * TIP_BUDGET_WINDOW_MS across the whole server.
- */
+/** The limit on working out coach tips: TIP_BURST per player per TIP_WINDOW_MS, across their tabs. */
 export function tipLimits(now: () => number) {
   const times = new Map<PlayerId, number[]>();
-  let work: { at: number; ms: number }[] = [];
   return {
-    /** Throws if this player, or the server, has had enough for now; otherwise counts the tip and returns what to call with how long it took. */
-    admit(playerId: PlayerId): (ms: number) => void {
+    /** Throws if this player has had enough for now; otherwise counts the tip, and returns what hands it back. */
+    admit(playerId: PlayerId): () => void {
       const t = now();
       const recent = (times.get(playerId) ?? []).filter((x) => t - x < TIP_WINDOW_MS);
       if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
-      work = work.filter((w) => t - w.at < TIP_BUDGET_WINDOW_MS);
-      if (work.reduce((sum, w) => sum + w.ms, 0) >= TIP_BUDGET_MS) throw new ActionError('the coach is busy, try again in a moment');
       times.set(playerId, [...recent, t]);
-      return (ms) => void work.push({ at: t, ms });
+      let back = false;
+      return () => {
+        if (back) return;
+        back = true;
+        const mine = times.get(playerId);
+        const at = mine?.indexOf(t) ?? -1;
+        if (at >= 0) mine!.splice(at, 1);
+      };
     },
     forget(playerId: PlayerId) {
       times.delete(playerId);
@@ -434,6 +455,9 @@ export function createApp(deps: AppDeps = {}) {
   const gestureTimes = new Map<PlayerId, number[]>();
   const chatTimes = new Map<PlayerId, number[]>();
   const tips = tipLimits(() => clock.now());
+  // Started with the first tip anyone asks for.
+  const coach = deps.tips ? null : coachWorker({ log });
+  const tipWorker: TipWorker = deps.tips ?? coach!;
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
   const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
@@ -480,9 +504,12 @@ export function createApp(deps: AppDeps = {}) {
   const feedbackPerPlayer = limiter(FEEDBACK_BURST, FEEDBACK_WINDOW_MS, () => clock.now());
   const feedbackSite = limiter(FEEDBACK_SITE_PER_HOUR, 60 * 60_000, () => clock.now());
   const feedbackAddress = limiter(FEEDBACK_ADDRESS_BURST, FEEDBACK_WINDOW_MS, () => clock.now());
+  const push = new PushAlerts({ store: deps.push?.store ?? memoryPushStore(), config: deps.push?.config ?? null, now: () => clock.now(), log, fetch: deps.push?.fetch });
+  pushRoutes(app, push, { resolve: (token, session) => identity.resolve(token, session), fingerprint: hashSecret, now: () => clock.now(), log });
   const accountHooks: AccountHooks = {
     signedIn: (playerId) => avatars.delete(playerId),
     deleted: (playerIds) => {
+      push.forget(playerIds);
       for (const id of playerIds) {
         avatars.delete(id);
         // Their tabs reconnect as new guests.
@@ -860,7 +887,91 @@ export function createApp(deps: AppDeps = {}) {
         }, delayMs);
       } else feeds.delete(id);
       for (const s of watchers.get(id) ?? []) s.emit('table:state', viewFor(rt, s, now));
+      watchTurn(rt);
     });
+  }
+
+  /**
+   * The turn each loaded table last showed, so each turn is looked at once: table id → `turnToAct`'s key,
+   * `<player>:<hand>:<events>` for a move and `pick:<player>:<hand it follows>` for a Dealer's choice pick.
+   */
+  const turnSeen = new Map<string, string>();
+  /** Until when phone alerts wait for tabs to reconnect (RESTART_QUIET_MS; set by resume). */
+  let quietUntil = -Infinity;
+  /** Runs `fn` now, or once tabs have had time to reconnect after a restart. */
+  function whenSettled(fn: () => void) {
+    const wait = quietUntil - clock.now();
+    if (wait > 0) clock.setTimeout(() => whenSettled(fn), wait);
+    else fn();
+  }
+
+  /**
+   * What the table is waiting on a person for, as the views have it: a move (TableView.legal and canDraw), or a
+   * Dealer's choice pick with its clock running (the page calls the chooser for it like a turn: myPickDue in
+   * Choice.tsx). Not a bot's, and not while paused. `key` names it once; `tag` is the page's own alert tag
+   * (TablePage.tsx), so a phone that shows the page's alert too shows it once.
+   */
+  function turnToAct(rt: TableRuntime): { playerId: PlayerId; key: string; tag: string; title: string } | null {
+    const s = rt.state;
+    const hand = s.hand;
+    if (s.paused) return null;
+    if (hand && hand.phase !== 'complete') {
+      if (hand.toAct === null || (hand.phase !== 'betting' && hand.phase !== 'drawing')) return null;
+      const dealt = hand.seats.find((x) => x.seat === hand.toAct);
+      if (!dealt || rt.seatOf(dealt.playerId)?.seat !== hand.toAct || s.bots?.[dealt.playerId]) return null;
+      const at = `${hand.input.handNumber}:${hand.events.length}`;
+      return { playerId: dealt.playerId, key: `${dealt.playerId}:${at}`, tag: `turn:${s.id}:${at}`, title: 'Your turn' };
+    }
+    // Between hands: the table waits for the chooser's pick while its clock runs (choice.ts). Once per pick: the
+    // hand it follows, so a pause and its fresh clock don't make it a new one.
+    if (rt.tournament || s.choice?.deadline == null || !rt.choice.pickOpen()) return null;
+    const chooser = rt.choice.chooser();
+    if (!chooser || s.bots?.[chooser.playerId]) return null;
+    const after = hand?.input.handNumber ?? 0;
+    return { playerId: chooser.playerId, key: `pick:${chooser.playerId}:${after}`, tag: `turn:${s.id}:pick:${after}`, title: 'Your pick: choose the next game' };
+  }
+
+  /** True when one of the player's tabs at this table is on screen (or never said). */
+  const lookingAt = (tableId: string, playerId: PlayerId) => [...(watchers.get(tableId) ?? [])].some((s) => s.data.playerId === playerId && s.data.visible !== false);
+  /** True when one of the player's tabs anywhere on the site is on screen (or never said). */
+  const onSite = (playerId: PlayerId) => [...(playerSockets.get(playerId) ?? [])].some((s) => s.data.visible !== false);
+
+  /**
+   * "Your turn" (or "Your pick" in Dealer's choice) on the player's phones: once per turn, a moment after it starts,
+   * and only if it is still that turn and none of their tabs at this table is on screen. The tag is the page's own
+   * (TablePage.tsx), so a phone that shows the page's alert too shows it once.
+   */
+  function watchTurn(rt: TableRuntime) {
+    const id = rt.state.id;
+    const turn = turnToAct(rt);
+    // Between turns, and while paused, the last turn stays seen, so resuming doesn't alert for it again.
+    if (!turn) return;
+    const key = turn.key;
+    if (turnSeen.get(id) === key) return;
+    turnSeen.set(id, key);
+    if (!push.on) return;
+    /** Still that turn, and none of the player's tabs at the table on screen. */
+    const due = () => {
+      const still = tables.get(id) === rt ? turnToAct(rt) : null;
+      return !!still && still.key === key && !lookingAt(id, turn.playerId);
+    };
+    clock.setTimeout(
+      () =>
+        whenSettled(() => {
+          if (tables.get(id) !== rt) return;
+          // Paused before the alert was due: it waits for the game to go on (resuming looks at the turn again).
+          if (rt.state.paused && turnSeen.get(id) === key) return void turnSeen.delete(id);
+          if (!due()) return;
+          push.send(
+            turn.playerId,
+            { title: turn.title, body: rt.state.settings.table.name, url: `/t/${id}`, tag: turn.tag, replaces: `turn:${id}:` },
+            { ttl: TURN_ALERT_TTL_S, urgency: 'high' },
+            // Played, or looked at, while it waited for a slow push service: it goes nowhere.
+            due,
+          );
+        }),
+      TURN_ALERT_DELAY_MS,
+    );
   }
 
   /** One answer for a hand that isn't there and one a spectator's delay still hides. */
@@ -1013,6 +1124,7 @@ export function createApp(deps: AppDeps = {}) {
     tables.delete(id);
     audit.forgetTable(id);
     feeds.delete(id);
+    turnSeen.delete(id);
     watchers.delete(id);
     lastWatched.delete(id);
     lastChange.delete(id);
@@ -1075,6 +1187,7 @@ export function createApp(deps: AppDeps = {}) {
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
+      turnSeen.delete(id);
       lastWatched.delete(id);
       lastChange.delete(id);
       practiceStarts.delete(id);
@@ -1131,6 +1244,7 @@ export function createApp(deps: AppDeps = {}) {
         tables.delete(rt.state.id);
         audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
+        turnSeen.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
         // Save the final state so the table's history stays readable (tracked, so a name being replaced waits for it).
@@ -1143,6 +1257,7 @@ export function createApp(deps: AppDeps = {}) {
         const view = tournaments.view(id, s.data.playerId);
         if (view) s.emit('tournament:state', { id, view });
       }
+      if (push.on) startAlerts.check(id);
     },
     onEvents: (state, before, events) => {
       const at = clock.now();
@@ -1153,10 +1268,41 @@ export function createApp(deps: AppDeps = {}) {
       });
       if (items.length) addToLobby(state.id, items);
     },
-    onMoved: (playerId, from, to) => {
+    onMoved: (playerId, from, to, restored) => {
       for (const s of playerSockets.get(playerId) ?? []) s.emit('table:moved', { from, to });
+      // A seat a restart put back was announced before it went down.
+      const tournament = tournaments.tournamentOf(to);
+      if (!push.on || !tournament || restored) return;
+      const seated = from === '';
+      // The tag is the page's own (TournamentAlerts.tsx); it replaces the alert for the seat before, so a tap
+      // never opens a table the player has left.
+      const alert = {
+        title: seated ? "You're seated" : "You've been moved",
+        body: seated ? 'Your tournament table is ready. Cards are in the air soon.' : 'The tournament moved you to another table.',
+        url: `/t/${to}`,
+        tag: `seat:${tournament}:${to}`,
+        replaces: `seat:${tournament}:`,
+      };
+      // A tab on screen follows the seat itself (useFollowSeat).
+      whenSettled(() => {
+        if (!onSite(playerId)) push.send(playerId, alert, { ttl: SEAT_ALERT_TTL_S, urgency: 'high' });
+      });
     },
     log,
+  });
+
+  /** "Starting soon" on the phones of everyone still in a scheduled event, with the page's own tag (TournamentAlerts.tsx). */
+  const startAlerts = new StartAlerts({
+    clock,
+    state: (id) => tournaments.liveState(id),
+    send: (playerId, state, startAt, now) => {
+      const minutes = Math.max(1, Math.round((startAt - now) / 60_000));
+      push.send(
+        playerId,
+        { title: 'Starting soon', body: `${state.settings.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, url: `/tn/${state.id}`, tag: `start:${state.id}:${startAt}` },
+        { ttl: Math.max(30, Math.floor((startAt - now) / 1000)), urgency: 'normal' },
+      );
+    },
   });
 
   /** Every finished hand of a table as one player may see it (spectators only those past the delay): saved hands, with the copies still in memory winning (they include cards shown after the hand). */
@@ -1201,7 +1347,7 @@ export function createApp(deps: AppDeps = {}) {
       await gate.settled();
       return getTable(id);
     }
-    const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
+    const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs, tips: tipWorker });
     if (ended && runtime.closeSavedHand(ended)) log(`table ${id}: hand ${ended.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
     const rt = attach(runtime);
     rt.resume();
@@ -1328,6 +1474,9 @@ export function createApp(deps: AppDeps = {}) {
       }) as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
+    on('page:visible', (input) => {
+      socket.data.visible = input?.visible !== false;
+    });
 
     on('table:create', (input, ack) =>
       guarded(
@@ -1339,7 +1488,7 @@ export function createApp(deps: AppDeps = {}) {
           // The checks a settings change gets: a preset can ask for more seats than one of its games deals.
           TableRuntime.checkGameSettings(settings);
           if (!tableCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tables; try again in a few minutes');
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs, tips: tipWorker });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
             try {
@@ -1564,20 +1713,23 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:tip', (input, ack) =>
       guarded(
         ack,
-        () => {
+        async () => {
           const handNumber = Number(input?.handNumber);
           const at = Number(input?.at);
           if (!Number.isSafeInteger(handNumber) || !Number.isSafeInteger(at)) throw new ActionError('that turn is over');
-          // Only a tip that is about to be worked out counts: a refused request, or one already cached for this turn, costs
-          // nothing.
-          let spent = (_ms: number) => {};
-          let started = 0;
-          const tip = current().coachTip(me, handNumber, at, () => {
-            spent = tips.admit(me);
-            started = performance.now();
-          });
-          spent(performance.now() - started);
-          return { tip };
+          // Only a tip that is about to be worked out counts: a refused request, or one already asked for this turn, costs
+          // nothing. It is worked out on the coach's own thread, so no table waits for it, and one the coach was too busy
+          // to work out is handed back, so asking again in a moment never runs into the player's own limit.
+          let handBack = () => {};
+          try {
+            const tip = await current().coachTip(me, handNumber, at, () => {
+              handBack = tips.admit(me);
+            });
+            return { tip };
+          } catch (err) {
+            if (err instanceof ActionError && err.message === COACH_BUSY) handBack();
+            throw err;
+          }
         },
         log,
       ),
@@ -2016,7 +2168,16 @@ export function createApp(deps: AppDeps = {}) {
     /** Puts away idle cash tables now (the server also does this every few minutes); the ids put away. */
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
-    resume: () => tournaments.resumeAll(),
+    resume: async () => {
+      quietUntil = clock.now() + RESTART_QUIET_MS;
+      await tournaments.resumeAll();
+      // Counted from when tabs can reconnect: the server listens once this is done.
+      quietUntil = clock.now() + RESTART_QUIET_MS;
+      // Their "starting soon" alerts wait again (nothing announces an event brought back).
+      if (push.on) for (const id of tournaments.liveIds()) startAlerts.check(id);
+    },
+    /** Phone alerts (for tests: `push.idle()` waits until every queued alert has gone). */
+    push,
     /** Forgets addresses the limits no longer need now (the server also does this every few minutes). */
     forgetOldAddresses,
     /** How many addresses the open-tournament limit remembers now. */
@@ -2049,10 +2210,14 @@ export function createApp(deps: AppDeps = {}) {
       }
       steps.step('putting tables away');
       tournaments.dispose();
+      push.close();
+      startAlerts.dispose();
       if (sweep) clearInterval(sweep);
       await Promise.allSettled([...unloading.values()]);
       const open = [...tables.values()];
       for (const rt of open) rt.dispose();
+      // Tips still waiting are told the coach is busy now; the saves don't wait for its thread to stop.
+      const coachStopped = coach?.close().catch((err) => log("the coach's thread didn't stop", err));
       for (const t of saveTimers.values()) clearTimeout(t);
       saveTimers.clear();
       steps.step('saving tournaments');
@@ -2066,6 +2231,9 @@ export function createApp(deps: AppDeps = {}) {
       if (cut) steps.note(`cut ${cut} connection${cut === 1 ? '' : 's'} still open after ${graceMs} ms`);
       steps.step('writing the public record');
       await audit.flush();
+      // Told to stop while the tables were put away; its own step, so one that hangs shows by name.
+      steps.step("stopping the coach's thread");
+      await coachStopped;
       steps.step('recording the stop');
       await stopped;
     },

@@ -64,6 +64,9 @@ function betInto(hand: HandState, street: number, from: number, to: number) {
   return hand;
 }
 
+/** How hard the server's own tips think, before any test here turns it up or down. */
+const SERVER_TUNING = structuredClone(coachTuning);
+
 /** Deals enough finishes for the numbers to settle, and never stops on the clock, so every answer here is the same on every machine. */
 const SETTLED = {
   equity: { thinkMs: 1e9, minSims: 200, maxSims: 200 },
@@ -71,7 +74,6 @@ const SETTLED = {
   draw: { screen: 12, final: 48 },
   drawBet: { screen: 6, final: 24 },
   vsRandomUnderMs: 1e9,
-  drawMs: 1e9,
 };
 /** The same, turned right down: enough for "is it the same answer?", too few for "is it the right answer?". */
 const QUICK = {
@@ -80,7 +82,6 @@ const QUICK = {
   draw: { screen: 3, final: 6 },
   drawBet: { screen: 2, final: 4 },
   vsRandomUnderMs: 1e9,
-  drawMs: 1e9,
 };
 
 function fixTuning(tip: typeof SETTLED) {
@@ -156,24 +157,23 @@ describe('what a coach tip says', () => {
     expect(tipAt(pat, 0)).toMatchObject({ rule: 'pat', move: { type: 'draw', discard: [] } });
   });
 
-  it('stops weighing the ways to draw when its time is up, and says it is rougher for it', () => {
+  it('weighs the ways to draw on every deal it is given, however long that takes, so the same spot gets the same tip', () => {
     const bd = dealt('badugi', ['Ac', 'Kh', '2d', 'Kd', '5h', 'Ks', '3h', 'Qs']);
     engine.act(bd, 0, { type: 'call' });
     engine.act(bd, 1, { type: 'check' });
-    const full = tipAt(bd, 0);
-    const was = coachTuning.drawMs;
-    coachTuning.drawMs = 0;
+    const tip = tipAt(bd, 0);
+    // How rough it is comes from every final deal: no clock cuts it short (it runs on the coach's own thread).
+    expect(tip.se).toBeCloseTo(Math.sqrt(Math.max(tip.share * (1 - tip.share), 0.01) / SETTLED.draw.final), 9);
+    expect(tipAt(bd, 0)).toEqual(tip);
+    // With the server's own tuning too, on any machine and however busy it is.
+    const tuned = structuredClone(coachTuning);
+    Object.assign(coachTuning, SERVER_TUNING);
     try {
-      // Out of time at once: one deal for every way to draw, then one for the finalists.
-      const rushed = tipAt(bd, 0);
-      expect(rushed.kind).toBe('draw');
-      expect(rushed.se).toBeGreaterThan(full.se);
-      expect(rushed.options.length).toBeGreaterThan(0);
+      expect(tipAt(bd, 0, 9)).toEqual(tipAt(bd, 0, 9));
     } finally {
-      coachTuning.drawMs = was;
+      Object.assign(coachTuning, tuned);
     }
     const view = situation(seenBy(bd, 0), 0);
-    expect(bestDraw(view, 4, seededRand(1), { screen: 5, final: 7 }, 1, 0).deals).toBe(1);
     expect(bestDraw(view, 4, seededRand(1), { screen: 5, final: 7 }, 1).deals).toBe(7);
   });
 

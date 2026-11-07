@@ -20,7 +20,7 @@ export function HostPanel({ view, fmt, onSettings }: { view: TableView; fmt: Fmt
 
   return (
     <div className="panel host-panel">
-      <h3>{view.isHost ? 'Host controls' : 'Co-host controls'}</h3>
+      <h2>{view.isHost ? 'Host controls' : 'Co-host controls'}</h2>
       {me && (
         <p className="muted">
           The host has let you: {me.powers.length ? me.powers.map((p) => HOST_POWER_LABELS[p].toLowerCase()).join('; ') : 'see the host tools'}.{' '}

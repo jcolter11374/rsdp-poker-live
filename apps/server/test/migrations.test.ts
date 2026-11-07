@@ -289,12 +289,14 @@ describe('dropping the unused chip ledger tables (0017)', { timeout: 60_000 }, (
     const dataDir = path.join(dir, 'pglite');
     try {
       const old = await databaseBefore(TAG, dataDir);
+      let columns: Record<string, string[]>;
       let before: Record<string, string[]>;
       try {
         await fill(old.db);
         await fillLedger(old.db);
         await old.db.execute(sql`insert into tables (id, owner_player_id, settings) values ('t2', 'p1', '{}')`);
-        before = await rowsOf(old.db, await columnsOf(old.db));
+        columns = await columnsOf(old.db);
+        before = await rowsOf(old.db, columns);
       } finally {
         await old.close();
       }
@@ -303,7 +305,10 @@ describe('dropping the unused chip ledger tables (0017)', { timeout: 60_000 }, (
       try {
         expect(await migrationsRecorded(db)).toEqual(expectedRecords);
         expect(await ledgerTables(db)).toEqual(['chip_movements', 'seat_sessions']);
-        expect(await rowsOf(db, await columnsOf(db))).toEqual(before);
+        expect(await rowsOf(db, columns)).toEqual(before);
+        // Tables made by the migrations after it (0018's push tables) start empty.
+        const made = Object.fromEntries(Object.entries(await columnsOf(db)).filter(([t]) => !columns[t]));
+        expect(Object.values(await rowsOf(db, made)).flat()).toEqual([]);
         expect(await appendOnlyFunction(db)).toBe(true);
         await expect(
           db.execute(sql`update chip_movements set amount = 1`).catch((e) => {

@@ -1,4 +1,4 @@
-import type { Award, HandEvent } from '@rsdp/engine/core';
+import { runoutSteps, type Award, type HandEvent } from '@rsdp/engine/core';
 import { getVariant } from '@rsdp/engine/variants';
 import type { BotNote, HandRecordView, HandView, SeatView, SharedHandView, TableView, WireCard } from '@rsdp/engine/wire';
 import { defaultSettings } from '@rsdp/engine/settings';
@@ -107,10 +107,13 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
   };
   const frames: Frame[] = [];
   let lineCount = 0;
+  let stud = false;
   hand.events.forEach((e, i) => {
+    if (e.t === 'hand-start') stud = isStud(e.gameId);
     const prev = hand.events[i - 1];
-    // Deals to every seat show as one step.
-    const merge = e.t === 'deal' && prev?.t === 'deal' && frames.length > 0;
+    // Deals to every seat show as one step. Stud deals a street's cards before the street begins: the step that names
+    // the street and deals its cards also gathers the bets, as the table does.
+    const merge = frames.length > 0 && ((e.t === 'deal' && prev?.t === 'deal') || (stud && e.t === 'street' && (prev?.t === 'deal' || prev?.t === 'board')));
     f = merge ? f : clone(f);
     apply(f, e, gather, ownSeat);
     f.upTo = i + 1;
@@ -137,6 +140,14 @@ export function replayFrames(hand: HandRecordView, myId: string | null, fmt: Fmt
     from = fr.upTo;
   }
   return shown;
+}
+
+function isStud(gameId: string): boolean {
+  try {
+    return getVariant(gameId).family === 'stud';
+  } catch {
+    return false;
+  }
 }
 
 function apply(f: Frame, e: HandEvent, gather: () => void, ownSeat: number | null) {
@@ -358,6 +369,9 @@ export function frameView(
     };
   }
   const potTotal = frame.pot + [...frame.seats.values()].reduce((a, s) => a + s.bet, 0);
+  const played = hand.events.slice(0, frame.upTo);
+  // Partway through an all-in runout, its last card so far was dealt like the rest; only its very last turns over (#412).
+  const runoutToCome = played.some((e) => e.t === 'run-it') && runoutSteps(played).length < runoutSteps(hand.events).length;
   const settings = defaultSettings('cash');
   if (felt) settings.table.felt = felt;
   return {
@@ -430,8 +444,9 @@ export function frameView(
       showdown: frame.done,
       awards: frame.done ? frame.awards : [],
       // Played so far, so the table can tell what has happened (the equity waits for the hands to be shown).
-      events: hand.events.slice(0, frame.upTo),
+      events: played,
       bombPot: !!start?.bombPot,
+      ...(runoutToCome ? { runoutToCome } : {}),
     },
   } satisfies TableView;
 }

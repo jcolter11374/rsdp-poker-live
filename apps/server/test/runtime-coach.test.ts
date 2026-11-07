@@ -21,7 +21,6 @@ beforeAll(() => {
     draw: { screen: 2, final: 4 },
     drawBet: { screen: 2, final: 2 },
     vsRandomUnderMs: 1e9,
-    drawMs: 1e9,
   });
   Object.assign(botTuning, { thinkMs: 0, minSims: 4, drawSims: 2, drawFinalSims: 3, drawBetSims: 2, drawBetFinalSims: 2 });
 });
@@ -99,16 +98,16 @@ function play(rt: TableRuntime, clock: FakeClock, hands: number, onMyTurn: (rt: 
 }
 
 describe('who gets a coach tip', () => {
-  it('gives one to the one person at a table of bots, on their betting turn and their draw turn', () => {
+  it('gives one to the one person at a table of bots, on their betting turn and their draw turn', async () => {
     const { rt, clock } = practice();
     rt.start('host');
     const hand = toTurn(rt, clock);
     expect(rt.state.coach).toMatchObject({ handNumber: hand.input.handNumber, person: 'host' });
-    const tip = tipNow(rt);
+    const tip = await tipNow(rt);
     expect(tip).toMatchObject({ handNumber: hand.input.handNumber, at: hand.events.length, kind: 'bet', opponents: 2 });
     expect(tip.share).toBeGreaterThan(0);
     // The same turn asked twice (another tab, or the panel reopened) is the same answer, worked out once.
-    expect(tipNow(rt)).toBe(tip);
+    expect(await tipNow(rt)).toBe(tip);
     // Only they see the flag, and it is not part of what a spectator sees a delay behind.
     expect(tableView(rt, 'host', clock.now()).tips).toBe(true);
     for (const who of ['watcher', '', ...botIds(rt)]) expect(tableView(rt, who, clock.now()).tips, who).toBeFalsy();
@@ -123,7 +122,7 @@ describe('who gets a coach tip', () => {
       playOn(draw);
     }
     expect(draw.state.hand!.phase).toBe('drawing');
-    const drawTip = tipNow(draw);
+    const drawTip = await tipNow(draw);
     expect(drawTip).toMatchObject({ kind: 'draw', call: 0, cost: null, close: false });
     expect(['draw', 'pat']).toContain(drawTip.rule);
     expect(drawTip.move.type).toBe('draw');
@@ -194,13 +193,13 @@ describe('who gets a coach tip', () => {
     expect(() => away.rt.coachTip('host', awayHand.input.handNumber, awayHand.events.length)).toThrow(/everyone else is a bot/);
   });
 
-  it('lets this hand finish when someone sits down in the middle of it, and stops at the next deal', () => {
+  it('lets this hand finish when someone sits down in the middle of it, and stops at the next deal', async () => {
     const { rt, clock } = practice();
     rt.start('host');
     const hand = toTurn(rt, clock);
     rt.requestSeat('ann', { seat: 5, name: 'Ann', stack: 200, consent: true });
     // She was not dealt in, so this hand is still one person against bots.
-    expect(rt.coachTip('host', hand.input.handNumber, hand.events.length).kind).toBe('bet');
+    expect((await rt.coachTip('host', hand.input.handNumber, hand.events.length)).kind).toBe('bet');
     play(rt, clock, 1);
     const next = toTurn(rt, clock);
     expect(rt.state.coach).toBeNull();

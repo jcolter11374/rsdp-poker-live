@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { CoachTip, TableView } from '@rsdp/engine/wire';
 import { tipText } from '../coach';
@@ -21,32 +20,11 @@ export function CoachWhy({ tip, view, fmt, skew, onClose, onRules }: { tip: Coac
   const deadline = turn && !view.paused ? turn.deadline : null;
   const now = useNow(deadline !== null, 500) + skew;
   const text = tipText(tip, view, fmt);
-  // It opens beside the move buttons, mid-turn: focus moves in and stays in (Tab and Shift+Tab go round the sheet, never
-  // to Fold or Call behind it), and goes back to whatever opened it when it closes.
-  const root = useRef<HTMLDivElement>(null);
-  const back = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = root.current?.closest<HTMLElement>('[role="dialog"]') ?? null;
-    dialog?.setAttribute('aria-modal', 'true');
-    back.current?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || !dialog) return;
-      const stops = [...dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.hasAttribute('disabled'));
-      if (!stops.length) return;
-      const at = stops.indexOf(document.activeElement as HTMLElement);
-      const next = e.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : at < 0 || at === stops.length - 1 ? 0 : at + 1;
-      e.preventDefault();
-      stops[next].focus();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      if (opener?.isConnected) opener.focus({ preventScroll: true });
-    };
-  }, []);
+  // It opens beside the move buttons, mid-turn. Like every dialog (dialogFocus.ts), focus moves in and stays in (Tab and
+  // Shift+Tab go round the sheet, never to Fold or Call behind it), and goes back to whatever opened it when it closes.
+  // Here it starts on Back to the table.
   const body = (
-    <div className="coach-why" ref={root}>
+    <div className="coach-why">
       {deadline !== null && (
         <p className="coach-why-clock" aria-live="off">
           Your turn: <b>{clock(deadline - now)}</b> left{turn?.usingBank ? ' (time bank)' : ''}
@@ -67,7 +45,7 @@ export function CoachWhy({ tip, view, fmt, skew, onClose, onRules }: { tip: Coac
       ))}
       <div className="row wrap">
         {onRules && <button onClick={onRules}>How to play {view.hand?.gameName ?? 'this game'}</button>}
-        <button className="primary" ref={back} onClick={onClose}>
+        <button className="primary" autoFocus onClick={onClose}>
           Back to the table
         </button>
       </div>

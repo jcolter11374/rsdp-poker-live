@@ -189,7 +189,7 @@ describe('Copy recap in the ledger', () => {
     const history = [START, START + 600_000].map((endedAt, i) => ({ handNumber: i + 1, endedAt, gameName: 'x' }));
     ledgerOf(tableView({ me: { playerId: 'id-Cy', seat: null }, spectator: { delaySeconds: 0, seeAll: false, blocked: true }, history }));
     fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
-    expect(await screen.findByText(/Couldn't get the hands \(the host has turned watching off\)/)).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toMatch(/^Couldn't get the hands \(the host has turned watching off\)/);
     expect(box().value).not.toMatch(/hands in|Biggest pot|No hands/);
     expect(box().value).toContain('Ann +$5');
     // The hand list's night, read where this browser is, rather than today.

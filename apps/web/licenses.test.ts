@@ -23,7 +23,7 @@ describe('the /credits package list', () => {
     expect(named('vite')?.parts).toEqual(['browser']);
     expect(named('rolldown')?.parts).toEqual(['browser']);
     expect(named('@babel/runtime')?.parts).toEqual(['browser']);
-    for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
+    for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit', 'axe-core', '@axe-core/playwright']) expect(named(name), name).toBeUndefined();
   });
 
   it('only ships permissive licenses', () => {

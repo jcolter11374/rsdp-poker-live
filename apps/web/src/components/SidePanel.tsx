@@ -10,6 +10,7 @@ import { usePrefs } from '../prefs';
 import { ledgerMismatches, tableChips, changedWhileClosed } from '../audit';
 import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
+import { useScrollReach } from './scrollReach';
 import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
 import { RecapDialog, useRecapOffered } from './table/Recap';
@@ -33,17 +34,18 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
   useEffect(() => {
     scroller.current?.scrollTo(0, scroller.current.scrollHeight);
   }, [tab, view.log.length, handLines.length]);
+  const reach = useScrollReach(scroller, TAB_NAMES[tab]);
 
   return (
     <div className="panel side-panel">
       <div className="tabs">
         {(Object.keys(TAB_NAMES) as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
+          <button key={t} className={tab === t ? 'active' : ''} aria-pressed={tab === t} onClick={() => setTab(t)}>
             {TAB_NAMES[t]}
           </button>
         ))}
       </div>
-      <div className="scroll" ref={scroller}>
+      <div className="scroll" ref={scroller} {...reach}>
         {tab === 'log' && (
           <>
             <FullLogDownload view={view} fmt={fmt} />

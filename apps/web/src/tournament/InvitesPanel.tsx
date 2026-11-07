@@ -96,7 +96,9 @@ export function InvitesPanel({ state, send }: { state: TournamentState; send: (c
               <tr>
                 <th>Code</th>
                 <th>Used by</th>
-                <th />
+                <th>
+                  <span className="sr-only">Copy or cancel</span>
+                </th>
               </tr>
             </thead>
             <tbody>

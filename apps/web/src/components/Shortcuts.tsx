@@ -7,10 +7,14 @@ const KEYS: [string, string][] = [
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
   ['0-9', 'On your turn: start typing a bet amount (then Enter)'],
   ['A', 'Call any (before your turn)'],
+  [
+    'Shift+A',
+    'Twice, on your turn: the most you can bet (all in). In pot limit, or with Trim bets nobody can call on, the most can be less, and it says so. The first press says what the second will send; Enter sends it too, Esc cancels. Not in fixed limit.',
+  ],
   ['B', 'Show amounts in chips or big blinds'],
   ['T', 'Tip on your turn (hands with only bots)'],
   ['W', 'In the replayer: why the bots played'],
-  ['Enter', 'Type in the chat. Enter again sends it and takes you back to the table (Esc leaves without sending)'],
+  ['Enter', 'Type in the chat. Enter again sends it and takes you back to the table (Esc leaves without sending). Just after Shift+A, Enter sends the all-in instead'],
   ['?', 'Show this list'],
 ];
 

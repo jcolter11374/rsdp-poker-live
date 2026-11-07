@@ -118,7 +118,25 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
   let runs = 1;
   // Cards on each run's boards so far, to name flop, turn and river.
   const boardCount = new Map<string, number>();
+  // Stud deals each street's cards before the event that names the street. The log names it at its first card, so
+  // the cards read as part of it; worked out from the cards alone, so a hand cut short anywhere (a replay's step, a
+  // runout shown a street at a time) reads the same as far as it goes.
+  let studStreets: string[] | null = null;
+  let street = 0;
+  let named = 0;
+  let groups = 0;
+  let dealing = false;
   for (const e of events) {
+    const dealt = e.t === 'deal' || e.t === 'board';
+    if (studStreets && dealt && !dealing) {
+      // Third street's cards come first and are named by the hand's header.
+      if (groups > 0 && studStreets[street + 1]) {
+        lines.push(`— ${studStreets[street + 1]} —`);
+        named = street + 1;
+      }
+      groups++;
+    }
+    dealing = dealt;
     switch (e.t) {
       case 'hand-start': {
         let family = 'flop';
@@ -131,6 +149,14 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         }
         gameFamily = family;
         boardCount.clear();
+        try {
+          studStreets = family === 'stud' ? getVariant(e.gameId).streets.map((st) => st.name) : null;
+        } catch {
+          studStreets = null;
+        }
+        street = 0;
+        named = 0;
+        groups = 0;
         lines.push(`--- Hand #${e.handNumber} · ${gameLabel(e.gameId, e.betting)} ${stakesLabel(e.stakes, family, e.betting, fmt)}${e.bombPot ? ' · bomb pot' : ''}`);
         break;
       }
@@ -147,7 +173,8 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         break;
       }
       case 'street':
-        if (gameFamily !== 'flop' && e.street > 0) lines.push(`— ${e.name} —`);
+        if (gameFamily !== 'flop' && e.street > 0 && named !== e.street) lines.push(`— ${e.name} —`);
+        street = e.street;
         break;
       case 'board': {
         const key = `${e.run}:${e.board}`;

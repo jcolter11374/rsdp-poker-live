@@ -8,7 +8,7 @@
 .chat-form input { flex: 1 1 auto; min-width: 0; }
 .chat-form button { flex: 0 0 auto; padding-inline: 16px; }
 .quick-replies { display: flex; flex-wrap: wrap; gap: 4px; }
-.quick-replies button { min-height: 0; padding: 2px 9px; border-radius: 999px; font-size: 0.8rem; }
+.quick-replies button { min-height: 24px; padding: 2px 9px; border-radius: 999px; font-size: 0.8rem; }
 
 /* On a wide desk the log tabs and the chat share the full-height side column; narrower
    windows stack the column under the table, where the usual 50vh scroll cap applies. */

@@ -140,7 +140,8 @@ describe('lobby chat', () => {
     show('bob');
     fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'hello?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(await screen.findByText('The host has turned chat off')).toBeTruthy();
+    // Read out as it appears.
+    expect((await screen.findByRole('alert')).textContent).toBe('The host has turned chat off');
   });
 
   it("doesn't count messages from someone you hid as unread", () => {

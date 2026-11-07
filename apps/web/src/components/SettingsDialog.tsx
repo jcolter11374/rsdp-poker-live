@@ -273,7 +273,7 @@ export function SettingsDialog({ view, onClose }: { view: TableView; onClose: ()
     <Modal title="Table settings" onClose={onClose}>
       <div className="tabs">
         {TABS.map((t) => (
-          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
+          <button key={t.id} className={tab === t.id ? 'active' : ''} aria-pressed={tab === t.id} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}

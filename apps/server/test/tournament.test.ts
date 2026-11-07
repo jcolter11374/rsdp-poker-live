@@ -57,6 +57,9 @@ describe('tournaments on the server', () => {
     // Tables broke as players busted, and players were moved to keep them balanced.
     expect(env.tables.size).toBe(1);
     expect(env.moves.filter((m) => m.from !== '').length).toBeGreaterThan(0);
+    // A broken table's last state, which anyone still looking at it keeps, counts down to no next hand there.
+    expect(env.detached.length).toBe(2);
+    expect(env.detached.map((t) => t.nextHandAt)).toEqual([null, null]);
   }, 60_000);
 
   it("a finished Sit & Go's last table shows the winner, with no countdown to a next hand", async () => {

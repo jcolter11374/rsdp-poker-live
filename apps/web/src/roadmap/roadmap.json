@@ -41,7 +41,8 @@
       "title": "Coming in the next release",
       "blurb": "Done, or being finished now.",
       "items": [
-        { "title": "Nothing waiting right now", "detail": "Everything finished so far is already live. When the next pieces of work are done, they'll show here until they go live." }
+        { "title": "Phone alerts", "detail": "An alert on your phone or computer when a tournament you're in is about to start, when you're seated or moved, and when it's your turn or your pick, even with the site closed." },
+        { "title": "Screen reader and keyboard", "detail": "The table read aloud to screen readers, everything working from the keyboard, and the table's words and buttons easier to read and to tap." }
       ]
     },
     {
@@ -52,8 +53,7 @@
         { "title": "Rock-solid cash games", "detail": "Cash games come first: keeping them smooth and reliable is ongoing." },
         { "title": "Our roster and results on the site", "detail": "The group's own roster and results kept here, so nobody has to update the spreadsheet by hand. We're waiting on the group's feedback on the plan first." },
         { "title": "Tournament polish", "detail": "Smoother host tools and nicer screens for the big moments, like a final table mode." },
-        { "title": "Phone alerts", "detail": "An alert on your phone when it's your turn or a tournament is about to start." },
-        { "title": "The long tail", "detail": "High hand prizes, accessibility improvements and lots of small touches." },
+        { "title": "The long tail", "detail": "High hand prizes and lots of small touches." },
         { "title": "Audio and video", "detail": "Talk and see each other at the table, without a separate app." }
       ]
     }

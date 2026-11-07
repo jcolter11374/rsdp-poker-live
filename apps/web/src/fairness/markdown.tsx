@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useRef, type ReactNode } from 'react';
+import { useScrollReach } from '../components/scrollReach';
 
 // Just enough Markdown for docs/FAIRNESS.md, turned into React elements (never
 // raw HTML): headings, paragraphs, lists, tables, code blocks, quotes (shown as
@@ -122,13 +123,13 @@ function Blocks({ blocks, link }: { blocks: Block[]; link: (href: string) => str
           }
           case 'code':
             return (
-              <pre key={i}>
+              <SideScroll key={i} as="pre" label={`Code: ${b.text.split('\n')[0].slice(0, 60)}`}>
                 <code>{b.text}</code>
-              </pre>
+              </SideScroll>
             );
           case 'table':
             return (
-              <div key={i} className="md-table">
+              <SideScroll key={i} as="div" className="md-table" label={`Table: ${b.head.join(', ')}`}>
                 <table>
                   <thead>
                     <tr>
@@ -147,7 +148,7 @@ function Blocks({ blocks, link }: { blocks: Block[]; link: (href: string) => str
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </SideScroll>
             );
           case 'box':
             return (
@@ -160,5 +161,16 @@ function Blocks({ blocks, link }: { blocks: Block[]; link: (href: string) => str
         }
       })}
     </>
+  );
+}
+
+/** A code block or table, which scrolls sideways when it is wider than the screen; then Tab can reach it (scrollReach.ts). */
+function SideScroll({ as: Tag, className, label, children }: { as: 'pre' | 'div'; className?: string; label: string; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null);
+  const reach = useScrollReach(ref, label);
+  return (
+    <Tag ref={ref as never} className={className} {...reach}>
+      {children}
+    </Tag>
   );
 }

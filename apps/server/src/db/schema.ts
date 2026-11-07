@@ -498,3 +498,47 @@ export const opsLog = pgTable(
   },
   (t) => [index('ops_log_at_idx').on(t.at), check('ops_log_kind_check', sql`${t.kind} in (${oneOf(OPS_KINDS)})`)],
 );
+
+// ---------------------------------------------------------------- phone alerts
+
+/**
+ * The server's VAPID key pair (RFC 8292), which signs its claim to the push services that the alerts come from
+ * this site. Made the first time it is needed; one row, id 'vapid'. Backups hold it, locked like the rest.
+ */
+export const pushKeys = pgTable('push_keys', {
+  id: text('id').primaryKey(),
+  /** The uncompressed P-256 point browsers take, base64url. */
+  publicKey: text('public_key').notNull(),
+  /** The private value, base64url. */
+  privateKey: text('private_key').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
+});
+
+/**
+ * A browser that turned alerts on: the address its push service takes messages at, and the browser's keys that
+ * encrypt them so only it can read them. Goes when the browser turns alerts off, its push service says it is gone,
+ * the browser secret it came from is forgotten (signing out, a password change), the account is deleted, or the
+ * browser hasn't opened the site for 60 days (push/alerts.ts).
+ */
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    endpoint: text('endpoint').primaryKey(),
+    /** Who the alerts are for: the player the browser played as when it turned them on. */
+    playerId: text('player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    /** The browser secret's fingerprint (player_tokens.token_hash). */
+    device: text('device')
+      .notNull()
+      .references(() => playerTokens.tokenHash, { onDelete: 'cascade' }),
+    /** The sign-in session's fingerprint (sessions.token_hash), when the browser plays as the account through one; alerts stop when it ends. */
+    session: text('session'),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: at('created_at').notNull().defaultNow(),
+    /** When the browser last opened the site with alerts on. */
+    seenAt: at('seen_at').notNull().defaultNow(),
+  },
+  (t) => [index('push_subscriptions_player_idx').on(t.playerId), index('push_subscriptions_device_idx').on(t.device)],
+);

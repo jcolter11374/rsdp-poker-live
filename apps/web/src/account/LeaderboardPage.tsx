@@ -104,7 +104,9 @@ export function LeaderboardPage() {
             <table className="leader-table">
               <thead>
                 <tr>
-                  <th aria-label="On the graph" />
+                  <th>
+                    <span className="sr-only">On the graph</span>
+                  </th>
                   <th>#</th>
                   <th>Player</th>
                   <th className={sort === 'profit' ? 'on' : ''}>Profit</th>

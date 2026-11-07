@@ -80,8 +80,11 @@ export interface ManagerDeps {
   tables: TableHost;
   /** Push a fresh view to everyone watching this tournament. */
   onState: (id: string) => void;
-  /** A player was moved to another table (or seated late). `from` is '' when they had no table. */
-  onMoved: (playerId: PlayerId, from: string, to: string) => void;
+  /**
+   * A player was moved to another table (or seated late). `from` is '' when they had no table. `restored`: a seat
+   * the director already had, put back at a table that was saved before it after a restart (not news to the player).
+   */
+  onMoved: (playerId: PlayerId, from: string, to: string, restored?: boolean) => void;
   /** Director events as they are acted on, with the state after them and (for a browser's command) the state before. */
   onEvents?: (state: TournamentState, before: TournamentState | null, events: DirectorEvent[]) => void;
   log: (message: string, err?: unknown) => void;
@@ -412,6 +415,16 @@ export class TournamentManager {
     if (events.some((s) => s.hostId !== hostId)) throw new ActionError('only the host of that season can add events to it');
     const latest = events.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
     return { ...settings, season: { id: season.id, name: latest.settings.season!.name } };
+  }
+
+  /** An event this server holds in memory, as it is now; null when it isn't held (nothing is loaded). */
+  liveState(id: string): TournamentState | null {
+    return this.live.get(id)?.state ?? null;
+  }
+
+  /** The ids of every event held in memory (every event still to come or under way is). */
+  liveIds(): string[] {
+    return [...this.live.keys()];
   }
 
   /** The tournament a runtime table belongs to (by its runtime id), if any. */
@@ -819,7 +832,7 @@ export class TournamentManager {
         if (rt.seatOf(playerId)) continue;
         fix('seating a player', () => {
           rt.placePlayer({ seat, playerId, name: e.displayName, stack: e.stack });
-          this.deps.onMoved(playerId, '', rt.state.id);
+          this.deps.onMoved(playerId, '', rt.state.id, true);
         });
       }
     }
@@ -956,6 +969,8 @@ export class TournamentManager {
         const rt = this.table(live, e.tableId);
         if (rt) {
           live.tables.delete(e.tableId);
+          // It deals no more: whoever stays looking at it (a player knocked out in its last hand) sees no countdown.
+          rt.state.nextHandAt = null;
           this.deps.tables.detach(rt);
           rt.dispose();
         }

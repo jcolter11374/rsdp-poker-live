@@ -30,7 +30,8 @@ echo "Restoring into a fresh database"
 jq -r '"Restored \([.rows[]] | add) rows in \(.rows | length) tables, from a backup taken \(.at)"' "$work/summary.json"
 
 echo "Starting a server on the restored data"
-(cd "$root/apps/server" && PGLITE_DIR="$work/pglite" PORT=$port NODE_ENV=production exec node --import tsx src/index.ts) > "$work/server.log" 2>&1 &
+# PUBLIC_URL stays empty: with it, the restored server would send phone alerts to the players in the backup.
+(cd "$root/apps/server" && PUBLIC_URL= PGLITE_DIR="$work/pglite" PORT=$port NODE_ENV=production exec node --import tsx src/index.ts) > "$work/server.log" 2>&1 &
 server=$!
 for i in $(seq 1 60); do
   curl -sf "localhost:$port/api/health" > /dev/null && break
