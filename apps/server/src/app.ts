@@ -38,6 +38,7 @@ import { writeBackup } from './db/backup';
 import { AuditLog, auditRoutes, buildFromEnv, memoryAuditStore, type BuildInfo } from './audit';
 import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
+import { coachWorker, type TipWorker } from './bots/coachWorker';
 import { subjectRef } from '@rsdp/engine';
 
 export interface Session {
@@ -198,6 +199,8 @@ export interface AppDeps {
   build?: BuildInfo;
   /** Asks the database something trivial, for /api/health's `db` field. Without it the field is left out. */
   checkDb?: () => Promise<unknown>;
+  /** Works out coach tips. Defaults to the coach's own thread (coachWorker.ts), which close() stops. */
+  tips?: TipWorker;
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
@@ -221,16 +224,12 @@ const CHAT_WINDOW_MS = 10_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
 const GESTURE_WINDOW_MS = 10_000;
-/** Coach tips one player may ask for per window, across all their tabs. */
+/**
+ * Coach tips one player may ask for per window, across all their tabs. How many the whole server works out at once is
+ * up to the coach's own thread (coachWorker.ts), which tells the rest the coach is busy.
+ */
 const TIP_BURST = 10;
 const TIP_WINDOW_MS = 20_000;
-/**
- * Time the whole server may spend working out coach tips per window. A tip
- * holds the event loop for up to about 150 ms, so tips tapped at once at
- * several practice tables could otherwise hold up turns at every table.
- */
-const TIP_BUDGET_MS = 300;
-const TIP_BUDGET_WINDOW_MS = 1_000;
 /** Share links one player may make per window. */
 const SHARE_BURST = 20;
 const SHARE_WINDOW_MS = 60_000;
@@ -274,24 +273,16 @@ async function guarded<T extends object>(ack: Ack<T> | undefined, fn: () => T | 
   }
 }
 
-/**
- * The limits on working out coach tips: TIP_BURST per player per
- * TIP_WINDOW_MS (across their tabs), and TIP_BUDGET_MS of work per
- * TIP_BUDGET_WINDOW_MS across the whole server.
- */
+/** The limit on working out coach tips: TIP_BURST per player per TIP_WINDOW_MS, across their tabs. */
 export function tipLimits(now: () => number) {
   const times = new Map<PlayerId, number[]>();
-  let work: { at: number; ms: number }[] = [];
   return {
-    /** Throws if this player, or the server, has had enough for now; otherwise counts the tip and returns what to call with how long it took. */
-    admit(playerId: PlayerId): (ms: number) => void {
+    /** Throws if this player has had enough for now; otherwise counts the tip. */
+    admit(playerId: PlayerId) {
       const t = now();
       const recent = (times.get(playerId) ?? []).filter((x) => t - x < TIP_WINDOW_MS);
       if (recent.length >= TIP_BURST) throw new ActionError('a few seconds between tips, please');
-      work = work.filter((w) => t - w.at < TIP_BUDGET_WINDOW_MS);
-      if (work.reduce((sum, w) => sum + w.ms, 0) >= TIP_BUDGET_MS) throw new ActionError('the coach is busy, try again in a moment');
       times.set(playerId, [...recent, t]);
-      return (ms) => void work.push({ at: t, ms });
     },
     forget(playerId: PlayerId) {
       times.delete(playerId);
@@ -417,6 +408,9 @@ export function createApp(deps: AppDeps = {}) {
   const gestureTimes = new Map<PlayerId, number[]>();
   const chatTimes = new Map<PlayerId, number[]>();
   const tips = tipLimits(() => clock.now());
+  // Started with the first tip anyone asks for.
+  const coach = deps.tips ? null : coachWorker({ log });
+  const tipWorker: TipWorker = deps.tips ?? coach!;
   const shareTimes = new Map<PlayerId, number[]>();
   const avatarChanges = new Map<PlayerId, number[]>();
   const tableCreates = perPlayerAndAddress(TABLES_PER_WINDOW, CREATE_WINDOW_MS, () => clock.now());
@@ -1116,7 +1110,7 @@ export function createApp(deps: AppDeps = {}) {
     // Another join may have loaded it (or it was deleted) while we waited.
     if (deleted.has(id)) return null;
     if (tables.has(id)) return tables.get(id)!;
-    const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
+    const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs, tips: tipWorker });
     if (ended && runtime.closeSavedHand(ended)) log(`table ${id}: hand ${ended.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
     const rt = attach(runtime);
     rt.resume();
@@ -1252,7 +1246,7 @@ export function createApp(deps: AppDeps = {}) {
           // The checks a settings change gets: a preset can ask for more seats than one of its games deals.
           TableRuntime.checkGameSettings(settings);
           if (!tableCreates(me, socketAddress(socket))) throw new ActionError('that is a lot of new tables; try again in a few minutes');
-          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs });
+          const rt = TableRuntime.create({ hostId: me, settings }, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs, tips: tipWorker });
           // A practice table is set up before it is saved, so one that can't be leaves nothing behind.
           if (input?.practice) {
             try {
@@ -1465,19 +1459,13 @@ export function createApp(deps: AppDeps = {}) {
     on('hand:tip', (input, ack) =>
       guarded(
         ack,
-        () => {
+        async () => {
           const handNumber = Number(input?.handNumber);
           const at = Number(input?.at);
           if (!Number.isSafeInteger(handNumber) || !Number.isSafeInteger(at)) throw new ActionError('that turn is over');
-          // Only a tip that is about to be worked out counts: a refused request, or one already cached for this turn, costs
-          // nothing.
-          let spent = (_ms: number) => {};
-          let started = 0;
-          const tip = current().coachTip(me, handNumber, at, () => {
-            spent = tips.admit(me);
-            started = performance.now();
-          });
-          spent(performance.now() - started);
+          // Only a tip that is about to be worked out counts: a refused request, or one already asked for this turn, costs
+          // nothing. It is worked out on the coach's own thread, so no table waits for it.
+          const tip = await current().coachTip(me, handNumber, at, () => tips.admit(me));
           return { tip };
         },
         log,
@@ -1900,6 +1888,7 @@ export function createApp(deps: AppDeps = {}) {
       await Promise.allSettled([...unloading.values()]);
       const open = [...tables.values()];
       for (const rt of open) rt.dispose();
+      await coach?.close();
       for (const t of saveTimers.values()) clearTimeout(t);
       saveTimers.clear();
       await tournaments.flush();

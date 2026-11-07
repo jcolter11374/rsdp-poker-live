@@ -98,6 +98,13 @@ Handle it privately, as [SECURITY.md](../.github/SECURITY.md) says. Not in a pub
 
 If a public issue only says someone found a security problem, don't ask for details there. John replies asking them to use Security → Report a vulnerability (private reporting has been on since 5 November 2026; if it's ever off, it's under Settings → Code security → Private vulnerability reporting).
 
+## Coach tips keep saying "the coach is busy"
+
+Coach tips are worked out on a thread of their own inside the server, so this never holds up a table. One "busy" now and then is normal when several tips are asked for at once. If players see it again and again, look in the server logs (or the game-night recap) for lines that start "the coach's thread" or "a coach tip ran past":
+
+- **"…; a fresh thread is starting"**: a tip crashed the thread or ran past 3 seconds, and the thread started again by itself. If it keeps happening, open an issue with the game and the time.
+- **"…; the next tip starts a fresh thread", again and again**: the thread can't start at all, most likely because of a broken release (a missing file). Tables play on normally; see "A bad release".
+
 ## Someone asks about their data
 
 Requests to see, correct or delete someone's data are handled **privately**, by John, within a month, as [PRIVACY.md](PRIVACY.md) says. Never in a public issue.

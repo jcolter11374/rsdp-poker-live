@@ -12,7 +12,7 @@ What to do when something goes wrong is in [RUNBOOK.md](RUNBOOK.md).
   - set `DATABASE_URL` to a managed Postgres (14 or later), or
   - leave it unset and mount a persistent volume at `/data`. The server keeps an embedded PGlite database in `/data/pglite`.
   The container starts as root only to take ownership of `/data`, then runs the server as the unprivileged `node` user.
-- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less.
+- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less. Coach tips run on a second thread, started by the first tip anyone asks for, which adds about 30 MB (it may use at most 128 MB).
 - **HTTPS** in front of port `8080` (or whatever `PORT` says).
 
 ## Settings

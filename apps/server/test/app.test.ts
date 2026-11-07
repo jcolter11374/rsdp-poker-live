@@ -292,23 +292,21 @@ describe('socket server', () => {
 });
 
 describe('coach tip limits', () => {
-  it('lets one player work out ten tips in 20 s, across their tabs, and the server 300 ms of them a second', () => {
+  it('lets one player work out ten tips in 20 s, across their tabs', () => {
     let now = 0;
     const limits = tipLimits(() => now);
-    for (let i = 0; i < 10; i++) limits.admit('ann')(1);
+    for (let i = 0; i < 10; i++) limits.admit('ann');
     expect(() => limits.admit('ann')).toThrow(/between tips/);
-    // Someone else has their own ten.
-    limits.admit('bo')(1);
+    // Someone else has their own ten: how many the server works out at once is the coach's thread's business
+    // (coach-worker.test.ts), not a share of time that one player's tips could use up for everyone.
+    for (let i = 0; i < 10; i++) limits.admit('bo');
     now += 20_000;
-    limits.admit('ann')(1);
-
-    // Tips that took 300 ms between them in the last second keep everyone waiting a moment, whoever asked.
-    now += 20_000;
-    limits.admit('cy')(150);
-    limits.admit('dee')(150);
-    expect(() => limits.admit('eve')).toThrow(/coach is busy/);
-    now += 1_000;
-    limits.admit('eve')(10);
+    limits.admit('ann');
+    // Forgotten once their last tab has gone.
+    for (let i = 0; i < 9; i++) limits.admit('ann');
+    expect(() => limits.admit('ann')).toThrow(/between tips/);
+    limits.forget('ann');
+    limits.admit('ann');
   });
 });
 
