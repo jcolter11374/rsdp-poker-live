@@ -5,6 +5,7 @@ import {
   MAX_CHIPS,
   PRESET_FORMAT,
   SettingsError,
+  dealersChoiceOff,
   defaultSettings,
   diffSettings,
   exportPreset,
@@ -27,6 +28,8 @@ import { withField } from './helpers';
 function busy(): TableSettings {
   const s = defaultSettings('cash');
   s.game.rotation = { enabled: true, steps: [{ gameId: 'plo', betting: 'pot-limit', length: 2, unit: 'orbits' }] };
+  // Defaults leave Dealer's choice out until a host turns it on: here it is, switched off, so its fields are checked too.
+  s.game.dealersChoice = dealersChoiceOff();
   s.blindSchedule = { enabled: true, countdown: 'hands', levels: [{ smallBlind: 1, bigBlind: 2, ante: 0, minutes: 15, hands: 20 }] };
   return s;
 }
@@ -302,7 +305,7 @@ describe('settings validation, pinned', () => {
       const expected = {
         version: 1,
         table: { name: tournament ? 'Tournament table' : 'Poker night', maxSeats: 10, mode, felt: 'green' },
-        game: { gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] }, dealersChoice: { enabled: false, games: [], hands: 0, pickSeconds: 20 } },
+        game: { gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] } },
         stakes: { smallBlind: 1, bigBlind: 2, ante: 0, anteType: 'none', bringIn: 0, smallBet: 2, bigBet: 4, centsMode: false },
         blindSchedule: { enabled: false, countdown: 'per-level-timer', levels: [] },
         timing: { decisionSeconds: 30, timeBankSeconds: 30, timeBankRefillHands: 10, autoActivateTimeBank: true, autoStartNextHand: true, showdownSeconds: 6, nextHandDelaySeconds: 3 },

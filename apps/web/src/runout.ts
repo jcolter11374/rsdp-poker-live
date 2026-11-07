@@ -14,7 +14,8 @@ interface Reveal {
 /**
  * What the server changes as soon as the hand is over, kept as it was until
  * the result shows: the log (who won), seats (busted players sit out, leavers
- * go, tournaments knock players out) and the ledger.
+ * go, tournaments knock players out), the ledger and Dealer's choice (a busted
+ * chooser's PICK tag moves on).
  */
 export interface Frozen {
   /** The newest log line before the runout. */
@@ -23,6 +24,7 @@ export interface Frozen {
   ledger: TableView['ledger'];
   me: TableView['me'];
   nit: TableView['nit'];
+  choice?: TableView['choice'];
 }
 
 /**
@@ -53,7 +55,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
-        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit },
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, choice: before.choice },
       });
       setShown(0);
     }
@@ -103,6 +105,7 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
     nit: before.nit,
+    choice: before.choice,
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
     canShow: [],

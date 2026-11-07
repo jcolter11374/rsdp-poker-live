@@ -7,6 +7,7 @@ import {
   SETTINGS_VERSION,
   SettingsError,
   TableSettingsSchema,
+  dealersChoiceOff,
   defaultSettings,
   migrateSettings,
   parseSettings,
@@ -17,6 +18,8 @@ import { issuesOf, pathsOf, withField } from './helpers';
 
 const cash = () => defaultSettings('cash');
 const tournament = () => defaultSettings('tournament');
+/** Defaults leave Dealer's choice out until a host turns it on; these have it, switched off. */
+const withChoice = (s: TableSettings): TableSettings => ({ ...s, game: { ...s.game, dealersChoice: dealersChoiceOff() } });
 
 /** Settings with several fields set at once. */
 function withFields(base: TableSettings, fields: Record<string, unknown>): TableSettings {
@@ -36,7 +39,9 @@ describe('defaults', () => {
     const s = cash();
     expect(s.version).toBe(SETTINGS_VERSION);
     expect(s.table).toMatchObject({ maxSeats: 10, mode: 'cash' });
-    expect(s.game).toEqual({ gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] }, dealersChoice: { enabled: false, games: [], hands: 0, pickSeconds: 20 } });
+    // No Dealer's choice until a host turns it on, so a table that never used it has nothing an older server can't read.
+    expect(s.game).toEqual({ gameId: 'nlhe', betting: 'no-limit', rotation: { enabled: false, steps: [] } });
+    expect(tournament().game.dealersChoice).toBeUndefined();
     expect(s.timing).toEqual({
       decisionSeconds: 30,
       timeBankSeconds: 30,
@@ -168,18 +173,18 @@ describe('field ranges', () => {
   for (const [path, bad, good] of cases) {
     it(`${path} rejects out-of-range values and accepts its boundaries`, () => {
       for (const value of bad) {
-        const issues = issuesOf(() => parseSettings(withField(cash(), path, value)));
+        const issues = issuesOf(() => parseSettings(withField(withChoice(cash()), path, value)));
         expect(issues.map((i) => i.path), `${path} = ${JSON.stringify(value)}`).toEqual([path]);
       }
       for (const value of good) {
-        expect(() => parseSettings(withField(cash(), path, value)), `${path} = ${JSON.stringify(value)}`).not.toThrow();
+        expect(() => parseSettings(withField(withChoice(cash()), path, value)), `${path} = ${JSON.stringify(value)}`).not.toThrow();
       }
     });
   }
 
   it('covers every field of every section', () => {
     const covered = new Set(cases.map(([path]) => path));
-    const s = cash();
+    const s = withChoice(cash());
     const leaves = Object.entries(s)
       .filter(([section]) => section !== 'version' && section !== 'modifiers')
       .flatMap(([section, fields]) => Object.keys(fields as object).map((f) => `${section}.${f}`));
@@ -400,13 +405,13 @@ describe('cross-field rules', () => {
   it("Dealer's choice needs two games, none twice, no rotation, and a cash table; its betting needs its stakes", () => {
     const nl = { gameId: 'nlhe', betting: 'no-limit' };
     const razz = { gameId: 'razz', betting: 'fixed-limit' };
-    expect(issuesOf(() => parseSettings(withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl] })))).toEqual([
+    expect(issuesOf(() => parseSettings(withFields(withChoice(cash()), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl] })))).toEqual([
       { path: 'game.dealersChoice.games', message: 'put at least two games on the menu' },
     ]);
-    expect(pathsOf(() => parseSettings(withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz, nl] })))).toEqual(['game.dealersChoice.games[2]']);
+    expect(pathsOf(() => parseSettings(withFields(withChoice(cash()), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz, nl] })))).toEqual(['game.dealersChoice.games[2]']);
     // A menu that is off is hidden in the dialog, so a repeat left on it doesn't stop the host saving.
-    expect(() => parseSettings(withFields(cash(), { 'game.dealersChoice.games': [nl, razz, nl] }))).not.toThrow();
-    const on = withFields(cash(), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz] });
+    expect(() => parseSettings(withFields(withChoice(cash()), { 'game.dealersChoice.games': [nl, razz, nl] }))).not.toThrow();
+    const on = withFields(withChoice(cash()), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz] });
     expect(() => parseSettings(on)).not.toThrow();
     expect(pathsOf(() => parseSettings(withFields(on, { 'game.rotation.enabled': true, 'game.rotation.steps': [{ ...nl, length: 1, unit: 'hands' }] })))).toEqual([
       'game.dealersChoice.enabled',
@@ -414,15 +419,24 @@ describe('cross-field rules', () => {
     expect(pathsOf(() => parseSettings(withField(on, 'stakes.smallBet', 0)))).toEqual(['stakes.smallBet']);
     // Off, its menu's betting asks nothing of the stakes.
     expect(() => parseSettings(withFields(on, { 'game.dealersChoice.enabled': false, 'stakes.smallBet': 0 }))).not.toThrow();
-    const tour = withFields(defaultSettings('tournament'), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz] });
+    const tour = withFields(withChoice(tournament()), { 'game.dealersChoice.enabled': true, 'game.dealersChoice.games': [nl, razz] });
     expect(pathsOf(() => parseSettings(tour))).toContain('game.dealersChoice.enabled');
   });
 
-  it('settings from before Dealer\u2019s choice load with it left out, and migrate with it off', () => {
-    const old = cash() as Record<string, unknown> & { game: Record<string, unknown> };
-    delete old.game.dealersChoice;
+  it('settings without Dealer\u2019s choice load and migrate with it left out (off), and a menu that is there keeps its fields', () => {
+    const old = cash();
+    expect(old.game.dealersChoice).toBeUndefined();
     expect(parseSettings(old).game.dealersChoice).toBeUndefined();
-    expect(migrateSettings(old).game.dealersChoice).toEqual({ enabled: false, games: [], hands: 0, pickSeconds: 20 });
+    expect(migrateSettings(old).game.dealersChoice).toBeUndefined();
+    const games = [
+      { gameId: 'nlhe', betting: 'no-limit' },
+      { gameId: 'razz', betting: 'fixed-limit' },
+    ];
+    // A preset from a Dealer's choice table: missing fields are filled, unknown ones dropped.
+    const dropped: string[] = [];
+    const preset = withField(withField(old, 'stakes.smallBet', 2), 'game.dealersChoice', { enabled: true, games, extra: 1 });
+    expect(migrateSettings(preset, { onDropped: (p) => dropped.push(...p) }).game.dealersChoice).toEqual({ enabled: true, games, hands: 0, pickSeconds: 20 });
+    expect(dropped).toEqual(['game.dealersChoice.extra']);
   });
 
   it('an enabled rotation needs a step and an enabled schedule needs a level', () => {

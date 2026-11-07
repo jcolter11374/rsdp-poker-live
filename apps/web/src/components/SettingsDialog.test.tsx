@@ -41,6 +41,28 @@ describe('Table settings: How the game is chosen', () => {
     expect(sentPatch()?.stakes).toBeUndefined();
   });
 
+  it("saves a table that has never had Dealer's choice on without it, even after a look at it", () => {
+    const settings = defaultSettings('cash');
+    expect(settings.game.dealersChoice).toBeUndefined();
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    fireEvent.change(mode(), { target: { value: 'rotate' } });
+    fireEvent.change(mode(), { target: { value: 'choice' } });
+    fireEvent.change(mode(), { target: { value: 'one' } });
+    fireEvent.change(screen.getByLabelText('Table name'), { target: { value: 'Friday' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentPatch()?.table).toEqual({ name: 'Friday' });
+    expect(sentPatch()?.game?.dealersChoice).toBeUndefined();
+  });
+
+  it("keeps a Dealer's choice menu that is there when the host turns it off", () => {
+    const settings = defaultSettings('cash');
+    settings.game.dealersChoice = { enabled: true, games: [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 };
+    render(<SettingsDialog view={viewOf(settings)} onClose={() => {}} />);
+    fireEvent.change(mode(), { target: { value: 'one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(sentPatch()?.game).toMatchObject({ dealersChoice: { enabled: false } });
+  });
+
   it("switching to Dealer's choice sends the rotation switch too, so a mix queued earlier in the hand can't clash", () => {
     render(<SettingsDialog view={viewOf(defaultSettings('cash'))} onClose={() => {}} />);
     fireEvent.change(mode(), { target: { value: 'choice' } });

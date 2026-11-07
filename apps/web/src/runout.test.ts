@@ -71,6 +71,14 @@ describe('holdBack', () => {
     expect(all.hand!.events.map((e) => e.seq)).toEqual([0, 1, 1.5, 1.7, 2, 3, 4, 5, 6, 7, 8]);
   });
 
+  it("keeps Dealer's choice as it was until the result, so a busted chooser's PICK tag doesn't move first", () => {
+    const choice = (chip: number, open: boolean) => ({ chip, current: null, handsLeft: 0, next: null, open, deadline: null, count: 2, cap: null, closed: false, defaultIndex: 0, canKeep: false });
+    // The server has already moved the chip on from seat 0, who busted.
+    const after = { ...finished(), choice: choice(1, true) } as TableView;
+    const frozen = { ...before(), choice: choice(0, true) };
+    for (let shown = 0; shown <= runoutSteps(after.hand!.events).length; shown++) expect(holdBack(after, frozen, shown).choice).toEqual(choice(0, true));
+  });
+
   it('keeps players at the table who bust or leave when the hand ends', () => {
     const done = finished();
     const busted = { ...done.seats[0]!, stack: 0, won: 0, sittingOut: true, sitOutReason: 'busted' as const };

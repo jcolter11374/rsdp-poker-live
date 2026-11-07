@@ -1,9 +1,9 @@
-import { SETTINGS_LIMITS, type ChoiceGame, type DealersChoiceSettings, type TableSettings } from '@rsdp/engine/settings';
+import { SETTINGS_LIMITS, dealersChoiceOff, type ChoiceGame, type DealersChoiceSettings, type TableSettings } from '@rsdp/engine/settings';
 import { getVariant, MIXED_GAMES, VARIANT_LIST } from '@rsdp/engine/variants';
 import { defaultStudAnte, studBringIn } from '../../format';
 
-/** Dealer's choice settings, filled in for tables saved before it existed (D33). */
-export const choiceOf = (settings: TableSettings): DealersChoiceSettings => settings.game.dealersChoice ?? { enabled: false, games: [], hands: 0, pickSeconds: 20 };
+/** Dealer's choice settings, filled in for tables that have never turned it on (D33). */
+export const choiceOf = (settings: TableSettings): DealersChoiceSettings => settings.game.dealersChoice ?? dealersChoiceOff();
 
 const fromMix = (id: string) => MIXED_GAMES.find((m) => m.id === id)!.steps.map((st) => ({ gameId: st.gameId, betting: st.betting }));
 

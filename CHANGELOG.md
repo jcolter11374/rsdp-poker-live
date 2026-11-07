@@ -24,7 +24,7 @@ _Dealer's choice_
 
 ### New
 
-- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit. As soon as they pick, the tag moves one seat to the left, to whoever picks next. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 
 ### Fixed and changed
 
