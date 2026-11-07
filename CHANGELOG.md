@@ -29,6 +29,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 
 ### Fixed and changed
 
+- Bomb pots on a computer: at a table whose bomb pots come on their own in another game (Omaha bomb pots at a Hold'em table, say), the seats no longer move when a bomb pot is dealt and again after it.
 - Coach tips are now worked out on a thread of their own, so asking for lots of tips never slows down play at any table. Tips in draw games always think through every possible draw. If the coach is busy, it tells you to try again in a moment, and that doesn't count against your tips.
 - Tournament tables no longer show numbered empty seats. Nobody picks a seat at a tournament, so the players now spread evenly round the table, with yours at the bottom, and their nameplates get the room the empty seats took. If you're knocked out, the table stays turned your way until the next hand. Cash tables keep their empty seats for sitting down and adding bots.
 - Keyboard: Shift+A twice goes all in on your turn in no-limit and pot-limit hands. The first press puts the most you can bet in the box and says on the action bar what the second press will send: in pot limit that's the most the pot allows. Enter sends it too, and Esc, a click or any other key cancels it. A still ticks Call any before your turn, and Shift+A does nothing in fixed-limit games.
