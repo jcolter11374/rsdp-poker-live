@@ -17,6 +17,7 @@ import { SeatingBanners } from './components/table/Seating';
 import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
+import { noteRealGame } from './components/table/Recap';
 import { PartBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
@@ -344,6 +345,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     );
   }
   if (!view) return <main className="home">Connecting…</main>;
+  // Copy recap waits out a spectator's delay from here, whether or not the ledger is open (on a phone it's in a sheet).
+  noteRealGame(view);
 
   const copyLink = async () => {
     try {

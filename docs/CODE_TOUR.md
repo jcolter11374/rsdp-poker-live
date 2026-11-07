@@ -131,7 +131,9 @@ opens the connection and keeps your browser's secret.
   `table:state` and draws the table with the components in
   [`src/components/`](../apps/web/src/components): `Table.tsx` (the felt and
   seats), `ActionBar.tsx` (your buttons), `SidePanel.tsx` (log, ledger, hands, stats), `table/Chat.tsx`,
-  `Replayer.tsx` and `FairCheck.tsx`.
+  `Replayer.tsx` and `FairCheck.tsx`. The ledger's Copy recap (`table/Recap.tsx`) shows a few lines
+  about a cash game to paste into the group chat; [`src/recap.ts`](../apps/web/src/recap.ts) writes
+  them from the ledger and the hands the viewer can already see.
 - [`components/ErrorBoundary.tsx`](../apps/web/src/components/ErrorBoundary.tsx)
   shows "Something broke" and a Reload button when a page crashes, instead
   of a blank screen (the table's side panel and chat have their own, so the

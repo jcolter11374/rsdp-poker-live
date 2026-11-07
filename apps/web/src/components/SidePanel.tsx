@@ -12,6 +12,7 @@ import { handNet, isReplayable, playerStats } from '../replay';
 import { Replayer } from './Replayer';
 import { groupLog } from '../logGroups';
 import { FullLogDownload, Highlights, ohhDownload, RecordsLockedNote, ShareHandDialog } from './table/Records';
+import { RecapDialog, useRecapOffered } from './table/Recap';
 
 export type Tab = 'log' | 'ledger' | 'hands' | 'stats';
 const TAB_NAMES: Record<Tab, string> = { log: 'Log', ledger: 'Ledger', hands: 'Hands', stats: 'Stats' };
@@ -68,6 +69,7 @@ export function SidePanel({ view, fmt, initialTab = 'log' }: { view: TableView; 
 type SortKey = 'name' | 'buyIn' | 'cashOut' | 'stack' | 'net';
 const SORT_KEY = 'rsdp.ledgerSort';
 
+/** The cash ledger, settle-up and Copy recap. */
 function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(() => {
     try {
@@ -78,6 +80,12 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   });
   const [settle, setSettle] = useState(false);
   const [copied, setCopied] = useState(false);
+  // A spectator on a delay waits it out from when the table opened in this browser (TablePage notes it), not from
+  // when this tab opened.
+  const recap = useRecapOffered(view);
+  const [recapOpen, setRecapOpen] = useState(false);
+  // The hands the Hands tab shows, loaded only once the recap is open.
+  const recapHands = useAllHands(view, recap && recapOpen);
   if (!view.ledger.length) return <p className="muted">Nobody has bought in yet.</p>;
 
   const seated = new Set(view.seats.filter((s) => s !== null).map((s) => s.playerId));
@@ -120,7 +128,15 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
           {settle ? 'Show ledger' : 'Settle up'}
         </button>
         <button onClick={() => download(`${fileStem(view.name)}-ledger.csv`, ledgerCsv(rows, seated, view.settings.stakes.centsMode), 'text/csv')}>Download CSV</button>
+        {recap && (
+          <button onClick={() => setRecapOpen(true)} title="A few lines about the game for the group chat">
+            Copy recap
+          </button>
+        )}
       </div>
+      {recap && recapOpen && (
+        <RecapDialog view={view} fmt={fmt} hands={recapHands.hands} error={recapHands.error} onRetry={recapHands.retry} onClose={() => setRecapOpen(false)} />
+      )}
       {settle ? (
         <div className="settle">
           {transfers.length === 0 ? (
