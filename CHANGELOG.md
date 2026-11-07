@@ -26,11 +26,14 @@ _Dealer's choice_
 
 - **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 
+### Fixed and changed
+
+- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
+
 ## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
 
-- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 - Stud games with a big-blind ante (tournaments with stud levels, cash stud tables, and the stud games of HORSE and 8-Game): everyone now antes about an eighth of it (300 becomes 40 each, 0.50 becomes 0.06), instead of every player putting in the full amount. In tournaments the lobby clock and the structure table show the ante each level really deals, and the structure editor says how it works.
 - Mixed games: a bomb pot dealt during a stud game no longer cuts the rest of that stud game short. It takes the place of one hand of the orbit, as it does in hold'em.
 - Mixed games: making the table smaller in the middle of a game keeps that game's orbit going with the players who move to new seats, instead of counting by the old seat numbers, which could end the game early or make it run long.
