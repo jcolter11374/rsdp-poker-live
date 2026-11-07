@@ -400,3 +400,26 @@ describe('the turn a player sees', () => {
     if (gameId === 'td27') expect(rt.state.hand!.events.some((e) => e.t === 'draw')).toBe(true);
   });
 });
+
+describe('someone watching on a delay, before anything is old enough to show', () => {
+  it('sees a blind change the host made during the hand with the hand it is dealt in, not at the live deal (#432)', async () => {
+    const { ann, ben, tableId } = await headsUp('waiting', { spectators: { allowed: true, delaySeconds: 120 } });
+    const fan = client('late-waiting-fan-0123456789');
+    await fan.call('table:join', { tableId });
+    const before = await fan.until((v) => !!v.spectator);
+    const { bigBlind } = before.settings.stakes;
+    // During the hand, so the new blinds wait for the next one.
+    await ann.call('host:settings', { patch: { stakes: { smallBlind: 5, bigBlind: 10 } } });
+    const sb = ann.view().legal ? ann : ben;
+    await sb.call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    await ann.call('host:deal');
+    await ann.until((v) => v.settings.stakes.bigBlind === 10 && v.hand?.handNumber === 2);
+    await pause(50);
+    // Two minutes behind, the watcher hasn't seen the first hand yet, so not the blinds of the second either.
+    const now = fan.view();
+    expect(now.hand).toBeNull();
+    expect(now.settings.stakes.bigBlind).toBe(bigBlind);
+    expect(now.settings.stakes.bigBlind).not.toBe(10);
+  });
+});
