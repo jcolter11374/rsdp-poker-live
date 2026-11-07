@@ -61,7 +61,8 @@ scripts/             Stand-alone checkers (hands, the public record), backups, d
 .github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
 .github/             Also the issue forms, the pull request template and labels.json.
 docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md,
-                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why).
+                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why),
+                     ACCESSIBILITY.md (screen readers, keyboards, contrast, zoom).
 ```
 
 At the top level, [CONTRIBUTING.md](../CONTRIBUTING.md) says how work is
@@ -147,6 +148,15 @@ opens the connection and keeps your browser's secret.
   which saves it with the table and hand number in the `feedback` table.
   It is private: only the admin reads it, on `/roadmap/admin` or from
   `GET /api/feedback`.
+- Screen readers and keyboards: [`src/announce.ts`](../apps/web/src/announce.ts)
+  turns each change at the table into words, which
+  [`components/table/Announcer.tsx`](../apps/web/src/components/table/Announcer.tsx)
+  puts in a region only screen readers read out ("Bo bets 40", "Your turn:
+  call 40, raise to 80 up to 1000 or fold"). Every dialog keeps the keyboard
+  inside it while it's open
+  ([`components/dialogFocus.ts`](../apps/web/src/components/dialogFocus.ts)).
+  What was checked, what was fixed and what's left is in
+  [ACCESSIBILITY.md](ACCESSIBILITY.md).
 - [`src/fair.ts`](../apps/web/src/fair.ts) is your browser's half of fair
   dealing: it sends your seed for the next hand and watches that it was used.
   [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
@@ -255,7 +265,9 @@ npm run smoke        # browser test; see below
 The smoke test drives a real browser, so install one first with
 `npx playwright install chromium`. It needs the built website served by the
 game server: run `npm run build && npm start` in one terminal, then
-`BASE_URL=http://localhost:3001 npm run smoke` in another. The play-test
+`BASE_URL=http://localhost:3001 npm run smoke` in another. It also checks
+the main pages with [axe](https://github.com/dequelabs/axe-core) and fails on
+any serious accessibility problem ([ACCESSIBILITY.md](ACCESSIBILITY.md)). The play-test
 scripts for a release run the same way; see
 [e2e/playtest/README.md](../e2e/playtest/README.md).
 

@@ -5,12 +5,14 @@
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
 //
-// Screenshots go to e2e/out/. Any console error fails the run.
+// Screenshots go to e2e/out/. Any console error fails the run, and so does a
+// serious or critical accessibility problem on the main pages (docs/ACCESSIBILITY.md).
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { AxeBuilder } from '@axe-core/playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
 // It creates tables and a tournament with made-up players, so it never runs against the live site.
@@ -24,8 +26,35 @@ const SERVER = new URL(BASE).host;
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 mkdirSync(OUT, { recursive: true });
 const errors = [];
+const a11y = [];
 
 const browser = await chromium.launch();
+
+/** The WCAG 2.2 AA rules (with the 2.0 and 2.1 ones they build on) that axe checks. */
+const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+/**
+ * Rules left out on the table screen for now: its brighter green buttons and the red host tag are below 4.5:1, and
+ * changing the table's look waits for John's before-and-after OK (D21). Take it out with that change.
+ */
+const TABLE = { skip: ['color-contrast'] };
+
+/**
+ * Checks the page as it is now with axe, and notes every serious or critical problem; any fails the run at the end.
+ * Short animations (cards being dealt, chips flying) finish first, so nothing is checked half faded in.
+ */
+async function checkA11y(page, label, { skip = [] } = {}) {
+  await page.evaluate(() => {
+    const short = document.getAnimations().filter((a) => {
+      const t = a.effect?.getComputedTiming();
+      return t && Number.isFinite(t.endTime) && t.endTime - Number(a.currentTime ?? 0) < 3000;
+    });
+    return Promise.race([Promise.all(short.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 4000))]);
+  });
+  const result = await new AxeBuilder({ page }).withTags(WCAG_AA).disableRules(skip).analyze();
+  for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
+    a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
+  }
+}
 
 async function open(label, viewport = { width: 1280, height: 860 }) {
   const ctx = await browser.newContext({ viewport });
@@ -90,6 +119,21 @@ async function step(name, fn) {
 }
 
 try {
+  await step('accessibility: home, sign-in, sign-up and new tournament pages, on a computer and a phone', async () => {
+    for (const [label, viewport] of [['computer', undefined], ['phone', { width: 390, height: 844 }]]) {
+      const p = await open(`pages (${label})`, viewport);
+      // Each page, and something that shows it has finished loading.
+      for (const [route, ready] of [['/', 'input[required]'], ['/signin', 'form'], ['/signup', 'form'], ['/tn/new', 'button:has-text("Create tournament")']]) {
+        await p.goto(`${BASE}${route}`);
+        await p.locator(ready).first().waitFor();
+        // Lists that arrive after the page (open tournaments on the home page) have a moment to land.
+        await p.waitForTimeout(600);
+        await checkA11y(p, `${route} (${label})`);
+      }
+      await p.close();
+    }
+  });
+
   await step('cash table: create, approve a seat, play a hand', async () => {
     const host = await open('cash host');
     const guest = await open('cash guest');
@@ -114,6 +158,15 @@ try {
     await first.keyboard.press('t');
     await first.waitForTimeout(300);
     for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
+    // A screen reader hears that it's their turn, from a region nobody sees.
+    await first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' });
+    await checkA11y(first, 'table, your turn', TABLE);
+    await checkA11y(first === host ? guest : host, 'table, waiting to act', TABLE);
+    const watcher = await open('cash spectator');
+    await watcher.goto(host.url());
+    await watcher.waitForSelector('.seat .hole .playing-card');
+    await checkA11y(watcher, 'table, watching', TABLE);
+    await watcher.close();
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
 
@@ -331,6 +384,8 @@ try {
       await p.getByRole('button', { name: /^Register/ }).click();
       await p.getByText("You're registered.").waitFor();
     }
+    await checkA11y(host, 'tournament lobby, host');
+    await checkA11y(players[2], 'tournament lobby (phone)');
     // The host starts from the card by the clock, without opening the Host tab.
     await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
 
@@ -338,6 +393,8 @@ try {
     for (const p of players) await p.waitForURL(table, { waitUntil: 'commit' });
     await host.locator('.tn-strip:has-text("Level 1")').waitFor();
     await host.waitForSelector('.seat .hole .playing-card');
+    await players[2].waitForSelector('.seat .hole .playing-card');
+    await checkA11y(players[2], 'tournament table (phone)', TABLE);
     await playOut(players);
     const log = await host.locator('.side').innerText();
     for (const name of names) if (!log.includes(name)) throw new Error(`${name} was not in the first hand`);
@@ -469,6 +526,7 @@ try {
   await new Promise((r) => setTimeout(r, 2000));
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
+  if (a11y.length) throw new Error(`accessibility problems (docs/ACCESSIBILITY.md says how to check them):\n${a11y.join('\n')}`);
   console.log('smoke test passed');
 } catch (e) {
   console.error('smoke test FAILED:', e.message);

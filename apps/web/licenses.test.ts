@@ -21,7 +21,7 @@ describe('the /credits package list', () => {
 
   it('leaves out tools only used to build and test, but credits the one that adds code to the bundle', () => {
     expect(named('vite')?.parts).toEqual(['browser']);
-    for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit']) expect(named(name), name).toBeUndefined();
+    for (const name of ['vitest', 'typescript', 'playwright', 'pokersolver', 'drizzle-kit', 'axe-core', '@axe-core/playwright']) expect(named(name), name).toBeUndefined();
   });
 
   it('only ships permissive licenses', () => {

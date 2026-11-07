@@ -394,7 +394,7 @@ function MyPanel({ state, session, skew, send }: { state: TournamentState; sessi
           <input value={code} maxLength={40} autoCapitalize="characters" placeholder="ABCD2345" onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && register()} />
         </label>
       )}
-      {nameError && <p className="error">{nameError}</p>}
+      {nameError && <p className="error" role="alert">{nameError}</p>}
       <div className="tn-actions">
         {o.canCheckIn && (
           <button className="primary big" onClick={() => send({ type: 'checkIn', playerId: me.playerId })}>
@@ -444,7 +444,8 @@ function Players({ state, me }: { state: TournamentState; me?: string }) {
           <tr>
             {started && <th>#</th>}
             <th>Player</th>
-            <th className="num">{started ? 'Chips' : ''}</th>
+            {/* Empty to the eye until the chips are dealt; a screen reader still hears what the column is. */}
+            <th className="num">{started ? 'Chips' : <span className="sr-only">Chips</span>}</th>
             {bounty && <th className="num">Bounty</th>}
             {bounty && <th className="num">KOs</th>}
             {state.settings.payouts && <th className="num">Prize</th>}

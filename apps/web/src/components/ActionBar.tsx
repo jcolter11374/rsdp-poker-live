@@ -371,7 +371,11 @@ export function ActionBar({
   const errorLine = slow ? (
     <div className="muted sending-note">Sending… your connection seems slow.</div>
   ) : (
-    error && <div className="error">{error}</div>
+    error && (
+      <div className="error" role="alert">
+        {error}
+      </div>
+    )
   );
 
   // After the hand: show cards you were not made to show.
@@ -463,6 +467,7 @@ export function ActionBar({
                 key={o.label}
                 className={on ? 'queued' : ''}
                 aria-pressed={on}
+                aria-keyshortcuts={o.key}
                 title={`${on ? 'Click again to cancel' : 'Do this as soon as it is your turn'}. Shortcut: ${o.key}`}
                 onClick={() => togglePre(o.value)}
               >
@@ -543,6 +548,8 @@ export function ActionBar({
               }}
               onBlur={() => setTyped(null)}
               aria-label={bigBlind ? 'Amount in big blinds' : 'Amount'}
+              // R jumps here (and Enter sends the bet).
+              aria-keyshortcuts="R"
             />
             {bigBlind && <span className="unit">BB</span>}
           </div>
@@ -550,7 +557,7 @@ export function ActionBar({
       ))}
       <div className="buttons">
         {legal.canFold && (
-          <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F">
+          <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F" aria-keyshortcuts="F">
             {confirmFold ? 'Fold anyway?' : 'Fold'}
             <Key k="F" />
           </button>
@@ -558,19 +565,19 @@ export function ActionBar({
         {legal.canBringIn ? (
           <button onClick={() => send({ type: 'bring-in' })}>Bring in {fmt(hand.stakes.bringIn)}</button>
         ) : legal.canCheck ? (
-          <button className="call" onClick={() => send({ type: 'check' })} title="Shortcut: K">
+          <button className="call" onClick={() => send({ type: 'check' })} title="Shortcut: K" aria-keyshortcuts="K">
             Check
             <Key k="K" />
           </button>
         ) : (
-          <button className="call" onClick={() => send({ type: 'call' })} title="Shortcut: C">
+          <button className="call" onClick={() => send({ type: 'call' })} title="Shortcut: C" aria-keyshortcuts="C">
             Call {fmt(legal.callAmount)}
             {legal.callAmount >= me.stack ? ' (all in)' : ''}
             <Key k="C" />
           </button>
         )}
         {legal.canRaise && (
-          <button className="primary" onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })}>
+          <button className="primary" onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })} aria-keyshortcuts={sized ? undefined : 'R'}>
             {raiseLabel(sized ? clamp(amount) : legal.minTo)}
             <Key k="R" />
           </button>

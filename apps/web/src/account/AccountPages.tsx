@@ -134,7 +134,7 @@ export function SignUpPage() {
           Password again
           <input type="password" value={again} autoComplete="new-password" minLength={8} maxLength={200} required onChange={(e) => setAgain(e.target.value)} />
         </label>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <button className="primary" disabled={busy}>
           Create account
         </button>
@@ -191,7 +191,7 @@ export function SignInPage() {
             <span className="hint">Your notes and picture from this device move into your account, and the tables and tournaments you played here show in its history. Untick this on a friend's phone so their things stay theirs.</span>
           </span>
         </label>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         {error && <HeldLink href={errorLink} />}
         <button className="primary" disabled={busy}>
           Sign in
@@ -254,7 +254,7 @@ export function ResetPage() {
               <input type="password" value={password} autoComplete="new-password" minLength={8} maxLength={200} required onChange={(e) => setPassword(e.target.value)} />
               <span className="hint">At least 8 characters.</span>
             </label>
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
             <button className="primary" disabled={busy}>
               Set new password
             </button>

@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # main's smoke test needs only playwright: run from live/e2e, it finds the one installed here.
+      # main's smoke test needs only playwright and @axe-core/playwright: run from live/e2e, it finds the ones installed here.
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
