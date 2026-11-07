@@ -32,6 +32,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. A narrower window doesn't show it; the action buttons still show their keys.
 - One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
 - Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
+- Dealer's choice: when the host changes the menu during a hand, the pick panel's "If time runs out" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.
 
 ## [2026.11.07.5] - 2026-11-07
 
