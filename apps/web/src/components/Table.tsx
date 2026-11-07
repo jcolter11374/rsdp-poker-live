@@ -3,7 +3,7 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, keepPlaced, placePlayers, placeSeats, playerFractions, px, seatFractions, seatsFine, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
+import { besideBet, clearSideBands, fitHand, fitMiddle, fromVars, handRoom, inFront, keepPlaced, lerp, placePlayers, placeSeats, playerFractions, px, seatFractions, seatsFine, stadiumPoint, type Box, type Extent, type HandFit, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
@@ -181,6 +181,66 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
     if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
   });
   return reach;
+}
+
+/** Whether a card is where it will stay: not being dealt, carried down or turned over. A winning card's short lift counts. */
+const settled = (card: Element) => !card.getAnimations?.().some((a) => a instanceof CSSAnimation && a.playState === 'running');
+
+/**
+ * Where an element will be once it has grown in (a winner's line pops in from 40% and overshoots a little): its box,
+ * less a scale and a move in its own `transform` about its centre. `zoom` is how much what holds it is drawn scaled.
+ */
+function grownIn(el: Element, zoom: number): Box {
+  const r = el.getBoundingClientRect();
+  const style = getComputedStyle(el);
+  const m = !style.transform || style.transform === 'none' || typeof DOMMatrixReadOnly === 'undefined' ? null : new DOMMatrixReadOnly(style.transform);
+  if (!m || !m.is2D || m.b || m.c || m.a <= 0 || m.d <= 0 || style.scale !== 'none' || style.translate !== 'none') return r;
+  const x = (r.left + r.right) / 2 - m.e * zoom;
+  const y = (r.top + r.bottom) / 2 - m.f * zoom;
+  const w = r.width / m.a / 2;
+  const h = r.height / m.d / 2;
+  return { left: x - w, right: x + w, top: y - h, bottom: y + h };
+}
+
+/**
+ * The scale the middle of the table (`stack`, drawn scaled about its centre) needs so it covers no player's nameplate or
+ * cards (#417): see fitMiddle.
+ */
+function boardScale(felt: HTMLElement, stack: HTMLElement): number {
+  const now = parseFloat(getComputedStyle(stack).scale) || 1;
+  const s = stack.getBoundingClientRect();
+  const centre = { x: s.left + s.width / 2, y: s.top + s.height / 2 };
+  const full = (b: Box) => ({ left: centre.x + (b.left - centre.x) / now, right: centre.x + (b.right - centre.x) / now, top: centre.y + (b.top - centre.y) / now, bottom: centre.y + (b.bottom - centre.y) / now });
+  // What it holds, as it would be at full size: each row, with its cards where they are (a winning card lifted), and each
+  // winner's line.
+  const items: (Box & { line: boolean })[] = [];
+  for (const child of stack.children) {
+    for (const part of child.classList.contains('results') ? [...child.children] : [child]) {
+      if (part.classList.contains('unseen')) continue;
+      let b = grownIn(part, now);
+      if (!b.right && !b.bottom) continue;
+      for (const card of part.querySelectorAll('.playing-card')) {
+        if (!settled(card)) continue;
+        const r = card.getBoundingClientRect();
+        b = { left: Math.min(b.left, r.left), right: Math.max(b.right, r.right), top: Math.min(b.top, r.top), bottom: Math.max(b.bottom, r.bottom) };
+      }
+      items.push({ ...full(b), line: !part.matches('.board-row, .pots') });
+    }
+  }
+  if (!items.length) return 1;
+  const seats: Box[] = [];
+  felt.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.empty)').forEach((seat) => {
+    const plate = seat.querySelector('.nameplate');
+    if (plate) seats.push(plate.getBoundingClientRect());
+    // The cards' own spots, and where they are once dealt or turned over (a winning card lifted). Cards on their way to
+    // or from the muck are left out, as for the seats' reach.
+    const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
+    if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
+      seats.push(hole.getBoundingClientRect());
+      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(card.getBoundingClientRect());
+    }
+  });
+  return fitMiddle(items, seats, felt.querySelector('.dealer')?.getBoundingClientRect() ?? null, centre);
 }
 
 /** The smallest box holding both. */
@@ -579,6 +639,27 @@ export function Table({
     });
     boardShift = Math.max(-h * 0.15, Math.min(h * 0.15, (above + below) / 2 - center.y));
   }
+  // Where the middle would run onto a player's nameplate or cards (two runs of the board, several winners' lines, a short
+  // wide window), it is drawn smaller until it doesn't (#417). The seats don't move for it, and a scale doesn't change the
+  // layout this measures, so it can't feed back on itself. Within a hand (at one window size) it only ever gets smaller, as
+  // the board and the results come, so it doesn't grow and shrink back and forth. Phones: see #380.
+  const stack = useRef<HTMLDivElement>(null);
+  const [boardFit, setBoardFit] = useState(1);
+  const fitHeld = useRef({ key: '', fit: 1, failed: false });
+  const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
+  useLayoutEffect(() => {
+    let fit = 1;
+    try {
+      if (!compact && felt.current && stack.current) fit = boardScale(felt.current, stack.current);
+    } catch (error) {
+      // As for the seats: a slip here mustn't take the table down. The middle keeps its full size, as before #417.
+      if (!fitHeld.current.failed) reportError(error, 'error');
+      fitHeld.current.failed = true;
+    }
+    if (fitHeld.current.key === fitKey) fit = Math.min(fit, fitHeld.current.fit);
+    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed };
+    setBoardFit((f) => (f === fit ? f : fit));
+  });
   const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
   const betHalf = compact ? { w: 22, h: 10 } : { w: 30, h: 13 };
   const betPoint = (seat: number) => inFront(seatPoint(seat), boardMiddle, reach[seat] ?? guess, betHalf, compact ? 4 : 8);
@@ -647,7 +728,7 @@ export function Table({
     const f = el.getBoundingClientRect();
     const r = pot.getBoundingClientRect();
     potSpot.current = { x: r.left + r.width / 2 - f.left - el.clientLeft, y: r.top + r.height / 2 - f.top - el.clientTop };
-  }, [view, w, h]);
+  }, [view, w, h, boardFit]);
   const potPoint = (): Point => potSpot.current ?? boardMiddle;
   const geometry = useRef({ betPoint, seatPoint, center, potPoint });
   geometry.current = { betPoint, seatPoint, center: boardMiddle, potPoint };
@@ -706,6 +787,7 @@ export function Table({
     >
       <FeltEmblem />
       <div className={`board${multiRun || multiBoard ? ' multi' : ''}`} style={boardShift ? { translate: `0 ${Math.round(boardShift)}px` } : undefined}>
+        <div className="board-stack" ref={stack} style={boardFit < 1 ? { scale: String(boardFit) } : undefined}>
         {runs.map((run, r) =>
           run.map((cards, b) => {
             // Run it twice: the second run's first cards are the first run's, carried down as the board splits, not dealt again (#372).
@@ -761,13 +843,18 @@ export function Table({
             {hand!.pots.length > 1 && bets > 0 && <div className="pot total">Total {fmt(hand!.potTotal)}</div>}
           </div>
         )}
-        {done &&
-          [...results.entries()].map(([seat, w]) => (
-            <div className="pot result" key={seat}>
-              {view.hand?.names?.[seat] ?? view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
-              {w.handName ? ` · ${w.handName}` : ''}
-            </div>
-          ))}
+        {/* One line per winner. Several (a split pot, side pots) sit side by side where the felt has the width, so the middle
+            doesn't grow taller than the room between the seats above and below it (#417). */}
+        {done && results.size > 0 && (
+          <div className={`results${results.size > 1 ? ' several' : ''}`}>
+            {[...results.entries()].map(([seat, w]) => (
+              <div className="pot result" key={seat}>
+                {view.hand?.names?.[seat] ?? view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}
+                {w.handName ? ` · ${w.handName}` : ''}
+              </div>
+            ))}
+          </div>
+        )}
         {/* The pot's spot above the board says what happens next between hands. */}
         {!live && view.nextHandAt !== null && view.started && !view.paused && view.choice?.deadline == null && (
           <div className="next-hand">Next hand in {Math.max(0, Math.ceil((view.nextHandAt - now) / 1000))}</div>
@@ -798,6 +885,7 @@ export function Table({
           </div>
         )}
         <BoardExtras view={view} />
+        </div>
       </div>
 
       {view.seats.map((s, seat) => {

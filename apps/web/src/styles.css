@@ -138,6 +138,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   gap: 8px;
   pointer-events: none;
 }
+/* The board's contents, in a column drawn smaller where it would run onto a seat (#417, Table.tsx). */
+.board-stack { display: flex; flex-direction: column; align-items: center; gap: inherit; width: 100%; }
 .board .cards { display: flex; gap: 7px; }
 .board .playing-card { --cw: 54px; }
 .pot { background: rgba(0, 0, 0, 0.28); padding: 4px 12px; border-radius: 999px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
@@ -718,6 +720,13 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .pot.result { background: #1d6b41; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .pot.result { max-width: min(440px, 80%); }
 .felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }
+/* Several winners' lines side by side, wrapping only when they don't fit, clear of the seats at the ends of the table, so
+   the middle doesn't grow taller than the room between the seats above and below it (#417). On a phone each still takes
+   its own line. */
+.board .results { display: flex; flex-direction: column; align-items: center; gap: inherit; width: 100%; }
+.felt:not(.compact) .board .results.several { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 10px; max-width: max(min(440px, 80%), calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
+/* Each line as wide as one on its own may be, so where they don't fit side by side they don't wrap any sooner. */
+.felt:not(.compact) .board .results.several .pot.result { max-width: min(440px, 100%); }
 .pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
 .board .playing-card { --cw: var(--board-cw, 62px); }
 .board .cards { gap: 6px; }

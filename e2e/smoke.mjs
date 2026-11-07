@@ -714,6 +714,68 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step('wide, short window: run it twice stays clear of the seats', async () => {
+    // On a wide, short screen the two runs of the board went under the top player's nameplate, and the winners' lines and
+    // "Next hand in" onto the bottom player's cards (#417). The middle now fits between them, and the seats hold still.
+    const host = await open('two runs host', { width: 2300, height: 824 });
+    const guest = await open('two runs guest');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Hal');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    await guest.goto(host.url());
+    await guest.locator('.seat.empty button').nth(2).click();
+    await guest.fill('.modal input[required]', 'Ivy');
+    await guest.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await guest.waitForSelector('.seat.me');
+    await host.click('button:has-text("Table settings")');
+    await host.click('.tabs button:has-text("Rules")');
+    await host.locator('label:has-text("Run it twice") select').selectOption('always');
+    await host.click('.modal button:has-text("Save")');
+    await host.click('button:has-text("Start game")');
+    await host.waitForSelector('.seat .hole .playing-card');
+    if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
+    await sampleLayouts(host);
+
+    // The first to act moves all in and the other calls, so the board is run twice.
+    const move = (p, label) => p.locator('.action-bar.my-turn .buttons button', { hasText: label });
+    const first = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
+    const other = first === host ? guest : host;
+    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in$/ }).click();
+    await first.waitForTimeout(600);
+    await move(first, /^All in/).click();
+    await move(other, /^Call/).waitFor();
+    await other.waitForTimeout(600);
+    await move(other, /^Call/).click();
+    // An all in before the flop is run out a card at a time, both runs about 20 seconds; the second run's row comes
+    // with its first card, about 14 seconds in.
+    await host.locator('.board-row').nth(1).waitFor({ timeout: 30000 });
+    await host.locator('.pot.result').first().waitFor({ timeout: 30000 });
+    // "Next hand in" follows unless a player is out of chips.
+    await host.locator('.board .next-hand').waitFor({ timeout: 5000 }).catch(() => {});
+    await host.waitForTimeout(1500);
+    const covered = await host.evaluate(() => {
+      const box = (e) => e.getBoundingClientRect();
+      const area = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      const middle = [...document.querySelectorAll('.felt .board .playing-card, .felt .board .pot.result, .felt .board .next-hand')];
+      const seats = [...document.querySelectorAll('.felt .seat:not(.empty) .nameplate, .felt .seat .hole .playing-card')];
+      const out = [];
+      for (const m of middle) for (const s of seats) if (area(box(m), box(s)) > 4) out.push(`${m.textContent.trim().slice(0, 30) || m.className} on ${s.closest('.seat').querySelector('.name')?.textContent ?? 'a seat'}`);
+      return out;
+    });
+    await host.screenshot({ path: path.join(OUT, 'run-it-twice-wide.png') });
+    if (covered.length) throw new Error(`at 2300x824 the middle of the table covers a player: ${[...new Set(covered)].join('; ')}`);
+    const layouts = await layoutsSeen(host);
+    if (layouts.length !== 1) throw new Error(`the seats moved during the hand: ${layouts.join(' / ')}`);
+    // Host controls are behind the drawer button in this layout.
+    await host.click('.drawer-button');
+    await stopGame(host, [host, guest]);
+  });
+
   await step('Omaha on a laptop: no nameplate covers another, and the seats hold still', async () => {
     // Four-card Omaha has the widest nameplates. At a nine-seat table on a 1280x800 window, the seats once ran out of room
     // and went back to even spacing, and your nameplate covered the next player's (#363).
