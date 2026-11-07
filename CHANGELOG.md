@@ -29,6 +29,7 @@ _Hands left in each game_
 ### Fixed and changed
 
 - Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
+- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.2] - 2026-11-07
 
