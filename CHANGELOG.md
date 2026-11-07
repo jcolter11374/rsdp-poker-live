@@ -30,11 +30,11 @@ _Dealer's choice, lobby chat moderation and a recap of the night_
 
 ### Fixed and changed
 
+- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
 - Tournaments: when a table breaks right after a hand that knocked someone out, the players moved off it are taken to their new tables as soon as the hand's result shows, instead of sometimes staying on the old table until they reload.
 - The Hands and Stats tabs no longer show a hand's result while its all-in runout is still being dealt on the table, if you open them for the first time just then.
 - If you deleted your account, or played as a guest, you can ask John to take your name out of old games. It's replaced with "Deleted player" in hands, ledgers, table logs and chat, tournament entries and lobbies, and other players' shared hand links. Amounts and results stay exactly as they were. The privacy page says what this can't reach.
 - The Checking John page now shows each time John takes a name out of old records, without the name itself.
-- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
 
 ## [2026.11.07] - 2026-11-07
 
