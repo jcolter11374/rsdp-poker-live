@@ -195,10 +195,16 @@ describe('placeSeats (#363: nameplates covering each other on a laptop)', () => 
 
   it('squeezes empty seats in between players when there is no room to keep them clear, and gives up only when players cannot fit', () => {
     const taken = seats(9, [0, 1, 2, 3, 4, 5, 6, 7]);
-    const big = box(taken, omaha.me, omaha.other, { l: 70, r: 70, u: 40, d: 40 });
+    const tall: Extent = { l: 134, r: 134, u: 60, d: 60 };
+    const big = box(taken, tall, tall, { l: 100, r: 100, u: 20, d: 20 });
+    // No spacing keeps the empty seat clear of everyone...
+    expect(spreadByBoxes(taken, 0, w, h, big, { gap: 0 })).toBeNull();
     const f = placeSeats(taken, 0, w, h, { ...spacing(140), box: big, gap: 6 });
-    // Players are clear of each other, even though the empty seat isn't clear of them.
+    expect(seatsApart(f, w, h, big)).toBe(false);
+    // ...so players are kept clear of each other, and the empty seat goes between two of them.
+    expect(f).toEqual(spreadByBoxes(taken, 0, w, h, big, { players: true }));
     expect(seatsApart(f, w, h, (s) => (taken[s] ? big(s) : undefined))).toBe(true);
+    expect(inOrder(f)).toBe(true);
     // Far too big for the table: back to even spacing.
     const huge: Extent = { l: 300, r: 300, u: 120, d: 120 };
     expect(placeSeats(taken, 0, w, h, { ...spacing(300), box: () => huge, gap: 6 })).toEqual(seatFractions(taken, 0, spacing(300)));

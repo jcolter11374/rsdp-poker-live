@@ -527,21 +527,37 @@ try {
     await check('six players at 1280x800');
     await addBots(3);
     await check('nine players at 1280x800');
-    // Frame to frame, the seats stay where they are while the bots play and fold (#350's twitch, #363's spacing).
-    const spots = await p.evaluate(
-      () =>
-        new Promise((done) => {
-          const seen = new Set();
-          const end = performance.now() + 3000;
-          const sample = () => {
-            seen.add([...document.querySelectorAll('.felt .seat')].map((s) => `${s.style.left},${s.style.top}`).join(' '));
-            if (performance.now() < end) requestAnimationFrame(sample);
-            else done(seen.size);
-          };
-          requestAnimationFrame(sample);
-        }),
-    );
-    if (spots !== 1) throw new Error(`the seats moved ${spots - 1} times in three seconds of play`);
+    // Oli checks or calls when it's her turn, so the hands play on instead of waiting on her clock.
+    const play = async (ms) => {
+      const buttons = p.locator('.action-bar.my-turn .buttons button');
+      for (const end = Date.now() + ms; Date.now() < end; ) {
+        const pick = (await buttons.allInnerTexts().catch(() => [])).findIndex((t) => /^(Check|Call)/.test(t));
+        if (pick >= 0) await buttons.nth(pick).click({ timeout: 2000 }).catch(() => {});
+        await p.waitForTimeout(250);
+      }
+    };
+    // Wait for a hand dealt after the last bot sat down (Oli's cards change), so the seats are where they'll stay.
+    const hand = () => p.locator('.seat.me .hole .playing-card').evaluateAll((cards) => cards.map((c) => c.getAttribute('aria-label')).join());
+    const before = await hand();
+    for (let i = 0; i < 120 && (await hand()) === before; i++) await play(500);
+    await p.waitForTimeout(900);
+    // Frame to frame, the seats stay where they are while the hands play: cards dealt, bets, folds and the lines under
+    // the nameplates coming and going (#350's twitch, #363's spacing).
+    await p.evaluate(() => {
+      const seen = (window.__spots = new Set());
+      const sample = () => {
+        seen.add([...document.querySelectorAll('.felt .seat')].map((s) => `${s.style.left},${s.style.top}`).join(' '));
+        if (window.__spots === seen) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await play(8000);
+    const spots = await p.evaluate(() => {
+      const n = window.__spots.size;
+      window.__spots = null;
+      return n;
+    });
+    if (spots !== 1) throw new Error(`the seats moved ${spots - 1} times in eight seconds of play`);
     await p.screenshot({ path: path.join(OUT, 'omaha-laptop.png') });
     await stopGame(p, [p]);
     await p.close();

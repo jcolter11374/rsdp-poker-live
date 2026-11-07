@@ -8,6 +8,7 @@ import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, 
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
+import { handSizes } from '../handSizes';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
@@ -198,18 +199,86 @@ interface SeatBoxes {
   empty?: Extent;
 }
 
+/** The lines a nameplate can gain in the middle of a hand: the last action, and the clock's last seconds or the time bank. */
+const LINES_GAINED: readonly [string, string][] = [
+  ['last-action a-call', 'Call'],
+  ['status low-text', '0:10'],
+];
+
 /**
- * The boxes seats are spaced by on a computer (#363), each the biggest it has been since `key` (the game, the sizes,
- * who sits where) last changed. A player's nameplate and cards shrink when they fold and between hands; spacing by the
- * biggest keeps the seats still then. Within a key they only grow, so the seats can't flip back and forth.
+ * How far each player's seat will reach once the cards are out (#363), before they are: a copy of the seat is given the
+ * game's cards at each size a hand reaches (and, for a row of cards over the nameplate, at either end of the table), with
+ * and without the lines a nameplate gains mid-hand, measured, and taken away again before anything is drawn. Spacing the
+ * seats by these from the start means they don't move when the cards are dealt, a line appears or a stud hand grows.
  */
-function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, me: number | null, on: boolean): SeatBoxes {
+function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: readonly number[]): Map<HTMLElement, Reach> {
+  const copies: [HTMLElement, HTMLElement][] = [];
+  for (const seatEl of seats)
+    for (const n of sizes)
+      for (const edge of n > 4 && !seatEl.classList.contains('me') ? ['', 'edge-left', 'edge-right'] : [null])
+        for (const lines of [0, LINES_GAINED.length]) {
+          const copy = seatEl.cloneNode(true) as HTMLElement;
+          copy.removeAttribute('data-seat');
+          copy.setAttribute('aria-hidden', 'true');
+          copy.style.visibility = 'hidden';
+          copy.style.transition = 'none';
+          copy.classList.remove('folded', 'acting', 'winner', 'departed', 'fading', 'long-hand');
+          copy.classList.add('has-cards');
+          if (n > 4) copy.classList.add('long-hand');
+          if (edge !== null) copy.classList.remove('edge-left', 'edge-right');
+          if (edge) copy.classList.add(edge);
+          const hole = copy.querySelector<HTMLElement>('.hole');
+          const plate = copy.querySelector<HTMLElement>('.nameplate');
+          if (!hole || !plate) continue;
+          hole.className = `hole n${n}`;
+          hole.replaceChildren(
+            ...Array.from({ length: n }, () => {
+              const card = document.createElement('div');
+              card.className = 'playing-card small back';
+              return card;
+            }),
+          );
+          // Lines that come and go (and an Away pill: an away player isn't dealt in) give way to the ones a hand brings.
+          plate.querySelectorAll(':scope > :is(.last-action, .status, .pill)').forEach((line) => line.remove());
+          for (const [className, text] of LINES_GAINED.slice(0, lines)) {
+            const line = document.createElement('div');
+            line.className = className;
+            line.textContent = text;
+            plate.appendChild(line);
+          }
+          copies.push([seatEl, copy]);
+        }
+  for (const [, copy] of copies) felt.appendChild(copy);
+  const out = new Map<HTMLElement, Reach>();
+  for (const [seatEl, copy] of copies) out.set(seatEl, grow(out.get(seatEl), seatReach(copy)));
+  for (const [, copy] of copies) copy.remove();
+  return out;
+}
+
+/**
+ * The boxes seats are spaced by on a computer (#363), each the biggest it has been since `key` (the shape of the game's
+ * hands and the seats' size) last changed. They start from each player's dealt size (dealtReach), measured again when
+ * someone sits down, and then grow with what's on screen: a player's nameplate and cards shrink when they fold and
+ * between hands, and spacing by the biggest keeps the seats still then. Within a key they only grow, so the seats can't
+ * flip back and forth.
+ */
+function useSeatBoxes(felt: RefObject<HTMLElement>, key: string, sizes: readonly number[], seating: string, me: number | null, on: boolean): SeatBoxes {
   const [boxes, setBoxes] = useState<SeatBoxes>({ key: '' });
+  const probed = useRef('');
   useLayoutEffect(() => {
     const el = felt.current;
     if (!el || !on) return;
     const fresh = boxes.key !== key;
     let { me: mine, others, empty }: SeatBoxes = fresh ? { key } : boxes;
+    const probe = `${key}|${seating}|${me}`;
+    if (fresh || probed.current !== probe) {
+      probed.current = probe;
+      const players = [...el.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.departed)')];
+      for (const [seatEl, r] of dealtReach(el, players, sizes)) {
+        if (Number(seatEl.dataset.seat) === me) mine = grow(mine, r);
+        else others = grow(others, r);
+      }
+    }
     el.querySelectorAll<HTMLElement>('.seat').forEach((seatEl) => {
       if (seatEl.classList.contains('empty')) {
         const b = seatEl.getBoundingClientRect();
@@ -348,11 +417,16 @@ export function Table({
   const estPerimeter = 2 * Math.abs(estW - estH) + Math.PI * Math.min(estW, estH);
   const grownScale = Math.round(Math.max(0.72, Math.min(k, (estPerimeter * 0.92) / (players * podWidth + (n - players) * 130))) * 100) / 100;
   const seatScale = compact ? 1 : grown ? grownScale : Math.round(Math.max(0.72, roomy) * 100) / 100;
-  // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been since the game, the sizes or
-  // the seating last changed: they shrink when a player folds and between hands, and the seats mustn't move then (#363).
+  // Each player's nameplate and cards, and an empty seat's button, at the biggest they've been (starting from their size once
+  // dealt in) since the shape of the game's hands or the seats' size last changed: they shrink when a player folds and
+  // between hands, and the seats mustn't move then or when the cards come (#363). Games whose hands look alike (stud, razz
+  // and stud hi-lo; Omaha and badugi) share their boxes, so a mixed game doesn't move the seats at every change.
   // Everyone but you shares the biggest of their boxes, so a long name or a folded hand doesn't move anyone either.
+  // Before a tournament's first hand there's no game on the view yet: the table's own setting is the best guess.
+  const sizesOf = gameId || view.settings.game.gameId;
+  const sizes = useMemo(() => handSizes(sizesOf), [sizesOf]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
-  const sized = useSeatBoxes(felt, `${gameId}|${seatScale}|${Math.round(w)}x${Math.round(h)}|${view.me.seat}|${seating}`, view.me.seat, !compact);
+  const sized = useSeatBoxes(felt, `${sizes.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`, sizes, seating, view.me.seat, !compact);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
   const podHalf = compact
