@@ -534,6 +534,9 @@ describe('seeds that nobody checks', () => {
       [{ playerId: 'me', seed: 'aa' }, { playerId: 'bot-1', seed: 'ff' }],
       [{ playerId: 'me', seed: 'bb' }, { playerId: 'me', seed: 'cc' }],
       [{ playerId: 'me', seed: 'aa' }, { playerId: 'p9', seed: 'aa' }],
+      // A seed from my other device as well as a bot's seed, or one listed twice: the bot's or the repeat is told.
+      [{ playerId: 'me', seed: 'bb' }, { playerId: 'bot-1', seed: 'ff' }],
+      [{ playerId: 'me', seed: 'bb' }, { playerId: 'p9', seed: 'bb' }],
       [],
     ]) {
       const warning = liveSeedWarning(view(seeds))!;
@@ -541,6 +544,8 @@ describe('seeds that nobody checks', () => {
       expect(warning.line).toBe('Deck may have been steered: tell the table');
       expect(warning.otherDevice).toBe(false);
     }
+    expect(liveSeedWarning(view([{ playerId: 'me', seed: 'bb' }, { playerId: 'bot-1', seed: 'ff' }]))!.text).toMatch(/\(ff\).*practice bot/);
+    expect(liveSeedWarning(view([{ playerId: 'me', seed: 'bb' }, { playerId: 'p9', seed: 'bb' }]))!.text).toMatch(/same seed \(bb\) was listed twice/);
   });
 
   it('notes who was dealt in and who is a bot, so "Check this hand" need not take the record\'s word for it', () => {

@@ -152,7 +152,7 @@ export function useTableEffects(view: TableView | null, skew: number, preQueued:
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | { kind: 'seed'; text: string; otherDevice: boolean } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | { kind: 'seed'; text: string; otherDevice: boolean; hand: number } | null;
 
 /** How long the keyboard tip stays up if nobody presses Got it. */
 const KEYS_TIP_MS = 20_000;
@@ -617,7 +617,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   // table's height (it was a banner above the table, and every seat moved when it came or went). Phones held sideways
   // have no hand line: it takes the top bar's place of the logo and the table's name there. Details has the whole of it.
   const seedAlarm = seedWarning && (
-    <button type="button" className="seed-alarm" aria-haspopup="dialog" onClick={() => setDialog({ kind: 'seed', text: seedWarning.text, otherDevice: seedWarning.otherDevice })}>
+    <button type="button" className="seed-alarm" aria-haspopup="dialog" onClick={() => setDialog({ kind: 'seed', text: seedWarning.text, otherDevice: seedWarning.otherDevice, hand: view.hand!.handNumber })}>
       <span className="seed-alarm-text">
         {'\u26a0'} {seedWarning.line}
         {portrait ? ' \u203a' : (
@@ -1049,7 +1049,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'feedback' && <FeedbackDialog portrait={portrait} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'seed' && (
         <Modal title="Fair dealing warning" onClose={() => setDialog(null)}>
-          <p>Your browser checks the seeds each hand is dealt from. For this hand, {dialog.text}.</p>
+          <p>Your browser checks the seeds each hand is dealt from. For hand {dialog.hand}, {dialog.text}.</p>
           <p>
             {dialog.otherDevice ? 'If you aren\u2019t on another device, tell the table' : 'Tell the table'}, and check this hand once it&rsquo;s revealed: open it in the replayer and press Check this hand.
           </p>

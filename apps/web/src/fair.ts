@@ -393,7 +393,11 @@ export function liveSeedProblem(view: TableView): string | null {
   const seen = Object.keys(live?.players ?? {});
   const dealt = seen.length === Object.keys(view.hand!.names).length ? Object.values(live!.players!) : undefined;
   const bots = [...view.seats.flatMap((s) => (s?.bot ? [s.playerId] : [])), ...(live?.bots ?? [])];
-  return mine ?? seedListProblem(fair.clientSeeds, { bots, dealt });
+  const listProblem = seedListProblem(fair.clientSeeds, { bots, dealt });
+  // A seed from my other device is harmless, but not when the list also has a bot's or a repeated seed: say that instead.
+  const mineOnly = fair.clientSeeds.filter((c) => c.playerId === view.me.playerId);
+  if (listProblem && mine && mineOnly.length === 1 && mine === notSentHere(mineOnly[0].seed)) return listProblem;
+  return mine ?? listProblem;
 }
 
 /**
