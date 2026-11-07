@@ -31,7 +31,12 @@ const INSERT_BATCH = 200;
  * live site runs, fails on a result much over 16 MB, and a page of saved tables can get that big (#403).
  */
 export const PAGE_BYTES = 4 * 1_048_576;
-/** Rows whose place and size are read per fetch in the first pass. */
+/**
+ * Rows whose place and size are read per fetch in the first pass: SIZE_FIRST to begin with, then as many as hold
+ * about PAGE_BYTES of JSON going by the last fetch (working out a row's size means making its JSON, and PGlite does
+ * that on the server's own thread), up to SIZE_FETCH.
+ */
+const SIZE_FIRST = 16;
 const SIZE_FETCH = 1000;
 
 export interface BackupHeader {
@@ -79,7 +84,7 @@ async function migrationCount(db: Db): Promise<number> {
  * copy takes, so table saves wait until it is done; a few seconds at most for
  * a home game's data.
  */
-export async function writeBackup(db: Db, write: (line: string) => void | Promise<void>, now = new Date()): Promise<BackupSummary> {
+export async function writeBackup(db: Db, write: (line: string) => void | Promise<void>, now = new Date(), stopped: () => boolean = () => false): Promise<BackupSummary> {
   return db.transaction(
     async (tx) => {
       const tables = await tableNames(tx);
@@ -88,16 +93,23 @@ export async function writeBackup(db: Db, write: (line: string) => void | Promis
       const rows: Record<string, number> = {};
       for (const table of tables) {
         rows[table] = 0;
-        // First where each row is and how big its JSON is, read in small fetches with a breath between them. Then
-        // the rows, a page at a time: a run of neighbouring rows whose JSON fits in PAGE_BYTES, read as a ctid
-        // range. All of it inside this one snapshot, where a row's ctid can't change. Nothing sorts the rows'
-        // JSON, so a big table needs no temporary files and never holds the server for long in one go.
+        // First where each row is and how big its JSON is, read in fetches of about PAGE_BYTES of JSON with a breath
+        // between them. Then the rows, a page at a time: a run of neighbouring rows whose JSON fits in PAGE_BYTES,
+        // read as a ctid range. All of it inside this one snapshot, where a row's ctid can't change. Nothing sorts
+        // the rows' JSON, so a big table needs no temporary files, and no one query holds the server for long.
         const found: { block: number; item: number; size: number }[] = [];
         await tx.execute(sql.raw(`declare backup_sizes no scroll cursor for select ctid::text as c, octet_length(row_to_json(t)::text) as n from ${ident(table)} t`));
-        for (;;) {
-          const page = await queryRows<{ c: string; n: number }>(tx, sql.raw(`fetch ${SIZE_FETCH} from backup_sizes`));
-          for (const { c, n } of page) found.push({ ...parseTid(c), size: Number(n) });
-          if (page.length < SIZE_FETCH) break;
+        for (let fetch = SIZE_FIRST; ; ) {
+          const page = await queryRows<{ c: string; n: number }>(tx, sql.raw(`fetch ${fetch} from backup_sizes`));
+          let bytes = 0;
+          for (const { c, n } of page) {
+            found.push({ ...parseTid(c), size: Number(n) });
+            bytes += Number(n);
+          }
+          if (page.length < fetch) break;
+          // A shutdown stops a backup here too: this pass writes nothing, so `write` can't stop it.
+          if (stopped()) throw new Error('the backup was stopped');
+          fetch = nextSizeFetch(page.length, bytes);
           await breathe();
         }
         await tx.execute(sql.raw('close backup_sizes'));
@@ -140,6 +152,11 @@ function parseTid(text: string): { block: number; item: number } {
 
 /** Lets timers and sockets run between fetches: PGlite works on the server's own thread. */
 const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/** The first pass's next fetch: rows enough for about PAGE_BYTES of JSON at the last fetch's sizes, 1 to SIZE_FETCH. */
+export function nextSizeFetch(rows: number, bytes: number): number {
+  return Math.max(1, Math.min(SIZE_FETCH, Math.floor((rows * PAGE_BYTES) / Math.max(1, bytes))));
+}
 
 /** How many rows each fetch takes, in order: up to PAGE rows and PAGE_BYTES of JSON, and always at least one. */
 export function pageCounts(sizes: number[]): number[] {

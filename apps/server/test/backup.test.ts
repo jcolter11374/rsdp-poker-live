@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore } from '../src/audit';
 import { closeDb, createDb, dbCause, queryRows, type Db } from '../src/db';
-import { BackupError, backupLines, PAGE_BYTES, pageCounts, restoreBackup } from '../src/db/backup';
+import { BackupError, backupLines, nextSizeFetch, PAGE_BYTES, pageCounts, restoreBackup, writeBackup } from '../src/db/backup';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { RESTORE_FILE, restoreIfWaiting } from '../src/db/restoreOnStart';
 import { backupOf, BIG, everything, fill, linesOf } from './backup-fixture';
@@ -156,6 +156,28 @@ describe('backups', { timeout: 30_000 }, () => {
     } finally {
       await closeDb(copy);
     }
+  });
+
+  it("sizes the first pass's fetches by the JSON they make, so big rows are measured a few at a time", () => {
+    const MB = 1_048_576;
+    // Saved tables of 1.3 MB each: three at a time after the first fetch, not up to a thousand in one go.
+    expect(nextSizeFetch(16, 16 * 1.3 * MB)).toBe(3);
+    expect(nextSizeFetch(3, 3 * 1.3 * MB)).toBe(3);
+    expect(nextSizeFetch(1, 10 * MB)).toBe(1);
+    // Small rows go up to the most a fetch takes.
+    expect(nextSizeFetch(16, 16 * 2000)).toBe(1000);
+    expect(nextSizeFetch(1000, 0)).toBe(1000);
+  });
+
+  it('stops in the first pass when the server is shutting down', async () => {
+    await resetTestDb(db);
+    await db.execute(sql`insert into suggestions (name, title) select 'n' || g, 't' || g from generate_series(1, 100) g`);
+    const lines: string[] = [];
+    let asked = 0;
+    // Stopped after the first fetch of the first table with more rows than that.
+    await expect(writeBackup(db, (l) => void lines.push(l), new Date(), () => ++asked > 0)).rejects.toThrow(/stopped/);
+    expect(asked).toBe(1);
+    expect(lines.filter((l) => l.startsWith('{"t":'))).toEqual([]);
   });
 
   it('fetches as many rows at a time as fit, and at least one', () => {
