@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LevelRow, PlayerOptions, TournamentSummary } from '@rsdp/tournament';
 import { TableStrip } from './TableStrip';
 
-// The strip above a tournament table, and on a wide window (#385) the box in the bottom-right corner: what shows where.
+// The strip above a tournament table, and on a wide window (#385) the box in the bottom-right corner and the asks under
+// the table: what shows where.
 
 const level: LevelRow = { kind: 'level', sb: 100, bb: 200, ante: 0, anteType: 'none', minutes: 8 };
 let options: Partial<PlayerOptions>;
@@ -34,45 +35,61 @@ vi.mock('./hooks', () => ({
 }));
 vi.mock('./client', () => ({ tournamentClient: () => ({ send }) }));
 
+// TablePage's spot for the asks, under the table (in the Dock).
+let under: HTMLDivElement;
 beforeEach(() => {
   options = {};
   send.mockReset();
+  under = document.body.appendChild(document.createElement('div'));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  under.remove();
+});
 
-const show = (corner: boolean) => render(<TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere corner={corner} />);
+const strip = (corner: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere corner={corner} asksIn={corner ? under : null} />;
+const show = (corner: boolean) => render(strip(corner));
 const seated = { status: 'seated', tableId: 'tn1-t1' } as PlayerOptions['entry'];
 
 describe('the tournament strip', () => {
   it('keeps the level, clock and blinds above the table on a laptop', () => {
     const { container } = show(false);
     expect(container.querySelector('.tn-corner')).toBeNull();
+    expect(under.childElementCount).toBe(0);
     expect(container.querySelector('.tn-strip')?.textContent).toMatch(/Friday Cup.*Level 3 · 5:00.*100 \/ 200.*Next 150 \/ 300.*12 of 18 left/);
   });
 
-  it('puts them in the corner box on a wide window, with nothing above the table', () => {
+  it('puts them in the corner box on a wide window, with nothing above or under the table', () => {
     const { container } = show(true);
     expect(container.querySelector('.tn-strip')).toBeNull();
+    expect(under.childElementCount).toBe(0);
     expect(container.querySelector('.tn-corner')?.textContent).toMatch(/Friday Cup.*Lobby.*Level 3.*5:00.*100 \/ 200.*Next 150 \/ 300.*12 of 18 left/);
   });
 
-  it('shows a row above the table while it asks something of the player', () => {
+  it('shows a row under the table, not above it, while it asks something of the player', () => {
     options = { entry: seated, canAddOn: true };
     const { container } = show(true);
-    expect(container.querySelector('.tn-strip')?.textContent).toMatch(/Add-ons are open\./);
+    expect(under.querySelector('.tn-strip')?.textContent).toMatch(/Add-ons are open\./);
+    expect(container.querySelector('.tn-strip')).toBeNull();
     expect(container.querySelector('.tn-corner')?.textContent).not.toMatch(/Add-ons/);
+  });
+
+  it('keeps the asks above the table on a laptop', () => {
+    options = { entry: { status: 'rebuy-offer', rebuyOfferExpiresAt: 20_000 } as PlayerOptions['entry'], canRebuy: true, canDeclineRebuy: true };
+    const { container } = show(false);
+    expect(container.querySelector('.tn-strip')?.textContent).toMatch(/Friday Cup.*You're out of chips\. Rebuy for 63,000\?.*Rebuy.*No thanks/);
   });
 
   it('moves a refused request\'s error to the corner box once there is nothing left to ask', async () => {
     send.mockRejectedValue(new Error('add-ons are closed'));
     options = { entry: seated, canAddOn: true };
     const { container, rerender } = show(true);
-    await act(async () => fireEvent.click(container.querySelector('.tn-strip button')!));
-    expect(container.querySelector('.tn-strip')?.textContent).toMatch(/Add-ons are closed/);
-    // The break ends: no add-on to offer, so no row above the table, and the error stays where the player can see it.
+    await act(async () => fireEvent.click(under.querySelector('.tn-strip button')!));
+    expect(under.querySelector('.tn-strip')?.textContent).toMatch(/Add-ons are closed/);
+    // The break ends: no add-on to offer, so no row under the table, and the error stays where the player can see it.
     options = { entry: seated, canAddOn: false };
-    rerender(<TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere corner />);
-    expect(container.querySelector('.tn-strip')).toBeNull();
+    rerender(strip(true));
+    expect(under.childElementCount).toBe(0);
     expect(container.querySelector('.tn-corner')?.textContent).toMatch(/Add-ons are closed/);
   });
 });

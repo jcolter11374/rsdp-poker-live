@@ -159,7 +159,9 @@
 .tn-strip-row a { margin-left: auto; }
 .tn-strip-row button { padding: 3px 10px; }
 /* The wide layout (#385): the level, clock, blinds and players left in the bottom-right corner, across from the chat box
-   and the same size, so they take no height from the table. Rows that ask something of the player stay above the table. */
+   and the same size, so they take no height from the table. Rows that ask something of the player go under the table,
+   with the other notes about you (TableStrip's asksIn, in .dock-notes). */
+.dock-notes .tn-strip { margin-bottom: 0; }
 .tn-corner.panel { position: fixed; right: 12px; bottom: 12px; width: var(--chat-w); min-height: var(--chat-h); z-index: 6; justify-content: space-between; gap: 8px; background: rgba(29, 33, 39, 0.94); font-size: 0.9rem; }
 .tn-corner-head { display: flex; align-items: baseline; gap: 10px; }
 .tn-corner-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

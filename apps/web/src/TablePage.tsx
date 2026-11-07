@@ -168,6 +168,8 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [drawerPick, setDrawer] = useState<boolean | null>(null);
   // Whether the middle of the table has room for the note before a cash game starts (Table's onNoticeRoom).
   const [noticeRoom, setNoticeRoom] = useState(true);
+  // In the wide layout, the spot under the table where a tournament's rebuy offer, add-on or other ask goes (TableStrip).
+  const [tournamentAsks, setTournamentAsks] = useState<HTMLDivElement | null>(null);
   const chatMutes = useChatMutes();
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, runningOut);
@@ -620,7 +622,8 @@ export function TablePage({ tableId }: { tableId: string }) {
           )}
         </a>
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
-            At a tournament the strip under the bar names the event, so the bar just says which table. */}
+            At a tournament the strip under the bar names the event (in the wide layout, the box in the bottom-right
+            corner: #385), so the bar just says which table. */}
         {view.tournamentId ? (
           <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
         ) : view.rotation ? (
@@ -710,8 +713,11 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, so the table keeps its height (#385). */}
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} />}
+          {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
+              with the other notes about you, so the table keeps its height (#385). */}
+          {view.tournamentId && (
+            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+          )}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}
@@ -785,6 +791,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             tips={!!view.tips && prefs.tips}
           >
             {dockNotes.length > 0 && <div className={`dock-notes${yourTurn ? ' your-turn' : ''}`}>{dockNotes}</div>}
+            {/* TableStrip's asks, while there is one (empty, it takes no room: .dock-notes:empty). */}
+            {wide && view.tournamentId && <div className={`dock-notes tournament-asks${yourTurn ? ' your-turn' : ''}`} ref={setTournamentAsks} />}
             <ActionBar
               view={view}
               fmt={fmt}

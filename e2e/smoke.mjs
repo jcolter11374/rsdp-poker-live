@@ -535,6 +535,9 @@ try {
     await host.setViewportSize({ width: 2300, height: 824 });
     await host.locator('.tn-corner:has-text("Level 1")').waitFor();
     if (await host.locator('.tn-strip').count()) throw new Error('the tournament strip still takes room above the table on a wide window');
+    // A rebuy offer or an add-on goes under the table there, in a spot that takes no room while nothing is asked.
+    const asks = await host.locator('.dock-notes.tournament-asks').evaluate((el) => getComputedStyle(el).display);
+    if (asks !== 'none') throw new Error(`the empty spot for tournament asks under the table takes room (display: ${asks})`);
     await sampleTableSizes(host);
     for (const h of [824, 800]) {
       const sizes = await tableSizesAt(host, 2300, h);
@@ -649,8 +652,14 @@ try {
     withTip.forEach((s, i) => {
       if (s !== withoutTip[i]) throw new Error(`at 2300x${760 + 12 * i} the keyboard tip changed the table's size: ${s} with it, ${withoutTip[i]} without`);
     });
-    // Shorter still, where the table keeps shrinking below its usual size down to the smallest seats (#385).
-    await sweep(604, 748);
+    // Shorter still, where the table keeps shrinking below its usual size down to the smallest seats (#385), rather than
+    // dropping to the laptop layout (where the table has no scale of its own) as soon as there isn't room for scale 1.
+    const low = await sweep(604, 748);
+    const scales = low.map((s) => parseFloat(s.slice('scale '.length)));
+    scales.forEach((k, i) => {
+      if (!(k >= 0.72 && k < 1.05)) throw new Error(`at 2300x${604 + 12 * i} the table didn't keep the big-table layout at a smaller size: ${low[i]}`);
+      if (i && k < scales[i - 1]) throw new Error(`at 2300x${604 + 12 * i} the table got smaller as the window got taller: ${low[i - 1]}, then ${low[i]}`);
+    });
     await host.setViewportSize({ width: 2300, height: 800 });
     await host.click('.drawer-button');
     await stopGame(host, [host, guest]);

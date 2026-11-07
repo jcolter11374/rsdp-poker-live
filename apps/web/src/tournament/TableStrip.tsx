@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { playerOptions, standings, summarize, tableAddress, type Command } from '@rsdp/tournament';
 import { tournamentClient } from './client';
 import { blinds, chips, countdown, ordinal } from './format';
@@ -10,8 +11,11 @@ import { followMissedMove, navigate, useHeld, useNow, useSession, useTournament 
  * to their seat when it is at another table than `tableId`, the one on screen.
  *
  * With `corner` (the wide layout), the level, clock, blinds and players left sit in a box in the bottom-right corner,
- * across from the chat, so they take no height from the table (#385). Only the rows that ask something of the player
- * (a rebuy offer, an add-on, your seat at another table) stay above the table, and only while there is one.
+ * across from the chat, so they take no height from the table (#385). The rows that ask something of the player (a
+ * rebuy offer, an add-on, your seat at another table) go into `asksIn`, a spot in the area under the table with the
+ * other notes about you, and only while there is one. That area holds its height (Dock), so an ask coming or going
+ * doesn't move the table: above the felt, a rebuy offer or an add-on break starting or ending slid every seat, often
+ * as the next hand was dealt (#388 moved the cash tables' notes the same way).
  */
 export function TableStrip({
   tournamentId,
@@ -19,12 +23,15 @@ export function TableStrip({
   seatedHere,
   holding = false,
   corner = false,
+  asksIn = null,
 }: {
   tournamentId: string;
   tableId: string;
   seatedHere: boolean;
   holding?: boolean;
   corner?: boolean;
+  /** With `corner`: where the asks go (TablePage's spot for them under the table). Until it exists they wait. */
+  asksIn?: HTMLElement | null;
 }) {
   const { state: latest, skew } = useTournament(tournamentId);
   // While an all-in runout is dealt here the strip stays as it was: places, rebuy offers and moves are the result.
@@ -124,16 +131,19 @@ export function TableStrip({
   if (corner) {
     const asking = seatTable > 0 || o?.entry?.status === 'rebuy-offer' || !!o?.canAddOn || !!o?.canReEnter || !!o?.pending.length;
     // An error stays until the next command, and once its ask has gone there may be no next one: it shows under the asks
-    // while there are some, and in the corner box after, so it never holds the strip above the table open on its own.
+    // while there are some, and in the corner box after, so it never keeps a row of its own under the table.
     const errorRow = error && <div className="tn-strip-row error">{error}</div>;
     return (
       <>
-        {asking && (
-          <div className="tn-strip">
-            {asks}
-            {errorRow}
-          </div>
-        )}
+        {asking &&
+          asksIn &&
+          createPortal(
+            <div className="tn-strip">
+              {asks}
+              {errorRow}
+            </div>,
+            asksIn,
+          )}
         <div className="tn-corner panel">
           <div className="tn-corner-head">
             <b>{state.settings.name}</b>

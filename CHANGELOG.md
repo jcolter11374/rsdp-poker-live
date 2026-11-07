@@ -24,11 +24,11 @@ _Bigger tournament tables on wide screens_
 
 ### New
 
-- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer or your seat at another table, still shows above the table. (Suggested by John.)
+- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
 
 ### Fixed and changed
 
-- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. The strip only shows when it has something for you to do (a rebuy, an add-on, a re-entry, your seat at another table).
+- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. Anything for you to do (a rebuy, an add-on, a re-entry, your seat at another table) shows under the table with your buttons, so the seats don't move when it comes or goes.
 - Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
 - Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
 - Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
