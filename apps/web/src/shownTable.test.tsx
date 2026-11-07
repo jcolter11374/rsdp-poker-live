@@ -83,8 +83,10 @@ describe("Dealer's choice while a runout is dealt out (#459)", () => {
     const game = (gameId: string, gameName: string) => ({ gameId, betting: gameId === 'plo4' ? 'pot-limit' : 'fixed-limit', gameName });
     const choice = (comingCount: number, fallback: ReturnType<typeof game>) => ({ chip: 2, current: { ...nlhe, by: 'A', how: 'picked' }, handsLeft: 0, next: null, open: true, deadline: null, count: 3, cap: null, closed: false, defaultIndex: 0, canKeep: false, comingCount, fallback });
     const ends = 1000 + runoutMs(after.hand!.events);
-    const cash = (v: TableView, coming: number, fallback: ReturnType<typeof game>, late = false) =>
-      ({ ...v, mode: 'cash', tournamentId: null, settings, pendingSettings, hand: withFold(v.hand), choice: choice(coming, fallback), history: [{ handNumber: 9, endedAt: 1000, gameName: "No-Limit Hold'em" }], serverNow: late ? ends : 1000 }) as unknown as TableView;
+    // Sent at `at` ms after the hand ended: 'end' is when the server had dealt the runout out, 'late' a delayed
+    // spectator's view of a moment in it.
+    const cash = (v: TableView, coming: number, fallback: ReturnType<typeof game>, at: number | 'end' | 'late' = 0) =>
+      ({ ...v, mode: 'cash', tournamentId: null, settings, pendingSettings, hand: withFold(v.hand), choice: choice(coming, fallback), history: [{ handNumber: 9, endedAt: 1000, gameName: "No-Limit Hold'em" }], serverNow: at === 'end' ? ends : at === 'late' ? ends + 30_000 : 1000 + at }) as unknown as TableView;
     return { before, after, cash, razz: game('razz', 'Razz'), omaha: game('plo4', 'Pot-Limit Omaha') };
   }
 
@@ -100,7 +102,7 @@ describe("Dealer's choice while a runout is dealt out (#459)", () => {
     rerender({ live: cash(after, 9, omaha) });
     expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
     act(() => void vi.advanceTimersByTime(1_000));
-    rerender({ live: cash(after, 8, razz, true) });
+    rerender({ live: cash(after, 8, razz, 'end') });
     expect(result.current.runningOut).toBe(true);
     expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
     // Newer counts don't hold up the cards: the runout ends when it would have.
@@ -120,5 +122,19 @@ describe("Dealer's choice while a runout is dealt out (#459)", () => {
     rerender({ live: cash(after, 8, razz) });
     expect(result.current.runningOut).toBe(true);
     expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'razz' });
+  });
+
+  it("holds the most people coming in views that can't be told from after the server dealt it out", () => {
+    // A spectator on a 30-second delay: every view is sent long after the moment it shows. And a player's view sent
+    // just before the server had dealt the runout out, which may have been counted just after.
+    const { before, after, cash, razz, omaha } = dealersChoice();
+    for (const at of ['late', runoutMs(after.hand!.events) - 1] as const) {
+      const { result, rerender } = renderHook(({ live }) => useShownTable(live), { initialProps: { live: cash(before, 8, razz) } });
+      rerender({ live: cash(after, 8, razz, at === 'late' ? 'late' : 0) });
+      rerender({ live: cash(after, 9, omaha, at) });
+      rerender({ live: cash(after, 8, razz, at === 'late' ? 'late' : 'end') });
+      expect(result.current.runningOut).toBe(true);
+      expect(result.current.view!.choice!.fallback).toMatchObject({ gameId: 'plo4' });
+    }
   });
 });

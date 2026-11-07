@@ -261,9 +261,9 @@ describe('holdBack', () => {
       expect(holdBack(refilled, nine, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
       // Someone joined the waitlist during the runout, so the server counted nine coming until it had dealt the runout
       // out; then the busted bot's seat went to someone waiting. The nine stay until the result.
-      const joined = { ...nine, choice: { ...frozen.choice, comingCount: 8 }, shownBefore: { count: 7, coming: 9 } };
+      const joined = { ...nine, choice: { ...frozen.choice, comingCount: 8 }, counted: { count: 7, coming: 9 } };
       expect(holdBack(refilled, joined, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
-      expect(holdBack(refilled, { ...joined, shownBefore: undefined }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
+      expect(holdBack(refilled, { ...joined, counted: undefined }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
       // The host saves again once the hand is over, so the change applies before the result shows: the table is held
       // at the nine it was going to have, not the eight it has.
       const nineSeats = parseSettings({ ...table, table: { ...table.table, maxSeats: 9 }, seating: { ...table.seating, waitlist: true }, game: { ...table.game, dealersChoice: { enabled: true, games: [menu[1], menu[2], plo4], hands: 0, pickSeconds: 20 } } });
