@@ -115,7 +115,7 @@ and seasons (`season.ts`).
 | [`src/runtime/view.ts`](../apps/server/src/runtime/view.ts) | `tableView`: builds what one particular person sees. This is where hidden information is filtered out. |
 | [`src/tournament/manager.ts`](../apps/server/src/tournament/manager.ts) | Runs the director on a real clock, opens and closes tables for it, and saves and resumes tournaments. |
 | [`src/scheduler/scheduler.ts`](../apps/server/src/scheduler/scheduler.ts) | Timers that must survive a restart (a tournament's start time, for example) are kept as rows in a `jobs` table. |
-| [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. |
+| [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. Tips are worked out on a thread of their own (`coachWorker.ts`, which starts `coachThread.mjs`), so they never hold up a table. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
 | [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. |
 | [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
