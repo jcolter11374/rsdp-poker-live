@@ -5,6 +5,11 @@ import { licensesPlugin } from './licenses.mjs';
 
 export default defineConfig({
   plugins: [react(), licensesPlugin()],
+  build: {
+    // The browsers Vite 5 built for by default: Safari 14, Chrome 87, Firefox 78 and Edge 88 (late 2020) or newer.
+    // Vite 8's own default starts at 2023's browsers, so naming the old list keeps older phones working.
+    target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'],
+  },
   server: {
     port: 5173,
     proxy: {
