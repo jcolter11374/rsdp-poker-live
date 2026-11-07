@@ -384,6 +384,31 @@ describe('waitlist', () => {
     expect(ran).toBeGreaterThan(0);
   });
 
+  it("counts a runout's seats as taken in the count a bigger table will have, bust or not (#459)", () => {
+    // Dealer's choice works out the game a missed pick deals on the count the table will have once a waiting change
+    // to six seats applies. During the runout, five people wait: three seats a bigger table adds, and up to two seats
+    // busted bots leave, all go to people waiting, so the answer is six either way, during the runout and after it.
+    const coming = (rt: TableRuntime) => {
+      const next = structuredClone(rt.state.settings);
+      next.table.maxSeats = 6;
+      return (rt as unknown as { comingCount(next: TableSettings): number }).comingCount(next);
+    };
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 3);
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      for (const [id, name] of [['a', 'Al'], ['b', 'Bo'], ['c', 'Cy'], ['d', 'Di'], ['e', 'Eve']]) rt.joinWaitlist(id, { name, stack: 100 });
+      expect(rt.state.offers).toEqual([]);
+      expect(coming(rt)).toBe(6);
+      clock.advance(left);
+      expect(rt.state.offers!.length).toBe(busted.length);
+      expect(coming(rt)).toBe(6);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
   it('clears the queue when the waitlist is turned off', () => {
     const { rt } = full();
     expect(() => rt.joinWaitlist('host', { name: 'H', stack: 100 })).toThrow(/already have a seat/);

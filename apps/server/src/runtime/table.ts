@@ -618,13 +618,19 @@ export class TableRuntime {
    * be when a missed pick is dealt (#459). The deal applies the change before the pick clock starts, and upkeep then
    * offers the seats a bigger table opens to the waitlist: one for each online player waiting without an offer, while
    * there are free seats nobody holds and the game being played has room. (The waitlist itself is switched at once,
-   * never with the next hand; a smaller table has already let go of offers in the seats it drops.)
+   * never with the next hand; a smaller table has already let go of offers in the seats it drops.) While an all-in
+   * runout is still being dealt out, its players' seats stay taken, as tableCount still counts them (revealSeats):
+   * the answer doesn't change with whether one of them busted.
    */
   private comingCount(next: TableSettings): number {
     const s = this.state;
     const count = this.tableCount();
     if (!next.seating.waitlist || next.table.maxSeats <= s.seats.length) return count;
-    const held = new Set([...this.offers().map((o) => o.seat), ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!)]);
+    const held = new Set([
+      ...this.offers().map((o) => o.seat),
+      ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!),
+      ...this.revealSeats(),
+    ]);
     let open = 0;
     for (let i = 0; i < next.table.maxSeats; i++) if (!s.seats[i] && !held.has(i)) open++;
     const offered = new Set(this.offers().map((o) => o.playerId));
