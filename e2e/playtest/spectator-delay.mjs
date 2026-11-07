@@ -110,9 +110,10 @@ try {
   await ann.until((v) => v.hand?.phase === 'complete' && v.hand.handNumber === 2);
   await sleep(500);
   check('item 5: the public record does not have hand 2 as soon as it ends', (await handEntries()) === entriesBefore);
+  // Dealt when the pause after a hand runs out, not when the host presses Deal.
   await ann.call('host:deal');
-  const deal3 = Date.now();
   const live3 = await ann.until((v) => v.hand?.handNumber === 3);
+  const deal3 = Date.now();
   await sleep(500);
   const shown = fan.view();
   check('item 1: the live table has 6 seats, the spectator still sees 10', live3.seats.length === 6 && shown.seats.length === 10, `live ${live3.seats.length}, shown ${shown.seats.length}`);
