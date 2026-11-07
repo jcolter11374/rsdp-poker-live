@@ -4,12 +4,13 @@ import { NoteBadge } from './Notes';
 import { GestureLayer, SeatPersona } from './Persona';
 import { EquityTag } from './Equity';
 import { ChatBubbles } from './Chat';
+import { GameBanner } from './GameBanner';
 import './extras.css';
 
 /*
  * Mount points on the table for features that live in their own components
  * (double board, bomb pot and 7-2 badges, rabbit hunt, nit marker, notes,
- * pictures, moods and gestures, chat bubbles, all-in equity, the Pick chip on phones).
+ * pictures, moods and gestures, chat bubbles, all-in equity, the Pick chip on phones, the new-game banner).
  * Add a line here rather than editing Table.tsx.
  */
 
@@ -41,6 +42,7 @@ export function FeltExtras({ view, seatPoint, railPoint }: { view: TableView; se
     <>
       <GestureLayer view={view} seatPoint={seatPoint} railPoint={railPoint} />
       <ChatBubbles view={view} seatPoint={seatPoint} width={railPoint.x * 2} height={railPoint.y} />
+      <GameBanner view={view} />
     </>
   );
 }

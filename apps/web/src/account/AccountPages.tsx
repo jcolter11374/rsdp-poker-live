@@ -16,7 +16,7 @@ export function useSession() {
 
 export function Shell({ title, children, narrow = false }: { title: string; children: ReactNode; /** Sign-in style pages: a short centred column. */ narrow?: boolean }) {
   useEffect(() => {
-    document.title = `${title} · RSDP Poker Live!`;
+    document.title = `${title} · RSDP Live!`;
   }, [title]);
   return (
     <div className="site-page">

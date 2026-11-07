@@ -1,6 +1,6 @@
 # Changelog
 
-Every release of RSDP Poker Live!, newest first.
+Every release of RSDP Live!, newest first.
 
 <!-- Made by `npm run changelog` from apps/web/src/roadmap/changelog.json and whatsnew.json. Edit those, not this file. -->
 This file is made from [`changelog.json`](apps/web/src/roadmap/changelog.json) and
@@ -18,12 +18,25 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.07.3] - 2026-11-07
+## [2026.11.07.4] - 2026-11-07
 
 ### Fixed and changed
 
 - Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.
 - On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
+
+## [2026.11.07.3] - 2026-11-07
+
+_Hands left in each game_
+
+### New
+
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
+- **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name is new: the site looks the same and the web address hasn't changed. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
+
+### Fixed and changed
+
+- Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
 
 ## [2026.11.07.2] - 2026-11-07
 
@@ -693,6 +706,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07

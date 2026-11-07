@@ -10,7 +10,7 @@ export function AboutPage() {
       <main className="about-page">
         <section className="about-hero">
           <h1>
-            About RSDP Poker <span>Live!</span>
+            About RSDP <span>Live!</span>
           </h1>
           <p className="about-lede">
             A free home for our poker group. Start a table, send the link, and play from a computer or phone. There are no paid extras: every game and every option is free for everyone.

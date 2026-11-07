@@ -11,7 +11,7 @@ export interface Preview {
   description: string;
 }
 
-const SITE = 'RSDP Poker Live!';
+const SITE = 'RSDP Live!';
 
 function gameNames(ids: string[], betting?: BettingKind): string {
   const names = ids.map((id) => gameTitle(id, betting));

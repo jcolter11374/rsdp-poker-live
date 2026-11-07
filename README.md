@@ -1,4 +1,4 @@
-# RSDP Poker Live!
+# RSDP Live!
 
 Browser poker for friends, no sign-up. A host creates a cash table or a tournament, shares the link, and everyone plays in real time. Every game and option is free for everyone.
 
