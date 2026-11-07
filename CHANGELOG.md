@@ -26,6 +26,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
 - Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
 - Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (the Pick next game button at a Dealer's choice table, Paused, or a blind level's clock). When the line doesn't fit, the table's name is shortened with "…" first; point at the line to see all of it.
+- Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
 
 ## [2026.11.07.5] - 2026-11-07
 
