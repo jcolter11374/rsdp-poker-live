@@ -47,5 +47,9 @@ describe('the blind schedule note', () => {
     expect(scheduleBetsNote({ ...game, gameId: 'razz', betting: 'no-limit' })).toBe('The stud bring-in rises with the blinds, keeping their size to the big blind.');
     const horse = { ...game, rotation: { enabled: true, steps: MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'orbits' as const })) } };
     expect(scheduleBetsNote(horse)).toBe('The Limit bets and the stud bring-in rise with the blinds, keeping their size to the big blind.');
+    // Dealer's choice: the menu's games, not the table's own (hidden) game.
+    const choice = (games: { gameId: string; betting: 'no-limit' | 'fixed-limit' | 'pot-limit' }[]) => ({ ...game, dealersChoice: { enabled: true, games, hands: 0, pickSeconds: 20 } });
+    expect(scheduleBetsNote(choice([{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'razz', betting: 'fixed-limit' }]))).toBe('The Limit bets and the stud bring-in rise with the blinds, keeping their size to the big blind.');
+    expect(scheduleBetsNote({ ...choice([{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'plo4', betting: 'pot-limit' }]), betting: 'fixed-limit' })).toBeNull();
   });
 });
