@@ -1,10 +1,17 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.3",
+      "date": "2026-11-07",
+      "fixes": [
+        "Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you."
+      ]
+    },
+    {
       "id": "2026.11.07.2",
       "date": "2026-11-07",
       "fixes": [
-        "Phones: another player's cards no longer cover the next player's name and chips, most of all at full Omaha tables in the top corners. Their cards now move aside into the free room, or bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you."
+        "Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays."
       ]
     },
     {

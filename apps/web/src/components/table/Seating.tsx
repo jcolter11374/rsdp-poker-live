@@ -30,7 +30,11 @@ export function SeatingBanners({
   const seated = view.me.seat !== null;
   const asking = view.requests.some((r) => r.playerId === me && r.kind === 'seat');
   const held = new Set([...view.offers.map((o) => o.seat), ...view.requests.filter((r) => r.kind === 'seat').map((r) => r.seat)]);
-  const full = view.seats.every((s, i) => s !== null || held.has(i));
+  const taken = view.seats.every((s, i) => s !== null || held.has(i));
+  // Dealer's choice: while a smaller game is on, the empty seats are closed and newcomers wait on the waitlist.
+  const cap = view.choice?.cap;
+  const closed = !!view.choice?.closed;
+  const full = taken || closed;
   const leave = () => call('waitlist:leave').catch(() => {});
 
   return (
@@ -55,7 +59,8 @@ export function SeatingBanners({
         !asking &&
         full && (
           <div className="banner">
-            The table is full{view.waitlist.length ? ` and ${view.waitlist.length} ${view.waitlist.length === 1 ? 'person is' : 'people are'} waiting` : ''}.{' '}
+            {taken ? 'The table is full' : `The other seats are closed while a game for ${cap} players is on`}
+            {view.waitlist.length ? ` and ${view.waitlist.length} ${view.waitlist.length === 1 ? 'person is' : 'people are'} waiting` : ''}.{' '}
             <button className="primary" onClick={onJoinWaitlist}>
               Join the waitlist
             </button>
