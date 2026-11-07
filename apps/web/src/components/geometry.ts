@@ -424,3 +424,30 @@ export function fitHand(cards: number, room: number, natural: HandFit, minShow =
   const cw = Math.max(minCw, Math.min(natural.cw, Math.floor(room / (1 + (cards - 1) * show))));
   return { cw, overlap: Math.round(cw * (1 - show)) };
 }
+
+/** How much two boxes overlap, in px². */
+export const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+
+/**
+ * How small the middle of the table must be drawn so it covers no player's nameplate or cards (#417). `items` are what
+ * it holds, at full size, drawn scaled about `centre`; `line` marks the winners' lines and what comes next, which should
+ * stay clear of the dealer `button` too where they can. The cards alone never shrink for the button, so the board keeps
+ * its size from hand to hand wherever the button is. The answer is the largest scale from 1 down to `least`, in `step`s,
+ * that covers nothing, or where none does, the one that covers the least.
+ */
+export function fitMiddle(items: readonly (Box & { line?: boolean })[], seats: readonly Box[], button: Box | null, centre: Point, { gap = 4, least = 0.6, step = 0.02 } = {}): number {
+  const covered = (k: number, withButton: boolean) => {
+    let area = 0;
+    for (const it of items) {
+      const b = { left: centre.x + (it.left - centre.x) * k - gap, right: centre.x + (it.right - centre.x) * k + gap, top: centre.y + (it.top - centre.y) * k - gap, bottom: centre.y + (it.bottom - centre.y) * k + gap };
+      for (const o of seats) area += overlapArea(b, o);
+      if (withButton && button && it.line) area += overlapArea(b, button);
+    }
+    return area;
+  };
+  const scales: number[] = [];
+  for (let i = 0; 1 - i * step >= least - 1e-9; i++) scales.push(Math.round((1 - i * step) * 100) / 100);
+  const clear = scales.find((k) => covered(k, true) < 1) ?? scales.find((k) => covered(k, false) < 1);
+  if (clear !== undefined) return clear;
+  return scales.reduce((best, k) => (covered(k, false) < covered(best, false) - 1 ? k : best), 1);
+}
