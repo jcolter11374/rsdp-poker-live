@@ -207,15 +207,21 @@ const LINES_GAINED: readonly [string, string][] = [
 
 /**
  * How far each player's seat will reach once the cards are out (#363), before they are: a copy of the seat is given the
- * game's cards at each size a hand reaches (and, for a row of cards over the nameplate, at either end of the table), with
- * and without the lines a nameplate gains mid-hand, measured, and taken away again before anything is drawn. Spacing the
- * seats by these from the start means they don't move when the cards are dealt, a line appears or a stud hand grows.
+ * game's cards at the sizes a hand reaches, with and without the lines a nameplate gains mid-hand, measured, and taken
+ * away again before anything is drawn. Spacing the seats by these from the start means they don't move when the cards
+ * are dealt, a line appears or a stud hand grows. It runs only when the game's shape, the seat size or the seating
+ * changes: a full stud table makes about 60 copies, a few milliseconds.
  */
 function dealtReach(felt: HTMLElement, seats: readonly HTMLElement[], sizes: readonly number[]): Map<HTMLElement, Reach> {
+  // Up to four cards tuck into the nameplate, each size a little differently. A longer hand is a row over the nameplate,
+  // and the longest row reaches furthest, so it alone stands for the others. Lined up with either end of the seat (as at
+  // the table's left and right ends), it reaches at least as far as when centred.
+  const long = sizes.filter((n) => n > 4);
+  const shapes = [...sizes.filter((n) => n <= 4), ...(long.length ? [Math.max(...long)] : [])];
   const copies: [HTMLElement, HTMLElement][] = [];
   for (const seatEl of seats)
-    for (const n of sizes)
-      for (const edge of n > 4 && !seatEl.classList.contains('me') ? ['', 'edge-left', 'edge-right'] : [null])
+    for (const n of shapes)
+      for (const edge of n > 4 && !seatEl.classList.contains('me') ? ['edge-left', 'edge-right'] : [null])
         for (const lines of [0, LINES_GAINED.length]) {
           const copy = seatEl.cloneNode(true) as HTMLElement;
           copy.removeAttribute('data-seat');
