@@ -24,13 +24,13 @@ _Dealer's choice_
 
 ### New
 
-- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit. As soon as they pick, the tag moves one seat to the left, to whoever picks next. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 
 ### Fixed and changed
 
 - Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes.
 - Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
-- Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a full table in a small window, where every game's cards can't fit at once, the seats still shift to make room when a game with bigger hands comes round.
 
 ## [2026.11.07] - 2026-11-07
 

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
 import { runoutSteps } from '@rsdp/engine/core';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
@@ -353,6 +353,9 @@ export function Table({
   discard,
   fill = false,
   wide = false,
+  notice = null,
+  noticeHidden = false,
+  onNoticeRoom,
   games,
 }: {
   view: TableView;
@@ -371,6 +374,15 @@ export function Table({
   /** The wide desktop layout (no side column): cards grow a little more than the nameplates. */
   wide?: boolean;
   /**
+   * What happens next, in the middle of the table, before a cash game starts or after it stops (#383). There it takes
+   * no room from the felt, so the seats don't move when it goes. With `onClick` it opens what it points to.
+   */
+  notice?: { text: string; onClick?: () => void } | null;
+  /** `notice` is shown elsewhere: it is laid out in the middle, unseen, only to tell whether it would fit there. */
+  noticeHidden?: boolean;
+  /** Whether `notice` fits in the middle of the table without covering a seat (phones: see below). */
+  onNoticeRoom?: (room: boolean) => void;
+  /**
    * Every game the table deals (a rotation, a Dealer's choice menu, a tournament's games): it is laid out for all of
    * them, so the seats don't move when the game changes (#409). Left out, the game on now.
    */
@@ -382,6 +394,25 @@ export function Table({
   const reach = useSeatReach(felt);
   const handFit = useHandFit(felt, compact);
   const room = useRoom(felt, fill && !compact);
+  // On a small phone table (a narrow phone, an iPhone SE in Safari standing up or on its side) the note in the middle is
+  // squeezed between the seats at the sides until it runs onto the nameplates above or below it: there the page shows
+  // it under the table instead (#383). The note stays laid out in the middle, unseen (noticeHidden), so this measures
+  // where it would be. Showing it under the table doesn't make the felt bigger, so the answer can't flip back and forth.
+  useLayoutEffect(() => {
+    if (!onNoticeRoom) return;
+    const el = felt.current;
+    const note = el?.querySelector('.board-notice');
+    if (!compact || !el || !note || !size.w) {
+      onNoticeRoom(true);
+      return;
+    }
+    const n = note.getBoundingClientRect();
+    const covers = [...el.querySelectorAll<HTMLElement>('.seat')].some((s) => {
+      const b = (s.classList.contains('empty') ? s : (s.querySelector('.nameplate') ?? s)).getBoundingClientRect();
+      return Math.min(n.right, b.right) - Math.max(n.left, b.left) > 2 && Math.min(n.bottom, b.bottom) - Math.max(n.top, b.top) > 2;
+    });
+    onNoticeRoom(!covers);
+  });
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
   const offset = view.me.seat ?? 0;
@@ -736,6 +767,27 @@ export function Table({
         <ChoiceLine view={view} now={now} />
         {view.paused && <div className="next-hand">Paused</div>}
         {!hand && view.upcoming && !(view.choice && !view.choice.current) && <div className="next-hand muted">{view.upcoming.gameName}</div>}
+        {notice && (
+          <div
+            className={['board-notice', hand && 'after-hand', notice.onClick && 'clickable', noticeHidden && 'unseen'].filter(Boolean).join(' ')}
+            {...(noticeHidden
+              ? { 'aria-hidden': true }
+              : notice.onClick
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  onClick: notice.onClick,
+                  onKeyDown: (e: ReactKeyboardEvent) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    notice.onClick!();
+                  },
+                }
+              : { role: 'status' })}
+          >
+            {notice.text}
+          </div>
+        )}
         <BoardExtras view={view} />
       </div>
 
@@ -872,7 +924,8 @@ export function Table({
         );
       })}
 
-      {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+      {/* Not once the game is stopped: the last hand stays on the felt, but its button means nothing, and it would sit on the note (#383). */}
+      {hand && !stud && !notice && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
 
       <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 
