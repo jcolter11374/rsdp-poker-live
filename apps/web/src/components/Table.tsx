@@ -281,15 +281,19 @@ export function Table({
   const players = view.seats.filter(Boolean).length;
   const roomy = Math.min(1.1, h / 460, (perimeter * 0.92) / (players * 290 + (n - players) * 130));
   // On a big window the whole table grows with it (#317): k is the table's scale, from the room the felt has. Below k = 1
-  // (laptops, and the replayer) the sizes above stay as they were.
+  // (laptops, and the replayer) the sizes above stay as they were, except in the wide layout (below).
   // A short, very wide window (an ultrawide screen, or a big one with tall browser bars) has the width but not the height:
   // there the wide layout packs the table tighter from top to bottom, so it still grows a little instead of shrinking (#347).
   const kTall = Math.min(1.9, room.h / 560, room.w / 1180);
   const kShort = wide ? Math.min(1.25, room.h / 470, room.w / 1180) : 0;
-  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort) * 100) / 100;
+  // A window just too short for k = 1 keeps that packed table, a little smaller, down to the smallest seats' size (0.72),
+  // rather than dropping to the laptop layout and its smallest seats: a few pixels of height (a tournament's strip, a
+  // banner over the table) took a 2300x824 window from full-size seats and cards to the smallest (#385).
+  const packed = wide && fill && !compact && !!room.w;
+  const k = !fill || compact || !room.w ? 1 : Math.round(Math.max(kTall, kShort, packed ? 0.72 : 0) * 100) / 100;
+  const grown = k > 1 || packed;
   // On such a window the board gives up some height too, so bets in front of the seats above and below don't reach it.
-  const short = kShort > kTall && k > 1;
-  const grown = k > 1;
+  const short = kShort > kTall && grown;
   // Seats grow with k unless the players round the felt need them smaller. The felt's size is estimated from the room
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.

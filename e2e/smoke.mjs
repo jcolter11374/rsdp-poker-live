@@ -344,6 +344,18 @@ try {
     if (log.includes('(auto)')) throw new Error('a player was acted for automatically in the first hand');
     await host.screenshot({ path: path.join(OUT, 'tournament.png') });
 
+    // A wide, short window (John's is about 2300x824): the tournament's clock moves to the bottom-right corner, so the
+    // table gets the same big layout a cash table gets there. The strip above it used to take just enough height to
+    // drop the seats and cards to their smallest size (#385).
+    await host.setViewportSize({ width: 2300, height: 824 });
+    await host.locator('.tn-corner:has-text("Level 1")').waitFor();
+    if (await host.locator('.tn-strip').count()) throw new Error('the tournament strip still takes room above the table on a wide window');
+    await host.waitForTimeout(500);
+    const k = await host.locator('.felt').evaluate((el) => parseFloat(el.style.getPropertyValue('--k')));
+    if (!(k >= 1)) throw new Error(`a tournament table at 2300x824 stayed small (scale ${k})`);
+    await host.screenshot({ path: path.join(OUT, 'tournament-wide-short.png') });
+    await host.setViewportSize({ width: 1280, height: 860 });
+
     // The host ends it early the way the Host tab asks (pause, let the hand in progress finish, end), so its
     // table isn't still dealing when CI's backup drill runs. The players stay at the table to finish that hand.
     const lobby = await openTab(host, 'tournament host lobby');

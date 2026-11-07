@@ -925,6 +925,9 @@ dl.shortcuts dd { margin: 0; }
 .table-page:not(.portrait) .felt-area > .felt.grown {
   margin: calc(var(--top-margin, 84px) * var(--sk)) calc(var(--side-margin) * var(--sk)) calc(46px * var(--sk));
   max-height: none;
+  /* A short wide window packs the table below k = 1 too (#385), so its felt can be under 280px. Its size has to come from
+     the room, not this floor: a felt held taller than the room would make the room measure bigger than it is (Table.tsx). */
+  min-height: 200px;
 }
 .felt.grown .board .pots { zoom: var(--k); }
 .felt.grown .board .cards { gap: calc(6px * var(--k)); }

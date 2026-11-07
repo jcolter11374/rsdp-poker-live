@@ -577,7 +577,8 @@ export function TablePage({ tableId }: { tableId: string }) {
 
       <div className="layout">
         <section className="felt-area">
-          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} />}
+          {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, so the table keeps its height (#385). */}
+          {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={view !== live} corner={wide} />}
           {readyTable && (
             <div className="banner attention">
               Your tournament table is ready.{' '}

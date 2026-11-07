@@ -158,6 +158,17 @@
 .tn-strip-row + .tn-strip-row { border-top: 1px solid var(--panel-2); }
 .tn-strip-row a { margin-left: auto; }
 .tn-strip-row button { padding: 3px 10px; }
+/* The wide layout (#385): the level, clock, blinds and players left in the bottom-right corner, across from the chat box
+   and the same size, so they take no height from the table. Rows that ask something of the player stay above the table. */
+.tn-corner.panel { position: fixed; right: 12px; bottom: 12px; width: var(--chat-w); min-height: var(--chat-h); z-index: 6; justify-content: space-between; gap: 8px; background: rgba(29, 33, 39, 0.94); font-size: 0.9rem; }
+.tn-corner-head { display: flex; align-items: baseline; gap: 10px; }
+.tn-corner-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-corner-now { display: flex; flex-direction: column; gap: 6px; }
+.tn-corner-clock { display: flex; align-items: baseline; gap: 10px; font-variant-numeric: tabular-nums; }
+.tn-corner-clock > span:first-child { font-size: 1.05rem; font-weight: 600; }
+.tn-corner-clock b { font-size: 2rem; line-height: 1; }
+.tn-corner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.tn-corner .tn-strip-row { padding: 0; }
 
 /* Home page tournament lists. */
 .tn-list { margin-bottom: 16px; gap: 10px; }
