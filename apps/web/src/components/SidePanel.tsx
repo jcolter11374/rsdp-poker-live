@@ -85,7 +85,8 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
   // when this tab opened.
   const recap = useRecapOffered(view);
   const [recapOpen, setRecapOpen] = useState(false);
-  // The hands the Hands tab shows, loaded only once the recap is open.
+  // The hands the Hands tab shows, loaded only once the recap is open. Opened again, it waits for them to catch up
+  // with the hands finished since, rather than offer last time's to copy.
   const recapHands = useAllHands(view, recap && recapOpen);
   if (!view.ledger.length) return <p className="muted">Nobody has bought in yet.</p>;
 
@@ -136,7 +137,7 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
         )}
       </div>
       {recap && recapOpen && (
-        <RecapDialog view={view} fmt={fmt} hands={recapHands.hands} error={recapHands.error} onRetry={recapHands.retry} onClose={() => setRecapOpen(false)} />
+        <RecapDialog view={view} fmt={fmt} hands={recapHands.current ? recapHands.hands : null} error={recapHands.error} onRetry={recapHands.retry} onClose={() => setRecapOpen(false)} />
       )}
       {settle ? (
         <div className="settle">
@@ -297,14 +298,22 @@ function useAllHands(view: TableView, active: boolean) {
   const [hands, setHands] = useState<HandRecordView[] | null>(() => handCache.get(view.id) ?? null);
   const [error, setError] = useState('');
   const [tries, setTries] = useState(0);
+  // Whether hands have come in since it last started loading. Cleared when it stops, so the recap, opened again,
+  // can tell last time's hands from new ones.
+  const [fresh, setFresh] = useState(false);
   const latest = view.history.at(-1)?.handNumber ?? 0;
   const dealing = view.hand?.handNumber ?? 0;
+  useEffect(() => {
+    if (active) return;
+    setFresh(false);
+    setError('');
+  }, [active]);
   // Hands open for checking half an hour after the game stops (docs/FAIRNESS.md): openThrough moves then, so that fetches them again too.
   useEffect(() => {
     if (!active || !latest) return;
     let live = true;
     allHands(view)
-      .then((h) => live && (setHands(h), setError('')))
+      .then((h) => live && (setHands(h), setError(''), setFresh(true)))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
@@ -312,7 +321,9 @@ function useAllHands(view: TableView, active: boolean) {
   }, [active, latest, dealing, tries, view.started, view.fair.openThrough]);
   // Never ahead of the table on screen: the Hands and Stats tabs and the recap don't give away a runout still being dealt.
   const shown = useMemo(() => finishedOnScreen(hands, view), [hands, view.history]);
-  return { hands: shown, error, retry: () => setTries((t) => t + 1), setHands };
+  // Up to date: loaded since it started, or the ones kept from before already reach the newest hand on screen.
+  const current = fresh || (!!shown && (shown.at(-1)?.handNumber ?? 0) >= latest);
+  return { hands: shown, current, error, retry: () => setTries((t) => t + 1), setHands };
 }
 
 function Hands({ view, fmt }: { view: TableView; fmt: Fmt }) {

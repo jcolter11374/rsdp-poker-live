@@ -122,6 +122,44 @@ describe('Copy recap in the ledger', () => {
     expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy();
   });
 
+  it("opened again after more hands, waits for them rather than offer last time's recap", async () => {
+    const hands = [1, 2, 3].map((n) => handRecord(n, 0, 400));
+    const listOf = (n: number) => hands.slice(0, n).map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.gameName }));
+    let answer: (() => void) | null = null;
+    call.mockImplementation((event: string, args?: { handNumber: number }) => {
+      if (event === 'table:export') return Promise.resolve({ hands: hands.slice(0, 2) });
+      const hand = hands.find((h) => h.handNumber === args?.handNumber);
+      // The new hand's answer is held back until the test lets it go.
+      return hand?.handNumber === 3 ? new Promise((resolve) => (answer = () => resolve({ hand }))) : Promise.resolve({ hand });
+    });
+    const view = tableView({ history: listOf(2) });
+    const { rerender } = ledgerOf(view);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
+    expect((await screen.findByLabelText('Recap') as HTMLTextAreaElement).value).toContain('2 hands');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    // A hand finishes while it's closed, then it's opened again.
+    rerender(<SidePanel view={{ ...view, history: listOf(3) }} fmt={fmt} initialTab="ledger" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
+    expect(screen.getByText('Getting the hands…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
+    await act(async () => void answer?.());
+    expect(box().value).toContain('3 hands');
+  });
+
+  it('opened again with no new hands, shows them straight away', async () => {
+    const hands = [handRecord(1, 0, 400), handRecord(2, 1, 900)];
+    call.mockImplementation(async (event: string, args?: { handNumber: number }) =>
+      event === 'table:export' ? { hands } : { hand: hands.find((h) => h.handNumber === args?.handNumber) },
+    );
+    ledgerOf(tableView({ history: hands.map((h) => ({ handNumber: h.handNumber, endedAt: h.endedAt, gameName: h.gameName })) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
+    await screen.findByLabelText('Recap');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    call.mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
+    expect(box().value).toContain('2 hands');
+  });
+
   it('says nothing has been played when no hand has finished, without asking for hands', () => {
     ledgerOf(tableView());
     fireEvent.click(screen.getByRole('button', { name: 'Copy recap' }));
