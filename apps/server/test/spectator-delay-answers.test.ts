@@ -139,10 +139,9 @@ describe('a spectator on a delay asking for a seat (#435)', () => {
   });
 
   it('leaves the answers of anyone who sees the table live as they were', () => {
-    const { rt, clock } = table();
+    const { rt } = table();
     rt.updateSettings('host', { table: { maxSeats: 6 } });
-    freezeView(rt, clock);
-    // As the host and co-hosts do, and everyone at a table without a delay.
+    // The watcher sees the table live, as the host and co-hosts do, and everyone at a table without a delay.
     rt.shownTo = () => null;
     expect(ask(rt, 7)).toMatch(/going down to 6 seats/);
     expect(ask(rt, 1)).toBe('that seat is taken');
