@@ -18,7 +18,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { noteRealGame } from './components/table/Recap';
-import { PartBoundary } from './components/ErrorBoundary';
+import { PartBoundary, QuietBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
@@ -32,6 +32,7 @@ import { LookDialog } from './components/LookDialog';
 import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
+import { TableAnnouncer } from './components/table/Announcer';
 import { useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
@@ -528,7 +529,10 @@ export function TablePage({ tableId }: { tableId: string }) {
         </a>
         <span className="stakes">
           {/* At a tournament the strip under the bar names the event, so the bar just says which table. */}
-          <b>{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</b>
+          {/* The page's heading for screen readers, which jump between headings; it looks as it always has. */}
+          <b role="heading" aria-level={1}>
+            {view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}
+          </b>
           {game && (
             <>
               {portrait ? <br /> : ' · '}
@@ -549,11 +553,14 @@ export function TablePage({ tableId }: { tableId: string }) {
           <button
             className="units-toggle"
             aria-pressed={prefs.units === 'bb'}
-            aria-label="Amounts in big blinds"
+            // The name starts with the words on the button, as they read (WCAG's label in name), then says what it does.
+            aria-label={`${dollars ? '$' : 'Chips'} BB: show amounts in big blinds`}
             onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
             title={`Show amounts in ${prefs.units === 'bb' ? (dollars ? 'dollars' : 'chips') : 'big blinds'} (B)`}
           >
             <span className={prefs.units === 'bb' ? '' : 'on'}>{dollars ? '$' : 'Chips'}</span>
+            {/* A space for screen readers ("Chips BB", not "ChipsBB"); the button lays its two halves out side by side. */}
+            {' '}
             <span className={prefs.units === 'bb' ? 'on' : ''}>BB</span>
           </button>
         )}
@@ -563,7 +570,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               💬{unread > 0 && <span className="badge">{unread}</span>}
             </button>
             <button onClick={() => setSheet('log')}>Log</button>
-            <button aria-label="Menu" onClick={() => setSheet('menu')}>
+            <button aria-label={pending > 0 ? `Menu, ${pending} ${pending === 1 ? 'request' : 'requests'} waiting` : 'Menu'} onClick={() => setSheet('menu')}>
               ☰{pending > 0 && <span className="badge">{pending}</span>}
             </button>
           </>
@@ -606,13 +613,17 @@ export function TablePage({ tableId }: { tableId: string }) {
         )}
       </header>
 
-      {!connected && <div className="banner warn">Connection lost. Reconnecting…</div>}
+      {!connected && (
+        <div className="banner warn" role="status">
+          Connection lost. Reconnecting…
+        </div>
+      )}
 
-      <div className="layout">
+      <main className="layout">
         <section className="felt-area">
           {view.tournamentId && <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} />}
           {readyTable && (
-            <div className="banner attention">
+            <div className="banner attention" role="status">
               Your tournament table is ready.{' '}
               <a
                 href={`/t/${readyTable}`}
@@ -626,7 +637,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           )}
           {unseated && (
-            <div className="banner attention">
+            <div className="banner attention" role="status">
               You're no longer seated: the host removed you, or your seat was released while you were away. Your chips are counted in the ledger.{' '}
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
@@ -644,7 +655,11 @@ export function TablePage({ tableId }: { tableId: string }) {
                   : 'Waiting for the host to start the game.'}
             </div>
           )}
-          {view.stopAfterHand && <div className="banner">The host is stopping the game after this hand.</div>}
+          {view.stopAfterHand && (
+            <div className="banner" role="status">
+              The host is stopping the game after this hand.
+            </div>
+          )}
           {pending > 0 && (
             <div className="banner attention" onClick={portrait ? () => setSheet('menu') : wide ? openDrawer : undefined}>
               {pending} {pending === 1 ? 'request is' : 'requests are'} waiting for you. {portrait ? 'Tap to see.' : wide ? 'Click to see.' : 'See Host controls.'}
@@ -768,7 +783,11 @@ export function TablePage({ tableId }: { tableId: string }) {
             </PartBoundary>
           </div>
         )}
-      </div>
+        {/* `view`, never `live`: in an all-in runout it says each card only as it lands on the felt (announce.test.ts). */}
+        <QuietBoundary>
+          <TableAnnouncer view={view} fmt={feltFmt} skew={skew} preQueued={preQueued} />
+        </QuietBoundary>
+      </main>
 
       {portrait && sheet === 'menu' && (
         <Sheet title={view.name} onClose={close}>

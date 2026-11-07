@@ -708,12 +708,14 @@ export function Table({
                   Closed
                 </span>
               ) : onPickSeat ? (
-                <button onClick={() => onPickSeat(seat)}>Sit</button>
+                <button onClick={() => onPickSeat(seat)} aria-label={`Sit in seat ${seat + 1}`}>
+                  Sit
+                </button>
               ) : (
                 !onAddBot && <span>{seat + 1}</span>
               )}
               {onAddBot && !seatsClosed && (
-                <button className="add-bot" onClick={() => onAddBot(seat)} title="Add a practice bot to this seat">
+                <button className="add-bot" onClick={() => onAddBot(seat)} title="Add a practice bot to this seat" aria-label={`Add a practice bot to seat ${seat + 1}`}>
                   + Bot
                 </button>
               )}
@@ -750,6 +752,8 @@ export function Table({
           .filter(Boolean)
           .join(' ');
         const pickable = isMe && !!discard;
+        // What the felt shows only by its look (the glow on whoever is to act, the D button, dimmed folded cards), in words.
+        const state = [acting && 'to act', live && s.folded && 'folded', hand && !stud && hand.button === seat && 'dealer'].filter(Boolean).join(', ');
         const shown = done && !won && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null;
         // Cards come off the dealer button (stud has none, so the middle of the table).
         const toMiddle = fromVars(hand && !stud ? buttonPoint(hand.button) : center, pos);
@@ -786,6 +790,19 @@ export function Table({
                 className="nameplate"
                 onClick={onSeatClick && !s.departed ? () => onSeatClick(s) : undefined}
               >
+                {/* The nameplate opens the seat's pop-up when clicked; this button, seen only when Tab reaches it, opens
+                    it from the keyboard and names it for screen readers. */}
+                {onSeatClick && !s.departed && (
+                  <button
+                    className="sr-only seat-open"
+                    aria-label={isMe ? `${s.name}: your seat` : `${s.name}: player menu`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSeatClick(s);
+                    }}
+                  />
+                )}
+                {state && <span className="sr-only">{state}</span>}
                 {badge && badge.kind !== 'info' && <div className={`pill ${badge.kind}`}>{badge.text}</div>}
                 <div className="name" title={s.bot ? `${s.name}, ${botOwnerLabel(s.bot, 'practice bot')}` : undefined}>
                   {s.name}
@@ -830,7 +847,12 @@ export function Table({
         );
       })}
 
-      {hand && !stud && <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))}>D</div>}
+      {/* Its seat says "dealer" to screen readers instead. */}
+      {hand && !stud && (
+        <div className={`dealer ${hand.buttonDead ? 'dead' : ''}`} style={px(buttonPoint(hand.button))} aria-hidden="true">
+          D
+        </div>
+      )}
 
       <FeltExtras view={view} seatPoint={seatPoint} railPoint={{ x: w / 2, y: h }} />
 

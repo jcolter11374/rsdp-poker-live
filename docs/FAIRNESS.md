@@ -1,6 +1,6 @@
 # Fair dealing in RSDP Poker Live!
 
-> ### The short version: you're trusting John
+> ## The short version: you're trusting John
 >
 > John built and runs this site. Like every online poker site, the server sees everyone's cards, and whoever runs it could cheat if they really wanted to: peek at hands, or change the code. Nothing here can make that impossible.
 >

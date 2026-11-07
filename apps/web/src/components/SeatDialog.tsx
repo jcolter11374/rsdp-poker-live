@@ -5,9 +5,12 @@ import { fromInput, toInput, type Fmt } from '../format';
 import { delayText } from '@rsdp/engine/settings';
 import { BotLevelControl, botOwnerLabel, lastBotLevel, LevelPicker, rememberBotLevel } from './table/BotLevels';
 import { markCardsWatchedSeen } from './table/Seating';
+import { useDialogFocus } from './dialogFocus';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const backdrop = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box);
   // Escape closes the topmost dialog only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -23,7 +26,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   }, [onClose]);
   return (
     <div className="modal-backdrop" ref={backdrop} onClick={onClose}>
-      <div className="card-panel modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
+      <div ref={box} className="card-panel modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {children}
       </div>
@@ -98,7 +101,7 @@ export function SeatDialog({ view, seat, fmt, onClose, waitlist = false }: { vie
             </label>
           </div>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <div className="row">
           <button type="button" onClick={onClose}>
             Cancel
@@ -135,7 +138,7 @@ export function RebuyDialog({ view, fmt, onClose }: { view: TableView; fmt: Fmt;
         <p className="muted">
           {approval ? 'The host approves rebuys. ' : ''}Chips added during a hand arrive when it ends.
         </p>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <div className="row">
           <button type="button" onClick={onClose}>
             Cancel
@@ -227,7 +230,7 @@ export function PlayerDialog({ view, seat, fmt, onClose, children }: { view: Tab
             </button>
           )}
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         {children}
         <button onClick={onClose}>Close</button>
       </div>
@@ -242,7 +245,7 @@ export function MyBot({ view, seat, onDone }: { view: TableView; seat: SeatView;
     <div className="form">
       <p className="muted">Your practice bot.{seat.inHand ? ' Removing it now folds its hand.' : ''}</p>
       <BotLevelControl view={view} seat={seat} />
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
       <button
         className="danger"
         onClick={() =>
@@ -278,7 +281,7 @@ export function AddBotDialog({ view, seat, onClose }: { view: TableView; seat: n
     <Modal title={`Add a practice bot to seat ${seat + 1}`} onClose={onClose}>
       <div className="form">
         <LevelPicker name="add-bot-level" value={level} onPick={setLevel} disabled={busy} />
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
         <div className="row">
           <button className="primary" disabled={busy} onClick={add}>
             Add {level} bot

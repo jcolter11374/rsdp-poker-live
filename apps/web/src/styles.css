@@ -12,6 +12,9 @@
   --bank: #6aa8ff;
   --go: #2fa866;
   --go-hover: #36bb73;
+  /* Buttons with white words on green (Create table, Sit down, Register): dark enough to read, at least 4.5:1 (WCAG AA). */
+  --go-fill: #1d8049;
+  --go-fill-hover: #1e874b;
   --call: #3a4a5c;
   --felt: #2d7b4f;
   --felt-edge: #23603e;
@@ -39,8 +42,17 @@ button {
 button:hover:not(:disabled) { border-color: #4a525d; background: #2c323a; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--go); border-color: var(--go); color: #fff; font-weight: 700; }
-button.primary:hover:not(:disabled) { background: var(--go-hover); border-color: var(--go-hover); }
+button.primary { background: var(--go-fill); border-color: var(--go-fill); color: #fff; font-weight: 700; }
+button.primary:hover:not(:disabled) { background: var(--go-fill-hover); border-color: var(--go-fill-hover); }
+/* The table page (and the dialogs over it) keeps its brighter green for now: a change to the table's look waits for
+   John's before-and-after OK (D21). */
+:root:has(.table-page) { --go-fill: var(--go); --go-fill-hover: var(--go-hover); }
+/* Words for screen readers only: off screen to the eye, still read aloud and still reachable with Tab. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* A dialog takes focus itself when it opens with nothing inside focused; the box needs no ring of its own. */
+[role='dialog']:focus { outline: none; }
+/* A nameplate's keyboard button (Table.tsx) is unseen, so the nameplate shows the ring while Tab is on it. */
+.nameplate:has(> .seat-open:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
 button.big { padding: 12px; font-size: 1.1rem; }
 input, select {
   font: inherit;
@@ -274,7 +286,9 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 
 .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.panel h3 { margin: 0; font-size: 1rem; }
+/* A side panel's heading is an h2 under the table's name (the page's h1), the size an h3 always was here. Only the
+   panel's own: a dialog opened inside a panel (Share hand, in the side panel) keeps a dialog title's size. */
+.panel > h2, .panel h3 { margin: 0; font-size: 1rem; }
 .request { display: flex; gap: 6px; align-items: center; background: var(--panel-2); padding: 6px 8px; border-radius: 8px; }
 .request span { flex: 1; font-size: 0.85rem; }
 .settings input { padding: 6px; }
