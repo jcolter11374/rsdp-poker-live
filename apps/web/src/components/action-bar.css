@@ -5,3 +5,7 @@
   opacity: 0.6;
 }
 .action-bar .sending-note { text-align: center; }
+/* An all-in armed with A: the button the next A or Enter presses is ringed, and a line above the buttons says so. */
+.action-bar .buttons button.armed { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+.action-bar .armed-note { text-align: center; margin: 2px 0; }
+.action-bar .armed-note b { color: var(--accent-2); }

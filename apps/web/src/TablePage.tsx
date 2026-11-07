@@ -675,7 +675,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             {keysTip && !dialog && (
               <div className="tip-toast" role="status">
                 <span>
-                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+                  Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises, <kbd>A</kbd> twice goes all in{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
                   {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
                 </span>
                 <button
