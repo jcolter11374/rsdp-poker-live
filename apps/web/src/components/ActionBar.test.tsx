@@ -798,6 +798,19 @@ describe('all in with Shift+A pressed twice (#307)', () => {
     expect(note()).toBeNull();
   });
 
+  it('reads the armed all-in out from a live region already in the bar, and names Shift+A on the button it presses', async () => {
+    renderBar(facingBet(100));
+    // There, and empty, before the first press: a region that appears already holding its words is often not read.
+    // (R is on the bet box here, which this bar shows.)
+    const region = document.querySelector('.bar-head [role="status"]');
+    expect(region?.textContent).toBe('');
+    expect(document.querySelector('.action-bar .buttons button.primary')?.getAttribute('aria-keyshortcuts')).toBe('Shift+A');
+    await shiftA();
+    expect(document.querySelector('.bar-head [role="status"]')).toBe(region);
+    expect(region?.textContent).toBe('All in 1000. Shift+A or Enter sends it, Escape cancels.');
+    expect(document.querySelector('.armed-note')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('bets every chip when nobody has bet', async () => {
     renderBar(checkedToMe());
     await shiftATwice();

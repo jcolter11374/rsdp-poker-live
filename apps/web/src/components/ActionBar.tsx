@@ -468,8 +468,10 @@ export function ActionBar({
   const hint = strength && <div className="strength">{strength}</div>;
   // An armed all-in says what the next Shift+A or Enter sends on the bar's top line, standing in for the hand's strength.
   const armedWords = armed && most && hand && legal && me ? mostWords(most, hand, legal, me, fmt) : '';
+  // Screen readers hear it from a live region that is in the bar whenever Shift+A can arm, empty until it does: one
+  // that appears already holding its words is often not read out.
   const armedNote = armedWords && (
-    <div className="armed-note" role="status" title={`${armedWords}. Shift+A or Enter sends it, Esc cancels`}>
+    <div className="armed-note" aria-hidden="true" title={`${armedWords}. Shift+A or Enter sends it, Esc cancels`}>
       <b>{armedWords}.</b>{' '}
       <span className="how">
         <kbd>Shift</kbd>+<kbd>A</kbd> or <kbd>Enter</kbd> sends it, <kbd>Esc</kbd> cancels
@@ -490,6 +492,11 @@ export function ActionBar({
           </button>
         )}
         {armedNote || hint}
+        {most && (
+          <span className="sr-only" role="status">
+            {armedWords ? `${armedWords}. Shift+A or Enter sends it, Escape cancels.` : ''}
+          </span>
+        )}
         {canBank && (
           <button className="time-bank" onClick={startBank}>
             Time bank +{me.timeBank}s
@@ -750,14 +757,14 @@ export function ActionBar({
             <Key k="K" />
           </button>
         ) : (
-          <button className={`call${armed && most?.kind === 'call' ? ' armed' : ''}`} onClick={() => send({ type: 'call' })} title="Shortcut: C" aria-keyshortcuts="C">
+          <button className={`call${armed && most?.kind === 'call' ? ' armed' : ''}`} onClick={() => send({ type: 'call' })} title="Shortcut: C" aria-keyshortcuts={most?.kind === 'call' ? 'C Shift+A' : 'C'}>
             Call {fmt(legal.callAmount)}
             {legal.callAmount >= me.stack ? ' (all in)' : ''}
             <Key k="C" />
           </button>
         )}
         {legal.canRaise && (
-          <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })} aria-keyshortcuts={sized ? undefined : 'R'}>
+          <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })} aria-keyshortcuts={[sized ? '' : 'R', most?.kind === 'raise' ? 'Shift+A' : ''].filter(Boolean).join(' ') || undefined}>
             {raiseLabel(sized ? clamp(amount) : legal.minTo)}
             <Key k="R" />
           </button>

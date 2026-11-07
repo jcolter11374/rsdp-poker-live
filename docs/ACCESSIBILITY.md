@@ -71,7 +71,9 @@ yet tried it with a real screen reader; see "Known and left".
 - **Names and states:** the chips-or-big-blinds switch is named by the words
   on it; the open tab in the table's panel and its settings is announced;
   the move buttons and the bet box say their keyboard shortcuts (F, K, C,
-  R); and the menu button on a phone says how many requests are waiting.
+  R, and Shift+A on the button it presses twice for the most you can bet),
+  and what the second Shift+A will send is read out after the first; and
+  the menu button on a phone says how many requests are waiting.
 - **Messages:** errors on sign-in, sign-up, password reset, creating a
   table, sitting down, registering for a tournament, on the move buttons,
   picking the next game, sending or moderating in the lobby chat, and
