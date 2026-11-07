@@ -175,38 +175,36 @@ function allInWith(boardCards: number, options: Parameters<typeof start>[0]['opt
 const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null });
 
 describe('run it twice, street by street (#372)', () => {
-  for (const [street, cards] of [['before the flop', 0], ['on the flop', 3], ['on the turn', 4]] as const) {
-    it(`deals each run's own cards one street at a time, all in ${street}`, () => {
-      const s = allInWith(cards);
-      const view = engineView(s);
-      const steps = runoutSteps(s.events);
-      const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
-      // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
-      const shared = s.runs[0][0].slice(0, cards);
-      expect(boardsAt(0)).toEqual([[shared], [shared]]);
-      // Each step then adds exactly that step's cards, to its own run and board, and nothing anywhere else.
-      for (let k = 0; k < steps.length; k++) {
-        const was = boardsAt(k);
-        const now = boardsAt(k + 1);
-        for (let r = 0; r < now.length; r++) {
-          for (let b = 0; b < now[r].length; b++) {
-            const dealt = steps[k].filter((e) => e.run === r && e.board === b).flatMap((e) => e.cards);
-            expect(now[r][b]).toEqual([...was[r][b], ...dealt]);
+  for (const boards of [1, 2] as const) {
+    for (const [street, cards] of [['before the flop', 0], ['on the flop', 3], ['on the turn', 4]] as const) {
+      it(`deals each run's own cards one street at a time, all in ${street}${boards > 1 ? ', on two boards' : ''}`, () => {
+        const s = allInWith(cards, { boards });
+        const view = engineView(s);
+        const steps = runoutSteps(s.events);
+        const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
+        // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
+        const shared = s.runs[0].map((board) => board.slice(0, cards));
+        expect(boardsAt(0)).toEqual([shared, shared]);
+        expect(shared.map((_, b) => sharedWithFirstRun(boardsAt(0), 1, b))).toEqual(shared.map(() => cards));
+        // Each step then adds exactly that step's cards, to its own run and board, and nothing anywhere else:
+        // one street of one run, on every board of that run.
+        for (let k = 0; k < steps.length; k++) {
+          const was = boardsAt(k);
+          const now = boardsAt(k + 1);
+          for (let r = 0; r < now.length; r++) {
+            for (let b = 0; b < now[r].length; b++) {
+              const dealt = steps[k].filter((e) => e.run === r && e.board === b).flatMap((e) => e.cards);
+              expect(now[r][b]).toEqual([...was[r][b], ...dealt]);
+            }
           }
+          expect(new Set(steps[k].map((e) => e.run)).size).toBe(1);
+          expect(steps[k].map((e) => e.board)).toEqual(s.runs[0].map((_, b) => b));
+          for (const e of steps[k]) expect(e.cards).toHaveLength(cards === 0 && k % 3 === 0 ? 3 : 1);
         }
-        expect(steps[k].flatMap((e) => e.cards).length).toBe(cards === 0 && k % 3 === 0 ? 3 : 1);
-      }
-      expect(boardsAt(steps.length)).toEqual(s.runs);
-    });
+        expect(boardsAt(steps.length)).toEqual(s.runs);
+      });
+    }
   }
-
-  it('carries the shared cards down to the second run of a double board too', () => {
-    const s = allInWith(3, { boards: 2 });
-    const view = engineView(s);
-    const at0 = holdBack(view, frozenOf(view), 0).hand!.boards;
-    expect(at0[1]).toEqual([s.runs[0][0].slice(0, 3), s.runs[0][1].slice(0, 3)]);
-    expect(at0[1].map((_, b) => sharedWithFirstRun(at0, 1, b))).toEqual([3, 3]);
-  });
 });
 
 describe('sharedWithFirstRun', () => {

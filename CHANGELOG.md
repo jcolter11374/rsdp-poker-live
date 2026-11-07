@@ -22,7 +22,7 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 
 ### Fixed and changed
 
-- Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own turn and river one at a time, like the first run. Before, its flop and turn landed together. The hand log also names the second run's turn and river now, instead of calling them "Board".
+- Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
 
 ## [2026.11.06.5] - 2026-11-06
 

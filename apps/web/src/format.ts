@@ -148,7 +148,7 @@ export function eventLines(events: HandEvent[], name: (seat: number) => string, 
         const before = boardCount.get(key) ?? 0;
         const total = before + e.cards.length;
         boardCount.set(key, total);
-        // Anything else (several cards that aren't a flop) is just "Board".
+        // Anything else (stud's one shared card when the deck runs short) is just "Board".
         const label = before === 0 && total === 3 ? 'Flop' : e.cards.length === 1 && total === 4 ? 'Turn' : e.cards.length === 1 && total === 5 ? 'River' : 'Board';
         const where = (runs > 1 ? ` (run ${e.run + 1})` : '') + (e.board > 0 ? ` (board ${e.board + 1})` : '');
         lines.push(`${label}${where}: ${cardsText(e.cards)}`);
