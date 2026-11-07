@@ -6,7 +6,8 @@
       "fixes": [
         "Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.",
         "On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.",
-        "Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it."
+        "Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.",
+        "Waitlist: pressing Join the waitlist while an all-in is being dealt out no longer tells you whether someone busted. You're added to the waitlist either way, and a seat that comes free is offered once the cards are out. At a table that seats newcomers at random, a seat offered from the waitlist is a random one too. And if the host makes the table smaller during a hand and the seat you were offered is needed for a player moving in, you stay on the waitlist for the next seat instead of losing your place."
       ]
     },
     {
