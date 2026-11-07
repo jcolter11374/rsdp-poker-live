@@ -130,7 +130,7 @@ describe('a fresh seed each time the server loads a tournament whose seats are s
     const drawn = run(fresh(), ...register(14), start);
     expect(drawn.tables.length).toBeGreaterThan(0);
     expect(needsSeatSeed(drawn)).toBe(false);
-    // Seats drawn early for a scheduled start: still registering, but no longer to draw.
+    // A guard, not a state the director makes (a draw always moves it to 'seating'): tables alone block a reseed.
     const early = { ...drawn, status: 'registering' as const };
     expect(needsSeatSeed(early)).toBe(false);
   });

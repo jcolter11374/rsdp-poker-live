@@ -322,7 +322,7 @@ export interface CreateInput {
    * A second secret, for the old seat-draw generator's state (`rng`): a whole number from 1 to 2^32 - 1, made by
    * the same secure generator separately from `seed`. This code never draws from it; a server from before
    * rsdp-seats-v1 draws seats from `rng` alone. Such a server sends every field to browsers but `rng`, `seatRng`
-   * included, so after a rollback the seed is public and `rng` must tell nothing about it.
+   * included, so after a rollback the seed is public, and nothing about `rng` may follow from it.
    */
   legacyRng: number;
   /** The event this one follows in a series: rebuy and add-on counts it was allowed to keep carry over. */
@@ -366,8 +366,8 @@ export function createTournament({ id, hostId, settings: raw, now, seed, legacyR
 
 /**
  * A tournament whose seats are still to be drawn. The server gives it a fresh seed and old-generator state
- * (`withSeatSeed`) every time it loads it. Nothing has been drawn from the old ones yet, so nothing anyone saw
- * changes, and:
+ * (`withSeatSeed`) every time it loads it. Nothing saved has been drawn from the old ones yet (only a draw the server
+ * lost in a hard crash, in the moment before saving it, is made again with the new seed), and:
  * - one saved before rsdp-seats-v1 (no `seatRng`) draws from a secure seed rather than its old 32-bit one;
  * - one that a server from before rsdp-seats-v1 ran after a rollback, which sends `seatRng` to browsers, never
  *   draws from a seed people may have seen.

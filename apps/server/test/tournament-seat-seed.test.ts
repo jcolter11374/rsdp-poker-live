@@ -78,6 +78,28 @@ describe('tournament seat-draw seeds on the server', () => {
     expect(errors).toEqual([]);
   });
 
+  it('makes the old-generator state apart from the seed, so knowing the seed tells nothing about it', async () => {
+    // Every seed byte comes out 0, so every tournament gets the same seed; the old-generator state must still differ.
+    let k = 0;
+    const errors: unknown[] = [];
+    const manager = new TournamentManager({
+      clock: new FakeClock(),
+      store: memoryTournamentStore(),
+      tables: { createTable: async () => {}, loadTable: async () => null, attach: () => {}, detach: () => {} },
+      rng: (n) => (n === 256 ? 0 : ++k % n),
+      onState: () => {},
+      onMoved: () => {},
+      log: (m, e) => errors.push([m, e]),
+    });
+    const ids = [await manager.create('host', defaultSettings({ name: 'A' })), await manager.create('host', defaultSettings({ name: 'B' }))];
+    const states = await Promise.all(ids.map(async (id) => (await manager.peek(id))!));
+    expect(states[0].seatRng!.seed).toBe('00'.repeat(32));
+    expect(states[1].seatRng!.seed).toBe(states[0].seatRng!.seed);
+    expect(states[0].rng).not.toBe(states[1].rng);
+    manager.dispose();
+    expect(errors).toEqual([]);
+  });
+
   it('gives a tournament saved with the old 32-bit seed a fresh secure one when its seats are still to draw', async () => {
     const first = setup();
     const id = await first.manager.create('host', defaultSettings({ name: 'Before', startingStack: 1000, seatsPerTable: 6 }));
