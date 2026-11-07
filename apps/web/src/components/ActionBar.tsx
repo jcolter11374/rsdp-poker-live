@@ -399,9 +399,10 @@ export function ActionBar({
   const hint = strength && <div className="strength">{strength}</div>;
   // An armed all-in says what the next A or Enter sends on the bar's top line, standing in for the hand's strength, so
   // the bar (and the table above it) doesn't move when A is pressed.
-  const armedNote = armed && most && hand && legal && me && (
-    <div className="armed-note" role="status">
-      <b>{mostWords(most, hand, legal, me, fmt)}:</b> press <kbd>A</kbd> again or <kbd>Enter</kbd> to send, <kbd>Esc</kbd> to cancel
+  const armedWords = armed && most && hand && legal && me ? mostWords(most, hand, legal, me, fmt) : '';
+  const armedNote = armedWords && (
+    <div className="armed-note" role="status" title={`${armedWords}: press A again or Enter to send, Esc to cancel`}>
+      <b>{armedWords}:</b> press <kbd>A</kbd> again or <kbd>Enter</kbd> to send, <kbd>Esc</kbd> to cancel
     </div>
   );
   // On your turn (betting or drawing) the tip and the time bank sit on the bar's top line, so the bar is no taller for them.
