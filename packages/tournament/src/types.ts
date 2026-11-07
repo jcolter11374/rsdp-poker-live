@@ -400,7 +400,8 @@ export type DirectorEvent =
   | { type: 'paused' }
   | { type: 'resumed' }
   | { type: 'structureEdited' }
-  | { type: 'settingsUpdated' }
+  /** The host changed settings: `changed` names the ones whose value differs (empty when a save changed nothing). */
+  | { type: 'settingsUpdated'; changed: (keyof TournamentSettings)[] }
   | { type: 'finished'; standings: Standing[] }
   | { type: 'cancelled'; reason: 'not-enough-players' | 'host' }
   /** A recurring series: the server should create the next occurrence at this time with the same settings. */
