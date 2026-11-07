@@ -394,6 +394,11 @@ export function createApp(deps: AppDeps = {}) {
   const build = deps.build ?? buildFromEnv();
   const startedAt = clock.now();
   audit.boot(build);
+  // Hands that waited out a spectator delay across the restart go in after the boot entry (D38).
+  audit.start((fn, ms) => {
+    const timer = clock.setTimeout(fn, ms);
+    return () => clock.clearTimeout(timer);
+  });
 
   const app = express();
   const http = createServer(app);
@@ -924,6 +929,11 @@ export function createApp(deps: AppDeps = {}) {
     );
   }
 
+  /** When spectators on a delay see the table as it is now: at once at a table without a delay that has caught up (#435). */
+  function spectatorsSeeAt(rt: TableRuntime, now: number): number {
+    return now + rt.settings.spectators.delaySeconds * 1000;
+  }
+
   function attach(rt: TableRuntime, ready: Promise<void> = Promise.resolve()) {
     const id = rt.state.id;
     tables.set(id, rt);
@@ -940,7 +950,8 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      audit.safely('a hand', () => audit.hand(id, record));
+      // In the public record no sooner than spectators on a delay see it end (D38); a late show too.
+      audit.safely('a hand', () => audit.hand(id, record, spectatorsSeeAt(rt, clock.now())));
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
@@ -2064,6 +2075,8 @@ export function createApp(deps: AppDeps = {}) {
       const graceMs = opts.graceMs ?? CLOSE_GRACE_MS;
       const cut = await closeConnections(http, connections, graceMs);
       if (cut) steps.note(`cut ${cut} connection${cut === 1 ? '' : 's'} still open after ${graceMs} ms`);
+      // Hands still waiting for a spectator delay stay saved; the next server puts them in on time.
+      audit.stop();
       steps.step('writing the public record');
       await audit.flush();
       steps.step('recording the stop');

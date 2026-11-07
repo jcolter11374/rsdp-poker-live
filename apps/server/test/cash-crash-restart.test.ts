@@ -32,7 +32,7 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** One server's life on the shared stores, as a deploy or crash ends one and the next starts. */
 async function serverOn(store: TableStore, auditStore: AuditStore, clock: FakeClock) {
-  const audit = AuditLog.after(auditStore, await auditStore.last(), { now: () => clock.now(), log: () => {} });
+  const audit = await AuditLog.open(auditStore, { now: () => clock.now(), log: () => {} });
   return createApp({ clock, store, audit, rng: seeded(3), log: () => {} });
 }
 
@@ -44,17 +44,19 @@ describe('a crash right after a cash hand ends (#224)', () => {
     ['in memory', () => ({ store: memoryStore(), identity: memoryIdentity() })],
     ['in the database', () => ({ store: dbStore(db), identity: dbIdentity(db) })],
   ];
-  it.each(stores)('closes the hand with its saved result instead of playing it again (%s)', async (where, open) => {
+  /** The first server plays out a hand and crashes before the table's own save; the next one loads the table. */
+  async function crashRightAfterHand(where: string, open: () => { store: TableStore; identity: IdentityService }, delaySeconds: number) {
     const clock = new FakeClock();
     const { store, identity } = open();
     const auditStore = memoryAuditStore();
-    const id = `crash224-${where === 'in memory' ? 'm' : 'd'}`;
+    const id = `crash224-${where === 'in memory' ? 'm' : 'd'}${delaySeconds ? '-delayed' : ''}`;
     const host = (await identity.resolve(`${id}-host-secret-0123456789`)).playerId;
     const ann = (await identity.resolve(`${id}-ann-secret-0123456789`)).playerId;
 
     // A table with a hand being played, saved as it is.
     const settings = defaultSettings('cash');
     settings.seating.requireApproval = false;
+    settings.spectators.delaySeconds = delaySeconds;
     const made = TableRuntime.create({ id, hostId: host, settings }, { clock, rng: seeded() });
     for (const p of [host, ann]) made.connect(p);
     made.requestSeat(host, { seat: 0, name: 'Host', stack: 100 });
@@ -65,17 +67,21 @@ describe('a crash right after a cash hand ends (#224)', () => {
     await store.createTable(made.state);
     const midHand = JSON.stringify(await store.loadTable(id));
 
-    // The first server plays the hand out: it is saved and fingerprinted straight away.
+    // The first server plays the hand out: it is saved straight away, and fingerprinted straight away or, at a table
+    // watched on a delay, once the delay has passed.
+    const prints = async () => (await auditStore.after(0, 1000, ['hand'])).filter((e) => e.data.table === tableRef(id) && e.data.hand === 1);
     const first = await serverOn(store, auditStore, clock);
     const rt = (await first.getTable(id))!;
     const folder = toAct(rt);
     rt.act(folder, { type: 'fold' });
     expect(rt.handInProgress).toBe(false);
+    const ended = clock.now();
     const after = stacks(rt.state);
     // It crashes before the table's own save: the store still holds the table mid-hand.
     first.tables.delete(id);
     rt.dispose();
     await first.close();
+    if (delaySeconds) expect((await auditStore.pending()).map((p) => p.hand)).toEqual([1]);
     await pause(700);
     await store.saveTable(JSON.parse(midHand) as RuntimeState);
     expect((await store.loadHands(id)).map((h) => h.handNumber)).toEqual([1]);
@@ -84,6 +90,8 @@ describe('a crash right after a cash hand ends (#224)', () => {
 
     // The next server loads the table: the hand is over, with the stacks it ended with.
     const second = await serverOn(store, auditStore, clock);
+    // A fingerprint waiting for the delay came through the crash, and is still waiting.
+    if (delaySeconds) expect(await prints()).toEqual([]);
     const back = (await second.getTable(id))!;
     expect(back.handInProgress).toBe(false);
     expect(back.state.handNumber).toBe(1);
@@ -96,10 +104,20 @@ describe('a crash right after a cash hand ends (#224)', () => {
     expect(back.state.handNumber).toBe(2);
     await second.close();
 
-    // The public record has one fingerprint for hand 1.
-    const prints = (await auditStore.after(0, 1000, ['hand'])).filter((e) => e.data.table === tableRef(id) && e.data.hand === 1);
-    expect(prints).toHaveLength(1);
-  });
+    // The public record has one fingerprint for hand 1. One that waited went in as the delay passed, after the boot.
+    const [print, ...more] = await prints();
+    expect(print).toBeTruthy();
+    expect(more).toEqual([]);
+    if (delaySeconds) {
+      expect(print.at).toBe(ended + delaySeconds * 1000);
+      expect(print.seq).toBeGreaterThan((await auditStore.after(0, 1000, ['boot'])).at(-1)!.seq);
+      expect(await auditStore.pending()).toEqual([]);
+    }
+  }
+
+  it.each(stores)('closes the hand with its saved result instead of playing it again (%s)', (where, open) => crashRightAfterHand(where, open, 0));
+
+  it.each(stores)("keeps the hand's fingerprint back for the spectator delay through the crash, then puts it in once (%s)", (where, open) => crashRightAfterHand(where, open, 30));
 
   it('lets a player who asked to leave during the hand go with what the hand left them', () => {
     const clock = new FakeClock();
