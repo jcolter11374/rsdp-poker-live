@@ -46,6 +46,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments on a laptop: when you're knocked out, the line saying where you finished waits until your seat goes as the next hand is dealt, and the space under the table keeps its size until then. In an event without re-entries or rebuys, the table no longer jumps and grows as the result shows: it changes once, with the next deal. At a table that broke, both come about 8 seconds after the result, together with the note that the table has closed.
 - Tournaments: once an event is over, the bar over its tables shows only who won, not a stopped clock with the next blinds. Someone still looking at a table that broke is told it has closed and that play goes on at the other tables.
 - Seven Card Stud, Stud Hi-Lo and Razz on a computer: each player's cards sit in a row over their nameplate from the first card, instead of tucked into the nameplate until fifth street. The cards no longer jump up and every nameplate no longer narrows at fifth street, and on some screens a table that only deals stud now has bigger seats and cards.
+- Dealer's choice: when the host adds seats during a hand while people are on the waitlist, "If time runs out" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.
 
 ## [2026.11.07.6] - 2026-11-07
 
