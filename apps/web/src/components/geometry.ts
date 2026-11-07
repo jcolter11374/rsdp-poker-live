@@ -182,6 +182,7 @@ export function spreadByBoxes(
   const counts = (k: number) => !players || k === 0 || taken[seatOf(k)];
   /** The first spot after `from` where seat k's box is clear of every placed one by `space` (or Infinity when there is none). */
   const firstClear = (from: number, k: number, placed: { i: number; k: number }[], space: number) => {
+    if (!Number.isFinite(from)) return Infinity;
     if (!counts(k)) return from + 1;
     const near = placed.filter((p) => counts(p.k));
     for (let i = from + 1; i <= from + steps; i++) if (near.every((p) => apart(at(i), boxes[k], at(p.i), boxes[p.k], space))) return i;
@@ -197,6 +198,8 @@ export function spreadByBoxes(
     let cur = from;
     for (let k = stops[j] + 1; k < next; k++) {
       cur = firstClear(cur, k, placed, space);
+      // No room for this empty seat: the stretch can't fit, and nothing after it can be placed.
+      if (!Number.isFinite(cur)) return { placed, end: Infinity };
       placed.push({ i: cur, k });
     }
     return { placed, end: firstClear(cur, next % n, placed, space) };

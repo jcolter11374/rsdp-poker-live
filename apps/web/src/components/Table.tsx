@@ -7,6 +7,7 @@ import { PlayingCard } from './PlayingCard';
 import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, placeSeats, px, seatFractions, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
+import { reportError } from '../reportError';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
@@ -372,7 +373,14 @@ export function Table({
     const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? sized.empty : seat === mine ? sized.me : sized.others);
     const key = `${sized.key}|${takenKey}|${offset}`;
     const keep = placed.current?.key === key ? placed.current.at : undefined;
-    const at = placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep });
+    let at: readonly number[];
+    try {
+      at = placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep });
+    } catch (error) {
+      // A slip here mustn't take the table down: report it and fall back to the old spacing.
+      reportError(error, 'error');
+      at = seatFractions(taken, offset, { clear, minGap });
+    }
     placed.current = { key, at };
     return at;
   }, [takenKey, offset, mine, compact, clear, minGap, w, h, sized]);

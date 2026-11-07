@@ -209,6 +209,19 @@ describe('spreadByBoxes', () => {
   it('says when the boxes cannot fit round the table', () => {
     expect(spreadByBoxes(seats(9, [0, 1, 2, 3, 4, 5, 6, 7, 8]), 0, 400, 250, () => ({ l: 150, r: 150, u: 40, d: 40 }))).toBeNull();
   });
+  it('says so, rather than failing, when an empty seat has no room left before the next player', () => {
+    // Two players and seven big empty seats on a small table: the empty seats run out of room partway round. This once
+    // threw while placing the empty seat after the one that didn't fit, and the table went blank.
+    const taken = seats(9, [0, 1]);
+    const box = (s: number): Extent => (taken[s] ? { l: 140, r: 140, u: 45, d: 30 } : { l: 120, r: 120, u: 60, d: 60 });
+    for (const [tw, th] of [[646, 391], [500, 300], [400, 250]]) {
+      expect(spreadByBoxes(taken, 0, tw, th, box, { gap: 6 })).toBeNull();
+      const f = placeSeats(taken, 0, tw, th, { box, gap: 6 });
+      expect(f).toHaveLength(9);
+      // The players are still kept clear of each other.
+      expect(seatsApart(f, tw, th, (s) => (taken[s] ? box(s) : undefined))).toBe(true);
+    }
+  });
   it('spaces seats evenly when every box fits with room to spare', () => {
     const f = spreadByBoxes(seats(4, [0, 1, 2, 3]), 0, 900, 520, () => ({ l: 40, r: 40, u: 20, d: 20 }))!;
     [0, 1, 2, 3].forEach((s) => expect(f[s]).toBeCloseTo(s / 4, 2));
