@@ -18,13 +18,21 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.06.6] - 2026-11-06
+## [2026.11.07.2] - 2026-11-07
 
-_We're RSDP Live! now_
+_Dealer's choice_
 
 ### New
 
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 - **The site has a shorter name.** The P in RSDP already stands for poker, so the site's name is now just RSDP Live! Only the name is new: the site looks the same and the web address hasn't changed. If you saved the site to your phone's home screen, it may keep the old name until you add it again. (Suggested by John.)
+
+### Fixed and changed
+
+- Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
+
+## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
 
@@ -40,7 +48,7 @@ _We're RSDP Live! now_
 - Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
 - Tournament seats are now drawn with a stronger random generator, the same kind used to shuffle the cards, from a secret seed each tournament gets of its own.
 - Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.
-- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last saves and public record entries. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
+- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last public record entries and closing the database. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
 - Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.
 
 ## [2026.11.06.5] - 2026-11-06
@@ -678,7 +686,8 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
-[2026.11.06.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.6
+[2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
+[2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4
 [2026.11.06.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.3

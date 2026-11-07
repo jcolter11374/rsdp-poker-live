@@ -58,9 +58,10 @@ export function tournamentPreview(s: TournamentState, now: number): Preview {
 }
 
 /** `watched`: spectators see every hole card, which anyone thinking of sitting down should know before they tap. */
-export function tablePreview(name: string, gameIds: string[], stakes: string, betting?: BettingKind, watched = false): Preview {
+/** `games` replaces the game names, as for a Dealer's choice table, whose own game isn't the one dealt. */
+export function tablePreview(name: string, gameIds: string[], stakes: string, betting?: BettingKind, watched = false, games?: string): Preview {
   const warning = watched ? ' Spectators here see every hole card.' : '';
-  return { title: `${name} · ${SITE}`, description: `${gameNames(gameIds, betting)} · ${stakes}.${warning} Tap to take a seat. No sign-up.` };
+  return { title: `${name} · ${SITE}`, description: `${games ?? gameNames(gameIds, betting)} · ${stakes}.${warning} Tap to take a seat. No sign-up.` };
 }
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

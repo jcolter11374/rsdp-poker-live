@@ -5,9 +5,11 @@ import path from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
+import { defaultSettings as cashSettings, parseSettings } from '@rsdp/engine/settings';
 import { createTournament, defaultSettings } from '@rsdp/tournament';
 import { io as connect } from 'socket.io-client';
 import { createApp, webBuild } from '../src/app';
+import { TableRuntime } from '../src/runtime/table';
 import { tournamentPreview, withPreview } from '../src/preview';
 
 beforeAll(() => registerAllVariants(variants));
@@ -61,6 +63,23 @@ describe('link previews', () => {
       expect(await (await fetch(`${base}/`)).text()).toContain('og:description');
       expect(await (await fetch(`${base}/t/nope`)).text()).toContain('<title>RSDP Live!</title>');
     });
+    it("says a Dealer's choice table plays Dealer's choice, not its own (hidden) game", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), 'rsdp-web-'));
+      await writeFile(path.join(dir, 'index.html'), INDEX);
+      server = createApp({ webDist: dir, log: () => {} });
+      await new Promise<void>((resolve) => server!.http.listen(0, resolve));
+      const base = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+      const settings = cashSettings('cash');
+      settings.table.name = 'Friday';
+      settings.game.gameId = 'td27';
+      settings.game.betting = 'fixed-limit';
+      settings.game.dealersChoice = { enabled: true, games: [{ gameId: 'nlhe', betting: 'no-limit' }, { gameId: 'razz', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 };
+      server.tables.set('0123456789abcdef', TableRuntime.create({ id: '0123456789abcdef', hostId: 'host', settings: parseSettings(settings) }));
+      const page = await (await fetch(`${base}/t/0123456789abcdef`)).text();
+      expect(page).toContain("Dealer's choice of 2 games · 1/2.");
+      expect(page).not.toContain('Triple Draw');
+    });
+
     it('tells each tab that connects which build of the app it serves', async () => {
       dir = await mkdtemp(path.join(tmpdir(), 'rsdp-web-'));
       await writeFile(path.join(dir, 'index.html'), INDEX.replace('</head>', '<script type="module" crossorigin src="/assets/index-AbC123.js"></script></head>'));

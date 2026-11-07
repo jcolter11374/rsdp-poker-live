@@ -5,7 +5,7 @@
 // See README.md.
 
 import { writeFileSync } from 'node:fs';
-import { BASE, OUT, DESK, PHONE, browser, errors, open, shot, shots, bot } from './lib.mjs';
+import { BASE, OUT, DESK, PHONE, browser, errors, open, shot, shots, bot, stopBots } from './lib.mjs';
 
 const john = await open('John', DESK, true);
 const lobby = await open('Lobby watcher');
@@ -14,6 +14,8 @@ const others = [];
 for (const n of ['Maya', 'Dev', 'Sam', 'Lee', 'Kat']) others.push(await open(n));
 const players = [john, rosa, ...others];
 const names = ['John', 'Rosa', 'Maya', 'Dev', 'Sam', 'Lee', 'Kat'];
+// The bots start once everyone is registered; they are stopped before the browsers close, pass or fail.
+let bots = [];
 
 try {
   await john.goto(`${BASE}/tn/new`);
@@ -46,7 +48,7 @@ try {
   await shot(rosa, 't-lobby-phone', 'Lobby on a phone.');
 
   // Nobody clicks anything now: wait for the clock.
-  const bots = players.map((p) => bot(p, 'mixed'));
+  bots = players.map((p) => bot(p, 'mixed'));
   const table = new RegExp(`/t/${id}-t\\d+$`);
   await john.waitForURL(table, { timeout: 240_000, waitUntil: 'commit' });
   console.log('started at', new Date().toISOString(), 'scheduled', start.toISOString());
@@ -96,7 +98,6 @@ try {
   await rosa.goto(`${BASE}/tn/${id}`);
   await rosa.locator('text=Winner').first().waitFor();
   await shot(rosa, 't-winner-phone', 'The finished lobby on a phone.');
-  for (const b of bots) b.stop = true;
 } catch (e) {
   console.error('FAILED', e);
   for (const p of [john, lobby, rosa]) await p.screenshot({ path: `${OUT}/fail-${p.label}.png` }).catch(() => {});
@@ -104,6 +105,8 @@ try {
 } finally {
   writeFileSync(`${OUT}/t-shots.json`, JSON.stringify(shots, null, 1));
   writeFileSync(`${OUT}/t-errors.json`, JSON.stringify(errors, null, 1));
+  // Closing a browser while its bot is still looping made every run exit 1, even a clean one (#400).
+  await stopBots(bots);
   for (const p of [john, rosa]) await p.context().close();
   await browser.close();
 }
