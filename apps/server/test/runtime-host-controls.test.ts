@@ -205,10 +205,16 @@ describe('waitlist', () => {
 
   /**
    * A cash table of `seats` seats at the end of an all-in runout: the host (seat 1) called two bots on 2 chips
-   * (seats 2 and 3), rebuys off, so a bot that busted has left. `before` runs first (to seat or queue others).
-   * Null when this seed's hand ended without a runout.
+   * (`bots`, seats 2 and 3 unless given), rebuys off, so a bot that busted has left. `before` runs before the hand
+   * (to seat or queue others), `during` while it is dealt. Null when this seed's hand ended without a runout.
    */
-  function afterRunout(seed: number, seats: number, before: (rt: TableRuntime) => void = () => {}, patch: (s: TableSettings) => void = () => {}) {
+  function afterRunout(
+    seed: number,
+    seats: number,
+    before: (rt: TableRuntime) => void = () => {},
+    patch: (s: TableSettings) => void = () => {},
+    { bots = [1, 2], during = () => {} }: { bots?: number[]; during?: (rt: TableRuntime) => void } = {},
+  ) {
     const clock = new FakeClock();
     const settings = defaultSettings('cash');
     settings.seating.requireApproval = false;
@@ -221,10 +227,10 @@ describe('waitlist', () => {
     const rt = TableRuntime.create({ id: 't1', hostId: 'host', settings }, { clock, rng: seeded(seed) });
     for (const p of PEOPLE) rt.connect(p);
     rt.requestSeat('host', { seat: 0, name: 'H', stack: 200, consent: true });
-    rt.addBot('host', { seat: 1, stack: 2 });
-    rt.addBot('host', { seat: 2, stack: 2 });
+    for (const seat of bots) rt.addBot('host', { seat, stack: 2 });
     before(rt);
     rt.start('host');
+    during(rt);
     for (let i = 0; i < 200 && rt.state.handNumber === 1 && rt.state.hand && rt.state.hand.phase !== 'complete'; i++) {
       const h = rt.state.hand;
       if (h.toAct !== null && rt.state.seats[h.toAct]?.playerId === 'host') rt.act('host', { type: 'call' });
@@ -232,7 +238,7 @@ describe('waitlist', () => {
     }
     const reveal = rt.state.hand?.phase === 'complete' ? runoutMs(rt.state.hand.events) : 0;
     if (!reveal) return null;
-    const busted = [1, 2].filter((i) => !rt.state.seats[i]);
+    const busted = bots.filter((i) => !rt.state.seats[i]);
     // How long browsers still have to deal it out (the hand may have ended partway through the last clock step).
     const left = rt.state.history.at(-1)!.endedAt + reveal - clock.now();
     return { rt, clock, left, busted };
@@ -308,6 +314,58 @@ describe('waitlist', () => {
       outcomes.add(t.busted.length > 0);
     }
     expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
+  it("keeps the seats a smaller table keeps for its movers the same during a runout, bust or not", () => {
+    // Six seats, going down to five after this hand: Al sits out in the sixth, so he moves. Bots in the all-in sit in
+    // seats 4 and 5 and seats 2 and 3 are empty. Seat 3 is kept for Al whether or not a bot busted (a busted bot's
+    // seat 5 would otherwise be the highest free seat, and kept instead), so Dee and the waitlist answer the same.
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(
+        seed,
+        6,
+        (rt) => {
+          rt.requestSeat('a', { seat: 5, name: 'Al', stack: 100 });
+          rt.sitOut('a', true);
+        },
+        () => {},
+        { bots: [3, 4], during: (rt) => rt.updateSettings('host', { table: { maxSeats: 5 } }) },
+      );
+      if (!t) continue;
+      const { rt, busted } = t;
+      rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 1]]);
+      expect(() => rt.requestSeat('d', { seat: 2, name: 'Dee', stack: 100 })).toThrow(/kept for a player moving into it/);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
+  it('counts each player in the runout once, wherever they sit now, and stops holding seats once a new hand is dealt', () => {
+    const seated = (rt: TableRuntime) => (rt as unknown as { seatedCount(): number }).seatedCount();
+    let ran = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 4, () => {}, (s) => {
+        s.timing.autoStartNextHand = false;
+      });
+      if (!t || t.busted.length !== 1) continue;
+      const { rt, busted } = t;
+      // Still three during the runout, with one bot gone; moving the other one doesn't count it twice.
+      expect(seated(rt)).toBe(3);
+      const other = [1, 2].find((i) => i !== busted[0])!;
+      rt.moveSeat('host', rt.state.seats[other]!.playerId, 3);
+      expect(seated(rt)).toBe(3);
+      // The host deals the next hand straight away: browsers drop the runout, and so does the hold.
+      expect(() => rt.requestSeat('d', { seat: busted[0], name: 'Dee', stack: 100 })).toThrow('that seat is taken');
+      rt.dealNext('host');
+      expect(rt.state.handNumber).toBe(2);
+      expect(seated(rt)).toBe(2);
+      rt.requestSeat('d', { seat: busted[0], name: 'Dee', stack: 100 });
+      expect(seatOf(rt, 'd')).toBe(busted[0]);
+      ran++;
+    }
+    expect(ran).toBeGreaterThan(0);
   });
 
   it('clears the queue when the waitlist is turned off', () => {

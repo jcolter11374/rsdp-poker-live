@@ -554,7 +554,9 @@ export class TableRuntime {
   /** Players sitting in seats a smaller table is about to drop: they move down into free seats when it does. */
   private movers(): number {
     const limit = this.seatLimit();
-    return this.state.seats.filter((x, i) => x && i >= limit).length;
+    // A player in an all-in runout still being dealt out counts where browsers still show them, bust or not (#437).
+    const reveal = this.revealSeats();
+    return this.state.seats.filter((x, i) => i >= limit && (x || reveal.has(i))).length;
   }
 
   /** `newcomer`: someone sitting down, who must not take a free seat a mover needs; null for a move. */
@@ -605,10 +607,9 @@ export class TableRuntime {
 
   /** Everyone sitting down, and anyone who busted or left in an all-in runout browsers are still dealing out. */
   private seatedCount(): number {
-    const s = this.state;
-    let gone = 0;
-    for (const i of this.revealSeats()) if (!s.seats[i]) gone++;
-    return s.seats.filter(Boolean).length + gone;
+    const last = this.state.history.at(-1);
+    const gone = last && this.revealSeats().size ? last.hand.seats.filter((hs) => !this.seatOf(hs.playerId)).length : 0;
+    return this.state.seats.filter(Boolean).length + gone;
   }
 
   /**
@@ -661,10 +662,13 @@ export class TableRuntime {
    * The free seats the players in a smaller table's dropped seats will move into: the highest
    * seats nobody is waiting on, then held ones if there aren't enough.
    */
-  private moverSeats(limit: number, count: number): number[] {
+  private moverSeats(limit: number, count: number, moving = false): number[] {
     if (count <= 0) return [];
     const held = new Set([...this.offers().map((o) => o.seat), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!)]);
-    const free = this.state.seats.slice(0, limit).flatMap((x, i) => (x ? [] : [i])).reverse();
+    // The seat of a player in an all-in runout still being dealt out isn't free yet, bust or not (#437), except to
+    // players actually moving now, who must not be left without a seat.
+    const reveal = moving ? new Set<number>() : this.revealSeats();
+    const free = this.state.seats.slice(0, limit).flatMap((x, i) => (x || reveal.has(i) ? [] : [i])).reverse();
     return [...free.filter((i) => !held.has(i)), ...free.filter((i) => held.has(i))].slice(0, count);
   }
 
@@ -1493,7 +1497,7 @@ export class TableRuntime {
     const s = this.state;
     const moving = s.seats.slice(limit).filter((x): x is SeatState => !!x);
     if (!moving.length) return;
-    const free = this.moverSeats(limit, moving.length).sort((a, b) => a - b);
+    const free = this.moverSeats(limit, moving.length, true).sort((a, b) => a - b);
     for (const seat of moving) {
       const to = free.shift();
       if (to === undefined) return;
@@ -3214,7 +3218,8 @@ export class TableRuntime {
    */
   private revealSeats(): Set<number> {
     const last = this.state.history.at(-1);
-    if (!last || this.revealUntil() <= this.clock.now()) return new Set();
+    // Over once it has had time to show, or once a newer hand is dealt (browsers drop the runout for it).
+    if (!last || last.handNumber !== this.state.handNumber || this.revealUntil() <= this.clock.now()) return new Set();
     return new Set(last.hand.seats.map((hs) => hs.seat));
   }
 
