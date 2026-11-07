@@ -13,6 +13,8 @@ export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>
   const store = shared?.store ?? memoryTournamentStore();
   const snapshots = shared?.snapshots ?? new Map<string, string>();
   const tables = new Map<string, TableRuntime>();
+  /** Tables the director took away, with the next-hand time their last state went out with. */
+  const detached: { id: string; nextHandAt: number | null }[] = [];
   const moves: { playerId: string; from: string; to: string }[] = [];
   const errors: unknown[] = [];
   const host: TableHost = {
@@ -29,6 +31,7 @@ export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>
     },
     detach(rt) {
       tables.delete(rt.state.id);
+      detached.push({ id: rt.state.id, nextHandAt: rt.state.nextHandAt });
     },
   };
   const manager = new TournamentManager({
@@ -41,7 +44,7 @@ export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>
     log: (m, e) => errors.push([m, e]),
     fairLeadMs: opts.fairLeadMs,
   });
-  return { clock, store, snapshots, tables, moves, errors, manager };
+  return { clock, store, snapshots, tables, detached, moves, errors, manager };
 }
 
 export const players = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `Player ${i + 1}` }));
