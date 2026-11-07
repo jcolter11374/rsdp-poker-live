@@ -745,7 +745,8 @@ try {
     const move = (p, label) => p.locator('.action-bar.my-turn .buttons button', { hasText: label });
     const first = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
     const other = first === host ? guest : host;
-    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in$/ }).click();
+    // The preset's text is "All in" and its keyboard hint (⇧A).
+    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in/ }).click();
     await first.waitForTimeout(600);
     await move(first, /^All in/).click();
     await move(other, /^Call/).waitFor();
