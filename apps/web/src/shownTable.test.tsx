@@ -245,7 +245,9 @@ function knockout(street: 'preflop' | 'flop' | 'river', dealNext = true) {
   const hand = { handNumber: 9, phase: 'complete', showdown: true, boards: [[streets.flat()]], pots: [], potTotal: 0, awards: [{ seat: 0, amount: 200 }], events };
   const runoutLasts = runoutMs(events);
   const after = { ...base, serverNow, nextHandAt: dealNext ? serverNow + runoutLasts + RESULT_MS : null, hand, seats: [seat(0), null, seat(2, { folded: true })] } as unknown as TableView;
-  return { before: was, after, runoutLasts };
+  // The server sends the hand's end with the player still seated on no chips, and the knockout in a second update just after.
+  const ended = { ...after, seats: [seat(0), seat(1, { stack: 0 }), seat(2, { folded: true })] } as unknown as TableView;
+  return { before: was, ended, after, runoutLasts };
 }
 
 /** Moves the clock on in small steps, so the table re-renders between them (each street of a runout is its own timer). */
@@ -254,36 +256,50 @@ function wait(ms: number) {
 }
 
 describe("a knocked-out player's seat (#456)", () => {
-  // The computer's clock reads the server's when the hand ends, as the table's clock skew makes it in the app.
+  // The computer's clock reads the server's when the hand ends; start() sets the skew from each update after that.
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(50_000);
   });
   afterEach(() => vi.useRealTimers());
 
-  /** The hook's table, the hand having just finished; and how the knocked-out seat stands now. */
-  function start(street: 'preflop' | 'flop' | 'river', dealNext = true) {
+  /**
+   * The hook's table, the hand having just finished; and how the knocked-out seat stands now. Each update sets the table's
+   * clock skew (the server's clock less this one's) as TablePage does when it comes. With `twoUpdates` the knockout comes
+   * 40ms after the hand's end, as the server sends it; otherwise both show at once, as they did in the browser.
+   */
+  function start(street: 'preflop' | 'flop' | 'river', dealNext = true, twoUpdates = false) {
     const k = knockout(street, dealNext);
-    const hook = renderHook(({ live }) => useShownTable(live), { initialProps: { live: k.before } });
-    hook.rerender({ live: k.after });
+    const hook = renderHook(({ live, skew }: { live: TableView; skew: number }) => useShownTable(live, skew), { initialProps: { live: k.before, skew: 0 } });
+    const rerender = ({ live }: { live: TableView }) => hook.rerender({ live, skew: live.serverNow - Date.now() });
+    let after = k.after;
+    if (twoUpdates) {
+      rerender({ live: k.ended });
+      wait(40);
+      after = { ...after, serverNow: after.serverNow + 40 };
+    }
+    rerender({ live: after });
     const seat = () => hook.result.current.view!.seats[1];
-    return { ...k, ...hook, seat };
+    return { ...k, ...hook, after, rerender, seat };
   }
 
-  for (const street of ['preflop', 'flop', 'river'] as const) {
-    it(`stays through the result and fades just before the next deal, all in ${street === 'river' ? 'with the board out' : street === 'preflop' ? 'before the flop' : 'on the flop'}`, () => {
-      const { runoutLasts, seat, result } = start(street);
-      expect(runoutLasts > 0).toBe(street !== 'river');
-      // Dealt out a street at a time, with the player still in the hand.
-      wait(runoutLasts + 100);
-      expect(result.current.runningOut).toBe(false);
-      expect(seat()).toMatchObject({ playerId: 'b', departed: 'out' });
-      // The whole result, until a moment before the next deal.
-      wait(RESULT_MS - DEPART_FADE_MS - 400);
-      expect(seat()).toMatchObject({ playerId: 'b', departed: 'out' });
-      wait(600);
-      expect(seat()).toMatchObject({ playerId: 'b', departed: 'fading' });
-    });
+  for (const twoUpdates of [false, true]) {
+    for (const street of ['preflop', 'flop', 'river'] as const) {
+      const allIn = street === 'river' ? 'with the board out' : street === 'preflop' ? 'before the flop' : 'on the flop';
+      it(`stays through the result and fades just before the next deal, all in ${allIn}${twoUpdates ? ', knocked out in a second update' : ''}`, () => {
+        const { runoutLasts, seat, result } = start(street, true, twoUpdates);
+        expect(runoutLasts > 0).toBe(street !== 'river');
+        // Dealt out a street at a time, with the player still in the hand.
+        wait(runoutLasts + 100);
+        expect(result.current.runningOut).toBe(false);
+        expect(seat()).toMatchObject({ playerId: 'b', departed: 'out' });
+        // The whole result, until a moment before the next deal.
+        wait(RESULT_MS - DEPART_FADE_MS - 400);
+        expect(seat()).toMatchObject({ playerId: 'b', departed: 'out' });
+        wait(600);
+        expect(seat()).toMatchObject({ playerId: 'b', departed: 'fading' });
+      });
+    }
   }
 
   it("doesn't move the fade when the table updates during the result", () => {
@@ -312,7 +328,7 @@ describe("a knocked-out player's seat (#456)", () => {
   it("doesn't fade later for an update that was held up on the way", () => {
     const { after, runoutLasts, seat, rerender } = start('flop');
     wait(runoutLasts + 2000);
-    // Sent 1.2s before it arrived: on its own it would put the next deal 1.2s later than it is.
+    // Sent 1.2s before it arrived, so the table's clock skew drops by 1.2s: on its own it would put the next deal 1.2s later than it is.
     rerender({ live: { ...after, serverNow: after.serverNow + runoutLasts + 2000 - 1200 } as TableView });
     wait(RESULT_MS - 2000 - DEPART_FADE_MS - 400);
     expect(seat()).toMatchObject({ departed: 'out' });
@@ -335,7 +351,7 @@ describe("a knocked-out player's seat (#456)", () => {
   it("doesn't move the fade when the computer's clock is set during the result", () => {
     const { after, runoutLasts, seat, rerender } = start('flop');
     wait(runoutLasts + 1000);
-    // The computer's time jumps 3s ahead (a time sync, say), then the table updates.
+    // The computer's time jumps 3s ahead (a time sync, say), then the table updates, and the clock skew with it.
     vi.setSystemTime(Date.now() + 3000);
     wait(500);
     rerender({ live: { ...after, serverNow: after.serverNow + runoutLasts + 1500 } as TableView });
