@@ -18,6 +18,26 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.5] - 2026-11-07
+
+_Phone alerts, and a table for screen readers and the keyboard_
+
+### New
+
+- **Phone alerts, even with the site closed.** Turn on alerts with the Alerts button on the tournaments page or in a tournament's lobby. Your phone or computer then tells you when a tournament you're in starts in 5 minutes, when you're seated or moved to another table, and when it's your turn, or your pick at a Dealer's choice table. This works even when the site isn't open. "Your turn" only comes when you aren't already looking at that table, and you get one alert per turn, not two. On iPhone and iPad, alerts work once the site is on your home screen (Safari: Share, then Add to Home Screen); the button says how. An alert holds only its words and the page to open, never cards or amounts. Turning alerts off, signing out or deleting your account makes the site forget that browser straight away. The privacy page says what is kept and who delivers the alerts.
+- **Works with a screen reader and the keyboard.** The table now reads itself aloud to screen readers: each new line of the hand, "Your turn" with what you can do and the pot, pauses, and a warning when 10 seconds are left. Tab reaches every nameplate, which says who is to act, who has folded and who has the button, and Enter opens that player's menu. Dialogs and phone sheets keep the keyboard inside them and hand it back when they close. And the table's words and buttons are easier to read, with bigger buttons to tap.
+
+### Fixed and changed
+
+- Coach tips are now worked out on a thread of their own, so asking for lots of tips never slows down play at any table. Tips in draw games always think through every possible draw. If the coach is busy, it tells you to try again in a moment, and that doesn't count against your tips.
+- Tournament tables no longer show numbered empty seats. Nobody picks a seat at a tournament, so the players now spread evenly round the table, with yours at the bottom, and their nameplates get the room the empty seats took. If you're knocked out, the table stays turned your way until the next hand. Cash tables keep their empty seats for sitting down and adding bots.
+- Keyboard: Shift+A twice goes all in on your turn in no-limit and pot-limit hands. The first press puts the most you can bet in the box and says on the action bar what the second press will send: in pot limit that's the most the pot allows. Enter sends it too, and Esc, a click or any other key cancels it. A still ticks Call any before your turn, and Shift+A does nothing in fixed-limit games.
+- Seven Card Stud, Stud Hi-Lo and Razz: when everyone is all in before the last card, the rest of the hand is now dealt a street at a time, like an all-in in hold'em. Before, every card and the result appeared at once. This works the same in HORSE and the other mixed games.
+- All-in runouts: only the last card turns over now, and only once. Before, the flop turned over again when the turn landed, and the turn again when the river landed. The hand replayer works the same way.
+- The table is easier to read. The green buttons (Raise, Start game, Sit down, Invite) now use the darker green the rest of the site uses, the red host tag, request counts and Fold anyway? are darker, and the empty seats' Sit and + Bot are brighter. The words in the middle of the felt (Next hand in, Paused, the game's name, Run 1, the side-pot total) sit on a dark backing. + Bot, the quick chat replies and the Straddle and Wait for the big blind switches are bigger and easier to tap.
+- Tournaments: after a hand that knocks someone out, the top bar's level and the countdown to the next game keep going, instead of stopping until the next hand, or for good when that hand was the table's last.
+- Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
+
 ## [2026.11.07.4] - 2026-11-07
 
 _Lobby chat moderation and a recap of the night_
@@ -717,6 +737,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
