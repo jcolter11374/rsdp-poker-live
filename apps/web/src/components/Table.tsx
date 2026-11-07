@@ -119,12 +119,17 @@ type RowSize = (typeof PHONE_ROW)['upright'];
  */
 const PLATE_HALF_HEIGHT = 25;
 /**
- * How much taller a phone nameplate is while it shows a line under its stack ("Call 0.50", a hand's name): 5.5px, half
- * of it up and half down, rounded up. Where the layout must keep clear of a nameplate whatever it shows, it adds this.
+ * How much taller a phone nameplate is while it shows a betting line under its stack ("Call 0.50"): 5.5px, half of it up
+ * and half down, rounded up. (A hand's name at showdown adds about 10px.)
  */
 const LINE_GROWTH = 6;
-/** Cards on a phone don't follow a nameplate's width by this many pixels or fewer (see useHandFit). */
+/** Other players' cards on a phone don't follow a nameplate's width by this many pixels or fewer (see useRowSpots). */
 const JIGGLE = 2;
+/**
+ * Nor does your own hand, by this many: it moves when someone in the next seats acts and their nameplate widens, and a
+ * move this small, which still leaves it clear of their nameplates and cards, is left out.
+ */
+const HAND_JIGGLE = 4;
 const plateBox = (r: DOMRect, from: DOMRect = r): Box => {
   const middle = (r.top + r.bottom) / 2;
   return { left: from.left, right: from.right, top: middle - PLATE_HALF_HEIGHT, bottom: middle + PLATE_HALF_HEIGHT };
@@ -199,36 +204,24 @@ function placeRows(seats: readonly PhoneSeat[], size: RowSize, mine?: Box): Map<
     // the bottom of an earlier seat's nameplate above them (10px in all), and keep their size instead of bunching up: a
     // plain nameplate has nothing written there (its stack ends 12px above its bottom). While that nameplate also shows a
     // line under the stack ("Call 0.50", a hand's name), the cards can cover the bottom of that line. The other way round,
-    // a nameplate drawn over the cards would hide their rank and suit, so there the usual 4px holds, and holds while lines
-    // show: a line on this player's nameplate lifts these cards by half of LINE_GROWTH, and one on the nameplate over them
-    // brings its bottom down by the other half (and its top up by that half). Keeping clear of those lines is worth
-    // bunching the cards up for, not making them smaller: when it would, the 4px counts from plain nameplates.
-    const plates = (lines: boolean) =>
-      seats
-        .filter((s) => s !== r)
-        .map((s) =>
-          !(s.me || s.seat > r.seat)
-            ? { ...s.plate, bottom: s.plate.bottom - PADDING_UNDER_STACK }
-            : lines
-              ? { ...s.plate, top: s.plate.top - LINE_GROWTH / 2, bottom: s.plate.bottom + LINE_GROWTH }
-              : s.plate,
-        );
-    const others: Box[] = mine ? [mine] : [];
+    // a nameplate drawn over the cards would hide their rank and suit, so there the usual 4px holds. Both count plain
+    // nameplates: while both show a line, one drawn over the cards can come a few pixels further down over them (#380 is
+    // about the room between those seats). Counting the lines instead moved rows aside and back as lines came and went.
+    const blocks: Box[] = seats
+      .filter((s) => s !== r)
+      .map((s) => (s.me || s.seat > r.seat ? s.plate : { ...s.plate, bottom: s.plate.bottom - PADDING_UNDER_STACK }));
+    if (mine) blocks.push(mine);
     for (const o of rows) {
       const ob = band(o.plate);
       if (o === r || !(ob.bottom > at.top && ob.top < at.bottom)) continue;
       // Halfway between the two nameplates (between their middles, if they overlap).
       const [a, b] = r.plate.left <= o.plate.left ? [r.plate, o.plate] : [o.plate, r.plate];
       const x = a.right <= b.left ? (a.right + b.left) / 2 : (a.left + a.right + b.left + b.right) / 4;
-      others.push({ left: x, right: x, top: at.top, bottom: at.bottom });
+      blocks.push({ left: x, right: x, top: at.top, bottom: at.bottom });
     }
     const step = size.steps[r.cards <= 3 ? 0 : r.cards === 4 ? 1 : 2];
     // Bunched up, half of each card still shows: its rank and suit, for when it's turned up.
-    const natural = { cards: r.cards, cw: size.cw, step };
-    const placed = (lines: boolean) => placeRow(r.plate, at, [...plates(lines), ...others], edges, natural, { minCw: size.minCw });
-    const clear = placed(true);
-    const plain = (clear?.cw ?? size.cw) < size.cw ? placed(false) : clear;
-    const place = (plain?.cw ?? size.cw) > (clear?.cw ?? size.cw) ? plain : clear;
+    const place = placeRow(r.plate, at, blocks, edges, { cards: r.cards, cw: size.cw, step }, { minCw: size.minCw });
     const f = place ?? { shift: 0, cw: size.cw, step };
     const from = (r.plate.left + r.plate.right) / 2 - (f.cw + (r.cards - 1) * f.step) / 2 + f.shift;
     plans.set(r.seat, { place, step, box: { left: from, right: from + f.cw + (r.cards - 1) * f.step, ...at } });
@@ -277,13 +270,15 @@ interface MyHandFit extends HandFit {
 function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: string): MyHandFit | null {
   const [fit, setFit] = useState<MyHandFit | null>(null);
   const hold = useHeldPlates(plateKey);
-  const holdRows = useHeldRows(plateKey);
-  // Seats glide to new places when someone sits down or leaves; measure again once they've arrived.
-  const [, setGlides] = useState(0);
+  // Seats glide to new places when someone sits down or leaves; measure again once they've arrived, and from then on hold
+  // the rows where they are now, not where they were on the way.
+  const [glides, setGlides] = useState(0);
+  const holdRows = useHeldRows(`${plateKey}|${glides}`);
   useEffect(() => {
     const el = felt.current;
     if (!el || !compact) return;
-    const arrived = (e: TransitionEvent) => (e.target as HTMLElement).classList?.contains('seat') && setGlides((g) => g + 1);
+    const arrived = (e: TransitionEvent) =>
+      (e.target as HTMLElement).classList?.contains('seat') && (e.propertyName === 'left' || e.propertyName === 'top') && setGlides((g) => g + 1);
     el.addEventListener('transitionend', arrived);
     return () => el.removeEventListener('transitionend', arrived);
   }, [felt, compact]);
@@ -313,16 +308,16 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: st
         // Centred over your nameplate, then moved into the room, and further when it can, so the rows beside it keep their
         // usual look as they'd be set out without your cards. A hand that still can't fit sits in the middle of the room.
         const rows = holdRows(seats, placeRows(seats, PHONE_ROW.upright));
-        const from = placeHand(cx, w, span, clearOfRows(mine, rows, natural.cw * 1.4, span));
+        const from = placeHand(cx, w, span, clearOfRows(mine, rows, natural.cw * 1.4, span, LINE_GROWTH / 2));
         const shift = Math.round(from - (cx - w / 2));
         next = size || shift ? { ...f, shift } : null;
       }
     }
-    // A nameplate gets a little wider or narrower as its stack or the line under it changes. Following that by a pixel or
-    // two would only make the cards jiggle, so a move that small is left out.
+    // A nameplate gets a little wider or narrower as its stack or the line under it changes. Following that by a few pixels
+    // would only make the cards jiggle, so a move that small is left out (HAND_JIGGLE).
     // (No fit and the usual size moved aside a little count as the same size.)
     const sized = (f: MyHandFit | null) => (!f || (f.cw === natural?.cw && f.overlap === natural.overlap) ? '' : `${f.cw}/${f.overlap}`);
-    if (sized(next) !== sized(fit) || Math.abs((next?.shift ?? 0) - (fit?.shift ?? 0)) > JIGGLE) setFit(next);
+    if (sized(next) !== sized(fit) || Math.abs((next?.shift ?? 0) - (fit?.shift ?? 0)) > HAND_JIGGLE) setFit(next);
   });
   return fit;
 }
@@ -495,8 +490,9 @@ export function Table({
   const prefs = usePrefs();
   const size = useSize(felt);
   const reach = useSeatReach(felt);
-  // Cards on a phone are placed by the nameplates around them, each held at its widest through a hand (useHeldPlates).
-  const plateKey = `${view.hand?.handNumber ?? 0}|${size.w}|${view.seats.map((s) => (s ? 1 : 0)).join('')}`;
+  // Cards on a phone are placed by the nameplates around them, each held at its widest through a hand (useHeldPlates),
+  // until the felt changes size or someone sits down or leaves.
+  const plateKey = `${view.hand?.handNumber ?? 0}|${size.w}x${size.h}|${view.seats.map((s) => (s ? 1 : 0)).join('')}`;
   const handFit = useHandFit(felt, compact, plateKey);
   const rowSpots = useRowSpots(felt, compact, plateKey);
   const room = useRoom(felt, fill && !compact);

@@ -476,7 +476,7 @@ try {
   await step("phone: other players' cards keep off their neighbours' names and stacks", async () => {
     // On a phone, the row of cards above a player's nameplate once covered the next player's name and stack, most of all at
     // full Omaha tables, in the top corners (#318). A full 9-seat Omaha table, four cards each: at each phone size, no row
-    // of cards covers another player's name or stack, and none goes off the screen.
+    // of cards, yours included, covers another player's name or stack, and none goes off the screen.
     const host = await open('phone host');
     await host.goto(BASE);
     await host.fill('input[required]', 'Pat');
@@ -512,9 +512,10 @@ try {
         const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
         const seats = [...document.querySelectorAll('.felt .seat[data-seat]')];
         const found = [];
+        // Your own cards too: they move aside, and get smaller only if they must.
         for (const s of seats) {
           const hole = s.querySelector('.hole:not(.mucked)');
-          if (s.classList.contains('me') || !hole?.querySelector('.playing-card')) continue;
+          if (!hole?.querySelector('.playing-card')) continue;
           const row = box(hole);
           // innerText leaves out the host's tag, which phones hide.
           const name = s.querySelector('.name')?.innerText;

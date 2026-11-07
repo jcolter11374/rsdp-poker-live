@@ -222,17 +222,19 @@ export function handSpan(mine: Box, others: readonly Box[], cardHeight: number, 
  * rows of cards level with it (#318). Each row in `rows` is where it would go without your cards, with the
  * middle of its player's nameplate (`from`): a row counts on its player's side, even one that has moved
  * over your nameplate. A row is level with your cards when it reaches more than 4px into their height, as
- * placeRow counts it. Your cards hang down to 8px into your nameplate (styles.css), `cardHeight` tall.
+ * placeRow counts it. Your cards hang down to 8px into your nameplate (styles.css), `cardHeight` tall, and
+ * count `lift` pixels higher, as the rows count them (a line on your nameplate lifts them).
  */
 export function clearOfRows(
   mine: Box,
   rows: readonly { box: Box; from: number }[],
   cardHeight: number,
   span: { left: number; right: number },
+  lift = 0,
   margin = 6,
 ): { left: number; right: number } {
   const bottom = mine.top + 8;
-  const level = rows.filter(({ box }) => box.bottom > bottom - cardHeight + 4 && box.top < bottom - 4);
+  const level = rows.filter(({ box }) => box.bottom > bottom - cardHeight - lift + 4 && box.top < bottom - 4);
   const cx = (mine.left + mine.right) / 2;
   return {
     left: Math.max(span.left, ...level.filter((r) => r.from < cx).map((r) => r.box.right + margin)),

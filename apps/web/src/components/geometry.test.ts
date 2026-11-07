@@ -188,6 +188,8 @@ describe('clearOfRows and placeHand (#318: your cards making room for the rows b
     const sliver = { box: box(20, 150, 415, 457), from: 85 };
     expect(clearOfRows(mine, [above, sliver], 84, span)).toEqual(span);
     expect(clearOfRows(mine, [{ ...sliver, box: box(20, 150, 415, 459) }], 84, span)).toEqual({ left: 156, right: 387 });
+    // Counting your cards 3px higher, as the rows do, the sliver counts.
+    expect(clearOfRows(mine, [sliver], 84, span, 3)).toEqual({ left: 156, right: 387 });
   });
   it('never reaches past the room clear of nameplates', () => {
     expect(clearOfRows(mine, [{ box: box(0, 2, 460, 502), from: 1 }], 84, { left: 50, right: 300 })).toEqual({ left: 50, right: 300 });
