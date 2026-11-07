@@ -191,7 +191,8 @@ describe('backups', { timeout: 30_000 }, () => {
 });
 
 // Migration 0017 dropped the unused chip ledger tables where they were empty. Backups from before it still list them.
-describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () => {
+// Each restores into one or two fresh databases (some on disk), which takes seconds on a busy machine.
+describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () => {
   const LEDGER = ['chip_movements', 'seat_sessions'];
   const without = (all: Record<string, string[]>, names: string[]) => Object.fromEntries(Object.entries(all).filter(([t]) => !names.includes(t)));
 
@@ -214,11 +215,18 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
       await fill(old.db);
       if (withLedgerRows) await fillLedger(old.db);
       const { text, summary } = await backupOf(old.db);
-      return { text, summary, rows: await everything(old.db) };
+      return { text, summary, rows: await everything(old.db), shape: await ledgerShape(old.db) };
     } finally {
       await old.close();
     }
   }
+
+  let empty: Awaited<ReturnType<typeof backupFromBefore>>;
+  let withRows: Awaited<ReturnType<typeof backupFromBefore>>;
+  beforeAll(async () => {
+    empty = await backupFromBefore(false);
+    withRows = await backupFromBefore(true);
+  }, 60_000);
 
   it('are listed with migrations that exist, the drop after the ones that made them', () => {
     const tags = journal.entries.map((e) => e.tag);
@@ -229,7 +237,7 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
   });
 
   it('restore, leaving out the empty ones as the migration did', async () => {
-    const before = await backupFromBefore(false);
+    const before = empty;
     expect(before.summary.rows).toMatchObject({ chip_movements: 0, seat_sessions: 0 });
     const copy = await createTestDb();
     try {
@@ -247,7 +255,7 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
   });
 
   it('restore with their rows, keeping those tables as they were', async () => {
-    const before = await backupFromBefore(true);
+    const before = withRows;
     expect(before.summary.rows).toMatchObject({ chip_movements: 1, seat_sessions: 1 });
     const copy = await createTestDb();
     try {
@@ -276,9 +284,8 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
     }
   });
 
-  // Three databases, two of them on disk.
-  it('restore on start too, onto a server that then opens', { timeout: 60_000 }, async () => {
-    const before = await backupFromBefore(true);
+  it('restore on start too, onto a server that then opens', async () => {
+    const before = withRows;
     const dir = await mkdtemp(path.join(tmpdir(), 'rsdp-onstart-'));
     try {
       const live = path.join(dir, 'pglite');
@@ -298,15 +305,12 @@ describe('backups that list the dropped ledger tables', { timeout: 30_000 }, () 
   });
 
   it('remakes them exactly as the old migrations made them', async () => {
-    const before = await backupFromBefore(true);
-    const old = await databaseBefore('0017_drop_unused_ledger');
     const copy = await createTestDb();
     try {
-      await restoreBackup(copy, linesOf(before.text));
-      expect(await ledgerShape(copy)).toEqual(await ledgerShape(old.db));
-      expect((await ledgerShape(copy)).length).toBeGreaterThan(20);
+      await restoreBackup(copy, linesOf(withRows.text));
+      expect(withRows.shape.length).toBeGreaterThan(20);
+      expect(await ledgerShape(copy)).toEqual(withRows.shape);
     } finally {
-      await old.close();
       await closeDb(copy);
     }
   });
