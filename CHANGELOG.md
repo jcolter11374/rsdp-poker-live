@@ -18,6 +18,12 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.6] - 2026-11-07
+
+### Fixed and changed
+
+- Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you.
+
 ## [2026.11.07.4] - 2026-11-07
 
 _Lobby chat moderation and a recap of the night_
@@ -38,7 +44,6 @@ _Lobby chat moderation and a recap of the night_
 - Tournaments: the seat draw stays secret even if the site ever has to go back to an older version before the seats are drawn. The server now picks new secret numbers for the draw each time it loads a tournament whose seats aren't drawn yet, so nothing an older version shows can be used to work the draw out.
 - Backups: the nightly backup now works however big the saved tables get. Before, very large saved tables could make the backup fail and stop the site saving until it restarted. The site isn't near that size today.
 - Dealer's choice: at a new table, the first hand's button goes to the player who makes the first pick, and if they leave or sit out first, to the next player round. During an all-in runout, the seat count, closed seats, the fallback game and seat offers now wait for the result like the PICK tag, so none of them shows who busted before the cards are out.
-- Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you.
 
 ## [2026.11.07.3] - 2026-11-07
 
@@ -721,6 +726,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
 [2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
