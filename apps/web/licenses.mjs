@@ -17,7 +17,7 @@ export const PARTS = { browser: 'apps/web', server: 'apps/server' };
  * Rolldown (the bundler inside Vite) adds to wrap the CommonJS packages, React among them, and Babel's class-field
  * helpers. Oxc, inside Rolldown, copies those from @babel/runtime to rewrite class fields for the older browsers in
  * vite.config.ts. Oxc carries its own copy, so the @babel/runtime credited is the one installed here, a devDependency
- * kept for its license (the same MIT text in every version).
+ * kept for its license (the same MIT text in every version). Oxc's copy is from a slightly older Babel, as /credits says.
  */
 export const BUNDLED_TOOLS = { browser: ['vite', 'rolldown', '@babel/runtime'] };
 
