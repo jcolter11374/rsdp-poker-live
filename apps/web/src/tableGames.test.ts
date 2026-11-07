@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { dealtSizes } from './handSizes';
-import { tableGames, tournamentGames } from './tableGames';
+import { dealableGames, tableGames, tournamentGames } from './tableGames';
 
 describe('the games a table is laid out for (#409)', () => {
   it("is a cash table's one game, its rotation, or its Dealer's choice menu", () => {
@@ -21,6 +21,13 @@ describe('the games a table is laid out for (#409)', () => {
     const level = { kind: 'level' as const, sb: 25, bb: 50, ante: 0, anteType: 'per-player' as const, minutes: 10 };
     expect(tournamentGames({ games: ['nlhe'], structure: [level, { kind: 'break', minutes: 5 }, level] })).toEqual(['nlhe']);
     expect(tournamentGames({ games: ['nlhe', 'stud'], structure: [level, { ...level, gameId: 'plo4' }, { ...level, gameId: 'stud' }] })).toEqual(['nlhe', 'stud', 'plo4']);
+  });
+  it('leaves out the games too small for the players seated', () => {
+    const menu = ['td27', 'razz', 'stud', 'plo4', 'nlhe'];
+    expect(dealableGames(menu, 4)).toEqual(menu);
+    expect(dealableGames(menu, 7)).toEqual(['razz', 'stud', 'plo4', 'nlhe']);
+    expect(dealableGames(menu, 9)).toEqual(['plo4', 'nlhe']);
+    expect(dealableGames(['nope', 'nlhe'], 2)).toEqual(['nlhe']);
   });
   it('sizes seats for every hand any of the games deals', () => {
     expect(dealtSizes(['nlhe'])).toEqual([2]);

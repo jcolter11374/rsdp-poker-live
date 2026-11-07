@@ -613,7 +613,8 @@ try {
       window.__moved = null;
       return Math.round(most);
     });
-    // A few pixels are allowed: the seats grow or shrink a step if the table's size changes by a pixel or two.
+    // A few pixels are allowed: if the table's size changes by a pixel or two, the seats keep their places round it and so
+    // move with its edge.
     if (moved > 12) throw new Error(`a seat moved ${moved}px when the game changed from Hold'em to Omaha hi-lo`);
     await p.screenshot({ path: path.join(OUT, 'horse-laptop.png') });
     await stopGame(p, [p]);

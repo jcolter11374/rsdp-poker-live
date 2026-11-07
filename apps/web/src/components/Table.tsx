@@ -4,11 +4,12 @@ import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { clock, type Fmt } from '../format';
 import { handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
-import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, placeSeats, px, seatFractions, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
+import { besideBet, clearSideBands, fitHand, fromVars, handRoom, inFront, lerp, keepPlaced, placeSeats, px, seatFractions, seatsFine, stadiumPoint, type Extent, type HandFit, type Point, type Reach } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
 import { ChoiceLine, PickTag } from './table/Choice';
 import { reportError } from '../reportError';
 import { dealtSizes } from '../handSizes';
+import { dealableGames } from '../tableGames';
 import { baseChip, CHIP_SET, ChipStacks, DOLLAR_CHIPS } from './table/Chips';
 import { feltStyle, usePrefs } from '../prefs';
 import { CountUp, FeltEmblem, useLanded } from './table/Feel';
@@ -338,7 +339,6 @@ interface Flight {
 }
 
 /** How much the felt's width or height may change, as a share of it, before the seats are placed afresh. */
-const FELT_SLACK = 0.04;
 
 let flightId = 0;
 
@@ -419,9 +419,10 @@ export function Table({
   // and k, not measured, because its margins grow with the seats and a measured size would feed back.
   // A player's nameplate with its tucked cards, at scale 1: wider with four cards, and with the wide layout's bigger cards.
   // A mixed table is laid out for every game it deals, the game on now included (a bomb pot can deal one that isn't on
-  // the list), so neither the felt nor the seats move when the game changes (#409).
+  // the list), so neither the felt nor the seats move when the game changes (#409). Games too small for the players
+  // seated can't be dealt now, so they're left out.
   const gameId = (hand ?? view.upcoming)?.gameId ?? '';
-  const dealtKey = [...new Set([...(games ?? []), gameId].filter(Boolean))].sort().join(',');
+  const dealtKey = [...new Set([...dealableGames(games ?? [], players), gameId].filter(Boolean))].sort().join(',');
   const dealt = useMemo(() => (dealtKey ? dealtKey.split(',') : []), [dealtKey]);
   const fourCard = dealt.some((g) => ['plo4', 'plo8', 'badugi'].includes(g));
   // Stud, triple draw and five- and six-card Omaha show a row of cards over the nameplate. In the wide layout those
@@ -445,14 +446,22 @@ export function Table({
   // so there's nothing to size for until the deal, unless the page knows the tournament's games.
   const sizes = useMemo(() => dealtSizes(dealt), [dealt]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
-  const sized = useSeatBoxes(felt, `${sizes.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`, sizes, seating, view.me.seat, !compact);
+  // The hand sizes, the seats' scale, then the layout (the placement below leaves the scale out of its key).
+  const boxKey = (of: readonly number[]) => `${of.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`;
+  const sized = useSeatBoxes(felt, boxKey(sizes), sizes, seating, view.me.seat, !compact);
+  // A table too full to give every game's hands their room at once is spaced for the game on now instead, as before #409:
+  // its seats move when the game changes, but nobody's nameplate covers another's.
+  const nowSizes = useMemo(() => dealtSizes(gameId ? [gameId] : []), [gameId]);
+  const mixed = nowSizes.join('-') !== sizes.join('-');
+  const sizedNow = useSeatBoxes(felt, boxKey(nowSizes), nowSizes, seating, view.me.seat, !compact && mixed);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
   // players, and some room between each other, so they never land on someone's nameplate.
-  const podHalf = compact
-    ? Math.max(60, ...view.seats.map((s, seat) => (s && reach[seat]?.pod ? reach[seat].pod! : 0)))
-    : Math.max(120, sized.me?.pod ?? 0, sized.others?.pod ?? 0);
   const emptyHalf = compact ? 34 : 58;
-  const clear = (podHalf + emptyHalf + 6) / perimeter;
+  const clearOf = (b: SeatBoxes) =>
+    ((compact ? Math.max(60, ...view.seats.map((s, seat) => (s && reach[seat]?.pod ? reach[seat].pod! : 0))) : Math.max(120, b.me?.pod ?? 0, b.others?.pod ?? 0)) + emptyHalf + 6) /
+    perimeter;
+  const clear = clearOf(sized);
+  const clearNow = clearOf(sizedNow);
   const minGap = (compact ? 72 : 120) / perimeter;
   // On a computer that spacing is kept unless it puts one seat on another; then seats are spaced by their real size (#363).
   // Worked out again only when something it depends on changes: the box spacing takes a moment, and the clocks re-render often.
@@ -464,27 +473,36 @@ export function Table({
   const spread = useMemo(() => {
     const taken = [...takenKey].map((c) => c === '1');
     if (compact) return seatFractions(taken, offset, { clear, minGap });
-    const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? sized.empty : seat === mine ? sized.me : sized.others);
+    const was = placed.current;
     // They stay through a small change to the felt's size too (the dock or the top bar a few pixels taller mid-hand),
     // since placed afresh, a few pixels could send seats a long way. A bigger change (a banner coming or going, a new
     // window size) or the felt's first measure places them afresh: seats kept from the size before would depend on what
     // happened before, and two players with the same window could see different tables.
-    const key = `${sized.key}|${takenKey}|${offset}`;
-    const was = placed.current;
-    const near = !!was && was.key === key && measured && Math.abs(w - was.w) <= was.w * FELT_SLACK && Math.abs(h - was.h) <= was.h * FELT_SLACK;
-    const keep = near ? was.at : undefined;
+    // The seats' scale isn't part of it: a small change to the felt's size can step the scale too, and kept seats still
+    // have to fit the boxes at the new scale (placeSeats checks).
+    const place = (b: SeatBoxes, clearing: number) => {
+      const boxOf = (seat: number): Extent | undefined => (!taken[seat] ? b.empty : seat === mine ? b.me : b.others);
+      const key = `${b.key.split('|').filter((_, i) => i !== 1).join('|')}|${takenKey}|${offset}`;
+      const near = keepPlaced(was, key, size.w, size.h);
+      const at = placeSeats(taken, offset, w, h, { clear: clearing, minGap, box: boxOf, gap: 6, keep: near ? was.at : undefined });
+      // Kept seats keep the size they were placed for, so a run of small changes can't carry them across a big one.
+      const record = near && at === was.at ? was : { key, w, h, at };
+      return { at, record, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
+    };
     let at: readonly number[];
     try {
-      at = placeSeats(taken, offset, w, h, { clear, minGap, box: boxOf, gap: 6, keep });
+      let done = place(sized, clear);
+      if (mixed && !done.fine) done = place(sizedNow, clearNow);
+      at = done.at;
+      placed.current = measured ? done.record : null;
     } catch (error) {
       // A slip here mustn't take the table down: report it and fall back to the old spacing.
       reportError(error, 'error');
       at = seatFractions(taken, offset, { clear, minGap });
+      placed.current = null;
     }
-    // Kept seats keep the size they were placed for, so a run of small changes can't carry them across a big one.
-    placed.current = !measured ? null : near && at === was.at ? was : { key, w, h, at };
     return at;
-  }, [takenKey, offset, mine, compact, clear, minGap, w, h, measured, sized]);
+  }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
   const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;

@@ -164,8 +164,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   useTableEffects(view, skew, preQueued);
   const readyTable = useFollowSeat(tableId, view?.me.seat != null, view !== live);
   // Every game the table deals, so a mixed table is laid out once for all of them (#409). A tournament table's own
-  // settings always say Hold'em: its games come from the tournament.
-  const eventGames = useTournamentGames(view?.tournamentId ?? null);
+  // settings always say Hold'em: its games come from the tournament, asked for as the page opens (the table's address
+  // names it), so they're mostly known by the first deal and the table isn't laid out twice.
+  const eventGames = useTournamentGames(view?.tournamentId ?? tournamentOfTable(tableId));
   const cashGames = view && view.mode === 'cash' ? tableGames(view.settings).join(',') : '';
   const games = useMemo(() => (view?.tournamentId ? eventGames : cashGames ? cashGames.split(',') : []), [view?.tournamentId, eventGames, cashGames]);
   // A newer build of the app waits for the end of the hand (and its runout) before this tab reloads into it.

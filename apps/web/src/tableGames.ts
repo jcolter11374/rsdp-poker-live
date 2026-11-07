@@ -1,4 +1,5 @@
 import type { TableSettings } from '@rsdp/engine/settings';
+import { getVariant } from '@rsdp/engine/variants';
 import type { TournamentSettings } from '@rsdp/tournament';
 
 /*
@@ -21,4 +22,18 @@ export function tableGames(settings: TableSettings): string[] {
 export function tournamentGames(settings: Pick<TournamentSettings, 'games' | 'structure'>): string[] {
   const own = settings.structure.flatMap((row) => (row.kind === 'level' && row.gameId !== undefined ? [row.gameId] : []));
   return [...new Set([...settings.games, ...own])];
+}
+
+/**
+ * The games of these that can be dealt to this many players. A Dealer's choice menu can hold games the table is too
+ * full to pick (stud with nine seated), and those needn't make room for their hands.
+ */
+export function dealableGames(games: readonly string[], players: number): string[] {
+  return games.filter((g) => {
+    try {
+      return getVariant(g).maxPlayers >= players;
+    } catch {
+      return false;
+    }
+  });
 }
