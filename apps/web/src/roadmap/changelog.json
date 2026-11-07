@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.4",
+      "date": "2026-11-07",
+      "fixes": [
+        "Dealer's choice: when the host switches the table to one game or to rotating games during a hand, the next chooser can no longer pick a game that would never be dealt. The Pick next game button and the PICK tag go, the top bar says it's the last hand, and if someone had already picked, the log says their pick isn't dealt. A game the host takes off the menu during a hand can no longer be picked, kept going or dealt when the clock runs out; if the host changes the whole menu, the chooser picks from the new one when the hand is over.",
+        "Tournaments: the seat draw stays secret even if the site ever has to go back to an older version before the seats are drawn. The server now picks new secret numbers for the draw each time it loads a tournament whose seats aren't drawn yet, so nothing an older version shows can be used to work the draw out.",
+        "Backups: the nightly backup now works however big the saved tables get. Before, very large saved tables could make the backup fail and stop the site saving until it restarted. The site isn't near that size today.",
+        "Dealer's choice: at a new table, the first hand's button goes to the player who makes the first pick, and if they leave or sit out first, to the next player round. During an all-in runout, the seat count, closed seats, the fallback game and seat offers now wait for the result like the PICK tag, so none of them shows who busted before the cards are out."
+      ]
+    },
+    {
       "id": "2026.11.07.3",
       "date": "2026-11-07",
       "fixes": [
