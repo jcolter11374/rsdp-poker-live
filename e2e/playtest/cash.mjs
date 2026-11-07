@@ -18,6 +18,8 @@ async function settings(fn) {
   await john.click('.modal button:has-text("Save")');
   await john.locator('.modal').waitFor({ state: 'detached' }).catch(() => {});
 }
+/** The Game tab's game menu: the select that lists the games ("How the game is chosen" comes first since Dealer's choice). */
+const gameMenu = () => john.locator('.modal select').filter({ has: john.locator('option[value="plo4"]') }).first();
 async function waitStreet(p, n) {
   await p.waitForFunction((n) => document.querySelectorAll('.board-row').length > 0 && document.querySelectorAll('.board-row')[0].querySelectorAll('.playing-card').length >= n, n, { timeout: 60_000 });
 }
@@ -109,7 +111,7 @@ try {
   // Omaha.
   await settings(async () => {
     await john.click('.tabs button:has-text("Game")');
-    await john.locator('.field:has-text("Game") select, label:has-text("Game") select').first().selectOption('plo4');
+    await gameMenu().selectOption('plo4');
   });
   await john.locator('.seat.me .hole .playing-card:nth-child(4)').waitFor({ timeout: 120_000 });
   await waitStreet(john, 3);
@@ -120,7 +122,7 @@ try {
   // Seven Card Stud.
   await settings(async () => {
     await john.click('.tabs button:has-text("Game")');
-    await john.locator('.field:has-text("Game") select, label:has-text("Game") select').first().selectOption('stud');
+    await gameMenu().selectOption('stud');
   });
   await john.locator('.topbar:has-text("Stud")').waitFor({ timeout: 120_000 });
   await john.waitForFunction(() => document.querySelectorAll('.seat.me .playing-card').length >= 5, null, { timeout: 120_000 });

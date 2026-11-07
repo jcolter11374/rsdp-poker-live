@@ -9,6 +9,7 @@
       "items": [
         { "title": "Every game", "detail": "Hold'em, Omaha and Omaha Hi-Lo (4, 5 or 6 cards), Seven Card Stud, Stud Hi-Lo, Razz, 2-7 Triple Draw and Badugi, with a How to play guide for each one. Tables name the game plainly, and high-low games are labelled 8 or better." },
         { "title": "Game extras, all free", "detail": "Run it twice, straddles, bomb pots, the 7-2 bounty, double board, game rotation, rabbit hunting, the time bank and the Nit game, each with its own How to play guide." },
+        { "title": "Mixed games", "detail": "HORSE and 8-Game at cash tables and in tournaments. Cash tables also have Dealer's choice: players take turns choosing the game from a menu the host sets up, with the How to play guide for every game on it, for an orbit at a time or as many hands as the host sets." },
         { "title": "Cash games in dollars and cents", "detail": "Type the blinds as money (it starts at .25/.50), and stacks, bets, the pot and the ledger all show dollars, with casino chips on the felt. Tournaments still use chips." },
         { "title": "Cash game host controls", "detail": "A waitlist, seat shuffles, co-hosts who can run the game while you play, spectators with a delay, chat settings and saved table presets. If the host lets spectators see every card, everyone is told, and you agree to it before you sit down." },
         { "title": "Cash game reliability", "detail": "Fixes for players leaving while all in, phones dropping out, double taps, buttons stuck on busy after a dropped connection, and server updates in the middle of a hand. A tap that arrives after its turn is over, say on a slow connection, is refused instead of being played on a later street. Stud bring-ins, limit caps and short all-ins follow the usual rules." },
@@ -40,7 +41,6 @@
       "title": "Coming in the next release",
       "blurb": "Done, or being finished now.",
       "items": [
-        { "title": "Dealer's choice", "detail": "Players take turns choosing the game for the next orbit from a menu the host sets up, with the How to play guide for every game on it." },
         { "title": "A recap for WhatsApp", "detail": "A Copy recap button in a cash game's ledger: a few lines about the night (the games, how many hands, everyone's result and the biggest pot), ready to paste into the WhatsApp group." },
         { "title": "Lobby chat moderation", "detail": "Tournament hosts can mute someone, delete a message for everyone, or turn the lobby chat off, and anyone can hide someone's messages just for themselves." }
       ]
