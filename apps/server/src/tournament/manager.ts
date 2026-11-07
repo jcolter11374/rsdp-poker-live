@@ -226,7 +226,7 @@ export class TournamentManager {
       const state = this.newState(newTournamentId(), hostId, settings);
       // A taken id is never saved over: another one is drawn.
       if (!(await this.deps.store.create(state))) continue;
-      await this.adopt(state, null);
+      await this.adopt(state, null, { made: true });
       return state.id;
     }
     throw new Error('no free tournament id');
@@ -241,7 +241,7 @@ export class TournamentManager {
     const mark = this.deps.gate?.mark();
     const saved = await this.deps.store.load(id);
     if (!saved) return null;
-    return this.live.get(id) ?? this.adopt(saved.state, saved.nextId, mark);
+    return this.live.get(id) ?? this.adopt(saved.state, saved.nextId, { mark });
   }
 
   /** The state of every tournament held in memory (a name being replaced must not be written back over). */
@@ -500,7 +500,8 @@ export class TournamentManager {
 
   private newState(id: string, hostId: PlayerId, settings: TournamentSettings, follows: TournamentSettings | null = null) {
     const seed = this.newSeatSeed();
-    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, follows }));
+    const legacyRng = this.newLegacyRng();
+    return this.guard(() => createTournament({ id, hostId, settings, now: this.clock.now(), seed, legacyRng, follows }));
   }
 
   /**
@@ -511,6 +512,18 @@ export class TournamentManager {
     const rng = this.deps.rng;
     const bytes = rng ? Uint8Array.from({ length: 32 }, () => rng(256)) : randomBytes(32);
     return Buffer.from(bytes).toString('hex');
+  }
+
+  /**
+   * A secret state for the old seat-draw generator, made apart from the seed (see `CreateInput.legacyRng`): 4 bytes
+   * from crypto.randomBytes, or from the test rng, never 0.
+   */
+  private newLegacyRng(): number {
+    const rng = this.deps.rng;
+    for (;;) {
+      const n = rng ? rng(0x100000000) : randomBytes(4).readUInt32BE(0);
+      if (n !== 0) return n;
+    }
   }
 
   private guard<T>(fn: () => T): T {
@@ -576,26 +589,28 @@ export class TournamentManager {
   }
 
   /**
-   * Takes a tournament into memory: its tables come back from their snapshots. `mark`: the gate's mark taken before
+   * Takes a tournament into memory: its tables come back from their snapshots. `made` is true when this server
+   * has just made the state, so its seat seed has never left the server. `mark`: the gate's mark taken before
    * `state` was read, when it was read from storage.
    */
-  private async adopt(state: TournamentState, nextId: string | null, mark?: number): Promise<Live> {
+  private async adopt(state: TournamentState, nextId: string | null, opts: { made?: boolean; mark?: number } = {}): Promise<Live> {
     // Every snapshot loads before anything is mounted, so a failed load leaves nothing half-built to be found later.
     const snapshots = await Promise.all(state.tables.map((t) => this.deps.tables.loadTable(tableAddress(t.id))));
     const already = this.live.get(state.id);
     if (already) return already;
     // A name replaced since it was read: read it again, or its first save would put the name back.
     const gate = this.deps.gate;
-    if (gate && mark !== undefined && gate.stale(mark)) {
+    if (gate && opts.mark !== undefined && gate.stale(opts.mark)) {
       await gate.settled();
       const again = await this.get(state.id);
       if (!again) throw new ActionError('tournament not found');
       return again;
     }
-    // Saved before seat draws used a 32-byte seed, with its seats still to draw: it draws from a fresh secure seed
-    // rather than the old 32-bit one. Nobody ever saw the old seed, so nothing anyone saw changes.
-    const reseeded = needsSeatSeed(state);
-    if (reseeded) state = withSeatSeed(state, this.newSeatSeed());
+    // Seats still to draw: a fresh seed every time it loads from storage (see needsSeatSeed). That upgrades one
+    // saved before rsdp-seats-v1, and retires a seed that a server from before then sent to browsers after a
+    // rollback. One this server has just made keeps the seed it was made with.
+    const reseeded = !opts.made && needsSeatSeed(state);
+    if (reseeded) state = withSeatSeed(state, this.newSeatSeed(), this.newLegacyRng());
     const live: Live = { state, nextId, tables: new Map(), timer: null, saveTimer: null, applying: false, deferred: [], reports: new Map(), replay: null };
     try {
       state.tables.forEach((t, i) => {
@@ -1002,7 +1017,7 @@ export class TournamentManager {
     // A series keeps a rebuy or add-on count saved before the per-player cap (#281).
     const state = { ...this.newState(id, live.state.hostId, settings, live.state.settings), spawnedFrom: live.state.id };
     // Already saved: it was made before a restart (this event's own save had not happened yet), so that one is next.
-    if (await this.deps.store.create(state)) await this.adopt(state, null);
+    if (await this.deps.store.create(state)) await this.adopt(state, null, { made: true });
     else if (!(await this.get(id))) throw new Error(`tournament ${id} is saved but could not be loaded`);
     live.nextId = id;
     if (live.state.nextError !== undefined) {

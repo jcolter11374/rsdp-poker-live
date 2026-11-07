@@ -780,10 +780,15 @@ export function createApp(deps: AppDeps = {}) {
     );
     // Shutting down cuts the download: a client that has stopped reading would otherwise hold it open for good.
     stopBackup = () => void res.destroy();
-    backup = writeBackup(db, (line) => {
-      if (stopped) throw new Error('the download was closed');
-      if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
-    })
+    backup = writeBackup(
+      db,
+      (line) => {
+        if (stopped) throw new Error('the download was closed');
+        if (!gzip.write(line)) return Promise.race([new Promise<void>((done) => gzip.once('drain', done)), closed]);
+      },
+      new Date(),
+      () => stopped,
+    )
       .then(() => gzip.end())
       .catch((e) => {
         log('backup failed', e);
