@@ -218,6 +218,12 @@ function cleanSettings(raw: Partial<TournamentSettings>): Partial<TournamentSett
   return out;
 }
 
+/** JSON with every object's keys in sorted order, so a setting sent back with its keys in another order compares equal. */
+const sortedJson = (v: unknown) => JSON.stringify(v, (_k, x: unknown) => (isObject(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+
+/** Whether two values of one setting hold the same thing. Lists keep their order: in a list, order matters. */
+const sameSetting = (a: unknown, b: unknown) => sortedJson(a) === sortedJson(b);
+
 /** Most rebuys, and most add-ons, one player may take in one event. */
 export const MAX_BUYS_PER_PLAYER = 100;
 
@@ -1340,7 +1346,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
         // Compared cleaned, as settings saved before nested fields were cleaned may still hold extra ones.
         const was = cleanSettings(s.settings);
         for (const k of locked) {
-          if (k in changes && JSON.stringify(changes[k]) !== JSON.stringify(was[k]))
+          if (k in changes && !sameSetting(changes[k], was[k]))
             fail(k === 'structure' ? 'Use editStructure to change levels' : k === 'season' ? 'The season is set when the tournament is created' : `${k} is locked once tables exist`);
         }
         const errors = validateSettings(next, s.settings);
@@ -1353,7 +1359,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
           s.startAt = next.start.startAt;
         }
         // Named for the activity log, which leaves out a save that changed nothing.
-        const changed = (Object.keys(changes) as (keyof TournamentSettings)[]).filter((k) => JSON.stringify(changes[k]) !== JSON.stringify(was[k]));
+        const changed = (Object.keys(changes) as (keyof TournamentSettings)[]).filter((k) => !sameSetting(changes[k], was[k]));
         emit(c, { type: 'settingsUpdated', changed });
         break;
       }

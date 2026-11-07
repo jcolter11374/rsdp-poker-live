@@ -134,4 +134,20 @@ describe('host settings changes', () => {
     expect(r.events).toEqual([{ type: 'settingsUpdated', changed: [] }]);
     expect(logEvent(r.events[0], name)).toBeNull();
   });
+
+  it('count the same values sent with their keys in another order as no change', () => {
+    const r = update(create(), { lateRegistration: { throughLevel: 4, enabled: true } });
+    expect(r.events).toEqual([{ type: 'settingsUpdated', changed: [] }]);
+    // A list is still compared in order.
+    const mixed = createTournament({ id: 'M', hostId: 'host', settings: defaultSettings({ games: ['nlhe', 'plo'] }), now: T0, seed: 1 });
+    expect(update(mixed, { games: ['plo', 'nlhe'] }).events).toEqual([{ type: 'settingsUpdated', changed: ['games'] }]);
+  });
+
+  it('let a locked setting be sent back with its keys in another order', () => {
+    const s = create();
+    const reordered = s.settings.structure.map((row) => Object.fromEntries(Object.entries(row).reverse())) as TournamentSettings['structure'];
+    expect(Object.keys(reordered[0])).not.toEqual(Object.keys(s.settings.structure[0]));
+    expect(update(s, { structure: reordered }).events).toEqual([{ type: 'settingsUpdated', changed: [] }]);
+    expect(() => update(s, { structure: reordered.slice(1) })).toThrow(/Use editStructure/);
+  });
 });

@@ -25,7 +25,7 @@ const SETTING_NAMES: Record<keyof TournamentSettings, string> = {
   payouts: 'payouts',
   handForHand: 'hand-for-hand',
   bounty: 'bounties',
-  invites: 'invite codes',
+  invites: 'invite code rules',
   checkIn: 'check-in',
   season: 'season',
   tableRules: 'table rules',

@@ -63,6 +63,8 @@ describe('host settings changes', () => {
     expect(settings(['lateRegistration'])).toBe('The host changed the tournament settings: late registration');
     expect(settings(['reEntry', 'handForHand', 'tableRules'])).toBe('The host changed the tournament settings: re-entry, hand-for-hand, table rules');
     expect(settings(['games', 'gameBetting'])).toBe('The host changed the tournament settings: games');
+    // The two invite switches, not new codes: making codes isn't shown.
+    expect(settings(['invites'])).toBe('The host changed the tournament settings: invite code rules');
   });
 
   it('fall back to a plain line for settings this tab does not know', () => {
