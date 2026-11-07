@@ -271,17 +271,21 @@ the repository (and pulling the `transparency` branch now and then).
   whole hand as "Check this hand" sees it once revealed (a hand shown after it
   ends is recorded again). It includes the hand's secret server seed, so it
   can't be used to work out folded cards while the hand is still sealed. At a
-  table whose spectators watch on a delay, each hand goes in that long after
-  it ends (at most 10 minutes), and a card shown after the hand that long
-  after it is shown, so the record never shows a hand ending before the
-  people watching see it end. Until then the server keeps the entry, saved,
-  outside the chain: it gets its number and time when it goes in, and a
-  table's hands go in in the order they ended. Buy-ins, cash-outs and
-  everything else go in at once. Anyone can read the record at `/api/audit/entries`.
+  table whose spectators watch on a delay, each hand's own entry goes in that
+  long after the hand ends (at most 10 minutes), and a card shown after the
+  hand goes in that long after it is shown, so the hand's entry can't tell
+  anyone it is over before the people watching see it end. Until then the
+  server keeps the entry, saved, outside the chain: it gets its number and
+  time when it goes in, and a table's hands go in in the order they ended.
+  Buy-ins, cash-outs and everything else still go in at once, even those that
+  come as a hand ends (someone leaving after the hand, say), so those can show
+  that a hand is over before the people watching see it end. Anyone can read
+  the record at `/api/audit/entries`.
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
   without names, and anyone can see when hands were played (at a table
-  watched on a delay, when its spectators saw them end).
+  watched on a delay, when they went in, which is normally when its
+  spectators saw them end).
 - **GitHub's copy of the record.** Each time the watcher runs, it reads the whole
   record again, checks every entry it ever copied is still there unchanged
   and that the chain is unbroken, and copies the new entries to the
@@ -296,7 +300,10 @@ the repository (and pulling the `transparency` branch now and then).
   against its entry, and marks a hand that is missing while hands before and
   after it are recorded (an honest server only does that if it crashed just
   as the hand finished; a hand waiting for a spectator delay is saved, and
-  goes in before any later hand of its table). The ledger checks every
+  goes in before any later hand of its table). A card shown after the hand
+  at a table watched on a delay goes in up to 10 minutes after it is shown;
+  until then the check finds the hand as it ended and asks the record again
+  each minute. The ledger checks every
   buy-in and cash-out against the record, and says so if a player's totals
   were found changed when a closed table was opened again. Those two compare with the record as the
   site shows it now; it's GitHub's regular check of the whole record that shows
@@ -328,7 +335,8 @@ What these checks can't do:
   loses the last few writes would make it reuse their numbers. Browsers and
   the watcher would report that as a changed record, as they should.
 - A hand waiting for a table's spectator delay is saved on the server too,
-  and goes in on time after a restart. A hosting failure that lost it would
+  and goes in after a restart: on time, or straight after the restart if it
+  came due while the server was down. A hosting failure that lost it would
   leave that hand out of the record, a gap "Check this hand" marks as above.
 - If the database were lost, the record would start again from entry 1, and
   the watcher would report it as a problem. That is the right call; John would
@@ -375,7 +383,8 @@ list, a link's preview) from that same moment, and sends them an update only
 when something they can see changes. A change to the delay starts for them at
 the first hand dealt under it. A few things stay live on purpose:
 
-- Chat, and who has the table open.
+- Chat, gestures between players their view has seated, and who has the table
+  open.
 - The warning that spectators see every card. It can only be turned on between
   hands, so when it appears, someone watching on a delay can tell that the live
   table is between hands. Delaying it would let people sit down without seeing

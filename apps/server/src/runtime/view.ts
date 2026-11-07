@@ -573,9 +573,23 @@ export function handRecordView(
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
-    fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealsAt(past.handNumber, past.endedAt, opts.asOf), rt.now(), (id) => rt.nameOf(id)),
+    fair: opts.hideMine ? null : fairOf(rt, past, opts.asOf),
     ...(notes.length ? { botNotes: notes.map((n) => ({ ...n })) } : {}),
   };
+}
+
+/**
+ * A finished hand's fair-dealing record for someone who sees the table at `asOf` (a spectator on a delay; live without
+ * it). Revealed only once it was revealed at the moment they are shown: the live table may have moved the reveal since
+ * (a stop lifted), and a seed shown on the time now could show them cards the live table still keeps hidden (#435).
+ * Its time to reveal is on their clock, which runs that far behind.
+ */
+function fairOf(rt: TableRuntime, past: PastHand, asOf?: number): FairRecordView | null {
+  const revealsAt = rt.fairRevealsAt(past.handNumber, past.endedAt, asOf);
+  const nameOf = (id: PlayerId) => rt.nameOf(id);
+  if (asOf === undefined || !Number.isFinite(asOf)) return fairRecordView(past, revealsAt, rt.now(), nameOf);
+  const view = fairRecordView(past, revealsAt, asOf, nameOf);
+  return view?.revealsAt != null ? { ...view, revealsAt: view.revealsAt + Math.max(0, rt.now() - asOf) } : view;
 }
 
 function fairRecordView(past: PastHand, revealsAt: number, now: number, nameOf: (id: PlayerId) => string): FairRecordView | null {

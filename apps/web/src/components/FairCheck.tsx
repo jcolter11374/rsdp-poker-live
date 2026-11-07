@@ -16,6 +16,8 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
   const digest = useMemo(() => digestOf(hand), [hand]);
   // The public record of this hand, to check it against once it is revealed.
   const [record, setRecord] = useState<HandEntries | 'failed' | null>(null);
+  // Asked again a minute later while a card shown after the hand is still waiting to go in the record (D38).
+  const [again, setAgain] = useState(0);
   useEffect(() => {
     if (!tableId || !digest) return;
     let live = true;
@@ -26,7 +28,13 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
     return () => {
       live = false;
     };
-  }, [tableId, digest, hand.handNumber]);
+  }, [tableId, digest, hand.handNumber, again]);
+  const waiting = !!record && record !== 'failed' && !!handInRecord(hand, record).pending;
+  useEffect(() => {
+    if (!waiting || again >= 15) return;
+    const t = setTimeout(() => setAgain((n) => n + 1), 60_000);
+    return () => clearTimeout(t);
+  }, [waiting, again]);
   const report = useMemo(() => {
     if (!fair) return null;
     const seat = hand.seats.find((s) => s.playerId === myId)?.seat;

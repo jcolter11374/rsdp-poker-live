@@ -199,8 +199,8 @@ describe('hands at a table watched on a delay', () => {
   const handEntries = (id: string, n: number) => read<{ entries: AuditEntry[]; before: boolean; after: boolean }>(`/api/audit/table/${tableRef(id)}/hand/${n}`);
 
   /** One server's life on these stores, as a deploy ends one and the next starts. */
-  async function serve(auditStore: AuditStore, store: TableStore) {
-    const audit = await AuditLog.open(auditStore, { now: () => clock.now(), log: () => {} });
+  async function serve(auditStore: AuditStore, store: TableStore, now = () => clock.now()) {
+    const audit = await AuditLog.open(auditStore, { now, log: () => {} });
     delayed = createApp({ clock, store, audit, adminKey: KEY, rng: seeded(3), log: () => {} });
     await new Promise<void>((resolve) => delayed!.http.listen(0, resolve));
     base = `http://localhost:${(delayed.http.address() as AddressInfo).port}`;
@@ -315,6 +315,16 @@ describe('hands at a table watched on a delay', () => {
     clock.advance(1);
     expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1, 2]);
     expect(chainProblem(await all())).toBeNull();
+  });
+
+  it('records a hand at a table watched live at once, even when the record was given another clock', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    // A record whose clock is far behind the app's: a table without a delay must not wait for it to catch up.
+    const app = await serve(memoryAuditStore(), store, () => 0);
+    const rt = await table(app, store, 'live-other-clock', 0);
+    playHand(rt);
+    expect(await handsOf('live-other-clock')).toHaveLength(1);
   });
 
   it('puts a deleted table\'s waiting hands in before the entry that ends it', { timeout: 20_000 }, async () => {
@@ -484,5 +494,41 @@ describe('hands waiting in the database', () => {
     expect(chainProblem(entries)).toBeNull();
     expect(await dbAuditStore(wdb).pending()).toEqual([]);
     second.stop();
+  });
+
+  // A shortened delay can leave two hands of one table due at the same moment: the one kept first must go in first.
+  it('puts hands due at the same time in in the order they were kept, after a restart too', async () => {
+    const store = dbAuditStore(wdb);
+    const [x, y] = ['e'.repeat(32), 'f'.repeat(32)];
+    const kept: PendingHand[] = [
+      { id: 'tie-x1', table: x, hand: 1, digest: '1'.repeat(64), at: 900_000 },
+      { id: 'tie-y7', table: y, hand: 7, digest: '7'.repeat(64), at: 800_000 },
+      { id: 'tie-x2', table: x, hand: 2, digest: '2'.repeat(64), at: 900_000 },
+    ];
+    await store.hold(kept[0]);
+    // As if the database clock had gone back since, or counted too coarsely to tell the saves apart.
+    await wdb.execute(sql`update jobs set created_at = now() + interval '1 hour' where id = ${kept[0].id}`);
+    await store.hold(kept[1]);
+    await store.hold(kept[2]);
+    expect((await store.pending()).map((p) => p.id)).toEqual(['tie-y7', 'tie-x1', 'tie-x2']);
+
+    const clock = new FakeClock();
+    const next = await AuditLog.open(store, { now: () => clock.now(), log: () => {} });
+    next.boot({ commit: null, image: null, machine: null });
+    next.start((fn, ms) => {
+      const id = clock.setTimeout(fn, ms);
+      return () => clock.clearTimeout(id);
+    });
+    await next.flush();
+    const entries = await next.after(0, 1000);
+    expect(entries.slice(-4).map((e) => [e.kind, e.data.table ?? null, e.data.hand ?? null])).toEqual([
+      ['boot', null, null],
+      ['hand', y, 7],
+      ['hand', x, 1],
+      ['hand', x, 2],
+    ]);
+    expect(chainProblem(entries)).toBeNull();
+    expect(await store.pending()).toEqual([]);
+    next.stop();
   });
 });

@@ -1046,8 +1046,13 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      // In the public record no sooner than spectators on a delay see it end (D38); a late show too.
-      audit.safely('a hand', () => audit.hand(id, record, spectatorsSeeAt(rt, clock.now())));
+      // In the public record no sooner than spectators on a delay see it end (D38); a late show too. A table they
+      // watch live passes no time, so it is recorded at once whatever clock the record was given.
+      audit.safely('a hand', () => {
+        const now = clock.now();
+        const seeAt = spectatorsSeeAt(rt, now);
+        audit.hand(id, record, seeAt > now ? seeAt : undefined);
+      });
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
     };
@@ -1898,7 +1903,14 @@ export function createApp(deps: AppDeps = {}) {
           if (recent.length >= GESTURE_BURST) throw new ActionError('easy there: a few seconds between gestures');
           gestureTimes.set(me, [...recent, now]);
           rt.checkGesture(me, to);
-          for (const s of watchers.get(rt.state.id) ?? []) s.emit('table:gesture', { from: me, to, kind, at: now });
+          // A spectator on a delay sees it only between people their view has seated (or a thrower from the rail): one
+          // at a player who has just sat down, or from one, would tell them the live table had moved on (#435).
+          const thrower = !!rt.seatOf(me);
+          for (const s of watchers.get(rt.state.id) ?? []) {
+            const shown = isSpectator(rt, s) ? rt.shownTo(s.data.playerId) : null;
+            if (shown && (!shown.seats.includes(to) || (thrower && !shown.seats.includes(me)))) continue;
+            s.emit('table:gesture', { from: me, to, kind, at: now });
+          }
         },
         log,
       ),

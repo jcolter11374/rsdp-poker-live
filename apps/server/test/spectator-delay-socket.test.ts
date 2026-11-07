@@ -211,6 +211,28 @@ describe('a spectator on a delay', () => {
   }, 30_000);
 });
 
+describe('gestures, seen by a spectator on a delay', () => {
+  it('only between players their view has seated, so one at a player who just sat down tells them nothing', async () => {
+    const { ann, ben, fan } = await table('gesture', 30);
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.handNumber === 1);
+    const gestures: { to: string }[] = [];
+    fan.socket.on('table:gesture', (g) => gestures.push(g));
+    // Dee sits down at the live table; thirty seconds behind, the fan doesn't see her yet.
+    const dee = client('gap-gesture-dee-0123456789');
+    await dee.call('table:join', { tableId: ann.view().id });
+    await dee.call('seat:request', { seat: 2, name: 'Dee', stack: 10_000 });
+    const deeId = (await ann.until((v) => v.seats[2]?.name === 'Dee')).seats[2]!.playerId;
+    const benId = ann.view().seats[1]!.playerId;
+    await ann.call('table:gesture', { to: deeId, kind: 'rose' });
+    await dee.call('table:gesture', { to: benId, kind: 'fish' });
+    await ann.call('table:gesture', { to: benId, kind: 'clap' });
+    await settle();
+    expect(gestures.map((g) => g.to)).toEqual([benId]);
+    void ben;
+  }, 30_000);
+});
+
 describe('a spectator on a delay on the waitlist (#452)', () => {
   it('is offered the seat a player left only when their view shows it free, with the whole minute to take it', async () => {
     const { ann, ben, fan } = await table('offer', 30, { table: { maxSeats: 2 }, seating: { requireApproval: false, waitlist: true } });
