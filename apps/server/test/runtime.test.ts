@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { engine, variants } from '@rsdp/engine/core';
+import { engine, RUNOUT_LAST_STEP_MS, RUNOUT_SETTLE_MS, RUNOUT_STEP_MS, runoutMs, variants } from '@rsdp/engine/core';
 import { defaultSettings, type TableSettings } from '@rsdp/engine/settings';
 import { MIXED_GAMES, registerAllVariants } from '@rsdp/engine/variants';
 import { HOST_HANDOFF_MS, RESUME_MIN_MS, TableRuntime } from '../src/runtime/table';
@@ -470,6 +470,36 @@ describe('host settings', () => {
     const cycle = ['nlhe', 'plo8', 'razz', 'stud', 'stud8'].flatMap((g) => [g, g, g]);
     expect(games).toEqual([...cycle, ...cycle]);
   });
+
+  for (const game of ['razz', 'stud', 'stud8']) {
+    it(`the next hand waits for a ${game} all-in in HORSE to be shown a street at a time (#216)`, () => {
+      const steps = MIXED_GAMES[0].steps.map((st) => ({ ...st, length: 1, unit: 'hands' as const }));
+      const first = steps.findIndex((st) => st.gameId === game);
+      const { rt, clock } = table((s) => {
+        s.stakes = { ...s.stakes, smallBlind: 1, bigBlind: 2, ante: 1, anteType: 'per-player', bringIn: 1, smallBet: 2, bigBet: 4 };
+        s.table.maxSeats = 6;
+        // HORSE, starting at this game.
+        s.game.rotation = { enabled: true, steps: [...steps.slice(first), ...steps.slice(0, first)] };
+      });
+      // Three chips each: the ante and a completed bet put both players all in on third street.
+      seatPlayers(rt, 2, 3);
+      rt.start('host');
+      expect(hand(rt).input.game.id).toBe(game);
+      for (let i = 0; i < 10 && hand(rt).phase !== 'complete'; i++) {
+        const legal = engine.legalActions(hand(rt), hand(rt).toAct!)!;
+        rt.act(toActId(rt), legal.canRaise ? { type: legal.raiseKind, to: legal.maxTo } : { type: 'call' });
+      }
+      const h = hand(rt);
+      expect(h.phase).toBe('complete');
+      expect(h.events.find((e) => e.t === 'run-it')).toMatchObject({ times: 1 });
+      // Fourth to seventh street a street at a time, then the result, then the showdown pause.
+      const runout = 3 * RUNOUT_STEP_MS + RUNOUT_LAST_STEP_MS + RUNOUT_SETTLE_MS;
+      expect(runoutMs(h.events)).toBe(runout);
+      expect(rt.state.nextHandAt! - clock.now()).toBe(rt.state.settings.timing.showdownSeconds * 1000 + runout);
+      clock.advance(rt.state.nextHandAt! - clock.now() - 1);
+      expect(hand(rt)).toBe(h);
+    });
+  }
 
   it('a rotation without stud keeps its antes in every game', () => {
     const { rt, clock } = table((s) => {

@@ -170,10 +170,13 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
   return reach;
 }
 
-/** The last card of a single all-in run: it waited face down on the board before turning over (#308). */
+/**
+ * The last card of a single all-in run: it waited face down on the board before turning over (#308). Stud's last
+ * street goes to the seats, with no card waiting on the board, so it is dealt as usual.
+ */
 function heldCards(hand: TableView['hand']): string[] {
-  if (!hand || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
-  return runoutSteps(hand.events).at(-1)?.flatMap((e) => e.cards) ?? [];
+  if (!hand || hand.family === 'stud' || !hand.events.some((e) => e.t === 'run-it' && e.times === 1)) return [];
+  return runoutSteps(hand.events).at(-1)?.flatMap((e) => (e.t === 'board' ? e.cards : [])) ?? [];
 }
 
 /** A short badge for a seat that is not playing, or null when it is. */
