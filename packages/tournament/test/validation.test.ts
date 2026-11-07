@@ -214,7 +214,7 @@ describe('late registration, re-entry, rotation and switches', () => {
     { reEntry: { enabled: true, throughLevel: null, max: null, approval: 'no' } },
     { allowQuit: 'yes' },
     { registrationApproval: 1 },
-  ])('refuses %o', (overrides) => {
+  ])('refuses %j', (overrides) => {
     expect(refusal(() => create(overrides))).not.toBeNull();
   });
 
