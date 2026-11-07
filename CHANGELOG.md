@@ -38,6 +38,7 @@ _Lobby chat moderation and a recap of the night_
 - Tournaments: the seat draw stays secret even if the site ever has to go back to an older version before the seats are drawn. The server now picks new secret numbers for the draw each time it loads a tournament whose seats aren't drawn yet, so nothing an older version shows can be used to work the draw out.
 - Backups: the nightly backup now works however big the saved tables get. Before, very large saved tables could make the backup fail and stop the site saving until it restarted. The site isn't near that size today.
 - Dealer's choice: at a new table, the first hand's button goes to the player who makes the first pick, and if they leave or sit out first, to the next player round. During an all-in runout, the seat count, closed seats, the fallback game and seat offers now wait for the result like the PICK tag, so none of them shows who busted before the cards are out.
+- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.3] - 2026-11-07
 
@@ -51,7 +52,6 @@ _Hands left in each game_
 ### Fixed and changed
 
 - Cash tables, in the middle of a game: the seats no longer slide when someone asks to sit (for the host), when you sit out or come back, when a rebuy or a bot is waiting for the host, or when the host stops the game after the hand. Those notes now sit under the table with your buttons, in room that is already kept there. At a Limit table on a laptop, or with several notes at once, the table can still get a little smaller the first time, and then keeps that size. "Connection lost" now shows over the top of the table instead of pushing it down.
-- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.2] - 2026-11-07
 
