@@ -29,6 +29,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 
 ### Fixed and changed
 
+- Bomb pots on a computer: at a table whose bomb pots come on their own in another game (Omaha bomb pots at a Hold'em table, say), the seats no longer move when a bomb pot is dealt and again after it.
 - Coach tips are now worked out on a thread of their own, so asking for lots of tips never slows down play at any table. Tips in draw games always think through every possible draw. If the coach is busy, it tells you to try again in a moment, and that doesn't count against your tips.
 - Tournament tables no longer show numbered empty seats. Nobody picks a seat at a tournament, so the players now spread evenly round the table, with yours at the bottom, and their nameplates get the room the empty seats took. If you're knocked out, the table stays turned your way until the next hand. Cash tables keep their empty seats for sitting down and adding bots.
 - Keyboard: Shift+A twice goes all in on your turn in no-limit and pot-limit hands. The first press puts the most you can bet in the box and says on the action bar what the second press will send: in pot limit that's the most the pot allows. Enter sends it too, and Esc, a click or any other key cancels it. A still ticks Call any before your turn, and Shift+A does nothing in fixed-limit games.
@@ -39,6 +40,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
 - Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
 - Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+- Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room. When a waitlist offer has to be let go (the table gets smaller, or a smaller game has no room for it), its holder keeps their place: the seats are offered again in queue order, so nobody behind them sits first.
 - Dealer's choice: when the host adds seats during a hand while people are on the waitlist, "If time runs out" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.
 
 ## [2026.11.07.6] - 2026-11-07
