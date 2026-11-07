@@ -31,8 +31,9 @@ export function TableStrip({
   tableId: string;
   seatedHere: boolean;
   /**
-   * The player was knocked out here and their seat still shows, marked out, until the next deal: above the table (not in
-   * the corner box), "You finished" waits for it to go, so the felt doesn't move down as the result shows (#445).
+   * The player was knocked out here and their seat still shows, marked out, until the next deal (or, at a table that
+   * broke, until it fades): above the table (not in the corner box), "You finished" and the closed note wait for it to
+   * go, so the felt doesn't move down as the result shows (#445).
    */
   keptHere?: boolean;
   /** Nobody is seated at the table on screen (the server's view, not the seats kept for a knocked-out player). */
@@ -229,7 +230,7 @@ export function TableStrip({
       </div>
       {asks}
       {!keptHere && finished}
-      {closedHere}
+      {!keptHere && closedHere}
       {error && <div className="tn-strip-row error">{error}</div>}
     </div>
   );

@@ -33,7 +33,7 @@ import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
 import { TableAnnouncer } from './components/table/Announcer';
-import { useShownTable } from './runout';
+import { myPlace, useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
@@ -438,10 +438,8 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
-  // A player knocked out of a tournament keeps their seat, marked out, until the next deal (#308). Until it goes, the room
-  // under the table and the strip above it stay as they were, so the table doesn't jump as the result shows (#445).
-  const keptSeat = view.me.seat ?? (view.tournamentId ? view.seats.findIndex((s) => !!s?.departed && s.playerId === view.me.playerId) : -1);
-  const myPlace = keptSeat >= 0 ? keptSeat : null;
+  // Your seat, or the one kept for you, marked out, after a knockout until the next deal (#445).
+  const place = myPlace(view);
   // Worked out once per render: it reads this browser's saved notes.
   const seedWarning = liveSeedProblem(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
@@ -843,7 +841,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               tournamentId={view.tournamentId}
               tableId={tableId}
               seatedHere={view.me.seat !== null}
-              keptHere={view.me.seat === null && myPlace !== null}
+              keptHere={view.me.seat === null && place !== null}
               emptyHere={!!live && live.seats.every((s) => !s)}
               holding={runningOut}
               corner={wide}
@@ -896,8 +894,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             onNoticeRoom={setNoticeRoom}
           />
           <Dock
-            reset={`${portrait}:${myPlace}`}
-            seated={myPlace !== null}
+            reset={`${portrait}:${place}`}
+            seated={place !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >

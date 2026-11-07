@@ -107,6 +107,14 @@ describe('the tournament strip', () => {
     rerender(kept(false));
     expect(container.textContent).toMatch(/You finished 5th\./);
     cleanup();
+    // At a table that broke, the closed note waits for the kept seat too, so both come at once.
+    event = { status: 'running', tables: [{ id: 'tn1-t2' }] };
+    const broke = (k: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere={k} emptyHere />;
+    const b = render(broke(true));
+    expect(b.container.textContent).not.toMatch(/You finished|closed/);
+    b.rerender(broke(false));
+    expect(b.container.textContent).toMatch(/You finished 5th\..*This table has closed/);
+    cleanup();
     // In the corner box on a wide window it takes no room from the table, so it shows at once.
     const corner = render(<TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere corner asksIn={under} />);
     expect(corner.container.querySelector('.tn-corner')?.textContent).toMatch(/You finished 5th\./);
