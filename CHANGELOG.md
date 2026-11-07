@@ -18,21 +18,17 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.07.6] - 2026-11-07
+## [2026.11.07.7] - 2026-11-07
 
-_Bigger tournament tables on wide screens_
+_Phone alerts, and a table for screen readers and the keyboard_
 
 ### New
 
-- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
 - **Phone alerts, even with the site closed.** Turn on alerts with the Alerts button on the tournaments page or in a tournament's lobby. Your phone or computer then tells you when a tournament you're in starts in 5 minutes, when you're seated or moved to another table, and when it's your turn, or your pick at a Dealer's choice table. This works even when the site isn't open. "Your turn" only comes when you aren't already looking at that table, and you get one alert per turn, not two. On iPhone and iPad, alerts work once the site is on your home screen (Safari: Share, then Add to Home Screen); the button says how. An alert holds only its words and the page to open, never cards or amounts. Turning alerts off, signing out or deleting your account makes the site forget that browser straight away. The privacy page says what is kept and who delivers the alerts.
 - **Works with a screen reader and the keyboard.** The table now reads itself aloud to screen readers: each new line of the hand, "Your turn" with what you can do and the pot, pauses, and a warning when 10 seconds are left. Tab reaches every nameplate, which says who is to act, who has folded and who has the button, and Enter opens that player's menu. Dialogs and phone sheets keep the keyboard inside them and hand it back when they close. And the table's words and buttons are easier to read, with bigger buttons to tap.
 
 ### Fixed and changed
 
-- Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.
-- On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
-- Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
 - Coach tips are now worked out on a thread of their own, so asking for lots of tips never slows down play at any table. Tips in draw games always think through every possible draw. If the coach is busy, it tells you to try again in a moment, and that doesn't count against your tips.
 - Tournament tables no longer show numbered empty seats. Nobody picks a seat at a tournament, so the players now spread evenly round the table, with yours at the bottom, and their nameplates get the room the empty seats took. If you're knocked out, the table stays turned your way until the next hand. Cash tables keep their empty seats for sitting down and adding bots.
 - Keyboard: Shift+A twice goes all in on your turn in no-limit and pot-limit hands. The first press puts the most you can bet in the box and says on the action bar what the second press will send: in pot limit that's the most the pot allows. Enter sends it too, and Esc, a click or any other key cancels it. A still ticks Call any before your turn, and Shift+A does nothing in fixed-limit games.
@@ -43,6 +39,20 @@ _Bigger tournament tables on wide screens_
 - Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
 - Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
 - Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+
+## [2026.11.07.6] - 2026-11-07
+
+_Bigger tournament tables on wide screens_
+
+### New
+
+- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
+
+### Fixed and changed
+
+- Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.
+- On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.
+- Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.
 - Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (the Pick next game button at a Dealer's choice table, Paused, or a blind level's clock). When the line doesn't fit, the table's name is shortened with "…" first; point at the line to see all of it.
 - Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
 - Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
@@ -766,6 +776,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
 [2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4
