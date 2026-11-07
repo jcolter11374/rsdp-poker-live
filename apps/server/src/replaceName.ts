@@ -7,13 +7,14 @@
  * ledger's numbers, the leaderboard and everyone's profit graph.
  *
  * Where names are kept beside the player's id (seats, ledger rows, chat, waitlists, co-hosts, tournament entries,
- * hand seeds in shared hands, feedback), the id decides. Lines with no id (the table log, the dealer's chat lines,
- * tournament lobby events) are matched by the names the player went by, and only at tables and tournaments where
- * the player's id is found, so someone else of the same name elsewhere is left alone. A name is looked for inside a
- * line of text only when it can't be mistaken for the server's own words there: it has a letter, at least two
- * characters and a word the server never writes itself, so a name like "100", "a" or "Game" never rewrites an amount
- * or "Game paused" (those names are counted, and still replaced wherever they sit beside the id). What people typed
- * in chat is left as they typed it: those messages are only counted.
+ * hand seeds in shared hands, feedback, a Dealer's choice pick's chooser), the id decides. Names kept with no id (the
+ * table log, the dealer's chat lines, tournament lobby events, a pick saved before its chooser's id was kept) are
+ * matched by the names the player went by, and only at tables and tournaments where the player's id is found, so
+ * someone else of the same name elsewhere is left alone. A name is looked for inside a line of text only when it
+ * can't be mistaken for the server's own words there: it has a letter, at least two characters and a word the server
+ * never writes itself, so a name like "100", "a" or "Game" never rewrites an amount or "Game paused" (those names are
+ * counted, and still replaced wherever they sit beside the id). What people typed in chat is left as they typed it:
+ * those messages are only counted.
  */
 
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
@@ -233,8 +234,24 @@ export class NameReplacer {
       for (const line of list(state.log)) if (isObj(line)) tally.names += this.text(line, 'text', place);
       // The dealer's lines (no player id) repeat some log lines, such as a settings change and who made it.
       for (const m of list(state.chat)) if (isObj(m) && m.playerId === null) tally.names += this.text(m, 'text', place);
+      // Dealer's choice keeps the chooser's name with the game being played and the next one ("Pat's pick" in the
+      // top bar), beside their id (see pickBy).
+      if (isObj(state.choice)) for (const k of ['current', 'next']) if (isObj(state.choice[k])) tally.names += this.pickBy(state.choice[k], list(state.seats), place);
     }
     return tally;
+  }
+
+  /**
+   * A Dealer's choice pick's chooser (ChoicePick.by in runtime/types.ts): by the chooser's id beside it. A pick saved
+   * before the id was kept (2026.11.07.4) is matched by the names the player went by, as a bot's owner is, except a
+   * practice bot's pick and one whose seat holds someone else of that name.
+   */
+  private pickBy(pick: Obj, seats: unknown[], place: Place): number {
+    if (typeof pick.byId === 'string') return pick.byId === this.playerId ? put(pick, 'by') : 0;
+    if (pick.how === 'bot') return 0;
+    const at = typeof pick.seat === 'number' ? seats[pick.seat] : undefined;
+    if (isObj(at) && typeof at.playerId === 'string' && at.playerId !== this.playerId && at.name === pick.by) return 0;
+    return this.owner(pick, 'by', undefined, place);
   }
 
   /** One saved line of a table's log or chat (table_log.item). */

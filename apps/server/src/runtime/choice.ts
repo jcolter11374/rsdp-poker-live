@@ -186,18 +186,33 @@ export class DealersChoice {
 
   /** Index of the menu entry a missed pick deals: the current game if it's on the menu and fits, else the first that fits. */
   defaultIndex(): number {
-    const menu = this.menu!;
+    // During a hand, a game the host is taking off the menu isn't what a missed pick deals (#425).
+    return this.defaultOn(this.menu!.games, (g) => this.leaving(g));
+  }
+
+  /** defaultIndex for the games `games`, passing over those `skip` says. */
+  private defaultOn(games: readonly { gameId: string; betting: BettingKind }[], skip: (g: { gameId: string; betting: BettingKind }) => boolean): number {
     const count = this.host.tableCount();
     const cur = this.keepable();
-    // During a hand, a game the host is taking off the menu isn't what a missed pick deals (#425).
-    const kept = cur ? menu.games.findIndex((g) => same(g, cur) && this.fits(g.gameId, count) && !this.leaving(g)) : -1;
+    const kept = cur ? games.findIndex((g) => same(g, cur) && this.fits(g.gameId, count) && !skip(g)) : -1;
     if (kept >= 0) return kept;
-    const staying = menu.games.findIndex((g) => this.fits(g.gameId, count) && !this.leaving(g));
+    const staying = games.findIndex((g) => this.fits(g.gameId, count) && !skip(g));
     if (staying >= 0) return staying;
-    const first = menu.games.findIndex((g) => this.fits(g.gameId, count));
+    const first = games.findIndex((g) => this.fits(g.gameId, count));
     // The table never has more seats than the menu's biggest game (checkSettings), so one fits; if not, the biggest.
     if (first >= 0) return first;
-    return menu.games.reduce((best, g, i) => (seatsOf(g.gameId) > seatsOf(menu.games[best].gameId) ? i : best), 0);
+    return games.reduce((best, g, i) => (seatsOf(g.gameId) > seatsOf(games[best].gameId) ? i : best), 0);
+  }
+
+  /**
+   * The game a missed pick deals. While the host's change waits for the next hand it is worked out on the menu that
+   * change brings, as it applies before the pick is missed: a menu in another order, or with a game added in front, can
+   * deal another game than the current menu's first that fits (#444).
+   */
+  missedPick(): { gameId: string; betting: BettingKind } {
+    const coming = this.s.pendingSettings ? choiceMenu(this.coming()) : null;
+    if (coming) return coming.games[this.defaultOn(coming.games, () => false)];
+    return this.menu!.games[this.defaultIndex()];
   }
 
   /** The current game can be kept on purpose ("Keep playing"): it is on the menu and fits. */
@@ -263,7 +278,7 @@ export class DealersChoice {
       const cur = this.keepable();
       const kept = !!cur && same(g, cur);
       this.host.log(`Nobody can pick the next game, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
-      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+      this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
       return 'changed';
     }
     if (c.deadline === null || c.clockFor !== chooser.playerId) {
@@ -282,7 +297,7 @@ export class DealersChoice {
     this.host.log(`${chooser.name} didn't pick in time, so ${gameTitle(g.gameId, g.betting)} ${kept ? 'carries on' : 'is dealt'}`);
     this.passChip(chooser.seat);
     // Nobody picked it: the top bar says whose pick a game was only when someone chose it.
-    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, how: kept ? 'kept' : 'default' });
+    this.start({ gameId: g.gameId, betting: g.betting, by: null, seat: null, byId: null, how: kept ? 'kept' : 'default' });
     return 'changed';
   }
 
@@ -374,7 +389,7 @@ export class DealersChoice {
     const cur = this.keepable();
     const kept = !!cur && same(g, cur);
     const bot = this.host.isBot(playerId);
-    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
+    c.next = { gameId: g.gameId, betting: g.betting, by: chooser.name, seat: chooser.seat, byId: chooser.playerId, how: bot ? 'bot' : kept ? 'kept' : 'picked' };
     const waiting = c.deadline !== null;
     c.deadline = null;
     c.clockFor = null;
@@ -475,14 +490,18 @@ export class DealersChoice {
     return this.currentGame();
   }
 
-  /** The game the next hand deals, as far as is known: the current pick, the next one, or what a missed pick deals. */
+  /**
+   * The game the next hand deals, as far as is known: the current pick, the next one, or what a missed pick deals.
+   * Null when Dealer's choice is off, or ends with this hand.
+   */
   upcoming(): { gameId: string; betting: BettingKind } | null {
     const menu = this.menu;
-    if (!menu) return null;
+    // The host's change ends Dealer's choice with this hand: the next hand deals the game it sets up, not a pick (#444).
+    if (!menu || this.ending()) return null;
     const c = this.s.choice;
     if (c && !this.pickDone()) return this.currentGame();
     if (c?.next) return c.next;
-    return menu.games[this.defaultIndex()];
+    return this.missedPick();
   }
 
   view(): ChoiceView | null {
@@ -508,6 +527,7 @@ export class DealersChoice {
       closed: (this.host.seatRoom() ?? 1) <= 0,
       defaultIndex: this.defaultIndex(),
       canKeep: this.canKeep(),
+      fallback: (({ gameId, betting }) => ({ gameId, betting, gameName: gameTitle(gameId, betting) }))(this.missedPick()),
     };
   }
 

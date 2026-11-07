@@ -1,10 +1,40 @@
 {
   "releases": [
     {
-      "id": "2026.11.07.6",
+      "id": "2026.11.07.7",
       "date": "2026-11-07",
       "fixes": [
         "Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you."
+      ]
+    },
+    {
+      "id": "2026.11.07.6",
+      "date": "2026-11-07",
+      "fixes": [
+        "Mixed games (HORSE, 8-Game, any rotation of games, mixed tournaments) and Dealer's choice on a computer: the seats no longer move when the game changes. The table is laid out for every game it deals, so the felt keeps its size and the seats keep their places from one game to the next. At a busy table in a small window, where every game's cards can't fit at once, the seats are spaced for the game being played and still shift when the game changes.",
+        "On a computer, the seats also stay put when the space under the table or the top bar changes height by a few pixels in the middle of a hand.",
+        "Wide, short screens and laptops: when a hand ends with several winners (a split pot or side pots), or is run twice, the middle of the table no longer runs onto the players above and below it. Several winners' lines sit side by side where there's room, and where the middle still doesn't fit it's drawn a little smaller. The seats don't move for it.",
+        "Computers: the top bar's line (the table's name, the game, the stakes and so on) now stays on one line. On smaller windows a long line used to wrap, which made the bar taller and the table smaller, and the table could shrink in the middle of a hand when something new appeared in the bar (the Pick next game button at a Dealer's choice table, Paused, or a blind level's clock). When the line doesn't fit, the table's name is shortened with \"…\" first; point at the line to see all of it.",
+        "Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.",
+        "Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.",
+        "Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.",
+        "The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. At a tournament table, where the tournament clock has that corner, it stays at the top of the Log panel. A narrower window doesn't show it; the action buttons still show their keys.",
+        "One of something now reads in the singular: \"1 hand\" instead of \"1 hands\" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and \"1 minute\" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.",
+        "Laptops and other smaller windows: at a busy table, the seats no longer shift when a hand ends and the players' hands are named under their names (\"Full House, Queens full of Sevens\"). The seats are spaced for the longest hand name from the deal, and in hi-lo games for both halves.",
+        "Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with \"The host is taking it off the menu\" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.",
+        "Dealer's choice: when the host changes the menu during a hand, the pick panel's \"If time runs out\" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.",
+        "Waitlist: pressing Join the waitlist while an all-in is being dealt out no longer tells you whether someone busted. You're added to the waitlist either way, and a seat that comes free is offered once the cards are out. At a table that seats newcomers at random, a seat offered from the waitlist is a random one too. And if the host makes the table smaller during a hand and the seat you were offered is needed for a player moving in, you stay on the waitlist for the next seat instead of losing your place.",
+        "Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. Anything for you to do (a rebuy, an add-on, a re-entry, your seat at another table) shows under the table with your buttons, so the seats don't move when it comes or goes.",
+        "Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.",
+        "Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.",
+        "Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap."
+      ]
+    },
+    {
+      "id": "2026.11.07.5",
+      "date": "2026-11-07",
+      "fixes": [
+        "Spectators watching on a delay now see a change the host made during a hand, and a blind level counted in hands, move on with the hand they are shown, not the moment the live table deals its next hand. The \"every card face up\" note starts with its hand too."
       ]
     },
     {

@@ -86,6 +86,26 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   flex-wrap: wrap;
 }
 .topbar .stakes { flex: 1; color: var(--muted); }
+/* On a desktop the line stays on one line, so the bar keeps its height whatever comes and goes in it (#408). When it
+   doesn't fit, the table's name gives way first, then the rest; each ends in "…" when cut. */
+.table-page:not(.portrait) .topbar .stakes:not(.game-line) { display: flex; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; container-type: inline-size; }
+.table-page:not(.portrait) .topbar .stakes-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.table-page:not(.portrait) .topbar .stakes-more { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+/* Too narrow for even "…": no line, rather than a stray dot. */
+@container (max-width: 18px) { .topbar .stakes-name, .topbar .stakes-more { visibility: hidden; } }
+/* Narrow desktop windows: a little tighter, so the Pick button fits on the bar's one row too (#408). */
+@media (max-width: 859px) {
+  .table-page:not(.portrait) .topbar { gap: 6px; }
+  .table-page:not(.portrait) .topbar > button:not(.units-toggle),
+  .table-page:not(.portrait) .topbar > .table-menu > button { padding-inline: 9px; }
+}
+@media (max-width: 799px) {
+  .table-page:not(.portrait) .topbar { gap: 4px; padding-inline: 8px; }
+  .table-page:not(.portrait) .topbar > button:not(.units-toggle),
+  .table-page:not(.portrait) .topbar > .table-menu > button { padding-inline: 6px; }
+  .table-page:not(.portrait) .topbar .units-toggle span { padding-inline: 6px; }
+  .table-page:not(.portrait) .topbar .logo.small { font-size: 1.05rem; }
+}
 .paused { color: var(--accent-2); }
 .layout { flex: 1; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
 /* Below about 1180px wide the side column would squeeze the table, so it moves under it. */
@@ -124,6 +144,8 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
   gap: 8px;
   pointer-events: none;
 }
+/* The board's contents, in a column drawn smaller where it would run onto a seat (#417, Table.tsx). */
+.board-stack { display: flex; flex-direction: column; align-items: center; gap: inherit; width: 100%; }
 .board .cards { display: flex; gap: 7px; }
 .board .playing-card { --cw: 54px; }
 .pot { background: rgba(0, 0, 0, 0.28); padding: 4px 12px; border-radius: 999px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
@@ -275,8 +297,12 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; colo
 .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .panel h3 { margin: 0; font-size: 1rem; }
-.request { display: flex; gap: 6px; align-items: center; background: var(--panel-2); padding: 6px 8px; border-radius: 8px; }
-.request span { flex: 1; font-size: 0.85rem; }
+/* A seat request: the words on one line and the buttons together under them, rather than the words one to a line beside
+   the buttons with the seat list cut short (#399). */
+.requests { display: flex; flex-direction: column; gap: 6px; }
+.request { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--panel-2); padding: 6px 8px; border-radius: 8px; }
+.request span { flex: 1 1 100%; font-size: 0.85rem; }
+.request select { flex: none; width: auto; }
 .settings input { padding: 6px; }
 .side-panel { flex: 1; min-height: 320px; }
 .tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 10px; }
@@ -675,7 +701,8 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 }
 /* Clear of the nameplates at the ends of the table, level with the middle. */
 .felt:not(.compact) .board-notice { max-width: min(600px, calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
-.felt.grown .board-notice { max-width: min(760px, calc(100% - 2 * (150px * var(--seat-scale) + 12px))); font-size: calc(0.95rem * min(var(--k), 1.25)); }
+/* It grows with a big table, and keeps its usual size on a wide window's table below k = 1 (#385). */
+.felt.grown .board-notice { max-width: min(760px, calc(100% - 2 * (150px * var(--seat-scale) + 12px))); font-size: calc(0.95rem * max(1, min(var(--k), 1.25))); }
 /* Phones: clear of the nameplates at the table's sides (100px at most). */
 .felt.compact .board-notice { max-width: calc(100% - 2 * 56px); padding: 6px 12px; font-size: 0.8rem; line-height: 1.3; }
 /* The host's, in the wide layout: it opens Host & log, where Start game is. */
@@ -697,6 +724,13 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .pot.result { background: #1d6b41; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .pot.result { max-width: min(440px, 80%); }
 .felt.compact .pot.result { max-width: 92%; font-size: 0.78rem; line-height: 1.25; }
+/* Several winners' lines side by side, wrapping only when they don't fit, clear of the seats at the ends of the table, so
+   the middle doesn't grow taller than the room between the seats above and below it (#417). On a phone each still takes
+   its own line. */
+.board .results { display: flex; flex-direction: column; align-items: center; gap: inherit; width: 100%; }
+.felt:not(.compact) .board .results.several { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 10px; max-width: max(min(440px, 80%), calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
+/* Each line as wide as one on its own may be, so where they don't fit side by side they don't wrap any sooner. */
+.felt:not(.compact) .board .results.several .pot.result { max-width: min(440px, 100%); }
 .pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
 .board .playing-card { --cw: var(--board-cw, 62px); }
 .board .cards { gap: 6px; }
@@ -826,30 +860,35 @@ kbd {
 .units-toggle span { padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
 .units-toggle span.on { background: var(--accent-2); color: #1b1606; font-weight: 700; }
 .portrait .units-toggle span { padding: 2px 7px; font-size: 0.72rem; }
-/* The one-time keyboard tip: a small note over the felt's bottom corner rather than in the page, so it covers
-   no buttons (action bar, chat, host requests) and sits below any dialog. */
-/* The anchor is always there and takes no room: its negative margin cancels the felt area's 14px gap, so the felt keeps
-   its height whether or not the tip shows (#350). */
-.tip-anchor { position: relative; height: 0; margin-top: -14px; }
-.portrait .tip-anchor { display: none; }
+/* The one-time keyboard tip (#399). It never covers the table: beside the side column it heads that column, and in the
+   wide layout it takes the bottom-right corner, across from the chat, in the room the action bar keeps clear (or heads
+   the drawer while that is open over the corner, and at a tournament table, whose clock has that corner: #385). Either way it is outside the felt's layout, so it coming and going
+   can't change the table's size (#350). Below 1181px the
+   side column moves under the table, out of sight, and so does the tip (the action buttons still show their keys). */
 .tip-toast {
-  position: absolute;
-  left: 12px;
-  bottom: 8px;
-  z-index: 9;
-  max-width: min(340px, calc(100vw - 32px));
   display: flex;
   align-items: center;
   gap: 8px 10px;
   flex-wrap: wrap;
+  flex: none;
   padding: 10px 12px;
   font-size: 0.85rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   animation: tip-in 0.3s ease-out;
 }
+.tip-toast.corner {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: var(--chat-w);
+  max-height: var(--chat-h);
+  overflow-y: auto;
+  z-index: 6;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+@media (max-width: 1180px) { .side > .tip-toast { display: none; } }
 .tip-toast > span { flex: 1 1 100%; line-height: 1.5; }
 .tip-toast button { padding: 4px 10px; font-size: 0.82rem; }
 @keyframes tip-in { from { opacity: 0; transform: translateY(8px); } }
@@ -874,6 +913,8 @@ dl.shortcuts dd { margin: 0; }
 .dock-notes { display: flex; flex-direction: column; gap: 8px; order: 1; }
 .portrait .dock-notes, .dock.tips .dock-notes { order: -1; }
 .dock-notes.your-turn { display: none; }
+/* A spot kept for notes that come and go (a tournament's asks, #385) takes no room while it's empty. */
+.dock-notes:empty { display: none; }
 .dock-notes .banner.clickable { cursor: pointer; }
 /* Windows too narrow for the side column (a laptop window at half width, a tablet on its side): the table's size comes
    from the window there, not from this area, and under the buttons the notes would be at the bottom edge of the screen.
@@ -994,10 +1035,13 @@ dl.shortcuts dd { margin: 0; }
 .felt.compact .seat:not(.me) .hole.bunched .playing-card + .playing-card { margin-left: var(--row-margin); }
 
 /* ---- big windows (#317): the table grows into the room. --k is its scale (Table.tsx), --sk the seats' (k, or less when a
-   full table needs it). Below k = 1 none of this applies. */
+   full table needs it). Below k = 1 none of this applies, except in the wide layout, which keeps it down to k = 0.72 (#385). */
 .table-page:not(.portrait) .felt-area > .felt.grown {
   margin: calc(var(--top-margin, 84px) * var(--sk)) calc(var(--side-margin) * var(--sk)) calc(46px * var(--sk));
   max-height: none;
+  /* A short wide window packs the table below k = 1 too (#385), so its felt can be under 280px. Its size has to come from
+     the room, not this floor: a felt held taller than the room would make the room measure bigger than it is (Table.tsx). */
+  min-height: 200px;
 }
 .felt.grown .board .pots { zoom: var(--k); }
 .felt.grown .board .cards { gap: calc(6px * var(--k)); }
@@ -1019,9 +1063,12 @@ dl.shortcuts dd { margin: 0; }
   .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -26px; }
   .seat.long-hand.me .nameplate { min-width: 260px; }
 }
-/* A short, very wide window (#347): your own row of five or more cards stays a little lower, so it clears the board. */
-.felt.big-cards.short:not(.compact) .seat.long-hand.me .playing-card.small { --cw: 56px; }
-.felt.big-cards.short:not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -20px; }
+/* A short, very wide window (#347): your own row of five or more cards stays a little lower, so it clears the board,
+   and on one too short for the big cards (#385, Table.tsx) as low as everyone else's. */
+.felt.short:not(.compact) .seat.long-hand.me .playing-card.small { --cw: 56px; }
+.felt.short:not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -20px; }
+.felt.short:not(.big-cards):not(.compact) .seat.long-hand.me .playing-card.small { --cw: 48px; }
+.felt.short:not(.big-cards):not(.compact) .seat.long-hand.me .hole .playing-card + .playing-card { margin-left: -17px; }
 
 /* ---- the wide layout (windows 1440px and wider, #317): no side column. Chat sits in the bottom-left corner beside the
    action bar, and the log, ledger, hands, stats and host controls slide out from the top bar's "Log" button. */
