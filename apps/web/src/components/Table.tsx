@@ -428,9 +428,9 @@ export function Table({
   // between hands, and the seats mustn't move then or when the cards come (#363). Games whose hands look alike (stud, razz
   // and stud hi-lo; Omaha and badugi) share their boxes, so a mixed game doesn't move the seats at every change.
   // Everyone but you shares the biggest of their boxes, so a long name or a folded hand doesn't move anyone either.
-  // Before a tournament's first hand there's no game on the view yet: the table's own setting is the best guess.
-  const sizesOf = gameId || view.settings.game.gameId;
-  const sizes = useMemo(() => handSizes(sizesOf), [sizesOf]);
+  // Before a tournament table's first hand the view has no game yet (its settings say Hold'em whatever the event plays),
+  // so there's nothing to size for until the deal.
+  const sizes = useMemo(() => handSizes(gameId), [gameId]);
   const seating = view.seats.map((s) => s?.playerId ?? '').join(',');
   const sized = useSeatBoxes(felt, `${sizes.join('-')}|${seatScale}|${grown && wide ? 'big-cards' : ''}|${short ? 'short' : ''}`, sizes, seating, view.me.seat, !compact);
   // Empty seats keep half the widest nameplate (with its cards, so nothing moves on the deal) plus half an empty seat clear of
