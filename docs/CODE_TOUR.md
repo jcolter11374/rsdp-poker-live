@@ -119,6 +119,7 @@ and seasons (`season.ts`).
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
 | [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. |
 | [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
+| [`src/push/`](../apps/server/src/push) | Phone alerts that reach a closed site: `webpush.ts` encrypts and signs each one for the browser's push service, `alerts.ts` keeps who gets them and sends them without holding up the game, `starts.ts` times "starting soon". See [ARCHITECTURE.md](ARCHITECTURE.md#phone-alerts-appsserversrcpush-appswebpublicswjs). |
 | [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
 | [`src/restore.ts`](../apps/server/src/restore.ts), [`db/backup.ts`](../apps/server/src/db/backup.ts) | Backups out, restores in. See [DEPLOY.md](DEPLOY.md#backups). |
 
@@ -155,6 +156,11 @@ opens the connection and keeps your browser's secret.
   dealing: it sends your seed for the next hand and watches that it was used.
   [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
   you visit (at most every 10 minutes).
+- [`src/notify.ts`](../apps/web/src/notify.ts) turns alerts on and off and
+  shows them while a tab is in the background; with alerts on it also
+  subscribes the browser for push. The service worker,
+  [`public/sw.js`](../apps/web/public/sw.js), shows the pushes that arrive
+  with the site closed and opens the right page when one is tapped.
 - [`src/tournament/`](../apps/web/src/tournament) holds the tournament lobby
   and creation pages; [`src/rules/`](../apps/web/src/rules) the How to play
   guides; [`src/account/`](../apps/web/src/account) sign-in, profile,

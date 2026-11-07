@@ -31,7 +31,7 @@ describe('backups', { timeout: 30_000 }, () => {
     await fill(db);
     const { text, summary } = await backupOf(db);
     expect(summary.rows.players).toBe(2);
-    expect(Object.keys(summary.rows)).toHaveLength(22);
+    expect(Object.keys(summary.rows)).toHaveLength(24);
 
     const copy = await createTestDb();
     try {
@@ -195,6 +195,11 @@ describe('backups', { timeout: 30_000 }, () => {
 describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () => {
   const LEDGER = ['chip_movements', 'seat_sessions'];
   const without = (all: Record<string, string[]>, names: string[]) => Object.fromEntries(Object.entries(all).filter(([t]) => !names.includes(t)));
+  /** What a restore of an old backup gives: its rows, and empty the tables made since it was taken (0018's push tables). */
+  const andNewer = (rows: Record<string, string[]>, after: Record<string, string[]>) => ({
+    ...Object.fromEntries(Object.keys(after).filter((t) => !(t in rows) && !LEDGER.includes(t)).map((t) => [t, []])),
+    ...rows,
+  });
 
   /** Columns, indexes, constraints and triggers of the ledger tables, as Postgres prints them. */
   async function ledgerShape(target: Db) {
@@ -246,7 +251,7 @@ describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () 
       const after = await everything(copy);
       expect(Object.keys(after)).not.toContain('chip_movements');
       expect(Object.keys(after)).not.toContain('seat_sessions');
-      expect(after).toEqual(without(before.rows, LEDGER));
+      expect(after).toEqual(andNewer(without(before.rows, LEDGER), after));
       // The append-only function went with chip_movements.
       expect(await queryRows(copy, sql`select 1 from pg_proc where proname = 'chip_movements_append_only'`)).toHaveLength(0);
     } finally {
@@ -260,7 +265,8 @@ describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () 
     const copy = await createTestDb();
     try {
       await restoreBackup(copy, linesOf(before.text));
-      expect(await everything(copy)).toEqual(before.rows);
+      const after = await everything(copy);
+      expect(after).toEqual(andNewer(before.rows, after));
       // Still append-only, and the ledger's counter carries on after the restored row.
       await expect(
         copy.execute(sql`delete from chip_movements`).catch((e) => {
@@ -295,7 +301,8 @@ describe('backups that list the dropped ledger tables', { timeout: 60_000 }, () 
       expect(logged.some((m) => m.startsWith('restored data is in place'))).toBe(true);
       const reopened = await createDb({ ignoreEnv: true, pgliteDir: live });
       try {
-        expect(await everything(reopened)).toEqual(before.rows);
+        const after = await everything(reopened);
+        expect(after).toEqual(andNewer(before.rows, after));
       } finally {
         await closeDb(reopened);
       }

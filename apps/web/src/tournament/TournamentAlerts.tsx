@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { TournamentListing } from '@rsdp/tournament';
-import { disableNotifications, enableNotifications, notify, useNotifyState } from '../notify';
+import { disableNotifications, enableNotifications, notify, syncPush, useNotifyState, usePushAvailable } from '../notify';
 import { socket } from '../socket';
 import { tournamentClient } from './client';
 import { tournamentOfTable } from './hooks';
@@ -33,20 +33,29 @@ function saveFired(keys: string[]) {
 /**
  * Background alerts on every page: a registered tournament starting soon,
  * being seated when the cards are drawn, and being moved to another table.
- * (Your turn is raised by the table page.)
+ * (Your turn is raised by the table page.) With alerts on, it also keeps this
+ * device's push subscription up to date, so the server's phone alerts reach
+ * it with the site closed. The tags are the server's too
+ * (apps/server/src/app.ts), so a device shows each alert once.
  */
 export function TournamentAlerts() {
   const state = useNotifyState();
   const on = state === 'on';
 
   useEffect(() => {
+    if (on) void syncPush().catch(() => {});
+  }, [on]);
+
+  useEffect(() => {
     if (!on) return;
     const onMoved = ({ from, to }: { from: string; to: string }) => {
       const tournament = tournamentOfTable(to);
       if (!tournament) return;
-      // Every tab of the player hears this; the shared tag makes it one alert.
-      if (from === '') notify("You're seated", 'Your tournament table is ready. Cards are in the air soon.', { tag: `seat:${tournament}`, url: `/t/${to}` });
-      else notify("You've been moved", 'The tournament moved you to another table.', { tag: `seat:${tournament}`, url: `/t/${to}` });
+      // Every tab of the player hears this; the shared tag makes it one alert. It replaces the alert for the seat
+      // before, so a tap never opens a table they've left.
+      const seat = { tag: `seat:${tournament}:${to}`, url: `/t/${to}`, replaces: `seat:${tournament}:` };
+      if (from === '') notify("You're seated", 'Your tournament table is ready. Cards are in the air soon.', seat);
+      else notify("You've been moved", 'The tournament moved you to another table.', seat);
     };
     socket.on('table:moved', onMoved);
     return () => {
@@ -98,7 +107,21 @@ export function TournamentAlerts() {
 /** Turns background alerts on or off for this browser. */
 export function AlertsToggle({ className = '', quietWhenBlocked = false }: { className?: string; quietWhenBlocked?: boolean }) {
   const state = useNotifyState();
+  const push = usePushAvailable();
+  const [help, setHelp] = useState(false);
   if (state === 'unsupported') return null;
+  // An iPhone or iPad offers alerts to the site only once it is on the home screen: say how, rather than fail.
+  if (state === 'install')
+    return help ? (
+      <span className={`muted tn-alerts-help ${className}`} role="status">
+        On iPhone and iPad, alerts work only once the site is on your home screen: in Safari tap <b>Share</b>, then <b>Add to Home Screen</b>, open the site
+        from there, and turn alerts on.
+      </span>
+    ) : (
+      <button className={`tn-alerts ${className}`} onClick={() => setHelp(true)}>
+        🔕 Turn on alerts
+      </button>
+    );
   // On the home page a first-time visitor shouldn't open on a warning about their browser.
   if (state === 'denied' && quietWhenBlocked) return null;
   if (state === 'denied')
@@ -111,7 +134,7 @@ export function AlertsToggle({ className = '', quietWhenBlocked = false }: { cla
     <button
       className={`tn-alerts ${state === 'on' ? 'on' : ''} ${className}`}
       aria-pressed={state === 'on'}
-      title="Starting soon, seated, moved, and your turn, while this tab is in the background"
+      title={push ? 'Starting soon, seated, moved, and your turn, on this device even with the site closed' : 'Starting soon, seated, moved, and your turn, while this tab is in the background'}
       onClick={() => (state === 'on' ? disableNotifications() : void enableNotifications())}
     >
       {state === 'on' ? '🔔 Alerts on' : '🔕 Turn on alerts'}

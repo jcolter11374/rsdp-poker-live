@@ -43,6 +43,8 @@ import { clientErrorRoutes } from './clientErrors';
 import { opsRecorder, recapRoutes } from './recap';
 import { quietSteps, type ShutdownSteps } from './shutdown';
 import { COACH_BUSY, coachWorker, type TipWorker } from './bots/coachWorker';
+import { memoryPushStore, PushAlerts, pushRoutes, type PushConfig, type PushStore } from './push/alerts';
+import { StartAlerts } from './push/starts';
 import { subjectRef } from '@rsdp/engine';
 import { LoadGate, ReplaceNameError, replacePlayerName } from './replaceName';
 
@@ -208,11 +210,17 @@ export interface AppDeps {
   dataDir?: string;
   /** Works out coach tips. Defaults to the coach's own thread (coachWorker.ts), which close() stops. */
   tips?: TipWorker;
+  /**
+   * Phone alerts (push/alerts.ts): off when `config` is missing (production turns them on with PUBLIC_URL). The
+   * subscriptions are kept in memory unless a store is given; tests pass a fake `fetch` for the push services.
+   */
+  push?: { config: PushConfig | null; store?: PushStore; fetch?: typeof fetch };
 }
 
 type C2S = ClientToServer & TournamentClientToServer;
 type S2C = ServerToClient & TournamentServerToClient;
-type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; lastExport?: number; lastFullLog?: number }>;
+/** `visible`: what the tab last said about being on screen (page:visible); unknown counts as on screen. */
+type Sock = Socket<C2S, S2C, object, { playerId: PlayerId; session: Session; tableId?: string; tournaments: Set<string>; device: string; visible?: boolean; lastExport?: number; lastFullLog?: number }>;
 
 /** Least time between two lobby chat messages from one browser tab. */
 const LOBBY_CHAT_GAP_MS = 1_000;
@@ -258,6 +266,20 @@ const CREATE_WINDOW_MS = 10 * 60_000;
  */
 const OPEN_TOURNAMENTS = 10;
 const NAME_MAX = 20;
+/**
+ * A "your turn" phone alert waits this long and goes only if it is still the same turn: a move queued in the
+ * page (check/fold, call any) or a quick tap answers first, and nobody's phone buzzes for it.
+ */
+export const TURN_ALERT_DELAY_MS = 2_000;
+/** How long a push service may hold each alert for a phone that is off, in seconds. */
+const TURN_ALERT_TTL_S = 60;
+const SEAT_ALERT_TTL_S = 300;
+/**
+ * After a restart, tabs take a few seconds to reconnect, join their table again and say whether they are on
+ * screen. Turn and seat alerts due in that time wait for it to pass, so a player whose screen is only reconnecting
+ * isn't sent one.
+ */
+export const RESTART_QUIET_MS = 10_000;
 
 /**
  * Which build of the web app a page is: the entry script it loads, whose name
@@ -482,9 +504,12 @@ export function createApp(deps: AppDeps = {}) {
   const feedbackPerPlayer = limiter(FEEDBACK_BURST, FEEDBACK_WINDOW_MS, () => clock.now());
   const feedbackSite = limiter(FEEDBACK_SITE_PER_HOUR, 60 * 60_000, () => clock.now());
   const feedbackAddress = limiter(FEEDBACK_ADDRESS_BURST, FEEDBACK_WINDOW_MS, () => clock.now());
+  const push = new PushAlerts({ store: deps.push?.store ?? memoryPushStore(), config: deps.push?.config ?? null, now: () => clock.now(), log, fetch: deps.push?.fetch });
+  pushRoutes(app, push, { resolve: (token, session) => identity.resolve(token, session), fingerprint: hashSecret, now: () => clock.now(), log });
   const accountHooks: AccountHooks = {
     signedIn: (playerId) => avatars.delete(playerId),
     deleted: (playerIds) => {
+      push.forget(playerIds);
       for (const id of playerIds) {
         avatars.delete(id);
         // Their tabs reconnect as new guests.
@@ -857,7 +882,74 @@ export function createApp(deps: AppDeps = {}) {
         }, delayMs);
       } else feeds.delete(id);
       for (const s of watchers.get(id) ?? []) s.emit('table:state', viewFor(rt, s, now));
+      watchTurn(rt);
     });
+  }
+
+  /** The turn each loaded table last showed, so each turn is looked at once: table id → `<player>:<hand>:<events>`. */
+  const turnSeen = new Map<string, string>();
+  /** Until when phone alerts wait for tabs to reconnect (RESTART_QUIET_MS; set by resume). */
+  let quietUntil = -Infinity;
+  /** Runs `fn` now, or once tabs have had time to reconnect after a restart. */
+  function whenSettled(fn: () => void) {
+    const wait = quietUntil - clock.now();
+    if (wait > 0) clock.setTimeout(() => whenSettled(fn), wait);
+    else fn();
+  }
+
+  /** Whose move it is, as the views have it (TableView.legal and canDraw): a person's, not a bot's, and not while paused. */
+  function turnToAct(rt: TableRuntime): { playerId: PlayerId; handNumber: number; at: number } | null {
+    const s = rt.state;
+    const hand = s.hand;
+    if (!hand || s.paused || hand.toAct === null || (hand.phase !== 'betting' && hand.phase !== 'drawing')) return null;
+    const dealt = hand.seats.find((x) => x.seat === hand.toAct);
+    if (!dealt || rt.seatOf(dealt.playerId)?.seat !== hand.toAct || s.bots?.[dealt.playerId]) return null;
+    return { playerId: dealt.playerId, handNumber: hand.input.handNumber, at: hand.events.length };
+  }
+
+  const turnKey = (turn: { playerId: PlayerId; handNumber: number; at: number }) => `${turn.playerId}:${turn.handNumber}:${turn.at}`;
+
+  /** True when one of the player's tabs at this table is on screen (or never said). */
+  const lookingAt = (tableId: string, playerId: PlayerId) => [...(watchers.get(tableId) ?? [])].some((s) => s.data.playerId === playerId && s.data.visible !== false);
+  /** True when one of the player's tabs anywhere on the site is on screen (or never said). */
+  const onSite = (playerId: PlayerId) => [...(playerSockets.get(playerId) ?? [])].some((s) => s.data.visible !== false);
+
+  /**
+   * "Your turn" on the player's phones: once per turn, a moment after it starts, and only if it is still that turn
+   * and none of their tabs at this table is on screen. The tag is the page's own (TablePage.tsx), so a phone that
+   * shows the page's alert too shows it once.
+   */
+  function watchTurn(rt: TableRuntime) {
+    const id = rt.state.id;
+    const turn = turnToAct(rt);
+    // Between turns, and while paused, the last turn stays seen, so resuming doesn't alert for it again.
+    if (!turn) return;
+    const key = turnKey(turn);
+    if (turnSeen.get(id) === key) return;
+    turnSeen.set(id, key);
+    if (!push.on) return;
+    /** Still that turn, and none of the player's tabs at the table on screen. */
+    const due = () => {
+      const still = tables.get(id) === rt ? turnToAct(rt) : null;
+      return !!still && turnKey(still) === key && !lookingAt(id, turn.playerId);
+    };
+    clock.setTimeout(
+      () =>
+        whenSettled(() => {
+          if (tables.get(id) !== rt) return;
+          // Paused before the alert was due: it waits for the game to go on (resuming looks at the turn again).
+          if (rt.state.paused && turnSeen.get(id) === key) return void turnSeen.delete(id);
+          if (!due()) return;
+          push.send(
+            turn.playerId,
+            { title: 'Your turn', body: rt.state.settings.table.name, url: `/t/${id}`, tag: `turn:${id}:${turn.handNumber}:${turn.at}`, replaces: `turn:${id}:` },
+            { ttl: TURN_ALERT_TTL_S, urgency: 'high' },
+            // Played, or looked at, while it waited for a slow push service: it goes nowhere.
+            due,
+          );
+        }),
+      TURN_ALERT_DELAY_MS,
+    );
   }
 
   /** One answer for a hand that isn't there and one a spectator's delay still hides. */
@@ -1010,6 +1102,7 @@ export function createApp(deps: AppDeps = {}) {
     tables.delete(id);
     audit.forgetTable(id);
     feeds.delete(id);
+    turnSeen.delete(id);
     watchers.delete(id);
     lastWatched.delete(id);
     lastChange.delete(id);
@@ -1072,6 +1165,7 @@ export function createApp(deps: AppDeps = {}) {
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
+      turnSeen.delete(id);
       lastWatched.delete(id);
       lastChange.delete(id);
       practiceStarts.delete(id);
@@ -1128,6 +1222,7 @@ export function createApp(deps: AppDeps = {}) {
         tables.delete(rt.state.id);
         audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
+        turnSeen.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
         // Save the final state so the table's history stays readable (tracked, so a name being replaced waits for it).
@@ -1140,6 +1235,7 @@ export function createApp(deps: AppDeps = {}) {
         const view = tournaments.view(id, s.data.playerId);
         if (view) s.emit('tournament:state', { id, view });
       }
+      if (push.on) startAlerts.check(id);
     },
     onEvents: (state, before, events) => {
       const at = clock.now();
@@ -1150,10 +1246,41 @@ export function createApp(deps: AppDeps = {}) {
       });
       if (items.length) addToLobby(state.id, items);
     },
-    onMoved: (playerId, from, to) => {
+    onMoved: (playerId, from, to, restored) => {
       for (const s of playerSockets.get(playerId) ?? []) s.emit('table:moved', { from, to });
+      // A seat a restart put back was announced before it went down.
+      const tournament = tournaments.tournamentOf(to);
+      if (!push.on || !tournament || restored) return;
+      const seated = from === '';
+      // The tag is the page's own (TournamentAlerts.tsx); it replaces the alert for the seat before, so a tap
+      // never opens a table the player has left.
+      const alert = {
+        title: seated ? "You're seated" : "You've been moved",
+        body: seated ? 'Your tournament table is ready. Cards are in the air soon.' : 'The tournament moved you to another table.',
+        url: `/t/${to}`,
+        tag: `seat:${tournament}:${to}`,
+        replaces: `seat:${tournament}:`,
+      };
+      // A tab on screen follows the seat itself (useFollowSeat).
+      whenSettled(() => {
+        if (!onSite(playerId)) push.send(playerId, alert, { ttl: SEAT_ALERT_TTL_S, urgency: 'high' });
+      });
     },
     log,
+  });
+
+  /** "Starting soon" on the phones of everyone still in a scheduled event, with the page's own tag (TournamentAlerts.tsx). */
+  const startAlerts = new StartAlerts({
+    clock,
+    state: (id) => tournaments.liveState(id),
+    send: (playerId, state, startAt, now) => {
+      const minutes = Math.max(1, Math.round((startAt - now) / 60_000));
+      push.send(
+        playerId,
+        { title: 'Starting soon', body: `${state.settings.name} starts in ${minutes} minute${minutes === 1 ? '' : 's'}.`, url: `/tn/${state.id}`, tag: `start:${state.id}:${startAt}` },
+        { ttl: Math.max(30, Math.floor((startAt - now) / 1000)), urgency: 'normal' },
+      );
+    },
   });
 
   /** Every finished hand of a table as one player may see it (spectators only those past the delay): saved hands, with the copies still in memory winning (they include cards shown after the hand). */
@@ -1325,6 +1452,9 @@ export function createApp(deps: AppDeps = {}) {
       }) as never);
 
     on('session:name', (input, ack) => guarded(ack, () => rename(input?.name), log));
+    on('page:visible', (input) => {
+      socket.data.visible = input?.visible !== false;
+    });
 
     on('table:create', (input, ack) =>
       guarded(
@@ -2016,7 +2146,16 @@ export function createApp(deps: AppDeps = {}) {
     /** Puts away idle cash tables now (the server also does this every few minutes); the ids put away. */
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
-    resume: () => tournaments.resumeAll(),
+    resume: async () => {
+      quietUntil = clock.now() + RESTART_QUIET_MS;
+      await tournaments.resumeAll();
+      // Counted from when tabs can reconnect: the server listens once this is done.
+      quietUntil = clock.now() + RESTART_QUIET_MS;
+      // Their "starting soon" alerts wait again (nothing announces an event brought back).
+      if (push.on) for (const id of tournaments.liveIds()) startAlerts.check(id);
+    },
+    /** Phone alerts (for tests: `push.idle()` waits until every queued alert has gone). */
+    push,
     /** Forgets addresses the limits no longer need now (the server also does this every few minutes). */
     forgetOldAddresses,
     /** How many addresses the open-tournament limit remembers now. */
@@ -2049,6 +2188,8 @@ export function createApp(deps: AppDeps = {}) {
       }
       steps.step('putting tables away');
       tournaments.dispose();
+      push.close();
+      startAlerts.dispose();
       if (sweep) clearInterval(sweep);
       await Promise.allSettled([...unloading.values()]);
       const open = [...tables.values()];

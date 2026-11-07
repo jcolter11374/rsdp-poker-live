@@ -369,6 +369,11 @@ export interface CreateTableInput {
 export interface ClientToServer {
   /** The name other players see; also used to register for tournaments. */
   'session:name': (input: { name: string }, ack: Ack) => void;
+  /**
+   * Whether this tab is on screen, sent on connecting and whenever it changes. A phone alert for "your turn" goes
+   * out only while none of the player's tabs at that table is (a tab that never says counts as on screen).
+   */
+  'page:visible': (input: { visible: boolean }) => void;
   'table:create': (input: CreateTableInput, ack: Ack<{ tableId: string }>) => void;
   'table:join': (input: { tableId: string }, ack: Ack) => void;
   'table:leave': () => void;

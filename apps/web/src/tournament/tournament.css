@@ -180,6 +180,8 @@
 .tn-alerts { font-size: 0.85rem; padding: 4px 10px; }
 .tn-alerts.on { border-color: var(--good); color: var(--good); }
 .tn-list-head .tn-alerts { margin-left: auto; }
+.tn-alerts-help { font-size: 0.85rem; max-width: 34em; }
+.tn-list-head .tn-alerts-help { margin-left: auto; }
 
 /* Season leaderboard */
 .tn-scroll { overflow-x: auto; margin: 0 -4px; }

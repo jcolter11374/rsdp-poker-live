@@ -96,6 +96,7 @@ If a key was pasted somewhere public, committed, or shown in a log, replace it. 
   - Anyone holding it can open every backup still on GitHub.
   - Make a new key pair, and put the new public key in `scripts/backup/recipient.txt` through a PR. It has to reach `main` (a release), because the daily backup reads the file from there.
   - Once the first backup locked to the new key is green, delete the old backup artifacts (Actions → Nightly backup → each run → Artifacts).
+- **The phone alerts key.** It is not a secret on Fly: it lives in the database (`push_keys`) and so in the locked backups. With it and a browser's push address and keys (in the same database), someone could send that browser an alert that looks like the site's, and nothing more. It matters only if the database itself or an unlocked backup leaked, and then everything in it did. To replace it, a small PR adds a step that runs once: it deletes the `vapid` row of `push_keys` and every row of `push_subscriptions`, but only while the `vapid` row's `created_at` is older than a time written into the PR, so later starts keep the new key (take the step out again in the next release). The server makes a new key on its next use, and each browser with alerts on subscribes again with it the next time it opens the site (`syncPush` notices the key changed).
 - **Anything else**, like a player's password: tell John. Signed-in sessions can be ended by the player changing their password.
 
 ## Someone reports a security problem
