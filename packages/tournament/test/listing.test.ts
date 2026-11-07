@@ -5,7 +5,7 @@ const MIN = 60_000;
 const T0 = Date.parse('2026-10-30T00:00:00Z');
 
 const make = (id: string, overrides: Parameters<typeof defaultSettings>[0] = {}) =>
-  createTournament({ id, hostId: 'host', settings: defaultSettings({ name: id, ...overrides }), now: T0, seed: '01'.repeat(32) });
+  createTournament({ id, hostId: 'host', settings: defaultSettings({ name: id, ...overrides }), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
 const register = (s: TournamentState, ...ids: string[]) =>
   ids.reduce((st, p) => apply(st, { type: 'register', playerId: p, displayName: p.toUpperCase() }, T0).state, s);
 

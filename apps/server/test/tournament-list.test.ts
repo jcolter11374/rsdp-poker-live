@@ -50,7 +50,7 @@ describe('listing a player’s tournaments from the database', () => {
     await db.execute(sql`insert into players (id) values ('host'), ('p1'), ('p2')`);
     const store = dbTournamentStore(db);
     const now = Date.now();
-    const make = (id: string, hostId: string) => createTournament({ id, hostId, settings: defaultSettings({ name: id }), now, seed: '01'.repeat(32) });
+    const make = (id: string, hostId: string) => createTournament({ id, hostId, settings: defaultSettings({ name: id }), now, seed: '01'.repeat(32), legacyRng: 7 });
     const a = make('a', 'host');
     const b = make('b', 'p2');
     b.entries.push({ id: 'b:e1', playerId: 'p1', displayName: 'P1', entryNo: 1, status: 'registered', stack: 1, tableId: null, seat: null, rebuys: 0, addOns: 0, registeredAt: now });

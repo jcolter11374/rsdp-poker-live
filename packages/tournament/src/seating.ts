@@ -45,19 +45,10 @@ export function seatRng(state: SeatRngState): Rng {
 }
 
 /**
- * The old generator's 32-bit state for a new tournament, derived from its seed
- * under its own label: the first big-endian 32-bit word of
- * SHA-256("rsdp-seats-v1-legacy|<seed>"), never 0. This code never draws from
- * it while the state has a seed. It is there for a rollback: a server from
- * before rsdp-seats-v1 draws seats from `rng` alone, and must find a secret
- * value there rather than a fixed 0 anyone can read in the source. It says
- * nothing about the seat-draw stream, which hashes the seed under another label.
+ * A valid secret state for the old generator (mulberry32) that a new tournament keeps in `rng`: a whole number
+ * from 1 to 2^32 - 1. Never 0, which is what browsers are sent in its place and anyone can read in the source.
  */
-export function legacyRngFor(seed: string): number {
-  const h = sha256(utf8(`${SEAT_RNG_VERSION}-legacy|${seed}`));
-  // 0 is what browsers are sent in its place, so never store that.
-  return (((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0) || 1;
-}
+export const isLegacyRng = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 1 && (n as number) <= 0xffffffff;
 
 /** mulberry32, which drew seats before rsdp-seats-v1: returns [value in [0, 1), next state]. */
 export function nextRandom(state: number): [number, number] {
