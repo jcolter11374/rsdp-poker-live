@@ -14,8 +14,9 @@ interface Reveal {
 /**
  * What the server changes as soon as the hand is over, kept as it was until
  * the result shows: the log (who won), seats (busted players sit out, leavers
- * go, tournaments knock players out), the ledger and Dealer's choice (a busted
- * chooser's PICK tag moves on).
+ * go, tournaments knock players out), the ledger, a game rotation's count
+ * (one player fewer is one hand fewer in an orbit) and Dealer's choice (a
+ * busted chooser's PICK tag moves on).
  */
 export interface Frozen {
   /** The newest log line before the runout. */
@@ -24,6 +25,7 @@ export interface Frozen {
   ledger: TableView['ledger'];
   me: TableView['me'];
   nit: TableView['nit'];
+  rotation: TableView['rotation'];
   choice?: TableView['choice'];
   /** Whether `choice` is from this hand (false when the hand was dealt and run out in one update). */
   sameHand?: boolean;
@@ -57,7 +59,7 @@ export function useRunoutReveal(live: TableView | null): TableView | null {
         handNumber: hand.handNumber,
         steps,
         waits: runoutWaits(hand.events),
-        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
+        before: { logCut: before.log.at(-1)?.at ?? 0, seats: before.seats, ledger: before.ledger, me: before.me, nit: before.nit, rotation: before.rotation, choice: before.choice, sameHand: prior.handNumber === hand.handNumber },
       });
       setShown(0);
     }
@@ -107,6 +109,7 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     // Knocked out or leaving: you stay in your seat, with the table turned your way, until the result.
     me: view.me.seat === null && before.me.playerId === view.me.playerId ? before.me : view.me,
     nit: before.nit,
+    rotation: heldRotation(view, before),
     choice: heldChoice(view, before),
     log: view.log.filter((l) => l.at <= before.logCut),
     history: view.history.filter((h) => h.handNumber !== hand.handNumber),
@@ -114,6 +117,17 @@ export function holdBack(view: TableView, before: Frozen, shown: number): TableV
     nextHandAt: null,
     rabbit: { available: false, cards: null },
   };
+}
+
+/**
+ * A game rotation's count during the reveal (#373), as it was before the result: one player fewer in the orbit is
+ * one hand fewer, so the live count would tell who busted. A hand dealt and run out in one update has no count of its
+ * own from before the result (the one before is the last hand's), so until the result the bar names the game and the
+ * next one without a count. Neither depends on how the hand went.
+ */
+export function heldRotation(view: TableView, before: Frozen): TableView['rotation'] {
+  if (before.sameHand !== false) return before.rotation;
+  return view.rotation ? { ...view.rotation, handsLeft: null } : before.rotation;
 }
 
 /**
