@@ -1275,8 +1275,9 @@ try {
         });
       }
       await host.call('host:start');
-      // Four split pots, which take about eight hands (about 11 s each, with the seeds sent); before the fix more than half
-      // of them drew the middle smaller at one size or the other, so all four passing would be about a 1 in 40 chance.
+      // Four split pots, which take about eight hands (7 to 8 s each with the seeds sent: the 6 s a showdown shows, and
+      // play); before the fix more than half of them drew the middle smaller at one size or the other, so all four passing
+      // would be about a 1 in 40 chance. 150 s is about 20 hands: fewer than four splits in those is well under 1 in 100.
       const splits = (page) => page.evaluate(() => [...window.__splits.entries()].map(([k, s]) => [k, [...s]]));
       const deadline = Date.now() + 150_000;
       while ((await splits(pages[0])).length < 4) {

@@ -187,6 +187,34 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
 const settled = (card: Element) => !card.getAnimations?.().some((a) => a instanceof CSSAnimation && a.playState === 'running');
 
 /**
+ * A card's box where its lift (a winning card rising, a `translate` transition) will leave it, not where it is on the
+ * way. The class that lifts it comes in the same render as the result, so measured as it is, the first reading sees it
+ * still at rest and the next one, a moment later, lifted: the middle's fit, and whether the winners' lines are stacked,
+ * would change just after they appear (#474).
+ */
+function liftedTo(card: HTMLElement): Box {
+  const r = card.getBoundingClientRect();
+  const lift =
+    typeof CSSTransition === 'undefined'
+      ? undefined
+      : card.getAnimations?.().find((a): a is CSSTransition => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
+  const frames = lift?.effect && 'getKeyframes' in lift.effect ? (lift.effect as KeyframeEffect).getKeyframes() : [];
+  const end = frames[frames.length - 1]?.translate;
+  if (typeof end !== 'string') return r;
+  const xy = (v: string) => {
+    const [x, y] = v === 'none' ? [] : v.trim().split(/\s+/).map(parseFloat);
+    return { x: x || 0, y: y || 0 };
+  };
+  const to = xy(end);
+  const at = xy(getComputedStyle(card).translate);
+  // In screen pixels: what holds the card may be drawn scaled (the seat, the felt).
+  const k = card.offsetHeight ? r.height / card.offsetHeight : 1;
+  const dx = (to.x - at.x) * k;
+  const dy = (to.y - at.y) * k;
+  return { left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy };
+}
+
+/**
  * Where an element will be once it has grown in (a winner's line pops in from 40% and overshoots a little): its box,
  * less a scale and a move in its own `transform` about its centre. `zoom` is how much what holds it is drawn scaled.
  */
@@ -206,23 +234,28 @@ function grownIn(el: Element, zoom: number): Box {
  * The scale the middle of the table (`stack`, drawn scaled about its centre) needs so it covers no player's nameplate or
  * cards (#417), and whether several winners' lines should be stacked rather than side by side. Side by side keeps the
  * middle short (a wide, short window), but a side seat's long row of cards (stud's seven, five- and six-card Omaha) can
- * reach in that far: then, if stacked lines need less shrinking, they're stacked (#474). Both are measured each time, so
- * the choice doesn't depend on which one is drawn now.
+ * reach in that far: then, if stacked lines need less shrinking, they're stacked (#474). Both are measured, whichever is
+ * drawn now. `keep` measures only the layout already chosen for these lines, so they don't jump from one to the other.
  */
-function boardFitOf(felt: HTMLElement, stack: HTMLElement): { fit: number; stacked: boolean } {
+function boardFitOf(felt: HTMLElement, stack: HTMLElement, keep: boolean | null = null): { fit: number; stacked: boolean } {
   const several = [...stack.children].find((c): c is HTMLElement => c.classList.contains('several'));
   if (!several) return { fit: boardScale(felt, stack), stacked: false };
   const drawn = several.classList.contains('stacked');
-  several.classList.remove('stacked');
-  const side = boardScale(felt, stack);
-  let out = { fit: side, stacked: false };
-  if (side < 1) {
-    several.classList.add('stacked');
-    const stacked = boardScale(felt, stack);
-    if (stacked > side) out = { fit: stacked, stacked: true };
+  const fitAs = (stacked: boolean) => {
+    several.classList.toggle('stacked', stacked);
+    return boardScale(felt, stack);
+  };
+  try {
+    if (keep !== null) return { fit: fitAs(keep), stacked: keep };
+    const side = fitAs(false);
+    if (side < 1) {
+      const stacked = fitAs(true);
+      if (stacked > side) return { fit: stacked, stacked: true };
+    }
+    return { fit: side, stacked: false };
+  } finally {
+    several.classList.toggle('stacked', drawn);
   }
-  several.classList.toggle('stacked', drawn);
-  return out;
 }
 
 /** The scale the middle needs as it is laid out now: see fitMiddle. */
@@ -239,9 +272,9 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
       if (part.classList.contains('unseen')) continue;
       let b = grownIn(part, now);
       if (!b.right && !b.bottom) continue;
-      for (const card of part.querySelectorAll('.playing-card')) {
+      for (const card of part.querySelectorAll<HTMLElement>('.playing-card')) {
         if (!settled(card)) continue;
-        const r = card.getBoundingClientRect();
+        const r = liftedTo(card);
         b = { left: Math.min(b.left, r.left), right: Math.max(b.right, r.right), top: Math.min(b.top, r.top), bottom: Math.max(b.bottom, r.bottom) };
       }
       items.push({ ...full(b), line: !part.matches('.board-row, .pots') });
@@ -262,7 +295,7 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
     const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
     if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
       seats.push(to(hole.getBoundingClientRect()));
-      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(to(card.getBoundingClientRect()));
+      for (const card of hole.querySelectorAll<HTMLElement>('.playing-card')) if (settled(card)) seats.push(to(liftedTo(card)));
     }
   });
   const dealer = felt.querySelector<HTMLElement>('.dealer');
@@ -708,20 +741,28 @@ export function Table({
   const stack = useRef<HTMLDivElement>(null);
   const [boardFit, setBoardFit] = useState(1);
   const [stackResults, setStackResults] = useState(false);
-  const fitHeld = useRef({ key: '', fit: 1, failed: false });
+  // The fit for this hand and size, and the layout chosen for the winners' lines (by hand, size and how many lines).
+  const fitHeld = useRef({ key: '', fit: 1, failed: false, lines: '', stacked: false });
   const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
   useLayoutEffect(() => {
     let fit = 1;
     let stacked = false;
+    let lines = '';
     try {
-      if (!compact && felt.current && stack.current) ({ fit, stacked } = boardFitOf(felt.current, stack.current));
+      if (!compact && felt.current && stack.current) {
+        // Once several lines are laid out one way, they stay that way while they show (#474).
+        const several = stack.current.querySelector(':scope > .results.several');
+        lines = several ? `${fitKey}|${several.childElementCount}` : '';
+        const keep = lines && fitHeld.current.lines === lines ? fitHeld.current.stacked : null;
+        ({ fit, stacked } = boardFitOf(felt.current, stack.current, keep));
+      }
     } catch (error) {
       // As for the seats: a slip here mustn't take the table down. The middle keeps its full size, as before #417.
       if (!fitHeld.current.failed) reportError(error, 'error');
       fitHeld.current.failed = true;
     }
     if (fitHeld.current.key === fitKey) fit = Math.min(fit, fitHeld.current.fit);
-    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed };
+    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed, lines, stacked };
     setBoardFit((f) => (f === fit ? f : fit));
     setStackResults((was) => (was === stacked ? was : stacked));
   });
