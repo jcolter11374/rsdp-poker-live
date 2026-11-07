@@ -39,6 +39,9 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
 - Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
 - Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+- Tournaments on a laptop: when you're knocked out, the table no longer jumps and grows as the result shows. It holds still, and changes once, as the next hand is dealt and your seat goes.
+- Tournaments: once an event is over, the bar over its tables shows only who won, not a stopped clock with the next blinds. Someone still looking at a table that broke is told it has closed and that play goes on at the other tables.
+- Seven Card Stud, Stud Hi-Lo and Razz on a computer: each player's cards sit in a row over their nameplate from the first card, instead of tucked into the nameplate until fifth street. The cards no longer jump up and every nameplate no longer narrows at fifth street, and on some screens a table that only deals stud now has bigger seats and cards.
 
 ## [2026.11.07.6] - 2026-11-07
 
