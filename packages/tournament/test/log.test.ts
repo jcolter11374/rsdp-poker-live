@@ -5,7 +5,7 @@ const T0 = Date.parse('2026-10-30T00:00:00Z');
 
 describe('the public lobby log', () => {
   it('names players instead of showing their ids, including one who just unregistered', () => {
-    let s: TournamentState = createTournament({ id: 'L', hostId: 'host', settings: defaultSettings(), now: T0, seed: '01'.repeat(32) });
+    let s: TournamentState = createTournament({ id: 'L', hostId: 'host', settings: defaultSettings(), now: T0, seed: '01'.repeat(32), legacyRng: 7 });
     s = apply(s, { type: 'register', playerId: 'p1', displayName: 'Ana' }, T0).state;
     const before = s;
     const r = apply(s, { type: 'unregister', playerId: 'p1' }, T0);
@@ -113,7 +113,7 @@ describe('every kind of director event', () => {
 
 describe('host settings changes', () => {
   const name = () => 'X';
-  const create = () => createTournament({ id: 'S', hostId: 'host', settings: defaultSettings({ lateRegistration: { enabled: true, throughLevel: 4 } }), now: T0, seed: 'a1'.repeat(32) });
+  const create = () => createTournament({ id: 'S', hostId: 'host', settings: defaultSettings({ lateRegistration: { enabled: true, throughLevel: 4 } }), now: T0, seed: 'a1'.repeat(32), legacyRng: 7 });
   const update = (s: TournamentState, settings: Partial<TournamentSettings>) => apply(s, { type: 'updateSettings', by: 'host', settings }, T0);
 
   it('name the settings that changed, the way a lobby switch sends them', () => {
@@ -139,7 +139,7 @@ describe('host settings changes', () => {
     const r = update(create(), { lateRegistration: { throughLevel: 4, enabled: true } });
     expect(r.events).toEqual([{ type: 'settingsUpdated', changed: [] }]);
     // A list is still compared in order.
-    const mixed = createTournament({ id: 'M', hostId: 'host', settings: defaultSettings({ games: ['nlhe', 'plo'] }), now: T0, seed: 'a1'.repeat(32) });
+    const mixed = createTournament({ id: 'M', hostId: 'host', settings: defaultSettings({ games: ['nlhe', 'plo'] }), now: T0, seed: 'a1'.repeat(32), legacyRng: 7 });
     expect(update(mixed, { games: ['plo', 'nlhe'] }).events).toEqual([{ type: 'settingsUpdated', changed: ['games'] }]);
   });
 

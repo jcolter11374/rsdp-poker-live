@@ -1,4 +1,4 @@
-# Fly.io config for RSDP Poker Live! See docs/DEPLOY.md.
+# Fly.io config for RSDP Live! See docs/DEPLOY.md.
 # One always-on machine: live tables and tournaments run in a single process,
 # so never scale this app past one machine.
 
