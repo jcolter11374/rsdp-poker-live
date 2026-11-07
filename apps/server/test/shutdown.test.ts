@@ -198,6 +198,7 @@ describe('a backup download and the shutdown', { timeout: 60_000 }, () => {
       client.destroy();
       // Saves would wait behind the backup's transaction for as long as it lasts.
       expect(await within(db.execute(sql`select 1`), 3_000)).not.toBe('still waiting');
+      for (let i = 0; i < 60 && !logged.includes('backup failed'); i++) await sleep(50);
       expect(logged).toContain('backup failed');
       const next = await fetch(`http://localhost:${port}/api/admin/backup`, { headers: { 'x-admin-key': KEY } });
       expect(next.status).toBe(200);
