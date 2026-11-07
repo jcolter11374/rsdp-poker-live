@@ -420,11 +420,16 @@ function seatReach(seatEl: HTMLElement, still = false): Reach {
 
 /**
  * How far each seat's nameplate and cards reach from its centre, measured after
- * each render, so bets can sit just clear of them.
+ * each render, so bets can sit just clear of them. `moving` is set while a new
+ * reach is on its way: the render it makes comes before the paint and can move
+ * the middle of the table (a nameplate gets a line for its hand at a showdown),
+ * so the middle isn't measured until then (#474).
  */
 function useSeatReach(felt: RefObject<HTMLElement>) {
   const [reach, setReach] = useState<Record<number, Reach>>({});
+  const moving = useRef(false);
   useLayoutEffect(() => {
+    moving.current = false;
     const el = felt.current;
     if (!el) return;
     const next: Record<number, Reach> = {};
@@ -437,9 +442,12 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
       if (!was || Math.abs(was.pod! - pod) > 4 || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
       next[seat] = now;
     });
-    if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
+    if (changed || Object.keys(next).length !== Object.keys(reach).length) {
+      moving.current = true;
+      setReach(next);
+    }
   });
-  return reach;
+  return { reach, moving };
 }
 
 /** Whether a card is where it will stay: not being dealt, carried down or turned over. A winning card's short lift counts. */
@@ -807,7 +815,7 @@ export function Table({
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
   const size = useSize(felt);
-  const reach = useSeatReach(felt);
+  const { reach, moving: reachMoving } = useSeatReach(felt);
   // Cards on a phone are placed by the nameplates around them, each held at its widest through a hand (useHeldPlates),
   // until the felt changes size or someone sits down or leaves.
   const plateKey = `${view.hand?.handNumber ?? 0}|${size.w}x${size.h}|${view.seats.map((s) => (s ? 1 : 0)).join('')}`;
@@ -1052,6 +1060,8 @@ export function Table({
   const fitHeld = useRef({ key: '', fit: 1, failed: false, lines: '', stacked: false });
   const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
   useLayoutEffect(() => {
+    // The seats' new reach moves the middle in a render that comes before the paint: measure it there, not where it was.
+    if (reachMoving.current) return;
     let fit = 1;
     let stacked = false;
     let lines = '';
