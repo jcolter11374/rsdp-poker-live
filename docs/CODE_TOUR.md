@@ -61,7 +61,8 @@ scripts/             Stand-alone checkers (hands, the public record), backups, d
 .github/workflows/   Automated jobs on GitHub: tests, deploys, releases, backups, watchers.
 .github/             Also the issue forms, the pull request template and labels.json.
 docs/                This page, ARCHITECTURE.md, FAIRNESS.md, PRIVACY.md, TERMS.md, CREDITS.md, DEPLOY.md,
-                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why).
+                     RUNBOOK.md (when something goes wrong), DECISIONS.md (what was decided, and why),
+                     ACCESSIBILITY.md (screen readers, keyboards, contrast, zoom).
 ```
 
 At the top level, [CONTRIBUTING.md](../CONTRIBUTING.md) says how work is
@@ -115,10 +116,11 @@ and seasons (`season.ts`).
 | [`src/runtime/view.ts`](../apps/server/src/runtime/view.ts) | `tableView`: builds what one particular person sees. This is where hidden information is filtered out. |
 | [`src/tournament/manager.ts`](../apps/server/src/tournament/manager.ts) | Runs the director on a real clock, opens and closes tables for it, and saves and resumes tournaments. |
 | [`src/scheduler/scheduler.ts`](../apps/server/src/scheduler/scheduler.ts) | Timers that must survive a restart (a tournament's start time, for example) are kept as rows in a `jobs` table. |
-| [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. |
+| [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. Tips are worked out on a thread of their own (`coachWorker.ts`, which starts `coachThread.mjs`), so they never hold up a table. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
 | [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. At a table whose spectators watch on a delay, a hand goes in that long after it ends (D38); until then it waits as an `audit-hand` row in `jobs`, which audit.ts puts in itself, not the scheduler. |
 | [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
+| [`src/push/`](../apps/server/src/push) | Phone alerts that reach a closed site: `webpush.ts` encrypts and signs each one for the browser's push service, `alerts.ts` keeps who gets them and sends them without holding up the game, `starts.ts` times "starting soon". See [ARCHITECTURE.md](ARCHITECTURE.md#phone-alerts-appsserversrcpush-appswebpublicswjs). |
 | [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
 | [`src/restore.ts`](../apps/server/src/restore.ts), [`db/backup.ts`](../apps/server/src/db/backup.ts) | Backups out, restores in. See [DEPLOY.md](DEPLOY.md#backups). |
 
@@ -151,10 +153,24 @@ opens the connection and keeps your browser's secret.
   which saves it with the table and hand number in the `feedback` table.
   It is private: only the admin reads it, on `/roadmap/admin` or from
   `GET /api/feedback`.
+- Screen readers and keyboards: [`src/announce.ts`](../apps/web/src/announce.ts)
+  turns each change at the table into words, which
+  [`components/table/Announcer.tsx`](../apps/web/src/components/table/Announcer.tsx)
+  puts in a region only screen readers read out ("Bo bets 40", "Your turn:
+  call 40, raise to 80 up to 1000 or fold"). Every dialog keeps the keyboard
+  inside it while it's open
+  ([`components/dialogFocus.ts`](../apps/web/src/components/dialogFocus.ts)).
+  What was checked, what was fixed and what's left is in
+  [ACCESSIBILITY.md](ACCESSIBILITY.md).
 - [`src/fair.ts`](../apps/web/src/fair.ts) is your browser's half of fair
   dealing: it sends your seed for the next hand and watches that it was used.
   [`src/audit.ts`](../apps/web/src/audit.ts) checks the public record when
   you visit (at most every 10 minutes).
+- [`src/notify.ts`](../apps/web/src/notify.ts) turns alerts on and off and
+  shows them while a tab is in the background; with alerts on it also
+  subscribes the browser for push. The service worker,
+  [`public/sw.js`](../apps/web/public/sw.js), shows the pushes that arrive
+  with the site closed and opens the right page when one is tapped.
 - [`src/tournament/`](../apps/web/src/tournament) holds the tournament lobby
   and creation pages; [`src/rules/`](../apps/web/src/rules) the How to play
   guides; [`src/account/`](../apps/web/src/account) sign-in, profile,
@@ -261,7 +277,9 @@ npm run smoke        # browser test; see below
 The smoke test drives a real browser, so install one first with
 `npx playwright install chromium`. It needs the built website served by the
 game server: run `npm run build && npm start` in one terminal, then
-`BASE_URL=http://localhost:3001 npm run smoke` in another. The play-test
+`BASE_URL=http://localhost:3001 npm run smoke` in another. It also checks
+the main pages with [axe](https://github.com/dequelabs/axe-core) and fails on
+any serious accessibility problem ([ACCESSIBILITY.md](ACCESSIBILITY.md)). The play-test
 scripts for a release run the same way; see
 [e2e/playtest/README.md](../e2e/playtest/README.md).
 

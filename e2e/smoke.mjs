@@ -5,12 +5,17 @@
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
 //
-// Screenshots go to e2e/out/, and a failed step adds one of every open page. Any console error fails the run.
+// Screenshots go to e2e/out/, and a failed step adds one of every open page. Any console error fails the run, and so
+// does a serious or critical accessibility problem on the main pages (docs/ACCESSIBILITY.md).
+// SMOKE_A11Y=report prints the accessibility problems instead of failing on them.
 
+import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { AxeBuilder } from '@axe-core/playwright';
+import { io } from 'socket.io-client';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
 // It creates tables and a tournament with made-up players, so it never runs against the live site.
@@ -26,8 +31,53 @@ mkdirSync(OUT, { recursive: true });
 const errors = [];
 /** Every page the run opens, so a failed step can screenshot them all. */
 const pages = [];
+const a11y = [];
+// Only the upgrade rehearsal (upgrade.yml) sets SMOKE_A11Y=report. It runs main's copy of this test, with the newer
+// axe and Playwright a release brings, against main's image: a new rule there could flag what is already live, which
+// that release can't change, though the data it makes is fine. CI's own smoke test always fails on these problems.
+const A11Y = process.env.SMOKE_A11Y || 'fail';
+if (A11Y !== 'fail' && A11Y !== 'report') {
+  console.error(`SMOKE_A11Y is "fail" (the default) or "report", not "${A11Y}"`);
+  process.exit(1);
+}
 
 const browser = await chromium.launch();
+
+/** The WCAG 2.2 AA rules (with the 2.0 and 2.1 ones they build on) that axe checks. */
+const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+
+/**
+ * An accessibility check that isn't axe's (a screen reader hears "Your turn"). Failing, it fails the run at once,
+ * or with SMOKE_A11Y=report it is noted with axe's problems.
+ */
+async function a11yCheck(label, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    if (A11Y !== 'report') throw e;
+    a11y.push(`${label}: ${e.message.split('\n')[0]}`);
+  }
+}
+
+/**
+ * Checks the page as it is now with axe, and notes every serious or critical problem; any fails the run at the end.
+ * Short animations (cards being dealt, chips flying) finish first, so nothing is checked half faded in.
+ */
+async function checkA11y(page, label) {
+  await page.evaluate(() => {
+    const short = document.getAnimations().filter((a) => {
+      const t = a.effect?.getComputedTiming();
+      return t && Number.isFinite(t.endTime) && t.endTime - Number(a.currentTime ?? 0) < 3000;
+    });
+    return Promise.race([Promise.all(short.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 4000))]);
+  });
+  await a11yCheck(`${label} (axe)`, async () => {
+    const result = await new AxeBuilder({ page }).withTags(WCAG_AA).analyze();
+    for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
+      a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
+    }
+  });
+}
 
 async function open(label, viewport = { width: 1280, height: 860 }) {
   const ctx = await browser.newContext({ viewport });
@@ -93,6 +143,31 @@ async function stopGame(host, players) {
   await stopped.waitFor();
 }
 
+/** Starts noting the table's size (its scale and the felt's height) every animation frame (#350). */
+async function sampleTableSizes(page) {
+  await page.evaluate(() => {
+    const seen = (window.__tableSizes = new Set());
+    const sample = () => {
+      const felt = document.querySelector('.felt');
+      if (felt) seen.add(`scale ${felt.style.getPropertyValue('--k')}, felt ${Math.round(felt.getBoundingClientRect().height)}px`);
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+/** The table's sizes seen over a quarter of a second at this window size, after it has had time to settle. */
+async function tableSizesAt(page, width, height) {
+  // A change of width, so the bar under the table lets go of a taller size it held from an earlier height (Dock.tsx).
+  await page.setViewportSize({ width: width - 1, height });
+  await page.waitForTimeout(100);
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.__tableSizes.clear());
+  await page.waitForTimeout(250);
+  return page.evaluate(() => [...window.__tableSizes]);
+}
+
 /**
  * Starts noting, every animation frame, the felt's size and place, the seats' scale and every player's seat spot: each
  * distinct combination is one layout. `layoutsSeen` stops and returns them, so one entry means nothing moved.
@@ -127,6 +202,21 @@ async function step(name, fn) {
 }
 
 try {
+  await step('accessibility: home, sign-in, sign-up and new tournament pages, on a computer and a phone', async () => {
+    for (const [label, viewport] of [['computer', undefined], ['phone', { width: 390, height: 844 }]]) {
+      const p = await open(`pages (${label})`, viewport);
+      // Each page, and something that shows it has finished loading.
+      for (const [route, ready] of [['/', 'input[required]'], ['/signin', 'form'], ['/signup', 'form'], ['/tn/new', 'button:has-text("Create tournament")']]) {
+        await p.goto(`${BASE}${route}`);
+        await p.locator(ready).first().waitFor();
+        // Lists that arrive after the page (open tournaments on the home page) have a moment to land.
+        await p.waitForTimeout(600);
+        await checkA11y(p, `${route} (${label})`);
+      }
+      await p.close();
+    }
+  });
+
   await step('cash table: create, approve a seat, play a hand', async () => {
     const host = await open('cash host');
     const guest = await open('cash guest');
@@ -151,6 +241,15 @@ try {
     await first.keyboard.press('t');
     await first.waitForTimeout(300);
     for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
+    // A screen reader hears that it's their turn, from a region nobody sees.
+    await a11yCheck('table, your turn (read aloud)', () => first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' }));
+    await checkA11y(first, 'table, your turn');
+    await checkA11y(first === host ? guest : host, 'table, waiting to act');
+    const watcher = await open('cash spectator');
+    await watcher.goto(host.url());
+    await watcher.waitForSelector('.seat .hole .playing-card');
+    await checkA11y(watcher, 'table, watching');
+    await watcher.close();
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
 
@@ -492,6 +591,23 @@ try {
       await p.getByRole('button', { name: /^Register/ }).click();
       await p.getByText("You're registered.").waitFor();
     }
+    await checkA11y(host, 'tournament lobby, host');
+    await checkA11y(players[2], 'tournament lobby (phone)');
+    // The lobby chat with messages in it: your own (on its redder background) and another player's, with the host's
+    // Hide, Mute and Delete beside them.
+    for (const [p, text] of [
+      [host, 'Good luck, everyone'],
+      [players[2], 'Thanks, you too'],
+    ]) {
+      await p.getByRole('tab', { name: /^Chat/ }).click();
+      await p.getByRole('textbox', { name: 'Message' }).fill(text);
+      await p.getByRole('button', { name: 'Send' }).click();
+      await p.locator('.tn-chat-list li.mine', { hasText: text }).waitFor();
+    }
+    await host.locator('.tn-chat-list li', { hasText: 'Thanks, you too' }).getByRole('button', { name: 'Mute' }).waitFor();
+    await players[2].locator('.tn-chat-list li', { hasText: 'Good luck, everyone' }).waitFor();
+    await checkA11y(host, 'tournament lobby chat, host');
+    await checkA11y(players[2], 'tournament lobby chat (phone)');
     // The host starts from the card by the clock, without opening the Host tab.
     await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
 
@@ -499,11 +615,38 @@ try {
     for (const p of players) await p.waitForURL(table, { waitUntil: 'commit' });
     await host.locator('.tn-strip:has-text("Level 1")').waitFor();
     await host.waitForSelector('.seat .hole .playing-card');
+    await players[2].waitForSelector('.seat .hole .playing-card');
+    await checkA11y(players[2], 'tournament table (phone)');
     await playOut(players);
     const log = await host.locator('.side').innerText();
     for (const name of names) if (!log.includes(name)) throw new Error(`${name} was not in the first hand`);
     if (log.includes('(auto)')) throw new Error('a player was acted for automatically in the first hand');
     await host.screenshot({ path: path.join(OUT, 'tournament.png') });
+
+    // A wide, short window (John's is about 2300x824): the tournament's clock moves to the bottom-right corner, so the
+    // table gets the same big layout a cash table gets there. The strip above it used to take just enough height to
+    // drop the seats and cards to their smallest size (#385). Frame by frame, it holds that one size (#350).
+    await host.setViewportSize({ width: 2300, height: 824 });
+    await host.locator('.tn-corner:has-text("Level 1")').waitFor();
+    if (await host.locator('.tn-strip').count()) throw new Error('the tournament strip still takes room above the table on a wide window');
+    // A rebuy offer or an add-on goes under the table there, in a spot that takes no room while nothing is asked. (On
+    // your turn the spot is hidden anyway, so this looks at it off turn: the next hand waits for the showdown.)
+    const asks = await host.locator('.dock-notes.tournament-asks:not(.your-turn)').evaluate((el) => `${el.childElementCount} inside, display ${getComputedStyle(el).display}`);
+    if (asks !== '0 inside, display none') throw new Error(`the empty spot for tournament asks under the table takes room (${asks})`);
+    await sampleTableSizes(host);
+    for (const h of [824, 800]) {
+      const sizes = await tableSizesAt(host, 2300, h);
+      if (sizes.length !== 1) throw new Error(`a tournament table at 2300x${h} kept changing size: ${sizes.join(' / ')}`);
+      const k = await host.locator('.felt').evaluate((el) => parseFloat(el.style.getPropertyValue('--k')));
+      if (!(k >= 1)) throw new Error(`a tournament table at 2300x${h} stayed small (scale ${k})`);
+      if (h === 824) await host.screenshot({ path: path.join(OUT, 'tournament-wide-short.png') });
+    }
+    // The Log drawer is a little narrower than the box: the box goes while the drawer is open, rather than peek out.
+    await host.click('.drawer-button');
+    await host.locator('.tn-corner').waitFor({ state: 'hidden' });
+    await host.click('.drawer-button');
+    await host.locator('.tn-corner').waitFor();
+    await host.setViewportSize({ width: 1280, height: 860 });
 
     // The host ends it early the way the Host tab asks (pause, let the hand in progress finish, end), so its
     // table isn't still dealing when CI's backup drill runs. The players stay at the table to finish that hand.
@@ -587,37 +730,30 @@ try {
     await host.waitForSelector('.seat .hole .playing-card');
     if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
     await host.locator('.tip-toast').waitFor();
-    await host.evaluate(() => {
-      const seen = (window.__tableSizes = new Set());
-      const sample = () => {
-        const felt = document.querySelector('.felt');
-        if (felt) seen.add(`scale ${felt.style.getPropertyValue('--k')}, felt ${Math.round(felt.getBoundingClientRect().height)}px`);
-        requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    });
-    const sweep = async () => {
+    await sampleTableSizes(host);
+    const sweep = async (from, to) => {
       const sizes = [];
-      for (let h = 760; h <= 880; h += 12) {
-        // A change of width, so the bar under the table lets go of a taller size it held from an earlier height (Dock.tsx).
-        await host.setViewportSize({ width: 2299, height: h });
-        await host.waitForTimeout(100);
-        await host.setViewportSize({ width: 2300, height: h });
-        await host.waitForTimeout(250);
-        await host.evaluate(() => window.__tableSizes.clear());
-        await host.waitForTimeout(250);
-        const seen = await host.evaluate(() => [...window.__tableSizes]);
+      for (let h = from; h <= to; h += 12) {
+        const seen = await tableSizesAt(host, 2300, h);
         if (seen.length !== 1) throw new Error(`at 2300x${h} the table kept changing size: ${seen.join(' / ')}`);
         sizes.push(seen[0]);
       }
       return sizes;
     };
-    const withTip = await sweep();
+    const withTip = await sweep(760, 880);
     if (!(await host.locator('.tip-toast').count())) throw new Error('the keyboard tip went before the sweep with it was done');
     await host.click('.tip-toast button:has-text("Got it")');
-    const withoutTip = await sweep();
+    const withoutTip = await sweep(760, 880);
     withTip.forEach((s, i) => {
       if (s !== withoutTip[i]) throw new Error(`at 2300x${760 + 12 * i} the keyboard tip changed the table's size: ${s} with it, ${withoutTip[i]} without`);
+    });
+    // Shorter still, where the table keeps shrinking below its usual size down to the smallest seats (#385), rather than
+    // dropping to the laptop layout (where the table has no scale of its own) as soon as there isn't room for scale 1.
+    const low = await sweep(604, 748);
+    const scales = low.map((s) => parseFloat(s.slice('scale '.length)));
+    scales.forEach((k, i) => {
+      if (!(k >= 0.72 && k < 1.05)) throw new Error(`at 2300x${604 + 12 * i} the table didn't keep the big-table layout at a smaller size: ${low[i]}`);
+      if (i && k < scales[i - 1]) throw new Error(`at 2300x${604 + 12 * i} the table got smaller as the window got taller: ${low[i - 1]}, then ${low[i]}`);
     });
     await host.setViewportSize({ width: 2300, height: 800 });
     await host.click('.drawer-button');
@@ -655,7 +791,8 @@ try {
     const move = (p, label) => p.locator('.action-bar.my-turn .buttons button', { hasText: label });
     const first = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
     const other = first === host ? guest : host;
-    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in$/ }).click();
+    // The preset's text is "All in" and its keyboard hint (⇧A).
+    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in/ }).click();
     await first.waitForTimeout(600);
     await move(first, /^All in/).click();
     await move(other, /^Call/).waitFor();
@@ -902,12 +1039,187 @@ try {
     await p.close();
   });
 
+  await step('laptop, nine players: the seats hold still when hands are shown', async () => {
+    // When a hand is over, the hand each player shows is named under their stack. A long one ("Full House, Queens full of
+    // Jacks") widened a short-named player's nameplate, which the seats weren't spaced for, so at a full table on a laptop
+    // every seat but yours moved 6 to 30px as the result came (#427). Practice bots don't show their cards, so eight other
+    // players join here from plain connections. They check or call, so every hand goes to a showdown, and when it's over
+    // they all show their cards, as anyone may.
+    const host = await open('showdown host', { width: 1366, height: 768 });
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Ned');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    const tableId = new URL(host.url()).pathname.split('/').pop();
+    const guests = [];
+    try {
+      for (const [i, name] of ['Bea', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy'].entries()) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        guests.push(s);
+        const call = (ev, arg) => s.timeout(10_000).emitWithAck(ev, arg).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        // On their turn each checks or calls, and once the hand is over shows what they hold. A turn that comes while the
+        // last move is still on its way is taken once that move is done, so nobody waits out their clock.
+        let busy = false;
+        let latest = null;
+        let showed = null;
+        const act = () => {
+          const v = latest;
+          if (busy || !v) return;
+          const handNumber = v.hand?.handNumber;
+          let move;
+          if (v.legal) move = () => call('hand:act', { type: v.legal.canCheck ? 'check' : 'call', handNumber });
+          else if (v.canShow?.length && showed !== handNumber) move = () => call('hand:show', { cards: v.canShow, handNumber }).then(() => (showed = handNumber));
+          else return;
+          busy = true;
+          move()
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (latest !== v) act();
+            });
+        };
+        s.on('table:state', (v) => {
+          latest = v;
+          act();
+        });
+        await call('table:join', { tableId });
+        // $50 at $0.25/$0.50, so nobody runs out of chips in the hands this plays.
+        await call('seat:request', { seat: i + 1, name, stack: 5000, consent: true });
+        await host.locator('.request button:has-text("Approve")').first().click();
+        await host.locator(`.seat[data-seat="${i + 1}"]:not(.empty)`).waitFor();
+      }
+      // As someone who opens the table once everyone is seated: seats grow their room for what they've shown, and while
+      // the others sat down their nameplates showed more than they do in a hand.
+      await host.reload();
+      await host.waitForSelector('.seat.me');
+      await host.waitForTimeout(900);
+      await host.click('button:has-text("Start game")');
+      await host.waitForSelector('.seat.me .hole .playing-card');
+      await host.waitForTimeout(900);
+      await sampleLayouts(host);
+      // Hands to their results, until one where another player's nameplate is wider once the hands are shown than when
+      // the cards were dealt. With eight hands shown, a long one usually comes in the first or second (about 7 hands in
+      // 10), so eight hands without one is about a 1 in 10,000 chance.
+      const widths = () =>
+        host.evaluate(() => Object.fromEntries([...document.querySelectorAll('.felt .seat[data-seat]:not(.me)')].map((s) => [s.dataset.seat, s.querySelector('.nameplate').getBoundingClientRect().width])));
+      let widened = 0;
+      let hands = 0;
+      while (!widened && hands < 8) {
+        // The next hand is dealt a few seconds after the last one's result (a split pot has a line for each winner).
+        await host.locator('.pot.result').first().waitFor({ state: 'detached', timeout: 30_000 });
+        await host.waitForSelector('.seat.me .hole .playing-card');
+        const dealt = await widths();
+        await playOut([host], 60);
+        hands++;
+        await host.waitForTimeout(1000);
+        const shown = await widths();
+        widened = Object.keys(dealt).filter((seat) => shown[seat] > dealt[seat] + 2).length;
+      }
+      const seen = await layoutsSeen(host);
+      if (seen.length !== 1) throw new Error(`the seats moved in ${hands} hands:\n  ${seen.join('\n  ')}`);
+      if (!widened) throw new Error(`in ${hands} hands no hand shown made a nameplate wider, so this step checked nothing`);
+      await host.screenshot({ path: path.join(OUT, 'nine-players-laptop.png') });
+      await stopGame(host, [host]);
+    } finally {
+      for (const s of guests) s.close();
+    }
+    await host.close();
+  });
+
+  await step('computer: a table opened mid-hand draws the middle full size', async () => {
+    // A page opened or reloaded mid-hand places the seats for a guessed felt first, then for the real one, and they glide
+    // there. The middle (board, pot, winners' lines) was fitted to where the seats were on the way, near it, and as a fit
+    // only gets smaller within a hand, the board and pot stayed at 60% until the next deal (#462). Six players join from
+    // plain connections and check or call to the river, then wait there while a watcher opens the table on a big screen,
+    // where nothing comes near the middle.
+    const players = [];
+    let hold = true;
+    try {
+      for (const name of ['Ned', 'Bea', 'Cal', 'Dee', 'Eli', 'Fay']) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        // The host's start and stop take no argument, only the answer.
+        const call = (ev, ...args) => s.timeout(10_000).emitWithAck(ev, ...args).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        let busy = false;
+        const p = { s, call, latest: null };
+        p.act = () => {
+          const v = p.latest;
+          if (busy || !v?.legal || (hold && (v.hand?.boards?.[0]?.[0]?.length ?? 0) >= 5)) return;
+          busy = true;
+          call('hand:act', { type: v.legal.canCheck ? 'check' : 'call', handNumber: v.hand?.handNumber })
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (p.latest !== v) p.act();
+            });
+        };
+        s.on('table:state', (v) => {
+          p.latest = v;
+          p.act();
+        });
+        players.push(p);
+      }
+      const [host] = players;
+      const { tableId } = await host.call('table:create', { settings: { table: { maxSeats: 9 }, seating: { requireApproval: false }, timing: { decisionSeconds: 60 } } });
+      for (const [i, p] of players.entries()) {
+        await p.call('table:join', { tableId });
+        await p.call('seat:request', { seat: [0, 1, 3, 4, 6, 7][i], name: ['Ned', 'Bea', 'Cal', 'Dee', 'Eli', 'Fay'][i], stack: 200, consent: true });
+      }
+      await host.call('host:start');
+      const deadline = Date.now() + 60_000;
+      while ((host.latest?.hand?.boards?.[0]?.[0]?.length ?? 0) < 5) {
+        if (Date.now() > deadline) throw new Error('the hand never reached the river');
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const page = await open('mid-hand watcher', { width: 1920, height: 1080 });
+      // Notes the middle's scale every frame from the first one.
+      await page.addInitScript(() => {
+        const scales = (window.__scales = new Set());
+        const sample = () => {
+          const stack = document.querySelector('.felt .board-stack');
+          if (stack?.querySelector('.playing-card')) scales.add(getComputedStyle(stack).scale);
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      for (const how of ['opened', 'reloaded']) {
+        if (how === 'opened') await page.goto(`${BASE}/t/${tableId}`);
+        else await page.reload();
+        await page.waitForFunction(() => document.querySelectorAll('.felt .board .playing-card').length === 5);
+        await page.waitForTimeout(2000);
+        const scales = await page.evaluate(() => [...window.__scales]);
+        if (!scales.length) throw new Error(`${how} mid-hand, no frame with the board in the middle was read, so this step checked nothing`);
+        if (scales.some((s) => s !== 'none' && s !== '1')) throw new Error(`${how} mid-hand, the middle was drawn at ${scales.join(', ')}`);
+      }
+      await page.screenshot({ path: path.join(OUT, 'opened-mid-hand.png') });
+      await page.close();
+      // The hand is played out and the game stopped, so the backup check after this finds every hand finished.
+      hold = false;
+      for (const p of players) p.act();
+      await host.call('host:stop');
+      const done = Date.now() + 60_000;
+      while (host.latest?.hand && !host.latest.hand.awards?.length) {
+        if (Date.now() > done) throw new Error("the hand didn't end");
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } finally {
+      for (const p of players) p.s.close();
+    }
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.
   await new Promise((r) => setTimeout(r, 2000));
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
+  if (a11y.length) {
+    const found = `accessibility problems (docs/ACCESSIBILITY.md says how to check them):\n${a11y.join('\n')}`;
+    if (A11Y !== 'report') throw new Error(found);
+    console.warn(`${found}\nSMOKE_A11Y=report: reported, not failed.`);
+  }
   console.log('smoke test passed');
 } catch (e) {
   console.error('smoke test FAILED:', e.message);

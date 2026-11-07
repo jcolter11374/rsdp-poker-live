@@ -18,7 +18,40 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.7] - 2026-11-07
+
+_Phone alerts, and a table for screen readers and the keyboard_
+
+### New
+
+- **Phone alerts, even with the site closed.** Turn on alerts with the Alerts button on the tournaments page or in a tournament's lobby. Your phone or computer then tells you when a tournament you're in starts in 5 minutes, when you're seated or moved to another table, and when it's your turn, or your pick at a Dealer's choice table. This works even when the site isn't open. "Your turn" only comes when you aren't already looking at that table, and you get one alert per turn, not two. On iPhone and iPad, alerts work once the site is on your home screen (Safari: Share, then Add to Home Screen); the button says how. An alert holds only its words and the page to open, never cards or amounts. Turning alerts off, signing out or deleting your account makes the site forget that browser straight away. The privacy page says what is kept and who delivers the alerts.
+- **Works with a screen reader and the keyboard.** The table now reads itself aloud to screen readers: each new line of the hand, "Your turn" with what you can do and the pot, pauses, and a warning when 10 seconds are left. Tab reaches every nameplate, which says who is to act, who has folded and who has the button, and Enter opens that player's menu. Dialogs and phone sheets keep the keyboard inside them and hand it back when they close. And the table's words and buttons are easier to read, with bigger buttons to tap.
+
+### Fixed and changed
+
+- Coach tips are now worked out on a thread of their own, so asking for lots of tips never slows down play at any table. Tips in draw games always think through every possible draw. If the coach is busy, it tells you to try again in a moment, and that doesn't count against your tips.
+- Tournament tables no longer show numbered empty seats. Nobody picks a seat at a tournament, so the players now spread evenly round the table, with yours at the bottom, and their nameplates get the room the empty seats took. If you're knocked out, the table stays turned your way until the next hand. Cash tables keep their empty seats for sitting down and adding bots.
+- Keyboard: Shift+A twice goes all in on your turn in no-limit and pot-limit hands. The first press puts the most you can bet in the box and says on the action bar what the second press will send: in pot limit that's the most the pot allows. Enter sends it too, and Esc, a click or any other key cancels it. A still ticks Call any before your turn, and Shift+A does nothing in fixed-limit games.
+- Seven Card Stud, Stud Hi-Lo and Razz: when everyone is all in before the last card, the rest of the hand is now dealt a street at a time, like an all-in in hold'em. Before, every card and the result appeared at once. This works the same in HORSE and the other mixed games.
+- All-in runouts: only the last card turns over now, and only once. Before, the flop turned over again when the turn landed, and the turn again when the river landed. The hand replayer works the same way.
+- The table is easier to read. The green buttons (Raise, Start game, Sit down, Invite) now use the darker green the rest of the site uses, the red host tag, request counts and Fold anyway? are darker, and the empty seats' Sit and + Bot are brighter. The words in the middle of the felt (Next hand in, Paused, the game's name, Run 1, the side-pot total) sit on a dark backing. + Bot, the quick chat replies and the Straddle and Wait for the big blind switches are bigger and easier to tap.
+- Tournaments: after a hand that knocks someone out, the top bar's level and the countdown to the next game keep going, instead of stopping until the next hand, or for good when that hand was the table's last.
+- Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees "Next hand in 0" there for good.
+- Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.
+- Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.
+- Watching a table on a delay: the number of seats, who is sitting where, the chip stacks, the stakes (in the table and in a pasted link's preview), the waitlist and the table's log now stay as they were at the moment you are shown, instead of giving away the live table early. Your screen is only sent an update when something you can see changes, so how often it updates no longer tells you when the live hand ended. Asking for a seat, throwing something at a player, sharing a hand, the hand list and hand search are answered from the table as you see it too. Chat and a few other things stay live on purpose; the Fair dealing page lists them.
+- Watching on a delay, when the host changes the delay: the new one starts for you when your view reaches the first hand dealt under it. A longer delay makes the break before that hand longer; a shorter one never skips or hides the end of the hand before. When the host turns the delay off, you see the table live once your view has caught up.
+- Watching on a delay, when the host stops spectators seeing every card: what is still to come keeps playing, without the cards, instead of stopping for the length of the delay.
+- Waitlist: someone watching on a delay is offered a free seat when their view shows it free, and has the full minute to take it from then.
+- Public record: at a table whose spectators watch on a delay, a hand's own entry goes into the public record that long after the hand ends (at most 10 minutes), so it doesn't show the hand ending before the people watching see it end. A card shown after the hand waits the same way, and Check this hand says it is waiting for it rather than failing. Buy-ins and cash-outs, even ones made as a hand ends, and everything else still go in at once. The Checking John page says so.
+
 ## [2026.11.07.6] - 2026-11-07
+
+_Bigger tournament tables on wide screens_
+
+### New
+
+- **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes. (Suggested by John.)
 
 ### Fixed and changed
 
@@ -29,16 +62,16 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - Bomb pots at HORSE, 8-Game and stud tables: a Hold'em bomb pot dealt in place of a stud hand no longer shows the stud ante in the top bar, the hand history or hand search. Nobody posts that ante in a bomb pot. At a stud-only table it also shows Hold'em blinds, such as 0.25/0.50 rather than 0/0.50.
 - Tournament lobbies: the selected tab keeps its white look when the mouse is over it, or after a tap on a phone, instead of turning to dark text on dark grey.
 - Host controls: a seat request now reads on one line, with Approve, the seat list and Reject under it. Before, the words were squeezed to one per line and the seat list was cut off.
-- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. A narrower window doesn't show it; the action buttons still show their keys.
+- The keyboard tip no longer covers a seat or your own cards. On a laptop it sits at the top of the side column, and on a big screen in the bottom-right corner, across from the chat, or at the top of the Log panel (Host & log for hosts) while that is open. At a tournament table, where the tournament clock has that corner, it stays at the top of the Log panel. A narrower window doesn't show it; the action buttons still show their keys.
 - One of something now reads in the singular: "1 hand" instead of "1 hands" in the top bar when a level of blinds has one hand left, in the Dealer's choice picker and atop a downloaded hand history, and "1 minute" when a table set to 1 minute turns away a player who left and came back with fewer chips, or releases an offline seat.
+- Laptops and other smaller windows: at a busy table, the seats no longer shift when a hand ends and the players' hands are named under their names ("Full House, Queens full of Sevens"). The seats are spaced for the longest hand name from the deal, and in hi-lo games for both halves.
 - Dealer's choice: a game the host is taking off the menu during a hand is now greyed out in the game picker, with "The host is taking it off the menu" under it, and Keep playing isn't offered for it. Before, the picker still offered it, and tapping it only brought an error.
 - Dealer's choice: when the host changes the menu during a hand, the pick panel's "If time runs out" line now names the game a missed pick really deals from the new menu. Before, a menu with the games in another order, or with a game added at the top, could make it name a different game from the one dealt.
 - Waitlist: pressing Join the waitlist while an all-in is being dealt out no longer tells you whether someone busted. You're added to the waitlist either way, and a seat that comes free is offered once the cards are out. At a table that seats newcomers at random, a seat offered from the waitlist is a random one too. And if the host makes the table smaller during a hand and the seat you were offered is needed for a player moving in, you stay on the waitlist for the next seat instead of losing your place.
-- Watching a table on a delay: the number of seats, who is sitting where, the chip stacks, the stakes (in the table and in a pasted link's preview), the waitlist and the table's log now stay as they were at the moment you are shown, instead of giving away the live table early. Your screen is only sent an update when something you can see changes, so how often it updates no longer tells you when the live hand ended. Asking for a seat, throwing something at a player, sharing a hand, the hand list and hand search are answered from the table as you see it too. Chat and a few other things stay live on purpose; the Fair dealing page lists them.
-- Watching on a delay, when the host changes the delay: the new one starts for you when your view reaches the first hand dealt under it. A longer delay makes the break before that hand longer; a shorter one never skips or hides the end of the hand before. When the host turns the delay off, you see the table live once your view has caught up.
-- Watching on a delay, when the host stops spectators seeing every card: what is still to come keeps playing, without the cards, instead of stopping for the length of the delay.
-- Waitlist: someone watching on a delay is offered a free seat when their view shows it free, and has the full minute to take it from then.
-- Public record: at a table whose spectators watch on a delay, a hand's own entry goes into the public record that long after the hand ends (at most 10 minutes), so it doesn't show the hand ending before the people watching see it end. A card shown after the hand waits the same way, and Check this hand says it is waiting for it rather than failing. Buy-ins and cash-outs, even ones made as a hand ends, and everything else still go in at once. The Checking John page says so.
+- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. Anything for you to do (a rebuy, an add-on, a re-entry, your seat at another table) shows under the table with your buttons, so the seats don't move when it comes or goes.
+- Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
+- Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
+- Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
 
 ## [2026.11.07.5] - 2026-11-07
 
@@ -748,6 +781,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
 [2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5
 [2026.11.07.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.4

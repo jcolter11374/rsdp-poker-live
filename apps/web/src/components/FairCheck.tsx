@@ -105,7 +105,7 @@ export function FairCheck({ hand, myId, tableId }: { hand: HandRecordView; myId:
   }, [fair, hand, myId, tableId, record, again]);
   if (!fair || !report) return <p className="muted">This hand can&rsquo;t be checked here: it was dealt before hands could be checked, or it was shared as a link.</p>;
   const { check, extra } = report;
-  const checks = [...(check?.checks ?? []), ...extra];
+  const checks: { label: string; ok: boolean; wait?: boolean; detail: string }[] = [...(check?.checks ?? []), ...extra];
   const ok = !!check?.ok && extra.every((c) => c.ok || c.wait);
   const waitingOn = extra.some((c) => c.wait);
 

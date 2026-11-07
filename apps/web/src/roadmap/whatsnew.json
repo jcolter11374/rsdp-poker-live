@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "id": "2026.11.07.7",
+      "date": "2026-11-07",
+      "title": "Phone alerts, and a table for screen readers and the keyboard",
+      "items": [
+        { "title": "Phone alerts, even with the site closed", "detail": "Turn on alerts with the Alerts button on the tournaments page or in a tournament's lobby. Your phone or computer then tells you when a tournament you're in starts in 5 minutes, when you're seated or moved to another table, and when it's your turn, or your pick at a Dealer's choice table. This works even when the site isn't open. \"Your turn\" only comes when you aren't already looking at that table, and you get one alert per turn, not two. On iPhone and iPad, alerts work once the site is on your home screen (Safari: Share, then Add to Home Screen); the button says how. An alert holds only its words and the page to open, never cards or amounts. Turning alerts off, signing out or deleting your account makes the site forget that browser straight away. The privacy page says what is kept and who delivers the alerts." },
+        { "title": "Works with a screen reader and the keyboard", "detail": "The table now reads itself aloud to screen readers: each new line of the hand, \"Your turn\" with what you can do and the pot, pauses, and a warning when 10 seconds are left. Tab reaches every nameplate, which says who is to act, who has folded and who has the button, and Enter opens that player's menu. Dialogs and phone sheets keep the keyboard inside them and hand it back when they close. And the table's words and buttons are easier to read, with bigger buttons to tap." }
+      ]
+    },
+    {
+      "id": "2026.11.07.6",
+      "date": "2026-11-07",
+      "title": "Bigger tournament tables on wide screens",
+      "items": [
+        { "title": "The tournament clock moves to the corner", "detail": "On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer, an add-on or your seat at another table, shows under the table with your buttons, so the seats don't move when it comes or goes.", "suggestedBy": "John" }
+      ]
+    },
+    {
       "id": "2026.11.07.4",
       "date": "2026-11-07",
       "title": "Lobby chat moderation and a recap of the night",

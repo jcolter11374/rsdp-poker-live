@@ -119,6 +119,7 @@ describe('closing the server', () => {
       'closing connections',
       'note: cut 2 connections still open after 300 ms',
       'writing the public record',
+      "stopping the coach's thread",
       'recording the stop',
     ]);
     sleepy.close();

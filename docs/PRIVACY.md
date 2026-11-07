@@ -51,6 +51,7 @@ public, so don't put anything private in one, just ask him to get in touch).
 | Username and scrambled password | You, when you make an account | Only the site. The password is scrambled with scrypt and can't be read back. |
 | Google's id for you (a long number) | Google, if you sign in with Google | Only the site. Google also shares your name, used once to make your starting username and table name. No email, no contacts, nothing else. |
 | Signed-in sessions (30 days) and one-time password reset codes | Made when you sign in or John gives you a code | Only the site, stored as fingerprints |
+| For alerts, if you turn them on: your browser's push address, the two keys that lock each alert so only that browser can read it, which player it alerts, the fingerprint of the browser's secret (and of its session, when someone signed in on it), and when it last opened the site | Your browser, when you turn alerts on and each time it opens the site | Only the site. The push address comes from your browser's push service (below), which delivers the alerts. |
 | Hands: who was dealt in, the cards, every action, the board, who won | The game | Players at that table see what poker rules allow them to see. Shown and mucked cards follow the table's settings. |
 | Table chat and the table log (joins, rebuys, seat moves, host actions, Dealer's choice picks) | You and the game | Everyone at that table, and spectators if the host allows them. At a tournament table, also the tournament's host, co-hosts and players, who can download every table's chat and log once the tournament is over. John can read any table's chat from the admin page (with the admin key), open or closed, and each such read is shown publicly on [/transparency](/transparency). |
 | Tournament lobby chat and log | You and the tournament | Everyone who opens that tournament |
@@ -83,10 +84,13 @@ reason. These are ours:
   and rate limits, to keep the site safe. You can object
   to any of these (see *Your rights*).
 - Nothing is done on the basis of consent, so there is nothing to withdraw,
-  except that signing in with Google is your choice. You can stop using it
-  from your profile (set a password first if Google is your only way in), and
-  remove the site's access on Google's side at
+  except two things that are your choice. Signing in with Google: you can
+  stop using it from your profile (set a password first if Google is your
+  only way in), and remove the site's access on Google's side at
   [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+  And alerts: you turn them on and off with the **Alerts** button (on the
+  tournaments page or a tournament's lobby), and turning them off makes the
+  site forget that browser's push address there and then.
 
 You don't have to give the site anything beyond a name to sit at a table. The
 site makes no automatic decisions about you beyond the game itself, and does
@@ -114,11 +118,24 @@ for how it works.
 
 - The site keeps a few things in your browser's local storage: your guest id
   and secret, your signed-in session, your table name, settings such as
-  sound, volume and alerts, players you muted or hid in chat (at tables and in
+  sound, volume and alerts, the alerts it has already shown (and which
+  tournament a tab of the site has on screen, or is about to alert you
+  about, so another tab doesn't alert you about it meanwhile), players you muted or hid in chat (at tables and in
   tournament lobbies), tips you've dismissed, guest
   presets, tournaments you made, and what your
   browser saw during hands (so it can check the dealing later). Clearing the
   site's data in your browser removes them, and makes you a new guest.
+- With alerts on, your browser also holds its push subscription (the push
+  address and keys above), and the site's background helper (a "service
+  worker") shows the alerts that arrive while the site is closed. It notes in
+  your browser's cache storage which alerts it showed (their labels, such as
+  a tournament's id and start time, the newest 50), so an open page of the
+  site doesn't give you the same alert again.
+- While a page of the site is open, your browser tells the server whether
+  that tab is on screen, so the server doesn't send "Your turn" (or "Your
+  pick" in Dealer's choice) while you're looking at the table, or a seat
+  alert while you're looking at the site. It
+  keeps that only while the tab is connected and never saves it.
 - The only cookie is a short one (10 minutes) set while you sign in with
   Google, to make sure the sign-in finishes in the browser that started it.
 - Your browser fetches a small public file from GitHub
@@ -161,6 +178,17 @@ for how it works.
   workspace.
 - **GitHub** holds the code, the regular copy of the public record and the
   daily backups (below).
+- **Your browser's push service**, only if you turn alerts on. Alerts reach a
+  closed site or a locked phone through the service your browser's maker
+  runs: Google for Chrome and Android, Apple for Safari and iPhone, Mozilla
+  for Firefox, Microsoft for Edge. The site sends only to those four. Each
+  alert is encrypted so that only your browser can read it (the standard web
+  push encryption), so the service sees your push address, when an alert was
+  sent and how big it is, and that this site sent it, but not what it says.
+  An alert holds only its words (such as "Your turn" and the table's name, or
+  a tournament starting in 5 minutes), the page to open and a label, and no
+  cards, chip counts or amounts. An alert waits at the service for at most
+  5 minutes if your device is off or offline, and is dropped after that.
 - **Google**, only if you choose to sign in with Google. Google's own privacy
   policy covers what Google does. The site asks Google only for the basic
   sign-in scopes (`openid` and `profile`), uses what it gets only to sign you
@@ -172,11 +200,14 @@ for how it works.
 
 Fly.io and GitHub act as service providers ("processors"): they store and
 serve the data for the site and don't use it for their own purposes.
-Anthropic receives only the recap described above. Nobody else receives
+Anthropic receives only the recap described above, and a push service only
+the locked alerts for the browsers that turned them on. Nobody else receives
 anything, unless the law forces John to hand something over.
 
 **Data leaves Europe.** If you play from the EU or UK, your data goes to the
-USA, where Fly.io and GitHub keep it and Claude reads the recap. Fly.io and
+USA, where Fly.io and GitHub keep it and Claude reads the recap (alerts, if
+you turn them on, also pass through your browser's push service, which may
+be in the USA). Fly.io and
 GitHub publish data protection terms that cover this (such as the EU's
 standard contractual clauses or the EU-US Data Privacy Framework); you can
 read them on their websites. The USA's privacy laws are weaker than Europe's.
@@ -186,7 +217,9 @@ read them on their websites. The USA's privacy laws are weaker than Europe's.
 Once a day a GitHub job takes a full copy of the database, locks it with a
 key only John holds, and keeps it for 90 days so the site can be restored
 after a disaster. The locked copy can't be opened without that key. Each
-backup also shows up on [Checking John](/transparency).
+backup also shows up on [Checking John](/transparency). Backups also hold
+the key the site signs its alerts with, so that restoring a backup doesn't
+cut off everyone's alerts; it is locked with the rest.
 
 ## How long things are kept
 
@@ -208,6 +241,11 @@ backup also shows up on [Checking John](/transparency).
 - Feedback sent from a table: until John deletes it, and at most a year.
 - Signed-in sessions: 30 days. Password reset codes: until used or expired.
   The Google sign-in cookie: 10 minutes.
+- A browser's push address for alerts: until you turn alerts off, sign out
+  or delete your account in that browser, the push service says the address
+  is gone, or 60 days pass without that browser opening the site. It also
+  stops alerting a player as soon as that browser would no longer open the
+  site as them (for example when a sign-in on a friend's phone ends).
 - Backups: 90 days each.
 
 ## Your rights
@@ -231,7 +269,7 @@ authority (in the UK, the ICO).
 - **With an account:** open [your profile](/profile) and use **Delete account**.
   That removes your username, password, Google link, sessions, browser
   secrets, name, picture, notes, saved setups, hidden tables, practice graph
-  reset, shared hand links and feedback you sent while signed in straight away. Hands you already
+  reset, shared hand links, alerts on every device and feedback you sent while signed in straight away. Hands you already
   played, and your messages in table chat, stay in other players' history,
   ledgers and table logs under the name you used at the time, because they
   are part of their games too. If you want your

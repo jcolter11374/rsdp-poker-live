@@ -9,8 +9,8 @@ import { useHeld, useNow, useTournament } from './hooks';
 /**
  * The top bar at a tournament table (#305): the game first, in big type, then in a mixed game how long until the
  * next one ("Razz next, in 3:20"), then its stakes, the level and the table in small type. While an all-in runout is
- * dealt here (`holding`) it keeps the tournament as it was, as the strip under it does: an event that ends with this
- * hand would otherwise lose its level and countdown before the cards show who won.
+ * dealt here (`holding`) it keeps the tournament as it was, as the strip under it (on a wide window, the corner box)
+ * does: an event that ends with this hand would otherwise lose its level and countdown before the cards show who won.
  */
 export function TournamentGameLine({ view, fmt, portrait, narrow, tight, holding }: { view: TableView; fmt: Fmt; portrait: boolean; narrow: boolean; tight: boolean; holding: boolean }) {
   const { state: latest, skew } = useTournament(view.tournamentId!);

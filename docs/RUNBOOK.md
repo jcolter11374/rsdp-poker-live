@@ -102,6 +102,7 @@ If a key was pasted somewhere public, committed, or shown in a log, replace it. 
   - Anyone holding it can open every backup still on GitHub.
   - Make a new key pair, and put the new public key in `scripts/backup/recipient.txt` through a PR. It has to reach `main` (a release), because the daily backup reads the file from there.
   - Once the first backup locked to the new key is green, delete the old backup artifacts (Actions → Nightly backup → each run → Artifacts).
+- **The phone alerts key.** It is not a secret on Fly: it lives in the database (`push_keys`) and so in the locked backups. With it and a browser's push address and keys (in the same database), someone could send that browser an alert that looks like the site's, and nothing more. It matters only if the database itself or an unlocked backup leaked, and then everything in it did. To replace it, a small PR adds a step that runs once: it deletes the `vapid` row of `push_keys` and every row of `push_subscriptions`, but only while the `vapid` row's `created_at` is older than a time written into the PR, so later starts keep the new key (take the step out again in the next release). The server makes a new key on its next use, and each browser with alerts on subscribes again with it the next time it opens the site (`syncPush` notices the key changed).
 - **Anything else**, like a player's password: tell John. Signed-in sessions can be ended by the player changing their password.
 
 ## Someone reports a security problem
@@ -114,6 +115,14 @@ Handle it privately, as [SECURITY.md](../.github/SECURITY.md) says. Not in a pub
 4. **Once the fix is live,** John edits that release on GitHub (Releases → the tag → Edit) to say what was fixed, and thanks the reporter if they'd like that. This is the one time a release's notes are edited by hand. The Release workflow never rewrites a release that already exists.
 
 If a public issue only says someone found a security problem, don't ask for details there. John replies asking them to use Security → Report a vulnerability (private reporting has been on since 5 November 2026; if it's ever off, it's under Settings → Code security → Private vulnerability reporting).
+
+## Coach tips keep saying "the coach is busy"
+
+Coach tips are worked out on a thread of their own inside the server, so this never holds up a table. One "busy" now and then is normal when several tips are asked for at once. If players see it again and again, look in the server logs (or the game-night recap) for lines that start "the coach" or "a coach tip":
+
+- **"…; a fresh thread is starting"**: a tip crashed the thread or ran past 3 seconds, and the thread started again by itself. If it keeps happening, open an issue with the game and the time.
+- **"…; the next tip starts a fresh thread", again and again**: the thread can't start at all, most likely because of a broken release (a missing file). Tables play on normally; see "A bad release".
+- **"the coach turned away N tips in the last hour"**: more tips were asked for at once than the coach could take (more than 8 waiting, or one waiting over 4 seconds). It is written at most once an hour, with the count. A few is normal on a busy night; if it's large night after night, open an issue: the coach may need a second thread.
 
 ## Someone asks about their data
 
