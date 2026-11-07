@@ -994,6 +994,85 @@ try {
     await host.close();
   });
 
+  await step('computer: a table opened mid-hand draws the middle full size', async () => {
+    // A page opened or reloaded mid-hand places the seats for a guessed felt first, then for the real one, and they glide
+    // there. The middle (board, pot, winners' lines) was fitted to where the seats were on the way, near it, and as a fit
+    // only gets smaller within a hand, the board and pot stayed at 60% until the next deal (#462). Six players join from
+    // plain connections and check or call to the river, then wait there while a watcher opens the table on a big screen,
+    // where nothing comes near the middle.
+    const players = [];
+    let hold = true;
+    try {
+      for (const name of ['Ned', 'Bea', 'Cal', 'Dee', 'Eli', 'Fay']) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        // The host's start and stop take no argument, only the answer.
+        const call = (ev, ...args) => s.timeout(10_000).emitWithAck(ev, ...args).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        let busy = false;
+        const p = { s, call, latest: null };
+        p.act = () => {
+          const v = p.latest;
+          if (busy || !v?.legal || (hold && (v.hand?.boards?.[0]?.[0]?.length ?? 0) >= 5)) return;
+          busy = true;
+          call('hand:act', { type: v.legal.canCheck ? 'check' : 'call', handNumber: v.hand?.handNumber })
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (p.latest !== v) p.act();
+            });
+        };
+        s.on('table:state', (v) => {
+          p.latest = v;
+          p.act();
+        });
+        players.push(p);
+      }
+      const [host] = players;
+      const { tableId } = await host.call('table:create', { settings: { table: { maxSeats: 9 }, seating: { requireApproval: false }, timing: { decisionSeconds: 60 } } });
+      for (const [i, p] of players.entries()) {
+        await p.call('table:join', { tableId });
+        await p.call('seat:request', { seat: [0, 1, 3, 4, 6, 7][i], name: ['Ned', 'Bea', 'Cal', 'Dee', 'Eli', 'Fay'][i], stack: 200, consent: true });
+      }
+      await host.call('host:start');
+      const deadline = Date.now() + 60_000;
+      while ((host.latest?.hand?.boards?.[0]?.[0]?.length ?? 0) < 5) {
+        if (Date.now() > deadline) throw new Error('the hand never reached the river');
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const page = await open('mid-hand watcher', { width: 1920, height: 1080 });
+      // Notes the middle's scale every frame from the first one.
+      await page.addInitScript(() => {
+        const scales = (window.__scales = new Set());
+        const sample = () => {
+          const stack = document.querySelector('.felt .board-stack');
+          if (stack?.querySelector('.playing-card')) scales.add(getComputedStyle(stack).scale);
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      for (const how of ['opened', 'reloaded']) {
+        if (how === 'opened') await page.goto(`${BASE}/t/${tableId}`);
+        else await page.reload();
+        await page.waitForFunction(() => document.querySelectorAll('.felt .board .playing-card').length === 5);
+        await page.waitForTimeout(2000);
+        const scales = await page.evaluate(() => [...window.__scales]);
+        if (scales.some((s) => s !== 'none' && s !== '1')) throw new Error(`${how} mid-hand, the middle was drawn at ${scales.join(', ')}`);
+      }
+      await page.screenshot({ path: path.join(OUT, 'opened-mid-hand.png') });
+      await page.close();
+      // The hand is played out and the game stopped, so the backup check after this finds every hand finished.
+      hold = false;
+      for (const p of players) p.act();
+      await host.call('host:stop');
+      const done = Date.now() + 60_000;
+      while (host.latest?.hand && !host.latest.hand.awards?.length) {
+        if (Date.now() > done) throw new Error("the hand didn't end");
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } finally {
+      for (const p of players) p.s.close();
+    }
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.

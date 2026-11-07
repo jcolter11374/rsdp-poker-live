@@ -229,19 +229,38 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
     }
   }
   if (!items.length) return 1;
+  // Seats and the button glide to a new spot (when the table is first measured, on opening or reloading it, or when the
+  // seats are spaced again), and a hand's fit is only ever made smaller. So each is measured where it is headed, not where
+  // it is on the way: halfway in from the first guess at the table's size, they'd make the middle shrink for the hand (#462).
+  const zoom = felt.offsetWidth ? felt.getBoundingClientRect().width / felt.offsetWidth : 1;
   const seats: Box[] = [];
   felt.querySelectorAll<HTMLElement>('.seat[data-seat]:not(.empty)').forEach((seat) => {
+    const to = headedFor(seat, zoom);
     const plate = seat.querySelector('.nameplate');
-    if (plate) seats.push(plate.getBoundingClientRect());
+    if (plate) seats.push(to(plate.getBoundingClientRect()));
     // The cards' own spots, and where they are once dealt or turned over (a winning card lifted). Cards on their way to
     // or from the muck are left out, as for the seats' reach.
     const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
     if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
-      seats.push(hole.getBoundingClientRect());
-      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(card.getBoundingClientRect());
+      seats.push(to(hole.getBoundingClientRect()));
+      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(to(card.getBoundingClientRect()));
     }
   });
-  return fitMiddle(items, seats, felt.querySelector('.dealer')?.getBoundingClientRect() ?? null, centre);
+  const dealer = felt.querySelector<HTMLElement>('.dealer');
+  return fitMiddle(items, seats, dealer ? headedFor(dealer, zoom)(dealer.getBoundingClientRect()) : null, centre);
+}
+
+/** Moves a box inside a seat (or the button) by what that seat has left to glide: its spot is set in its style, and while
+ * its left and top are moving there, the drawn ones lag behind. */
+function headedFor(el: HTMLElement, zoom: number): (b: Box) => Box {
+  const now = getComputedStyle(el);
+  const gap = (to: string, at: string) => {
+    const d = (parseFloat(to) - parseFloat(at)) * zoom;
+    return Number.isFinite(d) ? d : 0;
+  };
+  const x = gap(el.style.left, now.left);
+  const y = gap(el.style.top, now.top);
+  return (b) => ({ left: b.left + x, right: b.right + x, top: b.top + y, bottom: b.bottom + y });
 }
 
 /** The smallest box holding both. */
