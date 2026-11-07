@@ -52,8 +52,21 @@ export function notifyState(): NotifyState {
   return Notification.permission === 'granted' && stored() ? 'on' : 'off';
 }
 
-/** Whether alerts on this device can also come with the site closed (push), not only to an open tab. */
-export const pushAvailable = () => canPush();
+/** Whether the last try to set this device up for push worked; null before one, and while alerts are off. */
+let pushReached: boolean | null = null;
+function setReached(v: boolean | null) {
+  if (pushReached === v) return;
+  pushReached = v;
+  changed();
+}
+
+/**
+ * Whether alerts on this device can also come with the site closed (push), not only to an open tab: the browser
+ * has push, and setting it up didn't fail (a copy of the site has no key, a push service it won't send to, a
+ * busy moment).
+ */
+export const pushAvailable = () => canPush() && pushReached !== false;
+export const usePushAvailable = () => useSyncExternalStore(subscribe, pushAvailable);
 
 /** Asks the browser for permission if needed, then turns alerts on, and push with them where the browser has it. */
 export async function enableNotifications(): Promise<NotifyState> {
@@ -78,6 +91,7 @@ export function disableNotifications() {
  */
 export async function turnOffAlerts(): Promise<void> {
   store(false);
+  pushReached = null;
   changed();
   await unsubscribePush().catch(() => {});
 }
@@ -139,6 +153,16 @@ async function post(path: string, body: object) {
  */
 export async function syncPush(): Promise<boolean> {
   if (notifyState() !== 'on' || !canPush()) return false;
+  let ok = false;
+  try {
+    ok = await reach();
+  } finally {
+    setReached(ok);
+  }
+  return ok;
+}
+
+async function reach(): Promise<boolean> {
   const reg = await worker();
   const key = reg && (await pushKey());
   if (!reg || !key) return false;
@@ -166,6 +190,9 @@ export async function unsubscribePush(): Promise<void> {
 
 /** Alerts this page showed without the service worker, by tag, so they can be taken down once they are out of date. */
 const shown = new Map<string, Notification>();
+/** Tags of the alerts this tab raised through the service worker (the newest few), so coming back to it takes those down. */
+const mine = new Set<string>();
+const MINE_MAX = 50;
 
 /** The service worker's registration if there is one now, without waiting for it. */
 async function registration(): Promise<ServiceWorkerRegistration | null> {
@@ -186,6 +213,36 @@ export function closeNotifications(prefix = '') {
     .catch(() => {});
 }
 
+/**
+ * Back on the page: takes down the alerts this tab raised, and any alert (a push's too) that opens the page now on
+ * screen. The rest stay: a turn at another table, open in another tab or on no tab, still needs its player.
+ */
+function closeSeen() {
+  for (const [tag, n] of shown) {
+    n.close();
+    shown.delete(tag);
+  }
+  const own = new Set(mine);
+  mine.clear();
+  const here = location.pathname;
+  void registration()
+    .then((reg) => reg?.getNotifications())
+    .then((list) => list?.forEach((n) => (own.has(n.tag) || sitePage((n.data as { url?: unknown } | null)?.url) === here) && n.close()))
+    .catch(() => {});
+}
+
+/** A page of this site, from an alert or a message: its path, or null for anything that would leave the site. */
+function sitePage(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    // Resolved as the browser would: '/\\other.example' and '//other.example' are other sites.
+    const u = new URL(url, location.origin);
+    return u.origin === location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Goes to a page of the site the way a link inside it does. */
 function open(url: string) {
   window.focus();
@@ -196,13 +253,13 @@ function open(url: string) {
 }
 
 if (typeof document !== 'undefined') {
-  // Back on the page: whatever the alerts said is on screen now.
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && closeNotifications());
+  // Back on the page: what its alerts said is on screen now.
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && closeSeen());
   // A tap on an alert in a tab that is already open (sw.js) goes to its page here, without loading the site again.
   if (hasWorker()) {
     navigator.serviceWorker.addEventListener('message', (e: MessageEvent) => {
-      const url = (e.data as { open?: unknown } | null)?.open;
-      if (typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) open(url);
+      const url = sitePage((e.data as { open?: unknown } | null)?.open);
+      if (url) open(url);
     });
     navigator.serviceWorker.startMessages?.();
   }
@@ -228,9 +285,20 @@ export function notify(title: string, body: string, opts: NotifyOptions) {
   });
 }
 
+/** Notes that this tab raised the alert with this tag (the newest MINE_MAX are kept). */
+function remember(tag: string) {
+  mine.delete(tag);
+  mine.add(tag);
+  for (const old of mine) {
+    if (mine.size <= MINE_MAX) break;
+    mine.delete(old);
+  }
+}
+
 async function show(title: string, body: string, opts: NotifyOptions) {
   const reg = await registration();
   if (reg) {
+    remember(opts.tag);
     // A push for the same thing got here first.
     if ((await reg.getNotifications({ tag: opts.tag })).length) return;
     if (opts.replaces) for (const n of await reg.getNotifications()) if (n.tag.startsWith(opts.replaces)) n.close();

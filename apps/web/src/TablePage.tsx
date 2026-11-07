@@ -91,6 +91,7 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
   }, [deadline, skew]);
 
   // Flash the tab title and badge its icon while it's your turn.
+  const tableId = view?.id;
   useEffect(() => {
     if (!myTurn) return;
     const original = document.title;
@@ -106,10 +107,10 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
       clearInterval(t);
       document.title = original;
       badgeFavicon(false);
-      // Acted (here or in another tab): the alert is out of date.
-      closeNotifications('turn:');
+      // Acted (here or in another tab): this table's alert is out of date. A turn at another table still needs its player.
+      closeNotifications(`turn:${tableId}:`);
     };
-  }, [myTurn]);
+  }, [myTurn, tableId]);
 }
 
 const HURRY_MS = 5000;

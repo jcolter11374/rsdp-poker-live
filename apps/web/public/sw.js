@@ -22,8 +22,17 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(req).catch(() => new Response(OFFLINE, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })));
 });
 
-/** A page of this site (/t/…, /tn/…), or the home page for anything else. */
-const pageOf = (url) => (typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') ? url : '/');
+/** A page of this site (/t/…, /tn/…), or the home page for anything else: never another site. */
+const pageOf = (url) => {
+  if (typeof url !== 'string') return '/';
+  try {
+    // Resolved as the browser would: '/\\other.example/x' and '//other.example' are other sites.
+    const u = new URL(url, self.location.origin);
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : '/';
+  } catch {
+    return '/';
+  }
+};
 const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 
 self.addEventListener('push', (event) => {

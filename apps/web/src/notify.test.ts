@@ -18,8 +18,9 @@ interface Shown {
 }
 
 /** A browser with alerts, push and a running service worker, as far as notify.ts can tell. */
-function fakeBrowser(opts: { ua?: string; permission?: NotificationPermission; standalone?: boolean; existing?: { key: Uint8Array } } = {}) {
+function fakeBrowser(opts: { ua?: string; permission?: NotificationPermission; standalone?: boolean; existing?: { key: Uint8Array }; serverKey?: string | null } = {}) {
   const posts: { path: string; body: Record<string, unknown>; headers: Record<string, string> }[] = [];
+  const workerListeners = new Map<string, (e: MessageEvent) => void>();
   const shown: Shown[] = [];
   let permission: NotificationPermission = opts.permission ?? 'default';
   const makeSub = (key: Uint8Array, n: number) => ({
@@ -44,13 +45,13 @@ function fakeBrowser(opts: { ua?: string; permission?: NotificationPermission; s
       },
     },
     getNotifications: async (filter?: { tag?: string }) =>
-      shown.filter((n) => !n.closed && (!filter?.tag || n.options.tag === filter.tag)).map((n) => ({ tag: n.options.tag ?? '', close: () => (n.closed = true) })),
+      shown.filter((n) => !n.closed && (!filter?.tag || n.options.tag === filter.tag)).map((n) => ({ tag: n.options.tag ?? '', data: n.options.data, close: () => (n.closed = true) })),
     showNotification: async (title: string, options: NotificationOptions) => void shown.push({ title, options, closed: false }),
   };
   Object.defineProperty(navigator, 'userAgent', { value: opts.ua ?? 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130', configurable: true });
   Object.defineProperty(navigator, 'standalone', { value: opts.standalone ?? false, configurable: true });
   Object.defineProperty(navigator, 'serviceWorker', {
-    value: { ready: Promise.resolve(reg), getRegistration: async () => reg, addEventListener: () => {}, startMessages: () => {} },
+    value: { ready: Promise.resolve(reg), getRegistration: async () => reg, addEventListener: (type: string, fn: (e: MessageEvent) => void) => workerListeners.set(type, fn), startMessages: () => {} },
     configurable: true,
   });
   (window as unknown as { PushManager: unknown }).PushManager = class {};
@@ -64,12 +65,16 @@ function fakeBrowser(opts: { ua?: string; permission?: NotificationPermission; s
   vi.stubGlobal(
     'fetch',
     vi.fn(async (path: string, init?: RequestInit) => {
-      if (path === '/api/push/key') return { ok: true, json: async () => ({ key: b64(KEY) }) };
+      if (path === '/api/push/key') return { ok: true, json: async () => ({ key: opts.serverKey === undefined ? b64(KEY) : opts.serverKey }) };
       posts.push({ path, body: JSON.parse(String(init?.body)), headers: init?.headers as Record<string, string> });
       return { ok: true, json: async () => ({ ok: true }) };
     }),
   );
-  return { posts, shown, subscribeCalls, reg, current: () => current, requestPermission: FakeNotification.requestPermission };
+  /** What the service worker tells an open tab when an alert is tapped (sw.js). */
+  const message = (data: unknown) => workerListeners.get('message')?.({ data } as MessageEvent);
+  /** An alert a push showed, not the page. */
+  const pushed = (tag: string, url: string) => shown.push({ title: 'Your turn', options: { tag, data: { url } }, closed: false });
+  return { posts, shown, subscribeCalls, reg, message, pushed, current: () => current, requestPermission: FakeNotification.requestPermission };
 }
 
 async function load() {
@@ -161,6 +166,24 @@ describe('push', () => {
     expect(await notify.syncPush()).toBe(false);
     expect(b.posts).toEqual([]);
   });
+
+  it("stops saying alerts come with the site closed when this device couldn't be set up for them", async () => {
+    fakeBrowser({ permission: 'granted', serverKey: null });
+    localStorage.setItem('rsdp.notify', 'on');
+    let notify = await load();
+    expect(notify.pushAvailable()).toBe(true);
+    // A copy of the site has no key to subscribe with.
+    expect(await notify.syncPush()).toBe(false);
+    expect(notify.pushAvailable()).toBe(false);
+    await notify.turnOffAlerts();
+    expect(notify.pushAvailable()).toBe(true);
+
+    fakeBrowser({ permission: 'granted' });
+    localStorage.setItem('rsdp.notify', 'on');
+    notify = await load();
+    expect(await notify.syncPush()).toBe(true);
+    expect(notify.pushAvailable()).toBe(true);
+  });
 });
 
 describe('showing alerts', () => {
@@ -183,9 +206,42 @@ describe('showing alerts', () => {
     notify.notify('Your turn', 'Friday', { tag: 'turn:t1:4:2', url: '/t/t1', replaces: 'turn:t1:' });
     await vi.waitFor(() => expect(b.shown).toHaveLength(2));
     expect(b.shown[0].closed).toBe(true);
-    // Acting takes it down.
-    notify.closeNotifications('turn:');
+    // Acting takes it down, and only that table's: a turn at another table still needs its player.
+    b.pushed('turn:t2:1:1', '/t/t2');
+    notify.closeNotifications('turn:t1:');
     await vi.waitFor(() => expect(b.shown[1].closed).toBe(true));
+    expect(b.shown[2].closed).toBe(false);
+  });
+
+  it("coming back to the tab takes down its own alerts and the ones for the page on screen, not another table's", async () => {
+    const b = fakeBrowser({ permission: 'granted' });
+    localStorage.setItem('rsdp.notify', 'on');
+    const notify = await load();
+    history.pushState(null, '', '/t/t1');
+    hide(true);
+    notify.notify('Starting soon', 'Weekly starts in 5 minutes.', { tag: 'start:tn:1', url: '/tn/tn', whenVisible: true });
+    await vi.waitFor(() => expect(b.shown).toHaveLength(1));
+    // While the tab was away, pushes for this table and for another one.
+    b.pushed('turn:t1:2:5', '/t/t1');
+    b.pushed('turn:t2:1:1', '/t/t2');
+    hide(false);
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.waitFor(() => expect(b.shown.map((n) => n.closed)).toEqual([true, true, false]));
+    history.pushState(null, '', '/');
+  });
+
+  it('goes to the page a tapped alert opens, and never to another site', async () => {
+    const b = fakeBrowser({ permission: 'granted' });
+    await load();
+    history.pushState(null, '', '/');
+    for (const url of ['/\\evil.example/x', '//evil.example/x', 'https://evil.example/x', 42]) {
+      b.message({ open: url });
+      expect(location.href).toBe(`${location.origin}/`);
+    }
+    b.message({ open: '/t/t1' });
+    expect(location.pathname).toBe('/t/t1');
+    history.pushState(null, '', '/');
   });
 
   it('stays quiet while the tab is in front, unless asked to show anyway', async () => {

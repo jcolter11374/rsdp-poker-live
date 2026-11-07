@@ -268,6 +268,12 @@ export const TURN_ALERT_DELAY_MS = 2_000;
 /** How long a push service may hold each alert for a phone that is off, in seconds. */
 const TURN_ALERT_TTL_S = 60;
 const SEAT_ALERT_TTL_S = 300;
+/**
+ * After a restart, tabs take a few seconds to reconnect, join their table again and say whether they are on
+ * screen. Turn and seat alerts due in that time wait for it to pass, so a player whose screen is only reconnecting
+ * isn't sent one.
+ */
+export const RESTART_QUIET_MS = 10_000;
 
 /**
  * Which build of the web app a page is: the entry script it loads, whose name
@@ -807,6 +813,14 @@ export function createApp(deps: AppDeps = {}) {
 
   /** The turn each loaded table last showed, so each turn is looked at once: table id → `<player>:<hand>:<events>`. */
   const turnSeen = new Map<string, string>();
+  /** Until when phone alerts wait for tabs to reconnect (RESTART_QUIET_MS; set by resume). */
+  let quietUntil = -Infinity;
+  /** Runs `fn` now, or once tabs have had time to reconnect after a restart. */
+  function whenSettled(fn: () => void) {
+    const wait = quietUntil - clock.now();
+    if (wait > 0) clock.setTimeout(() => whenSettled(fn), wait);
+    else fn();
+  }
 
   /** Whose move it is, as the views have it (TableView.legal and canDraw): a person's, not a bot's, and not while paused. */
   function turnToAct(rt: TableRuntime): { playerId: PlayerId; handNumber: number; at: number } | null {
@@ -839,18 +853,28 @@ export function createApp(deps: AppDeps = {}) {
     if (turnSeen.get(id) === key) return;
     turnSeen.set(id, key);
     if (!push.on) return;
-    clock.setTimeout(() => {
-      if (tables.get(id) !== rt) return;
-      // Paused before the alert was due: it waits for the game to go on (resuming looks at the turn again).
-      if (rt.state.paused && turnSeen.get(id) === key) return void turnSeen.delete(id);
-      const still = turnToAct(rt);
-      if (!still || turnKey(still) !== key || lookingAt(id, turn.playerId)) return;
-      push.send(
-        turn.playerId,
-        { title: 'Your turn', body: rt.state.settings.table.name, url: `/t/${id}`, tag: `turn:${id}:${turn.handNumber}:${turn.at}`, replaces: `turn:${id}:` },
-        { ttl: TURN_ALERT_TTL_S, urgency: 'high' },
-      );
-    }, TURN_ALERT_DELAY_MS);
+    /** Still that turn, and none of the player's tabs at the table on screen. */
+    const due = () => {
+      const still = tables.get(id) === rt ? turnToAct(rt) : null;
+      return !!still && turnKey(still) === key && !lookingAt(id, turn.playerId);
+    };
+    clock.setTimeout(
+      () =>
+        whenSettled(() => {
+          if (tables.get(id) !== rt) return;
+          // Paused before the alert was due: it waits for the game to go on (resuming looks at the turn again).
+          if (rt.state.paused && turnSeen.get(id) === key) return void turnSeen.delete(id);
+          if (!due()) return;
+          push.send(
+            turn.playerId,
+            { title: 'Your turn', body: rt.state.settings.table.name, url: `/t/${id}`, tag: `turn:${id}:${turn.handNumber}:${turn.at}`, replaces: `turn:${id}:` },
+            { ttl: TURN_ALERT_TTL_S, urgency: 'high' },
+            // Played, or looked at, while it waited for a slow push service: it goes nowhere.
+            due,
+          );
+        }),
+      TURN_ALERT_DELAY_MS,
+    );
   }
 
   /** One answer for a hand that isn't there and one a spectator's delay still hides. */
@@ -1146,22 +1170,25 @@ export function createApp(deps: AppDeps = {}) {
       });
       if (items.length) addToLobby(state.id, items);
     },
-    onMoved: (playerId, from, to) => {
+    onMoved: (playerId, from, to, restored) => {
       for (const s of playerSockets.get(playerId) ?? []) s.emit('table:moved', { from, to });
-      // A tab on screen follows the seat itself (useFollowSeat); the tag is the page's own (TournamentAlerts.tsx).
+      // A seat a restart put back was announced before it went down.
       const tournament = tournaments.tournamentOf(to);
-      if (!push.on || !tournament || onSite(playerId)) return;
+      if (!push.on || !tournament || restored) return;
       const seated = from === '';
-      push.send(
-        playerId,
-        {
-          title: seated ? "You're seated" : "You've been moved",
-          body: seated ? 'Your tournament table is ready. Cards are in the air soon.' : 'The tournament moved you to another table.',
-          url: `/t/${to}`,
-          tag: `seat:${tournament}:${to}`,
-        },
-        { ttl: SEAT_ALERT_TTL_S, urgency: 'high' },
-      );
+      // The tag is the page's own (TournamentAlerts.tsx); it replaces the alert for the seat before, so a tap
+      // never opens a table the player has left.
+      const alert = {
+        title: seated ? "You're seated" : "You've been moved",
+        body: seated ? 'Your tournament table is ready. Cards are in the air soon.' : 'The tournament moved you to another table.',
+        url: `/t/${to}`,
+        tag: `seat:${tournament}:${to}`,
+        replaces: `seat:${tournament}:`,
+      };
+      // A tab on screen follows the seat itself (useFollowSeat).
+      whenSettled(() => {
+        if (!onSite(playerId)) push.send(playerId, alert, { ttl: SEAT_ALERT_TTL_S, urgency: 'high' });
+      });
     },
     log,
   });
@@ -1984,7 +2011,10 @@ export function createApp(deps: AppDeps = {}) {
     unloadIdle,
     /** Brings back unfinished tournaments (and their tables) after a restart. */
     resume: async () => {
+      quietUntil = clock.now() + RESTART_QUIET_MS;
       await tournaments.resumeAll();
+      // Counted from when tabs can reconnect: the server listens once this is done.
+      quietUntil = clock.now() + RESTART_QUIET_MS;
       // Their "starting soon" alerts wait again (nothing announces an event brought back).
       if (push.on) for (const id of tournaments.liveIds()) startAlerts.check(id);
     },

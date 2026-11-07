@@ -1,8 +1,10 @@
 /**
  * Web Push with nothing but node:crypto: the message encryption browsers
  * expect (RFC 8291, the aes128gcm content coding of RFC 8188) and the server's
- * signed claim of who is sending (VAPID, RFC 8292). test/push.test.ts checks
- * both against the examples published in those RFCs.
+ * signed claim of who is sending (VAPID, RFC 8292). test/push-crypto.test.ts
+ * checks both against the examples published in those RFCs: the encrypted
+ * message byte for byte, the claim's header and body byte for byte, and its
+ * signature by verifying it (ECDSA signatures differ every time).
  *
  * The push service (Google's for Chrome, Apple's for Safari, Mozilla's for
  * Firefox, Microsoft's for Edge) gets the subscription's address and the

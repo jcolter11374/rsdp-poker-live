@@ -27,7 +27,7 @@ vi.mock('../notify', async () => {
       ),
     enableNotifications: alerts.enable,
     disableNotifications: alerts.disable,
-    pushAvailable: () => alerts.push,
+    usePushAvailable: () => alerts.push,
     notify: () => {},
     syncPush: async () => false,
   };

@@ -137,8 +137,15 @@ export interface SendOptions {
 
 export class PushError extends Error {}
 
+interface Job {
+  playerId: PlayerId;
+  alert: PushAlert;
+  opts: SendOptions;
+  current?: () => boolean;
+}
+
 export class PushAlerts {
-  private readonly queue: { playerId: PlayerId; alert: PushAlert; opts: SendOptions }[] = [];
+  private readonly queue: Job[] = [];
   private running = 0;
   private closed = false;
   private readonly idleWaiters: (() => void)[] = [];
@@ -199,11 +206,15 @@ export class PushAlerts {
     if (playerIds.length) this.deps.store.removePlayers(playerIds).catch((e) => this.deps.log('forgetting phone alerts failed', e));
   }
 
-  /** Queues an alert for every browser of the player that has alerts on. Returns at once; nothing waits on the push services. */
-  send(playerId: PlayerId, alert: PushAlert, opts: SendOptions): void {
+  /**
+   * Queues an alert for every browser of the player that has alerts on. Returns at once; nothing waits on the push
+   * services. `current`, when given, is asked again as the alert leaves the queue: false (the turn was played while
+   * a slow push service held up the queue) drops it.
+   */
+  send(playerId: PlayerId, alert: PushAlert, opts: SendOptions, current?: () => boolean): void {
     if (!this.on) return;
     if (this.queue.length >= QUEUE_MAX) return this.failed('the queue is full');
-    this.queue.push({ playerId, alert, opts });
+    this.queue.push({ playerId, alert, opts, current });
     setImmediate(() => this.pump());
   }
 
@@ -228,8 +239,9 @@ export class PushAlerts {
   private pump() {
     while (this.running < IN_FLIGHT && this.queue.length) {
       const job = this.queue.shift()!;
+      if (!still(job)) continue;
       this.running++;
-      this.deliver(job.playerId, job.alert, job.opts)
+      this.deliver(job)
         .catch((e) => this.deps.log('a phone alert failed', e))
         .finally(() => {
           this.running--;
@@ -237,11 +249,13 @@ export class PushAlerts {
           else if (!this.running) this.settle();
         });
     }
+    if (!this.running && !this.queue.length) this.settle();
   }
 
-  private async deliver(playerId: PlayerId, alert: PushAlert, opts: SendOptions) {
+  private async deliver(job: Job) {
+    const { playerId, alert, opts } = job;
     const targets = await this.deps.store.targets(playerId, new Date(this.deps.now()));
-    if (!targets.length) return;
+    if (!targets.length || !still(job)) return;
     const keys = await this.deps.store.keys();
     const payload = Buffer.from(JSON.stringify(alert));
     await Promise.all(
@@ -289,6 +303,15 @@ export class PushAlerts {
       this.tokens.set(audience, token);
     }
     return vapidAuthorization(token.value, keys.publicKey);
+  }
+}
+
+/** False once a queued alert is out of date; a check that throws counts as out of date. */
+function still(job: Job): boolean {
+  try {
+    return !job.current || job.current();
+  } catch {
+    return false;
   }
 }
 

@@ -10,12 +10,12 @@ import { sql } from 'drizzle-orm';
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
-import { defaultSettings, type TournamentState } from '@rsdp/tournament';
-import { createApp, TURN_ALERT_DELAY_MS } from '../src/app';
+import { defaultSettings, tableAddress, type TournamentState } from '@rsdp/tournament';
+import { createApp, RESTART_QUIET_MS, TURN_ALERT_DELAY_MS } from '../src/app';
 import { closeDb, queryRows, prunePushSubscriptions, pushTargetsOf, savePushSubscription, vapidKeys, type Db } from '../src/db';
 import { createTestDb, resetTestDb } from '../src/db/testing';
 import { createAccount, deleteAccount, forgetToken, hashSecret, login, logout, resolveToken } from '../src/identity';
-import { dbPushStore, memoryPushStore, PUSH_DEVICES_MAX, PUSH_KEEP_MS } from '../src/push/alerts';
+import { dbPushStore, memoryPushStore, PushAlerts, PUSH_DEVICES_MAX, PUSH_KEEP_MS } from '../src/push/alerts';
 import { START_LEAD_MS, StartAlerts } from '../src/push/starts';
 import { dbIdentity } from '../src/storage';
 import { FakeClock } from './fake-clock';
@@ -189,15 +189,15 @@ describe('phone alerts from the server', () => {
     await server.close();
   });
 
-  const subscribe = async (guest: string, b = browser()) => {
-    const res = await request(url, 'POST', '/api/push/subscribe', b.subscription, { guest });
+  const subscribe = async (guest: string, b = browser(), at = url) => {
+    const res = await request(at, 'POST', '/api/push/subscribe', b.subscription, { guest });
     expect(res.status).toBe(200);
     return b;
   };
   /** Lets alerts queued by a timer go out to the fake push service. */
-  const flush = async () => {
+  const flush = async (app = server) => {
     await pause(20);
-    await server.push.idle();
+    await app.push.idle();
   };
 
   it('hands out its public key, and none when alerts are off', async () => {
@@ -226,9 +226,9 @@ describe('phone alerts from the server', () => {
   });
 
   /** Two players sit down and the host starts; returns them with whoever must act first. */
-  async function headsUp(name: string, hostToken: string, guestToken: string) {
-    const host = client(hostToken);
-    const guest = client(guestToken);
+  async function headsUp(name: string, hostToken: string, guestToken: string, connect = client) {
+    const host = connect(hostToken);
+    const guest = connect(guestToken);
     const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { table: { name }, seating: { requireApproval: false }, timing: { autoStartNextHand: false } } });
     await host.call('table:join', { tableId });
     await guest.call('table:join', { tableId });
@@ -389,6 +389,94 @@ describe('phone alerts from the server', () => {
     expect(seated[0]).toMatchObject({ title: "You're seated", body: 'Your tournament table is ready. Cards are in the air soon.' });
     expect(seated[0].url).toMatch(new RegExp(`^/t/${id}-t\\d+$`));
     expect(seated[0].tag).toBe(`seat:${id}:${seated[0].url.slice(3)}`);
+    // A later seat's alert takes this one down (sw.js and notify.ts close what it replaces).
+    expect(seated[0].replaces).toBe(`seat:${id}:`);
+  });
+
+  it("tells a moved player who isn't looking, and not one who is", async () => {
+    const host = client('push-mv-host-secret-0001');
+    await host.call('session:name', { name: 'Host' });
+    const startAt = clock.now() + 20 * MINUTE;
+    const { id } = await host.call<{ id: string }>('tournament:create', { settings: defaultSettings({ name: 'Moves', seatsPerTable: 2, start: { kind: 'scheduled', startAt } }) });
+    const players = await Promise.all(
+      ['Ana', 'Bo', 'Cy', 'Di'].map(async (name) => {
+        const token = `push-mv-${name}-secret-000001`;
+        const c = client(token);
+        await c.call('session:name', { name });
+        await c.call('tournament:command', { id, command: { type: 'register' } });
+        const phone = await subscribe(token);
+        await hidden(c);
+        return { name, c, phone };
+      }),
+    );
+    // The seats are drawn a minute before the start: two tables of two.
+    clock.advance(20 * MINUTE - 60_000);
+    await flush();
+    const state = await new Promise<TournamentState>((resolve) => {
+      (host.socket as unknown as { once: (e: string, fn: (m: { view: { state: TournamentState } }) => void) => void }).once('tournament:state', (m) => resolve(m.view.state));
+      void host.call('tournament:subscribe', { id });
+    });
+    const tableOf = (p: (typeof players)[number]) => opened(service, p.phone).find((a) => a.title === "You're seated")!.url.slice(3);
+    const entryOf = (p: (typeof players)[number]) => state.entries.find((e) => e.displayName === p.name)!;
+    const [ana] = players;
+    // Someone at the other table, with that table on screen.
+    const looking = players.find((p) => tableOf(p) !== tableOf(ana))!;
+    const there = tableOf(looking);
+    expect(tableAddress(entryOf(looking).tableId!)).toBe(there);
+    await hidden(looking.c, true);
+    const told = players.map((p) => opened(service, p.phone).length);
+
+    // Ana takes their seat, so the two swap: both are moved.
+    await host.call('tournament:command', { id, command: { type: 'movePlayer', playerId: entryOf(ana).playerId, tableId: entryOf(looking).tableId, seat: entryOf(looking).seat } });
+    await flush();
+    expect(players.map((p, i) => opened(service, p.phone).length - told[i])).toEqual(players.map((p) => (p === ana ? 1 : 0)));
+    expect(opened(service, ana.phone).at(-1)).toEqual({
+      title: "You've been moved",
+      body: 'The tournament moved you to another table.',
+      url: `/t/${there}`,
+      tag: `seat:${id}:${there}`,
+      replaces: `seat:${id}:`,
+    });
+  });
+
+  it('after a restart, holds a turn alert until tabs have had time to come back', async () => {
+    const restarted = createApp({ clock, push: { config: { subject: SITE }, store: memoryPushStore(), fetch: service.fetch }, log: () => {} });
+    const at = await listen(restarted);
+    try {
+      await restarted.resume();
+      const t = await headsUp('Restarted', 'push-restart-host-secret', 'push-restart-guest-secre', (token) => socketClient(at, token, clients));
+      const phone = await subscribe(t.me === t.host ? 'push-restart-host-secret' : 'push-restart-guest-secre', browser(), at);
+      await hidden(t.me);
+      clock.advance(TURN_ALERT_DELAY_MS);
+      await flush(restarted);
+      expect(opened(service, phone)).toEqual([]);
+      clock.advance(RESTART_QUIET_MS);
+      await flush(restarted);
+      expect(opened(service, phone).map((a) => a.title)).toEqual(['Your turn']);
+    } finally {
+      await restarted.close();
+    }
+  });
+});
+
+describe('the alert queue', () => {
+  it('drops an alert that went out of date while it waited', async () => {
+    const service = fakePushService();
+    const push = new PushAlerts({ store: memoryPushStore(), config: { subject: SITE }, now: () => Date.now(), log: () => {}, fetch: service.fetch });
+    const phone = browser();
+    await push.subscribe(phone.subscription, { playerId: 'p1', device: 'd1', session: null });
+    const alert = { title: 'Your turn', body: 'Friday', url: '/t/t1', tag: 'turn:t1:1:1', replaces: 'turn:t1:' };
+    let current = true;
+    push.send('p1', alert, { ttl: 60, urgency: 'high' }, () => current);
+    // Played before the queue got to it.
+    current = false;
+    await push.idle();
+    expect(service.delivered).toEqual([]);
+    current = true;
+    push.send('p1', alert, { ttl: 60, urgency: 'high' }, () => current);
+    await push.idle();
+    expect(opened(service, phone)).toEqual([alert]);
+    push.close();
   });
 });
 

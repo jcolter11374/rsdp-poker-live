@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { TournamentListing } from '@rsdp/tournament';
-import { disableNotifications, enableNotifications, notify, pushAvailable, syncPush, useNotifyState } from '../notify';
+import { disableNotifications, enableNotifications, notify, syncPush, useNotifyState, usePushAvailable } from '../notify';
 import { socket } from '../socket';
 import { tournamentClient } from './client';
 import { tournamentOfTable } from './hooks';
@@ -51,9 +51,11 @@ export function TournamentAlerts() {
     const onMoved = ({ from, to }: { from: string; to: string }) => {
       const tournament = tournamentOfTable(to);
       if (!tournament) return;
-      // Every tab of the player hears this; the shared tag makes it one alert.
-      if (from === '') notify("You're seated", 'Your tournament table is ready. Cards are in the air soon.', { tag: `seat:${tournament}:${to}`, url: `/t/${to}` });
-      else notify("You've been moved", 'The tournament moved you to another table.', { tag: `seat:${tournament}:${to}`, url: `/t/${to}` });
+      // Every tab of the player hears this; the shared tag makes it one alert. It replaces the alert for the seat
+      // before, so a tap never opens a table they've left.
+      const seat = { tag: `seat:${tournament}:${to}`, url: `/t/${to}`, replaces: `seat:${tournament}:` };
+      if (from === '') notify("You're seated", 'Your tournament table is ready. Cards are in the air soon.', seat);
+      else notify("You've been moved", 'The tournament moved you to another table.', seat);
     };
     socket.on('table:moved', onMoved);
     return () => {
@@ -105,6 +107,7 @@ export function TournamentAlerts() {
 /** Turns background alerts on or off for this browser. */
 export function AlertsToggle({ className = '', quietWhenBlocked = false }: { className?: string; quietWhenBlocked?: boolean }) {
   const state = useNotifyState();
+  const push = usePushAvailable();
   const [help, setHelp] = useState(false);
   if (state === 'unsupported') return null;
   // An iPhone or iPad offers alerts to the site only once it is on the home screen: say how, rather than fail.
@@ -131,7 +134,7 @@ export function AlertsToggle({ className = '', quietWhenBlocked = false }: { cla
     <button
       className={`tn-alerts ${state === 'on' ? 'on' : ''} ${className}`}
       aria-pressed={state === 'on'}
-      title={pushAvailable() ? 'Starting soon, seated, moved, and your turn, on this device even with the site closed' : 'Starting soon, seated, moved, and your turn, while this tab is in the background'}
+      title={push ? 'Starting soon, seated, moved, and your turn, on this device even with the site closed' : 'Starting soon, seated, moved, and your turn, while this tab is in the background'}
       onClick={() => (state === 'on' ? disableNotifications() : void enableNotifications())}
     >
       {state === 'on' ? '🔔 Alerts on' : '🔕 Turn on alerts'}
