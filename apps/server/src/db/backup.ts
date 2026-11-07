@@ -228,7 +228,7 @@ export async function restoreBackup(db: Db, lines: AsyncIterable<string>): Promi
       if (end) throw new BackupError('The backup has lines after its end.');
       if (!header) {
         const item = JSON.parse(line);
-        if (item.backup !== BACKUP_FORMAT || item.version !== BACKUP_VERSION) throw new BackupError('This is not an RSDP Poker Live! backup.');
+        if (item.backup !== BACKUP_FORMAT || item.version !== BACKUP_VERSION) throw new BackupError('This is not an RSDP Live! backup.');
         header = item as BackupHeader;
         const migrations = await migrationCount(tx);
         if (header.migrations > migrations) throw new BackupError(`The backup is from a newer version (${header.migrations} migrations; this code has ${migrations}). Restore it with newer code.`);

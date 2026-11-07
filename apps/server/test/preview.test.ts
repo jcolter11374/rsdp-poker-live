@@ -15,7 +15,7 @@ import { tournamentPreview, withPreview } from '../src/preview';
 beforeAll(() => registerAllVariants(variants));
 
 const T0 = Date.parse('2026-10-30T02:30:00Z');
-const INDEX = '<!doctype html><html><head><title>RSDP Poker Live!</title></head><body><div id="root"></div></body></html>';
+const INDEX = '<!doctype html><html><head><title>RSDP Live!</title></head><body><div id="root"></div></body></html>';
 
 describe('link previews', () => {
   it('describes a scheduled tournament in its own time zone', () => {
@@ -28,10 +28,10 @@ describe('link previews', () => {
       legacyRng: 7,
     });
     const p = tournamentPreview(s, T0 - 86_400_000);
-    expect(p.title).toBe('Thursday <Deep> · RSDP Poker Live!');
+    expect(p.title).toBe('Thursday <Deep> · RSDP Live!');
     expect(p.description).toBe("No-Limit Hold'em tournament · Thu, Oct 29, 7:30 PM PDT · 0 players registered · starts automatically. Tap to open the lobby and register.");
     const html = withPreview(INDEX, p, 'https://x.test/tn/abc', 'https://x.test');
-    expect(html).toContain('<title>Thursday &lt;Deep&gt; · RSDP Poker Live!</title>');
+    expect(html).toContain('<title>Thursday &lt;Deep&gt; · RSDP Live!</title>');
     expect(html).toContain('<meta property="og:image" content="https://x.test/og.jpg" />');
     expect(html).not.toContain('<Deep>');
     // `$'` and friends in a name are text, not replacement patterns.
@@ -56,13 +56,13 @@ describe('link previews', () => {
       const base = `http://localhost:${(server.http.address() as AddressInfo).port}`;
       const id = await server.tournaments.create('host', defaultSettings({ name: 'Sunday Mix' }));
       const page = await (await fetch(`${base}/tn/${id}`, { headers: { 'x-forwarded-proto': 'https' } })).text();
-      expect(page).toContain('<meta property="og:title" content="Sunday Mix · RSDP Poker Live!" />');
+      expect(page).toContain('<meta property="og:title" content="Sunday Mix · RSDP Live!" />');
       expect(page).toMatch(/og:image" content="https:\/\/localhost:\d+\/og.jpg"/);
       expect(page).toContain('<div id="root"></div>');
       // Unknown links and the home page still load the app.
       expect(await (await fetch(`${base}/tn/0123456789abcdef`)).text()).toContain('<div id="root"></div>');
       expect(await (await fetch(`${base}/`)).text()).toContain('og:description');
-      expect(await (await fetch(`${base}/t/nope`)).text()).toContain('<title>RSDP Poker Live!</title>');
+      expect(await (await fetch(`${base}/t/nope`)).text()).toContain('<title>RSDP Live!</title>');
     });
     it("says a Dealer's choice table plays Dealer's choice, not its own (hidden) game", async () => {
       dir = await mkdtemp(path.join(tmpdir(), 'rsdp-web-'));

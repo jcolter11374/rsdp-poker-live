@@ -1,4 +1,4 @@
-# Fair dealing in RSDP Poker Live!
+# Fair dealing in RSDP Live!
 
 > ### The short version: you're trusting John
 >

@@ -11,7 +11,7 @@ import type { HandRecordView } from '@rsdp/engine/wire';
 
 type Ev<T extends HandEvent['t']> = Extract<HandEvent, { t: T }>;
 
-const SITE = 'RSDP Poker Live';
+const SITE = 'RSDP Live';
 
 const GAME_TYPE: Record<string, string> = {
   nlhe: 'Holdem',

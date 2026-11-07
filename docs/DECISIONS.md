@@ -1,6 +1,6 @@
 # Decisions
 
-The lasting decisions behind RSDP Poker Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
+The lasting decisions behind RSDP Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
 
 How this file works:
 
@@ -45,6 +45,7 @@ How this file works:
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
 | [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
+| [D35](#d35-the-site-is-called-rsdp-live) | The site is called RSDP Live! | 2026-11-07 | John |
 | [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
 
 ---
@@ -402,6 +403,13 @@ How this file works:
 - **Why:** a deploy restarts the server, but hands in progress resume and browsers reconnect by themselves, so players see a pause of a few seconds. John prefers that to finished work waiting.
 - **Replaces** the quiet-time condition in D05 and the "release at a quiet time" in D25's full path. Nothing else in them changes.
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CONTRIBUTING.md](../CONTRIBUTING.md#full-or-light-how-much-checking-a-change-needs), [CLAUDE.md](../CLAUDE.md), [CODE_TOUR.md](CODE_TOUR.md).
+
+## D35. The site is called RSDP Live!
+
+- **Decided:** 2026-11-07, 01:29 UTC, by John: "How hard would it be to change the name of the website and all mentions from RSDP Poker Live! To RSDP Live! The poker is redundant because RSDP is an acronym where the P stands for poker." A minute later: "I do really like the design and the style so I'd like to keep that". The name had been RSDP Poker Live! since he chose it on 2026-10-25.
+- **Decision:** the site is called **RSDP Live!** everywhere it shows a name: page titles and link previews, the logo, the crest on the felt (its top arc now reads RSDP, above LIVE), the app name on a phone's home screen, the offline page, the public pages, downloaded hand histories and the docs. Only the words changed: the logo, the crest and the preview picture keep their fonts, sizes, colours and layout.
+- **Not changed, on purpose:** the web address (`rsdp-poker-live.fly.dev`), the GitHub repository, the Fly app and the ids inside the code and data, which all say `rsdp-poker-live` or `rsdp`. Changing those would break saved links and touch Google sign-in, the signed build record and the backups. John dropped that at 01:36 UTC: "Yeah the Github and web address aren't a priority. We can just drop them as a concept for the time being. I'll bring it up again if I change my mind". So don't propose it again unless he raises it. Release notes already published keep the name they had. A phone that already has the site on its home screen may keep the old label until the site is added again.
+- **Where:** issue [#391](https://github.com/jcolter11374/rsdp-poker-live/issues/391). `apps/server/test/site-name.test.ts` fails if the old name comes back. `scripts/upgrade/compare.mjs` lets a page title under the old name match the same title under the new one, so the release that renames the site passes the upgrade rehearsal.
 
 ## D36. A worked-out stud bring-in is a round amount
 
