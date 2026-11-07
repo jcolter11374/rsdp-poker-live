@@ -45,6 +45,9 @@ export function AboutPage() {
             New things land all the time, and lots of them start as ideas from people who play here. See what's coming on the <a href="/roadmap">roadmap</a>, catch up on <a href="/whats-new">what's new</a>, or{' '}
             <a href="/roadmap#suggest">suggest an idea</a>.
           </p>
+          <p>
+            Played somewhere else before? See <a href="/compare">how we compare</a>, feature by feature.
+          </p>
         </section>
 
         <section className="about-more">

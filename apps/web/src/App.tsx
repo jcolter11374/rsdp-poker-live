@@ -11,6 +11,7 @@ import { FairnessPage } from './fairness/FairnessPage';
 import { TransparencyPage } from './fairness/TransparencyPage';
 import { PrivacyPage } from './fairness/PrivacyPage';
 import { CreditsPage } from './fairness/CreditsPage';
+import { ComparePage } from './compare/ComparePage';
 import { TermsPage } from './fairness/TermsPage';
 import { RecordAlert } from './fairness/RecordAlert';
 import { AboutPage } from './about/AboutPage';
@@ -59,6 +60,7 @@ function Page() {
   if (/^\/terms\/?$/.test(path)) return <TermsPage />;
   if (/^\/credits\/?$/.test(path)) return <CreditsPage />;
   if (/^\/about\/?$/.test(path)) return <AboutPage />;
+  if (/^\/compare\/?$/.test(path)) return <ComparePage />;
   if (/^\/signin\/?$/.test(path)) return <SignInPage />;
   if (/^\/signup\/?$/.test(path)) return <SignUpPage />;
   if (/^\/reset\/?$/.test(path)) return <ResetPage />;
