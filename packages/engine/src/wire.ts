@@ -272,7 +272,10 @@ export interface RotationGameView {
  * and when every step of the rotation plays the same game.
  */
 export interface RotationView extends RotationGameView {
-  /** Hands of this game dealt so far; 0 when the next hand starts it (a new table, or the rotation was changed). */
+  /**
+   * Hands of the rotation's current step dealt so far (a later step of the same game counts from 1 again); 0 when the
+   * next hand starts it (a new table, or the rotation was changed).
+   */
   dealt: number;
   /**
    * Hands of this game still to deal after those dealt (later steps of the same game included). A step counted in

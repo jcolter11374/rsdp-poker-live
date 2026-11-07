@@ -126,6 +126,16 @@ describe('holdBack', () => {
     const v = holdBack(done, { ...before(), rotation: razz(2) }, 0);
     expect(v.rotation?.handsLeft).toBe(2);
   });
+
+  it('names the games without a count for a hand dealt and run out in one update', () => {
+    const game = (gameId: string, gameName: string, dealt: number, handsLeft: number | null, next: string, nextName: string) => ({ gameId, betting: 'fixed-limit' as const, gameName, dealt, handsLeft, next: { gameId: next, betting: 'fixed-limit' as const, gameName: nextName } });
+    // Before: the last hand of Stud Hi-Lo. The bomb pot all in from the start was Limit Hold'em's first hand.
+    const was = game('stud8', 'Stud Hi-Lo', 7, 0, 'lhe', "Limit Hold'em");
+    const live = { ...finished(), rotation: game('lhe', "Limit Hold'em", 1, 3, 'plo8', 'Limit Omaha Hi-Lo') };
+    expect(holdBack(live, { ...before(), rotation: was, sameHand: false }, 0).rotation).toEqual({ ...live.rotation, handsLeft: null });
+    // The same hand seen dealing first keeps the count from then.
+    expect(holdBack(live, { ...before(), rotation: { ...live.rotation, handsLeft: 4 }, sameHand: true }, 0).rotation?.handsLeft).toBe(4);
+  });
 });
 
 /** Three-handed tournament hand: seat 1 is all in before the flop, loses and is knocked out. */

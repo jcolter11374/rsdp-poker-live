@@ -18,6 +18,14 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.07.3] - 2026-11-07
+
+_Hands left in each game_
+
+### New
+
+- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
+
 ## [2026.11.07.2] - 2026-11-07
 
 _Dealer's choice_
@@ -25,11 +33,11 @@ _Dealer's choice_
 ### New
 
 - **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit. As soon as they pick, the tag moves one seat to the left, to whoever picks next. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
-- **See how many hands are left in each game.** At HORSE, 8-Game and any table that rotates games, the top bar now leads with the game being played, in bigger type, and says how many more hands of it there are and what comes next: "3 more hands, then Razz", then "Last hand, then Razz" (on a phone, "Razz after 3 more", then "Razz next hand"). When the new game starts, a banner on the table says so for a few seconds. Every tournament table's bar now leads with the game too, and a banner marks each new level; in mixed-game tournaments the bar also counts down to the next game ("Razz next, in 3:20"). (Suggested by John.)
 
 ### Fixed and changed
 
 - Laptop-sized windows: at a busy table, nameplates no longer cover each other. In four-card Omaha, or with six or more players, the seats could run out of room and one player's nameplate sat on top of the next, hiding their stack. Seats now keep clear of each other, using the ends of the table when they need to, and stay put while the hand plays.
+- Cash tables: the seats no longer slide across the table when the host starts the game. The note saying to press Start game, or that you're waiting for the host, is now in the middle of the table instead of in a bar above it, so the table keeps its size when the note goes.
 - Tournaments with stud levels: the bring-in is now a round amount of about a third of the small bet, such as 600 at 2,000/4,000 instead of 666, and 1,000 at 4,000/8,000 instead of 1,333. A cash table whose bring-in is left at 0 works it out the same way.
 
 ## [2026.11.07] - 2026-11-07
@@ -686,6 +694,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.07.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.3
 [2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
 [2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
