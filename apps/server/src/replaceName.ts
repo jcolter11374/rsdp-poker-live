@@ -35,12 +35,12 @@ const PLACEHOLDERS = new Set(['', 'Guest', 'A player', 'Dealer', DELETED_NAME]);
 export const SERVER_WORDS: ReadonlySet<string> = new Set(
   `a action add added after all already amount and anyone anything are aren as asked at away back badugi be been
   behind better betting blind blinds board bomb bot bought bounties bounty bring call can cancelled cannot card cards
-  carries changed chat check clocks closed co collects come complete could couldn deal dealer deals dealt deck declined delay
+  carries changed chat check choice clocks closed co collects come complete could couldn deal dealer deals dealt deck declined delay
   deleted didn discard double down draw each early easy em ended ends enough every everyone flop folded for free from
   game games given going guest had hand hands hard has have here hi hidden hold holding hole host hunting if in into invalid
-  is it its joined kept last least leave left let level limit link live lo longer look losing made min minute minutes
+  is isn it its joined kept last least leave left let level limit link live lo longer look losing made min minute minutes
   modifiers most moved mucked muted need needs next nit no nobody normal not nothing now of off offline ok omaha on one only
-  options or others out pass paused pays people pick picked play player players post pot practice rabbit raise rake ran razz re
+  options or others out over pass paused pays people pick picked play player players post pot practice rabbit raise rake ran razz re
   rebuy released removed request result resumed right round run running s sat saved say schedule seat seated seating
   seats second see seeing sees server set settings seven show showdown shown shuffled side sitting so someone
   spectators stack stakes started stay stepped stopped stud such switching t table take taken that the their them they
