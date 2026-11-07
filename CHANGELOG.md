@@ -18,13 +18,23 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
-## [2026.11.06.6] - 2026-11-06
+## [2026.11.07.2] - 2026-11-07
 
-_Tournament tables as big as cash tables_
+_Dealer's choice_
 
 ### New
 
+- **Dealer's choice.** Players take turns choosing the game. Whoever has the gold PICK tag chooses the next game from a menu the host sets up, with How to play for every game on it, and the table plays it for one orbit before the tag moves one seat to the left. Pick Dealer's choice under Mixed games when you start a cash game, or in Table settings > Game. The menu starts with the 8-Game games; the host can fill it with the HORSE games, Hold'em and Omaha, or every game, and choose how long each pick lasts and how long the chooser has. Practice bots pick at random, so you get to try every game. (Suggested by John.)
 - **The tournament clock moves to the corner.** On a computer screen 1440 pixels wide or more, a tournament table's level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, so the table gets the room above it. On a wide but short screen that makes the seats and cards as big as at a cash table. Anything that needs you, like a rebuy offer or your seat at another table, still shows above the table. (Suggested by John.)
+
+### Fixed and changed
+
+- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. The strip only shows when it has something for you to do (a rebuy, an add-on, a re-entry, your seat at another table).
+- Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
+- Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
+- Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
+
+## [2026.11.07] - 2026-11-07
 
 ### Fixed and changed
 
@@ -40,12 +50,8 @@ _Tournament tables as big as cash tables_
 - Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
 - Tournament seats are now drawn with a stronger random generator, the same kind used to shuffle the cards, from a secret seed each tournament gets of its own.
 - Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.
-- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last saves and public record entries. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
+- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last public record entries and closing the database. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
 - Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.
-- Tournaments on a computer screen 1440 pixels wide or more: the level, clock, blinds and players left now sit in a box in the bottom-right corner, across from the chat, instead of a strip above the table. The strip only shows when it has something for you to do (a rebuy, an add-on, a re-entry, your seat at another table).
-- Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
-- Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
-- Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
 
 ## [2026.11.06.5] - 2026-11-06
 
@@ -682,7 +688,8 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
-[2026.11.06.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.6
+[2026.11.07.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.2
+[2026.11.07]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07
 [2026.11.06.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.5
 [2026.11.06.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.4
 [2026.11.06.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.06.3

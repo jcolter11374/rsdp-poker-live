@@ -16,13 +16,16 @@ export function withPreset(table: TableSettings, preset: TableSettings): TableSe
 }
 
 /**
- * The settings with no more seats than the game with the fewest has, as the
- * dialog's Save does. A preset saved before that, or edited by hand, can ask
+ * The settings with no more seats than the game with the fewest has (at
+ * Dealer's choice, the menu's biggest game), as the dialog's Save does. A preset saved before that, or edited by hand, can ask
  * for more, and the server won't make that table.
  */
 export function seatsThatFit(settings: TableSettings): TableSettings {
   const rot = settings.game.rotation;
-  const games = rot.enabled && rot.steps.length ? rot.steps.map((s) => s.gameId) : [settings.game.gameId];
+  const dc = settings.game.dealersChoice;
+  // Dealer's choice keeps the seats of the menu's biggest game; smaller games are greyed out when picking (D33).
+  const menu = dc?.enabled && settings.table.mode === 'cash' && dc.games.length >= 2 && !rot.enabled ? dc.games : null;
+  const games = menu ? menu.map((g) => g.gameId) : rot.enabled && rot.steps.length ? rot.steps.map((s) => s.gameId) : [settings.game.gameId];
   // A game this page doesn't know is left for the server to refuse by name.
   const limits = games.flatMap((id) => {
     try {
@@ -31,6 +34,7 @@ export function seatsThatFit(settings: TableSettings): TableSettings {
       return [];
     }
   });
-  const maxSeats = Math.min(settings.table.maxSeats, ...limits);
+  const limit = menu ? (limits.length ? Math.max(...limits) : Infinity) : Math.min(...limits);
+  const maxSeats = Math.min(settings.table.maxSeats, limit);
   return maxSeats === settings.table.maxSeats ? settings : { ...settings, table: { ...settings.table, maxSeats } };
 }
