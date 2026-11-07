@@ -32,6 +32,10 @@ merged but not live yet is also on the issues labelled [status: on develop](http
 - Hand search: Limit and No-Limit Hold'em are now separate choices in the Game list, and so is any other game you've played with more than one kind of betting.
 - Hosts: a saved preset with more seats than one of its games deals (2-7 Triple Draw and Badugi deal at most 6) now starts a table with seats that fit, instead of a table that stops when it reaches that game.
 - Run it twice after an all in on the flop or the turn: the second run now shows the cards both runs share as soon as the board splits, then deals its own cards one at a time, like the first run. Before, the shared cards landed together with the second run's first new card: its flop and turn at once after a flop all in, its whole board after a turn all in. The hand log also names the second run's turn and river now, instead of calling them "Board".
+- Tournament seats are now drawn with a stronger random generator, the same kind used to shuffle the cards, from a secret seed each tournament gets of its own.
+- Tournament lobbies: when the host changes a setting (late registration, re-entry, the table rules and so on), the Activity tab now says so and names the setting. A few changes made close together show as one line.
+- Updates restart the server more cleanly: it no longer waits on a stuck browser connection before writing its last saves and public record entries. A rare case where a backup download cut off part-way could hold up table saves until the next restart is fixed too.
+- Behind the scenes: John now gets an early warning if the server starts running short of memory or disk space, well before it could affect a game.
 
 ## [2026.11.06.5] - 2026-11-06
 

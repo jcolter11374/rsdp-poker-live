@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { closeDb, type Db } from '../src/db/client';
+import { sql } from 'drizzle-orm';
+import { closeDb, queryRows, type Db } from '../src/db/client';
 import { StorageError } from '../src/db/errors';
 import {
   archiveTable,
   createTable,
+  deleteTableForGood,
   diffSettings,
   getTable,
   listActiveTables,
@@ -273,5 +275,58 @@ describe('snapshots', () => {
     expect(await loadSnapshot(db, table.id)).toBeNull();
     await expectStorageError(saveSnapshot(db, table.id, { version: 1, state: null }), 'invalid');
     await expectStorageError(saveSnapshot(db, table.id, { version: 1.5, state: {} }), 'invalid');
+  });
+});
+
+describe('deleting a table for good', () => {
+  /** How many rows each of a table's records has. */
+  async function rowsFor(tableId: string) {
+    const out: Record<string, number> = {};
+    for (const t of ['tables', 'table_snapshots', 'settings_changes', 'hands', 'table_log', 'hidden_tables', 'shared_hands']) {
+      const [row] = await queryRows<{ n: number }>(db, sql.raw(`select count(*)::int as n from ${t} where ${t === 'tables' ? 'id' : 'table_id'} = '${tableId}'`));
+      out[t] = row.n;
+    }
+    return out;
+  }
+
+  async function tableWithRecords() {
+    const table = await createTable(db, { ownerPlayerId: host, settings: SETTINGS });
+    await saveSnapshot(db, table.id, { version: 1, state: { handNumber: 1 } });
+    await updateTableSettings<Settings>(db, table.id, { settings: { ...SETTINGS, turnSeconds: 20 }, actorPlayerId: host, effectiveHand: 2 });
+    const q = (s: string) => db.execute(sql.raw(s));
+    await q(`insert into hands (id, table_id, number, game_id, started_at, header, events) values ('h-${table.id}', '${table.id}', 1, 'nlh', now(), '{}', '[]')`);
+    await q(`insert into table_log (table_id, kind, at, item) values ('${table.id}', 'chat', now(), '{"text":"gl"}')`);
+    await q(`insert into hidden_tables (player_id, table_id) values ('${cohost}', '${table.id}')`);
+    await q(`insert into shared_hands (id, table_id, hand_number, created_by, snapshot) values ('sh-${table.id}', '${table.id}', 1, '${host}', '{}')`);
+    return table;
+  }
+
+  it('deletes a cash table with its hands, log, snapshot, settings log, hidden marks and share links', async () => {
+    const table = await tableWithRecords();
+    const other = await tableWithRecords();
+    expect(await rowsFor(table.id)).toEqual({ tables: 1, table_snapshots: 1, settings_changes: 1, hands: 1, table_log: 1, hidden_tables: 1, shared_hands: 1 });
+    expect(await deleteTableForGood(db, table.id)).toBe(true);
+    expect(await rowsFor(table.id)).toEqual({ tables: 0, table_snapshots: 0, settings_changes: 0, hands: 0, table_log: 0, hidden_tables: 0, shared_hands: 0 });
+    // Another table's records stay.
+    expect(Object.values(await rowsFor(other.id)).every((n) => n === 1)).toBe(true);
+    expect(await deleteTableForGood(db, table.id)).toBe(false);
+  });
+
+  it('refuses a tournament table', async () => {
+    await createTable(db, { id: 'tourney-del', ownerPlayerId: host, settings: SETTINGS, mode: 'tournament', tournamentId: 'tour-1' });
+    await expectStorageError(deleteTableForGood(db, 'tourney-del'), 'conflict');
+    expect(await getTable(db, 'tourney-del')).not.toBeNull();
+  });
+
+  it('refuses, and deletes nothing, while a row it does not know about still points at the table', async () => {
+    const table = await tableWithRecords();
+    await db.execute(sql`create table delete_test_refs (table_id text not null references tables (id))`);
+    try {
+      await db.execute(sql`insert into delete_test_refs (table_id) values (${table.id})`);
+      await expectStorageError(deleteTableForGood(db, table.id), 'conflict');
+      expect(Object.values(await rowsFor(table.id)).every((n) => n === 1)).toBe(true);
+    } finally {
+      await db.execute(sql`drop table delete_test_refs`);
+    }
   });
 });

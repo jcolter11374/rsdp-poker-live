@@ -104,6 +104,11 @@ jobs:
         run: |
           docker stop -t 30 rsdp-next
           test "$(docker inspect rsdp-next --format '{{.State.ExitCode}}')" = 0
+          # The server logs this line when its 10 s fallback stops it, skipping whatever its shutdown hadn't reached.
+          if docker logs rsdp-next 2>&1 | grep '^shutdown: gave up'; then
+            echo "::error::This pull request's server didn't finish shutting down by itself."
+            exit 1
+          fi
 
       # If a release goes wrong, going back to main's image must still work on the data the release touched.
       - name: Roll back to main's image on the upgraded volume
