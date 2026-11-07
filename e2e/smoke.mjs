@@ -475,10 +475,9 @@ try {
 
   await step("phone: other players' cards keep off their neighbours' names and stacks", async () => {
     // On a phone, the row of cards above a player's nameplate once covered the next player's name and stack, most of all at
-    // Omaha tables, in the top corners (#318). Two players side by side in the top corner of nine seats, four cards each:
-    // at each phone size, no row of cards covers another player's name or stack, and none goes off the screen.
+    // full Omaha tables, in the top corners (#318). A full 9-seat Omaha table, four cards each: at each phone size, no row
+    // of cards covers another player's name or stack, and none goes off the screen.
     const host = await open('phone host');
-    const guests = [await open('phone guest 1'), await open('phone guest 2')];
     await host.goto(BASE);
     await host.fill('input[required]', 'Pat');
     await host.click('button:has-text("Create table")');
@@ -490,18 +489,20 @@ try {
     await host.click('.tabs button:has-text("Game")');
     await host.locator('.field:has-text("Game") select, label:has-text("Game") select').first().selectOption('plo4');
     await host.click('.modal button:has-text("Save")');
-    // Seats 6 and 7 of 9 (the fifth empty seat each time): the top right corner, seen from seat 1 at the bottom.
-    for (const [i, guest] of guests.entries()) {
+    // Everyone else sits down: seats fill in order, so the table is full and the rows are side by side.
+    const guests = [];
+    for (const name of ['Bea', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy']) {
+      const guest = await open(`phone guest ${name}`);
       await guest.goto(host.url());
-      await guest.locator('.seat.empty button').nth(4).click();
-      await guest.fill('.modal input[required]', ['Fay', 'Gus'][i]);
+      await guest.locator('.seat.empty button').first().click();
+      await guest.fill('.modal input[required]', name);
       await guest.click('button:has-text("Ask to sit")');
       await host.click('.request button:has-text("Approve")');
       await guest.waitForSelector('.seat.me');
+      guests.push(guest);
     }
     await host.click('button:has-text("Start game")');
-    await host.waitForFunction(() => document.querySelectorAll('.seat:not(.me) .hole .playing-card').length === 8);
-    if (await host.locator('.side.drawer.open').count()) await host.keyboard.press('Escape');
+    await host.waitForFunction(() => document.querySelectorAll('.seat:not(.me) .hole:not(.mucked) .playing-card').length === 32);
     for (const [width, height] of [[390, 844], [390, 664], [360, 640], [430, 932]]) {
       await host.setViewportSize({ width, height });
       // Seats glide to their new spots (0.4s), then the rows are set out.
@@ -526,8 +527,8 @@ try {
         return found;
       });
       if (problems.length) throw new Error(`at ${width}x${height}: ${problems.join(', ')}`);
+      await host.screenshot({ path: path.join(OUT, `phone-omaha-${width}x${height}.png`) });
     }
-    await host.screenshot({ path: path.join(OUT, 'phone-omaha.png') });
     await host.setViewportSize({ width: 1280, height: 860 });
     await stopGame(host, [host, ...guests]);
   });

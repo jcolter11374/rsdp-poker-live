@@ -162,9 +162,10 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: st
     const plate = me?.querySelector<HTMLElement>('.nameplate');
     const cards = me?.querySelectorAll('.hole:not(.mucked) .playing-card').length ?? 0;
     let next: MyHandFit | null = null;
+    let natural: HandFit | undefined;
     if (el && compact && plate && cards >= 2) {
       const sideways = window.matchMedia('(max-height: 500px)').matches;
-      const natural = PHONE_HAND[sideways ? 'sideways' : 'upright'][cards <= 3 ? 'few' : cards === 4 ? 'four' : 'more'];
+      natural = PHONE_HAND[sideways ? 'sideways' : 'upright'][cards <= 3 ? 'few' : cards === 4 ? 'four' : 'more'];
       const others = [...el.querySelectorAll<HTMLElement>('.seat:not(.me)[data-seat] .nameplate')].map((p) =>
         hold(Number(p.closest<HTMLElement>('.seat')!.dataset.seat), plateBox(p.getBoundingClientRect())),
       );
@@ -187,7 +188,8 @@ function useHandFit(felt: RefObject<HTMLElement>, compact: boolean, plateKey: st
     }
     // A nameplate gets a little wider or narrower as its stack or the line under it changes. Following that by a pixel or
     // two would only make the cards jiggle, so a move that small is left out.
-    const sized = (f: MyHandFit | null) => (f ? `${f.cw}/${f.overlap}` : '');
+    // (No fit and the usual size moved aside a little count as the same size.)
+    const sized = (f: MyHandFit | null) => (!f || (f.cw === natural?.cw && f.overlap === natural.overlap) ? '' : `${f.cw}/${f.overlap}`);
     if (sized(next) !== sized(fit) || Math.abs((next?.shift ?? 0) - (fit?.shift ?? 0)) > JIGGLE) setFit(next);
   });
   return fit;
@@ -229,6 +231,8 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean, plateKey: s
   useLayoutEffect(() => {
     const el = felt.current;
     const next: Record<number, RowSpot> = {};
+    // Seats with a row of cards on the table now.
+    const live = new Set<number>();
     if (el && compact) {
       const size = PHONE_ROW[window.matchMedia('(max-height: 500px)').matches ? 'sideways' : 'upright'];
       const seats = [...el.querySelectorAll<HTMLElement>('.seat[data-seat]')].map((s) => ({
@@ -236,16 +240,20 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean, plateKey: s
         me: s.classList.contains('me'),
         plate: hold(Number(s.dataset.seat), plateBox(s.querySelector<HTMLElement>('.nameplate')!.getBoundingClientRect())),
         cards: s.querySelectorAll('.hole:not(.mucked) .playing-card').length,
+        mucked: !!s.querySelector('.hole.mucked .playing-card'),
       }));
       // The row's bottom edge sits 3px down the nameplate (styles.css: bottom: calc(100% - 3px)), counted from a plain plate's top.
       const band = (plate: Box) => ({ top: plate.top + 3 - size.height, bottom: plate.top + 3 });
       const mine = el.querySelector<HTMLElement>('.seat.me .hole')?.getBoundingClientRect();
       const rows = seats.filter((s) => !s.me && s.cards > 0);
       for (const r of rows) {
+        live.add(r.seat);
         const at = band(r.plate);
         // A seat drawn later covers an earlier one. So these cards may reach a little further into the bottom of an earlier
-        // seat's nameplate above them (10px in all): nothing is written there (the stack ends 12px above its bottom), and
-        // the cards keep their size instead of bunching up. A nameplate drawn over the cards would hide their rank and suit.
+        // seat's nameplate above them (10px in all), and keep their size instead of bunching up: a plain nameplate has
+        // nothing written there (its stack ends 12px above its bottom). While that nameplate also shows a line under the
+        // stack ("Call 0.50", a hand's name), the cards can cover the bottom of that line. The other way round, a nameplate
+        // drawn over the cards would hide their rank and suit, so there the usual 4px holds.
         const blocks: Box[] = seats.filter((s) => s !== r).map((s) => (s.seat < r.seat ? { ...s.plate, bottom: s.plate.bottom - PADDING_UNDER_STACK } : s.plate));
         if (mine?.width) blocks.push(mine);
         for (const o of rows) {
@@ -261,11 +269,24 @@ function useRowSpots(felt: RefObject<HTMLElement>, compact: boolean, plateKey: s
         const place = placeRow(r.plate, at, blocks, { left: 0, right: document.documentElement.clientWidth }, { cards: r.cards, cw: size.cw, step }, { minCw: size.minCw });
         if (place) next[r.seat] = { shift: place.shift, ...(place.step < step || place.cw < size.cw ? { margin: place.step - place.cw - 2, cw: place.cw } : {}) };
       }
+      // A folded hand slides to the middle from where it was, as it was, instead of jumping back over its nameplate first.
+      for (const s of seats) {
+        if (!s.mucked || !spots[s.seat]) continue;
+        live.add(s.seat);
+        next[s.seat] = spots[s.seat];
+      }
     }
-    // As for your own hand, a row that would move by only a pixel or two stays where it is.
-    const near = (a: RowSpot | undefined, b: RowSpot) => !!a && a.margin === b.margin && a.cw === b.cw && Math.abs(a.shift - b.shift) <= JIGGLE;
+    // As for your own hand, a row that would move by only a pixel or two stays where it is (no spot is a shift of 0).
+    const centred: RowSpot = { shift: 0 };
+    const near = (a: RowSpot, b: RowSpot) => a.margin === b.margin && a.cw === b.cw && Math.abs(a.shift - b.shift) <= JIGGLE;
     const kept: Record<number, RowSpot> = {};
-    for (const [k, v] of Object.entries(next)) kept[+k] = near(spots[+k], v) ? spots[+k] : v;
+    for (const k of new Set([...Object.keys(next), ...Object.keys(spots)].map(Number))) {
+      const was = spots[k];
+      const now = next[k];
+      const keep = live.has(k) && near(was ?? centred, now ?? centred);
+      const v = keep ? was : now;
+      if (v) kept[k] = v;
+    }
     const same = Object.keys(kept).length === Object.keys(spots).length && Object.entries(kept).every(([k, v]) => spots[+k] === v);
     if (!same) setSpots(kept);
   });
