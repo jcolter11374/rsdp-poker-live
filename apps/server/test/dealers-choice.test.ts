@@ -1172,6 +1172,35 @@ describe("Dealer's choice: the first hand's button and a holder who is moved (th
     expect(checked).toBeGreaterThan(2);
   });
 
+  it('starts afresh at once when it restores a paused new table everyone left, saved by older code with its pick clock (fifth review)', () => {
+    for (let n = 1; n <= 4; n++) {
+      const { rt, clock } = table(() => {}, seeded(n));
+      rt.requestSeat('a', { seat: 2, name: 'A', stack: 1000 });
+      rt.requestSeat('b', { seat: 5, name: 'B', stack: 1000 });
+      rt.start('host');
+      clock.advance(5_000);
+      rt.pause('host', true);
+      const kept = { choice: JSON.parse(JSON.stringify(rt.state.choice)), pausedLeft: { ...rt.state.pausedLeft! }, nextHandAt: rt.state.nextHandAt };
+      expect(kept.pausedLeft.pick).toBe(15_000);
+      rt.stand('a');
+      rt.stand('b');
+      // What older code saved: the choice, its first button on an empty seat, and the paused clocks, all kept.
+      Object.assign(rt.state, kept);
+      const saved = JSON.parse(JSON.stringify(rt.state));
+      rt.dispose();
+      const back = new TableRuntime(saved, { clock, rng: seeded(n) });
+      back.resume();
+      for (const p of PEOPLE) back.connect(p);
+      expect(back.state.choice).toBeUndefined();
+      back.requestSeat('c', { seat: 5, name: 'C', stack: 1000 });
+      back.requestSeat('d', { seat: 0, name: 'D', stack: 1000 });
+      back.pause('host', false);
+      clock.advance(1);
+      expect(back.choice.chooser()).toBeTruthy();
+      expect(back.state.choice!.deadline! - clock.now()).toBeGreaterThan(19_000);
+    }
+  });
+
   it('keeps the chip with a holder who is sitting out when the host moves them, so whoever sits in their old seat never takes it', () => {
     let checked = 0;
     for (let n = 1; n <= 12; n++) {

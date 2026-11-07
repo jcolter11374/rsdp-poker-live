@@ -294,6 +294,8 @@ export interface ChoicePickView {
   gameName: string;
   /** Who picked it; null when nobody did (a missed pick, or nobody could pick). */
   by: string | null;
+  /** The seat they picked from (null as for `by`). Missing from servers before 2026.11.07.4. */
+  seat?: number | null;
   /** picked: a person chose it; bot: a practice bot did; kept: the game carried on (on purpose or a missed pick); default: nobody could pick. */
   how: 'picked' | 'bot' | 'kept' | 'default';
 }

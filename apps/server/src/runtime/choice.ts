@@ -490,7 +490,7 @@ export class DealersChoice {
     const s = this.s;
     const c = s.choice ?? null;
     const now = this.host.now();
-    const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, how: g.how };
+    const pickView = (g: ChoicePick | null): ChoicePickView | null => g && { gameId: g.gameId, betting: g.betting, gameName: gameTitle(g.gameId, g.betting), by: g.by, seat: g.seat, how: g.how };
     // While paused the clock stands still: it shows what resuming now would give. Once the pick is made there is none.
     // (No clock runs while a host's change waits: the change applies before the table can wait for a pick.)
     const deadline = c?.deadline == null ? null : s.paused && s.pausedLeft?.pick != null ? now + s.pausedLeft.pick : c.deadline;

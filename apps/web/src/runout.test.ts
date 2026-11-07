@@ -47,7 +47,7 @@ function finished(): TableView {
 /** The table just before the runout. */
 const before_ = (): Frozen => before();
 /** With C sitting in seat 2 as well. */
-const withC = (f: Frozen): Frozen => ({ ...f, seats: [...f.seats, { ...f.seats[1]!, seat: 2, playerId: 'c', name: 'C', stack: 50 }] });
+const withC = <T extends { seats: TableView['seats'] }>(f: T): T => ({ ...f, seats: [...f.seats.slice(0, 2), { ...f.seats[1]!, seat: 2, playerId: 'c', name: 'C', stack: 50 }] });
 const before = (): Frozen => ({ logCut: 10, seats: finished().seats, ledger: [], me: { playerId: 'a', seat: 0 }, nit: null, rotation: null });
 
 describe('holdBack', () => {
@@ -118,12 +118,12 @@ describe('holdBack', () => {
       const base = finished();
       const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
       events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
-      const live = { ...base, hand: { ...base.hand!, events }, choice: choice(2, true) } as TableView;
+      const live = { ...withC(base), hand: { ...base.hand!, events }, choice: choice(2, true) } as TableView;
       const frozen = { ...withC(before()), choice: choice(2, true), sameHand: true };
       expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, true));
       // They pick: the pick shows, and the tag waits for the result (it passes over anyone who busted).
-      const picked = { ...live, choice: choice(0, false, { next: { ...razz, by: 'C' } }) } as TableView;
-      expect(holdBack(picked, frozen, 0).choice).toEqual(choice(2, false, { next: { ...razz, by: 'C' } }));
+      const picked = { ...live, choice: choice(0, false, { next: { ...razz, by: 'C', seat: 2 } }) } as TableView;
+      expect(holdBack(picked, frozen, 0).choice).toEqual(choice(2, false, { next: { ...razz, by: 'C', seat: 2 } }));
       // A table without Dealer's choice: nothing to hold. Nobody who could pick before: the tag shows with the result.
       expect(heldChoice({ ...live, choice: undefined } as TableView, before())).toBeUndefined();
       expect(heldChoice(live, { ...before(), choice: choice(null, false) })).toEqual(choice(null, false));
@@ -198,13 +198,16 @@ describe('holdBack', () => {
       const base = finished();
       const events = base.hand!.events.map((e) => (e.t === 'hand-start' ? { ...e, seats: [...e.seats, { seat: 2, playerId: 'c', stack: 50 }] } : e));
       events.splice(1, 0, { seq: 0.5, t: 'action', seat: 2, action: 'fold', amount: 0, to: 0, allIn: false, auto: false } as unknown as HandEvent);
-      const bot = { gameId: 'badugi', betting: 'fixed-limit', by: 'Ace', how: 'bot' };
+      const bot = { gameId: 'badugi', betting: 'fixed-limit', by: 'Ace', seat: 3, how: 'bot' };
       const live = { ...base, hand: { ...base.hand!, events }, choice: choice(1, false, { current: nlheB, next: bot, count: 6, cap: 6, closed: true }) } as TableView;
       const frozen = { ...withC(before()), choice: choice(2, true, { current: nlheB, count: 6, cap: 10 }), sameHand: true };
       expect(holdBack(live, frozen, 0).choice).toEqual(choice(2, false, { current: nlheB, count: 6, cap: 10 }));
-      // C picking it themselves before they left shows, as any pick by a chooser who isn't in the all-in.
-      const own = { ...live, choice: { ...live.choice!, next: { ...bot, by: 'C', how: 'picked' } } } as TableView;
+      // C, still in their seat, picking it themselves shows, as any pick by a chooser who isn't in the all-in.
+      const own = { ...withC(live), choice: { ...live.choice!, next: { ...bot, by: 'C', seat: 2, how: 'picked' } } } as TableView;
       expect(holdBack(own, frozen, 0).choice).toMatchObject({ chip: 2, next: { by: 'C' }, cap: 6, closed: true, open: false });
+      // C sat out instead, and another player who also goes by "C" picked in their place: it waits (names aren't unique).
+      const namesake = { ...withC(live), choice: { ...live.choice!, next: { ...bot, by: 'C', seat: 3, how: 'picked' } } } as TableView;
+      expect(holdBack(namesake, frozen, 0).choice).toEqual(choice(2, false, { current: nlheB, count: 6, cap: 10 }));
     });
 
     it("shows a folded chooser the fallback game for the count before the result", () => {

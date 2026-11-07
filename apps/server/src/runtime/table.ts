@@ -226,12 +226,12 @@ export class TableRuntime {
     });
     // Dealer's choice: a snapshot from before #421 can have the first hand's button on the empty seat of a first chooser
     // who picked and left. It goes on to the next player round, as a leaver's does now, so whoever sits there doesn't
-    // take it; at a new table nobody is left at, it starts afresh.
+    // take it; at a new table nobody is left at, it starts afresh, without waiting out the old pick clock.
     const c = state.choice;
     if (c && c.firstButton !== null && !state.seats[c.firstButton]) {
       const next = this.seatedFrom(c.firstButton);
       if (next) c.firstButton = next.seat;
-      else state.choice = undefined;
+      else this.freshChoice();
     }
     // Older snapshots could queue spectators seeing every card for the next hand. It now applies at once and only
     // between hands, so a queued "on" is dropped (the host turns it on again, announced) and a queued "off" applies now.

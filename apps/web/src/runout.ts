@@ -166,7 +166,9 @@ export function heldChoice(view: TableView, before: Frozen): TableView['choice']
   // if they made it: anyone else's was made in their place (they left or sat out), and the server may have passed
   // over someone who busted to get to them.
   const fresh = one ? !!live.next : !samePick(live.next, was.next);
-  const theirs = !!live.next && chip !== null && live.next.by === before.seats[chip]?.name;
+  // Theirs: picked from the seat with the tag, by the player who had it before the result and still has it. (Names
+  // aren't unique. A server from before the pick's seat was sent leaves it out: the pick then waits, which is safe.)
+  const theirs = !!live.next && chip !== null && live.next.seat === chip && !!before.seats[chip] && view.seats[chip]?.playerId === before.seats[chip]!.playerId;
   const held = inHand ? fresh : fresh && !!live.next && !theirs;
   const cap = !held ? live.cap : one ? capOf(live.current) : was.cap;
   // Closed: the held count fills the limit, or it was closed before the result for this same limit (a seat request,
