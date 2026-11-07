@@ -270,17 +270,21 @@ export function seatsFine(fractions: readonly number[], taken: readonly boolean[
 
 /**
  * How much the felt's width or height may change, from the size the seats were placed at, before they're placed afresh
- * (#410). The dock and the top bar change height by a few pixels in the middle of a hand: the most #410 measured was
- * 17px on a felt about 400px tall.
+ * (#410): FELT_SLACK of it, or FELT_SLACK_PX on a small felt. The dock and the top bar change height by a few pixels in
+ * the middle of a hand: the most #410 measured was 17px, on a felt about 400px tall, and a laptop's felt can be nearer
+ * 300px.
  */
 export const FELT_SLACK = 0.05;
+export const FELT_SLACK_PX = 20;
 
 /**
  * Whether seats placed earlier (`was`, from placements keyed `key`) stay where they are at a w×h felt: the same
- * placement key, and a felt within FELT_SLACK of the size they were placed at. They still have to fit (see placeSeats).
+ * placement key, and a felt within the slack (above) of the size they were placed at. They still have to fit (see
+ * placeSeats).
  */
 export function keepPlaced<T extends { key: string; w: number; h: number }>(was: T | null, key: string, w: number, h: number): was is T {
-  return !!was && was.key === key && w > 0 && Math.abs(w - was.w) <= was.w * FELT_SLACK && Math.abs(h - was.h) <= was.h * FELT_SLACK;
+  const near = (now: number, then: number) => Math.abs(now - then) <= Math.max(then * FELT_SLACK, FELT_SLACK_PX);
+  return !!was && was.key === key && w > 0 && near(w, was.w) && near(h, was.h);
 }
 
 /**

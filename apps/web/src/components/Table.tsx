@@ -338,8 +338,6 @@ interface Flight {
   kind: 'sweep' | 'award';
 }
 
-/** How much the felt's width or height may change, as a share of it, before the seats are placed afresh. */
-
 let flightId = 0;
 
 export function Table({
@@ -519,13 +517,17 @@ export function Table({
       const near = keepPlaced(was, key, size.w, size.h);
       const at = placeSeats(taken, offset, w, h, { clear: clearing, minGap, box: boxOf, gap: 6, keep: near ? was.at : undefined });
       // Kept seats keep the size they were placed for, so a run of small changes can't carry them across a big one.
-      const record = near && at === was.at ? was : { key, w, h, at };
-      return { at, record, current: b.key === current, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
+      const kept = near && at === was.at;
+      const record = kept ? was : { key, w, h, at };
+      return { at, record, kept, current: b.key === current, fine: [...taken.keys()].some((seat) => !boxOf(seat)) || seatsFine(at, taken, w, h, boxOf) };
     };
     let at: readonly number[];
     try {
-      let done = place(sized, clear, sizedKey);
-      if (mixed && !done.fine) done = place(sizedNow, clearNow, nowKey);
+      // A mixed table spaced for the game on now (below) stays that way while its seats are kept: trying every game's
+      // boxes first would swap it between the two spacings whenever a few pixels tipped those in or out of fitting.
+      const stay = mixed ? place(sizedNow, clearNow, nowKey) : null;
+      let done = stay?.kept && stay.fine ? stay : place(sized, clear, sizedKey);
+      if (mixed && !done.fine) done = stay!;
       at = done.at;
       // Seats placed with boxes from before this size and scale (the render before they're measured again) aren't
       // kept: the first measure of the felt would otherwise keep a spacing worked out for boxes at another scale.

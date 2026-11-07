@@ -331,6 +331,12 @@ describe('keepPlaced (#410: seats kept through a small change to the felt)', () 
     expect(keepPlaced(was, was.key, 646, 385)).toBe(true);
     expect(keepPlaced(was, was.key, 640, 410)).toBe(true);
   });
+  it('keeps them through 20px on a small felt, where that is more than 5% (a laptop window with its browser bars)', () => {
+    const small = { ...was, h: 320 };
+    expect(keepPlaced(small, was.key, 646, 303)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 300)).toBe(true);
+    expect(keepPlaced(small, was.key, 646, 299)).toBe(false);
+  });
   it('places them afresh after a bigger change, a new key, or before anything was placed or measured', () => {
     expect(keepPlaced(was, was.key, 646, Math.floor(402 * (1 - FELT_SLACK)) - 1)).toBe(false);
     expect(keepPlaced(was, was.key, 700, 402)).toBe(false);

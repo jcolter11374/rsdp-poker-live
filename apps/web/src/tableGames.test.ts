@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '@rsdp/engine/settings';
 import { dealtSizes } from './handSizes';
-import { dealableGames, tableGames, tournamentGames } from './tableGames';
+import { dealableGames, tableAllLimit, tableGames, tournamentAllLimit, tournamentGames } from './tableGames';
 
 describe('the games a table is laid out for (#409)', () => {
   it("is a cash table's one game, its rotation, or its Dealer's choice menu", () => {
@@ -34,5 +34,35 @@ describe('the games a table is laid out for (#409)', () => {
     expect(dealtSizes(['nlhe', 'plo8', 'razz', 'stud', 'stud8'])).toEqual([2, 3, 4, 5, 6, 7]);
     expect(dealtSizes(['td27', 'badugi', 'plo4'])).toEqual([4, 5]);
     expect(dealtSizes([])).toEqual([]);
+  });
+});
+
+describe('whether a table only deals Limit games, so the bar under it needs less room (#409)', () => {
+  it("follows a cash table's one game, its rotation, or its Dealer's choice menu", () => {
+    const s = defaultSettings('cash');
+    s.game.gameId = 'nlhe';
+    s.game.betting = 'no-limit';
+    expect(tableAllLimit(s)).toBe(false);
+    s.game.betting = 'fixed-limit';
+    expect(tableAllLimit(s)).toBe(true);
+    const horse = [{ gameId: 'nlhe', betting: 'fixed-limit' as const, length: 1, unit: 'hands' as const }, { gameId: 'stud', betting: 'fixed-limit' as const, length: 1, unit: 'hands' as const }];
+    s.game.betting = 'no-limit';
+    s.game.rotation = { enabled: true, steps: horse };
+    // The rotation's own betting counts, not the table's game's.
+    expect(tableAllLimit(s)).toBe(true);
+    s.game.rotation.steps = [...horse, { gameId: 'plo4', betting: 'pot-limit', length: 1, unit: 'hands' }];
+    expect(tableAllLimit(s)).toBe(false);
+    s.game.rotation.enabled = false;
+    s.game.dealersChoice = { enabled: true, games: [{ gameId: 'razz', betting: 'fixed-limit' }, { gameId: 'nlhe', betting: 'fixed-limit' }], hands: 0, pickSeconds: 20 };
+    expect(tableAllLimit(s)).toBe(true);
+    s.game.dealersChoice.games.push({ gameId: 'nlhe', betting: 'no-limit' });
+    expect(tableAllLimit(s)).toBe(false);
+  });
+  it("follows a tournament's betting for each game, each game's usual betting, and any level's own game", () => {
+    const level = { kind: 'level' as const, sb: 25, bb: 50, ante: 0, anteType: 'per-player' as const, minutes: 10 };
+    expect(tournamentAllLimit({ games: ['nlhe'], structure: [level] })).toBe(false);
+    expect(tournamentAllLimit({ games: ['nlhe', 'stud'], gameBetting: ['fixed-limit', null], structure: [level] })).toBe(true);
+    expect(tournamentAllLimit({ games: ['stud', 'razz'], structure: [level, { ...level, gameId: 'plo4' }] })).toBe(false);
+    expect(tournamentAllLimit({ games: ['stud', 'razz'], structure: [level, { ...level, gameId: 'stud8' }] })).toBe(true);
   });
 });

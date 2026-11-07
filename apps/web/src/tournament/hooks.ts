@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { TournamentState } from '@rsdp/tournament';
 import { socket } from '../socket';
 import { tournamentClient, type Session } from './client';
-import { tournamentGames } from '../tableGames';
+import { tournamentAllLimit, tournamentGames } from '../tableGames';
 
 /** Re-renders every `ms` with the current time. */
 export function useNow(ms = 1000): number {
@@ -53,17 +53,20 @@ export function useTournament(id: string) {
 }
 
 /**
- * Every game a tournament deals (see tournamentGames), for laying out its tables; empty until it loads, or with no
- * tournament. Only a change to the list re-renders.
+ * Every game a tournament deals (see tournamentGames), for laying out its tables, and whether they're all played Limit
+ * (see tournamentAllLimit); no games until it loads, or with no tournament. Only a change to those re-renders.
  */
-export function useTournamentGames(id: string | null): string[] {
+export function useTournamentGames(id: string | null): { games: string[]; allLimit: boolean } {
   const [key, setKey] = useState('');
   useEffect(() => {
     setKey('');
     if (!id) return;
-    return tournamentClient().subscribe(id, (v) => setKey(tournamentGames(v.state.settings).join(',')), () => {});
+    return tournamentClient().subscribe(id, (v) => setKey(`${tournamentGames(v.state.settings).join(',')}|${tournamentAllLimit(v.state.settings) ? 'limit' : ''}`), () => {});
   }, [id]);
-  return useMemo(() => (key ? key.split(',') : []), [key]);
+  return useMemo(() => {
+    const [games, limit] = key.split('|');
+    return { games: games ? games.split(',') : [], allLimit: limit === 'limit' };
+  }, [key]);
 }
 
 /** Changes page without reloading; App follows popstate. */
