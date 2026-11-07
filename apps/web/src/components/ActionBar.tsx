@@ -30,6 +30,7 @@ export function ActionBar({
   setDiscard,
   onPreAction,
   onRules,
+  note = null,
 }: {
   view: TableView;
   fmt: Fmt;
@@ -44,6 +45,8 @@ export function ActionBar({
   onPreAction?: (queued: boolean) => void;
   /** Opens How to play (from a coach tip's Why sheet). */
   onRules?: () => void;
+  /** Before the first hand, on a small phone table: what happens next (#383), as the empty bar's text. */
+  note?: string | null;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
@@ -376,7 +379,7 @@ export function ActionBar({
 
   // After the hand: show cards you were not made to show.
   if (hand?.phase === 'complete' || !hand) {
-    if (!view.canShow.length) return <div className="action-bar idle">{hint}</div>;
+    if (!view.canShow.length) return <div className="action-bar idle">{note ? <div className="bar-note" role="status">{note}</div> : hint}</div>;
     return (
       <div className="action-bar idle">
         {hint}

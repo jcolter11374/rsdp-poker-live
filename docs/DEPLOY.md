@@ -1,4 +1,4 @@
-# Deploying RSDP Poker Live!
+# Deploying RSDP Live!
 
 The whole site is one container: the game server plus the built web app, built from the `Dockerfile` at the repo root. On every pull request, CI builds an image from that Dockerfile and runs the browser smoke test against it. The deploy builds its own image from the same commit (see [Fly.io](#flyio-production)).
 

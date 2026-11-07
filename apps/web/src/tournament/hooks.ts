@@ -1,16 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TournamentState } from '@rsdp/tournament';
 import { socket } from '../socket';
 import { tournamentClient, type Session } from './client';
 
-/** Re-renders every `ms` with the current time. */
+/** One timer for each interval, so clocks on the same page (the strip's and the top bar's) tick together. */
+interface Ticker {
+  now: number;
+  listeners: Set<(now: number) => void>;
+  timer: ReturnType<typeof setInterval>;
+}
+const tickers = new Map<number, Ticker>();
+
+/** Re-renders every `ms` with the current time, on the same tick as everything else here that asks for `ms`. */
 export function useNow(ms = 1000): number {
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useState(() => tickers.get(ms)?.now ?? Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(t);
+    let ticker = tickers.get(ms);
+    if (!ticker) {
+      const listeners = new Set<(now: number) => void>();
+      const t: Ticker = { now: Date.now(), listeners, timer: setInterval(() => listeners.forEach((l) => l((t.now = Date.now()))), ms) };
+      tickers.set(ms, t);
+      ticker = t;
+    }
+    ticker.listeners.add(setNow);
+    setNow(ticker.now);
+    const mine = ticker;
+    return () => {
+      mine.listeners.delete(setNow);
+      if (!mine.listeners.size) {
+        clearInterval(mine.timer);
+        tickers.delete(ms);
+      }
+    };
   }, [ms]);
   return now;
+}
+
+/** `value`, or while `holding`, the value it had when the holding began. */
+export function useHeld<T>(value: T, holding: boolean): T {
+  const kept = useRef(value);
+  if (!holding) kept.current = value;
+  return holding ? kept.current : value;
 }
 
 export function useSession(): Session | null {

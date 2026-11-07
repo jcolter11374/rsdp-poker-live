@@ -1,6 +1,6 @@
 # Decisions
 
-The lasting decisions behind RSDP Poker Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
+The lasting decisions behind RSDP Live!: what was decided, by whom, when, why, and where it shows in the code. Read this before changing something that looks odd. It may be on purpose.
 
 How this file works:
 
@@ -45,7 +45,9 @@ How this file works:
 | [D32](#d32-a-database-engine-that-changes-postgres-version-moves-in-three-releases) | A database engine that changes Postgres version moves in three releases | 2026-11-06 | Claude |
 | [D33](#d33-dealers-choice) | Dealer's choice | 2026-11-06 | John; the fine print Claude |
 | [D34](#d34-releases-go-out-when-theyre-ready-not-at-a-quiet-time) | Releases go out when they're ready, not at a quiet time | 2026-11-07 | John |
-| [D36](#d36-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
+| [D35](#d35-the-site-is-called-rsdp-live) | The site is called RSDP Live! | 2026-11-07 | John |
+| [D36](#d36-a-worked-out-stud-bring-in-is-a-round-amount) | A worked-out stud bring-in is a round amount | 2026-11-07 | Claude |
+| [D37](#d37-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
 
 ---
 
@@ -384,8 +386,12 @@ How this file works:
   - **The default:** a missed pick keeps the current game if it is still on the menu and fits the table; otherwise the first game on the menu that fits. A fixed rule, so everyone knows what will happen.
   - **An orbit gets shorter** when players leave: it ends once it has had as many hands as were dealt into its first hand, or as the next hand would deal in if that is fewer (so when someone leaves before the last hand, the pick can be due at once). Someone sitting out a hand shortens it only while they are out: back in, the orbit is its full length again.
   - **A table made smaller** by the host: the Pick chip moves with its player into their new seat. If its seat is empty and goes, it passes to the next player round from it, who would have picked anyway.
+  - **The host moves a player or shuffles the seats:** the Pick chip stays with the player who holds it, in their new seat. If its holder is sitting out or away and the change would put the PICK tag on someone else (whoever picks in their place depends on the seating), the chip goes for good to whoever had the tag. The host sets the menu, never the pick, so no seat change gives the next pick to someone else. Who picks after them follows the new seating. At a new table the first hand's button goes with the first chooser too; after the first hand, a shuffle draws the button afresh as usual.
+  - **A chooser who leaves** gives up the Pick chip: it goes to the next player round from their seat, who would pick in their place anyway. Whoever sits down in that seat later, or a bot the host adds there, doesn't take it. At a new table the first hand's button goes with it. (While a holder sits out, whoever picks in their place is the first player round from them who can pick, so someone sitting down in between picks instead: the seating decides, as for any skip.)
+  - **An all-in runout:** while the cards are dealt out, the PICK tag stays where it was, since once the server has the result it passes over anyone who busted. A chooser in that all-in picks once the result shows; their pick clock only starts after it. A chooser not in it can pick as usual.
   - **Seats while a smaller game is on:** from the moment a game is picked (or kept) until the next game starts, the table seats nobody beyond that game's limit, counting seats held for a waitlist offer or a seat request as taken. Someone taking a seat held for them (their waitlist offer, or their seat request the host approves) counts only the other waitlist offers, as the check that the game fits does, so a seat request never blocks the offer the game was picked with. Empty seats show as closed, and the waitlist, seat requests and new bots wait. A spectator watching on a delay who tries to sit in a closed seat is told only that it is closed, not which game was picked. A game "fits" when the seated players plus anyone offered a seat from the waitlist are no more than it seats. Seat requests don't count toward that, because only the host sees them; they wait while a smaller game is on. The host can't save a menu where no game fits, and the table has no more seats than the menu's biggest game.
   - **A host's change** to the menu applies from the next pick. Editing the menu never moves the chip or restarts the orbit, and a pick already made stands even if its game comes off the menu.
+  - **A host's change during a hand** waits for the next hand, and picking follows it (#423, #425). A game coming off the menu can't be picked or kept going for the next hand, and isn't what a missed pick deals; if the whole menu changes, the chooser picks from the new one once the hand is over. A change to one game or a rotation ends Dealer's choice with that hand: picking closes, the PICK tag goes and the top bar says it's the last hand. A pick already made then isn't dealt, and the log says so (unless the host's new game is the one picked).
   - **What players see:** the chooser gets a "Pick the next game" panel; everyone sees the Pick chip, a "Sam is picking" line where "Next hand in" shows, and the game in the top bar. Picks go in the table log. There is no chat line: chat isn't held back for spectators on a delay, and a pick made as a hand ends would tell them it had ended.
   - **A bomb pot** counts as one hand of the orbit.
 - **Why:** card rooms (the World Series of Poker, the Asian Poker Tour) run Dealer's Choice with a separate pick button and one orbit per pick, so nobody picks a game to suit their own seat. The stud games don't show a button, and after a full orbit the button is back where it started, so "the button picks" would give the same player every pick. PokerNow doesn't offer Dealer's choice. The plan John read is linked from issue #341.
@@ -400,7 +406,21 @@ How this file works:
 - **Replaces** the quiet-time condition in D05 and the "release at a quiet time" in D25's full path. Nothing else in them changes.
 - **Where:** [DEPLOY.md](DEPLOY.md#releasing), [CONTRIBUTING.md](../CONTRIBUTING.md#full-or-light-how-much-checking-a-change-needs), [CLAUDE.md](../CLAUDE.md), [CODE_TOUR.md](CODE_TOUR.md).
 
-## D36. The cash game recap
+## D35. The site is called RSDP Live!
+
+- **Decided:** 2026-11-07, 01:29 UTC, by John: "How hard would it be to change the name of the website and all mentions from RSDP Poker Live! To RSDP Live! The poker is redundant because RSDP is an acronym where the P stands for poker." A minute later: "I do really like the design and the style so I'd like to keep that". The name had been RSDP Poker Live! since he chose it on 2026-10-25.
+- **Decision:** the site is called **RSDP Live!** everywhere it shows a name: page titles and link previews, the logo, the crest on the felt (its top arc now reads RSDP, above LIVE), the app name on a phone's home screen, the offline page, the public pages, downloaded hand histories and the docs. Only the words changed: the logo, the crest and the preview picture keep their fonts, sizes, colours and layout.
+- **Not changed, on purpose:** the web address (`rsdp-poker-live.fly.dev`), the GitHub repository, the Fly app and the ids inside the code and data, which all say `rsdp-poker-live` or `rsdp`. Changing those would break saved links and touch Google sign-in, the signed build record and the backups. John dropped that at 01:36 UTC: "Yeah the Github and web address aren't a priority. We can just drop them as a concept for the time being. I'll bring it up again if I change my mind". So don't propose it again unless he raises it. Release notes already published keep the name they had. A phone that already has the site on its home screen may keep the old label until the site is added again.
+- **Where:** issue [#391](https://github.com/jcolter11374/rsdp-poker-live/issues/391). `apps/server/test/site-name.test.ts` fails if the old name comes back. `scripts/upgrade/compare.mjs` lets a page title under the old name match the same title under the new one, so the release that renames the site passes the upgrade rehearsal.
+
+## D36. A worked-out stud bring-in is a round amount
+
+- **Decided:** 2026-11-07, by Claude, fixing the odd tournament bring-ins found in the play-test of release 2026.11.07 (issue #398). Reversible.
+- **Decision:** when the site works out a stud bring-in itself (every tournament level that doesn't set its own, and a cash table whose bring-in is left at 0), it is a third of the small bet rounded down to a round amount: 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten, the steps the tournament blinds use, and never less than 1. With Limit bets of 2,000/4,000 the bring-in is 600 (not 666), at 4,000/8,000 it is 1,000 (not 1,333), and at 1,000/2,000 it is 300. On the usual tournament levels that is between a quarter and a third of the small bet. A bring-in someone set themselves (a structure's own, or the Stakes tab's) is kept as it is, and the bring-in a new cash table fills in for the host (a third of the small bet, to the nearest nickel) doesn't change.
+- **Why:** card rooms bring in for about a quarter to a third of the small bet, in chips that are in play; 666 is an amount no dealer would ask for. Rounding down keeps it at most a third, the size the Stakes tab has always described. A fixed quarter would also give round amounts at the usual levels, but at Limit bets of 1,000/2,000 it would be 250 rather than 300, smaller than the third players already know from the cash tables.
+- **Where:** `bringInFor` in `packages/engine/src/variants/antes.ts`, used by `levelFor` in `packages/tournament/src/director.ts` and `fillStakes` in `apps/server/src/runtime/table.ts`.
+
+## D37. The cash game recap
 
 - **Decided:** 2026-11-07, while building issue #329. The details are Claude's; the roadmap had promised "a short recap ready to paste into the WhatsApp group" without saying what goes in it.
 - **Decision:** the ledger's Copy recap button gives a few plain lines about the whole table, as the ledger and Settle up do: the date of the night played, the games, how many hands and for how long, everyone's result from biggest winner down, and the biggest pot.

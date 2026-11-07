@@ -1,6 +1,6 @@
 # Privacy
 
-RSDP Poker Live! is a free, non-commercial site for one group of friends. It is
+RSDP Live! is a free, non-commercial site for one group of friends. It is
 run by John, who also runs the server. This page says, in plain words, what
 the site keeps about you, who can see it, how long it stays and how to remove
 it. It is written from what the code actually does, and the code is public on

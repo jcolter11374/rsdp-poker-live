@@ -1226,16 +1226,16 @@ export function createApp(deps: AppDeps = {}) {
       const games = menu ? `Dealer's choice of ${menu.games.length} games` : undefined;
       return tablePreview(settings.table.name, [settings.game.gameId], `${amountText(smallBlind, centsMode)}/${amountText(bigBlind, centsMode)}`, settings.game.betting, spectatorsSeeCards(settings), games);
     }
-    if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Poker Live!", description: 'Everything that has been added to RSDP Poker Live!, newest first.' };
-    if (/^\/changelog\/?$/.test(pathname)) return { title: 'Changelog · RSDP Poker Live!', description: 'Every release of RSDP Poker Live! and the small fixes in it.' };
-    if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Poker Live!', description: "What's live now and what's coming next to RSDP Poker Live!" };
-    if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Poker Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
-    if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Poker Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
-    if (/^\/transparency\/?$/.test(pathname)) return { title: 'Checking John · RSDP Poker Live!', description: 'What the site runs, the public record of every hand and admin action, and how to check them from outside the server.' };
-    if (/^\/privacy\/?$/.test(pathname)) return { title: 'Privacy · RSDP Poker Live!', description: 'What the site keeps about you, who can see it, how long it stays and how to delete it.' };
-    if (/^\/terms\/?$/.test(pathname)) return { title: 'Terms of use · RSDP Poker Live!', description: 'The site is free and comes as it is, with no warranty: the terms for using it.' };
-    if (/^\/credits\/?$/.test(pathname)) return { title: 'Credits · RSDP Poker Live!', description: 'The free, open-source software RSDP Poker Live! is built on, and its licenses.' };
-    return { title: 'RSDP Poker Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
+    if (/^\/whats-new\/?$/.test(pathname)) return { title: "What's new · RSDP Live!", description: 'Everything that has been added to RSDP Live!, newest first.' };
+    if (/^\/changelog\/?$/.test(pathname)) return { title: 'Changelog · RSDP Live!', description: 'Every release of RSDP Live! and the small fixes in it.' };
+    if (/^\/roadmap\/?$/.test(pathname)) return { title: 'Roadmap · RSDP Live!', description: "What's live now and what's coming next to RSDP Live!" };
+    if (/^\/(signin|signup|reset|profile)\/?$/.test(pathname)) return { title: 'Your account · RSDP Live!', description: 'Optional accounts: sign in to keep your name, picture, notes and history on every device.' };
+    if (/^\/fairness\/?$/.test(pathname)) return { title: 'Fair dealing · RSDP Live!', description: 'How every deck is shuffled, the audit and test results, and how to check any hand yourself.' };
+    if (/^\/transparency\/?$/.test(pathname)) return { title: 'Checking John · RSDP Live!', description: 'What the site runs, the public record of every hand and admin action, and how to check them from outside the server.' };
+    if (/^\/privacy\/?$/.test(pathname)) return { title: 'Privacy · RSDP Live!', description: 'What the site keeps about you, who can see it, how long it stays and how to delete it.' };
+    if (/^\/terms\/?$/.test(pathname)) return { title: 'Terms of use · RSDP Live!', description: 'The site is free and comes as it is, with no warranty: the terms for using it.' };
+    if (/^\/credits\/?$/.test(pathname)) return { title: 'Credits · RSDP Live!', description: 'The free, open-source software RSDP Live! is built on, and its licenses.' };
+    return { title: 'RSDP Live!', description: 'Free poker with friends: cash games and tournaments that start on their own. Send a link, no sign-up.' };
   }
 
   io.use(async (socket, next) => {
