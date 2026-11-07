@@ -351,6 +351,7 @@ export function Table({
   fill = false,
   wide = false,
   notice = null,
+  noticeHidden = false,
   onNoticeRoom,
 }: {
   view: TableView;
@@ -373,7 +374,9 @@ export function Table({
    * no room from the felt, so the seats don't move when it goes. With `onClick` it opens what it points to.
    */
   notice?: { text: string; onClick?: () => void } | null;
-  /** Whether the middle of the table has room for `notice` (false on a small phone table: see below). */
+  /** `notice` is shown elsewhere: it is laid out in the middle, unseen, only to tell whether it would fit there. */
+  noticeHidden?: boolean;
+  /** Whether `notice` fits in the middle of the table without covering a seat (phones: see below). */
   onNoticeRoom?: (room: boolean) => void;
 }) {
   const felt = useRef<HTMLDivElement>(null);
@@ -382,14 +385,25 @@ export function Table({
   const reach = useSeatReach(felt);
   const handFit = useHandFit(felt, compact);
   const room = useRoom(felt, fill && !compact);
-  // A small phone table (a 320px-wide phone, an iPhone SE in Safari standing up or on its side) has no room for the note
-  // between the game's name and the seats at the bottom, so the note would sit on their nameplates: there the page puts
-  // it under the table instead (#383). Measured on a local copy (the felt's inner size): standing up, the note overlapped
-  // the seats on felts 156-171px tall and fit from 203px; on its side (a wide felt), it overlapped at 97px and fit from
-  // 137px. Taking the note out of the middle doesn't change the felt's size for a player (the area under the table
-  // holds its height), and can only make it smaller for someone watching, so this settles at once.
-  const noticeRoom = !compact || !size.w || size.h >= (size.w < 400 ? 190 : 120);
-  useLayoutEffect(() => onNoticeRoom?.(noticeRoom), [noticeRoom, onNoticeRoom]);
+  // On a small phone table (a narrow phone, an iPhone SE in Safari standing up or on its side) the note in the middle is
+  // squeezed between the seats at the sides until it runs onto the nameplates above or below it: there the page shows
+  // it under the table instead (#383). The note stays laid out in the middle, unseen (noticeHidden), so this measures
+  // where it would be. Showing it under the table doesn't make the felt bigger, so the answer can't flip back and forth.
+  useLayoutEffect(() => {
+    if (!onNoticeRoom) return;
+    const el = felt.current;
+    const note = el?.querySelector('.board-notice');
+    if (!compact || !el || !note || !size.w) {
+      onNoticeRoom(true);
+      return;
+    }
+    const n = note.getBoundingClientRect();
+    const covers = [...el.querySelectorAll<HTMLElement>('.seat')].some((s) => {
+      const b = (s.classList.contains('empty') ? s : (s.querySelector('.nameplate') ?? s)).getBoundingClientRect();
+      return Math.min(n.right, b.right) - Math.max(n.left, b.left) > 2 && Math.min(n.bottom, b.bottom) - Math.max(n.top, b.top) > 2;
+    });
+    onNoticeRoom(!covers);
+  });
   const n = view.seats.length;
   // Rotate so your own seat is at the bottom.
   const offset = view.me.seat ?? 0;
@@ -713,8 +727,10 @@ export function Table({
         {!hand && view.upcoming && !(view.choice && !view.choice.current) && <div className="next-hand muted">{view.upcoming.gameName}</div>}
         {notice && (
           <div
-            className={['board-notice', hand && 'after-hand', notice.onClick && 'clickable'].filter(Boolean).join(' ')}
-            {...(notice.onClick
+            className={['board-notice', hand && 'after-hand', notice.onClick && 'clickable', noticeHidden && 'unseen'].filter(Boolean).join(' ')}
+            {...(noticeHidden
+              ? { 'aria-hidden': true }
+              : notice.onClick
               ? {
                   role: 'button',
                   tabIndex: 0,

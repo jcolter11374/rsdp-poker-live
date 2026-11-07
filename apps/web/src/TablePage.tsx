@@ -530,9 +530,9 @@ export function TablePage({ tableId }: { tableId: string }) {
         }
       : null;
   // On a phone, while the last hand is still on the table after a stop (its board, the result, the cards shown at the
-  // bottom seat), the middle is full, and on a small phone table it is too small for the note (Table's noticeRoom): there
-  // the note goes under the table, with your buttons, where the area holds its height (Dock), so it still takes nothing
-  // from the table.
+  // bottom seat), the middle is full, and on a small phone table the note doesn't fit there (Table's onNoticeRoom): then
+  // it goes under the table. Before the first hand it is the text of the empty bar there (ActionBar's note), so the area
+  // under the table grows no taller for it; after a stop it goes over the bar, where the area holds its height (Dock).
   const noticeUnder = !!startNotice && portrait && (!!view.hand || !noticeRoom);
 
   return (
@@ -710,7 +710,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             onAddBot={canAddBot ? addBot : undefined}
             onSeatClick={(seat) => setDialog({ kind: 'player', seat })}
             discard={view.canDraw ? { selected: discard, toggle: (i) => setDiscard((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i])) } : null}
-            notice={noticeUnder ? null : startNotice}
+            notice={noticeUnder && view.hand ? null : startNotice}
+            noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
           />
           {/* A zero-height anchor between the felt and the action bar: the tip floats up over the felt's corner. The anchor
@@ -741,7 +742,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             limit={(view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
-            {noticeUnder && (
+            {noticeUnder && view.hand && (
               <div className="dock-notes">
                 <div className="banner">{startNotice!.text}</div>
               </div>
@@ -758,6 +759,7 @@ export function TablePage({ tableId }: { tableId: string }) {
                 preQueued.current = q;
               }}
               onRules={() => setDialog({ kind: 'rules' })}
+              note={noticeUnder && !view.hand ? startNotice!.text : null}
             />
             <div className="dock-row">
               <HandExtras view={view} />
