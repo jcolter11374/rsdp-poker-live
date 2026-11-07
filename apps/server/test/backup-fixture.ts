@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
-import { sql } from 'drizzle-orm';
+import { getTableName, is, sql } from 'drizzle-orm';
+import { PgTable } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { MIGRATIONS_DIR, queryRows, type Db } from '../src/db';
@@ -14,9 +15,20 @@ import * as schema from '../src/db/schema';
 /** Past what a JavaScript number holds exactly: a restore must not round it. */
 export const BIG = '9007199254740993';
 
-/** A row in every table, with the awkward bits: players and accounts pointing at each other, jsonb, timestamps, counters. */
+/** The tables schema.ts describes, so fill() can tell a table that is still to come from a misspelt one. */
+const SCHEMA_TABLES = new Set<string>(Object.values(schema).flatMap((v) => (is(v, PgTable) ? [getTableName(v)] : [])));
+
+/**
+ * A row in every table, with the awkward bits: players and accounts pointing at each other, jsonb, timestamps, counters.
+ * A database from before a migration gets rows only in the tables it has (one before 0018 has no push tables).
+ */
 export async function fill(target: Db) {
-  const q = (s: string) => target.execute(sql.raw(s));
+  const has = new Set((await queryRows<{ name: string }>(target, sql`select table_name as name from information_schema.tables where table_schema = 'public'`)).map((r) => r.name));
+  const q = async (s: string) => {
+    const table = /^(?:insert into|update) (\w+)/.exec(s)?.[1];
+    if (!table || !SCHEMA_TABLES.has(table)) throw new Error(`fill: ${s} is not for a table schema.ts describes`);
+    if (has.has(table)) await target.execute(sql.raw(s));
+  };
   await q(`insert into players (id, display_name) values ('p1', 'Mike'), ('p2', 'Zoë "the rock" O''Neil')`);
   await q(`insert into accounts (id, username, password_hash, primary_player_id, google_sub) values ('a1', 'mike', 'scrypt$x', 'p1', 'g-123')`);
   await q(`update players set account_id = 'a1' where id = 'p1'`);
@@ -40,6 +52,8 @@ export async function fill(target: Db) {
   await q(`insert into tournament_log (tournament_id, item_id, at, item) values ('tn1', 'i1', now(), '{"k":"bust"}'), ('tn1', 'i2', now(), '{"k":"win"}')`);
   await q(`insert into audit_log (seq, at, kind, data, prev, hash) values (1, ${BIG}, 'boot', '{"commit":"abc"}', '0', 'h')`);
   await q(`insert into ops_log (at, kind, message) values (now(), 'server', 'saving table failed: timeout')`);
+  await q(`insert into push_keys (id, public_key, private_key) values ('vapid', 'BPub', 'priv')`);
+  await q(`insert into push_subscriptions (endpoint, player_id, device, session, p256dh, auth) values ('https://fcm.googleapis.com/fcm/send/abc', 'p1', 'th1', 'sh1', 'BKey', 'auth')`);
 }
 
 /** Every row of every table, as Postgres prints it, so two databases can be compared whole. */

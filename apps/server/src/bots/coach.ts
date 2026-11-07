@@ -9,6 +9,7 @@ import {
   lowDrawRule,
   normalDecide,
   opponentDraws,
+  seededRand,
   situation,
   tipDice,
   type MoveWhy,
@@ -35,6 +36,28 @@ export interface TipInput {
   /** The decision being answered, as the browser asked for it. */
   handNumber: number;
   at: number;
+}
+
+/**
+ * Everything one tip is worked out from, as plain data: it is what crosses to
+ * the coach's own thread (coachWorker.ts). The hand is the `Seen` copy, so no
+ * card the player has not been shown ever leaves the table's thread.
+ */
+export interface TipJob {
+  seen: Seen;
+  seat: SeatIndex;
+  legal: LegalActions | null;
+  drawMax: number;
+  /** Where the tip's own random numbers start (TableRuntime.coachTip makes it from the turn and the player). */
+  seed: number;
+  handNumber: number;
+  at: number;
+}
+
+/** The tip for a job: the same job always starts the same random numbers, on whichever thread it runs. */
+export function workTip(job: TipJob): CoachTip {
+  const { seen, seat, seed, ...input } = job;
+  return coachTip(seen, seat, { ...input, rand: seededRand(seed) });
 }
 
 /** A call or fold this close to what the pot asks for is a coin flip, whatever the deals said. */
@@ -71,7 +94,7 @@ export function coachTip(seen: Seen, seat: SeatIndex, input: TipInput): CoachTip
 
   if (seen.phase === 'drawing') {
     const field = drawFieldSize(view);
-    const best = bestDraw(view, input.drawMax, rand, coachTuning.draw, field, coachTuning.drawMs);
+    const best = bestDraw(view, input.drawMax, rand, coachTuning.draw, field);
     return {
       ...shared,
       kind: 'draw',
@@ -102,7 +125,7 @@ export function coachTip(seen: Seen, seat: SeatIndex, input: TipInput): CoachTip
   let vsRandom: number | null = null;
   if (view.drawsLeft > 0) {
     const field = drawFieldSize(view);
-    const best = bestDraw(view, view.cardsPerPlayer, rand, coachTuning.drawBet, field, coachTuning.drawMs);
+    const best = bestDraw(view, view.cardsPerPlayer, rand, coachTuning.drawBet, field);
     share = best.equity;
     deals = best.deals;
     vs = field;

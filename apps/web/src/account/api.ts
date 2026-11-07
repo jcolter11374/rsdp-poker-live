@@ -2,6 +2,7 @@
 
 import { guestToken, saveSessionToken, sessionToken, startOverAsGuest } from '../socket';
 import { bringSetupsOver } from '../savedSetups';
+import { turnOffAlerts } from '../notify';
 
 export interface TableRow {
   tableId: string;
@@ -205,6 +206,8 @@ export async function signIn(username: string, password: string, bringOver: bool
 }
 
 export async function signOut() {
+  // Alerts stop on this browser first: they were for the account.
+  await turnOffAlerts();
   // Even when the server can't be reached, this browser forgets the sign-in. Its guest starts over
   // only when that guest belonged to the account; a friend's device keeps its own guest.
   const res = await request<{ forgot: boolean }>('POST', '/api/account/signout').catch(() => ({ forgot: true }));
@@ -218,6 +221,8 @@ export const changePassword = (current: string, password: string) => request('PO
 /** `password`, or for an account without one, its username typed to confirm. */
 export async function deleteAccount(confirm: { password?: string; username?: string }) {
   await request('POST', '/api/account/delete', confirm);
+  // The server has forgotten this browser's alerts with the account; the browser drops its subscription too.
+  await turnOffAlerts();
   startOverAsGuest();
 }
 
