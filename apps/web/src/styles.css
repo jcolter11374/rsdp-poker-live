@@ -1001,19 +1001,32 @@ dl.shortcuts dd { margin: 0; }
   .portrait .play-tip-basis button { margin: 0; min-height: 30px; padding-block: 3px; }
   /* The line with the Nit game, the rabbit hunt and the bots' reasons goes over the bar here, not under it. On your turn it
      waits until you've acted, so the bar has the room: then the bet sizes take its place, and the move buttons stay where
-     the pre-move buttons were, so a tap meant for that line can't land on Fold or Call. Hidden but kept, so the Nit game's
-     rules, if open, stay open over the table. */
+     the pre-move buttons were, so a tap meant for that line can't land on Fold or Call. It also waits while a note shows
+     over the bar (you're sitting out, the host's waiting requests, the game stopping: .dock-notes), which needs the same
+     room. Hidden but kept, so the Nit game's rules, if open, stay open over the table. */
   .portrait .dock-row { order: -1; }
-  .portrait .dock-inner:has(> .action-bar.my-turn) > .dock-row { position: absolute; height: 0; overflow: hidden; visibility: hidden; }
+  .portrait .dock-inner:is(:has(> .action-bar.my-turn), :has(> .dock-notes:not(.your-turn))) > .dock-row { position: absolute; height: 0; overflow: hidden; visibility: hidden; }
   .portrait .dock-row .modal-backdrop { visibility: visible; }
+  /* A note fits that room too, on two lines if it must: smaller type, with its button beside the text. */
+  .portrait .dock-notes .banner { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 2px 10px; font-size: 0.78rem; line-height: 15px; }
+  .portrait .dock-notes .banner > button { flex: none; }
+  /* The move buttons take taps from 0.3s after they appear. A tap meant for "Show cards", already on its way as the next
+     deal makes it your turn, would otherwise land on Call (the bar between hands puts them in the same place). */
+  .portrait .action-bar.my-turn > .buttons { position: relative; }
+  .portrait .action-bar.my-turn > .buttons::after { content: ''; position: absolute; inset: 0; z-index: 1; animation: bar-arm 0.3s step-end both; }
   /* Between your turns that line has the room the bar takes on your turn: the rabbit hunt's cards are the table's small size,
-     and the Nit game's line runs on as one short paragraph, two lines on most phones. */
+     and the Nit game's line runs on as one short paragraph, two lines on most phones (in whole pixels, so the room it takes
+     doesn't flicker by a fraction). */
   .portrait .hand-extras .playing-card.small { --cw: 24px; }
-  .portrait .nit-row { display: block; font-size: 0.75rem; line-height: 1.35; }
+  .portrait .nit-row { display: block; font-size: 0.75rem; line-height: 16px; }
   .portrait .nit-row > :not(.modal-backdrop), .portrait .nit-line > * { display: inline; margin: 0 6px 0 0; font-size: inherit; }
   .portrait .nit-line .toggle input { vertical-align: middle; margin: 0 4px 0 0; }
   .portrait .nit-help-button { display: inline-block; width: 18px; height: 18px; line-height: 16px; font-size: 11px; vertical-align: middle; }
 }
+/* The smallest phones on their side (568px wide): during a Nit round the "Locked in until this round ends" hint would make
+   the line three lines. It gives way; the tick box's title says the same. */
+@media (max-height: 500px) and (max-width: 599px) { .portrait .nit-row .hint { display: none; } }
+@keyframes bar-arm { from { visibility: visible; } to { visibility: hidden; } }
 
 /* "Are you sure?" under a game picker set to unusual betting. */
 .betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }
