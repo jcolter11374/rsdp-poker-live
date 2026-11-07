@@ -16,9 +16,6 @@
   .table-page:not(.portrait) .side .side-panel { flex: 1 1 0; min-height: 200px; }
   .table-page:not(.portrait) .side .chat-box { flex: 1 1 0; min-height: 220px; }
   .table-page:not(.portrait) .side .scroll { max-height: none; }
-  /* While the keyboard tip heads the column (#399), the log gives up the room, down to its tabs, rather than the tip
-     pushing the chat out of view. */
-  .table-page:not(.portrait) .side > .tip-toast ~ .side-panel { min-height: 64px; overflow: hidden; }
 }
 .sheet-body .chat-scroll { max-height: none; }
 
