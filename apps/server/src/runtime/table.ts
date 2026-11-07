@@ -45,6 +45,7 @@ import {
   type HandRecord,
   type PastHand,
   type RuntimeState,
+  type SeatOffer,
   type SeatRequest,
   type SideGameState,
   type SeatState,
@@ -596,7 +597,8 @@ export class TableRuntime {
   private heldSeats(except: PlayerId | null = null): number {
     const ids = new Set([...this.offers().map((o) => o.playerId), ...this.state.requests.filter((r) => r.kind === 'seat').map((r) => r.playerId)]);
     if (except !== null) ids.delete(except);
-    return [...ids].filter((id) => !this.seatOf(id)).length;
+    const gone = this.goneInRunout();
+    return [...ids].filter((id) => !this.seatOf(id) && !gone.has(id)).length;
   }
 
   /**
@@ -614,7 +616,8 @@ export class TableRuntime {
   private countedOffers(except: PlayerId | null): number {
     const ids = new Set(this.offers().map((o) => o.playerId));
     if (except !== null) ids.delete(except);
-    return [...ids].filter((id) => !this.seatOf(id) && !this.needsApproval(id)).length;
+    const gone = this.goneInRunout();
+    return [...ids].filter((id) => !this.seatOf(id) && !gone.has(id) && !this.needsApproval(id)).length;
   }
 
   /** Someone who can only ask for a seat: the table needs the host's OK and they can't give it themselves. */
@@ -624,9 +627,18 @@ export class TableRuntime {
 
   /** Everyone sitting down, and anyone who busted or left in an all-in runout browsers are still dealing out. */
   private seatedCount(): number {
+    return this.state.seats.filter(Boolean).length + this.goneInRunout().size;
+  }
+
+  /**
+   * The players in the last hand who busted or left, while browsers still deal out its all-in runout and show them
+   * seated. Counted as sitting down until then (seatedCount), and only that way: an offer or a seat request one of
+   * them makes meanwhile doesn't count them again.
+   */
+  private goneInRunout(): Set<PlayerId> {
     const last = this.state.history.at(-1);
-    const gone = last && this.revealSeats().size ? last.hand.seats.filter((hs) => !this.seatOf(hs.playerId)).length : 0;
-    return this.state.seats.filter(Boolean).length + gone;
+    if (!last || !this.revealSeats().size) return new Set();
+    return new Set(last.hand.seats.map((hs) => hs.playerId).filter((id) => !this.seatOf(id)));
   }
 
   /**
@@ -3213,8 +3225,10 @@ export class TableRuntime {
     // offered one stays on the waitlist for the next seat.
     const limit = this.seatLimit();
     const kept = new Set(this.moverSeats(limit, this.movers()));
-    s.offers = this.offers().filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
+    const offered = this.offers();
+    s.offers = offered.filter((o) => !s.seats[o.seat] && o.seat < limit && !kept.has(o.seat));
     this.letGoOffersOverCap();
+    this.letGoOffersBehind(offered);
     // While browsers still deal out the last hand's all-in runout, the seats of the players in it aren't offered
     // (openSeats leaves them out, see revealSeats); upkeep runs again when the runout has had time to show (upkeepDue).
     const open = this.openSeats();
@@ -3243,12 +3257,27 @@ export class TableRuntime {
     if (!cap) return;
     const room = cap.cap - this.seatedCount();
     const place = new Map(this.queue().map((w, i) => [w.playerId, i]));
+    const gone = this.goneInRunout();
     const counted = this.offers()
-      .filter((o) => !this.seatOf(o.playerId) && !this.needsApproval(o.playerId))
+      .filter((o) => !this.seatOf(o.playerId) && !gone.has(o.playerId) && !this.needsApproval(o.playerId))
       .sort((a, b) => (place.get(a.playerId) ?? Infinity) - (place.get(b.playerId) ?? Infinity));
     if (counted.length <= room) return;
     const over = new Set(counted.slice(Math.max(0, room)));
     this.state.offers = this.offers().filter((o) => !over.has(o));
+  }
+
+  /**
+   * Someone whose offer was just let go (`before` is the offers until then) stays on the waitlist for the next seat,
+   * so the offers of everyone behind them in the queue are let go too, and upkeep offers the seats again in queue
+   * order. Otherwise someone behind could take a seat first: with their own offer, or, at a Dealer's choice table, as
+   * a request from an offer that doesn't count, which holds the room an earlier waiter would be offered (#453).
+   */
+  private letGoOffersBehind(before: SeatOffer[]) {
+    const place = new Map(this.queue().map((w, i) => [w.playerId, i]));
+    const kept = new Set(this.offers());
+    const first = Math.min(...before.filter((o) => !kept.has(o) && place.has(o.playerId)).map((o) => place.get(o.playerId)!));
+    if (first === Infinity) return;
+    this.state.offers = this.offers().filter((o) => (place.get(o.playerId) ?? -1) < first);
   }
 
   /** When the last hand's all-in runout, if it had one, has been dealt out in the browsers (0 when it hadn't). */

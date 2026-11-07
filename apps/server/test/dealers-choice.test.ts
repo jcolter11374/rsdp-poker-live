@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { engine, variants } from '@rsdp/engine/core';
+import { engine, runoutMs, variants } from '@rsdp/engine/core';
 import { defaultSettings, parseSettings, type ChoiceGame, type TableSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import { RESUME_MIN_MS, TableRuntime } from '../src/runtime/table';
@@ -330,6 +330,99 @@ describe("Dealer's choice", () => {
     expect(rt.state.seats.some((x) => x?.playerId === 'g')).toBe(true);
     expect(rt.state.offers).toEqual([]);
     expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['h', 'i']);
+  });
+
+  it('gives the next seat to a waiter whose offer was let go before anyone behind them, counted or not (#453)', () => {
+    // G and H need the host's OK, so their offers don't count and Badugi is picked with six seated. G is then made a
+    // co-host who can approve seats: G's offer counts and doesn't fit, so it is let go, and H's offer behind it too.
+    for (const then of ['host approves H', 'approval off'] as const) {
+      const { rt } = table((s) => {
+        s.seating.waitlist = true;
+      });
+      seat(rt, 6);
+      rt.updateSettings('host', { seating: { requireApproval: true } });
+      rt.joinWaitlist('g', { name: 'G', stack: 1000 });
+      rt.joinWaitlist('h', { name: 'H', stack: 1000 });
+      rt.start('host');
+      pick(rt, 'badugi');
+      rt.setCoHost('host', 'g', ['approve']);
+      expect(rt.state.offers).toEqual([]);
+      expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['g', 'h']);
+      // A seat comes free during Badugi: it is offered to G, first in the queue, and H can't take it ahead of G.
+      checkDown(rt);
+      rt.stand('e');
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+      if (then === 'host approves H') {
+        expect(() => rt.requestSeat('h', { seat: 5, name: 'H', stack: 1000 })).toThrow(/held for G/);
+      } else {
+        rt.updateSettings('host', { seating: { requireApproval: false } });
+        expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['g']);
+      }
+      rt.requestSeat('g', { seat: rt.state.offers![0].seat, name: 'G', stack: 1000 });
+      expect(rt.state.seats.some((x) => x?.playerId === 'g')).toBe(true);
+      expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['h']);
+    }
+  });
+
+  it('offers the seats again in queue order when a smaller table drops a seat on offer (#453)', () => {
+    // I is offered seat 9 and J seat 7, both needing the host's OK. Badugi is picked, and the table goes down to eight
+    // seats after this hand: I's seat is dropped, so J's offer is let go too. Badugi is full, so nobody is offered a
+    // seat until one comes free, and then it is I's.
+    const { rt } = table((s) => {
+      s.seating.waitlist = true;
+    });
+    for (const id of ['i', 'j']) rt.connect(id);
+    seat(rt, 8);
+    rt.updateSettings('host', { seating: { requireApproval: true } });
+    rt.joinWaitlist('i', { name: 'I', stack: 1000 });
+    rt.stand('f');
+    rt.stand('g');
+    rt.joinWaitlist('j', { name: 'J', stack: 1000 });
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['i', 8], ['j', 6]]);
+    rt.start('host');
+    pick(rt, 'badugi');
+    rt.updateSettings('host', { table: { maxSeats: 8 } });
+    expect(rt.state.offers).toEqual([]);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['i', 'j']);
+    checkDown(rt);
+    rt.stand('e');
+    expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['i']);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['i', 'j']);
+  });
+
+  it('counts a player who left in an all-in runout once, even if they join the waitlist before it has been dealt out', () => {
+    // A leaves after this hand and goes all in; the host calls and B folds. Until browsers have dealt out the runout,
+    // A still counts as sitting down (#437). A joining the waitlist then, and being offered seat 4, doesn't count A twice.
+    let checked = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 7;
+        s.seating.waitlist = true;
+        s.play.runItTwice = 'off';
+      }, seeded(seed));
+      seat(rt, 3);
+      rt.start('host');
+      pick(rt, 'nlhe');
+      rt.stand('a', { afterHand: true });
+      for (let i = 0; i < 50 && live(rt); i++) {
+        const h = hand(rt);
+        const id = toActId(rt);
+        const legal = engine.legalActions(h, h.toAct!)!;
+        if (id === 'a') rt.act(id, { type: legal.raiseKind, to: legal.maxTo });
+        else if (id === 'b') rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'fold' });
+        else rt.act(id, legal.canCheck ? { type: 'check' } : { type: 'call' });
+      }
+      const reveal = runoutMs(hand(rt).events);
+      if (!reveal || rt.state.seats.some((x) => x?.playerId === 'a')) continue;
+      expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
+      rt.joinWaitlist('a', { name: 'A', stack: 1000 });
+      expect(rt.state.offers!.map((o) => o.playerId)).toEqual(['a']);
+      expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
+      clock.advance(reveal);
+      expect(tableView(rt, 'c', clock.now()).choice!.count).toBe(3);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   it('lets someone who needs the host take their offer as a request while a smaller table keeps a seat for a mover (#453)', () => {
