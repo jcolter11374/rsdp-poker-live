@@ -98,7 +98,7 @@ describe('the tournament strip', () => {
     expect(container.querySelector('.tn-corner')?.textContent).toMatch(/Add-ons are closed/);
   });
   it("says where you finished only once your kept seat has gone, on a laptop, so the table doesn't move as the result shows (#445)", () => {
-    options = { entry: { id: 'e5', status: 'eliminated' } as PlayerOptions['entry'] };
+    options = { entry: { id: 'e5', status: 'busted' } as PlayerOptions['entry'] };
     places = [{ place: 5, displayName: 'Ana', entryId: 'e5' }];
     const kept = (k: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere={k} />;
     const { container, rerender } = render(kept(true));
