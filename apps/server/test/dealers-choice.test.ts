@@ -2097,3 +2097,27 @@ describe("Dealer's choice: a waiting change that adds seats while people wait fo
     expect(hand(rt).input.game.id).toBe('badugi');
   });
 });
+
+// #466: the host turns Dealer's choice on during a hand, with new stakes. The table waits for the first pick once the
+// change applies; until then the game it was dealing carries on, and a missed pick keeps it. The preview says so.
+describe("Dealer's choice turned on by a change waiting for the next hand (#466)", () => {
+  it('previews the game the table is dealing, at the new stakes, and a missed pick deals it', () => {
+    const { rt, clock } = table((s) => (s.game.dealersChoice = { ...s.game.dealersChoice!, enabled: false }));
+    seat(rt, 3);
+    rt.start('host');
+    expect(hand(rt).input.game.id).toBe('nlhe');
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: true } }, stakes: { smallBlind: 2, bigBlind: 4 } });
+    checkDown(rt);
+    expect(live(rt)).toBe(false);
+    expect(rt.state.pendingSettings).not.toBeNull();
+    const preview = tableView(rt, 'a', clock.now()).upcoming!;
+    expect(preview).toMatchObject({ gameId: 'nlhe', betting: 'no-limit', stakes: { smallBlind: 2, bigBlind: 4 } });
+    // The change applies and the table waits for the first pick; nobody picks.
+    clock.advance(10_000);
+    expect(live(rt)).toBe(false);
+    expect(rt.state.choice?.deadline).not.toBeNull();
+    clock.advance(25_000);
+    const dealt = hand(rt).input;
+    expect({ gameId: preview.gameId, betting: preview.betting, stakes: preview.stakes }).toEqual({ gameId: dealt.game.id, betting: dealt.betting, stakes: dealt.stakes });
+  });
+});

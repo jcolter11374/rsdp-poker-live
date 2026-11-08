@@ -1,6 +1,7 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
+import { choiceMenu } from './choice';
 import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
@@ -393,22 +394,39 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer, now: number
   };
 }
 
-/** Game and stakes of the next cash hand, without moving the blind schedule. */
+/**
+ * Game and stakes of the next cash hand, without moving the blind schedule. A change the host made during a hand that
+ * waits for the next one is dealt with it (applyPendingSettings), so the preview has it too (#444, #466): its game and
+ * stakes, a new rotation from its first step, and a blind schedule turned on from its first level.
+ */
 function previewSetup(rt: TableRuntime): TableView['upcoming'] {
   const s = rt.state;
-  // The host's change ends Dealer's choice with this hand (#423): the next hand is dealt with it applied, and a new
-  // rotation starts at its first step, a new blind schedule at its first level (#444).
-  const ending = rt.choice.ending() && !!s.pendingSettings;
-  const settings = ending ? applyAtNextHand(s.settings, s.pendingSettings!).settings : s.settings;
+  const settings = settingsNextHand(s);
   const rot = settings.game.rotation;
-  const at = ending ? 0 : rt.previewRotationStep();
-  // Dealer's choice: the game picked (or what a missed pick would deal).
-  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
+  const was = s.settings.game.rotation;
+  const at = JSON.stringify(rot) !== JSON.stringify(was) ? 0 : rt.previewRotationStep();
+  // Dealer's choice: the game picked, or what a missed pick would deal; null when it ends with this hand. Turned on by
+  // the change, the game the table is dealing now carries on until the first pick, and a missed pick keeps it if it's on
+  // the menu (choiceWas).
+  const turningOn = !choiceMenu(s.settings) && !!choiceMenu(settings);
+  const dealing = s.handNumber > 0 ? (was.enabled && was.steps.length ? was.steps[s.rotation.step % was.steps.length] : s.settings.game) : null;
+  const step = (turningOn ? dealing : rt.choice.upcoming()) ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
-  const level = ending && !s.settings.blindSchedule.enabled ? 0 : s.level.index;
+  const level = !s.settings.blindSchedule.enabled && settings.blindSchedule.enabled ? 0 : s.level.index;
   const stakes = cashHandStakes(settings, Math.min(level, settings.blindSchedule.levels.length - 1), game);
   const betting = step?.betting ?? settings.game.betting;
   return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes };
+}
+
+/** The settings the next hand is dealt with: the table's, with the host's change waiting for it, if one does. */
+function settingsNextHand(s: RuntimeState): TableSettings {
+  if (!s.pendingSettings) return s.settings;
+  try {
+    return applyAtNextHand(s.settings, s.pendingSettings).settings;
+  } catch {
+    // The change was checked when the host made it; if it somehow no longer reads, the deal finds out, not the view.
+    return s.settings;
+  }
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {
