@@ -1,34 +1,34 @@
 {
-  "checked": "2026-11-07T21:40:13.651Z",
+  "checked": "2026-11-08T00:46:30.079Z",
   "machines": [
     {
       "id": "8e3145c7e00e38",
       "state": "started",
-      "image": "registry.fly.io/rsdp-poker-live@sha256:560b46f06a6026cbdebead31d7319e21d3e94934a1d3bd75397413518067740b",
-      "digest": "sha256:560b46f06a6026cbdebead31d7319e21d3e94934a1d3bd75397413518067740b",
-      "lastStart": "2026-11-07T21:39:38.886Z",
+      "image": "registry.fly.io/rsdp-poker-live@sha256:294843a4aae9a63dcc58d033f0b28aa606af7bc1ab921d2bc71fb072528c2431",
+      "digest": "sha256:294843a4aae9a63dcc58d033f0b28aa606af7bc1ab921d2bc71fb072528c2431",
+      "lastStart": "2026-11-08T00:45:52.901Z",
       "starts": [
         {
           "type": "launch",
           "status": "pending",
-          "at": "2026-11-07T21:39:33.745Z"
+          "at": "2026-11-08T00:45:48.148Z"
         },
         {
           "type": "launch",
           "status": "created",
-          "at": "2026-11-07T21:39:33.762Z"
+          "at": "2026-11-08T00:45:48.170Z"
         },
         {
           "type": "start",
           "status": "started",
-          "at": "2026-11-07T21:39:38.886Z"
+          "at": "2026-11-08T00:45:52.901Z"
         }
       ],
       "settings": "318a0bfd9683f028",
       "signed": {
-        "commit": "bec77ea49901d7b25b065daed685c425720e3c53",
+        "commit": "9b779b37b7060c1d624def9bc11331379ea7af3a",
         "ref": "refs/heads/main",
-        "run": "https://github.com/jcolter11374/rsdp-poker-live/actions/runs/42416843071/attempts/1"
+        "run": "https://github.com/jcolter11374/rsdp-poker-live/actions/runs/42431172621/attempts/1"
       }
     }
   ],
@@ -51,10 +51,10 @@
     }
   ],
   "site": {
-    "commit": "bec77ea49901d7b25b065daed685c425720e3c53",
-    "image": "registry.fly.io/rsdp-poker-live@sha256:560b46f06a6026cbdebead31d7319e21d3e94934a1d3bd75397413518067740b",
+    "commit": "9b779b37b7060c1d624def9bc11331379ea7af3a",
+    "image": "registry.fly.io/rsdp-poker-live@sha256:294843a4aae9a63dcc58d033f0b28aa606af7bc1ab921d2bc71fb072528c2431",
     "machine": "8e3145c7e00e38",
-    "startedAt": "2026-11-07T21:39:45.866Z"
+    "startedAt": "2026-11-08T00:45:59.942Z"
   },
   "problems": []
 }
