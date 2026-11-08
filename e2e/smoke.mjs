@@ -288,7 +288,8 @@ function changedAtResult({ before, after }) {
 
 /**
  * Every other player who showed a losing hand has its name on a tab, and every tab shown is on the screen with nothing
- * over it: what is on top at its middle is the tab itself. (Your own tab shows only on a phone on its side, where the bar
+ * over it: what is on top all along its middle line, end to end, is the tab itself. (The dealer button is drawn over
+ * every seat; a tab under it slides out from under it. Your own tab shows only on a phone on its side, where the bar
  * under the table leaves your hand's name out.)
  */
 const tabsUnseen = (p) =>
@@ -305,11 +306,13 @@ const tabsUnseen = (p) =>
       const r = tab.getBoundingClientRect();
       const what = `${name(tab)}'s tab "${tab.textContent}"`;
       if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) found.push(`${what} goes off the screen`);
-      // Taps go through the tab to the nameplate: it takes them only while this asks what is on top at its middle.
+      // Taps go through the tab to the nameplate: it takes them only while this asks what is on top. Its ends, 2px in,
+      // and three points between them: something over one end only (the dealer button) leaves its middle clear.
       tab.style.pointerEvents = 'auto';
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const tops = [2, r.width / 4, r.width / 2, (r.width * 3) / 4, r.width - 2].map((x) => document.elementFromPoint(r.left + x, r.top + r.height / 2));
       tab.style.pointerEvents = '';
-      if (!tab.contains(top)) found.push(`${what} is under ${name(top) ? `${name(top)}'s ` : ''}${top?.className || top?.tagName || 'nothing'}`);
+      for (const top of new Set(tops.filter((t) => !tab.contains(t))))
+        found.push(`${what} is under ${name(top) ? `${name(top)}'s ` : ''}${top?.getAttribute('class') || top?.tagName || 'nothing'}`);
     }
     return found;
   });
@@ -1009,7 +1012,8 @@ try {
     // showdown with a bet and calls on the river, seen by a player on a 390x844 phone: from the last frame before the
     // result to 2.5 s after it, no nameplate changes size (a chip count changing aside: see changedAtResult) or moves, no
     // row of cards moves, no nameplate names a hand, and every losing hand is named on a tab that is on the screen with
-    // nothing over it.
+    // nothing over it. Then someone new sits down while the result still shows, and his nameplate keeps nothing of the
+    // last player's.
     const host = await open('result host');
     await host.goto(BASE);
     await host.fill('input[required]', 'Ada');
@@ -1028,7 +1032,8 @@ try {
     await host.locator('.modal').waitFor({ state: 'detached' });
     // Ben is the one on a phone: seats fill in order, so he has a neighbour on each side.
     const guests = [];
-    for (const name of ['Ben', 'Cleo', 'Dot', 'Ed', 'Flo', 'Gil', 'Hu', 'Ina']) {
+    const names = ['Ben', 'Cleo', 'Dot', 'Ed', 'Flo', 'Gil', 'Hu', 'Ina'];
+    for (const name of names) {
       const guest = await open(`result guest ${name}`, name === 'Ben' ? { width: 390, height: 844 } : undefined);
       await guest.goto(host.url());
       await guest.locator('.seat.empty button').first().click();
@@ -1074,6 +1079,27 @@ try {
     await phone.screenshot({ path: path.join(OUT, 'phone-result.png') });
     if (problems.length) throw new Error(`at 390x844, when the result showed: ${problems.join('; ')}`);
     await stopGame(host, players);
+
+    // Someone new can sit down while the result shows: here the game has stopped, so it stays. A player whose nameplate
+    // had a line just before the result leaves, and Zed takes the seat. His nameplate is his own, with no room kept in
+    // it, unseen, for the line the last player's showed.
+    const said = (name) => Object.values(seen.before.seats).find((s) => s.name === name)?.lines.length;
+    const left = names.findIndex((name, i) => i > 0 && said(name));
+    const newcomer = await open('result newcomer');
+    await newcomer.goto(host.url());
+    await guests[left].click('button:has-text("Leave seat")');
+    await newcomer.locator('.seat.empty button').first().click();
+    await newcomer.fill('.modal input[required]', 'Zed');
+    await newcomer.click('button:has-text("Ask to sit")');
+    await host.click('.request button:has-text("Approve")');
+    await newcomer.waitForSelector('.seat.me');
+    const zed = phone.locator('.felt .seat').filter({ has: phone.locator('.name', { hasText: /^Zed/ }) });
+    await zed.waitFor();
+    if (!(await phone.locator('.pot.result').count())) throw new Error('the result had gone before Zed sat down');
+    const kept = await zed
+      .locator('.nameplate > *')
+      .evaluateAll((els) => els.filter((e) => e.getClientRects().length && getComputedStyle(e).visibility === 'hidden').map((e) => `"${e.textContent}"`));
+    if (kept.length) throw new Error(`Zed sat in ${names[left]}'s seat while the result showed, and his nameplate keeps room for ${kept.join(', ')}`);
   });
 
   await step("phone: a knocked-out player's nameplate says so where the chips were, and keeps its size", async () => {
@@ -1081,7 +1107,9 @@ try {
     // "Knocked out" and the hand's name on lines of their own, grew into the next one and had both cut short (#455). Now
     // "Knocked out" takes the chip count's place and the hand's name goes on a tab. Two players go all in and the third,
     // on a 390x844 phone, folds and watches: from the last frame before the result to 2.5 s after it, nothing changes
-    // size or moves (as in the step before), and the player who went out reads "Knocked out" where the chips were.
+    // size or moves (as in the step before), and the player who went out reads "Knocked out" where the chips were. The
+    // bigger stack's shove is called for less, so the chips nobody matched go back and that player is no longer all in:
+    // their nameplate keeps its size at the result too.
     const host = await open('knockout host');
     await host.goto(`${BASE}/tn/new`);
     await host.getByRole('radio', { name: 'When I start it' }).click();
@@ -1101,43 +1129,43 @@ try {
     await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
     for (const p of players) await p.waitForURL(new RegExp(`/t/${id}-t1$`), { waitUntil: 'commit' });
 
-    // The two others go all in; Kit folds. Everyone starts with the same chips, so one of them goes out, unless they
-    // split the pot: then the next hand goes the same way.
+    // In the first hand everyone folds to the big blind, so the two others' stacks differ. From then on both go all in
+    // (the second over the first, if they have more) and Kit folds, until one goes out. Each hand's result is checked.
     let out = null;
+    const problems = [];
     for (let hands = 0; !out; hands++) {
-      if (hands === 6) throw new Error('nobody was knocked out in six hands with two players all in');
+      // Each all-in hand knocks someone out unless the bigger stack loses (or they split the pot).
+      if (hands === 12) throw new Error('nobody was knocked out in eleven hands with two players all in');
       // (A split pot has a result line for each player.)
       await phone.locator('.pot.result').first().waitFor({ state: 'detached', timeout: 30_000 });
       await phone.waitForSelector('.seat.me .hole .playing-card');
       await watchResult(phone);
       for (const end = Date.now() + 60_000; !(await phone.locator('.pot.result').count()); ) {
-        if (Date.now() > end) throw new Error('the all-in hand did not finish in 60 s');
+        if (Date.now() > end) throw new Error(`hand ${hands + 1} did not finish in 60 s`);
         let acted = false;
         for (const p of players) {
           const bar = p.locator('.action-bar.my-turn').first();
           if (!(await bar.count())) continue;
           const press = (where, text) => bar.locator(where, { hasText: text }).click({ timeout: 2000 }).catch(() => {});
-          if (p === phone) await press('.buttons button', /^Fold/);
-          // The first of the two to act goes all in, and the other calls.
-          else if (await p.locator('.felt .seat.all-in').count()) await press('.buttons button', /^Call/);
-          else {
-            // The preset's text is "All in" and its keyboard hint (⇧A).
-            await press('.presets button', /^All in/);
+          if (p === phone || hands === 0) await press('.buttons button', /^Fold/);
+          // All in while they can raise: the preset's text is "All in" and its keyboard hint (⇧A); with no range to
+          // pick from there are no presets and the raise button goes all in. Otherwise they call (all in, for less).
+          else if (await bar.locator('.buttons button.primary').count()) {
+            if (await bar.locator('.presets').count()) await press('.presets button', /^All in/);
             await press('.buttons button.primary', /^All in/);
-          }
+          } else await press('.buttons button', /^(Call|Check)/);
           acted = true;
           await p.waitForTimeout(200);
         }
         if (!acted) await phone.waitForTimeout(250);
       }
       const seen = await resultSeen(phone);
+      problems.push(...[...changedAtResult(seen), ...(await tabsUnseen(phone))].map((t) => `hand ${hands + 1}: ${t}`));
       out = (await phone.locator('.felt .seat.departed').count()) ? seen : null;
     }
     const gone = phone.locator('.felt .seat.departed');
-    const problems = changedAtResult(out);
     const [who, stack] = [await gone.locator('.name').innerText(), await gone.locator('.stack').innerText()];
     if (stack !== 'Knocked out') problems.push(`${who}'s nameplate reads "${stack}" where the chips were, not "Knocked out"`);
-    problems.push(...(await tabsUnseen(phone)));
     await phone.screenshot({ path: path.join(OUT, 'phone-knocked-out.png') });
     if (problems.length) throw new Error(`at 390x844, when the result showed: ${problems.join('; ')}`);
 
