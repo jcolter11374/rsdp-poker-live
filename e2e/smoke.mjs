@@ -1273,7 +1273,8 @@ try {
     // cards reach in further than that room allows for, and the middle was drawn up to 30% smaller to clear them, where
     // the lines one under the other fit at full size. They're stacked there now (#474). Four players check or call every
     // hand to the showdown; about half of Stud Hi-Lo hands then split. Watchers at 1440x900 and 1600x900 read the middle's
-    // scale every frame.
+    // scale every frame. Pots split two ways only: a third line (two tie for high as well) can make the stack too tall to
+    // clear the bottom seat's cards at 1600x900 whichever way the lines go, so the middle is drawn a little smaller then.
     const players = [];
     try {
       for (const name of ['Ned', 'Bea', 'Cal', 'Dee']) {
@@ -1317,13 +1318,13 @@ try {
       for (const page of pages) {
         await page.goto(`${BASE}/t/${tableId}`);
         await page.waitForSelector('.felt .seat');
-        // For each split pot shown (by its lines), every scale the middle was drawn at.
+        // For each pot split two ways (by its lines), every scale the middle was drawn at.
         await page.evaluate(() => {
           const splits = (window.__splits = new Map());
           const sample = () => {
             const stack = document.querySelector('.felt .board-stack');
             const several = stack?.querySelector(':scope > .results.several');
-            if (several) {
+            if (several?.childElementCount === 2) {
               const key = [...several.children].map((c) => c.textContent).join(' | ');
               if (!splits.has(key)) splits.set(key, new Set());
               splits.get(key).add(getComputedStyle(stack).scale);
