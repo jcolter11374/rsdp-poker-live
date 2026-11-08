@@ -1326,9 +1326,12 @@ try {
         await p.evaluate(() => {
           window.__warnings = 0;
           window.__onTurn = 0;
+          window.__lines = new Set();
           let was = null;
           const look = () => {
-            const shown = [...document.querySelectorAll('.seed-alarm')].some((b) => b.getClientRects().length > 0);
+            const pills = [...document.querySelectorAll('.seed-alarm')].filter((b) => b.getClientRects().length > 0);
+            const shown = pills.length > 0;
+            for (const b of pills) window.__lines.add(b.textContent);
             if (was !== null && shown !== was) window.__warnings++;
             if (shown && document.querySelector('.action-bar.my-turn')) window.__onTurn++;
             was = shown;
@@ -1358,6 +1361,10 @@ try {
       if ((await warnings()) < 1) throw new Error(`in ${hands} hands the fair-dealing warning never came or went, so this step checked nothing`);
       // It stays in view on your own turn, when you decide whether to put chips in.
       if ((await onTurn()) < 1) throw new Error(`in ${hands} hands the fair-dealing warning never showed on your own turn`);
+      // And it's the one that says a second device is expected, not that the deck may have been steered.
+      const lines = [...new Set((await Promise.all([first, second].map((p) => p.evaluate(() => [...window.__lines])))).flat())];
+      const wrong = lines.filter((l) => !l.includes('Seed not from this browser: expected on two devices'));
+      if (wrong.length) throw new Error(`the warning for a second device read: ${wrong.join(' / ')}`);
       await second.screenshot({ path: path.join(OUT, 'two-devices-laptop.png') });
       await stopGame(first, [first, second]);
     } finally {
