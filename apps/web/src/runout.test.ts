@@ -3,7 +3,7 @@ import { engine, runoutSteps, type HandEvent, type HandState } from '@rsdp/engin
 import { defaultSettings, parseSettings } from '@rsdp/engine/settings';
 import type { TableView } from '@rsdp/engine/wire';
 import { start } from '../../../packages/engine/test/core/harness';
-import { departures, finishedOnScreen, heldChoice, holdBack, sharedWithFirstRun, withShown, type Frozen } from './runout';
+import { departures, finishedOnScreen, heldCards, heldChoice, holdBack, myPlace, sharedWithFirstRun, withShown, type Frozen } from './runout';
 
 /** Two players all in before the flop, run twice: run 1 is 3h 4h 5h / 6h / 7h, run 2 shares nothing. */
 function finished(): TableView {
@@ -244,6 +244,39 @@ describe('holdBack', () => {
       // that seats seven, not the current menu's (#444).
       const addedInFront = { ...live, pendingSettings: { game: { dealersChoice: { games: [{ gameId: 'stud', betting: 'fixed-limit' }, menu[1], menu[2]] } } } } as unknown as TableView;
       expect(holdBack(addedInFront, frozen, 0).choice).toMatchObject({ defaultIndex: 2, canKeep: false, fallback: { gameId: 'stud', gameName: 'Seven Card Stud' } });
+      // The waiting change also makes the table bigger, with people on the waitlist: they are offered the new seats
+      // before a missed pick is dealt, so the held fallback counts them as the server did before the result: nine then,
+      // eight now that a bot has left (#459). Only Pot-Limit Omaha seats nine.
+      const plo4 = { gameId: 'plo4', betting: 'pot-limit' } as const;
+      const bigger = { ...live, pendingSettings: { table: { maxSeats: 9 }, game: { dealersChoice: { games: [menu[1], menu[2], plo4] } } }, choice: { ...live.choice!, comingCount: 8 } } as unknown as TableView;
+      expect(holdBack(bigger, { ...frozen, choice: { ...frozen.choice, comingCount: 9 } }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4', gameName: 'Pot-Limit Omaha' } });
+      // With nobody waiting, Razz seats the seven.
+      expect(holdBack({ ...bigger, choice: live.choice } as TableView, frozen, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
+      // As it really happens: the seat the busted bot left goes at once to someone waiting, so the count stays at seven
+      // and only the count once the change applies drops, to eight. The fallback still waits for the result.
+      const razz = { gameId: 'razz', betting: 'fixed-limit', gameName: 'Razz' };
+      // Eight seats before the result, as the settings say.
+      const nine = { ...frozen, seats: [...frozen.seats, ...Array(8 - frozen.seats.length).fill(null)], choice: { ...frozen.choice, comingCount: 9 } };
+      const refilled = { ...bigger, choice: { ...live.choice!, count: 7, comingCount: 8, fallback: razz } } as unknown as TableView;
+      expect(holdBack(refilled, nine, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
+      // Someone joined the waitlist during the runout, so the server counted nine coming until it had dealt the runout
+      // out; then the busted bot's seat went to someone waiting. The nine stay until the result.
+      const joined = { ...nine, choice: { ...frozen.choice, comingCount: 8 }, counted: { count: 7, coming: 9 } };
+      expect(holdBack(refilled, joined, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'plo4' } });
+      expect(holdBack(refilled, { ...joined, counted: undefined }, 0).choice).toMatchObject({ count: 7, fallback: { gameId: 'razz' } });
+      // The host saves again once the hand is over, so the change applies before the result shows: the table is held
+      // at the nine it was going to have, not the eight it has.
+      const nineSeats = parseSettings({ ...table, table: { ...table.table, maxSeats: 9 }, seating: { ...table.seating, waitlist: true }, game: { ...table.game, dealersChoice: { enabled: true, games: [menu[1], menu[2], plo4], hands: 0, pickSeconds: 20 } } });
+      const applied = { ...live, settings: nineSeats, pendingSettings: null, choice: { ...live.choice!, count: 8, fallback: razz } } as unknown as TableView;
+      expect(holdBack(applied, nine, 0).choice).toMatchObject({ count: 9, fallback: { gameId: 'plo4' } });
+      // The same when the host saves ten seats instead: the nine coming are counted, not the eight left by a bust.
+      const tenSeats = parseSettings({ ...nineSeats, table: { ...nineSeats.table, maxSeats: 10 } });
+      expect(holdBack({ ...applied, settings: tenSeats } as TableView, nine, 0).choice).toMatchObject({ count: 9, fallback: { gameId: 'plo4' } });
+      // Or the host undoes it, back to eight seats and this menu: the seven are counted as they are, and Hold'em, which
+      // seats them, is kept.
+      const nlhe = { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" };
+      const undone = { ...live, pendingSettings: null, choice: { ...live.choice!, count: 7, fallback: nlhe } } as unknown as TableView;
+      expect(holdBack(undone, nine, 0).choice).toMatchObject({ count: 7, defaultIndex: 0, canKeep: true, fallback: nlhe });
       // A change that ends Dealer's choice takes no game off: the result shows no next pick.
       const ending = { ...live, pendingSettings: { game: { dealersChoice: { enabled: false } } } } as unknown as TableView;
       expect(holdBack(ending, frozen, 0).choice).toEqual(choice(2, true, { current: nlheB, count: 7, defaultIndex: 0, canKeep: true, fallback: { gameId: 'nlhe', betting: 'no-limit', gameName: "No-Limit Hold'em" } }));
@@ -346,8 +379,14 @@ describe('a player knocked out (#308)', () => {
     const frozen: Frozen = { logCut: 0, seats: before.seats, ledger: [], me: { playerId: 'a', seat: 0 } as TableView['me'], nit: null, rotation: null };
     expect(holdBack(after, frozen, 1).hand!.comingNext).toBeUndefined();
     expect(holdBack(after, frozen, 2).hand!.comingNext).toEqual([{ run: 0, board: 0 }]);
+    // When the result shows, that card turns over where it lies.
+    expect(heldCards(after.hand)).toEqual(['3s']);
+    // It does from when it lands; the cards before it were dealt, even while each was the last out so far (#412).
+    expect([0, 1, 2, 3].map((n) => heldCards(holdBack(after, frozen, n).hand))).toEqual([[], [], [], ['3s']]);
+    expect(holdBack(after, frozen, 3).hand!.runoutToCome).toBeUndefined();
     // Run it twice deals at its own pace, without the wait.
     expect(holdBack(finished(), before_(), 5).hand!.comingNext).toBeUndefined();
+    expect(heldCards(finished().hand)).toEqual([]);
   });
 });
 
@@ -385,13 +424,39 @@ function allInWith(boardCards: number, options: Parameters<typeof start>[0]['opt
 
 const frozenOf = (v: TableView): Frozen => ({ logCut: 0, seats: v.seats, ledger: [], me: v.me, nit: null, rotation: null });
 
+describe("the viewer's place, kept after a knockout (#445)", () => {
+  // Player b, knocked out in hand 9, is looking at the table: their seat is kept, marked out.
+  const { after } = knockout();
+  const out = (departed: 'out' | 'fading', nextHandAt: number | null) =>
+    ({ ...after, me: { playerId: 'b', seat: null }, nextHandAt, seats: [after.seats[0], { ...after.seats[0]!, seat: 1, playerId: 'b', stack: 0, departed }, after.seats[2]] }) as unknown as TableView;
+
+  it('is your seat while you have one', () => {
+    expect(myPlace(after)).toBe(0);
+  });
+  it('is the seat kept for you after a knockout, until the next deal, fading included', () => {
+    expect(myPlace(out('out', 9000))).toBe(1);
+    expect(myPlace(out('out', null))).toBe(1);
+    // It fades a moment before the deal: the table changes with the deal, not before it.
+    expect(myPlace(out('fading', 9000))).toBe(1);
+  });
+  it('lets go once the kept seat fades with no deal coming, as at a table that broke', () => {
+    expect(myPlace(out('fading', null))).toBeNull();
+  });
+  it("is nothing for someone only watching, and doesn't count someone else's kept seat", () => {
+    expect(myPlace({ ...out('out', 9000), me: { playerId: 'z', seat: null } } as unknown as TableView)).toBeNull();
+    expect(myPlace({ ...out('out', 9000), mode: 'cash' } as unknown as TableView)).toBeNull();
+  });
+});
+
 describe('run it twice, street by street (#372)', () => {
   for (const boards of [1, 2] as const) {
     for (const [street, cards] of [['before the flop', 0], ['on the flop', 3], ['on the turn', 4]] as const) {
       it(`deals each run's own cards one street at a time, all in ${street}${boards > 1 ? ', on two boards' : ''}`, () => {
         const s = allInWith(cards, { boards });
         const view = engineView(s);
-        const steps = runoutSteps(s.events);
+        // Hold'em runs out on the board alone (stud's steps also deal to the seats).
+        const steps = runoutSteps(s.events).map((step) => step.filter((e) => e.t === 'board'));
+        expect(steps.flat()).toHaveLength(runoutSteps(s.events).flat().length);
         const boardsAt = (shown: number) => holdBack(view, frozenOf(view), shown).hand!.boards;
         // As the board splits, the second run already shows the cards both runs share, and nothing of its own.
         const shared = s.runs[0].map((board) => board.slice(0, cards));

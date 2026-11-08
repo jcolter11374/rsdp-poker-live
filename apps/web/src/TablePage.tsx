@@ -18,7 +18,7 @@ import { ActionBar } from './components/ActionBar';
 import { HostPanel } from './components/HostPanel';
 import { SidePanel, type Tab } from './components/SidePanel';
 import { noteRealGame } from './components/table/Recap';
-import { PartBoundary } from './components/ErrorBoundary';
+import { PartBoundary, QuietBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
 import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
@@ -32,7 +32,8 @@ import { LookDialog } from './components/LookDialog';
 import { FeedbackDialog } from './components/FeedbackDialog';
 import { hasKeyboard, ShortcutsDialog } from './components/Shortcuts';
 import { Dock } from './components/table/Dock';
-import { useShownTable } from './runout';
+import { TableAnnouncer } from './components/table/Announcer';
+import { myPlace, useShownTable } from './runout';
 import { holdReloadWhile, reloadIfStale } from './freshness';
 import { TableStrip } from './tournament/TableStrip';
 import { TournamentGameLine } from './tournament/TableGame';
@@ -41,21 +42,48 @@ import { navigate, tournamentOfTable, useFollowSeat, useTournamentGames } from '
 import { tableAllLimit, tableGames } from './tableGames';
 import type { BettingKind } from '@rsdp/engine/core';
 import { canPickNow, choiceText, GamePicker, myPickDue } from './components/table/Choice';
+import { pageTitle, usePageTitle } from './pageTitle';
+
+/**
+ * Every turn alert at a table starts with this, the page's and a push's alike (apps/server/src/app.ts, watchTurn): the
+ * next one replaces it, and it is taken down once the turn is over. A turn at another table still needs its player.
+ */
+const turnAlerts = (tableId: string) => `turn:${tableId}:`;
+
+/**
+ * Whether Enter on the focused `control` presses it, rather than starting a chat message (#320): only when it was
+ * reached with the keyboard. Not when it was last pressed with the mouse or a finger (`clicked`), nor when focus went
+ * back to it because what was pressed has gone (an item of the table's Menu, a dialog's Done button).
+ */
+export function enterPresses(control: Element | null, clicked: Element | null): boolean {
+  return !!control && control !== clicked && !(clicked && !clicked.isConnected);
+}
 
 /** Plays sounds, buzzes and badges the tab for what changed between two views. */
-function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
+export function useTableEffects(view: TableView | null, skew: number, preQueued: { current: boolean }) {
   const prev = useRef<TableView | null>(null);
   useEffect(() => {
     const before = prev.current;
     prev.current = view;
-    if (!view || !before) return;
+    if (!view) return;
+    const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+    // The server's phone alert for this turn carries the same tag (apps/server/src/app.ts, watchTurn), so a phone shows one.
+    const turnAlert = () =>
+      view.hand && notify('Your turn', view.name, { tag: `${turnAlerts(view.id)}${view.hand.handNumber}:${view.hand.events.length}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
+    // The first view says nothing (arriving mid-hand isn't news), but a table that opens on your turn in a tab in the
+    // background (following your seat from the lobby at the start) still calls you.
+    if (!before) {
+      if (myTurn && !preQueued.current) turnAlert();
+      return;
+    }
     if (newChat(before.chat, view.chat).some((m) => m.playerId && m.playerId !== view.me.playerId)) sounds.chat();
     if (view.powers.includes('approve') && view.requests.length > before.requests.length) sounds.request();
     // Dealer's choice: the table waiting for my pick calls me like a turn to act.
     if (myPickDue(view) && !myPickDue(before)) {
       sounds.turn();
       buzz();
-      notify('Your pick: choose the next game', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
+      // One alert for each pick (the hand it follows), with the same tag as the server's phone alert for it.
+      notify('Your pick: choose the next game', view.name, { tag: `${turnAlerts(view.id)}pick:${view.hand?.handNumber ?? 0}`, url: `/t/${view.id}`, replaces: turnAlerts(view.id) });
     }
     const hand = view.hand;
     if (!hand) return;
@@ -76,13 +104,12 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
     const won = hand.phase === 'complete' && before.hand?.phase !== 'complete';
     if (won && view.me.seat !== null && hand.awards.some((a) => a.seat === view.me.seat)) sounds.win();
     else if (won && hand.awards.length) sounds.pot();
-    const myTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
     const wasMyTurn = !!before.legal || !!before.canDraw || before.canVoteRunItTwice;
     // A queued move (check/fold, call any) answers for you, so there is nothing to call you for.
     if (myTurn && !wasMyTurn && !preQueued.current) {
       sounds.turn();
       buzz();
-      notify('Your turn', view.name, { tag: `turn:${view.id}`, url: `/t/${view.id}` });
+      turnAlert();
     }
   }, [view]);
 
@@ -102,25 +129,25 @@ function useTableEffects(view: TableView | null, skew: number, preQueued: { curr
   }, [deadline, skew]);
 
   // Flash the tab title and badge its icon while it's your turn.
+  const tableId = view?.id;
   useEffect(() => {
     if (!myTurn) return;
-    const original = document.title;
     badgeFavicon(true);
     let on = false;
     const t = setInterval(() => {
       if (document.hidden) {
         on = !on;
-        document.title = on ? '▶ Your turn!' : original;
-      } else document.title = original;
+        document.title = on ? '▶ Your turn!' : pageTitle();
+      } else document.title = pageTitle();
     }, 800);
     return () => {
       clearInterval(t);
-      document.title = original;
+      document.title = pageTitle();
       badgeFavicon(false);
-      // Acted (here or in another tab): the alert is out of date.
-      closeNotifications('turn:');
+      // Acted or picked (here or in another tab), or the time ran out: this table's alert is out of date.
+      if (tableId) closeNotifications(turnAlerts(tableId));
     };
-  }, [myTurn]);
+  }, [myTurn, tableId]);
 }
 
 const HURRY_MS = 5000;
@@ -134,8 +161,9 @@ export function TablePage({ tableId }: { tableId: string }) {
   const [live, setView] = useState<TableView | null>(null);
   // An all-in runout is dealt a street at a time; everything below sees the table as it is shown. A player knocked
   // out stays in their seat until the next deal. `runningOut`: a runout is still being dealt.
-  const { view, runningOut } = useShownTable(live);
   const [skew, setSkew] = useState(0);
+  const { view, runningOut } = useShownTable(live, skew);
+  usePageTitle(view?.name);
   const [error, setError] = useState('');
   /** The server's answer when it refused (or never answered) Sit out, I'm back, straddle or wait for the big blind. */
   const [seatError, setSeatError] = useState('');
@@ -272,7 +300,7 @@ export function TablePage({ tableId }: { tableId: string }) {
         // Start game pressed the Stop game button that took its place, and Pause flipped to Resume (#320).
         if (e.defaultPrevented) return;
         const control = e.target instanceof HTMLElement ? e.target.closest('button, a, summary, [role=button]') : null;
-        if (control && control !== clicked) return;
+        if (enterPresses(control, clicked)) return;
         if (document.querySelector('.modal-backdrop, .sheet-backdrop, .replayer-backdrop')) return;
         const box = document.querySelector<HTMLInputElement>('.side .chat-form input, .corner-chat .chat-form input');
         // With no chat box to go to (muted, say), a clicked button still isn't pressed again.
@@ -312,6 +340,8 @@ export function TablePage({ tableId }: { tableId: string }) {
     }
   };
   const keysTip = !keysTipSeen && !portrait && view?.me.seat != null && hasKeyboard();
+  // The tip names Shift+A only where it does something: the hand being played (or the next one) isn't fixed limit.
+  const bettingNow = view ? ((view.hand ?? view.upcoming)?.betting ?? view.settings.game.betting) : null;
   // The tip sits beside the table instead of pushing it down, and goes by itself after a while.
   useEffect(() => {
     if (!keysTip) return;
@@ -408,6 +438,8 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   const cash = view.mode === 'cash';
   const mySeat = view.me.seat !== null ? view.seats[view.me.seat] : null;
+  // Your seat, or the one kept for you, marked out, after a knockout until the next deal (#445).
+  const place = myPlace(view);
   // Worked out once per render: it reads this browser's saved notes.
   const seedWarning = liveSeedProblem(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
@@ -589,7 +621,7 @@ export function TablePage({ tableId }: { tableId: string }) {
       </div>
     ),
     view.stopAfterHand && (
-      <div className="banner" key="stop">
+      <div className="banner" key="stop" role="status">
         The host is stopping the game after this hand.
       </div>
     ),
@@ -643,7 +675,13 @@ export function TablePage({ tableId }: { tableId: string }) {
   const keysTipBox = keysTip && !dialog && (
     <div className={tipInCorner ? 'tip-toast corner' : 'tip-toast'} role="status">
       <span>
-        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises{bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
+        Tip: play from the keyboard. <kbd>F</kbd> folds, <kbd>K</kbd> checks, <kbd>C</kbd> calls, <kbd>R</kbd> raises
+        {bettingNow !== 'fixed-limit' && (
+          <>
+            , <kbd>Shift</kbd>+<kbd>A</kbd> twice {bettingNow === 'pot-limit' ? 'bets the most the pot allows' : 'goes all in'}
+          </>
+        )}
+        {bigBlind > 0 && <>, <kbd>B</kbd> switches chips and big blinds</>}
         {view.tips && prefs.tips && <>, <kbd>T</kbd> opens the coach&apos;s tip</>}.
       </span>
       <button
@@ -674,9 +712,13 @@ export function TablePage({ tableId }: { tableId: string }) {
         </a>
         {/* A tournament table, or one whose game rotates, leads with the game and says when it changes (#305, #373).
             At a tournament the strip under the bar names the event (in the wide layout, the box in the bottom-right
-            corner: #385), so the bar just says which table. */}
+            corner: #385), so the bar just says which table. The table's name is the page's heading for screen readers,
+            which jump between headings; it looks as it always has. */}
+        {view.tournamentId || view.rotation ? (
+          <h1 className="sr-only">{view.tournamentId ? (view.name.match(/· (Table \d+)$/)?.[1] ?? view.name) : view.name}</h1>
+        ) : null}
         {view.tournamentId ? (
-          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={view !== live} />
+          <TournamentGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} holding={runningOut} />
         ) : view.rotation ? (
           <CashGameLine view={view} fmt={fmt} portrait={portrait} narrow={narrowBar} tight={tightBar} levelText={levelText} />
         ) : (
@@ -686,7 +728,9 @@ export function TablePage({ tableId }: { tableId: string }) {
           <span className="stakes" title={barLine}>
             {/* The first dot goes with the name, so a name cut short ends in "…", not "· ". */}
             <span className="stakes-name">
-              <b>{barName}</b>
+              <b role="heading" aria-level={1}>
+                {barName}
+              </b>
               {!portrait && barLine !== barName && ' ·'}
             </span>
             <span className="stakes-more">
@@ -722,11 +766,14 @@ export function TablePage({ tableId }: { tableId: string }) {
           <button
             className="units-toggle"
             aria-pressed={prefs.units === 'bb'}
-            aria-label="Amounts in big blinds"
+            // The name starts with the words on the button, as they read (WCAG's label in name), then says what it does.
+            aria-label={`${dollars ? '$' : 'Chips'} BB: show amounts in big blinds`}
             onClick={() => setPrefs({ units: prefs.units === 'bb' ? 'chips' : 'bb' })}
             title={`Show amounts in ${prefs.units === 'bb' ? (dollars ? 'dollars' : 'chips') : 'big blinds'} (B)`}
           >
             <span className={prefs.units === 'bb' ? '' : 'on'}>{dollars ? '$' : 'Chips'}</span>
+            {/* A space for screen readers ("Chips BB", not "ChipsBB"); the button lays its two halves out side by side. */}
+            {' '}
             <span className={prefs.units === 'bb' ? 'on' : ''}>BB</span>
           </button>
         )}
@@ -736,7 +783,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               💬{unread > 0 && <span className="badge">{unread}</span>}
             </button>
             <button onClick={() => setSheet('log')}>Log</button>
-            <button aria-label="Menu" onClick={() => setSheet('menu')}>
+            <button aria-label={pending > 0 ? `Menu, ${pending} ${pending === 1 ? 'request' : 'requests'} waiting` : 'Menu'} onClick={() => setSheet('menu')}>
               ☰{pending > 0 && <span className="badge">{pending}</span>}
             </button>
           </>
@@ -779,17 +826,30 @@ export function TablePage({ tableId }: { tableId: string }) {
         )}
       </header>
 
-      {!connected && <div className="banner warn">Connection lost. Reconnecting…</div>}
+      {!connected && (
+        <div className="banner warn" role="status">
+          Connection lost. Reconnecting…
+        </div>
+      )}
 
-      <div className="layout">
+      <main className="layout">
         <section className="felt-area">
           {/* In the wide layout the tournament's clock sits in the bottom-right corner instead, and its asks under the table
               with the other notes about you, so the table keeps its height (#385). */}
           {view.tournamentId && (
-            <TableStrip tournamentId={view.tournamentId} tableId={tableId} seatedHere={view.me.seat !== null} holding={runningOut} corner={wide} asksIn={wide ? tournamentAsks : null} />
+            <TableStrip
+              tournamentId={view.tournamentId}
+              tableId={tableId}
+              seatedHere={view.me.seat !== null}
+              keptHere={view.me.seat === null && place !== null}
+              emptyHere={!!live && live.seats.every((s) => !s)}
+              holding={runningOut}
+              corner={wide}
+              asksIn={wide ? tournamentAsks : null}
+            />
           )}
           {readyTable && (
-            <div className="banner attention">
+            <div className="banner attention" role="status">
               Your tournament table is ready.{' '}
               <a
                 href={`/t/${readyTable}`}
@@ -803,7 +863,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           )}
           {unseated && (
-            <div className="banner attention">
+            <div className="banner attention" role="status">
               You're no longer seated: the host removed you, or your seat was released while you were away. Your chips are counted in the ledger.{' '}
               <button onClick={() => setUnseated(false)}>OK</button>
             </div>
@@ -834,8 +894,8 @@ export function TablePage({ tableId }: { tableId: string }) {
             onNoticeRoom={setNoticeRoom}
           />
           <Dock
-            reset={`${portrait}:${view.me.seat}`}
-            seated={view.me.seat !== null}
+            reset={`${portrait}:${place}`}
+            seated={place !== null}
             limit={allLimit && (view.hand ?? view.upcoming)?.betting === 'fixed-limit'}
             tips={!!view.tips && prefs.tips}
           >
@@ -884,7 +944,11 @@ export function TablePage({ tableId }: { tableId: string }) {
           </div>
         )}
         {tipInCorner && keysTipBox}
-      </div>
+        {/* `view`, never `live`: in an all-in runout it says each card only as it lands on the felt (announce.test.ts). */}
+        <QuietBoundary>
+          <TableAnnouncer view={view} fmt={feltFmt} skew={skew} preQueued={preQueued} />
+        </QuietBoundary>
+      </main>
 
       {portrait && sheet === 'menu' && (
         <Sheet title={view.name} onClose={close}>

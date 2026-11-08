@@ -20,7 +20,8 @@ mkdirSync(OUT, { recursive: true });
 export const DESK = { width: 1280, height: 800 };
 export const PHONE = { width: 390, height: 844 };
 
-export const browser = await chromium.launch();
+// CHROMIUM_PATH: a Chromium already on the machine, for when Playwright's own download isn't there.
+export const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 export const errors = [];
 
 export async function open(label, viewport = DESK, video = false) {
@@ -106,7 +107,8 @@ export function bot(p, style = 'call') {
           if (await approve.count()) await approve.first().click({ timeout: 2000 });
         }
       } catch {}
-      // A page closed while the bot waits (the run is ending) stops the bot instead of failing the run (#400).
+      // A page closed mid-run (a player who left) or while the bot waits (the run is ending) ends its bot, rather
+      // than throwing where nothing catches it and failing the whole run (#400).
       try {
         await p.waitForTimeout(300);
       } catch {

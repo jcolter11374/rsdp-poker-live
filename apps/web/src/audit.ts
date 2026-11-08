@@ -134,14 +134,28 @@ export type HandEntries = { entries: AuditEntry[]; before: boolean; after: boole
 export const tableHand = (tableId: string, handNumber: number) => json<HandEntries>(`/api/audit/table/${tableRef(tableId)}/hand/${handNumber}`);
 
 /** What a revealed hand's fingerprint is, from what "Check this hand" was given. Null while it is sealed. */
-export function digestOf(hand: HandRecordView): string | null {
+export function digestOf(hand: HandRecordView, events = hand.fair?.events): string | null {
   const fair = hand.fair;
-  if (!fair?.events || !fair.serverSeed) return null;
-  return handDigest({ handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed, button: hand.button, seats: hand.seats, events: fair.events });
+  if (!fair?.events || !events || !fair.serverSeed) return null;
+  return handDigest({ handId: fair.handId, commit: fair.commit, serverSeed: fair.serverSeed, button: hand.button, seats: hand.seats, events });
+}
+
+/**
+ * The fingerprints the hand had before each card shown after it ended (newest first): each show was recorded again,
+ * and at a table watched on a delay the latest may not be in the record yet.
+ */
+function earlierDigests(hand: HandRecordView): string[] {
+  const events = hand.fair?.events ?? [];
+  const end = events.findIndex((e) => e.t === 'hand-end');
+  if (end < 0) return [];
+  const cuts: number[] = [];
+  // Each show after the end is its own, recorded again with whatever it adds (a bounty or prize paid for it).
+  for (let i = end + 1; i < events.length; i++) if (events[i].t === 'show') cuts.push(i);
+  return cuts.reverse().flatMap((i) => digestOf(hand, events.slice(0, i)) ?? []);
 }
 
 /** How a revealed hand compares with the public record. A hand shown after it ends is recorded again, so any of its entries may match. */
-export function handInRecord(hand: HandRecordView, record: HandEntries): { ok: boolean | null; detail: string } {
+export function handInRecord(hand: HandRecordView, record: HandEntries): { ok: boolean | null; pending?: true; detail: string } {
   const digest = digestOf(hand);
   if (!digest) return { ok: null, detail: 'once the hand is revealed' };
   const entries = record.entries.filter((e) => e.kind === 'hand');
@@ -151,9 +165,14 @@ export function handInRecord(hand: HandRecordView, record: HandEntries): { ok: b
     return { ok: null, detail: 'this hand was played before hands went in the public record' };
   }
   const match = entries.find((e) => e.data.digest === digest);
-  return match
-    ? { ok: true, detail: `entry ${match.seq}, written ${new Date(match.at).toLocaleString()}` }
-    : { ok: false, detail: `entry ${entries.at(-1)!.seq} has a different fingerprint: this hand was changed after it was recorded` };
+  if (match) return { ok: true, detail: `entry ${match.seq}, written ${new Date(match.at).toLocaleString()}` };
+  // The newest entry is the hand as it was before a card shown after it ended, and that show isn't in yet: at a table
+  // watched on a delay it goes in up to 10 minutes after it was shown (D38), always before the table's next hand does.
+  // So only the newest entry counts, and not once a later hand is in. The cards it shows are checked against the deck.
+  const newest = entries.at(-1)!;
+  if (!record.after && earlierDigests(hand).includes(String(newest.data.digest)))
+    return { ok: null, pending: true, detail: `entry ${newest.seq} has the hand as it was before a card shown after it ended; that card goes in the record up to 10 minutes after it was shown` };
+  return { ok: false, detail: `entry ${newest.seq} has a different fingerprint: this hand was changed after it was recorded` };
 }
 
 /** Rows of the ledger whose buy-ins or cash-outs differ from the latest ones in the public record (bots aren't recorded). */

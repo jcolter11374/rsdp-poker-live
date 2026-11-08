@@ -158,6 +158,30 @@ describe('waitlist', () => {
     expect(rt.state.log.some((l) => /Eve didn't take/.test(l.text))).toBe(false);
   });
 
+  it('offers the seats again in queue order when an offer is let go, so nobody behind takes the next seat first (#453)', () => {
+    const { rt, clock } = table((s) => {
+      s.table.maxSeats = 6;
+      s.seating.waitlist = true;
+    });
+    for (const id of ['f', 'g']) rt.connect(id);
+    // Seats 1 to 5 are taken. Fay joins and is offered seat 6; then C stands, and Gus, who joined after her, is offered
+    // seat 4.
+    ['host', 'a', 'b', 'c', 'd'].forEach((id, seat) => rt.requestSeat(id, { seat, name: id.toUpperCase(), stack: 200 }));
+    rt.joinWaitlist('f', { name: 'Fay', stack: 150 });
+    rt.joinWaitlist('g', { name: 'Gus', stack: 150 });
+    rt.stand('c');
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['f', 5], ['g', 3]]);
+    // Mid-hand the host takes the table down to 5 seats for the next hand. Fay's seat 6 goes, so Gus's offer is let go
+    // too, and seat 4 is offered to Fay: she was first. Gus waits, and nobody is dropped from the waitlist.
+    rt.start('host');
+    rt.updateSettings('host', { table: { maxSeats: 5 } });
+    expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['f', 3]]);
+    expect(rt.state.waitlist!.map((w) => w.playerId)).toEqual(['f', 'g']);
+    expect(() => rt.requestSeat('g', { seat: 3, name: 'Gus', stack: 150 })).toThrow(/held for Fay/);
+    clock.advance(1000);
+    expect(rt.state.log.some((l) => /didn't take/.test(l.text))).toBe(false);
+  });
+
   it('answers a waitlist join the same whether or not a player in the all-in busted and left', () => {
     // Three seats: the host and two bots on small stacks, no rebuys, so a busted bot leaves as the hand ends.
     const outcomes = new Set<string>();
@@ -382,6 +406,68 @@ describe('waitlist', () => {
       ran++;
     }
     expect(ran).toBeGreaterThan(0);
+  });
+
+  it("counts a runout's seats as taken in the count a bigger table will have, bust or not (#459)", () => {
+    // Dealer's choice works out the game a missed pick deals on the count the table will have once a waiting change
+    // to six seats applies. During the runout, five people wait: three seats a bigger table adds, and up to two seats
+    // busted bots leave, all go to people waiting, so the answer is six either way, during the runout and after it.
+    const coming = (rt: TableRuntime) => {
+      const next = structuredClone(rt.state.settings);
+      next.table.maxSeats = 6;
+      return (rt as unknown as { comingCount(next: TableSettings): number }).comingCount(next);
+    };
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 3);
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      for (const [id, name] of [['a', 'Al'], ['b', 'Bo'], ['c', 'Cy'], ['d', 'Di'], ['e', 'Eve']]) rt.joinWaitlist(id, { name, stack: 100 });
+      expect(rt.state.offers).toEqual([]);
+      expect(coming(rt)).toBe(6);
+      clock.advance(left);
+      expect(rt.state.offers!.length).toBe(busted.length);
+      expect(coming(rt)).toBe(6);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
+  });
+
+  it('counts a player who said before the result that they were leaving as gone during the runout (#459)', () => {
+    // Four seats: the host, two bots on small stacks and Al, who stands up and folds once the hand is dealt. Bo and Cy
+    // wait. With six seats, the table will have the host, both bots and the two waiting players in Al's seat and a
+    // new one, five in all, if nobody busted. During the runout the answer is five either way: Al counts as gone,
+    // since his leaving showed before the result, and a bot that busted is still counted.
+    const coming = (rt: TableRuntime) => {
+      const next = structuredClone(rt.state.settings);
+      next.table.maxSeats = 6;
+      return (rt as unknown as { comingCount(next: TableSettings): number }).comingCount(next);
+    };
+    const outcomes = new Set<boolean>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const t = afterRunout(
+        seed,
+        4,
+        (rt) => {
+          rt.requestSeat('a', { seat: 3, name: 'Al', stack: 100 });
+          rt.joinWaitlist('b', { name: 'Bo', stack: 100 });
+          rt.joinWaitlist('c', { name: 'Cy', stack: 100 });
+        },
+        () => {},
+        { during: (rt) => rt.stand('a') },
+      );
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      expect(seatOf(rt, 'a')).toBeNull();
+      expect(rt.state.offers).toEqual([]);
+      expect(coming(rt)).toBe(5);
+      clock.advance(left);
+      // Once it has been shown: Al's seat, and any busted bot's, go to Bo and Cy.
+      expect(rt.state.offers!.length).toBe(Math.min(2, 1 + busted.length));
+      expect(coming(rt)).toBe(5 - busted.length);
+      outcomes.add(busted.length > 0);
+    }
+    expect([...outcomes].sort()).toEqual([false, true]);
   });
 
   it('clears the queue when the waitlist is turned off', () => {
@@ -653,7 +739,7 @@ describe('spectators', () => {
     expect(rt.state.log.at(-1)!.text).toBe('HOST changed the table settings: table.');
     // Taking the queued change back is announced too.
     rt.updateSettings('host', { spectators: { delaySeconds: 300 } });
-    expect(rt.state.log.at(-1)!.text).toMatch(/5 minutes behind the table from the next hand \(it was 30 seconds behind\)/);
+    expect(rt.state.log.at(-1)!.text).toMatch(/5 minutes behind the table, from the next hand \(it was 30 seconds behind\)/);
   });
 
   it('drops a turn-on queued by an older snapshot, and applies a queued turn-off now', () => {
@@ -695,7 +781,7 @@ describe('spectators', () => {
     const chats = rt.state.chat.length;
     rt.updateSettings('host', { spectators: { delaySeconds: 30 }, chat: { guestChat: true }, play: { rabbitHunt: false }, stakes: { bigBlind: 4 } });
     const log = rt.state.log.map((l) => l.text);
-    expect(log).toContain('⚠️ HOST set spectators to watch 30 seconds behind the table from the next hand (it was 5 minutes behind). They see every hole card.');
+    expect(log).toContain('⚠️ HOST set spectators to watch 30 seconds behind the table, from the next hand (it was 5 minutes behind). They see every hole card.');
     expect(log).toContain("HOST let people who aren't seated chat, and spectators here see every hole card.");
     expect(log.some((l) => /rabbit hunting off from the next hand/.test(l))).toBe(true);
     expect(log).toContain('HOST changed the table settings: stakes (from the next hand).');

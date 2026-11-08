@@ -5,13 +5,16 @@
 //   npm run build && npm start &            (or the dev servers)
 //   BASE_URL=http://localhost:3001 node e2e/smoke.mjs
 //
-// Screenshots go to e2e/out/, and a failed step adds one of every open page. Any console error fails the run.
+// Screenshots go to e2e/out/, and a failed step adds one of every open page. Any console error fails the run, and so
+// does a serious or critical accessibility problem on the main pages (docs/ACCESSIBILITY.md).
+// SMOKE_A11Y=report prints the accessibility problems instead of failing on them.
 
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { AxeBuilder } from '@axe-core/playwright';
 import { io } from 'socket.io-client';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3001';
@@ -28,8 +31,53 @@ mkdirSync(OUT, { recursive: true });
 const errors = [];
 /** Every page the run opens, so a failed step can screenshot them all. */
 const pages = [];
+const a11y = [];
+// Only the upgrade rehearsal (upgrade.yml) sets SMOKE_A11Y=report. It runs main's copy of this test, with the newer
+// axe and Playwright a release brings, against main's image: a new rule there could flag what is already live, which
+// that release can't change, though the data it makes is fine. CI's own smoke test always fails on these problems.
+const A11Y = process.env.SMOKE_A11Y || 'fail';
+if (A11Y !== 'fail' && A11Y !== 'report') {
+  console.error(`SMOKE_A11Y is "fail" (the default) or "report", not "${A11Y}"`);
+  process.exit(1);
+}
 
 const browser = await chromium.launch();
+
+/** The WCAG 2.2 AA rules (with the 2.0 and 2.1 ones they build on) that axe checks. */
+const WCAG_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+
+/**
+ * An accessibility check that isn't axe's (a screen reader hears "Your turn"). Failing, it fails the run at once,
+ * or with SMOKE_A11Y=report it is noted with axe's problems.
+ */
+async function a11yCheck(label, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    if (A11Y !== 'report') throw e;
+    a11y.push(`${label}: ${e.message.split('\n')[0]}`);
+  }
+}
+
+/**
+ * Checks the page as it is now with axe, and notes every serious or critical problem; any fails the run at the end.
+ * Short animations (cards being dealt, chips flying) finish first, so nothing is checked half faded in.
+ */
+async function checkA11y(page, label) {
+  await page.evaluate(() => {
+    const short = document.getAnimations().filter((a) => {
+      const t = a.effect?.getComputedTiming();
+      return t && Number.isFinite(t.endTime) && t.endTime - Number(a.currentTime ?? 0) < 3000;
+    });
+    return Promise.race([Promise.all(short.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 4000))]);
+  });
+  await a11yCheck(`${label} (axe)`, async () => {
+    const result = await new AxeBuilder({ page }).withTags(WCAG_AA).analyze();
+    for (const v of result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')) {
+      a11y.push(`${label}: ${v.help} (${v.id}, ${v.impact}) at ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')}`);
+    }
+  });
+}
 
 async function open(label, viewport = { width: 1280, height: 860 }) {
   const ctx = await browser.newContext({ viewport });
@@ -154,6 +202,21 @@ async function step(name, fn) {
 }
 
 try {
+  await step('accessibility: home, sign-in, sign-up and new tournament pages, on a computer and a phone', async () => {
+    for (const [label, viewport] of [['computer', undefined], ['phone', { width: 390, height: 844 }]]) {
+      const p = await open(`pages (${label})`, viewport);
+      // Each page, and something that shows it has finished loading.
+      for (const [route, ready] of [['/', 'input[required]'], ['/signin', 'form'], ['/signup', 'form'], ['/tn/new', 'button:has-text("Create tournament")']]) {
+        await p.goto(`${BASE}${route}`);
+        await p.locator(ready).first().waitFor();
+        // Lists that arrive after the page (open tournaments on the home page) have a moment to land.
+        await p.waitForTimeout(600);
+        await checkA11y(p, `${route} (${label})`);
+      }
+      await p.close();
+    }
+  });
+
   await step('cash table: create, approve a seat, play a hand', async () => {
     const host = await open('cash host');
     const guest = await open('cash guest');
@@ -178,6 +241,15 @@ try {
     await first.keyboard.press('t');
     await first.waitForTimeout(300);
     for (const p of [host, guest]) if (await p.locator('.play-tip-button, #play-tip').count()) throw new Error('a coach tip showed in a hand between two people');
+    // A screen reader hears that it's their turn, from a region nobody sees.
+    await a11yCheck('table, your turn (read aloud)', () => first.locator('[role="log"]', { hasText: 'Your turn' }).waitFor({ state: 'attached' }));
+    await checkA11y(first, 'table, your turn');
+    await checkA11y(first === host ? guest : host, 'table, waiting to act');
+    const watcher = await open('cash spectator');
+    await watcher.goto(host.url());
+    await watcher.waitForSelector('.seat .hole .playing-card');
+    await checkA11y(watcher, 'table, watching');
+    await watcher.close();
     await playOut([host, guest]);
     await host.screenshot({ path: path.join(OUT, 'cash.png') });
 
@@ -519,6 +591,23 @@ try {
       await p.getByRole('button', { name: /^Register/ }).click();
       await p.getByText("You're registered.").waitFor();
     }
+    await checkA11y(host, 'tournament lobby, host');
+    await checkA11y(players[2], 'tournament lobby (phone)');
+    // The lobby chat with messages in it: your own (on its redder background) and another player's, with the host's
+    // Hide, Mute and Delete beside them.
+    for (const [p, text] of [
+      [host, 'Good luck, everyone'],
+      [players[2], 'Thanks, you too'],
+    ]) {
+      await p.getByRole('tab', { name: /^Chat/ }).click();
+      await p.getByRole('textbox', { name: 'Message' }).fill(text);
+      await p.getByRole('button', { name: 'Send' }).click();
+      await p.locator('.tn-chat-list li.mine', { hasText: text }).waitFor();
+    }
+    await host.locator('.tn-chat-list li', { hasText: 'Thanks, you too' }).getByRole('button', { name: 'Mute' }).waitFor();
+    await players[2].locator('.tn-chat-list li', { hasText: 'Good luck, everyone' }).waitFor();
+    await checkA11y(host, 'tournament lobby chat, host');
+    await checkA11y(players[2], 'tournament lobby chat (phone)');
     // The host starts from the card by the clock, without opening the Host tab.
     await host.locator('.tn-host-start').getByRole('button', { name: 'Start now' }).click();
 
@@ -526,6 +615,8 @@ try {
     for (const p of players) await p.waitForURL(table, { waitUntil: 'commit' });
     await host.locator('.tn-strip:has-text("Level 1")').waitFor();
     await host.waitForSelector('.seat .hole .playing-card');
+    await players[2].waitForSelector('.seat .hole .playing-card');
+    await checkA11y(players[2], 'tournament table (phone)');
     await playOut(players);
     const log = await host.locator('.side').innerText();
     for (const name of names) if (!log.includes(name)) throw new Error(`${name} was not in the first hand`);
@@ -669,6 +760,65 @@ try {
     await stopGame(host, [host, guest]);
   });
 
+  await step("phone: other players' cards keep off their neighbours' names and stacks", async () => {
+    // On a phone, the row of cards above a player's nameplate once covered the next player's name and stack, most of all at
+    // full Omaha tables, in the top corners (#318). A full 9-seat Omaha table, four cards each: at each phone size, no row
+    // of cards, yours included, covers another player's name or stack, and none goes off the screen.
+    const host = await open('phone host');
+    await host.goto(BASE);
+    await host.fill('input[required]', 'Pat');
+    await host.selectOption('label:has-text("Game") select', 'plo4');
+    await host.click('button:has-text("Create table")');
+    await host.waitForURL(/\/t\//);
+    await host.locator('.seat.empty button').first().click();
+    await host.click('button:has-text("Sit down")');
+    await host.waitForSelector('.seat.me');
+    // Everyone else sits down: seats fill in order, so the table is full and the rows are side by side.
+    const guests = [];
+    for (const name of ['Bea', 'Cal', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy']) {
+      const guest = await open(`phone guest ${name}`);
+      await guest.goto(host.url());
+      await guest.locator('.seat.empty button').first().click();
+      await guest.fill('.modal input[required]', name);
+      await guest.click('button:has-text("Ask to sit")');
+      await host.click('.request button:has-text("Approve")');
+      await guest.waitForSelector('.seat.me');
+      guests.push(guest);
+    }
+    await host.click('button:has-text("Start game")');
+    await host.waitForFunction(() => document.querySelectorAll('.seat:not(.me) .hole:not(.mucked) .playing-card').length === 32);
+    for (const [width, height] of [[390, 844], [390, 664], [360, 640], [430, 932]]) {
+      await host.setViewportSize({ width, height });
+      // Seats glide to their new spots (0.4s), then the rows are set out.
+      await host.waitForTimeout(800);
+      const problems = await host.evaluate(() => {
+        const box = (el) => el.getBoundingClientRect();
+        const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+        const seats = [...document.querySelectorAll('.felt .seat[data-seat]')];
+        const found = [];
+        // Your own cards too: they move aside, and get smaller only if they must.
+        for (const s of seats) {
+          const hole = s.querySelector('.hole:not(.mucked)');
+          if (!hole?.querySelector('.playing-card')) continue;
+          const row = box(hole);
+          // innerText leaves out the host's tag, which phones hide.
+          const name = s.querySelector('.name')?.innerText;
+          if (row.left < 0 || row.right > innerWidth) found.push(`${name}'s cards go off the screen`);
+          for (const o of seats) {
+            if (o === s) continue;
+            for (const part of o.querySelectorAll('.nameplate .name, .nameplate .stack'))
+              if (hit(row, box(part))) found.push(`${name}'s cards cover ${o.querySelector('.name')?.innerText}'s ${part.classList.contains('name') ? 'name' : 'stack'}`);
+          }
+        }
+        return found;
+      });
+      if (problems.length) throw new Error(`at ${width}x${height}: ${problems.join(', ')}`);
+      await host.screenshot({ path: path.join(OUT, `phone-omaha-${width}x${height}.png`) });
+    }
+    await host.setViewportSize({ width: 1280, height: 860 });
+    await stopGame(host, [host, ...guests]);
+  });
+
   await step('wide, short window: run it twice stays clear of the seats', async () => {
     // On a wide, short screen the two runs of the board went under the top player's nameplate, and the winners' lines and
     // "Next hand in" onto the bottom player's cards (#417). The middle now fits between them, and the seats hold still.
@@ -700,7 +850,8 @@ try {
     const move = (p, label) => p.locator('.action-bar.my-turn .buttons button', { hasText: label });
     const first = await Promise.any([host, guest].map((p) => p.locator('.action-bar.my-turn').waitFor().then(() => p)));
     const other = first === host ? guest : host;
-    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in$/ }).click();
+    // The preset's text is "All in" and its keyboard hint (⇧A).
+    await first.locator('.action-bar.my-turn .presets button', { hasText: /^All in/ }).click();
     await first.waitForTimeout(600);
     await move(first, /^All in/).click();
     await move(other, /^Call/).waitFor();
@@ -1123,6 +1274,11 @@ try {
   await new Promise((r) => setTimeout(r, 2000));
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
+  if (a11y.length) {
+    const found = `accessibility problems (docs/ACCESSIBILITY.md says how to check them):\n${a11y.join('\n')}`;
+    if (A11Y !== 'report') throw new Error(found);
+    console.warn(`${found}\nSMOKE_A11Y=report: reported, not failed.`);
+  }
   console.log('smoke test passed');
 } catch (e) {
   console.error('smoke test FAILED:', e.message);

@@ -116,6 +116,11 @@ export interface HandView {
    * that card goes on, so each shows a face-down card there until it turns over.
    */
   comingNext?: { run: number; board: number }[];
+  /**
+   * Set only in the browser, never by the server: while an all-in runout is being shown and more of it is still to
+   * come, so the last card out so far was dealt like the rest. Only the run's very last card turns over where it waited.
+   */
+  runoutToCome?: boolean;
 }
 
 export interface RequestView {
@@ -315,6 +320,11 @@ export interface ChoiceView {
   deadline: number | null;
   /** People counted when checking a game fits: everyone sitting down, and anyone a seat is held for. */
   count: number;
+  /**
+   * `count` once the host's change waiting for the next hand applies, when it differs: a bigger table offers its new
+   * seats to the waitlist before a missed pick is dealt (#459). `fallback` is worked out with it.
+   */
+  comingCount?: number;
   /** While a smaller game is picked or played, the table seats at most this many (null: no limit). */
   cap: number | null;
   /** Every seat it can deal is taken or held (counting seat requests), so the empty seats are closed. */
@@ -408,6 +418,11 @@ export interface CreateTableInput {
 export interface ClientToServer {
   /** The name other players see; also used to register for tournaments. */
   'session:name': (input: { name: string }, ack: Ack) => void;
+  /**
+   * Whether this tab is on screen, sent on connecting and whenever it changes. A phone alert for "your turn" goes
+   * out only while none of the player's tabs at that table is (a tab that never says counts as on screen).
+   */
+  'page:visible': (input: { visible: boolean }) => void;
   'table:create': (input: CreateTableInput, ack: Ack<{ tableId: string }>) => void;
   'table:join': (input: { tableId: string }, ack: Ack) => void;
   'table:leave': () => void;

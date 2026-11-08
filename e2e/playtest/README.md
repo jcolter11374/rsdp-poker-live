@@ -15,7 +15,11 @@ pictures are what to check.
 - `tourney.mjs`: seven players register for a tournament set to start on its
   own a couple of minutes later, then everyone shoves until there is a
   winner. About 3 minutes.
-- `lib.mjs`: what both share: browsers, screenshots, and bots that click the
+- `spectator-delay.mjs`: two players and a host at a cash table, with
+  someone watching on a delay through a socket and in a browser. Unlike the
+  others it checks as it goes and prints PASS or FAIL for each thing a
+  spectator on a delay must not see early. About 2 minutes.
+- `lib.mjs`: what they share: browsers, screenshots, and bots that click the
   same buttons a player would.
 
 Like the smoke test, they refuse a `fly.dev` address, and the browsers may
@@ -25,7 +29,8 @@ else is blocked and listed with the errors.
 ## Running one against a local copy
 
 You need the repo set up (`npm install`) and Chromium for Playwright
-(`npx playwright install chromium`, once). Start a local copy of the site in
+(`npx playwright install chromium`, once; or set `CHROMIUM_PATH` to a Chromium
+already on the machine). Start a local copy of the site in
 one terminal, either from the code:
 
 ```bash

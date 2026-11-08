@@ -1,6 +1,6 @@
 # Fair dealing in RSDP Live!
 
-> ### The short version: you're trusting John
+> ## The short version: you're trusting John
 >
 > John built and runs this site. Like every online poker site, the server sees everyone's cards, and whoever runs it could cheat if they really wanted to: peek at hands, or change the code. Nothing here can make that impossible.
 >
@@ -164,10 +164,12 @@ when they deal at a home game.
   record now shows: in "Check this hand", in the ledger's check against the
   record, in a warning from any browser that saw the record before, and in
   the GitHub copy. What it doesn't stop: a false entry written at the time
-  (say, a changed server recording a wrong hand as it happens; you'd see the
-  hand play out differently), an edit in the hours before GitHub next copies
-  it that no browser saw, and the leaderboard, which is worked out from hands
-  and isn't checked separately. If amounts matter, keep your own tally too.
+  (say, a changed server recording a wrong hand as it happens, or changing a
+  hand's entry while it waits out a table's spectator delay, at most 10
+  minutes; you'd see the hand play out differently), an edit in the hours
+  before GitHub next copies it that no browser saw, and the leaderboard,
+  which is worked out from hands and isn't checked separately. If amounts
+  matter, keep your own tally too.
 - **Read table chat.** Since November 2026 (issue #300) the admin page can
   read any table's chat, cash or tournament, while it is open or long after it
   has closed. That includes everything said at the table, by players and
@@ -268,10 +270,22 @@ the repository (and pulling the `transparency` branch now and then).
   someone at that table can work out. A hand's entry is the fingerprint of the
   whole hand as "Check this hand" sees it once revealed (a hand shown after it
   ends is recorded again). It includes the hand's secret server seed, so it
-  can't be used to work out folded cards while the hand is still sealed. Anyone can read the record at `/api/audit/entries`.
+  can't be used to work out folded cards while the hand is still sealed. At a
+  table whose spectators watch on a delay, each hand's own entry goes in that
+  long after the hand ends (at most 10 minutes), and a card shown after the
+  hand goes in that long after it is shown, so the hand's entry can't tell
+  anyone it is over before the people watching see it end. Until then the
+  server keeps the entry, saved, outside the chain: it gets its number and
+  time when it goes in, and a table's hands go in in the order they ended.
+  Buy-ins, cash-outs and everything else still go in at once, even those that
+  come as a hand ends (someone leaving after the hand, say), so those can show
+  that a hand is over before the people watching see it end. Anyone can read
+  the record at `/api/audit/entries`.
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
-  without names, and anyone can see when hands were played.
+  without names, and anyone can see when hands were played (at a table
+  watched on a delay, when they went in, which is normally when its
+  spectators saw them end).
 - **GitHub's copy of the record.** Each time the watcher runs, it reads the whole
   record again, checks every entry it ever copied is still there unchanged
   and that the chain is unbroken, and copies the new entries to the
@@ -285,9 +299,15 @@ the repository (and pulling the `transparency` branch now and then).
   If not, every page shows a warning. "Check this hand" checks a revealed hand
   against its entry, and marks a hand that is missing while hands before and
   after it are recorded (an honest server only does that if it crashed just
-  as the hand finished). The ledger checks every buy-in and cash-out against
-  the record, and says so if a player's totals were found changed when a
-  closed table was opened again. Those two compare with the record as the
+  as the hand finished; a hand waiting for a spectator delay is saved, and
+  goes in before any later hand of its table). A card shown after the hand
+  at a table watched on a delay goes in up to 10 minutes after it is shown;
+  until then the check finds the hand as it was before that card, shows it as
+  waiting (never as passed), and asks the record again each minute for 15
+  minutes. It fails if the card still isn't there, or once a later hand of the
+  table is in the record. The ledger checks every
+  buy-in and cash-out against the record, and says so if a player's totals
+  were found changed when a closed table was opened again. Those two compare with the record as the
   site shows it now; it's GitHub's regular check of the whole record that shows
   whether those entries were edited since they were copied. These checks are
   code the site sends you, so they are only as honest as that code; GitHub's
@@ -301,7 +321,12 @@ git clone -b transparency https://github.com/jcolter11374/rsdp-poker-live copy
 node scripts/verify-audit.mjs --copy copy --proof hand-12-proof.json
 ```
 
-It uses Node's own SHA-256 and nothing from the app. To be told when a check
+It uses Node's own SHA-256 and nothing from the app. Like the browser, it
+never calls a hand passed while the record has it as it was before a card
+shown after it ended and no later hand of that table is in yet: it says that
+check is still waiting and ends with exit code 2. Run it again 10 minutes
+later. If it is still waiting more than 10 minutes after the card was shown,
+the record is wrong. To be told when a check
 fails, press **Watch** on the repository's GitHub page (custom: Issues).
 
 What these checks can't do:
@@ -316,6 +341,10 @@ What these checks can't do:
 - The server saves each entry before showing it, but a hosting failure that
   loses the last few writes would make it reuse their numbers. Browsers and
   the watcher would report that as a changed record, as they should.
+- A hand waiting for a table's spectator delay is saved on the server too,
+  and goes in after a restart: on time, or straight after the restart if it
+  came due while the server was down. A hosting failure that lost it would
+  leave that hand out of the record, a gap "Check this hand" marks as above.
 - If the database were lost, the record would start again from entry 1, and
   the watcher would report it as a problem. That is the right call; John would
   owe everyone an explanation.
@@ -353,6 +382,35 @@ your cards to a player at the table, so the site makes it hard to miss:
 - Turning it on suggests a two-minute delay, but the host can set it to none.
   The warnings always say which.
 - Turning it off works at once, even in the middle of a hand.
+
+**Watching on a delay.** Spectators at a table with a delay see it as it was
+that long ago: the hand, the seats and stacks, the stakes, the waitlist and the
+table log. The server answers what they ask (a seat, a hand to share, the hand
+list, hand search, a link's preview) from that same moment, and sends them an
+update only when something they can see changes. A change to the delay starts
+for them at the first hand dealt under it. A few things stay live on purpose:
+
+- Chat, gestures between players their view has seated, who has the table
+  open, the table's name and look, and whether watching is allowed.
+- The warning that spectators see every card. It can only be turned on between
+  hands, so when it appears, someone watching on a delay can tell that the live
+  table is between hands. Delaying it would let people sit down without seeing
+  the warning.
+
+And a few gaps are still open, each with its issue:
+
+- After a server restart (every release is one), a spectator's view starts
+  again from the table as it is then, so it can jump ahead by up to the delay
+  once (#470).
+- The public leaderboard counts a running table's hands as they end live, so
+  it can show a result about a minute after the live hand ends, before someone
+  on a longer delay sees it (#469).
+- Sitting down shows the table live, so someone who takes a free seat sees it
+  as it is now, ahead of their view, even if they stand up again straight away
+  (#472). At a table where the host approves new players, that needs the
+  host's OK.
+- A buy-in or cash-out made as a hand ends goes in the public record at once
+  (see "Checking John" above), so it can show that the hand is over (#471).
 
 ## HUDs and tracking software
 
@@ -517,7 +575,7 @@ Limits, stated plainly:
 | Dealer's choice (added 2026-11-06, D33) | Who picks follows a fixed rule: a Pick chip that moves one seat to the left after each pick, starting with a player drawn with the CSPRNG at a new table. A missed pick follows a fixed rule too (the current game carries on, or the first game on the menu that fits). Practice bots pick at random from the games that fit, with the CSPRNG. The game never touches the deck: each hand's deck comes from its seeds alone, whatever game is dealt. | OK |
 | Tournament seat draw | A fast non-cryptographic generator (mulberry32) from a secret 32-bit CSPRNG seed that stays on the server. Seats only, never cards. | **Fixed**: each new tournament gets its own secret 256-bit seed from the server's CSPRNG. The seat draw is a Fisher-Yates shuffle driven by SHA-256 of that seed in counter mode, with rejection sampling so there's no rounding bias (`seatRng` in packages/tournament/src/seating.ts); the tournament saves its place in that stream, so any later draw carries on from it. Until its seats are drawn, a tournament gets a fresh seed each time the server loads it (after an update or a restart), so a seed can't be drawn from after it was ever shown, for example by an older version of the server after an update had to be undone; that also upgrades tournaments made before this change. If the server stops hard in the split second between a draw and saving it, the seats are drawn again from the new seed. Seats that change after the draw (late registration, re-entry, balancing, breaking a table) follow fixed rules with nothing random. This version never sends the seed to browsers (an older version run after an update was undone would, which is why a seed is replaced while the seats are still to draw), so players can't re-run a seat draw the way they can check a hand. |
 | All-in equity | Computed in the browser from cards already visible; its seeded sampling only affects the displayed percentages. | OK |
-| Coach tips | Worked out on the server only for the one person dealt into a hand where everyone else is a practice bot, at a cash table where people have never played each other, never in tournaments, from a copy of the hand holding only what that person can see: no deck, no other hole cards, no muck, no seeds (`seenBy()` in apps/server/src/bots/strategy.ts). Sent only to them and never saved. Tests swap every card they can't see and check the tip doesn't change. | OK |
+| Coach tips | Worked out on the server only for the one person dealt into a hand where everyone else is a practice bot, at a cash table where people have never played each other, never in tournaments, from a copy of the hand holding only what that person can see: no deck, no other hole cards, no muck, no seeds (`seenBy()` in apps/server/src/bots/strategy.ts). The work is done on a separate thread inside the server, and that copy, plus the seat, that person's own legal actions or most cards they may draw, the turn and the tip's own seed, is all that is passed to it (apps/server/src/bots/coachWorker.ts). Sent only to them and never saved. Tests swap every card they can't see and check the tip doesn't change, and check that none of those cards is in what the thread is sent. | OK |
 | `Math.random` | Only in the sound effects. | OK |
 | What clients receive | Hole cards are filtered per viewer on the server (`visibleEvents`, the table view); undealt cards, the deck, and the seeds never go out during play. Hand history drops the deck. Tests check that no secret appears in any player's or spectator's view. Practice bots' explanations stay on the server until the hand ends, then go only to the one person in that hand; they hold numbers, never cards, and sit outside the hand's fingerprint. | OK |
 | After a restart | The deck, the next hand's secret and its commitment live in the server's saved table, never in anything sent to browsers. A restart throws away the unused next-hand secret and commits to a fresh one, so a deal lost in a crash is never dealt again. | OK |

@@ -12,7 +12,7 @@ What to do when something goes wrong is in [RUNBOOK.md](RUNBOOK.md).
   - set `DATABASE_URL` to a managed Postgres (14 or later), or
   - leave it unset and mount a persistent volume at `/data`. The server keeps an embedded PGlite database in `/data/pglite`.
   The container starts as root only to take ownership of `/data`, then runs the server as the unprivileged `node` user.
-- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less.
+- **About 1 GB of memory.** With PGlite, the process peaks near 600 MB at boot, so 512 MB plans are too small. With Postgres it needs less. Coach tips run on a second thread, started by the first tip anyone asks for, which adds about 30 MB (its heap is capped at 128 MB).
 - **HTTPS** in front of port `8080` (or whatever `PORT` says).
 
 ## Settings
@@ -23,7 +23,7 @@ What to do when something goes wrong is in [RUNBOOK.md](RUNBOOK.md).
 | `DATABASE_URL` | unset | Postgres connection string. When set, PGlite is not used. |
 | `PGLITE_DIR` | `/data/pglite` in the image | Where the embedded database lives when `DATABASE_URL` is unset. |
 | `NODE_ENV` | `production` in the image | Turns off development CORS. |
-| `PUBLIC_URL` | unset; `fly.toml` sets the live address | The site's public address. Link previews use it, and Google sends people back to `PUBLIC_URL` + `/auth/google/callback`. Unset, the request's own address is used. |
+| `PUBLIC_URL` | unset; `fly.toml` sets the live address | The site's public address. Link previews use it, and Google sends people back to `PUBLIC_URL` + `/auth/google/callback`. Unset, the request's own address is used. It also turns on phone alerts (push), as the contact address each alert is signed with: unset, the server sends none, so a copy and the restore drill never alert the phones in a backup. The key alerts are signed with is made on first use and kept in the database (`push_keys`), so it is in the locked backups; it is not a setting. |
 | `ADMIN_KEY` | unset (a secret) | Turns on the roadmap admin page (suggestions, table feedback, reset codes, reading a table's chat with `/api/admin/chat/:id`, each read in the public record) and the backup download (`/api/admin/backup`). At least 12 characters, or the server ignores it. |
 | `REPORT_KEY` | unset (a secret) | A read-only key for the game-night recap (`/api/admin/recap`, see [Game-night recap](#game-night-recap)). It opens nothing else. At least 12 characters, or the server ignores it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset (secrets) | Sign in with Google is on only when both are set. |
@@ -56,7 +56,7 @@ Never set a secret on Fly by hand. The watcher can't tell who set it.
 The schema migrates itself at startup. Concurrent starts are serialised with an advisory lock.
 
 - **Health check:** `GET /api/health` returns `{"ok":true,"tables":2,"memoryMb":376,"db":"ok","diskUsedPct":30,"diskFreeMb":650}`. `ok` and the status 200 never change while the server runs, because Fly's own health check reads them. `memoryMb` is the memory the server process uses; `db` is explained under [Site-down alert](#site-down-alert). `diskUsedPct` (how full the data disk is, as `df` shows it) and `diskFreeMb` (what the server can still write) are left out when the server can't read the disk, and when it runs on Postgres; it reads the disk at most once a minute. The [memory and disk check](#memory-and-disk-check) reads them.
-- **Shutdown:** on `SIGTERM` the server stops play, saves every tournament and table, gives requests still being answered 2 seconds, then cuts any connection still open (a half-sent request, a stalled download, a websocket whose browser never answers), writes the last public record entries, and closes the database. A backup download in progress is stopped first. It logs how long each step took (`shutdown: saving tables took 40 ms`, then `shutdown: finished in 120 ms`). If it hasn't finished within 10 seconds it logs `shutdown: gave up after 10000 ms, stuck <step> ...` and exits anyway, skipping whatever was left, so give the host's stop timeout at least that long (Fly's is 30 s). CI fails a pull request whose server needs that fallback: its restart step holds a half-sent request open, stops the container with docker's limit raised to 30 s, and checks the time and the log.
+- **Shutdown:** on `SIGTERM` the server stops play, saves every tournament and table, gives requests still being answered 2 seconds, then cuts any connection still open (a half-sent request, a stalled download, a websocket whose browser never answers), writes the last public record entries, and closes the database. Hands still waiting for a table's spectator delay before they go in the public record (D38) are saved with those entries, and the next server puts them in after its own start entry: on time, or straight after it if they came due while the server was down. A backup download in progress is stopped first. It logs how long each step took (`shutdown: saving tables took 40 ms`, then `shutdown: finished in 120 ms`). If it hasn't finished within 10 seconds it logs `shutdown: gave up after 10000 ms, stuck <step> ...` and exits anyway, skipping whatever was left, so give the host's stop timeout at least that long (Fly's is 30 s). CI fails a pull request whose server needs that fallback: its restart step holds a half-sent request open, stops the container with docker's limit raised to 30 s, and checks the time and the log.
 
 ## Restarts and deploys
 
@@ -64,6 +64,7 @@ A deploy restarts the process:
 - Tables reload from their last saved state.
 - A hand in progress resumes with the same cards.
 - Tournaments keep their clocks, and scheduled ones still start on time.
+- Hands waiting for a spectator delay still go in the public record on time, or straight after the restart if they came due while the server was down. Rolling back to code from before that (D38) leaves them out until it ships again: see [RUNBOOK.md](RUNBOOK.md#a-bad-release).
 - Players' browsers reconnect by themselves.
 
 **Each release's upgrade is rehearsed first.** Every pull request into `main` runs "Upgrade from what is live" (`.github/workflows/upgrade.yml`) on GitHub's machines, never on the live site. It runs `main`'s image and makes data with `main`'s own smoke test, then starts the pull request's image on that same volume. The new image must give the same leaderboard and keep every entry of the public record unchanged. It must also read back every saved table, with the same hands and players, and every saved tournament: a release that can't read them would drop them at deploy, even with the leaderboard unchanged. When it is stopped, it must shut down by itself, without its 10-second fallback. Then it starts `main`'s image again on the upgraded data, as a rollback would, and checks the same things. The play-test before a release with any full change (see CONTRIBUTING.md, "Full or light") can use the scripts in `e2e/playtest/`, which play a cash game and a tournament through real browsers on a local copy (see their README).
@@ -166,7 +167,7 @@ BASE_URL=http://localhost:3001 npm run smoke                   # cash table, pra
 docker stop copy && docker rm copy                             # when you're done
 ```
 
-Then try what the release changes, by hand in a browser or with bots placed by hand. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
+Then try what the release changes, by hand in a browser or with bots placed by hand. To try phone alerts, add `-e PUBLIC_URL=https://…` (an https address; push services may refuse anything else) to `docker run`, and open the copy at `http://localhost:3001` (browsers allow push on localhost). Alerts then really go out through the browser's push service, to the browsers that turned them on on the copy, so only on a copy with test data. The release PR records it all under **How it was tested**: what was run on the copy, what passed, and any setting that was changed.
 
 ## Releasing
 
@@ -188,6 +189,8 @@ Everything runs on John's own accounts. No values here, only what each one is fo
 | GitHub (`jcolter11374`) | The code, CI, deploys, daily backups, the public record (`transparency` branch), issues and alerts. |
 | Fly.io | The live server, its data volume and daily volume snapshots, and the image registry. Billed by usage. |
 | Google Cloud | The OAuth client behind "Sign in with Google". |
+
+Phone alerts go through each browser's own push service (Google, Apple, Mozilla or Microsoft), which needs no account and costs nothing.
 
 Costs: Fly bills one always-on small machine and a 1 GB volume to John's account, by usage. GitHub (public repository) and Google sign-in cost nothing. Anything that adds cost needs John's OK first: a second machine, a bigger volume, a paid service, or audio and video. If John loses access to one of these accounts, the site loses what it provides, so each one should have two-factor sign-in and saved recovery codes (#180).
 

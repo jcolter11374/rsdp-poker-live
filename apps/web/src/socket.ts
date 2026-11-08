@@ -85,6 +85,12 @@ socket.on('session', (s) => {
 socket.on('disconnect', (reason) => {
   if (reason === 'io server disconnect') setTimeout(() => location.reload(), 300);
 });
+// Whether this tab is on screen, so a phone alert for "your turn" goes out only when nobody is looking at the table.
+if (typeof document !== 'undefined') {
+  const reportVisible = () => socket.emit('page:visible', { visible: document.visibilityState === 'visible' });
+  socket.on('connect', reportVisible);
+  document.addEventListener('visibilitychange', reportVisible);
+}
 export const currentSession = () => session;
 export function onSession(cb: (s: Session) => void): () => void {
   sessionListeners.add(cb);
