@@ -9,6 +9,9 @@ import { TableStrip } from './TableStrip';
 
 const level: LevelRow = { kind: 'level', sb: 100, bb: 200, ante: 0, anteType: 'none', minutes: 8 };
 let options: Partial<PlayerOptions>;
+// The event's status and open tables, and its places (once it is over).
+let event: { status: string; tables: { id: string }[] };
+let places: { place: number; displayName: string; entryId: string }[];
 const send = vi.fn<(id: string, command: unknown) => Promise<void>>();
 
 vi.mock('@rsdp/tournament', async (original) => ({
@@ -22,11 +25,11 @@ vi.mock('@rsdp/tournament', async (original) => ({
     handForHand: false,
   }),
   playerOptions: () => ({ entry: null, pending: [], canAddOn: false, canReEnter: false, canRebuy: false, canDeclineRebuy: false, ...options }),
-  standings: () => [],
+  standings: () => places,
   tableAddress: (id: string) => id,
 }));
 vi.mock('./hooks', () => ({
-  useTournament: () => ({ state: { settings: { name: 'Friday Cup', rebuy: { chips: 63_000 }, addOn: { chips: 63_000 } }, status: 'running', tables: [] }, skew: 0 }),
+  useTournament: () => ({ state: { settings: { name: 'Friday Cup', rebuy: { chips: 63_000 }, addOn: { chips: 63_000 } }, ...event }, skew: 0 }),
   useSession: () => ({ playerId: 'p1' }),
   useNow: () => 0,
   followMissedMove: () => false,
@@ -39,6 +42,8 @@ vi.mock('./client', () => ({ tournamentClient: () => ({ send }) }));
 let under: HTMLDivElement;
 beforeEach(() => {
   options = {};
+  event = { status: 'running', tables: [{ id: 'tn1-t1' }, { id: 'tn1-t2' }] };
+  places = [];
   send.mockReset();
   under = document.body.appendChild(document.createElement('div'));
 });
@@ -47,8 +52,8 @@ afterEach(() => {
   under.remove();
 });
 
-const strip = (corner: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere corner={corner} asksIn={corner ? under : null} />;
-const show = (corner: boolean) => render(strip(corner));
+const strip = (corner: boolean, emptyHere = false) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere emptyHere={emptyHere} corner={corner} asksIn={corner ? under : null} />;
+const show = (corner: boolean, emptyHere = false) => render(strip(corner, emptyHere));
 const seated = { status: 'seated', tableId: 'tn1-t1' } as PlayerOptions['entry'];
 
 describe('the tournament strip', () => {
@@ -91,5 +96,59 @@ describe('the tournament strip', () => {
     rerender(strip(true));
     expect(under.childElementCount).toBe(0);
     expect(container.querySelector('.tn-corner')?.textContent).toMatch(/Add-ons are closed/);
+  });
+  it("says where you finished only once your kept seat has gone, on a laptop, so the table doesn't move as the result shows (#445)", () => {
+    options = { entry: { id: 'e5', status: 'busted' } as PlayerOptions['entry'] };
+    places = [{ place: 5, displayName: 'Ana', entryId: 'e5' }];
+    const kept = (k: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere={k} />;
+    const { container, rerender } = render(kept(true));
+    expect(container.textContent).not.toMatch(/You finished/);
+    // The next deal: the seat goes, and the row with it.
+    rerender(kept(false));
+    expect(container.textContent).toMatch(/You finished 5th\./);
+    cleanup();
+    // At a table that broke, the closed note waits for the kept seat too, so both come at once.
+    event = { status: 'running', tables: [{ id: 'tn1-t2' }] };
+    const broke = (k: boolean) => <TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere={k} emptyHere />;
+    const b = render(broke(true));
+    expect(b.container.textContent).not.toMatch(/You finished|closed/);
+    b.rerender(broke(false));
+    expect(b.container.textContent).toMatch(/You finished 5th\..*This table has closed/);
+    cleanup();
+    // In the corner box on a wide window it takes no room from the table, so it shows at once.
+    const corner = render(<TableStrip tournamentId="tn1" tableId="tn1-t1" seatedHere={false} keptHere corner asksIn={under} />);
+    expect(corner.container.querySelector('.tn-corner')?.textContent).toMatch(/You finished 5th\./);
+  });
+
+  it('shows a finished event with its winner, not a stopped clock and the next blinds (#446)', () => {
+    event = { status: 'finished', tables: [{ id: 'tn1-t1' }] };
+    places = [{ place: 1, displayName: 'Dot', entryId: 'e1' }];
+    for (const corner of [false, true]) {
+      const { container } = show(corner);
+      const text = container.textContent ?? '';
+      expect(text).toMatch(/🏆 Dot wins/);
+      expect(text).not.toMatch(/Level|100 \/ 200|Next/);
+      cleanup();
+    }
+  });
+
+  it('tells someone watching a table that broke that it has closed (#446)', () => {
+    // Its players were moved to the other table, and it is no longer one of the event's.
+    event = { status: 'running', tables: [{ id: 'tn1-t2' }] };
+    for (const corner of [false, true]) {
+      const { container } = show(corner, true);
+      expect(container.querySelector('[role="status"]')?.textContent).toBe('This table has closed. Play goes on at the other table.');
+      cleanup();
+    }
+  });
+
+  it("doesn't say a table closed while it has players, or while it is still one of the event's", () => {
+    // A table opened a moment before this page's copy of the tournament heard of it.
+    event = { status: 'running', tables: [{ id: 'tn1-t2' }] };
+    expect(show(false).container.textContent).not.toMatch(/closed/);
+    cleanup();
+    // Everyone at it is out of chips between hands, but the table plays on.
+    event = { status: 'running', tables: [{ id: 'tn1-t1' }, { id: 'tn1-t2' }] };
+    expect(show(false, true).container.textContent).not.toMatch(/closed/);
   });
 });
