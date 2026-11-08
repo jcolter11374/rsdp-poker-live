@@ -19,6 +19,8 @@ export function tableView(
   audience: { playerId: PlayerId; name: string }[] = [],
   /** Each player's picture, as SeatView.avatar has it. */
   avatarOf: (playerId: PlayerId) => string | null = () => null,
+  /** hideCards: a spectator's view without the hole cards spectators may see (a delayed feed's twin, see SpectatorFeed). */
+  opts: { hideCards?: boolean } = {},
 ): TableView {
   const s = rt.state;
   const mySeat = rt.seatOf(playerId);
@@ -33,7 +35,7 @@ export function tableView(
   // Cards follow the player, not the chair: after a seat shuffle or move, or once someone new sits where a player of
   // the last hand sat, the hand still on the table shows each person only the cards they were dealt themselves.
   const myDealtSeat = hand?.seats.find((x) => x.playerId === playerId)?.seat ?? null;
-  const viewer: Viewer = { seat: myDealtSeat, seeAll: isSpectator && seeAll };
+  const viewer: Viewer = { seat: myDealtSeat, seeAll: isSpectator && seeAll && !opts.hideCards };
   const handSeats = new Map((hand?.seats ?? []).map((x) => [x.seat, x]));
   const won = new Map<number, number>();
   const handNames = new Map<number, string>();
@@ -201,6 +203,12 @@ export type DelayedPart = Pick<
   | 'pendingSettings'
   | 'level'
   | 'spectator'
+  | 'log'
+  | 'settingsLog'
+  | 'realGame'
+  | 'recordsLocked'
+  | 'waitlist'
+  | 'offers'
 >;
 
 /**
@@ -234,7 +242,19 @@ export const delayedPart = (view: TableView): DelayedPart => ({
   pendingSettings: view.pendingSettings,
   level: view.level,
   // "With every card face up" starts with the first hand dealt after it was turned on, which would mark the live deal.
+  // The delay itself is the one this moment's hand is watched under (#435).
   spectator: view.spectator,
+  // The table log as it was: "X left with 2350" would tell how the hand went, and with only the newest lines kept,
+  // each new live line would push one off the top of a log cut by time (#435). So would the host's settings edits.
+  log: view.log,
+  settingsLog: view.settingsLog,
+  // The first hand two people play makes the game real, which closes downloads while it runs; a game stopped after
+  // the hand opens them as the live hand ends (#435).
+  realGame: view.realGame,
+  recordsLocked: view.recordsLocked,
+  // A seat a player leaves as the live hand ends is offered from the waitlist at once (#452).
+  waitlist: view.waitlist,
+  offers: view.offers,
 });
 
 /**
@@ -258,12 +278,50 @@ const NO_RABBIT: TableView['rabbit'] = { available: false, cards: null };
 /** How far a snapshot's clocks move on: by the delay, but a paused snapshot's stand still, moving with the time shown. */
 const moveBy = (live: TableView, part: DelayedPart, delayMs: number) => (part.paused ? live.serverNow - part.serverNow : delayMs);
 
+/** A seat with nothing of a hand in it. */
+const noHand = (x: SeatView): SeatView => ({ ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
+
+/** What app.ts knows about the viewer and the table that a view on its own doesn't say. */
+export interface BehindOptions {
+  /** Everyone with the table open, seated or not (the live view's watchers leave out whoever is seated now). */
+  audience?: { playerId: PlayerId; name: string }[];
+  /** The host and co-hosts, who watch live, so they aren't counted among those watching every card. */
+  isStaff?: (playerId: PlayerId) => boolean;
+  /** The viewer has never played here, so downloads stay closed to them while the game runs (recordsLocked). */
+  neverPlayed?: boolean;
+  /** When the viewer joined the waitlist they are on now, live: an offer from before they last joined isn't theirs. */
+  waitingSince?: number;
+}
+
 /**
  * What a spectator sees of the table's state from a snapshot: what changes as the live hand ends or the next is dealt.
  * The settings keep what changes at once as it is now.
  */
-function stateThen(live: TableView, part: DelayedPart, delayMs: number) {
+function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: BehindOptions) {
   const move = moveBy(live, part, delayMs);
+  const me = live.me.playerId;
+  // Whoever has the table open and isn't in a seat of the table shown: a player who leaves as the live hand ends, tab
+  // still open, stays in their seat until the view gets there (#435).
+  const seated = new Set(part.seats.flatMap((x) => (x ? [x.playerId] : [])));
+  const audience = opts.audience ?? live.watchers;
+  const watchers = audience.filter((a) => !seated.has(a.playerId));
+  // My own place on the waitlist and my own offer are mine to act on, so they follow what I do: joining shows at once.
+  // But a seat offered to me only shows once my view has the seat free (#452).
+  const mineWaiting = live.waitlist.find((w) => w.playerId === me);
+  // Joined again since the moment shown (after turning a seat down, or letting it run out): my place then is gone.
+  const rejoined = !!mineWaiting && opts.waitingSince !== undefined && opts.waitingSince > part.serverNow;
+  const waitlist = part.waitlist.filter((w) => w.playerId !== me || (mineWaiting && !rejoined));
+  if (mineWaiting && !waitlist.some((w) => w.playerId === me)) waitlist.push(mineWaiting);
+  const mineOffered = live.offers.find((o) => o.playerId === me);
+  // Other people's offers as they were, their clocks moved on with the rest of the view.
+  const offers = part.offers.filter((o) => o.playerId !== me).map((o) => ({ ...o, expiresAt: o.expiresAt + delayMs }));
+  // Mine runs out on the live clock: a seat offered to someone on a delay waits the delay longer (#452).
+  const partMine = part.offers.find((o) => o.playerId === me);
+  if (partMine && mineOffered?.seat === partMine.seat) offers.push(mineOffered);
+  // Let go live while I'm still waiting (a smaller table or a smaller Dealer's choice game, someone moved into the
+  // seat): it shows as it was until the view gets there, or its going would tell me what the live table just did.
+  // Not one I turned down or let run out and then joined the waitlist again since: that was my own doing.
+  else if (partMine && mineWaiting && !rejoined) offers.push(partMine);
   return {
     paused: part.paused,
     bombPotNext: part.bombPotNext,
@@ -274,47 +332,82 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number) {
     settings: settingsBehind(part.settings, live.settings),
     pendingSettings: part.pendingSettings,
     level: part.level && { ...part.level, endsAt: part.level.endsAt === null ? null : part.level.endsAt + move },
-    spectator: live.spectator && { ...live.spectator, seeAll: part.spectator?.seeAll ?? false },
+    // The delay is the one the hand shown is watched under, so the banner changes with the first hand dealt under a
+    // new one; "with every card" starts with its hand too. Whether watching is blocked is as it is now.
+    spectator: live.spectator && { ...live.spectator, delaySeconds: part.spectator?.delaySeconds ?? live.spectator.delaySeconds, seeAll: part.spectator?.seeAll ?? false },
+    realGame: part.realGame,
+    recordsLocked: part.recordsLocked && (opts.neverPlayed ?? true),
+    watchers,
+    // Whether spectators see every card, and since when, is as it is now: sitting down takes agreeing to it. The delay
+    // is the one the next hand will be watched under, which is what someone sitting down agrees to, and moves only
+    // when the host changes it, not at the live deal. The count is of those watching the table shown.
+    cardsWatched: live.cardsWatched && {
+      ...live.cardsWatched,
+      delaySeconds: applyAtNextHand(live.settings, live.pendingSettings).settings.spectators.delaySeconds,
+      watchers: watchers.filter((w) => !opts.isStaff?.(w.playerId)).length,
+    },
+    waitlist,
+    offers,
   };
 }
 
 /**
- * A spectator's view with the table as it was `delayMs` ago: seats, cards,
- * bets and the clock come from `past`. Clocks move forward by the delay so
- * they count down in step with the live server clock. Chat, the log and
- * everything else stay live.
+ * A spectator's view with the table as it was: seats, cards, bets, the clock, the log and the table's state come
+ * from `past`, the moment shown (see SpectatorFeed). Its clocks move forward by `delayMs`, how far behind it is shown
+ * (the delay, or more while a longer delay takes over), so they count down in step with the live server clock. Chat
+ * and everything else stay live.
  *
- * `past` is null when nothing is that old yet, which shows the seats with no hand. That happens for the first part of
- * the delay at a new table or once a delay is turned on, after a restart, and once the host stops spectators seeing
- * every card or raises the delay. The table's state then comes from `oldest`,
- * the oldest snapshot kept, if there is one: it will be shown next, so nothing jumps back when it is.
+ * The seats are those of the moment shown, as many as it had, each player where they sat then: someone who sat down
+ * since shows once the view gets to it, and a change to the number of seats, a seat move or a shuffle shows with the
+ * hand it was made before (#435).
+ *
+ * `past` is null when nothing is that old yet. That happens for the first part of the delay at a new table or once a
+ * delay is turned on, and after a restart. The table's state then comes from `oldest`, the oldest snapshot kept, if
+ * there is one: it will be shown next, so nothing jumps back when it is. Its seats show no hand, with each player's
+ * chips before the hand it is in (#435).
  */
-export function behind(live: TableView, past: DelayedPart | null, delayMs: number, oldest: DelayedPart | null = null): TableView {
-  // The table log runs behind too: "X left with 2350" would tell how the hand went.
-  const log = live.log.filter((l) => l.at <= live.serverNow - delayMs);
+export function behind(live: TableView, past: DelayedPart | null, delayMs: number, oldest: DelayedPart | null = null, opts: BehindOptions = {}): TableView {
+  const blocked = !!live.spectator?.blocked;
   if (!past) {
-    const seats = live.seats.map((x) => x && { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null });
-    const then = oldest ? stateThen(live, oldest, delayMs) : {};
-    return { ...live, ...then, seats, hand: null, turn: null, log, nextHandAt: null, upcoming: null, rotation: null, history: [], ledger: [], fair: NO_FAIR, rabbit: NO_RABBIT, choice: live.choice && { ...live.choice, open: false, deadline: null, next: null } };
+    const from = oldest ?? delayedPart(live);
+    // Chips in front of a player in the hand are theirs until it ends: the ledger has what they had before it.
+    const before = new Map(from.ledger.map((r) => [r.playerId, r.stack]));
+    const seats = from.seats.map((x) => x && { ...noHand(x), stack: x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack });
+    // Lines from the delay before the oldest snapshot: a fixed time, so this view stays the same until that snapshot
+    // comes due. Cut on the time now, a live change would send it with more lines at the moment it happened (#435).
+    const cutoff = (oldest ? oldest.serverNow : live.serverNow) - delayMs;
+    const then = stateThen(live, from, delayMs, opts);
+    return {
+      ...live,
+      ...then,
+      seats,
+      hand: null,
+      turn: null,
+      log: from.log.filter((l) => l.at <= cutoff),
+      settingsLog: from.settingsLog.filter((e) => e.at <= cutoff),
+      nextHandAt: null,
+      upcoming: null,
+      rotation: null,
+      history: [],
+      ledger: [],
+      fair: NO_FAIR,
+      rabbit: NO_RABBIT,
+      choice: from.choice && { ...from.choice, open: false, deadline: null, next: null },
+    };
   }
   const move = moveBy(live, past, delayMs);
   const later = (t: number | null) => (t === null ? null : t + move);
   const turn = past.turn && { ...past.turn, startedAt: past.turn.startedAt + move, deadline: later(past.turn.deadline) };
-  const hand = past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
-  // Whoever has sat down since still shows in their seat, without cards. A seat emptied since still shows who sat
-  // there then: players who bust, are knocked out or leave go when the live hand ends, which would give it away.
-  const seats = live.seats.map((x, i) => {
-    const then = past.seats[i];
-    if (!x) return then;
-    return then && then.playerId === x.playerId ? then : { ...x, cards: [], bet: 0, inHand: false, folded: false, allIn: false, lastAction: null, won: 0, handName: null };
-  });
+  // Watching turned off: the hand goes at once, as it does for the table live.
+  const hand = blocked ? null : past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
   return {
     ...live,
-    seats,
+    seats: blocked ? past.seats.map((x) => x && { ...x, cards: [] }) : past.seats,
     hand,
     turn,
-    log,
-    ...stateThen(live, past, delayMs),
+    ...stateThen(live, past, delayMs, opts),
+    log: past.log,
+    settingsLog: past.settingsLog,
     ledger: past.ledger,
     history: past.history,
     nextHandAt: later(past.nextHandAt),
@@ -324,6 +417,25 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     rotation: past.rotation ?? null,
     rabbit: NO_RABBIT,
   };
+}
+
+/**
+ * What a view shows, apart from when it was built: a spectator on a delay is sent a view only when this changes, or
+ * the moment each update reached the live table would show (#435). A paused view's clocks are counted from its
+ * serverNow, as the page counts them, since behind() moves them with the time shown.
+ */
+export function shownKey(view: TableView): string {
+  const base = view.paused ? view.serverNow : 0;
+  const at = (t: number | null | undefined) => (t === null || t === undefined ? (t ?? null) : t - base);
+  return JSON.stringify({
+    ...view,
+    serverNow: 0,
+    turn: view.turn && { ...view.turn, startedAt: at(view.turn.startedAt), deadline: at(view.turn.deadline) },
+    hand: view.hand && { ...view.hand, runItTwice: { ...view.hand.runItTwice, deadline: at(view.hand.runItTwice.deadline) } },
+    nextHandAt: at(view.nextHandAt),
+    choice: view.choice && { ...view.choice, deadline: at(view.choice.deadline) },
+    level: view.level && { ...view.level, endsAt: at(view.level.endsAt) },
+  });
 }
 
 function botTag(rt: TableRuntime, playerId: PlayerId): Pick<SeatView, 'bot'> {
@@ -444,8 +556,19 @@ export function pastHand(record: HandRecord): PastHand {
 }
 
 /** A finished hand as one person may see it (their own cards, and whatever was shown). */
-export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, playerId: PlayerId, opts: { hideMine?: boolean; notes?: boolean } = {}): HandRecordView {
-  const past = 'hand' in record ? pastHand(record) : record;
+export function handRecordView(
+  rt: TableRuntime,
+  record: HandRecord | PastHand,
+  playerId: PlayerId,
+  /**
+   * asOf: the moment a spectator on a delay is shown, so a reveal time the live table has moved since doesn't show;
+   * eventsOf: how many of a hand's events their view has, leaving out cards shown since (#435).
+   */
+  opts: { hideMine?: boolean; notes?: boolean; asOf?: number; eventsOf?: (handNumber: number) => number | undefined } = {},
+): HandRecordView {
+  const whole = 'hand' in record ? pastHand(record) : record;
+  const upTo = opts.eventsOf?.(whole.handNumber);
+  const past = upTo !== undefined && upTo < whole.events.length ? { ...whole, events: whole.events.slice(0, upTo) } : whole;
   // hideMine: as someone who wasn't in the hand sees it, so only shown cards are face up.
   const seat = opts.hideMine ? null : (past.seats.find((x) => x.playerId === playerId)?.seat ?? null);
   // Why the bots played as they did, for the one person in the hand, and only where the caller asks: a caller that
@@ -466,9 +589,21 @@ export function handRecordView(rt: TableRuntime, record: HandRecord | PastHand, 
     // Only events matter for what a viewer may see; the rest of the hand state is not kept.
     events: engine.visibleEvents({ events: past.events } as HandState, { seat, seeAll: false }),
     // Hiding my cards would be undone by the seeds, which rebuild the whole deck.
-    fair: opts.hideMine ? null : fairRecordView(past, rt.fairRevealsAt(past.handNumber, past.endedAt), rt.now(), (id) => rt.nameOf(id)),
+    fair: opts.hideMine ? null : fairOf(rt, past, opts.asOf),
     ...(notes.length ? { botNotes: notes.map((n) => ({ ...n })) } : {}),
   };
+}
+
+/**
+ * A finished hand's fair-dealing record for someone who sees the table at `asOf` (a spectator on a delay; live without
+ * it). Revealed only once it was revealed at the moment they are shown: the live table may have moved the reveal since
+ * (a stop lifted), and a seed shown on the time now could show them cards the live table still keeps hidden (#435).
+ * Its time to reveal is the table's as of that moment, so it doesn't move as the live table plays on.
+ */
+function fairOf(rt: TableRuntime, past: PastHand, asOf?: number): FairRecordView | null {
+  const revealsAt = rt.fairRevealsAt(past.handNumber, past.endedAt, asOf);
+  const at = asOf === undefined || !Number.isFinite(asOf) ? rt.now() : asOf;
+  return fairRecordView(past, revealsAt, at, (id) => rt.nameOf(id));
 }
 
 function fairRecordView(past: PastHand, revealsAt: number, now: number, nameOf: (id: PlayerId) => string): FairRecordView | null {

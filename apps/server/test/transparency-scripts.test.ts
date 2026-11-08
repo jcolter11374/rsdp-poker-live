@@ -11,7 +11,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { handDigest, playerRef, tableRef } from '@rsdp/engine';
+import { AUDIT_GENESIS, auditHash, handDigest, playerRef, tableRef, type AuditEntry } from '@rsdp/engine';
 import { createApp } from '../src/app';
 import { AuditLog, dbAuditStore, memoryAuditStore } from '../src/audit';
 import { closeDb, dbCause, type Db } from '../src/db';
@@ -102,6 +102,58 @@ describe("the watcher's copy and the standalone checker", () => {
       (e: { code: number }) => e.code,
     );
     expect(gone).toBe(2);
+  });
+});
+
+describe('the standalone checker with a downloaded hand (D38)', () => {
+  // Hand 3 of a table, revealed, with a card its winner showed after it ended.
+  const table = tableRef('t1');
+  const seats = [{ seat: 0, playerId: 'p1', stack: 100 }];
+  const ended = [{ t: 'deal', seat: 0, cards: [{ card: 'As', up: false }] }, { t: 'hand-end', stacks: { 0: 100 } }];
+  const shown = [...ended, { t: 'show', seat: 0, cards: ['As'] }];
+  const digest = (events: unknown[]) => handDigest({ handId: 'h3', commit: 'c', serverSeed: 's', button: 0, seats, events: events as never });
+  const proof = path.join(mkdtempSync(path.join(tmpdir(), 'rsdp-proof-')), 'hand-3-proof.json');
+  writeFileSync(proof, JSON.stringify({ commit: 'c', serverSeed: 's', button: 0, events: shown, record: { handId: 'h3', table, handNumber: 3, seats } }));
+
+  /** The record a site serves: a chain of hand entries, each { hand, digest }. */
+  async function site(hands: { hand: number; digest: string }[]) {
+    const entries: AuditEntry[] = [];
+    for (const h of hands) {
+      const base = { seq: entries.length + 1, at: 1_000 * (entries.length + 1), kind: 'hand' as const, data: { table, ...h }, prev: entries.at(-1)?.hash ?? AUDIT_GENESIS };
+      entries.push({ ...base, hash: auditHash(base) });
+    }
+    const fake = createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      const after = Number(new URL(req.url!, 'http://x').searchParams.get('after') ?? 0);
+      res.end(JSON.stringify({ entries: entries.filter((e) => e.seq > after) }));
+    });
+    await new Promise<void>((resolve) => fake.listen(0, resolve));
+    const url = `http://localhost:${(fake.address() as AddressInfo).port}`;
+    const out = await node('scripts/verify-audit.mjs', '--site', url, '--proof', proof);
+    await new Promise((resolve) => fake.close(resolve));
+    return out;
+  }
+
+  it('says a card shown after the hand is still to go in, while it can honestly be waiting', { timeout: 30_000 }, async () => {
+    const waiting = await site([{ hand: 3, digest: digest(ended) }]);
+    expect(waiting.out).toMatch(/before a card shown after it ended/);
+    // Never a pass: it ends saying a check is still waiting, with its own exit code.
+    expect(waiting.out).not.toMatch(/All checks passed/);
+    expect(waiting.out).toMatch(/Nothing wrong found yet, but 1 check\(s\) are still waiting/);
+    expect(waiting.code).toBe(2);
+    const passed = await site([{ hand: 3, digest: digest(ended) }, { hand: 3, digest: digest(shown) }]);
+    expect(passed.out).toMatch(/hand 3 is in the record as entry 2, exactly as in this file/);
+    expect(passed.out).toMatch(/All checks passed/);
+    expect(passed.code).toBe(0);
+  });
+
+  it('calls it a different hand once a later hand is in, or when the entry matches no cut of it', { timeout: 30_000 }, async () => {
+    const later = await site([{ hand: 3, digest: digest(ended) }, { hand: 4, digest: 'x' }]);
+    expect(later.out).toMatch(/hand 3 in the record is not the hand in this file \(entry 1\)/);
+    expect(later.code).toBe(1);
+    const changed = await site([{ hand: 3, digest: 'other' }]);
+    expect(changed.out).toMatch(/hand 3 in the record is not the hand in this file/);
+    expect(changed.code).toBe(1);
   });
 });
 
