@@ -420,11 +420,16 @@ function seatReach(seatEl: HTMLElement, still = false): Reach {
 
 /**
  * How far each seat's nameplate and cards reach from its centre, measured after
- * each render, so bets can sit just clear of them.
+ * each render, so bets can sit just clear of them. `moving` is set while a new
+ * reach is on its way: the render it makes comes before the paint and can move
+ * the middle of the table (a nameplate gets a line for its hand at a showdown),
+ * so the middle isn't measured until then (#474).
  */
 function useSeatReach(felt: RefObject<HTMLElement>) {
   const [reach, setReach] = useState<Record<number, Reach>>({});
+  const moving = useRef(false);
   useLayoutEffect(() => {
+    moving.current = false;
     const el = felt.current;
     if (!el) return;
     const next: Record<number, Reach> = {};
@@ -437,13 +442,64 @@ function useSeatReach(felt: RefObject<HTMLElement>) {
       if (!was || Math.abs(was.pod! - pod) > 4 || Math.abs(was.l - now.l) + Math.abs(was.r - now.r) + Math.abs(was.u - now.u) + Math.abs(was.d - now.d) > 4) changed = true;
       next[seat] = now;
     });
-    if (changed || Object.keys(next).length !== Object.keys(reach).length) setReach(next);
+    if (changed || Object.keys(next).length !== Object.keys(reach).length) {
+      moving.current = true;
+      setReach(next);
+    }
   });
-  return reach;
+  return { reach, moving };
 }
 
 /** Whether a card is where it will stay: not being dealt, carried down or turned over. A winning card's short lift counts. */
 const settled = (card: Element) => !card.getAnimations?.().some((a) => a instanceof CSSAnimation && a.playState === 'running');
+
+/** A `translate` value ('0px -6px', '0px', 'none') as x and y in px. */
+function translateOf(v: string): Point {
+  const [x, y] = v === 'none' ? [] : v.trim().split(/\s+/).map(parseFloat);
+  return { x: x || 0, y: y || 0 };
+}
+
+/** A card's `translate` now, and where a running transition of it (a winning card's lift) will leave it. */
+function translates(card: HTMLElement): { now: Point; end: Point } {
+  const now = translateOf(getComputedStyle(card).translate);
+  const lift =
+    typeof CSSTransition === 'undefined'
+      ? undefined
+      : card.getAnimations?.().find((a): a is CSSTransition => a instanceof CSSTransition && a.transitionProperty === 'translate' && a.playState === 'running');
+  const frames = lift?.effect && 'getKeyframes' in lift.effect ? (lift.effect as KeyframeEffect).getKeyframes() : [];
+  const end = frames[frames.length - 1]?.translate;
+  return { now, end: typeof end === 'string' ? translateOf(end) : now };
+}
+
+/**
+ * Where a card will rest, not where it is on the way (#474). The middle's fit is measured as a hand's result appears,
+ * and the layout then chosen for the winners' lines is kept while they show, so what's still moving at that moment
+ * must count where it ends up:
+ * - a winning card's lift (a `translate` transition) starts in the same render as the result: measured as it is, the
+ *   first reading would see it still at rest;
+ * - the cards turned over at the showdown are new elements, turning over (a CSS animation) for up to a second, and a
+ *   winning one is lifted from the start: they're placed at their own spot in the row, moved by that lift.
+ */
+function restingBox(card: HTMLElement): Box | null {
+  const { now, end } = translates(card);
+  if (settled(card)) {
+    const r = card.getBoundingClientRect();
+    // In screen pixels: what holds the card may be drawn scaled (the seat, the felt).
+    const k = card.offsetHeight ? r.height / card.offsetHeight : 1;
+    const dx = (end.x - now.x) * k;
+    const dy = (end.y - now.y) * k;
+    return { left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy };
+  }
+  // Its spot in what holds it (offsets leave out its own transform, where the animation has it now).
+  const holder = card.offsetParent;
+  if (!(holder instanceof HTMLElement) || !holder.offsetWidth || !holder.offsetHeight) return null;
+  const h = holder.getBoundingClientRect();
+  const kx = h.width / holder.offsetWidth;
+  const ky = h.height / holder.offsetHeight;
+  const left = h.left + (holder.clientLeft + card.offsetLeft + end.x) * kx;
+  const top = h.top + (holder.clientTop + card.offsetTop + end.y) * ky;
+  return { left, top, right: left + card.offsetWidth * kx, bottom: top + card.offsetHeight * ky };
+}
 
 /**
  * Where an element will be once it has grown in (a winner's line pops in from 40% and overshoots a little): its box,
@@ -463,8 +519,33 @@ function grownIn(el: Element, zoom: number): Box {
 
 /**
  * The scale the middle of the table (`stack`, drawn scaled about its centre) needs so it covers no player's nameplate or
- * cards (#417): see fitMiddle.
+ * cards (#417), and whether several winners' lines should be stacked rather than side by side. Side by side keeps the
+ * middle short (a wide, short window), but a side seat's long row of cards (stud's seven, five- and six-card Omaha) can
+ * reach in that far: then, if stacked lines need less shrinking, they're stacked (#474). Both are measured, whichever is
+ * drawn now. `keep` measures only the layout already chosen for these lines, so they don't jump from one to the other.
  */
+function boardFitOf(felt: HTMLElement, stack: HTMLElement, keep: boolean | null = null): { fit: number; stacked: boolean } {
+  const several = [...stack.children].find((c): c is HTMLElement => c.classList.contains('several'));
+  if (!several) return { fit: boardScale(felt, stack), stacked: false };
+  const drawn = several.classList.contains('stacked');
+  const fitAs = (stacked: boolean) => {
+    several.classList.toggle('stacked', stacked);
+    return boardScale(felt, stack);
+  };
+  try {
+    if (keep !== null) return { fit: fitAs(keep), stacked: keep };
+    const side = fitAs(false);
+    if (side < 1) {
+      const stacked = fitAs(true);
+      if (stacked > side) return { fit: stacked, stacked: true };
+    }
+    return { fit: side, stacked: false };
+  } finally {
+    several.classList.toggle('stacked', drawn);
+  }
+}
+
+/** The scale the middle needs as it is laid out now: see fitMiddle. */
 function boardScale(felt: HTMLElement, stack: HTMLElement): number {
   const now = parseFloat(getComputedStyle(stack).scale) || 1;
   const s = stack.getBoundingClientRect();
@@ -478,9 +559,9 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
       if (part.classList.contains('unseen')) continue;
       let b = grownIn(part, now);
       if (!b.right && !b.bottom) continue;
-      for (const card of part.querySelectorAll('.playing-card')) {
-        if (!settled(card)) continue;
-        const r = card.getBoundingClientRect();
+      for (const card of part.querySelectorAll<HTMLElement>('.playing-card')) {
+        const r = restingBox(card);
+        if (!r) continue;
         b = { left: Math.min(b.left, r.left), right: Math.max(b.right, r.right), top: Math.min(b.top, r.top), bottom: Math.max(b.bottom, r.bottom) };
       }
       items.push({ ...full(b), line: !part.matches('.board-row, .pots') });
@@ -501,7 +582,10 @@ function boardScale(felt: HTMLElement, stack: HTMLElement): number {
     const hole = seat.querySelector<HTMLElement>('.hole:not(.mucked)');
     if (hole?.childElementCount && getComputedStyle(hole).transform === 'none') {
       seats.push(to(hole.getBoundingClientRect()));
-      for (const card of hole.querySelectorAll('.playing-card')) if (settled(card)) seats.push(to(card.getBoundingClientRect()));
+      for (const card of hole.querySelectorAll<HTMLElement>('.playing-card')) {
+        const r = restingBox(card);
+        if (r) seats.push(to(r));
+      }
     }
   });
   const dealer = felt.querySelector<HTMLElement>('.dealer');
@@ -731,7 +815,7 @@ export function Table({
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
   const size = useSize(felt);
-  const reach = useSeatReach(felt);
+  const { reach, moving: reachMoving } = useSeatReach(felt);
   // Cards on a phone are placed by the nameplates around them, each held at its widest through a hand (useHeldPlates),
   // until the felt changes size or someone sits down or leaves.
   const plateKey = `${view.hand?.handNumber ?? 0}|${size.w}x${size.h}|${view.seats.map((s) => (s ? 1 : 0)).join('')}`;
@@ -973,20 +1057,33 @@ export function Table({
   // the board and the results come, so it doesn't grow and shrink back and forth. Phones: see #380.
   const stack = useRef<HTMLDivElement>(null);
   const [boardFit, setBoardFit] = useState(1);
-  const fitHeld = useRef({ key: '', fit: 1, failed: false });
+  const [stackResults, setStackResults] = useState(false);
+  // The fit for this hand and size, and the layout chosen for the winners' lines (by hand, size and how many lines).
+  const fitHeld = useRef({ key: '', fit: 1, failed: false, lines: '', stacked: false });
   const fitKey = `${hand?.handNumber ?? ''}|${w}x${h}`;
   useLayoutEffect(() => {
+    // The seats' new reach moves the middle in a render that comes before the paint: measure it there, not where it was.
+    if (reachMoving.current) return;
     let fit = 1;
+    let stacked = false;
+    let lines = '';
     try {
-      if (!compact && felt.current && stack.current) fit = boardScale(felt.current, stack.current);
+      if (!compact && felt.current && stack.current) {
+        // Once several lines are laid out one way, they stay that way while they show (#474).
+        const several = stack.current.querySelector(':scope > .results.several');
+        lines = several ? `${fitKey}|${several.childElementCount}` : '';
+        const keep = lines && fitHeld.current.lines === lines ? fitHeld.current.stacked : null;
+        ({ fit, stacked } = boardFitOf(felt.current, stack.current, keep));
+      }
     } catch (error) {
       // As for the seats: a slip here mustn't take the table down. The middle keeps its full size, as before #417.
       if (!fitHeld.current.failed) reportError(error, 'error');
       fitHeld.current.failed = true;
     }
     if (fitHeld.current.key === fitKey) fit = Math.min(fit, fitHeld.current.fit);
-    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed };
+    fitHeld.current = { key: fitKey, fit, failed: fitHeld.current.failed, lines, stacked };
     setBoardFit((f) => (f === fit ? f : fit));
+    setStackResults((was) => (was === stacked ? was : stacked));
   });
   const boardMiddle: Point = { x: center.x, y: center.y + boardShift };
   const betHalf = compact ? { w: 22, h: 10 } : { w: 30, h: 13 };
@@ -1175,9 +1272,10 @@ export function Table({
           </div>
         )}
         {/* One line per winner. Several (a split pot, side pots) sit side by side where the felt has the width, so the middle
-            doesn't grow taller than the room between the seats above and below it (#417). */}
+            doesn't grow taller than the room between the seats above and below it (#417), or stacked where that needs
+            less shrinking (#474: see boardFitOf). */}
         {done && results.size > 0 && (
-          <div className={`results${results.size > 1 ? ' several' : ''}`}>
+          <div className={`results${results.size > 1 ? ` several${stackResults ? ' stacked' : ''}` : ''}`}>
             {[...results.entries()].map(([seat, w]) => (
               <div className="pot result" key={seat}>
                 {view.hand?.names?.[seat] ?? view.seats[seat]?.name ?? 'Player'} wins {fmt(w.amount)}

@@ -1268,6 +1268,101 @@ try {
     }
   });
 
+  await step('laptop, Stud Hi-Lo: a split pot keeps the middle full size', async () => {
+    // A split pot's winners' lines sit side by side where the felt has room (#417). At a stud table a side seat's seven
+    // cards reach in further than that room allows for, and the middle was drawn up to 30% smaller to clear them, where
+    // the lines one under the other fit at full size. They're stacked there now (#474). Four players check or call every
+    // hand to the showdown; about half of Stud Hi-Lo hands then split. Watchers at 1440x900 and 1600x900 read the middle's
+    // scale every frame. Pots split two ways only: a third line (two tie for high as well) can make the stack too tall to
+    // clear the bottom seat's cards at 1600x900 whichever way the lines go, so the middle is drawn a little smaller then.
+    const players = [];
+    try {
+      for (const name of ['Ned', 'Bea', 'Cal', 'Dee']) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        const call = (ev, ...args) => s.timeout(10_000).emitWithAck(ev, ...args).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        let busy = false;
+        let seeded = '';
+        const p = { s, call, latest: null };
+        p.act = () => {
+          const v = p.latest;
+          if (busy || !v?.legal) return;
+          busy = true;
+          call('hand:act', { type: v.legal.canBringIn ? 'bring-in' : v.legal.canCheck ? 'check' : 'call', handNumber: v.hand?.handNumber })
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (p.latest !== v) p.act();
+            });
+        };
+        s.on('table:state', (v) => {
+          p.latest = v;
+          // A seed for each next hand, as a page sends: otherwise the deal waits up to 10 s for one (FAIR_SEED_WAIT_MS).
+          const commit = v.fair?.nextCommit;
+          if (commit && commit !== seeded && v.me?.seat != null) {
+            seeded = commit;
+            s.emit('fair:seed', { commit, seed: randomBytes(16).toString('hex') }, () => {});
+          }
+          p.act();
+        });
+        players.push(p);
+      }
+      const [host] = players;
+      const { tableId } = await host.call('table:create', { settings: { table: { maxSeats: 8 }, game: { gameId: 'stud8' }, seating: { requireApproval: false }, timing: { decisionSeconds: 60 } } });
+      // Two of them at the ends of the table, where their cards reach towards the middle.
+      for (const [i, p] of players.entries()) {
+        await p.call('table:join', { tableId });
+        await p.call('seat:request', { seat: [0, 2, 4, 6][i], name: ['Ned', 'Bea', 'Cal', 'Dee'][i], stack: 5000, consent: true });
+      }
+      // Two watchers, on the window sizes where it showed (the lines' lengths decide whether a given split needs it).
+      const pages = [await open('stud split watcher 1440', { width: 1440, height: 900 }), await open('stud split watcher 1600', { width: 1600, height: 900 })];
+      for (const page of pages) {
+        await page.goto(`${BASE}/t/${tableId}`);
+        await page.waitForSelector('.felt .seat');
+        // For each pot split two ways (by its lines), every scale the middle was drawn at.
+        await page.evaluate(() => {
+          const splits = (window.__splits = new Map());
+          const sample = () => {
+            const stack = document.querySelector('.felt .board-stack');
+            const several = stack?.querySelector(':scope > .results.several');
+            if (several?.childElementCount === 2) {
+              const key = [...several.children].map((c) => c.textContent).join(' | ');
+              if (!splits.has(key)) splits.set(key, new Set());
+              splits.get(key).add(getComputedStyle(stack).scale);
+            }
+            requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+      }
+      await host.call('host:start');
+      // Four split pots, which take about eight hands (7 to 8 s each with the seeds sent: the 6 s a showdown shows, and
+      // play); before the fix more than half of them drew the middle smaller at one size or the other, so all four passing
+      // would be about a 1 in 40 chance. 150 s is about 20 hands: fewer than four splits in those is well under 1 in 100.
+      const splits = (page) => page.evaluate(() => [...window.__splits.entries()].map(([k, s]) => [k, [...s]]));
+      const deadline = Date.now() + 150_000;
+      while ((await splits(pages[0])).length < 4) {
+        if (Date.now() > deadline) throw new Error(`only ${(await splits(pages[0])).length} split pots in 150 s`);
+        await pages[0].waitForTimeout(1000);
+      }
+      // The last split's lines show until the next deal: let them finish.
+      await pages[0].waitForTimeout(1500);
+      for (const [i, page] of pages.entries()) {
+        const small = (await splits(page)).filter(([, scales]) => scales.some((s) => s !== 'none' && s !== '1'));
+        if (small.length) throw new Error(`at ${i ? '1600x900' : '1440x900'} the middle was drawn smaller for ${small.length} split pots: ${small.map(([k, s]) => `${k} at ${s.join(', ')}`).join('; ')}`);
+      }
+      await pages[0].screenshot({ path: path.join(OUT, 'stud-split-laptop.png') });
+      for (const page of pages) await page.close();
+      await host.call('host:stop');
+      const done = Date.now() + 60_000;
+      while (host.latest?.hand && !host.latest.hand.awards?.length) {
+        if (Date.now() > done) throw new Error("the hand didn't end");
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } finally {
+      for (const p of players) p.s.close();
+    }
+  });
+
   // The server saves a table up to half a second after its last change (SAVE_DEBOUNCE_MS in app.ts), and a hand at once.
   // CI's backup check reads the leaderboard right after this, so give the last table's save time to land: read in that
   // half second, the board counts the last hand but not its chips, and the restored copy doesn't match.

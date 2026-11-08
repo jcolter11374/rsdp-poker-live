@@ -755,6 +755,10 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt:not(.compact) .board .results.several { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 10px; max-width: max(min(440px, 80%), calc(100% - 2 * (150px * var(--seat-scale, 1) + 12px))); }
 /* Each line as wide as one on its own may be, so where they don't fit side by side they don't wrap any sooner. */
 .felt:not(.compact) .board .results.several .pot.result { max-width: min(440px, 100%); }
+/* Stacked after all, as one under another: where a side seat's long row of cards reaches in further than side-by-side
+   lines leave room for, and stacked ones then need less shrinking (#474, see boardFitOf in Table.tsx). */
+.felt:not(.compact) .board .results.several.stacked { flex-direction: column; flex-wrap: nowrap; gap: inherit; max-width: none; }
+.felt:not(.compact) .board .results.several.stacked .pot.result { max-width: min(440px, 80%); }
 .pot { font-size: 1.05rem; padding: 5px 16px; background: rgba(0, 0, 0, 0.32); }
 .board .playing-card { --cw: var(--board-cw, 62px); }
 .board .cards { gap: 6px; }
