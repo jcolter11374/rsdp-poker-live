@@ -195,8 +195,6 @@ export class TableRuntime {
   private timers: Record<TimerKey, unknown> = { turn: null, next: null, rit: null, upkeep: null, bot: null, reveal: null, pick: null };
   /** Hands the table to someone else when the host has been gone a while. */
   private hostTimer: unknown = null;
-  /** A change saved between hands is waiting for an all-in runout to be dealt out, and applies then (updateSettings). */
-  private settingsAfterRunout = false;
   /** The next deal was put back to wait for a connected player's seed (fairReadyAt); it may come forward when it arrives. */
   private seedWait = false;
   /**
@@ -929,12 +927,20 @@ export class TableRuntime {
     this.forgetBot(seat.playerId);
   }
 
-  /** Dealer's choice: someone leaving seat `from` gives up the Pick chip, and at a new table the first hand's button, to the next player round from it (D33). */
+  /**
+   * Dealer's choice: someone leaving seat `from` gives up the Pick chip, and at a new table the first hand's button, to
+   * the next player round from it (D33). A bot held in its seat through an all-in runout (holdBustedBot) is leaving
+   * too, so it is passed over, as it would be if it had left already.
+   */
   private giveUpChip(from: number) {
     const c = this.state.choice;
     if (!c || (c.chip !== from && c.firstButton !== from)) return;
-    const found = this.seatedFrom((from + 1) % this.state.seats.length);
-    const next = found && found.seat !== from ? found : null;
+    const n = this.state.seats.length;
+    let next: SeatState | null = null;
+    for (let i = 1; i < n && !next; i++) {
+      const seat = this.state.seats[(from + i) % n];
+      if (seat && !this.heldBot(seat)) next = seat;
+    }
     if (c.firstButton === from) c.firstButton = next?.seat ?? null;
     if (c.chip === from && next) c.chip = next.seat;
   }
@@ -1480,7 +1486,7 @@ export class TableRuntime {
     if (s.settingsLog.length > LOG_LIMIT) s.settingsLog.splice(0, s.settingsLog.length - LOG_LIMIT);
     // Between hands, queued changes can take effect straight away.
     if (!waits) this.applyPendingSettings();
-    else if (runout && s.pendingSettings) this.settingsAfterRunout = true;
+    else if (runout && s.pendingSettings) s.settingsAfterRunout = true;
     // Turning the Nit game off ends any round now, mid-hand or not.
     this.nitStillOn();
     this.sync();
@@ -3350,8 +3356,8 @@ export class TableRuntime {
     const now = this.clock.now();
     // Once an all-in runout has been dealt out: bots that busted in it leave, and a change saved during it applies.
     this.letGoRunoutBots();
-    if (this.settingsAfterRunout && !this.revealSeats().size) {
-      this.settingsAfterRunout = false;
+    if (s.settingsAfterRunout && !this.revealSeats().size) {
+      delete s.settingsAfterRunout;
       if (!this.handLive()) this.applyPendingSettings();
     }
     const releaseMs = s.settings.seating.releaseOfflineSeatMinutes * 60_000;
@@ -3500,12 +3506,15 @@ export class TableRuntime {
     this.giveUpChip(seat.seat);
   }
 
+  /** A bot out of chips, sitting out as busted: one held in its seat through an all-in runout (holdBustedBot). */
+  private heldBot(seat: SeatState): boolean {
+    return this.isBot(seat.playerId) && seat.sitOutReason === 'busted' && seat.stack === 0 && !seat.pendingChips && seat.pendingStack === null;
+  }
+
   /** Bots held in their seats through an all-in runout (holdBustedBot) leave once it has been dealt out (or buy back in, if rebuys were turned on meanwhile). */
   private letGoRunoutBots() {
     if (this.handLive() || this.revealSeats().size) return;
-    for (const seat of this.state.seats) {
-      if (seat && this.isBot(seat.playerId) && seat.sitOutReason === 'busted' && seat.stack === 0 && !seat.pendingChips && seat.pendingStack === null) this.botBusted(seat);
-    }
+    for (const seat of this.state.seats) if (seat && this.heldBot(seat)) this.botBusted(seat);
   }
 
   /** When upkeep next has something to do: an offer running out, an offline seat to release, or a runout shown. */

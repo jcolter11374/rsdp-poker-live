@@ -1159,18 +1159,111 @@ describe('an all-in runout still being dealt out (#463)', () => {
     expect([...outcomes].sort()).toEqual([0, 1, 2]);
   });
 
-  it('marks someone who sits down during the runout as new whether or not two players kept chips', () => {
+  it('marks someone who sits down, or is moved, during the runout as new whether or not two players kept chips', () => {
+    // Al sits out in seat 4, so he isn't in the hand, and the host moves him to seat 5 during the runout.
     const outcomes = new Set<number>();
     for (let seed = 1; seed <= 24; seed++) {
-      const t = afterRunout(seed, 4);
+      const t = afterRunout(seed, 5, (rt) => {
+        rt.requestSeat('a', { seat: 3, name: 'Al', stack: 100 });
+        rt.sitOut('a', true);
+      });
       if (!t) continue;
       const { rt, clock, busted } = t;
+      rt.moveSeat('host', 'a', 4);
       rt.requestSeat('d', { seat: 3, name: 'Dee', stack: 100 });
-      expect(rt.seatOf('d')!.isNew).toBe(true);
-      expect(tableView(rt, 'c', clock.now()).seats[3]!.waiting).toBe(true);
+      for (const [id, seat] of [['a', 4], ['d', 3]] as const) {
+        expect(rt.seatOf(id)!.isNew).toBe(true);
+        expect(tableView(rt, 'c', clock.now()).seats[seat]!.waiting).toBe(true);
+      }
       outcomes.add(busted.length);
     }
     expect([...outcomes].sort()).toEqual([0, 1, 2]);
+  });
+
+  /** A runout at four seats in which the host removed the bot in seat 3 during the hand: it folded, and left as the hand ended. */
+  const leaverRunout = (seed: number, patch: (s: TableSettings) => void = () => {}) =>
+    afterRunout(seed, 4, () => {}, patch, { during: (rt) => rt.kick('host', rt.state.seats[2]!.playerId) });
+
+  it("keeps the seat of someone who left during the hand taken until the runout has been dealt out", () => {
+    // The hold that keeps a busted player's seat (#437) still matters for a seat that is empty because its player left.
+    let ran = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = leaverRunout(seed);
+      if (!t) continue;
+      const { rt, clock, left } = t;
+      expect(rt.state.seats[2]).toBeNull();
+      expect(answer(() => rt.requestSeat('d', { seat: 2, name: 'Dee', stack: 100 }))).toBe('that seat is taken');
+      expect(answer(() => rt.addBot('host', { seat: 2 }))).toBe('that seat is taken');
+      rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 3]]);
+      // The browsers still show three players, so the table can't go down to two seats.
+      expect(answer(() => rt.updateSettings('host', { table: { maxSeats: 2 } }))).toMatch(/^3 players are sitting down/);
+      clock.advance(left);
+      expect(answer(() => rt.requestSeat('d', { seat: 2, name: 'Dee', stack: 100 }))).toBe('ok');
+      ran++;
+    }
+    expect(ran).toBeGreaterThan(2);
+  });
+
+  it("never draws the seat of someone who left during the hand for a random seat while the runout is dealt out", () => {
+    let ran = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = leaverRunout(seed, (s) => {
+        s.seating.randomSeats = true;
+      });
+      if (!t) continue;
+      t.rt.requestSeat('d', { seat: 2, name: 'Dee', stack: 100 });
+      expect(seatOf(t.rt, 'd')).toBe(3);
+      ran++;
+    }
+    expect(ran).toBeGreaterThan(2);
+  });
+
+  it('still counts someone who left from a dropped seat during the hand as moving, until the runout has been dealt out', () => {
+    // Six seats going down to five; the host removes the bot in the sixth during the hand. Seat 5 stays kept for it.
+    let ran = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 6, () => {}, () => {}, {
+        bots: [1, 5],
+        during: (rt) => {
+          rt.updateSettings('host', { table: { maxSeats: 5 } });
+          rt.kick('host', rt.state.seats[5]!.playerId);
+        },
+      });
+      if (!t) continue;
+      const { rt } = t;
+      rt.joinWaitlist('e', { name: 'Eve', stack: 100 });
+      expect(rt.state.offers!.map((o) => [o.playerId, o.seat])).toEqual([['e', 2]]);
+      expect(answer(() => rt.requestSeat('d', { seat: 4, name: 'Dee', stack: 100 }))).toMatch(/kept for a player moving into it/);
+      ran++;
+    }
+    expect(ran).toBeGreaterThan(2);
+  });
+
+  it('applies a change saved during the runout once it has been dealt out, even after a restart in between', () => {
+    const outcomes = new Set<number>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const t = afterRunout(seed, 4, () => {}, (s) => {
+        s.timing.autoStartNextHand = false;
+      });
+      if (!t) continue;
+      const { rt, clock, left, busted } = t;
+      rt.updateSettings('host', { timing: { autoStartNextHand: true } });
+      clock.advance(Math.floor(left / 2));
+      // The server restarts: the table comes back from its save.
+      const saved = JSON.parse(JSON.stringify(rt.state));
+      rt.dispose();
+      const again = new TableRuntime(saved, { clock, rng: seeded(seed) });
+      for (const p of PEOPLE) again.connect(p);
+      again.resume();
+      expect(again.state.pendingSettings).toEqual({ timing: { autoStartNextHand: true } });
+      clock.advance(left);
+      expect(again.settings.timing.autoStartNextHand).toBe(true);
+      expect(again.state.pendingSettings).toBeNull();
+      expect(again.state.handNumber).toBe(busted.length < 2 ? 2 : 1);
+      outcomes.add(busted.length);
+    }
+    expect(outcomes.size).toBeGreaterThan(1);
   });
 
   it('holds a change of table size saved during the runout until it has been dealt out', () => {

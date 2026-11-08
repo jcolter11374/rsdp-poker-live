@@ -1147,6 +1147,42 @@ describe("Dealer's choice: the host can't move the pick (second review)", () => 
     expect(checked).toBeGreaterThan(0);
   });
 
+  it('passes the chip of a bot that busts in a runout over another bot that busts in it too (#463)', () => {
+    // Bot A in seat 1 and bot B in seat 4, with the chip, both on 3 chips; the host in seat 3 calls them. When both bust,
+    // the chip goes on to the host as the hand ends, as if both had left, and D sitting down in seat 2 doesn't take it.
+    let checked = 0;
+    for (let n = 1; n <= 150 && checked < 2; n++) {
+      const { rt, clock } = table((s) => {
+        s.table.maxSeats = 6;
+        s.seating.allowRebuys = false;
+        s.play.runItTwice = 'off';
+      }, seeded(n));
+      const a = rt.addBot('host', { seat: 0, stack: 3 });
+      rt.requestSeat('host', { seat: 2, name: 'HOST', stack: 1000 });
+      const b = rt.addBot('host', { seat: 3, stack: 3 });
+      rt.start('host');
+      pick(rt, 'nlhe');
+      rt.state.choice!.chip = 3;
+      for (let i = 0; i < 80 && live(rt); i++) {
+        const h = hand(rt);
+        if (h.toAct === null) break;
+        const legal = engine.legalActions(h, h.toAct)!;
+        if (toActId(rt) === 'host') rt.act('host', legal.canCheck ? { type: 'check' } : { type: 'call' });
+        else clock.advance(500);
+      }
+      const reveal = live(rt) ? 0 : runoutMs(hand(rt).events);
+      if (!reveal || hand(rt).seats.some((hs) => hs.playerId !== 'host' && hs.stack !== 0)) continue;
+      expect([rt.seatOf(a)?.seat, rt.seatOf(b)?.seat]).toEqual([0, 3]);
+      expect(rt.state.choice!.chip).toBe(2);
+      rt.requestSeat('d', { seat: 1, name: 'D', stack: 1000 });
+      clock.advance(reveal);
+      expect([rt.seatOf(a), rt.seatOf(b)]).toEqual([null, null]);
+      expect(rt.state.choice!.chip).toBe(2);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   it('passes the chip on when its holder leaves, so a bot the host adds in their seat, or a newcomer, never takes it', () => {
     for (let n = 1; n <= 8; n++) {
       const { rt } = between(seeded(n));

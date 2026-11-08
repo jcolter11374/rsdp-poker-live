@@ -231,6 +231,11 @@ export interface RuntimeState {
   settings: TableSettings;
   /** Host edits waiting for the next hand. */
   pendingSettings: SettingsPatch | null;
+  /**
+   * The waiting edits were saved between hands, while browsers still dealt out an all-in runout: they apply once it
+   * has been dealt out, as edits saved between hands apply at once (#463). Missing in older snapshots.
+   */
+  settingsAfterRunout?: boolean;
   settingsLog: SettingsLogEntry[];
   seats: (SeatState | null)[];
   requests: SeatRequest[];
