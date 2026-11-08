@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { engine, type BettingKind, type HandEvent, type HandState } from '@rsdp/engine/core';
 import { BOT_NOTE_RULES, COACH_RULES, type BotNote, type CoachMove, type CoachRule, type CoachTip, type HandRecordView, type TableView } from '@rsdp/engine/wire';
 import { STAKES, start } from '../../../packages/engine/test/core/harness';
-import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, tipText, VERDICT_CAP, type FactCode } from './coach';
+import { BASIS_CAP, breakEvenWords, MARK_BASIS_CAP, chanceWords, coachFacts, explainNote, linesWithWhy, NOTES_FOOTNOTE, noteText, oftenWords, practiceRoom, soloPractice, tipText, VERDICT_CAP, type FactCode } from './coach';
 import { bbExactFormat, eventLines } from './format';
 import { frameView, type Frame } from './replay';
 
@@ -600,4 +600,50 @@ it('has a verdict for every tip rule', () => {
     const move: CoachMove = rule === 'draw' || rule === 'pat' ? { type: 'draw', discard: rule === 'draw' ? [1] : [] } : rule === 'bring-in' ? { type: 'bring-in' } : { type: 'call' };
     expect(tipText(tipOf({ rule, move, kind: move.type === 'draw' ? 'draw' : 'bet' }), view, fmt).verdict).not.toBe('');
   }
+});
+
+describe('soloPractice (#476)', () => {
+  type Seat = NonNullable<TableView['seats'][number]>;
+  const bot = { ownerId: 'me', ownerName: 'Me', look: 0 };
+  const person = (playerId: string, over: Partial<Seat> = {}) => ({ playerId, stack: 100, sittingOut: false, online: true, ...over }) as Seat;
+  const robot = (playerId: string) => ({ ...person(playerId), bot }) as Seat;
+  const view = (seats: TableView['seats'], over: Partial<Pick<TableView, 'mode' | 'realGame' | 'me'>> = {}, dealToAway = false) => ({
+    mode: 'cash' as const,
+    realGame: false,
+    me: { playerId: 'me', seat: 0 },
+    seats,
+    settings: { seating: { dealToAway } } as TableView['settings'],
+    ...over,
+  });
+
+  it('is on when you sit among bots only, before any hand is dealt', () => {
+    expect(soloPractice(view([person('me'), robot('b1'), null, robot('b2')]))).toBe(true);
+  });
+
+  it('is off with another person seated, alone, watching, at a tournament, or where two people have played', () => {
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2')]))).toBe(false);
+    expect(soloPractice(view([person('me'), null]))).toBe(false);
+    expect(soloPractice(view([null, robot('b1')], { me: { playerId: 'me', seat: null } }))).toBe(false);
+    expect(soloPractice(view([person('me'), robot('b1')], { mode: 'tournament' }))).toBe(false);
+    expect(soloPractice(view([person('me'), robot('b1')], { realGame: true }))).toBe(false);
+  });
+
+  it("leaves out another person the deal leaves out: sitting out, out of chips, or away where the table doesn't deal to away players", () => {
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { sittingOut: true })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { stack: 0 })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })]))).toBe(true);
+    expect(soloPractice(view([person('me'), robot('b1'), person('p2', { online: false })], {}, true))).toBe(false);
+  });
+
+  it("gives the area under the table room for the tip and the bots' reasons from the moment you sit down, as Look allows (practiceRoom)", () => {
+    const on = { tips: true, botReasons: true };
+    const amongBots = view([person('me'), robot('b1')]);
+    expect(practiceRoom({ ...amongBots, tips: undefined }, on)).toEqual({ tips: true, why: true });
+    expect(practiceRoom({ ...amongBots, tips: undefined }, { tips: false, botReasons: true })).toEqual({ tips: false, why: true });
+    expect(practiceRoom({ ...amongBots, tips: undefined }, { tips: true, botReasons: false })).toEqual({ tips: true, why: false });
+    // A hand the server sent tips with keeps the room, whatever the seats say now.
+    const withFriend = view([person('me'), robot('b1'), person('p2')]);
+    expect(practiceRoom({ ...withFriend, tips: true }, on)).toEqual({ tips: true, why: true });
+    expect(practiceRoom({ ...withFriend, tips: undefined }, on)).toEqual({ tips: false, why: false });
+  });
 });

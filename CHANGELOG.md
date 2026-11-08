@@ -52,6 +52,7 @@ _Phone alerts, and a table for screen readers and the keyboard_
 - Watching on a delay, when the host stops spectators seeing every card: what is still to come keeps playing, without the cards, instead of stopping for the length of the delay.
 - Waitlist: someone watching on a delay is offered a free seat when their view shows it free, and has the full minute to take it from then.
 - Public record: at a table whose spectators watch on a delay, a hand's own entry goes into the public record that long after the hand ends (at most 10 minutes), so it doesn't show the hand ending before the people watching see it end. A card shown after the hand waits the same way, and Check this hand says it is waiting for it rather than failing. Buy-ins and cash-outs, even ones made as a hand ends, and everything else still go in at once. The Checking John page says so.
+- Practice tables against bots, on a computer or a phone held upright: the table keeps its size. Before, in fixed-limit games such as Seven Card Stud, Razz and 2-7 Triple Draw, it got smaller as the first hand was dealt (by up to 97 pixels on a phone), and again the first time "Why did the bots play last hand?" showed under your buttons. On a phone or a touch screen that could happen in Hold'em too. The space under the table now has room for both from the start, and keeps it if a friend joins in.
 
 ## [2026.11.07.6] - 2026-11-07
 
