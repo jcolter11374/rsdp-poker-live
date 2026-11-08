@@ -2,16 +2,21 @@
 // hash-chained, saved in order and readable by anyone (docs/FAIRNESS.md).
 
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { auditHash, chainProblem, handDigest, playerRef, tableRef, type AuditEntry } from '@rsdp/engine';
+import { sql } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { AUDIT_GENESIS, auditHash, chainProblem, handDigest, playerRef, tableRef, type AuditEntry } from '@rsdp/engine';
 import { variants } from '@rsdp/engine/core';
+import { defaultSettings } from '@rsdp/engine/settings';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { HandRecordView } from '@rsdp/engine/wire';
-import { createApp } from '../src/app';
-import { AuditLog, dbAuditStore, memoryAuditStore } from '../src/audit';
-import { closeDb, loadSnapshot, saveSnapshot, type Db } from '../src/db';
+import { createApp, memoryStore, type TableStore } from '../src/app';
+import { AuditLog, dbAuditStore, memoryAuditStore, PENDING_HAND_KIND, type AuditStore, type PendingHand } from '../src/audit';
+import { closeDb, loadSnapshot, queryRows, saveSnapshot, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
+import { TableRuntime } from '../src/runtime/table';
+import { Scheduler } from '../src/scheduler';
 import { dbIdentity, dbStore } from '../src/storage';
+import { FakeClock, seeded } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
 
 const KEY = 'admin-key-for-tests-0123';
@@ -96,7 +101,7 @@ describe('the chain', () => {
 });
 
 describe('what the server records', () => {
-  it('records a server start, then hands and chip totals as they happen', { timeout: 20_000 }, async () => {
+  it('records a server start, then chip totals as they change and hands as they end at a table watched live', { timeout: 20_000 }, async () => {
     const { host, tableId } = await playedTable('Recorded', 'aud-host-secret-0123456789', 'aud-guest-secret-0123456789');
     const all = await everything();
     expect(chainProblem(all)).toBeNull();
@@ -178,5 +183,352 @@ describe('what the server records', () => {
       { table: tableRef(other), by: 'admin' },
     ]);
     expect(entries.at(-1)?.data).toEqual({ action: 'suggestion marked planned', target: `#${suggestion.id}` });
+  });
+});
+
+// D38 (#435): at a table whose spectators watch on a delay, a hand goes in the record only once they see it end, so the
+// record can't tell anyone a hand is over before the table they watch is.
+describe('hands at a table watched on a delay', () => {
+  const DELAY = 60_000;
+  let clock: FakeClock;
+  let delayed: ReturnType<typeof createApp> | null = null;
+  let base = '';
+  const read = async <T>(path: string) => (await (await fetch(`${base}${path}`)).json()) as T;
+  const all = async () => (await read<{ entries: AuditEntry[] }>('/api/audit/entries?after=0')).entries;
+  const handsOf = async (id: string) => (await all()).filter((e) => e.kind === 'hand' && e.data.table === tableRef(id));
+  const handEntries = (id: string, n: number) => read<{ entries: AuditEntry[]; before: boolean; after: boolean }>(`/api/audit/table/${tableRef(id)}/hand/${n}`);
+
+  /** One server's life on these stores, as a deploy ends one and the next starts. */
+  async function serve(auditStore: AuditStore, store: TableStore, now = () => clock.now()) {
+    const audit = await AuditLog.open(auditStore, { now, log: () => {} });
+    delayed = createApp({ clock, store, audit, adminKey: KEY, rng: seeded(3), log: () => {} });
+    await new Promise<void>((resolve) => delayed!.http.listen(0, resolve));
+    base = `http://localhost:${(delayed.http.address() as AddressInfo).port}`;
+    return delayed;
+  }
+
+  async function shutDown() {
+    await delayed?.close();
+    delayed = null;
+  }
+
+  afterEach(shutDown);
+
+  /** A cash table on this server, with Host and Ann sitting down with 100 each. */
+  async function table(app: ReturnType<typeof createApp>, store: TableStore, id: string, delaySeconds: number) {
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.timing.autoStartNextHand = false;
+    settings.spectators.delaySeconds = delaySeconds;
+    const made = TableRuntime.create({ id, hostId: 'host', settings }, { clock, rng: seeded() });
+    made.dispose();
+    await store.createTable(made.state);
+    const rt = (await app.getTable(id))!;
+    for (const p of ['host', 'ann']) rt.connect(p);
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 100 });
+    rt.requestSeat('ann', { seat: 1, name: 'Ann', stack: 100 });
+    return rt;
+  }
+
+  /** Deals the next hand and the first to act folds. Returns who won it. */
+  function playHand(rt: TableRuntime) {
+    if (rt.state.handNumber === 0) rt.start('host');
+    else rt.dealNext('host');
+    expect(rt.handInProgress).toBe(true);
+    const folder = rt.state.seats[rt.state.hand!.toAct!]!.playerId;
+    rt.act(folder, { type: 'fold' });
+    expect(rt.handInProgress).toBe(false);
+    return folder === 'host' ? 'ann' : 'host';
+  }
+
+  it('keeps a finished hand out of the record until the delay has passed, then puts it in once', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    const app = await serve(memoryAuditStore(), store);
+    const rt = await table(app, store, 'delay-one', DELAY / 1000);
+
+    const head = await read<{ seq: number; hash: string }>('/api/audit/head');
+    playHand(rt);
+    // Nothing a spectator could read the end of the hand from: no entry, no new head, nothing for the hand.
+    expect(await handsOf('delay-one')).toEqual([]);
+    expect(await read('/api/audit/head')).toEqual(head);
+    expect((await handEntries('delay-one', 1)).entries).toEqual([]);
+    clock.advance(DELAY - 1);
+    expect(await handsOf('delay-one')).toEqual([]);
+    expect(await read('/api/audit/head')).toEqual(head);
+
+    clock.advance(1);
+    const entries = await all();
+    expect(chainProblem(entries)).toBeNull();
+    const [first] = await handsOf('delay-one');
+    expect(first).toMatchObject({ seq: head.seq + 1, at: clock.now(), data: { hand: 1 } });
+    expect((await handEntries('delay-one', 1)).entries).toEqual([first]);
+    expect(await read('/api/audit/head')).toEqual({ seq: first.seq, hash: first.hash });
+
+    // The next hand doesn't show through hand 1's neighbours either, until it goes in itself.
+    clock.advance(5_000);
+    const winner = playHand(rt);
+    expect(await handEntries('delay-one', 1)).toMatchObject({ before: false, after: false });
+    // A card shown after the hand goes in as an entry of its own, that long after it is shown.
+    clock.advance(1_000);
+    rt.show(winner, [0, 1]);
+    clock.advance(DELAY - 1_000);
+    expect(await handEntries('delay-one', 1)).toMatchObject({ after: true });
+    expect((await handEntries('delay-one', 2)).entries).toHaveLength(1);
+    clock.advance(999);
+    expect((await handEntries('delay-one', 2)).entries).toHaveLength(1);
+    clock.advance(1);
+    const shown = (await handEntries('delay-one', 2)).entries;
+    expect(shown).toHaveLength(2);
+    expect(shown[0].data.digest).not.toBe(shown[1].data.digest);
+    expect((await handsOf('delay-one')).map((e) => e.data.hand)).toEqual([1, 2, 2]);
+    expect(chainProblem(await all())).toBeNull();
+    // Each went in once.
+    clock.advance(10 * DELAY);
+    expect(await handsOf('delay-one')).toHaveLength(3);
+  });
+
+  it('keeps a table\'s hands in order when its delay is shortened, and leaves tables watched live as they were', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    const app = await serve(memoryAuditStore(), store);
+    const slow = await table(app, store, 'delay-slow', DELAY / 1000);
+    const live = await table(app, store, 'delay-live', 0);
+
+    const start = clock.now();
+    playHand(slow);
+    slow.updateSettings('host', { spectators: { delaySeconds: 10 } });
+    clock.advance(1_000);
+    playHand(slow);
+    expect(slow.settings.spectators.delaySeconds).toBe(10);
+    // A table watched live is recorded the moment its hand ends, whatever another table is waiting for.
+    playHand(live);
+    expect(await handsOf('delay-live')).toHaveLength(1);
+
+    // Hand 2's own delay has passed, but spectators reach it on the old one (D39), so it waits as long as hand 1 did.
+    clock.advance(20_000);
+    expect(await handsOf('delay-slow')).toEqual([]);
+    clock.advance(start + DELAY - clock.now());
+    expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1]);
+    clock.advance(999);
+    expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1]);
+    clock.advance(1);
+    expect((await handsOf('delay-slow')).map((e) => e.data.hand)).toEqual([1, 2]);
+    expect(chainProblem(await all())).toBeNull();
+  });
+
+  it('records a hand at a table watched live at once, even when the record was given another clock', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    // A record whose clock is far behind the app's: a table without a delay must not wait for it to catch up.
+    const app = await serve(memoryAuditStore(), store, () => 0);
+    const rt = await table(app, store, 'live-other-clock', 0);
+    playHand(rt);
+    expect(await handsOf('live-other-clock')).toHaveLength(1);
+  });
+
+  it('puts a deleted table\'s waiting hands in before the entry that ends it', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    const app = await serve(memoryAuditStore(), store);
+    const rt = await table(app, store, 'delay-gone', DELAY / 1000);
+    playHand(rt);
+    clock.advance(1_000);
+    playHand(rt);
+    const res = await fetch(`${base}/api/admin/tables/delay-gone/delete`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const mine = (await all()).filter((e) => e.data.table === tableRef('delay-gone') && e.kind !== 'chips');
+    expect(mine.map((e) => [e.kind, e.data.hand ?? null])).toEqual([
+      ['hand', 1],
+      ['hand', 2],
+      ['deleted', null],
+    ]);
+    clock.advance(DELAY);
+    expect(await handsOf('delay-gone')).toHaveLength(2);
+    expect(chainProblem(await all())).toBeNull();
+  });
+
+  it('puts a hand still waiting at shutdown in on time, after the next server\'s boot entry, once', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const auditStore = memoryAuditStore();
+    const store = memoryStore();
+    const first = await serve(auditStore, store);
+    const rt = await table(first, store, 'delay-restart', DELAY / 1000);
+    const ended = clock.now();
+    playHand(rt);
+    await shutDown();
+    // Saved, and not put in by the server that stopped.
+    expect(await auditStore.pending()).toHaveLength(1);
+    clock.advance(DELAY / 2);
+    expect((await auditStore.after(0, 1000, ['hand'])).length).toBe(0);
+
+    await serve(auditStore, store);
+    const booted = await all();
+    expect(booted.at(-1)?.kind).toBe('boot');
+    expect(await handsOf('delay-restart')).toEqual([]);
+    clock.advance(ended + DELAY - clock.now() - 1);
+    expect(await handsOf('delay-restart')).toEqual([]);
+    clock.advance(1);
+    const entries = await all();
+    expect(entries.slice(booted.length).map((e) => [e.kind, e.data.hand])).toEqual([['hand', 1]]);
+    expect(chainProblem(entries)).toBeNull();
+    expect(await auditStore.pending()).toEqual([]);
+    clock.advance(10 * DELAY);
+    expect(await handsOf('delay-restart')).toHaveLength(1);
+  });
+
+  it('puts hands that came due while the server was down in right after its boot entry', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const auditStore = memoryAuditStore();
+    const store = memoryStore();
+    const first = await serve(auditStore, store);
+    const rt = await table(first, store, 'delay-down', DELAY / 1000);
+    playHand(rt);
+    clock.advance(1_000);
+    playHand(rt);
+    await shutDown();
+    clock.advance(5 * DELAY);
+
+    await serve(auditStore, store);
+    const entries = await all();
+    expect(entries.slice(-3).map((e) => [e.kind, e.data.hand ?? null])).toEqual([
+      ['boot', null],
+      ['hand', 1],
+      ['hand', 2],
+    ]);
+    expect(chainProblem(entries)).toBeNull();
+  });
+});
+
+describe('hands waiting in the database', () => {
+  let wdb: Db;
+  const p: PendingHand = { id: 'waiting-hand-1', table: 'a'.repeat(32), hand: 3, digest: 'd'.repeat(64), at: 5_000 };
+  const entry = (seq: number, prev: string, kind: AuditEntry['kind'], data: AuditEntry['data']) => {
+    const e = { seq, at: 6_000 + seq, kind, data, prev };
+    return { ...e, hash: auditHash(e) };
+  };
+  const counts = async () => {
+    const [row] = await queryRows<{ jobs: number; entries: number }>(
+      wdb,
+      sql`select (select count(*)::int from jobs where id = ${p.id}) as jobs, (select count(*)::int from audit_log where kind = 'hand') as entries`,
+    );
+    return row;
+  };
+
+  beforeAll(async () => {
+    wdb = await createTestDb();
+  });
+
+  afterAll(async () => {
+    await closeDb(wdb);
+  });
+
+  it('keeps a waiting hand until it goes in, and lets it go in the same step as it goes in', async () => {
+    const store = dbAuditStore(wdb);
+    const boot = entry(1, AUDIT_GENESIS, 'boot', { commit: null, image: null });
+    await store.append(boot);
+    await store.hold(p);
+    // Saving it again (a retry after a save that went through) changes nothing.
+    await store.hold(p);
+    expect(await store.pending()).toEqual([p]);
+    // Another kind of job is left alone, and the Scheduler leaves waiting hands alone.
+    await new Scheduler(wdb, { other: async () => {} }, { now: () => 1e13 }).runDue();
+    expect(await store.pending()).toEqual([p]);
+
+    const hand = (seq: number, prev: string) => entry(seq, prev, 'hand', { table: p.table, hand: p.hand, digest: p.digest });
+    // The entry can't go in (its number is taken): the hand keeps waiting.
+    await expect(store.append(hand(1, AUDIT_GENESIS), p.id)).rejects.toThrow();
+    expect(await counts()).toEqual({ jobs: 1, entries: 0 });
+    // Letting it go fails after the entry went in: the entry is taken back with it.
+    await wdb.execute(sql.raw(`create function refuse_delete() returns trigger language plpgsql as $$ begin raise exception 'refused'; end $$`));
+    await wdb.execute(sql.raw(`create trigger refuse_delete before delete on jobs for each row execute function refuse_delete()`));
+    await expect(store.append(hand(2, boot.hash), p.id)).rejects.toThrow();
+    expect(await counts()).toEqual({ jobs: 1, entries: 0 });
+    await wdb.execute(sql.raw('drop trigger refuse_delete on jobs'));
+    // Both at once.
+    await store.append(hand(2, boot.hash), p.id);
+    expect(await counts()).toEqual({ jobs: 0, entries: 1 });
+    expect(await store.pending()).toEqual([]);
+    expect(chainProblem(await store.after(0, 10))).toBeNull();
+  });
+
+  it('carries a waiting hand over to the next server, which puts it in when it is due', async () => {
+    const clock = new FakeClock();
+    const timer = (fn: () => void, ms: number) => {
+      const id = clock.setTimeout(fn, ms);
+      return () => clock.clearTimeout(id);
+    };
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    const rt = TableRuntime.create({ id: 'db-waiting', hostId: 'host', settings }, { clock, rng: seeded() });
+    for (const x of ['host', 'ann']) rt.connect(x);
+    rt.requestSeat('host', { seat: 0, name: 'Host', stack: 100 });
+    rt.requestSeat('ann', { seat: 1, name: 'Ann', stack: 100 });
+    rt.start('host');
+    rt.act(rt.state.seats[rt.state.hand!.toAct!]!.playerId, { type: 'fold' });
+    const record = rt.state.history.at(-1)!;
+    rt.dispose();
+
+    const first = await AuditLog.open(dbAuditStore(wdb), { now: () => clock.now(), log: () => {} });
+    first.boot({ commit: null, image: null, machine: null });
+    first.start(timer);
+    first.hand('db-waiting', record, clock.now() + 30_000);
+    first.stop();
+    await first.flush();
+    const [waiting] = await dbAuditStore(wdb).pending();
+    expect(waiting).toMatchObject({ table: tableRef('db-waiting'), hand: 1, at: clock.now() + 30_000 });
+    const { c } = (await queryRows<{ c: number }>(wdb, sql`select count(*)::int as c from jobs where kind = ${PENDING_HAND_KIND} and status = 'pending'`))[0];
+    expect(c).toBe(1);
+
+    const second = await AuditLog.open(dbAuditStore(wdb), { now: () => clock.now(), log: () => {} });
+    second.boot({ commit: null, image: null, machine: null });
+    second.start(timer);
+    clock.advance(29_999);
+    await second.flush();
+    expect((await second.after(0, 100)).filter((e) => e.data.table === tableRef('db-waiting'))).toEqual([]);
+    clock.advance(1);
+    await second.flush();
+    const entries = await second.after(0, 100);
+    expect(entries.slice(-2).map((e) => e.kind)).toEqual(['boot', 'hand']);
+    expect(entries.at(-1)?.data).toEqual({ table: waiting.table, hand: 1, digest: waiting.digest });
+    expect(chainProblem(entries)).toBeNull();
+    expect(await dbAuditStore(wdb).pending()).toEqual([]);
+    second.stop();
+  });
+
+  // A shortened delay can leave two hands of one table due at the same moment: the one kept first must go in first.
+  it('puts hands due at the same time in in the order they were kept, after a restart too', async () => {
+    const store = dbAuditStore(wdb);
+    const [x, y] = ['e'.repeat(32), 'f'.repeat(32)];
+    const kept: PendingHand[] = [
+      { id: 'tie-x1', table: x, hand: 1, digest: '1'.repeat(64), at: 900_000 },
+      { id: 'tie-y7', table: y, hand: 7, digest: '7'.repeat(64), at: 800_000 },
+      { id: 'tie-x2', table: x, hand: 2, digest: '2'.repeat(64), at: 900_000 },
+    ];
+    await store.hold(kept[0]);
+    // As if the database clock had gone back since, or counted too coarsely to tell the saves apart.
+    await wdb.execute(sql`update jobs set created_at = now() + interval '1 hour' where id = ${kept[0].id}`);
+    await store.hold(kept[1]);
+    await store.hold(kept[2]);
+    expect((await store.pending()).map((p) => p.id)).toEqual(['tie-y7', 'tie-x1', 'tie-x2']);
+
+    const clock = new FakeClock();
+    const next = await AuditLog.open(store, { now: () => clock.now(), log: () => {} });
+    next.boot({ commit: null, image: null, machine: null });
+    next.start((fn, ms) => {
+      const id = clock.setTimeout(fn, ms);
+      return () => clock.clearTimeout(id);
+    });
+    await next.flush();
+    const entries = await next.after(0, 1000);
+    expect(entries.slice(-4).map((e) => [e.kind, e.data.table ?? null, e.data.hand ?? null])).toEqual([
+      ['boot', null, null],
+      ['hand', y, 7],
+      ['hand', x, 1],
+      ['hand', x, 2],
+    ]);
+    expect(chainProblem(entries)).toBeNull();
+    expect(await store.pending()).toEqual([]);
+    next.stop();
   });
 });

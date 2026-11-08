@@ -739,7 +739,7 @@ describe('spectators', () => {
     expect(rt.state.log.at(-1)!.text).toBe('HOST changed the table settings: table.');
     // Taking the queued change back is announced too.
     rt.updateSettings('host', { spectators: { delaySeconds: 300 } });
-    expect(rt.state.log.at(-1)!.text).toMatch(/5 minutes behind the table from the next hand \(it was 30 seconds behind\)/);
+    expect(rt.state.log.at(-1)!.text).toMatch(/5 minutes behind the table, from the next hand \(it was 30 seconds behind\)/);
   });
 
   it('drops a turn-on queued by an older snapshot, and applies a queued turn-off now', () => {
@@ -781,7 +781,7 @@ describe('spectators', () => {
     const chats = rt.state.chat.length;
     rt.updateSettings('host', { spectators: { delaySeconds: 30 }, chat: { guestChat: true }, play: { rabbitHunt: false }, stakes: { bigBlind: 4 } });
     const log = rt.state.log.map((l) => l.text);
-    expect(log).toContain('⚠️ HOST set spectators to watch 30 seconds behind the table from the next hand (it was 5 minutes behind). They see every hole card.');
+    expect(log).toContain('⚠️ HOST set spectators to watch 30 seconds behind the table, from the next hand (it was 5 minutes behind). They see every hole card.');
     expect(log).toContain("HOST let people who aren't seated chat, and spectators here see every hole card.");
     expect(log.some((l) => /rabbit hunting off from the next hand/.test(l))).toBe(true);
     expect(log).toContain('HOST changed the table settings: stakes (from the next hand).');

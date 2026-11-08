@@ -860,6 +860,18 @@ describe("Dealer's choice: from the final review", () => {
     expect(() => rt.requestSeat('h', { seat: 8, name: 'H', stack: 1000 })).toThrow(/^that seat is closed for now$/);
   });
 
+  it('names the game to someone at a table with a delay who is shown the table live (#435)', () => {
+    const { rt } = table((s) => {
+      s.spectators.delaySeconds = 30;
+    });
+    seat(rt, 8);
+    rt.start('host');
+    pick(rt, 'razz');
+    // The server's delayed feed has caught up with the table, say: what they are shown decides, not the setting.
+    rt.shownTo = () => null;
+    expect(() => rt.requestSeat('h', { seat: 8, name: 'H', stack: 1000 })).toThrow(/^Razz seats at most 8 players, so the other seats are closed/);
+  });
+
   it('shows the seats closed when a seat request fills a smaller game', () => {
     const { rt, clock } = table();
     seat(rt, 5);

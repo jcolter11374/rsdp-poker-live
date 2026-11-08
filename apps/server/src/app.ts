@@ -10,7 +10,7 @@ import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
 import { ActionError, type BettingKind, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
-import type { Ack, BotLevel, ClientToServer, ServerToClient, TurnKey } from '@rsdp/engine/wire';
+import type { Ack, BotLevel, ClientToServer, ServerToClient, TableView, TurnKey } from '@rsdp/engine/wire';
 import { chatModerationRefusal, isArchived, isTournamentStaff, LOBBY_CHAT_MAX, lobbyChatRefusal, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
 import { hashSecret, IdentityError } from './identity';
 import { realGameHand, TableRuntime } from './runtime/table';
@@ -22,7 +22,8 @@ import { avatarImage, avatarToken, cleanAvatar, memoryAvatars, type AvatarStore 
 import { BOT_LEVELS, GESTURES, SETUPS_PER_KIND, type GestureKind, type SavedSetup, type SetupKind } from '@rsdp/engine/wire';
 import { cleanNote, memoryNotes, type NotesStore } from './notes';
 import { cleanImportedSetup, cleanKind, cleanSetup, cleanSetupName, freeName, memorySetups, renamed, type SetupStore } from './savedSetups';
-import { behind, delayedPart, handRecordView, pastHand, tableView, type DelayedPart } from './runtime/view';
+import { behind, delayedPart, handRecordView, pastHand, settingsBehind, shownKey, tableView, type DelayedPart } from './runtime/view';
+import { SpectatorFeed, type Moment } from './runtime/feed';
 import { TournamentManager, type TournamentStore } from './tournament/manager';
 import { memoryTournamentStore } from './tournament/store';
 import { tablePreview, tournamentPreview, withPreview } from './preview';
@@ -415,6 +416,11 @@ export function createApp(deps: AppDeps = {}) {
   const build = deps.build ?? buildFromEnv();
   const startedAt = clock.now();
   audit.boot(build);
+  // Hands that waited out a spectator delay across the restart go in after the boot entry (D38).
+  audit.start((fn, ms) => {
+    const timer = clock.setTimeout(fn, ms);
+    return () => clock.clearTimeout(timer);
+  });
 
   const app = express();
   const http = createServer(app);
@@ -444,8 +450,12 @@ export function createApp(deps: AppDeps = {}) {
   const tournamentWatchers = new Map<string, Set<Sock>>();
   const playerSockets = new Map<PlayerId, Set<Sock>>();
   const pendingBroadcast = new Set<string>();
-  /** Spectator delay: what each table looked like to spectators, oldest first. */
-  const feeds = new Map<string, { at: number; part: DelayedPart; cards: boolean }[]>();
+  /** Spectator delay: what each table looked like to spectators, and when each moment may be shown (runtime/feed.ts). */
+  const feeds = new Map<string, SpectatorFeed>();
+  /** Per table, the times a timer is already set to show spectators the moment that comes due then. */
+  const showTimers = new Map<string, Set<number>>();
+  /** What each spectator on a delay was last sent (a digest of shownKey), so a live change that doesn't change their view sends nothing. */
+  const lastShown = new WeakMap<Sock, string>();
   const saveTimers = new Map<string, NodeJS.Timeout>();
   /** Saves wait for the table's row to exist. */
   const created = new Map<string, Promise<void>>();
@@ -580,7 +590,24 @@ export function createApp(deps: AppDeps = {}) {
     onAdmin: (action) => audit.admin(action),
   });
   // A loaded table's own fairness state, which may be ahead of its last save (a game started again before its stopped hands opened).
-  handSearchRoutes(app, deps.accounts ?? null, { shared: sharedStore, now: () => clock.now(), log, liveFair: (id) => (tables.has(id) ? (tables.get(id)!.state.fair ?? null) : undefined) });
+  handSearchRoutes(app, deps.accounts ?? null, {
+    shared: sharedStore,
+    now: () => clock.now(),
+    log,
+    liveFair: (id) => (tables.has(id) ? (tables.get(id)!.state.fair ?? null) : undefined),
+    // Someone who played a hand and now watches its table on a delay finds it as their view shows the table (#435).
+    asShown: (tableId, ids, past) => {
+      const rt = tables.get(tableId);
+      // Any of theirs who sees the table live (in a seat, or staff) finds it whole.
+      if (!rt || ids.some((id) => rt.seatOf(id) || rt.isStaff(id))) return undefined;
+      const player = past.seats.find((x) => ids.includes(x.playerId))?.playerId;
+      const shown = player ? shownTo(rt, player, clock.now()) : null;
+      if (!shown) return undefined;
+      const upTo = eventsShown(shown, past, feeds.get(tableId));
+      const cut = upTo === undefined || upTo >= past.events.length ? past : { ...past, events: past.events.slice(0, upTo) };
+      return { past: cut, view: (playerId, hideMine) => handRecordView(rt, cut, playerId, { hideMine, asOf: shown.at }) };
+    },
+  });
   googleRoutes(app, deps.accounts ?? null, { config: deps.google ?? null, confirmations, now: () => clock.now(), log, hooks: accountHooks });
   // Shared hand links: anyone with the id may read the frozen hand.
   app.get('/api/shared/:id', (req, res) => {
@@ -867,28 +894,83 @@ export function createApp(deps: AppDeps = {}) {
       pendingBroadcast.delete(id);
       const now = clock.now();
       loadAvatars(rt);
-      const delayMs = rt.settings.spectators.delaySeconds * 1000;
-      if (delayMs > 0) {
-        // Remember what spectators would see now, and show it to them once the delay has passed.
-        const cards = spectatorsSeeCards(rt.settings);
-        // Once the host stops spectators seeing every card, the snapshots that show them are dropped, not played out.
-        const feed = (feeds.get(id) ?? []).filter((f) => cards || !f.cards);
-        feeds.set(id, feed);
-        feed.push({ at: now, part: delayedPart(tableView(rt, '', now, null, [], avatarOf)), cards });
-        // Keep only the newest snapshot old enough to show, and the ones after it.
-        let old = 0;
-        while (old + 1 < feed.length && feed[old + 1].at <= now - delayMs) old++;
-        if (old > 0) feed.splice(0, old);
-        clock.setTimeout(() => {
-          if (tables.get(id) !== rt) return;
-          // Timers can fire a millisecond early; the snapshot taken now must count as old enough.
-          const later = Math.max(clock.now(), now + delayMs);
-          for (const s of watchers.get(id) ?? []) if (isSpectator(rt, s)) s.emit('table:state', viewFor(rt, s, later));
-        }, delayMs);
-      } else feeds.delete(id);
-      for (const s of watchers.get(id) ?? []) s.emit('table:state', viewFor(rt, s, now));
+      const moment = remember(rt, now);
+      if (moment) showLater(rt, moment.showAt);
+      for (const s of watchers.get(id) ?? []) sendView(rt, s, now);
       watchTurn(rt);
     });
+  }
+
+  /**
+   * The table's delayed feed (#432, #435), or null when spectators see it live: no delay, and the last delay has run
+   * out (the next broadcast drops it). With `start`, a table with a delay that has no feed yet (it was just loaded)
+   * starts one with the table as it is now; without, nothing changes, so the link preview can ask.
+   */
+  function feedOf(rt: TableRuntime, now: number, start = false): SpectatorFeed | null {
+    const feed = feeds.get(rt.state.id) ?? null;
+    if (!feed && start && rt.settings.spectators.delaySeconds > 0) remember(rt, now);
+    if (!feed) return feeds.get(rt.state.id) ?? null;
+    return rt.settings.spectators.delaySeconds > 0 || !feed.caughtUp(now) ? feed : null;
+  }
+
+  /** Remembers what spectators would see now, to show them once it is old enough. Null when they see the table live. */
+  function remember(rt: TableRuntime, now: number): Moment | null {
+    const id = rt.state.id;
+    const delayMs = rt.settings.spectators.delaySeconds * 1000;
+    let feed = feeds.get(id);
+    // With no delay, the feed runs on until the last delay has run out, so the hand dealt under it plays to its end.
+    if (delayMs <= 0 && (!feed || feed.caughtUp(now))) {
+      feeds.delete(id);
+      return null;
+    }
+    if (!feed) feeds.set(id, (feed = new SpectatorFeed()));
+    // The host stopped spectators seeing every card: what is still to come plays on without the cards.
+    if (!spectatorsSeeCards(rt.settings)) feed.hideCards();
+    const part = delayedPart(tableView(rt, '', now, null, [], avatarOf));
+    let plain: DelayedPart | undefined;
+    if (part.spectator?.seeAll) {
+      const bare = tableView(rt, '', now, null, [], avatarOf, { hideCards: true });
+      plain = { ...part, seats: bare.seats, hand: bare.hand, spectator: bare.spectator };
+    }
+    // Only a finished hand's count: cards shown after it ended add to it, and a hand still being played isn't listed.
+    const last = rt.state.hand?.phase === 'complete' ? rt.state.hand : null;
+    const moment = feed.add(now, delayMs, part, plain, last ? { handNumber: last.input.handNumber, events: last.events.length } : undefined);
+    feed.shown(now);
+    return moment;
+  }
+
+  /** Sends spectators on a delay the moment that comes due at `at`, once per time. */
+  function showLater(rt: TableRuntime, at: number) {
+    const id = rt.state.id;
+    const set = showTimers.get(id) ?? new Set<number>();
+    showTimers.set(id, set);
+    if (set.has(at)) return;
+    set.add(at);
+    clock.setTimeout(() => {
+      set.delete(at);
+      if (tables.get(id) !== rt) return;
+      // Timers can fire a millisecond early; the moment due now must count as old enough.
+      const now = Math.max(clock.now(), at);
+      for (const s of watchers.get(id) ?? []) if (isSpectator(rt, s)) sendView(rt, s, now);
+    }, Math.max(0, at - clock.now()));
+  }
+
+  /**
+   * Sends one person their view. A spectator on a delay is sent it only when it shows something new: an update at
+   * every live change, with only the server's clock new, would tell them when the live hand ended (#435). A join
+   * (`fresh`) always gets one.
+   */
+  function sendView(rt: TableRuntime, s: Sock, now: number, fresh = false) {
+    const { view, delayed } = viewOf(rt, s, now);
+    if (!delayed) {
+      lastShown.delete(s);
+      s.emit('table:state', view);
+      return;
+    }
+    const key = createHash('sha1').update(shownKey(view)).digest('base64');
+    if (!fresh && lastShown.get(s) === key) return;
+    lastShown.set(s, key);
+    s.emit('table:state', view);
   }
 
   /**
@@ -980,28 +1062,103 @@ export function createApp(deps: AppDeps = {}) {
   const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isStaff(s.data.playerId);
 
   /**
+   * What a spectator on a delay is shown at `now` (null for anyone who sees the table live): the moment shown, or
+   * while none is old enough the oldest kept, with how far behind it is shown. Read only, so the link preview can use it.
+   */
+  function shownTo(rt: TableRuntime, playerId: PlayerId, now: number, start = false): { moment: Moment | null; oldest: Moment | null; behindMs: number; at: number } | null {
+    if (rt.seatOf(playerId) || rt.isStaff(playerId)) return null;
+    const feed = feedOf(rt, now, start);
+    if (!feed) return null;
+    const moment = feed.shown(now, true);
+    const oldest = feed.oldest();
+    // How far behind: the moment's clocks move on by this. Before any is old enough, the oldest's.
+    const of = moment ?? oldest;
+    const behindMs = of ? of.showAt - of.at : rt.settings.spectators.delaySeconds * 1000;
+    return { moment, oldest, behindMs, at: moment ? moment.at : now - behindMs };
+  }
+
+  /**
    * Finished hands a person may open: everything for players and the host;
    * for spectators nothing when watching is off, and only hands that ended
-   * longer ago than the delay, so history can't get ahead of the table.
+   * by the moment their view shows, so history can't get ahead of the table.
    */
   function spectatorCutoff(rt: TableRuntime, s: Sock): number {
     if (!isSpectator(rt, s)) return Infinity;
     if (!rt.settings.spectators.allowed) throw new ActionError('the host has turned watching off');
-    return clock.now() - rt.settings.spectators.delaySeconds * 1000;
+    return shownTo(rt, s.data.playerId, clock.now())?.at ?? Infinity;
   }
 
-  /** One person's view; a spectator at a table with a delay sees the hand as it was that long ago. */
-  function viewFor(rt: TableRuntime, s: Sock, now: number) {
+  /**
+   * For a spectator on a delay, how many events of a finished hand their view has: cards shown after it ended live
+   * stay out of their hand list, downloads and share links until their view shows them (#435). Undefined for all of
+   * a hand (anyone who sees the table live, and every hand but the one their view last had).
+   */
+  function shownEventsOf(rt: TableRuntime, s: Sock): ((handNumber: number) => number | undefined) | undefined {
+    if (!isSpectator(rt, s)) return undefined;
+    const shown = shownTo(rt, s.data.playerId, clock.now());
+    const last = (shown?.moment ?? shown?.oldest)?.lastHand;
+    return last ? (n) => (n === last.handNumber ? last.events : undefined) : undefined;
+  }
+
+  /**
+   * How many of a finished hand's events someone on a delay is shown (undefined: all of them). A hand that ended after
+   * the moment they are shown is one they were dealt into, so in a seat until it ended live (nobody dealt in leaves
+   * before the end): all of it up to its end, but no card shown after that until their view gets there. Hand search
+   * lists such hands, where the table's own lists wait for them (#435).
+   */
+  function eventsShown(shown: { moment: Moment | null; oldest: Moment | null; at: number }, past: PastHand, feed?: SpectatorFeed): number | undefined {
+    if (past.endedAt > shown.at) {
+      // As the table ended it, with a 7-2 it turned up on its own and the bounty that paid; without a moment from
+      // then (the server restarted since), at the hand's own end.
+      const atEnd = feed?.endOf(past.handNumber);
+      if (atEnd !== undefined) return atEnd;
+      const end = past.events.findIndex((e) => e.t === 'hand-end');
+      return end < 0 ? undefined : end + 1;
+    }
+    const last = (shown.moment ?? shown.oldest)?.lastHand;
+    return last?.handNumber === past.handNumber ? last.events : undefined;
+  }
+
+  /** Whether downloads are closed to this person: for a spectator on a delay, as the table they are shown has it. */
+  function recordsLockedFor(rt: TableRuntime, s: Sock): boolean {
+    const shown = shownTo(rt, s.data.playerId, clock.now());
+    const part = (shown?.moment ?? shown?.oldest)?.part;
+    return part ? part.recordsLocked && rt.neverPlayedHere(s.data.playerId) : rt.recordsLocked(s.data.playerId);
+  }
+
+  /** One person's view; a spectator at a table with a delay sees the table as it was (see shownTo). */
+  function viewOf(rt: TableRuntime, s: Sock, now: number): { view: TableView; delayed: boolean } {
     const id = rt.state.id;
-    const live = tableView(rt, s.data.playerId, now, tournaments.tournamentOf(id), audience(id), avatarOf);
+    const people = audience(id);
+    const live = tableView(rt, s.data.playerId, now, tournaments.tournamentOf(id), people, avatarOf);
+    const shown = isSpectator(rt, s) ? shownTo(rt, s.data.playerId, now, true) : null;
+    if (!shown) return { view: live, delayed: false };
+    // Anything older than the moment shown is no longer needed.
+    feeds.get(id)?.shown(now);
+    const view = behind(live, shown.moment?.part ?? null, shown.behindMs, shown.oldest?.part ?? null, {
+      audience: people,
+      isStaff: (p) => rt.isStaff(p),
+      neverPlayed: rt.neverPlayedHere(s.data.playerId),
+      waitingSince: rt.state.waitlist?.find((w) => w.playerId === s.data.playerId)?.at,
+    });
+    return { view, delayed: true };
+  }
+
+  /**
+   * When spectators on a delay see the table as it is now: when a moment taken now would be shown (see SpectatorFeed),
+   * so at once at a table without a delay that has caught up (#435).
+   */
+  function spectatorsSeeAt(rt: TableRuntime, now: number): number {
     const delayMs = rt.settings.spectators.delaySeconds * 1000;
-    if (delayMs <= 0 || !isSpectator(rt, s)) return live;
-    const feed = feeds.get(id) ?? [];
-    // The newest snapshot old enough to show; anything older than it is no longer needed.
-    let i = -1;
-    while (i + 1 < feed.length && feed[i + 1].at <= now - delayMs) i++;
-    if (i > 0) feed.splice(0, i);
-    return behind(live, i >= 0 ? feed[0].part : null, delayMs, feed[0]?.part ?? null);
+    const feed = feedOf(rt, now);
+    return feed ? feed.showAtFor(now, delayMs) : now + delayMs;
+  }
+
+  /** The settings a spectator on a delay is shown (what changes at once as it is now), for the link preview (#435). */
+  function shownSettings(rt: TableRuntime, now: number) {
+    const shown = shownTo(rt, '', now);
+    const part = (shown?.moment ?? shown?.oldest)?.part;
+    return part ? settingsBehind(part.settings, rt.settings) : rt.settings;
   }
 
   /** Everyone with a table open, once each, by the name they go by. */
@@ -1051,9 +1208,32 @@ export function createApp(deps: AppDeps = {}) {
     // Hand saves run one after another, so a late show saved again can't be overwritten by the hand's first save.
     let handSaves = created.get(id) ?? Promise.resolve();
     rt.onHandFinished = (record) => {
-      audit.safely('a hand', () => audit.hand(id, record));
+      // In the public record no sooner than spectators on a delay see it end (D38); a late show too. A table they
+      // watch live passes no time, so it is recorded at once whatever clock the record was given.
+      audit.safely('a hand', () => {
+        const now = clock.now();
+        const seeAt = spectatorsSeeAt(rt, now);
+        audit.hand(id, record, seeAt > now ? seeAt : undefined);
+      });
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
+    };
+    // What the table answers a spectator on a delay comes from the seats their view shows (#435). Read only: this is
+    // asked in the middle of a move, so a table without a feed yet (none watching) answers from the seats as they are,
+    // which is what its feed will start from.
+    const liveShownTo = rt.shownTo;
+    rt.shownTo = (playerId) => {
+      const now = clock.now();
+      const shown = shownTo(rt, playerId, now);
+      if (!shown) return liveShownTo(playerId);
+      const of = shown.moment ?? shown.oldest;
+      if (!of) return liveShownTo(playerId);
+      const { part } = of;
+      // The seats are the moment's, so a seat counts as taken since if someone sat in it after that moment: before
+      // any is old enough, the oldest's, not the time the delay reaches back to.
+      const offer = part.offers.find((o) => o.playerId === playerId)?.seat;
+      const held = part.offers.filter((o) => o.playerId !== playerId).map((o) => o.seat);
+      return { seats: part.seats.map((x) => x?.playerId ?? null), at: of.at, behindMs: shown.behindMs, showsNowInMs: spectatorsSeeAt(rt, now) - now, held, ...(offer === undefined ? {} : { offer }) };
     };
     // Log and chat lines are saved in order too, the ones that come in while a save runs together in the next.
     // First the ones the table has now, if none are saved for it yet (a table saved before every line was kept).
@@ -1124,6 +1304,7 @@ export function createApp(deps: AppDeps = {}) {
     tables.delete(id);
     audit.forgetTable(id);
     feeds.delete(id);
+    showTimers.delete(id);
     turnSeen.delete(id);
     watchers.delete(id);
     lastWatched.delete(id);
@@ -1187,6 +1368,7 @@ export function createApp(deps: AppDeps = {}) {
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
+      showTimers.delete(id);
       turnSeen.delete(id);
       lastWatched.delete(id);
       lastChange.delete(id);
@@ -1244,6 +1426,7 @@ export function createApp(deps: AppDeps = {}) {
         tables.delete(rt.state.id);
         audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
+        showTimers.delete(rt.state.id);
         turnSeen.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
         lastChange.delete(rt.state.id);
@@ -1306,14 +1489,14 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   /** Every finished hand of a table as one player may see it (spectators only those past the delay): saved hands, with the copies still in memory winning (they include cards shown after the hand). */
-  async function allHandViews(rt: TableRuntime, playerId: PlayerId, cutoff = Infinity, notes = false) {
+  async function allHandViews(rt: TableRuntime, playerId: PlayerId, cutoff = Infinity, notes = false, eventsOf?: (handNumber: number) => number | undefined) {
     const saved = await store.loadHands(rt.state.id);
     const byNumber = new Map(saved.map((h) => [h.handNumber, h]));
     for (const h of rt.state.history) byNumber.set(h.handNumber, pastHand(h));
     return [...byNumber.values()]
       .sort((a, b) => a.handNumber - b.handNumber)
       .filter((h) => h.endedAt <= cutoff)
-      .map((h) => handRecordView(rt, h, playerId, { notes }));
+      .map((h) => handRecordView(rt, h, playerId, { notes, asOf: cutoff, eventsOf }));
   }
 
   async function getTable(id: string): Promise<TableRuntime | null> {
@@ -1369,9 +1552,12 @@ export function createApp(deps: AppDeps = {}) {
         const state = await tournaments.peek(owner);
         return state && !isArchived(state) ? tournamentPreview(state, clock.now()) : null;
       }
-      const state = tables.get(t[1])?.state ?? (await store.loadTable(t[1]));
+      const rt = tables.get(t[1]);
+      const state = rt?.state ?? (await store.loadTable(t[1]));
       if (!state) return null;
-      const { settings } = state;
+      // At a table with a delay, the game and stakes spectators are shown: the preview mustn't tell anyone holding the
+      // link that the live table has dealt with new ones (#435). The warning that they see every card is as it is now.
+      const settings = rt ? shownSettings(rt, clock.now()) : state.settings;
       const { smallBlind, bigBlind, centsMode } = settings.stakes;
       const menu = choiceMenu(settings);
       const games = menu ? `Dealer's choice of ${menu.games.length} games` : undefined;
@@ -1533,7 +1719,7 @@ export function createApp(deps: AppDeps = {}) {
           }
           loadAvatars(rt);
           rt.guestNames.set(me, socket.data.session.displayName || 'Guest');
-          socket.emit('table:state', viewFor(rt, socket, clock.now()));
+          sendView(rt, socket, clock.now(), true);
         },
         log,
       ),
@@ -1549,8 +1735,9 @@ export function createApp(deps: AppDeps = {}) {
           const rt = current();
           const record = rt.state.history.find((h) => h.handNumber === Number(handNumber));
           // A hand the delay still hides gets the same answer as one that isn't there, or a spectator learns it has ended.
-          if (!record || record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError(HAND_NOT_AVAILABLE);
-          return { hand: handRecordView(rt, record, me, { notes: true }) };
+          const cutoff = spectatorCutoff(rt, socket);
+          if (!record || record.endedAt > cutoff) throw new ActionError(HAND_NOT_AVAILABLE);
+          return { hand: handRecordView(rt, record, me, { notes: true, asOf: cutoff, eventsOf: shownEventsOf(rt, socket) }) };
         },
         log,
       ),
@@ -1568,7 +1755,7 @@ export function createApp(deps: AppDeps = {}) {
           const now = clock.now();
           if (now - (socket.data.lastExport ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           socket.data.lastExport = now;
-          return { hands: await allHandViews(rt, me, cutoff, true) };
+          return { hands: await allHandViews(rt, me, cutoff, true, shownEventsOf(rt, socket)) };
         },
         log,
       ),
@@ -1579,7 +1766,7 @@ export function createApp(deps: AppDeps = {}) {
         ack,
         async () => {
           const rt = current();
-          if (rt.recordsLocked(me)) throw new ActionError('downloads open once you leave your seat or the game stops');
+          if (recordsLockedFor(rt, socket)) throw new ActionError('downloads open once you leave your seat or the game stops');
           const now = clock.now();
           if (now - (socket.data.lastFullLog ?? 0) < EXPORT_GAP_MS) throw new ActionError('one download every few seconds, please');
           const cutoff = spectatorCutoff(rt, socket);
@@ -1589,7 +1776,7 @@ export function createApp(deps: AppDeps = {}) {
           return {
             log: withRecent(saved.log, rt.state.log).filter((l) => l.at <= cutoff).map((l) => ({ ...l })),
             chat: withRecent(saved.chat, rt.state.chat).filter((c) => c.at <= cutoff).map((c) => ({ ...c })),
-            hands: await allHandViews(rt, me, cutoff),
+            hands: await allHandViews(rt, me, cutoff, false, shownEventsOf(rt, socket)),
           };
         },
         log,
@@ -1608,12 +1795,18 @@ export function createApp(deps: AppDeps = {}) {
           shareTimes.set(me, [...recent, now]);
           // Kept across reconnects (so reconnecting doesn't reset the limit); old entries are swept now and then.
           if (shareTimes.size > 500) for (const [id, times] of shareTimes) if (now - times.at(-1)! >= SHARE_WINDOW_MS) shareTimes.delete(id);
-          const record = rt.state.history.find((h) => h.handNumber === handNumber) ?? (await store.loadHands(rt.state.id)).find((h) => h.handNumber === handNumber);
-          // The same answer for a hand the delay still hides as for one that isn't there (see table:history).
-          if (!record || record.endedAt > spectatorCutoff(rt, socket)) throw new ActionError(HAND_NOT_AVAILABLE);
+          // The same answer for a hand the delay still hides as for one that isn't there (see table:history), found the
+          // same way: one the live table has just finished isn't answered from memory, faster (#435).
+          const cutoff = spectatorCutoff(rt, socket);
+          const shown = (h: { handNumber: number; endedAt: number }) => h.handNumber === handNumber && h.endedAt <= cutoff;
+          const record = rt.state.history.find(shown) ?? (await store.loadHands(rt.state.id)).find(shown);
+          if (!record) throw new ActionError(HAND_NOT_AVAILABLE);
           const id = newId();
           // A link is public and outlives the game: it never carries the seeds that rebuild the deck.
-          const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine }), fair: null };
+          const hand = { ...handRecordView(rt, record, me, { hideMine: !!input?.hideMine, eventsOf: shownEventsOf(rt, socket) }), fair: null };
+          // The table as the hand was played (seats can be added or taken away since); the settings a spectator on a
+          // delay is shown, not ones the live table has moved on to.
+          const settings = isSpectator(rt, socket) ? shownSettings(rt, now) : rt.state.settings;
           // Which cards are mine, so the replay shows them; a link that hides them doesn't say.
           const sharerSeat = input?.hideMine ? undefined : hand.seats.find((s) => s.playerId === me)?.seat;
           await sharedStore.create({
@@ -1623,10 +1816,10 @@ export function createApp(deps: AppDeps = {}) {
             createdBy: me,
             snapshot: {
               id,
-              tableName: rt.state.settings.table.name,
-              centsMode: rt.state.settings.stakes.centsMode,
-              seatCount: rt.state.seats.length,
-              felt: rt.state.settings.table.felt ?? null,
+              tableName: settings.table.name,
+              centsMode: settings.stakes.centsMode,
+              seatCount: ('hand' in record ? record.hand.input.maxSeats : undefined) ?? (isSpectator(rt, socket) ? settings.table.maxSeats : rt.state.seats.length),
+              felt: settings.table.felt ?? null,
               sharedBy: socket.data.session.displayName || rt.nameOf(me),
               ...(sharerSeat !== undefined ? { sharerSeat } : {}),
               createdAt: now,
@@ -1704,7 +1897,7 @@ export function createApp(deps: AppDeps = {}) {
         () => {
           const rt = current();
           // Checked first, the same answer at any moment: the live hand's end would tell a spectator on a delay what is coming.
-          if (rt.settings.spectators.delaySeconds > 0 && isSpectator(rt, socket)) throw new ActionError('spectators on a delay can’t rabbit hunt');
+          if (isSpectator(rt, socket) && shownTo(rt, me, clock.now())) throw new ActionError('spectators on a delay can’t rabbit hunt');
           rt.rabbitHunt(me);
         },
         log,
@@ -1912,12 +2105,20 @@ export function createApp(deps: AppDeps = {}) {
           const kind = String(input?.kind ?? '') as GestureKind;
           if (!GESTURES.includes(kind)) throw new ActionError('unknown gesture');
           const to = String(input?.to ?? '');
-          rt.checkGesture(me, to);
+          // Counted before the table is asked, so refused gestures count against the limit too (#435).
           const now = clock.now();
           const recent = (gestureTimes.get(me) ?? []).filter((t) => now - t < GESTURE_WINDOW_MS);
           if (recent.length >= GESTURE_BURST) throw new ActionError('easy there: a few seconds between gestures');
           gestureTimes.set(me, [...recent, now]);
-          for (const s of watchers.get(rt.state.id) ?? []) s.emit('table:gesture', { from: me, to, kind, at: now });
+          rt.checkGesture(me, to);
+          // A spectator on a delay sees it only between people their view has seated (or a thrower from the rail): one
+          // at a player who has just sat down, or from one, would tell them the live table had moved on (#435).
+          const thrower = !!rt.seatOf(me);
+          for (const s of watchers.get(rt.state.id) ?? []) {
+            const shown = isSpectator(rt, s) ? rt.shownTo(s.data.playerId) : null;
+            if (shown && (!shown.seats.includes(to) || (thrower && !shown.seats.includes(me)))) continue;
+            s.emit('table:gesture', { from: me, to, kind, at: now });
+          }
         },
         log,
       ),
@@ -2229,6 +2430,8 @@ export function createApp(deps: AppDeps = {}) {
       const graceMs = opts.graceMs ?? CLOSE_GRACE_MS;
       const cut = await closeConnections(http, connections, graceMs);
       if (cut) steps.note(`cut ${cut} connection${cut === 1 ? '' : 's'} still open after ${graceMs} ms`);
+      // Hands still waiting for a spectator delay stay saved; the next server puts them in on time.
+      audit.stop();
       steps.step('writing the public record');
       await audit.flush();
       // Told to stop while the tables were put away; its own step, so one that hangs shows by name.

@@ -135,10 +135,10 @@ describe('gestures', () => {
     await expect(host.call('table:gesture', { to: 'someone-else', kind: 'clap' })).rejects.toThrow(/not seated/);
     await expect(host.call('table:gesture', { to: guestId, kind: 'brick' })).rejects.toThrow(/unknown gesture/);
 
-    await host.call('table:gesture', { to: guestId, kind: 'heart' });
-    await host.call('table:gesture', { to: guestId, kind: 'heart' });
+    // The two refused for whom they were thrown at count too, so who is seated can't be asked without limit (#435).
     await host.call('table:gesture', { to: guestId, kind: 'heart' });
     await expect(host.call('table:gesture', { to: guestId, kind: 'heart' })).rejects.toThrow(/easy there/);
+    await expect(host.call('table:gesture', { to: 'someone-else', kind: 'heart' })).rejects.toThrow(/easy there/);
     void guest;
   });
 

@@ -20,7 +20,8 @@ mkdirSync(OUT, { recursive: true });
 export const DESK = { width: 1280, height: 800 };
 export const PHONE = { width: 390, height: 844 };
 
-export const browser = await chromium.launch();
+// CHROMIUM_PATH: a Chromium already on the machine, for when Playwright's own download isn't there.
+export const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 export const errors = [];
 
 export async function open(label, viewport = DESK, video = false) {
