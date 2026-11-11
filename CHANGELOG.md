@@ -80,6 +80,7 @@ _Bigger tournament tables on wide screens_
 - Tournaments on a wide but short screen (about 2300 by 800, an ultrawide monitor or a big screen with tall browser bars): the seats and cards are now as big as at a cash table, in every game. Before, the strip above the table took just enough height to drop every seat and card to its smallest size.
 - Wide screens a little too short for the bigger table now get it a little smaller, instead of falling straight back to the smallest seats and cards. The cards in the middle of the table come out a little smaller than before, to fit.
 - Stud, Razz and Stud Hi-Lo on a big screen: on third and fourth street the players at the left and right ends of the table no longer run off the edge of the window, and the seats along the top and bottom no longer overlap.
+- Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons.
 
 ## [2026.11.07.5] - 2026-11-07
 
