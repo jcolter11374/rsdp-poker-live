@@ -26,6 +26,7 @@ Claude sessions write this project's code. Each session is short-lived, so the r
 - **Never handle John's backup private key.** Only John holds it. Don't ask for it.
 - **Production keys stay in `main`'s own workflows.** Workflows that use `FLY_API_TOKEN` or `ADMIN_KEY` run only from `main`: keep their main-only `if:` guard, and never give them a `push` or `pull_request` trigger that runs on another branch. Changing them through a normal PR into `develop` is fine.
 - **Keep public pages honest.** /fairness, /transparency and /privacy must describe what the code really does. If a change affects what they say, update them in the same PR. Any new stored data, cookie or outside service needs a docs/PRIVACY.md change.
+- **Keep the docs current.** A change updates every doc that describes it, in the same PR, and lists them under "Docs" in its description. The table in [CONTRIBUTING.md](CONTRIBUTING.md#keeping-the-docs-current) says which doc covers what.
 - **Keep private things out of this public repo:** players' names (unless already public), table invite links, the group's results spreadsheet, John's budget, and anything else a player or John hasn't made public.
 - **Ask John before** anything that costs money, changes what the product is, or can't be undone (deleting data, removing live tournaments).
 

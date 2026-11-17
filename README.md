@@ -4,19 +4,33 @@ Browser poker for friends, no sign-up. A host creates a cash table or a tourname
 
 Live at https://rsdp-poker-live.fly.dev. Play money only.
 
-## Where to read next
+## Start here
 
-| If you want to… | Read |
-| --- | --- |
-| Understand how the code fits together, where to start reading, and how to run it | [docs/CODE_TOUR.md](docs/CODE_TOUR.md) |
-| Check that the cards are dealt fairly, and see what the operator could still do | [docs/FAIRNESS.md](docs/FAIRNESS.md) (the same text as the site's `/fairness` page) |
-| Know the exact rules each part of the code follows | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Host it, back it up or restore it | [docs/DEPLOY.md](docs/DEPLOY.md) |
-| Fix it when something goes wrong (site down, bad release, leaked key) | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
-| Know why things are the way they are, and who decided | [docs/DECISIONS.md](docs/DECISIONS.md) |
-| Report a security problem | [.github/SECURITY.md](.github/SECURITY.md) (privately, please) |
-| See known bugs, what is being worked on, and what is waiting on whom | [Issues](https://github.com/jcolter11374/rsdp-poker-live/issues), and [CONTRIBUTING.md](CONTRIBUTING.md) for how we track and ship work |
-| See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) |
+New to the project? Read these three, in this order. Together they take under an hour.
+
+1. **This page**, for what the project is and how to run it.
+2. **[docs/CODE_TOUR.md](docs/CODE_TOUR.md)**, the map of the code: what each folder does, one bet followed from the button to every screen, which files to read first, and how a change reaches the live site.
+3. **[CONTRIBUTING.md](CONTRIBUTING.md)**, how work is tracked and released: issues, pull requests, the checks a change needs, and [how the docs are kept current](CONTRIBUTING.md#keeping-the-docs-current).
+
+To see what is going on right now, look at the [open issues](https://github.com/jcolter11374/rsdp-poker-live/issues) (bugs, work in progress, what is waiting on whom) and the newest [release](https://github.com/jcolter11374/rsdp-poker-live/releases) (normally what is live; the site's `/api/version` says exactly which commit it runs). Those are the record; nothing important lives only in someone's notes.
+
+Everything else is for looking things up when you need it:
+
+| If you want to… | Read | Kept current by |
+| --- | --- | --- |
+| Know the exact rules a part of the code follows (dense; a reference, not a first read) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Any change to those rules |
+| Know the tournament director's rules and how the server calls it | [packages/tournament/README.md](packages/tournament/README.md) | Any change to the director |
+| Know why things are the way they are, and who decided | [docs/DECISIONS.md](docs/DECISIONS.md) | A new entry for each decision; old ones aren't edited |
+| Check that the cards are dealt fairly, and see what the operator could still do | [docs/FAIRNESS.md](docs/FAIRNESS.md) (the site's `/fairness` page shows this file) | Any change to dealing, who sees what, or the public record |
+| See what the site keeps about players, and its terms | [docs/PRIVACY.md](docs/PRIVACY.md), [docs/TERMS.md](docs/TERMS.md) (the site's `/privacy` and `/terms` pages show these files) | PRIVACY: any change to what is stored, for how long, how it's deleted, cookies or outside services. TERMS: any change to what the site promises or asks of players |
+| Host it, back it up, restore it, or release it | [docs/DEPLOY.md](docs/DEPLOY.md) | Any change to hosting, settings, backups or the release steps |
+| Fix it when something goes wrong (site down, bad release, leaked key) | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Any change to what an alarm means or how to recover; each incident adds a line |
+| Know what works with screen readers and keyboards, and what doesn't yet | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) | Any change to the look or controls of the table or the site's main pages |
+| Play-test a release on a copy of the site | [e2e/playtest/README.md](e2e/playtest/README.md) | Any new play-test script |
+| See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) | Made by `npm run changelog` from the site's release notes; a test fails if it's stale |
+| See the software this is built on | [docs/CREDITS.md](docs/CREDITS.md) (the site's `/credits` page) | Any new library |
+| Report a security problem | [.github/SECURITY.md](.github/SECURITY.md) (privately, please) | |
+| Know the rules the AI coding sessions work under | [CLAUDE.md](CLAUDE.md) | John's standing rules |
 
 ## Quick start
 
