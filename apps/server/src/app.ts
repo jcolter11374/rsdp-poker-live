@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
-import { ActionError, type BettingKind, type PlayerId } from '@rsdp/engine/core';
+import { ActionError, runoutMs, type BettingKind, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient, TableView, TurnKey } from '@rsdp/engine/wire';
 import { chatModerationRefusal, isArchived, isTournamentStaff, LOBBY_CHAT_MAX, lobbyChatRefusal, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
@@ -550,6 +550,12 @@ export function createApp(deps: AppDeps = {}) {
       const saved = (await store.tablesSeating?.(playerId)) ?? [];
       const away = saved.find((t) => !tables.has(t.id) && !deleted.has(t.id));
       return away ? { table: away.name, id: away.id, waiting: !away.seated } : null;
+    },
+    heldFromBoards: (tableId) => {
+      const rt = tables.get(tableId);
+      // A hand in play that spectators wouldn't see as it is now: on a delay, or still catching up after one.
+      // At any table, an all-in result waits until the browsers have dealt the cards out, for the players too.
+      return audit.holdsHand(tableId) || (!!rt && (rt.showingRunout() || (rt.handLive() && spectatorsSeeAt(rt, clock.now()) > clock.now())));
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
     deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {
@@ -1217,7 +1223,9 @@ export function createApp(deps: AppDeps = {}) {
       audit.safely('a hand', () => {
         const now = clock.now();
         const seeAt = spectatorsSeeAt(rt, now);
-        audit.hand(id, record, seeAt > now ? seeAt : undefined);
+        // Their browsers deal an all-in runout out a street at a time once the finished hand reaches them, so the end
+        // they see comes that much later (#469: the leaderboard holds the game until the hand goes in).
+        audit.hand(id, record, seeAt > now ? seeAt + runoutMs(record.hand.events) : undefined);
       });
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);

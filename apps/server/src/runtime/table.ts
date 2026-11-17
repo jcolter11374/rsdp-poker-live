@@ -2601,7 +2601,7 @@ export class TableRuntime {
     return hand;
   }
 
-  private handLive() {
+  handLive() {
     return !!this.state.hand && this.state.hand.phase !== 'complete';
   }
 
@@ -3610,6 +3610,11 @@ export class TableRuntime {
     const last = this.state.history.at(-1);
     const ms = last ? runoutMs(last.hand.events) : 0;
     return ms ? last!.endedAt + ms : 0;
+  }
+
+  /** An all-in runout from the last hand is still being dealt out in the browsers (see revealSeats). */
+  showingRunout(): boolean {
+    return this.revealSeats().size > 0;
   }
 
   /**

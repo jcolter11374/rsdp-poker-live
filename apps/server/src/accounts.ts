@@ -55,6 +55,11 @@ export interface AccountHooks {
    * makes the browser play as another player id, and none of these can move.
    */
   heldBy?(playerId: string): Promise<{ table: string; id: string; waiting: boolean } | { tournament: string; id: string } | null>;
+  /**
+   * This table is left off the leaderboards for now (#469): its spectators watch on a delay, and it has a hand in play
+   * or one whose end they haven't seen yet. Asked on every request, never cached.
+   */
+  heldFromBoards?(tableId: string): boolean;
   /** How many people have this table open right now (0 when nobody is at it). */
   peopleAt?(tableId: string): number;
   /**
@@ -347,11 +352,14 @@ export function accountRoutes(
         (expiry as { unref?: () => void } | null)?.unref?.();
       }
       const { data, boards } = read;
+      // A game watched on a delay stays off the boards until its spectators have seen its last hand end (#469). That
+      // is asked now, not once a minute: the minute-old read may hold a hand they have yet to see.
+      const held = hooks.heldFromBoards ? [...(await data).real].filter((id) => hooks.heldFromBoards!(id)).sort() : [];
       // Time zones whose period starts at the same moment share one answer.
-      const key = `${period} ${since?.getTime() ?? ''}`;
+      const key = `${period} ${since?.getTime() ?? ''} ${held.join(',')}`;
       let rows = boards.get(key);
       if (!rows) {
-        const made = data.then((d) => leaderboard(db, d, since));
+        const made = data.then((d) => leaderboard(db, d, since, new Set(held)));
         boards.set(key, (rows = made));
         made.catch(() => boards.get(key) === made && boards.delete(key));
       }

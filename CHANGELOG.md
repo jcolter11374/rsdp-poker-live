@@ -18,6 +18,13 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.17.3] - 2026-11-17
+
+### Fixed and changed
+
+- The game and stakes shown for the next hand when no hand is on the table (to someone at a table that doesn't allow watching, or just after the site restarts) now include a change the host made during the last hand, such as new stakes, a blind schedule or a new rotation.
+- Watching on a delay: the leaderboard now leaves a game out while a hand is being played there and until the people watching on a delay have seen that hand end, so it can't show who won before they see it.
+
 ## [2026.11.17.2] - 2026-11-17
 
 _Tournaments wait for you after an outage_
@@ -809,6 +816,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.17.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.3
 [2026.11.17.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.2
 [2026.11.17]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17
 [2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
