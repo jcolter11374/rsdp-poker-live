@@ -31,7 +31,7 @@ public, so don't put anything private in one, just ask him to get in touch).
 - **Poker hands and table results are kept for good**, because the group likes
   its history, leaderboards and hand search. Deleting your account removes
   your name, picture, notes and sign-in, but the hands you played stay in the
-  other players' history under the name you used at the time.
+  other players' history under the name you had at that table.
 - **John can read everything in the database**, as whoever runs a server can.
   That includes table chat and private notes. He can also read any table's
   chat from the site's admin page, even after the table has closed; each time
@@ -46,14 +46,14 @@ public, so don't put anything private in one, just ask him to get in touch).
 | What | Where it comes from | Who can see it |
 | --- | --- | --- |
 | A random player id for your browser, and a secret that proves it's you | Made the first time you open the site | Only the site. The secret is stored only as a fingerprint (a SHA-256 hash). |
-| The name you use at tables, when you were first and last seen | You type the name | Everyone at your tables, and on the leaderboard |
+| The name you use at tables, when you were first and last seen. If you change your name on your profile, cash tables you have played at that are open at the time take the new name (your seat, the ledger and the leaderboard), the table's log says the change, and the table keeps the names you went by there before, so they can still be found if you ask for your name to be taken out. | You type the name | Everyone at your tables, and on the leaderboard. The earlier names a table keeps are shown to nobody, apart from the log lines that already had them. |
 | Your picture | You pick one from the library or upload a small image | Everyone at your tables. The picture's address isn't secret, and browsers may keep a copy for a while. |
 | Username and scrambled password | You, when you make an account | Only the site. The password is scrambled with scrypt and can't be read back. |
 | Google's id for you (a long number) | Google, if you sign in with Google | Only the site. Google also shares your name, used once to make your starting username and table name. No email, no contacts, nothing else. |
 | Signed-in sessions (30 days) and one-time password reset codes | Made when you sign in or John gives you a code | Only the site, stored as fingerprints |
 | For alerts, if you turn them on: your browser's push address, the two keys that lock each alert so only that browser can read it, which player it alerts, the fingerprint of the browser's secret (and of its session, when someone signed in on it), and when it last opened the site | Your browser, when you turn alerts on and each time it opens the site | Only the site. The push address comes from your browser's push service (below), which delivers the alerts. |
 | Hands: who was dealt in, the cards, every action, the board, who won | The game | Players at that table see what poker rules allow them to see. Shown and mucked cards follow the table's settings. |
-| Table chat and the table log (joins, rebuys, seat moves, host actions, Dealer's choice picks) | You and the game | Everyone at that table, and spectators if the host allows them. At a tournament table, also the tournament's host, co-hosts and players, who can download every table's chat and log once the tournament is over. John can read any table's chat from the admin page (with the admin key), open or closed, and each such read is shown publicly on [/transparency](/transparency). |
+| Table chat and the table log (joins, rebuys, seat moves, name changes, host actions, Dealer's choice picks) | You and the game | Everyone at that table, and spectators if the host allows them. At a tournament table, also the tournament's host, co-hosts and players, who can download every table's chat and log once the tournament is over. John can read any table's chat from the admin page (with the admin key), open or closed, and each such read is shown publicly on [/transparency](/transparency). |
 | Tournament lobby chat and log | You and the tournament | Everyone who opens that tournament |
 | Whether the host turned a tournament's lobby chat off, and whom they muted in it | The tournament's host, or a co-host they let manage chat | Whether chat is off: everyone who opens that tournament. Who is muted: the host and those co-hosts; a muted player sees only that they are muted. |
 | Each table's ledger: buy-ins, rebuys, cash-outs | The game | Everyone at that table. Totals from real games also feed the public leaderboard and your profit graph. |
@@ -271,7 +271,7 @@ authority (in the UK, the ICO).
   secrets, name, picture, notes, saved setups, hidden tables, practice graph
   reset, shared hand links, alerts on every device and feedback you sent while signed in straight away. Hands you already
   played, and your messages in table chat, stay in other players' history,
-  ledgers and table logs under the name you used at the time, because they
+  ledgers and table logs under the name you had at that table, because they
   are part of their games too. If you want your
   name taken out of those as well, ask John once your account is deleted: names aren't part of the
   public record's fingerprints, so he can replace yours with "Deleted

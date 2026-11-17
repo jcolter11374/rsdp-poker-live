@@ -233,6 +233,12 @@ export interface RuntimeState {
   departures: Record<PlayerId, { stack: number; at: number }>;
   /** The name of everyone dealt a hand here, so logs and history keep it after they leave. Missing in older snapshots. */
   handNames?: Record<PlayerId, string>;
+  /**
+   * The names players here went by before they changed the name on their profile (#491). The log's earlier lines
+   * still say the old name, and nothing else keeps it beside the player's id, which is how a deleted player's names
+   * are found (replaceName.ts). At most 20 for one player. Missing where nobody has changed their name.
+   */
+  formerNames?: { playerId: PlayerId; name: string }[];
   /** The host started the game; hands deal automatically while this is true. */
   started: boolean;
   /** Stop after the current hand. */

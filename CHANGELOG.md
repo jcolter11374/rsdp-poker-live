@@ -18,6 +18,14 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.17] - 2026-11-17
+
+### Fixed and changed
+
+- New tournament page: when you change the starting stack, the size of a rebuy and of an add-on now changes with it. Before, they stayed at 63,000 chips, so a tournament with a 1,500 starting stack could hand out 63,000 for a rebuy unless the host noticed. A size you type yourself is left alone.
+- Changing your name on your profile now changes it straight away at cash tables where you already have a seat, and in their ledgers. The table's log says who is now who. Tournaments keep the name you registered with.
+- A finished tournament's Payouts tab now says "These are the final prizes" where it used to say "Updates as players join".
+
 ## [2026.11.07.7] - 2026-11-07
 
 _Phone alerts, and a table for screen readers and the keyboard_
@@ -789,6 +797,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.17]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17
 [2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
 [2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6
 [2026.11.07.5]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.5

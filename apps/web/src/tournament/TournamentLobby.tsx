@@ -15,7 +15,7 @@ import {
   type TournamentState,
 } from '@rsdp/tournament';
 import { LocalTournamentClient, tournamentClient, type Session } from './client';
-import { blinds, chips, clockText, countdown, gamesText, localTime, money, ordinal, tableRulesText } from './format';
+import { blinds, chips, clockText, countdown, gamesText, localTime, money, ordinal, prizesNote, tableRulesText } from './format';
 import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
 import { savedName } from '../socket';
 import { CoHostPanel, EventPanel, PlayerManager, RequestRow } from './HostPanels';
@@ -570,7 +570,7 @@ function Payouts({ state, now }: { state: TournamentState; now: number }) {
     <>
       <p className="muted">
         For display only. {money(p.money.buyIn)} buy-in{p.money.rebuy && state.settings.rebuy.max ? `, ${money(p.money.rebuy)} rebuy` : ''}
-        {p.money.addOn && state.settings.addOn.max ? `, ${money(p.money.addOn)} add-on` : ''}. Updates as players join.
+        {p.money.addOn && state.settings.addOn.max ? `, ${money(p.money.addOn)} add-on` : ''}.{prizesNote(state.status, sum)}
       </p>
       <PrizeList prizes={prizes} />
     </>

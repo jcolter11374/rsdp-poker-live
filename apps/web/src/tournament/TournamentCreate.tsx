@@ -163,6 +163,21 @@ export function TournamentCreate({
   const [lateReg, setLateReg] = useState(base.lateRegistration);
   const [rebuy, setRebuy] = useState({ ...base.rebuy });
   const [addOn, setAddOn] = useState({ ...base.addOn });
+  /**
+   * A rebuy or add-on is one starting stack (the usual, and the RSDP default) and stays one when the host changes the
+   * stack, until the host types a size of their own in its Chips box (#490). One that is switched off when the form
+   * opens has no size of its own yet. Going by the link, not by the two numbers being equal, keeps a typed 2,000
+   * from being carried along when the stack passes through 2,000 on its way to 20,000.
+   */
+  const [linked, setLinked] = useState(() => ({
+    rebuy: base.rebuy.max === 0 || base.rebuy.chips === startingStack,
+    addOn: base.addOn.max === 0 || base.addOn.chips === startingStack,
+  }));
+  const changeStartingStack = (next: number) => {
+    if (linked.rebuy) setRebuy((r) => ({ ...r, chips: next }));
+    if (linked.addOn) setAddOn((a) => ({ ...a, chips: next }));
+    setStartingStack(next);
+  };
   const [reEntry, setReEntry] = useState(base.reEntry);
   const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
@@ -355,7 +370,7 @@ export function TournamentCreate({
             <div className="tn-grid3">
               <label>
                 Starting stack
-                <input type="number" min={1} value={startingStack} onChange={(e) => setStartingStack(int(e.target.value, 1))} />
+                <input type="number" min={1} value={startingStack} onChange={(e) => changeStartingStack(int(e.target.value, 1))} />
               </label>
               <label>
                 Seats per table
@@ -510,7 +525,7 @@ export function TournamentCreate({
             <div className="tn-option">
               <label className="tn-check">
                 <input type="checkbox" checked={rebuy.max > 0} onChange={(e) => {
-                    setRebuy({ ...rebuy, max: e.target.checked ? 1 : 0, chips: rebuy.chips || startingStack });
+                    setRebuy({ ...rebuy, max: e.target.checked ? 1 : 0, chips: linked.rebuy ? startingStack : rebuy.chips || startingStack });
                     // Rebuys need at least one rebuy level: default to the first four.
                     if (e.target.checked && !structure.some((r) => r.kind === 'level' && r.rebuy)) {
                       let n = 0;
@@ -527,7 +542,7 @@ export function TournamentCreate({
                   </label>
                   <label>
                     Chips
-                    <input type="number" min={1} value={rebuy.chips} onChange={(e) => setRebuy({ ...rebuy, chips: int(e.target.value, 1) })} />
+                    <input type="number" min={1} value={rebuy.chips} onChange={(e) => (setLinked({ ...linked, rebuy: false }), setRebuy({ ...rebuy, chips: int(e.target.value, 1) }))} />
                   </label>
                   <label>
                     Offer lasts (s)
@@ -542,7 +557,7 @@ export function TournamentCreate({
             <div className="tn-option">
               <label className="tn-check">
                 <input type="checkbox" checked={addOn.max > 0} onChange={(e) => {
-                    setAddOn({ ...addOn, max: e.target.checked ? 1 : 0, chips: addOn.chips || startingStack });
+                    setAddOn({ ...addOn, max: e.target.checked ? 1 : 0, chips: linked.addOn ? startingStack : addOn.chips || startingStack });
                     // Add-ons need a break that offers them: default to the first break, or add one after level 4 (RSDP has none).
                     const first = structure.findIndex((r) => r.kind === 'break');
                     if (e.target.checked && !structure.some((r) => r.kind === 'break' && r.addOn)) {
@@ -570,7 +585,7 @@ export function TournamentCreate({
                   </label>
                   <label>
                     Chips
-                    <input type="number" min={1} value={addOn.chips} onChange={(e) => setAddOn({ ...addOn, chips: int(e.target.value, 1) })} />
+                    <input type="number" min={1} value={addOn.chips} onChange={(e) => (setLinked({ ...linked, addOn: false }), setAddOn({ ...addOn, chips: int(e.target.value, 1) }))} />
                   </label>
                   <label className="tn-check">
                     <input type="checkbox" checked={addOn.approval} onChange={(e) => setAddOn({ ...addOn, approval: e.target.checked })} />I approve add-ons
