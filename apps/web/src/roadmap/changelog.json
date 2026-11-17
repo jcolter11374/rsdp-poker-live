@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.17.2",
+      "date": "2026-11-17",
+      "fixes": [
+        "Tournaments: if the site goes down in the middle of a tournament, the time it was down no longer counts. The blind clock picks up where it stopped, so nobody comes back to find the blinds a level or two higher, and a rebuy offer that was open is still open."
+      ]
+    },
+    {
       "id": "2026.11.17",
       "date": "2026-11-17",
       "fixes": [

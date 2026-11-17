@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "id": "2026.11.17.2",
+      "date": "2026-11-17",
+      "title": "Tournaments wait for you after an outage",
+      "items": [
+        { "title": "Two minutes to get back to your table", "detail": "If the site goes down during a tournament, the tournament is paused when it comes back, and every table shows \"Resuming in 2:00\" counting down. Play starts again as soon as everyone has their table open, or when the host presses Resume, or when the two minutes run out. A hand that was being played picks up where it stopped, and the player to act gets a full turn clock. Cash games carry on as before." }
+      ]
+    },
+    {
       "id": "2026.11.07.7",
       "date": "2026-11-07",
       "title": "Phone alerts, and a table for screen readers and the keyboard",
