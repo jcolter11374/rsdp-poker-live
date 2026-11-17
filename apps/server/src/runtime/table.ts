@@ -1460,6 +1460,25 @@ export class TableRuntime {
     this.setPaused(value);
   }
 
+  /**
+   * A tournament table after the server had been away (#493): every clock stops where it is, as in a pause, until
+   * the tournament resumes play: at `resumeAt` at the latest, sooner when everyone is back or the host says so.
+   */
+  holdForOutage(resumeAt: number) {
+    if (!this.isTournament) return;
+    this.state.resumeAt = resumeAt;
+    if (this.state.paused) this.sync();
+    else this.setPaused(true);
+  }
+
+  /** Play resumes after holdForOutage; nothing for a table that wasn't held. */
+  releaseOutageHold() {
+    if (this.state.resumeAt == null) return;
+    this.state.resumeAt = null;
+    if (this.state.paused) this.setPaused(false);
+    else this.sync();
+  }
+
   /** Freezes every clock where it is; resuming gives back the same time. */
   setPaused(value: boolean) {
     const s = this.state;

@@ -63,7 +63,7 @@ The schema migrates itself at startup. Concurrent starts are serialised with an 
 A deploy restarts the process:
 - Tables reload from their last saved state.
 - A hand in progress resumes with the same cards.
-- Tournaments keep their clocks, and scheduled ones still start on time.
+- A tournament in play pauses: the time the server was away doesn't count on its blind clock or its rebuy offers, and play resumes once every player has their table open again, when the host presses Resume, or after 2 minutes ([D40](DECISIONS.md#d40-a-tournament-pauses-when-the-site-has-been-down)). With browsers reconnecting by themselves, that is a second or two after a release. Scheduled tournaments still start on time.
 - Hands waiting for a spectator delay still go in the public record on time, or straight after the restart if they came due while the server was down. Rolling back to code from before that (D38) leaves them out until it ships again: see [RUNBOOK.md](RUNBOOK.md#a-bad-release).
 - Players' browsers reconnect by themselves.
 
