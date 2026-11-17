@@ -521,11 +521,10 @@ function previewSetup(rt: TableRuntime): TableView['upcoming'] {
   const was = s.settings.game.rotation;
   const at = JSON.stringify(rot) !== JSON.stringify(was) ? 0 : rt.previewRotationStep();
   // Dealer's choice: the game picked, or what a missed pick would deal; null when it ends with this hand. Turned on by
-  // the change, the game the table is dealing now carries on until the first pick, and a missed pick keeps it if it's on
-  // the menu (choiceWas).
+  // the change, the table waits for the first pick, and a missed pick keeps the game it is dealing now if that is on
+  // the coming menu and fits, else deals the menu's first that fits: the deal's own rule (missedPick).
   const turningOn = !choiceMenu(s.settings) && !!choiceMenu(settings);
-  const dealing = s.handNumber > 0 ? (was.enabled && was.steps.length ? was.steps[s.rotation.step % was.steps.length] : s.settings.game) : null;
-  const step = (turningOn ? dealing : rt.choice.upcoming()) ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
+  const step = (turningOn ? rt.choice.missedPick() : rt.choice.upcoming()) ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
   const level = !s.settings.blindSchedule.enabled && settings.blindSchedule.enabled ? 0 : s.level.index;
   const stakes = cashHandStakes(settings, Math.min(level, settings.blindSchedule.levels.length - 1), game);

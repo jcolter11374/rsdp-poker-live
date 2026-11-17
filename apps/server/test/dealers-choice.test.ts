@@ -2132,4 +2132,19 @@ describe("Dealer's choice turned on by a change waiting for the next hand (#466)
     const dealt = hand(rt).input;
     expect({ gameId: preview.gameId, betting: preview.betting, stakes: preview.stakes }).toEqual({ gameId: dealt.game.id, betting: dealt.betting, stakes: dealt.stakes });
   });
+  it('previews the first game on the new menu that fits when the game being dealt is not on it', () => {
+    const { rt, clock } = table((s) => (s.game.dealersChoice = { ...s.game.dealersChoice!, enabled: false }));
+    seat(rt, 3);
+    rt.start('host');
+    expect(hand(rt).input.game.id).toBe('nlhe');
+    rt.updateSettings('host', { game: { dealersChoice: { enabled: true, games: [{ gameId: 'razz', betting: 'fixed-limit' }, { gameId: 'plo4', betting: 'pot-limit' }] } } });
+    checkDown(rt);
+    expect(rt.state.pendingSettings).not.toBeNull();
+    const preview = tableView(rt, 'a', clock.now()).upcoming!;
+    expect(preview.gameId).toBe('razz');
+    clock.advance(10_000);
+    clock.advance(25_000);
+    const dealt = hand(rt).input;
+    expect({ gameId: preview.gameId, betting: preview.betting, stakes: preview.stakes }).toEqual({ gameId: dealt.game.id, betting: dealt.betting, stakes: dealt.stakes });
+  });
 });

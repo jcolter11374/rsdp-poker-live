@@ -97,4 +97,21 @@ describe('the leaderboard and a game watched on a delay (#469)', () => {
     clock.advance(60_000);
     expect(await handsOf('Ann Slow')).toBe(2);
   });
+  it('keeps an all-in hand out until spectators have watched the cards dealt out', { timeout: 40_000 }, async () => {
+    const { ann, ben } = await table('Shove', 120);
+    const v = await ann.until((x) => !!x.hand && x.hand.phase !== 'complete' && x.hand.handNumber === 1);
+    const [first, second] = v.legal ? [ann, ben] : [ben, ann];
+    await first.call('hand:act', { type: 'raise', to: 100 });
+    await second.until((x) => !!x.legal);
+    await second.call('hand:act', { type: 'call' });
+    // Each votes to run it once.
+    for (const c of [ann, ben]) await c.call('hand:runItTwice', { yes: false });
+    await ann.until((x) => x.hand?.handNumber === 1 && x.hand.phase === 'complete');
+    await saved();
+    // The finished hand reaches spectators after the delay, and their browsers then deal the flop, turn and river.
+    clock.advance(121_000);
+    expect(await handsOf('Ann Shove')).toBeNull();
+    clock.advance(10_000);
+    expect(await handsOf('Ann Shove')).toBe(1);
+  });
 });
