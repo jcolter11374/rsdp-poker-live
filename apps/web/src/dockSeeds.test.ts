@@ -66,8 +66,10 @@ describe('the Dock seeds at a practice table (#476)', () => {
 
   it('reads the rules as the file has them', () => {
     expect(seed('.dock.seated.limit')).toBe(113);
-    // Phones on their side: no seed, the table needs every pixel.
-    expect(seed('.portrait .dock.seated.limit.tips.why', '(max-height: 500px)')).toBe(0);
-    expect(seed('.portrait .dock.seated.why', '(max-height: 500px)')).toBe(0);
+    // Phones on their side (#382): one seed for the two-line bar in every game, and the practice table's room for the
+    // reasons row doesn't apply (that line sits over the bar there).
+    expect(seed('.portrait .dock.seated.limit.tips.why', '(max-height: 500px)')).toBe(92);
+    expect(seed('.portrait .dock.seated.why', '(max-height: 500px)')).toBe(89);
+    expect(seed('.portrait .dock.seated.limit.why', '(max-height: 500px)')).toBe(89);
   });
 });
