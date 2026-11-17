@@ -491,8 +491,8 @@ How this file works:
 
 - **Decided:** 2026-11-17, by John. A read of the docs as a newcomer (issue #502) found that the process asked for "a review pass with another AI session" without saying how to run one, what a person would do instead, or who may merge. Asked whether to add a short section on that now and leave the rest for later, he said "Go for it!". The details are Claude's and reversible.
 - **Decision:**
-  - CONTRIBUTING.md says what a review pass is, how to run one with an AI session, what a full review checks, and what the review comment says. The list describes what the reviews already did; it adds no new check.
+  - CONTRIBUTING.md says what a review pass is, how to run one with an AI session, what a full review checks, and what the review comment says. The list describes what the reviews already did. It adds one small thing: the comment should say what couldn't be checked.
   - A person who didn't write a change may review it, the same way.
-  - It also says who merges: today only John's account can change the repository, whoever opened the pull request merges it once the checks are green and the review is posted (D05, D22), and a newcomer works from a fork until John decides otherwise.
+  - It also says who merges: today only John's account can change the repository, a pull request opened through it is merged by whoever opened it once the checks are green and the review is posted (D05, D22), and a newcomer works from a fork, where John decides what is merged.
 - **Not done, waiting until a human developer is actually joining:** rewording ARCHITECTURE.md, which still speaks to "workstreams" (see also D41), and letting the smoke test use a browser already on the machine. Both stay on issue #502.
 - **Where:** [CONTRIBUTING.md](../CONTRIBUTING.md#reviewing-and-merging).

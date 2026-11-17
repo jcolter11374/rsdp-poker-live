@@ -177,7 +177,8 @@ one, for example) is full. If the review finds that a light change touches
 anything on the full list, it becomes full.
 
 **A light review is shorter, not skipped.** It still runs in a separate AI
-session and is posted on the pull request like any review (step 3 of
+session (or with a person who didn't write the change) and is posted on
+the pull request like any review (step 3 of
 [The life of a change](#the-life-of-a-change)). It checks that:
 
 1. every part of the change fits the light list;
@@ -221,7 +222,8 @@ Decide that before it's merged into `develop`, and make its branch from
    which docs it updated
    ([Keeping the docs current](#keeping-the-docs-current)). We
    also run a separate review pass with another AI session (a short one for
-   a light change; see [Reviewing and merging](#reviewing-and-merging)). That pass is ours, not an outside audit. Its findings,
+   a light change; see
+   [Reviewing and merging](#reviewing-and-merging)). That pass is ours, not an outside audit. Its findings,
    and the commit it reviewed, go in a comment on the pull request, so the
    review leaves a trace on GitHub. Anything left for later gets its own
    issue, listed under "Left to do", and needs an owner or a "waiting on"
@@ -286,7 +288,8 @@ told what to find tends to find it.
    spectator watching, the last hand of a tournament, the same button
    pressed twice.
 3. Hidden information: nothing new reaches a browser that its viewer may
-   not see (other players' cards, the deck, a spectator's delay).
+   not see (other players' cards, the deck, what a spectator's delay is
+   still holding back).
 4. Stored data: tables, tournaments and hands saved by the version now
    live still load, and a migration follows the rules in
    [ARCHITECTURE.md](docs/ARCHITECTURE.md#database-migrations-appsserverdrizzle).
@@ -296,15 +299,16 @@ told what to find tends to find it.
    /fairness, /transparency, /privacy and /terms still say what the code
    does.
 
-A light review checks the shorter list under
+A full review also covers the points of a light one, and a light review
+checks only those: the shorter list under
 [Full or light](#full-or-light-how-much-checking-a-change-needs).
 
-**What the review comment says.** It goes on the pull request, headed "a
-separate review we ran ourselves" (never "independent": it isn't an outside
-audit). It names the commit reviewed, what was checked, each finding and
-how it was resolved (fixed, with the commit; accepted, with the reason; or
-left for its own issue), and anything that couldn't be checked. If the
-fixes are more than small, the reviewer looks again at the new commit.
+**What the review comment says.** It goes on the pull request and calls
+itself "a separate review we ran ourselves" (never "independent": it isn't
+an outside audit). It names the commit reviewed, what was checked, and each
+finding with how it was resolved: fixed, with the commit; accepted, with
+the reason; or left for its own issue. It is worth saying what couldn't be
+checked too.
 
 **Who merges.** Today only John's GitHub account can change the
 repository, and the AI sessions work through it. No approval click is
@@ -313,17 +317,16 @@ John gave a standing OK for a change to be merged into `develop` once the
 checks are green and its review is posted, and for finished work to be
 released without asking him each time
 ([D05](docs/DECISIONS.md#d05-branches-merges-and-releases),
-[DEPLOY.md](docs/DEPLOY.md#releasing)). So whoever opened the pull request
-merges it when both are done, as one squashed commit whose title keeps the
-issue and pull request numbers. Ask John first about anything that costs
+[DEPLOY.md](docs/DEPLOY.md#releasing)). So a pull request opened through
+John's account is merged by whoever opened it when both are done, usually
+squashed into one commit. Ask John first about anything that costs
 money, changes what the product is, or can't be undone.
 
 **If you're new.** The code is MIT-licensed, so anyone may fork the
 repository and open a pull request into `develop` from the fork. It follows
-the same rules as any other: an issue, the checks, a review pass by someone
-who didn't write it, and then John (or a session working through his
-account) merges it. Whether someone else gets to change the repository
-directly is John's call; ask him.
+the same rules as any other: an issue, the checks, and a review pass by
+someone who didn't write it. John decides whether it is merged, and whether
+someone else gets to change the repository directly; ask him.
 
 ## Releases
 
