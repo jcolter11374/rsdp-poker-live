@@ -2180,6 +2180,55 @@ export class TableRuntime {
     }
   }
 
+  /**
+   * A player changed the name on their profile (#491): the seat they hold here, a seat request or waitlist place, and
+   * their ledger row take the new name, and the log says so. Tournament tables keep the name the player registered
+   * with, as the lobby does. Returns whether anything changed.
+   */
+  renamePlayer(playerId: PlayerId, name: string): boolean {
+    if (this.isTournament || this.isBot(playerId)) return false;
+    const clean = cleanName(name);
+    const s = this.state;
+    const seat = this.seatOf(playerId);
+    // Every place this table keeps the player's name beside their id, as [the thing, the field that holds the name].
+    const held: [object, string][] = [
+      ...(seat ? [[seat, 'name'] as [object, string]] : []),
+      ...s.requests.filter((r) => r.playerId === playerId).map((r) => [r, 'name'] as [object, string]),
+      ...(s.waitlist ?? []).filter((w) => w.playerId === playerId).map((w) => [w, 'name'] as [object, string]),
+      ...(s.ledger[playerId] ? [[s.ledger[playerId], 'name'] as [object, string]] : []),
+    ];
+    // The same name where it is shown second-hand: the co-host list, a Dealer's choice pick, and their practice bots.
+    const also: [object, string][] = [
+      ...(s.coHosts ?? []).filter((c) => c.playerId === playerId).map((c) => [c, 'name'] as [object, string]),
+      ...[s.choice?.current, s.choice?.next].flatMap((pick) => (pick && pick.byId === playerId && pick.by !== null ? [[pick, 'by'] as [object, string]] : [])),
+      ...Object.values(s.bots ?? {}).filter((bot) => bot.ownerId === playerId).map((bot) => [bot, 'ownerName'] as [object, string]),
+      ...Object.values(s.ledger).filter((row) => row.bot && row.owner !== undefined && s.bots?.[row.playerId]?.ownerId === playerId).map((row) => [row, 'owner'] as [object, string]),
+    ];
+    const read = ([o, k]: [object, string]) => (o as Record<string, string>)[k];
+    const old = held.map(read).find((n) => n !== clean);
+    const dealtAs = s.handNames?.[playerId];
+    const names = new Set([...held, ...also].map(read));
+    if (dealtAs !== undefined) names.add(dealtAs);
+    names.delete(clean);
+    if (!names.size) return false;
+    // The log's earlier lines keep the old name, so the table keeps it beside the player's id (see formerNames).
+    const former = (s.formerNames ??= []);
+    for (const was of names) if (!former.some((f) => f.playerId === playerId && f.name === was)) former.push({ playerId, name: was });
+    // Someone changing their name over and over only ever pushes out their own earlier names.
+    const mine = former.filter((f) => f.playerId === playerId);
+    if (mine.length > FORMER_NAMES_EACH) {
+      const drop = new Set(mine.slice(0, mine.length - FORMER_NAMES_EACH));
+      s.formerNames = former.filter((f) => !drop.has(f));
+    }
+    for (const [o, k] of [...held, ...also]) (o as Record<string, string>)[k] = clean;
+    if (dealtAs !== undefined) s.handNames![playerId] = clean;
+    // A bot that already has this name takes another, as when a person of that name sits down.
+    if (seat) this.giveWayTo(clean);
+    if (old !== undefined) this.log(`${old} is now ${clean}`);
+    this.sync();
+    return true;
+  }
+
   /** Gives a bot (here, or gone but still in the ledger) a fresh name and picture, everywhere its name shows. */
   private relookBot(playerId: PlayerId) {
     const bot = this.botInfo(playerId);
@@ -3763,6 +3812,9 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
+
+/** The most former names a table keeps for one player (formerNames in types.ts). */
+const FORMER_NAMES_EACH = 20;
 
 function cleanName(name: string) {
   const clean = cleanDisplayName(name, NAME_MAX);
