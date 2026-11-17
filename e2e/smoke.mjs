@@ -535,6 +535,64 @@ try {
     await p.close();
   });
 
+  await step('phone on its side: your turn leaves the table its height', async () => {
+    // On a phone held sideways the action bar once took three quarters of the screen on your turn and squeezed the table
+    // into a strip, which then stayed that thin (#382). The table must be one height before, during and after your turn,
+    // tall enough to play on, with the whole bar on the screen.
+    const p = await open('sideways', { width: 844, height: 390 });
+    await p.goto(BASE);
+    await p.fill('input[required]', 'Sol');
+    await p.click('button:has-text("Practice with bots")');
+    await p.waitForURL(/\/t\//);
+    await p.waitForSelector('.seat.me');
+    await p.waitForTimeout(1500);
+    await p.evaluate(() => {
+      const seen = (window.__feltHeights = new Set());
+      window.__waiting = false;
+      const sample = () => {
+        const felt = document.querySelector('.felt');
+        if (felt) seen.add(Math.round(felt.getBoundingClientRect().height));
+        if (!document.querySelector('.action-bar.my-turn')) window.__waiting = true;
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const bar = p.locator('.action-bar.my-turn');
+    // Sol checks or calls, and that turn is over when its bar goes. A call that closes the betting can make him first to act
+    // on the next street straight away: then the bar stays, on the next street.
+    const act = async () => {
+      const street = await bar.getAttribute('data-street');
+      await bar.locator('.buttons button').filter({ hasText: /^(Check|Call|Run it once)/ }).first().click();
+      await p.locator(street ? `.action-bar.my-turn[data-street="${street}"]` : '.action-bar.my-turn').waitFor({ state: 'detached' });
+    };
+    // The heights must include the table's before a turn. If Sol was first to act and his turn began before the sampling
+    // did, he plays it and the next one is measured.
+    for (let i = 0; i < 5 && !(await p.evaluate(() => window.__waiting)); i++) {
+      if (await bar.count()) await act();
+      else await p.waitForTimeout(100);
+    }
+    // A hand folded round to Sol's big blind ends without a turn, so allow a few hands.
+    await bar.waitFor({ timeout: 60_000 });
+    await p.waitForTimeout(600);
+    const offScreen = await bar.evaluate((el) =>
+      [...el.querySelectorAll('button, input')].filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth;
+      }).map((b) => b.textContent?.trim() || b.getAttribute('aria-label')),
+    );
+    if (offScreen.length) throw new Error(`on Sol's turn these are off the screen: ${offScreen.join(', ')}`);
+    await p.screenshot({ path: path.join(OUT, 'sideways-turn.png') });
+    await act();
+    await p.waitForTimeout(600);
+    const heights = await p.evaluate(() => [...window.__feltHeights]);
+    if (heights.length !== 1) throw new Error(`the table changed height around Sol's turn: ${heights.join(' / ')} px`);
+    if (heights[0] < 120) throw new Error(`the table is only ${heights[0]}px tall`);
+    // Stop game is in the side column on a computer (on a phone it's in the menu).
+    await p.setViewportSize({ width: 1280, height: 860 });
+    await stopGame(p, [p]);
+    await p.close();
+  });
+
   await step('rules guides: open a game from its link and switch games', async () => {
     const p = await open('rules');
     await p.goto(`${BASE}/rules/badugi`);
@@ -1257,6 +1315,101 @@ try {
       // The hand is played out and the game stopped, so the backup check after this finds every hand finished.
       hold = false;
       for (const p of players) p.act();
+      await host.call('host:stop');
+      const done = Date.now() + 60_000;
+      while (host.latest?.hand && !host.latest.hand.awards?.length) {
+        if (Date.now() > done) throw new Error("the hand didn't end");
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    } finally {
+      for (const p of players) p.s.close();
+    }
+  });
+
+  await step('laptop, Stud Hi-Lo: a split pot keeps the middle full size', async () => {
+    // A split pot's winners' lines sit side by side where the felt has room (#417). At a stud table a side seat's seven
+    // cards reach in further than that room allows for, and the middle was drawn up to 30% smaller to clear them, where
+    // the lines one under the other fit at full size. They're stacked there now (#474). Four players check or call every
+    // hand to the showdown; about half of Stud Hi-Lo hands then split. Watchers at 1440x900 and 1600x900 read the middle's
+    // scale every frame. Pots split two ways only: a third line (two tie for high as well) can make the stack too tall to
+    // clear the bottom seat's cards at 1600x900 whichever way the lines go, so the middle is drawn a little smaller then.
+    const players = [];
+    try {
+      for (const name of ['Ned', 'Bea', 'Cal', 'Dee']) {
+        const s = io(BASE, { auth: { token: randomBytes(24).toString('hex') }, transports: ['websocket'] });
+        const call = (ev, ...args) => s.timeout(10_000).emitWithAck(ev, ...args).then((res) => (res?.ok === false ? Promise.reject(new Error(`${name}, ${ev}: ${res.error}`)) : res));
+        let busy = false;
+        let seeded = '';
+        const p = { s, call, latest: null };
+        p.act = () => {
+          const v = p.latest;
+          if (busy || !v?.legal) return;
+          busy = true;
+          call('hand:act', { type: v.legal.canBringIn ? 'bring-in' : v.legal.canCheck ? 'check' : 'call', handNumber: v.hand?.handNumber })
+            .catch(() => {})
+            .finally(() => {
+              busy = false;
+              if (p.latest !== v) p.act();
+            });
+        };
+        s.on('table:state', (v) => {
+          p.latest = v;
+          // A seed for each next hand, as a page sends: otherwise the deal waits up to 10 s for one (FAIR_SEED_WAIT_MS).
+          const commit = v.fair?.nextCommit;
+          if (commit && commit !== seeded && v.me?.seat != null) {
+            seeded = commit;
+            s.emit('fair:seed', { commit, seed: randomBytes(16).toString('hex') }, () => {});
+          }
+          p.act();
+        });
+        players.push(p);
+      }
+      const [host] = players;
+      const { tableId } = await host.call('table:create', { settings: { table: { maxSeats: 8 }, game: { gameId: 'stud8' }, seating: { requireApproval: false }, timing: { decisionSeconds: 60 } } });
+      // Two of them at the ends of the table, where their cards reach towards the middle.
+      for (const [i, p] of players.entries()) {
+        await p.call('table:join', { tableId });
+        await p.call('seat:request', { seat: [0, 2, 4, 6][i], name: ['Ned', 'Bea', 'Cal', 'Dee'][i], stack: 5000, consent: true });
+      }
+      // Two watchers, on the window sizes where it showed (the lines' lengths decide whether a given split needs it).
+      const pages = [await open('stud split watcher 1440', { width: 1440, height: 900 }), await open('stud split watcher 1600', { width: 1600, height: 900 })];
+      for (const page of pages) {
+        await page.goto(`${BASE}/t/${tableId}`);
+        await page.waitForSelector('.felt .seat');
+        // For each pot split two ways (by its lines), every scale the middle was drawn at.
+        await page.evaluate(() => {
+          const splits = (window.__splits = new Map());
+          const sample = () => {
+            const stack = document.querySelector('.felt .board-stack');
+            const several = stack?.querySelector(':scope > .results.several');
+            if (several?.childElementCount === 2) {
+              const key = [...several.children].map((c) => c.textContent).join(' | ');
+              if (!splits.has(key)) splits.set(key, new Set());
+              splits.get(key).add(getComputedStyle(stack).scale);
+            }
+            requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+      }
+      await host.call('host:start');
+      // Four split pots, which take about eight hands (7 to 8 s each with the seeds sent: the 6 s a showdown shows, and
+      // play); before the fix more than half of them drew the middle smaller at one size or the other, so all four passing
+      // would be about a 1 in 40 chance. 150 s is about 20 hands: fewer than four splits in those is well under 1 in 100.
+      const splits = (page) => page.evaluate(() => [...window.__splits.entries()].map(([k, s]) => [k, [...s]]));
+      const deadline = Date.now() + 150_000;
+      while ((await splits(pages[0])).length < 4) {
+        if (Date.now() > deadline) throw new Error(`only ${(await splits(pages[0])).length} split pots in 150 s`);
+        await pages[0].waitForTimeout(1000);
+      }
+      // The last split's lines show until the next deal: let them finish.
+      await pages[0].waitForTimeout(1500);
+      for (const [i, page] of pages.entries()) {
+        const small = (await splits(page)).filter(([, scales]) => scales.some((s) => s !== 'none' && s !== '1'));
+        if (small.length) throw new Error(`at ${i ? '1600x900' : '1440x900'} the middle was drawn smaller for ${small.length} split pots: ${small.map(([k, s]) => `${k} at ${s.join(', ')}`).join('; ')}`);
+      }
+      await pages[0].screenshot({ path: path.join(OUT, 'stud-split-laptop.png') });
+      for (const page of pages) await page.close();
       await host.call('host:stop');
       const done = Date.now() + 60_000;
       while (host.latest?.hand && !host.latest.hand.awards?.length) {

@@ -119,6 +119,54 @@ describe('a crash right after a cash hand ends (#224)', () => {
 
   it.each(stores)("keeps the hand's fingerprint back for the spectator delay through the crash, then puts it in once (%s)", (where, open) => crashRightAfterHand(where, open, 30));
 
+  it("keeps a leaver's cash-out from the closed hand out of the public record until spectators on a delay have seen it end (#470)", async () => {
+    const clock = new FakeClock();
+    const store = memoryStore();
+    const auditStore = memoryAuditStore();
+    const id = 'crash470-leaver';
+    const settings = defaultSettings('cash');
+    settings.seating.requireApproval = false;
+    settings.spectators.delaySeconds = 30;
+    const made = TableRuntime.create({ id, hostId: 'host', settings }, { clock, rng: seeded() });
+    for (const p of ['host', 'ann']) made.connect(p);
+    made.requestSeat('host', { seat: 0, name: 'Host', stack: 100 });
+    made.requestSeat('ann', { seat: 1, name: 'Ann', stack: 100 });
+    made.start('host');
+    made.stand('ann', { afterHand: true });
+    made.dispose();
+    await store.createTable(made.state);
+    const midHand = JSON.stringify(await store.loadTable(id));
+    const cashOuts = async () => (await auditStore.after(0, 1000, ['chips'])).filter((e) => e.data.table === tableRef(id) && Number(e.data.cashOut) > 0);
+
+    const first = await serverOn(store, auditStore, clock);
+    const rt = (await first.getTable(id))!;
+    rt.act(toAct(rt), { type: 'fold' });
+    const ended = clock.now();
+    first.tables.delete(id);
+    rt.dispose();
+    await first.close();
+    await pause(700);
+    // The crash lost the table's save. The cash-out waiting with the hand (#471) was saved, and is still waiting.
+    await store.saveTable(JSON.parse(midHand) as RuntimeState);
+    expect((await auditStore.pending()).filter((p) => p.chips).length).toBe(1);
+
+    clock.advance(10_000);
+    const second = await serverOn(store, auditStore, clock);
+    const back = (await second.getTable(id))!;
+    expect(back.seatOf('ann')).toBeNull();
+    await pause(50);
+    expect(await cashOuts()).toEqual([]);
+    clock.advance(19_000);
+    await pause(50);
+    expect(await cashOuts()).toEqual([]);
+    clock.advance(1_000);
+    await pause(50);
+    const [out, ...more] = await cashOuts();
+    expect(out.at).toBe(ended + 30_000);
+    expect(more).toEqual([]);
+    await second.close();
+  });
+
   it('lets a player who asked to leave during the hand go with what the hand left them', () => {
     const clock = new FakeClock();
     const settings = defaultSettings('cash');

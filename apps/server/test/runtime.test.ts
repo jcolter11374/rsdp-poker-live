@@ -1526,3 +1526,38 @@ describe('hand-history downloads at tournament tables', () => {
     expect(rt.recordsLocked('b')).toBe(false);
   });
 });
+
+// #466: a change the host makes during a hand waits for the next hand, and the next hand is dealt with it. The preview
+// of the next hand that the server sends between hands has it too.
+describe("the next hand's preview, with the host's change waiting for it (#466)", () => {
+  const steps = (...games: [string, 'no-limit' | 'pot-limit'][]) => games.map(([gameId, betting]) => ({ gameId, betting, length: 2, unit: 'hands' as const }));
+  const CHANGES = [
+    { name: 'new stakes', patch: { stakes: { smallBlind: 3, bigBlind: 6 } } },
+    {
+      name: 'a blind schedule turned on',
+      patch: { blindSchedule: { enabled: true, countdown: 'hands' as const, levels: [{ smallBlind: 5, bigBlind: 10, ante: 0, minutes: 10, hands: 5 }] } },
+    },
+    {
+      name: "a rotation's new steps",
+      setup: (s: TableSettings) => (s.game.rotation = { enabled: true, steps: steps(['nlhe', 'no-limit'], ['plo4', 'pot-limit']) }),
+      patch: { game: { rotation: { enabled: true, steps: steps(['plo4', 'pot-limit'], ['nlhe', 'no-limit']) } } },
+    },
+  ];
+  for (const c of CHANGES) {
+    it(`shows ${c.name} between hands, as the next hand is dealt`, () => {
+      const { rt, clock } = table((s) => {
+        s.timing.autoStartNextHand = false;
+        c.setup?.(s);
+      });
+      seatPlayers(rt, 3, 1000);
+      rt.start('host');
+      rt.updateSettings('host', c.patch);
+      expect(rt.state.pendingSettings).not.toBeNull();
+      checkDown(rt);
+      const preview = tableView(rt, 'a', clock.now()).upcoming!;
+      rt.dealNext('host');
+      const dealt = hand(rt).input;
+      expect({ gameId: preview.gameId, betting: preview.betting, stakes: preview.stakes }).toEqual({ gameId: dealt.game.id, betting: dealt.betting, stakes: dealt.stakes });
+    });
+  }
+});

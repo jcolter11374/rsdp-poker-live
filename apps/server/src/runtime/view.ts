@@ -1,6 +1,7 @@
 import { engine, HIDDEN_CARD, variants, type HandState, type PlayerId, type Viewer } from '@rsdp/engine/core';
 import { rakeSchema } from '@rsdp/engine/modifiers';
 import type { FairRecordView, HandRecordView, HandView, SeatView, TableView } from '@rsdp/engine/wire';
+import { choiceMenu } from './choice';
 import { cashHandStakes, fairRevealsAt, rabbitCards, type TableRuntime } from './table';
 import type { HandRecord, PastHand, RuntimeState } from './types';
 import { gameCode, gameTitle } from '@rsdp/engine/variants';
@@ -155,11 +156,13 @@ export function tableView(
       return { ...r, ...(bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName, level: bot.level ?? 'normal' } } : {}) };
     }),
     // Bot rows are flagged: they play for nothing, so settle-up pays only between people.
-    ledger: Object.values(s.ledger).map((row) => {
-      const seat = rt.seatOf(row.playerId);
-      const stack = seat ? seat.stack + seat.pendingChips : 0;
-      return { ...row, stack, net: stack + row.cashOut - row.buyIn };
-    }),
+    ledger: ((waiting) =>
+      Object.values(s.ledger).map((row) => {
+        const seat = rt.seatOf(row.playerId);
+        const stack = seat ? seat.stack + seat.pendingChips : 0;
+        // Only the players are told which rows the public record doesn't have yet (#471): they see the table live.
+        return { ...row, stack, net: stack + row.cashOut - row.buyIn, ...(waiting?.has(row.playerId) ? { recordWaits: true as const } : {}) };
+      }))(isSpectator ? null : rt.ledgerWaiting()),
     chat: s.chat.slice(-CHAT_SHOWN),
     log: s.log.slice(-LOG_SHOWN),
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),
@@ -292,6 +295,27 @@ export interface BehindOptions {
   neverPlayed?: boolean;
   /** When the viewer joined the waitlist they are on now, live: an offer from before they last joined isn't theirs. */
   waitingSince?: number;
+  /**
+   * While nothing is old enough to show: the chips each player had before a hand that ended since the time shown
+   * (after a restart, #470), so the table doesn't show it as over early.
+   */
+  stacksBefore?: ReadonlyMap<PlayerId, number>;
+  /**
+   * The viewer's own seat, live: they sat down while watching on a delay and haven't been dealt in yet, so they keep
+   * the view they had, with their seat in it (#472). Taking a seat and standing up again shows nothing of the live hand.
+   */
+  seat?: SeatView;
+}
+
+/** The seats shown, with the viewer's own seat (see BehindOptions.seat) where the table shown has it free. */
+function withOwnSeat(seats: TableView['seats'], mine?: SeatView): TableView['seats'] {
+  if (!mine) return seats;
+  const out = seats.slice();
+  while (out.length <= mine.seat) out.push(null);
+  const there = out[mine.seat];
+  // Whether they owe blinds changes as each live hand is dealt, which would mark the deal: they are waiting for a hand.
+  if (!there || there.playerId === mine.playerId) out[mine.seat] = { ...noHand(mine), owesBlinds: false, waiting: true };
+  return out;
 }
 
 /**
@@ -305,7 +329,7 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   // still open, stays in their seat until the view gets there (#435).
   const seated = new Set(part.seats.flatMap((x) => (x ? [x.playerId] : [])));
   const audience = opts.audience ?? live.watchers;
-  const watchers = audience.filter((a) => !seated.has(a.playerId));
+  const watchers = audience.filter((a) => !seated.has(a.playerId) && a.playerId !== opts.seat?.playerId);
   // My own place on the waitlist and my own offer are mine to act on, so they follow what I do: joining shows at once.
   // But a seat offered to me only shows once my view has the seat free (#452).
   const mineWaiting = live.waitlist.find((w) => w.playerId === me);
@@ -337,7 +361,10 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
     level: part.level && { ...part.level, endsAt: part.level.endsAt === null ? null : part.level.endsAt + move },
     // The delay is the one the hand shown is watched under, so the banner changes with the first hand dealt under a
     // new one; "with every card" starts with its hand too. Whether watching is blocked is as it is now.
-    spectator: live.spectator && { ...live.spectator, delaySeconds: part.spectator?.delaySeconds ?? live.spectator.delaySeconds, seeAll: part.spectator?.seeAll ?? false },
+    // Someone who sat down on a delay and isn't dealt in yet is still told they are watching behind the table (#472).
+    spectator: opts.seat
+      ? { delaySeconds: part.spectator?.delaySeconds ?? live.settings.spectators.delaySeconds, seeAll: part.spectator?.seeAll ?? false, blocked: false }
+      : live.spectator && { ...live.spectator, delaySeconds: part.spectator?.delaySeconds ?? live.spectator.delaySeconds, seeAll: part.spectator?.seeAll ?? false },
     realGame: part.realGame,
     recordsLocked: part.recordsLocked && (opts.neverPlayed ?? true),
     watchers,
@@ -375,7 +402,13 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     const from = oldest ?? delayedPart(live);
     // Chips in front of a player in the hand are theirs until it ends: the ledger has what they had before it.
     const before = new Map(from.ledger.map((r) => [r.playerId, r.stack]));
-    const seats = from.seats.map((x) => x && { ...noHand(x), stack: x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack });
+    const seats = from.seats.map((x) => {
+      if (!x) return x;
+      const held = opts.stacksBefore?.get(x.playerId);
+      // Someone the held hand busted isn't shown as busted either.
+      const bust = held !== undefined && x.sitOutReason === 'busted' ? { sittingOut: false, sitOutReason: null } : {};
+      return { ...noHand(x), ...bust, stack: held ?? (x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack) };
+    });
     // Lines from the delay before the oldest snapshot: a fixed time, so this view stays the same until that snapshot
     // comes due. Cut on the time now, a live change would send it with more lines at the moment it happened (#435).
     const cutoff = (oldest ? oldest.serverNow : live.serverNow) - delayMs;
@@ -383,7 +416,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     return {
       ...live,
       ...then,
-      seats,
+      seats: withOwnSeat(seats, opts.seat),
       hand: null,
       turn: null,
       log: from.log.filter((l) => l.at <= cutoff),
@@ -405,7 +438,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   const hand = blocked ? null : past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
   return {
     ...live,
-    seats: blocked ? past.seats.map((x) => x && { ...x, cards: [] }) : past.seats,
+    seats: withOwnSeat(blocked ? past.seats.map((x) => x && { ...x, cards: [] }) : past.seats, opts.seat),
     hand,
     turn,
     ...stateThen(live, past, delayMs, opts),
@@ -508,22 +541,38 @@ function handView(rt: TableRuntime, hand: HandState, viewer: Viewer, now: number
   };
 }
 
-/** Game and stakes of the next cash hand, without moving the blind schedule. */
+/**
+ * Game and stakes of the next cash hand, without moving the blind schedule. A change the host made during a hand that
+ * waits for the next one is dealt with it (applyPendingSettings), so the preview has it too (#444, #466): its game and
+ * stakes, a new rotation from its first step, and a blind schedule turned on from its first level.
+ */
 function previewSetup(rt: TableRuntime): TableView['upcoming'] {
   const s = rt.state;
-  // The host's change ends Dealer's choice with this hand (#423): the next hand is dealt with it applied, and a new
-  // rotation starts at its first step, a new blind schedule at its first level (#444).
-  const ending = rt.choice.ending() && !!s.pendingSettings;
-  const settings = ending ? applyAtNextHand(s.settings, s.pendingSettings!).settings : s.settings;
+  const settings = settingsNextHand(s);
   const rot = settings.game.rotation;
-  const at = ending ? 0 : rt.previewRotationStep();
-  // Dealer's choice: the game picked (or what a missed pick would deal).
-  const step = rt.choice.upcoming() ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
+  const was = s.settings.game.rotation;
+  const at = JSON.stringify(rot) !== JSON.stringify(was) ? 0 : rt.previewRotationStep();
+  // Dealer's choice: the game picked, or what a missed pick would deal; null when it ends with this hand. Turned on by
+  // the change, the table waits for the first pick, and a missed pick keeps the game it is dealing now if that is on
+  // the coming menu and fits, else deals the menu's first that fits: the deal's own rule (missedPick).
+  const turningOn = !choiceMenu(s.settings) && !!choiceMenu(settings);
+  const step = (turningOn ? rt.choice.missedPick() : rt.choice.upcoming()) ?? (rot.enabled && rot.steps.length ? rot.steps[at % rot.steps.length] : null);
   const game = variants.get(step?.gameId ?? settings.game.gameId).spec;
-  const level = ending && !s.settings.blindSchedule.enabled ? 0 : s.level.index;
+  const level = !s.settings.blindSchedule.enabled && settings.blindSchedule.enabled ? 0 : s.level.index;
   const stakes = cashHandStakes(settings, Math.min(level, settings.blindSchedule.levels.length - 1), game);
   const betting = step?.betting ?? settings.game.betting;
   return { gameId: game.id, gameName: gameTitle(game.id, betting), betting, stakes };
+}
+
+/** The settings the next hand is dealt with: the table's, with the host's change waiting for it, if one does. */
+function settingsNextHand(s: RuntimeState): TableSettings {
+  if (!s.pendingSettings) return s.settings;
+  try {
+    return applyAtNextHand(s.settings, s.pendingSettings).settings;
+  } catch {
+    // The change was checked when the host made it; if it somehow no longer reads, the deal finds out, not the view.
+    return s.settings;
+  }
 }
 
 function levelView(rt: TableRuntime, now: number): TableView['level'] {

@@ -211,6 +211,12 @@ export class TableRuntime {
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
   onHandFinished: (record: HandRecord) => void = () => {};
+  /**
+   * The players whose latest buy-in and cash-out totals haven't gone in the public record yet: they changed as a hand
+   * ended, and wait until spectators on a delay see it end (#471). The app sets this; seated players' ledger checks
+   * wait for those rows.
+   */
+  ledgerWaiting: () => ReadonlySet<PlayerId> = () => new Set();
   /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
   onLine: (line: TableLine) => void = () => {};
   /**
@@ -2593,7 +2599,8 @@ export class TableRuntime {
    */
   private liveHandFor(playerId: PlayerId): HandState {
     const seat = this.seatOf(playerId);
-    if (!seat) throw new ActionError('you are not in this hand');
+    // The same for someone who sat down while watching on a delay and isn't dealt in yet (#472).
+    if (!seat || this.shownTo(playerId) !== null) throw new ActionError('you are not in this hand');
     const hand = this.state.hand;
     if (!hand || hand.phase === 'complete') throw new ActionError('no hand is being played');
     if (this.state.paused) throw new ActionError('the game is paused');
@@ -2601,7 +2608,7 @@ export class TableRuntime {
     return hand;
   }
 
-  private handLive() {
+  handLive() {
     return !!this.state.hand && this.state.hand.phase !== 'complete';
   }
 
@@ -3610,6 +3617,11 @@ export class TableRuntime {
     const last = this.state.history.at(-1);
     const ms = last ? runoutMs(last.hand.events) : 0;
     return ms ? last!.endedAt + ms : 0;
+  }
+
+  /** An all-in runout from the last hand is still being dealt out in the browsers (see revealSeats). */
+  showingRunout(): boolean {
+    return this.revealSeats().size > 0;
   }
 
   /**

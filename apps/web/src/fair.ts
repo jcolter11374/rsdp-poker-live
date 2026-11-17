@@ -190,7 +190,8 @@ export function contributeSeed(view: TableView) {
   recordLive(view);
   const commit = view.fair?.nextCommit;
   // Offline, the seed would go out late on reconnecting and could miss its hand through no one's fault.
-  if (!commit || view.me.seat === null || commit === sent || commit === sending || !socket.connected) return;
+  // Not while still watching on a delay from a seat (#472): the commitment shown is an old one, and the server would refuse a seed for it.
+  if (!commit || view.me.seat === null || view.spectator || commit === sent || commit === sending || !socket.connected) return;
   // Another tab of this browser, or this page before a reload, already made a seed for this commitment: send that
   // same one again (harmless if it got there) rather than a second one the server would keep instead. A refused seed
   // stays refused: a fresh one after a refusal would let a server pick and choose.

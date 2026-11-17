@@ -51,6 +51,8 @@ up, it gets an issue too.
    [Reporting status](#reporting-status)).
 7. **Work is done only when the whole ask is done** (see
    [Definition of done](#definition-of-done)).
+8. **A change updates the docs that describe it, in the same pull request**
+   (see [Keeping the docs current](#keeping-the-docs-current)).
 
 ## Definition of done
 
@@ -98,7 +100,7 @@ been started.
 | `status: waiting on John` | Needs John: a decision, a setting, something only he can do |
 | `status: waiting on others` | Waiting on someone outside the project |
 | `priority: high` | Breaks games or stops people playing; do it first |
-| `area: cash`, `area: tournaments`, `area: table`, `area: accounts`, `area: fairness`, `area: site`, `area: ops` | Which part of the site it's about (`ops` is hosting, deploys, backups, CI) |
+| `area: cash`, `area: tournaments`, `area: table`, `area: dealers choice`, `area: accounts`, `area: fairness`, `area: site`, `area: ops` | Which part of the site it's about (`ops` is hosting, deploys, backups, CI) |
 | `no issue needed` | On a pull request only: it skips the linked-issue check |
 
 The labels are defined in [`.github/labels.json`](.github/labels.json). Edit
@@ -175,14 +177,17 @@ one, for example) is full. If the review finds that a light change touches
 anything on the full list, it becomes full.
 
 **A light review is shorter, not skipped.** It still runs in a separate AI
-session and is posted on the pull request like any review (step 3 of
+session (or with a person who didn't write the change) and is posted on
+the pull request like any review (step 3 of
 [The life of a change](#the-life-of-a-change)). It checks that:
 
 1. every part of the change fits the light list;
 2. the change does what its issue asks, with nothing else mixed in;
 3. the wording is true and plain, and on the public trust pages each
    changed sentence matches the code;
-4. anything people see has been looked at on a phone-sized and a
+4. every doc that describes what changed is updated in the same pull
+   request ([Keeping the docs current](#keeping-the-docs-current));
+5. anything people see has been looked at on a phone-sized and a
    desktop-sized screen, with screenshots in the pull request when the look
    changes. If shared styles or the table screen change, that includes a
    table where it's your turn, so the action buttons and clock still show.
@@ -213,9 +218,12 @@ Decide that before it's merged into `develop`, and make its branch from
    test against the real Docker image, a backup restore drill, and the PR
    check for the issue link and release notes. The description also says
    whether the change is
-   [full or light](#full-or-light-how-much-checking-a-change-needs). We
+   [full or light](#full-or-light-how-much-checking-a-change-needs), and
+   which docs it updated
+   ([Keeping the docs current](#keeping-the-docs-current)). We
    also run a separate review pass with another AI session (a short one for
-   a light change). That pass is ours, not an outside audit. Its findings,
+   a light change; see
+   [Reviewing and merging](#reviewing-and-merging)). That pass is ours, not an outside audit. Its findings,
    and the commit it reviewed, go in a comment on the pull request, so the
    review leaves a trace on GitHub. Anything left for later gets its own
    issue, listed under "Left to do", and needs an owner or a "waiting on"
@@ -229,7 +237,8 @@ Decide that before it's merged into `develop`, and make its branch from
    from `develop` into `main`. If the release holds any full change, we
    play-test it on a copy of the site first, never on the live one
    ([DEPLOY.md](docs/DEPLOY.md#releasing)). A release of only light changes
-   skips that. Either way, merge it as soon as it's ready: don't wait for a
+   skips that. Check that each pull request going out did what its "Docs"
+   line says. Either way, merge it as soon as it's ready: don't wait for a
    quiet time (D34). Merging it runs the checks
    again and then deploys. After the deploy, the Release workflow tags the
    commit (`v2026.11.01`), publishes a GitHub release with its notes and
@@ -255,6 +264,70 @@ release pull request's description or in a commit message. That's fine: the
 Release workflow still lists it in the release notes and comments when it
 went live.
 
+## Reviewing and merging
+
+**What a review pass is.** A second read of a change by a reviewer who
+didn't write it, working from the change itself and its issue, not from the
+author's account of it. So far the reviewer has been a fresh AI session. A
+person can do it just as well: any developer who didn't write the change
+may review it, the same way. The session (or person) that wrote a change
+doesn't review it.
+
+**Running one with an AI session.** Start a new session, not the one that
+wrote the change. Give it the pull request's diff and its issue, tell it to
+change nothing, and ask it to check the list below against the code and
+report what it finds. Give it the code, not your conclusion: a reviewer
+told what to find tends to find it.
+
+**What a full review checks:**
+
+1. The change does what its issue asks, with nothing else mixed in, and
+   "full" or "light" is the right label for it.
+2. The unusual paths around what changed, not only the usual one: a server
+   restart in the middle, a player who is away or on two devices, a
+   spectator watching, the last hand of a tournament, the same button
+   pressed twice.
+3. Hidden information: nothing new reaches a browser that its viewer may
+   not see (other players' cards, the deck, what a spectator's delay is
+   still holding back).
+4. Stored data: tables, tournaments and hands saved by the version now
+   live still load, and a migration follows the rules in
+   [ARCHITECTURE.md](docs/ARCHITECTURE.md#database-migrations-appsserverdrizzle).
+5. The new tests test what they say, and would fail without the change.
+6. Every doc that describes what changed is updated
+   ([Keeping the docs current](#keeping-the-docs-current)), and
+   /fairness, /transparency, /privacy and /terms still say what the code
+   does.
+
+A full review also covers the points of a light one, and a light review
+checks only those: the shorter list under
+[Full or light](#full-or-light-how-much-checking-a-change-needs).
+
+**What the review comment says.** It goes on the pull request and calls
+itself "a separate review we ran ourselves" (never "independent": it isn't
+an outside audit). It names the commit reviewed, what was checked, and each
+finding with how it was resolved: fixed, with the commit; accepted, with
+the reason; or left for its own issue. It is worth saying what couldn't be
+checked too.
+
+**Who merges.** Today only John's GitHub account can change the
+repository, and the AI sessions work through it. No approval click is
+required ([D22](docs/DECISIONS.md#d22-how-work-is-tracked-and-checked)):
+John gave a standing OK for a change to be merged into `develop` once the
+checks are green and its review is posted, and for finished work to be
+released without asking him each time
+([D05](docs/DECISIONS.md#d05-branches-merges-and-releases),
+[DEPLOY.md](docs/DEPLOY.md#releasing)). So a pull request opened through
+John's account is merged by whoever opened it when both are done, usually
+squashed into one commit. Ask John first about anything that costs
+money, changes what the product is, or can't be undone.
+
+**If you're new.** The code is MIT-licensed, so anyone may fork the
+repository and open a pull request into `develop` from the fork. It follows
+the same rules as any other: an issue, the checks, and a review pass by
+someone who didn't write it. John decides whether it is merged, and whether
+someone else gets to change the repository directly; ask him.
+
 ## Releases
 
 Release notes are written once, in the site's own data:
@@ -273,7 +346,12 @@ notes on each GitHub release.
 - **One entry per release.** If the top entry in changelog.json isn't on
   `main` yet, it is the next release's: add your lines to it. If every
   entry is already on `main`, start a new one at the top with today's
-  version. Never change an entry that is already on `main`; it's live.
+  version. Never change an entry that is already on `main`; it's live. To
+  tell which it is, compare the top entry's version with the newest
+  [release](https://github.com/jcolter11374/rsdp-poker-live/releases), or
+  run `git fetch origin main && git diff origin/main -- apps/web/src/roadmap/changelog.json`:
+  an entry that shows up there as added (`+`) lines is still waiting, and
+  no output means every entry is on `main`.
 - **On release day,** if the waiting entry's version isn't today's, rename
   it to today's version (and its date, and its twin in whatsnew.json if it
   has one), run `npm run changelog`, and merge that into `develop` before
@@ -296,6 +374,39 @@ notes on each GitHub release.
 If a Release run fails, fix the cause and run it again by hand from the
 Actions tab (Release → Run workflow). It picks up whatever is missing and
 never moves a tag.
+
+## Keeping the docs current
+
+The docs are only useful to the next person if they match the code. So a
+pull request that changes how something works also changes every doc that
+describes it, and says which under "Docs" in its description. The review
+pass checks that list against the change. "None" is a fine answer when it's
+true.
+
+Each doc has one job. Put a fact in the doc whose job it is and link to it
+from the others, so there is one place to update:
+
+| If the change… | Update |
+| --- | --- |
+| Adds, moves or renames a folder, a main file, a workflow or a command | [docs/CODE_TOUR.md](docs/CODE_TOUR.md), and the README if it names it |
+| Changes a rule the code follows, or how two parts talk to each other | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); for the tournament director, [packages/tournament/README.md](packages/tournament/README.md) too |
+| Settles a question (John decides something, or a deliberate simplification is chosen) | A new entry in [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Changes dealing, who sees what and when, or the public record | [docs/FAIRNESS.md](docs/FAIRNESS.md) |
+| Changes signed builds, the watcher, or what the Checking John page (`/transparency`) reports | [docs/FAIRNESS.md](docs/FAIRNESS.md), and the page's own words in `apps/web/src/fairness/TransparencyPage.tsx` |
+| Stores something new, changes how long something is kept or how it's deleted, sets a cookie, or contacts another service | [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Changes what the site promises players or asks of them | [docs/TERMS.md](docs/TERMS.md) |
+| Changes hosting, a setting or secret, backups, restarts, or the release steps | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Changes what an alarm means, or how to recover from a failure | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Changes the look or controls of the table or one of the site's main pages | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) |
+| Adds or changes a play-test script | [e2e/playtest/README.md](e2e/playtest/README.md) |
+| Changes how a game or a table option plays | Its How to play guide (`apps/web/src/rules/`) |
+| Changes anything players will notice | The release notes, and the roadmap page if it lists it, by the release that ships it (see [Releases](#releases)) |
+| Adds a library | [docs/CREDITS.md](docs/CREDITS.md) |
+| Changes how work is tracked, reviewed or released | This page, and [CLAUDE.md](CLAUDE.md) if it's a rule sessions must follow |
+
+Each release, whoever prepares it reads the list of pull requests going out
+and checks that each one's "Docs" line was done. A doc found out of date
+later is a bug in the docs: open an issue with the `documentation` label.
 
 ## Reporting status
 

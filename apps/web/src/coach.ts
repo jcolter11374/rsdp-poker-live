@@ -562,3 +562,30 @@ export function linesWithWhy(hand: HandRecordView, name: (seat: number) => strin
   }
   return lines;
 }
+
+/**
+ * A practice table where you're the only person who'll be dealt in, among bots: the next hand comes with coach tips and
+ * the bots' reasons. The server decides that at each deal (view.tips: you're the only person dealt in, at a cash table
+ * where no two people have played a hand); this works it out from the seats, so the page can make room for them before
+ * the first deal (#476). Like the deal, it leaves out a person sitting out, out of chips or away (unless the table deals
+ * to away players).
+ */
+export function soloPractice(view: Pick<TableView, 'mode' | 'realGame' | 'me' | 'seats' | 'settings'>): boolean {
+  if (view.mode !== 'cash' || view.realGame || view.me.seat === null) return false;
+  const dealtIn = (s: NonNullable<TableView['seats'][number]>) => s.stack > 0 && !s.sittingOut && (s.online || view.settings.seating.dealToAway);
+  const others = view.seats.filter((s) => s && s.playerId !== view.me.playerId);
+  return others.some((s) => !!s!.bot) && others.every((s) => !!s!.bot || !dealtIn(s!));
+}
+
+/**
+ * The room the area under the table (the Dock) keeps for coach tips and the bots' reasons button: at a practice table,
+ * from the moment you sit down (soloPractice) as well as in its hands (view.tips), each as the viewer's Look choices
+ * allow. Then neither the first deal nor the first "Why did the bots play last hand?" pushes the table up (#476).
+ */
+export function practiceRoom(
+  view: Pick<TableView, 'tips' | 'mode' | 'realGame' | 'me' | 'seats' | 'settings'>,
+  prefs: { tips: boolean; botReasons: boolean },
+): { tips: boolean; why: boolean } {
+  const practice = !!view.tips || soloPractice(view);
+  return { tips: practice && prefs.tips, why: practice && prefs.botReasons };
+}

@@ -277,9 +277,11 @@ the repository (and pulling the `transparency` branch now and then).
   anyone it is over before the people watching see it end. Until then the
   server keeps the entry, saved, outside the chain: it gets its number and
   time when it goes in, and a table's hands go in in the order they ended.
-  Buy-ins, cash-outs and everything else still go in at once, even those that
-  come as a hand ends (someone leaving after the hand, say), so those can show
-  that a hand is over before the people watching see it end. Anyone can read
+  A buy-in or cash-out total that changes there as a hand ends (someone
+  leaving after the hand, say), or before the people watching have seen it
+  end, waits the same way and goes in with the hand, and the ledger tells the
+  players which rows are still waiting. Other buy-ins and cash-outs, and
+  everything else, still go in at once. Anyone can read
   the record at `/api/audit/entries`.
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
@@ -388,7 +390,11 @@ that long ago: the hand, the seats and stacks, the stakes, the waitlist and the
 table log. The server answers what they ask (a seat, a hand to share, the hand
 list, hand search, a link's preview) from that same moment, and sends them an
 update only when something they can see changes. A change to the delay starts
-for them at the first hand dealt under it. A few things stay live on purpose:
+for them at the first hand dealt under it. The public leaderboard leaves the
+whole game out while a hand is being played there, and until spectators have
+seen that hand end, so it can't show a result early. (A game that drops off
+the leaderboard does tell someone watching that a new hand has started.) A few
+things stay live on purpose:
 
 - Chat, gestures between players their view has seated, who has the table
   open, the table's name and look, and whether watching is allowed.
@@ -397,20 +403,35 @@ for them at the first hand dealt under it. A few things stay live on purpose:
   table is between hands. Delaying it would let people sit down without seeing
   the warning.
 
-And a few gaps are still open, each with its issue:
+Two more things are worth knowing:
 
-- After a server restart (every release is one), a spectator's view starts
-  again from the table as it is then, so it can jump ahead by up to the delay
-  once (#470).
-- The public leaderboard counts a running table's hands as they end live, so
-  it can show a result about a minute after the live hand ends, before someone
-  on a longer delay sees it (#469).
-- Sitting down shows the table live, so someone who takes a free seat sees it
-  as it is now, ahead of their view, even if they stand up again straight away
-  (#472). At a table where the host approves new players, that needs the
-  host's OK.
-- A buy-in or cash-out made as a hand ends goes in the public record at once
-  (see "Checking John" above), so it can show that the hand is over (#471).
+- **Sitting down.** At a cash table with a delay, a spectator who takes a seat
+  keeps the view they had, with their own seat in it, until they are dealt
+  into a hand (or their view has caught up with the table). So sitting down
+  and standing up again shows no cards, chips or moves of the hand being
+  played. (A few of the table's answers can still tell them that a hand has
+  ended, such as one to picking a Dealer's choice game.) From their first
+  hand on they see the table live, like every player. It only applies while
+  there is something to keep back: at a table that hasn't started, or long
+  after the last hand, sitting down shows the table as it is.
+- **After a server restart** (every release is one), the server no longer has
+  the moments it was keeping to show. Spectators see the table with no hand
+  on it until what the table did after the restart is old enough to show. A
+  hand that ended shortly before the restart doesn't show as over early: each
+  player in it keeps the chips they had before it until the time spectators
+  would have seen it end. They don't get to watch the rest of that hand at
+  the table; it is in the hand list once the delay has passed. A seat someone
+  left as that hand ended does show empty at once, and side-game totals (the
+  Nit game, house fees) are as the hand left them.
+
+**All-in runouts.** When a hand ends all-in, the remaining cards are dealt
+out on screen over a few seconds, though the server already has the result.
+No card is shown early. In those seconds a few things can hint at whether
+someone busted: how the table answers a host's or a bot owner's controls, a
+gesture at a player knocked out of a tournament, the player count in the
+Dealer's choice pick panel, and a page opened in the middle of the runout,
+which shows it finished. These are known and left as they are for now
+(issues #463, #483, #480; decision D43). They may be fixed later.
 
 ## HUDs and tracking software
 
