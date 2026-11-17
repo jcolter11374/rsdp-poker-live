@@ -44,7 +44,7 @@ function ResumingIn({ at, skew }: { at: number; skew: number }) {
   const now = useNow(true, 250) + skew;
   const left = Math.max(0, Math.ceil((at - now) / 1000));
   return (
-    <div className="next-hand" role="timer" aria-label="Paused. Play resumes soon">
+    <div className="next-hand resuming" role="timer" aria-label="Paused. Play resumes soon">
       Resuming in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
     </div>
   );
