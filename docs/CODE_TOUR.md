@@ -274,6 +274,13 @@ npm start            # serve the built website and the game server together on :
 npm run smoke        # browser test; see below
 ```
 
+On a four-core machine the typecheck takes about half a minute, the unit
+tests about three minutes and the smoke test about seven. Nothing needs
+setting up to run locally: the settings the live site uses (the admin page's
+key, Sign in with Google, phone alerts) are all optional and listed in
+[DEPLOY.md](DEPLOY.md#settings). There is no linter or code formatter, so
+match the style of the code around your change.
+
 The smoke test drives a real browser, so install one first with
 `npx playwright install chromium`. It needs the built website served by the
 game server: run `npm run build && npm start` in one terminal, then
@@ -308,6 +315,14 @@ The same production image the live site runs can be built with Docker; see
 | Once a day (scheduled for 06:23 UTC; GitHub starts it hours late), a GitHub job runs the fuzz tests on `main` far deeper than CI does (400 random cash tables, 400 random tournaments played four ways each, 30,000 random hands), on GitHub's machine. A failure opens an issue naming the failing seeds; the next run that passes closes it. | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) |
 | A GitHub job scheduled every 5 minutes checks the site and its database are up. GitHub starts it hours late, so it is a slow backstop; a quick alert needs an outside monitor (see [DEPLOY.md](DEPLOY.md#site-down-alert)). | [`uptime.yml`](../.github/workflows/uptime.yml) |
 | Once a day (scheduled for 14:47 UTC; GitHub starts it hours late), a GitHub job reads the live server's memory and data disk use from `/api/health`. While memory is over 800 MB or the disk over 70% full, an issue stays open for John (see [DEPLOY.md](DEPLOY.md#memory-and-disk-check)). | [`resources.yml`](../.github/workflows/resources.yml) |
+
+Three more jobs only run when asked, or when their file changes:
+[`live-check.yml`](../.github/workflows/live-check.yml) repeats the read-only
+checks a deploy makes on the live site,
+[`suggestions.yml`](../.github/workflows/suggestions.yml) lists the
+suggestions John approved on the site's roadmap page, and
+[`labels.yml`](../.github/workflows/labels.yml) makes the issue labels match
+[`.github/labels.json`](../.github/labels.json).
 
 The live site is a single small machine on Fly.io. It must stay a single
 copy, because the live tables exist in that one process's memory; see
