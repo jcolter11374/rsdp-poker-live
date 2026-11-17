@@ -224,7 +224,8 @@ function Ledger({ view, fmt }: { view: TableView; fmt: Fmt }) {
 /** Whether the ledger's buy-ins and cash-outs are the ones in the public record (docs/FAIRNESS.md, "Checking John"). */
 function LedgerRecord({ view }: { view: TableView }) {
   const [state, setState] = useState<{ key: string; wrong: string[]; reloaded: string[] } | null>(null);
-  const key = JSON.stringify(view.ledger.map((r) => [r.playerId, r.buyIn, r.cashOut]));
+  const key = JSON.stringify(view.ledger.map((r) => [r.playerId, r.buyIn, r.cashOut, !!r.recordWaits]));
+  const waiting = view.ledger.filter((r) => r.recordWaits && !r.bot).map((r) => r.name);
   useEffect(() => {
     let live = true;
     const check = (again: boolean) =>
@@ -251,7 +252,12 @@ function LedgerRecord({ view }: { view: TableView }) {
         </p>
       ) : (
         <p className="hint">
-          ✓ Every buy-in and cash-out here matches the <a href="/transparency">public record</a>.
+          ✓ {waiting.length ? 'Every other' : 'Every'} buy-in and cash-out here matches the <a href="/transparency">public record</a>.
+        </p>
+      )}
+      {waiting.length > 0 && (
+        <p className="hint">
+          The latest totals for {waiting.join(', ')} are waiting for the people watching on a delay. They go in the public record once those people have seen the last hand end, and are checked then.
         </p>
       )}
       {state.reloaded.length > 0 && (

@@ -5,7 +5,8 @@
       "date": "2026-11-17",
       "fixes": [
         "The game and stakes shown for the next hand when no hand is on the table (to someone at a table that doesn't allow watching, or just after the site restarts) now include a change the host made during the last hand, such as new stakes, a blind schedule or a new rotation.",
-        "Watching on a delay: the leaderboard now leaves a game out while a hand is being played there and until the people watching on a delay have seen that hand end, so it can't show who won before they see it."
+        "Watching on a delay: the leaderboard now leaves a game out while a hand is being played there and until the people watching on a delay have seen that hand end, so it can't show who won before they see it.",
+        "Watching on a delay, public record: a buy-in or cash-out total that changes as a hand ends (someone leaving after the hand, for example), or before the people watching on a delay have seen it end, now goes into the public record together with the hand. Before, it went in at once and could show that the hand was over. The ledger tells the players at the table which rows are still waiting."
       ]
     },
     {
