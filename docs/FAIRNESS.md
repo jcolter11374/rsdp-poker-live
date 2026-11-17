@@ -40,11 +40,15 @@ first, details after.
   bot (bots never send one) or for someone who wasn't dealt in (checked once
   your browser has seen everyone who was), the same seed is listed twice, or
   the commitment for the next hand was swapped for another without being
-  dealt, the table shows a warning straight away. One case is harmless: if
-  you sit at a table from two devices at once (a phone and a laptop, say), each
-  sends its own seed and the table keeps only the newest, so the other device
-  sees a seed it didn't send and warns about it. The warning says so; if you
-  weren't on another device, take it seriously. Your browser
+  dealt, the table shows a warning straight away: in red, on the bar under
+  the table, just above your betting buttons when you have them (in the bar
+  at the top on a phone held sideways), for the rest of that hand, your own
+  turn included. Tap it for the whole of it. One
+  case is harmless: if you sit at a table from two devices at once (a phone
+  and a laptop, say), each sends its own seed and the table keeps only the
+  newest, so the other device sees a seed it didn't send and warns about it.
+  The warning says that's expected if you're on two devices; if you weren't on
+  another device, take it seriously. Your browser
   also writes down what it saw during the hand: the button, who was dealt in
   and which of them were bots, the board, and every card shown to you.
 - **Anyone can check a hand afterwards.** Open a hand in the replayer and press

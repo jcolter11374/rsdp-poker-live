@@ -576,6 +576,28 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .felt.compact .nameplate .stack { font-size: 0.85rem; }
 .felt.compact .nameplate .timer { left: 6px; right: 6px; bottom: 2px; height: 3px; }
 .felt.compact .seat .status, .felt.compact .last-action { font-size: 0.6rem; }
+/* At the result a shown hand's name sits on a tab where the cards meet the nameplate, not on a line that would widen the
+   nameplate into its neighbours (#455). Nothing in the nameplate changes size: the lines it showed last stay, unseen.
+   Table.tsx sets --tab-drop for a bunched row's smaller cards, so the tab meets their suits instead of covering them, and
+   --tab-slide to bring it out from under the dealer button. */
+.felt.compact .shown-tab {
+  position: absolute; left: 50%; bottom: calc(100% - var(--tab-drop, 5px)); translate: calc(-50% + var(--tab-slide, 0px)) 0; z-index: 3;
+  padding: 0 4px; border-radius: 6px; background: #14171b;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 1px 3px rgba(0, 0, 0, 0.5);
+  font: 700 0.72rem/12px 'Barlow Condensed', 'Inter Variable', sans-serif; letter-spacing: 0.01em; color: #eef1f4;
+  white-space: nowrap; pointer-events: none;
+}
+/* On its side a phone's cards are smaller and end lower over the nameplate: the tab is 10px tall there, from 5px above the
+   nameplate to 5px into it, clear of their suits and of accents on the name's capitals. An 8px line with 2px under it
+   puts its capitals in the middle (the font's own line sits them low). */
+@media (max-height: 500px) { .felt.compact .shown-tab { bottom: calc(100% - 5px); line-height: 8px; padding-bottom: 2px; } }
+/* Your own hand's tab: standing up the bar under the table names your hand in full. On its side the bar leaves that
+   line out, and your cards sit beside your nameplate, so the tab shows there. */
+@media not all and (max-height: 500px) { .felt.compact .shown-tab.mine { display: none; } }
+.felt.compact .seat.departed .shown-tab { animation: depart-dim 0.8s ease 1.2s both; }
+@media (prefers-reduced-motion: reduce) { .felt.compact .seat.departed .shown-tab { animation: none; opacity: 0.6; filter: grayscale(0.8); } }
+.felt.compact .nameplate .stack .out-mark { font-size: 0.7rem; color: #ffb4ad; letter-spacing: 0.01em; }
+.felt.compact .nameplate > .kept { visibility: hidden; }
 .felt.compact .seat .hole { height: 34px; bottom: calc(100% - 3px); }
 .felt.compact .playing-card.small { --cw: 24px; }
 .felt.compact .seat .hole.n4 .playing-card + .playing-card { margin-left: -6px; }
@@ -987,6 +1009,29 @@ dl.shortcuts dd { margin: 0; }
 }
 /* The hand line gives way (cut short) rather than wrap the head onto two lines mid-hand. */
 .bar-head .strength { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The fair-dealing warning (#438) takes the hand line's place on the bar's top line, at exactly its height (17px; 15px on
+   a phone), or the head line's 26px on your turn, between the Tip pill and the time bank. So the bar is never taller with
+   it than with a hand's name, and the room kept under the table already holds that: no seat moves. Solid red, so it
+   reads as an alarm; a tap anywhere on it opens Details. Phones held sideways have no hand line: there it takes the
+   logo's place in the top bar, at the buttons' height, on two lines beside the game and the level clock when one is short. */
+.seed-alarm { position: relative; display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; margin: 0 auto; padding: 0 12px; border: 0; border-radius: 999px; background: #8c1d16; box-shadow: inset 0 0 0 1px #ff7a6e; color: #fff; font-weight: 600; text-align: center; white-space: nowrap; cursor: pointer; }
+.seed-alarm:hover:not(:disabled) { background: #a1231b; }
+.seed-alarm-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.seed-alarm-text u { font-weight: 500; text-underline-offset: 1px; }
+.action-bar .seed-alarm { height: 17px; max-width: 100%; font-size: 0.8rem; line-height: 17px; }
+/* A bigger target than it looks, without taking room. */
+.action-bar .seed-alarm::after { content: ''; position: absolute; inset: -6px 0 -2px; }
+.bar-head .seed-alarm { height: 26px; max-width: calc(100% - 272px); white-space: normal; line-height: 13px; }
+.bar-head .seed-alarm-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.portrait .action-bar .seed-alarm { height: 15px; line-height: 15px; padding: 0 8px; font-size: 0.72rem; }
+.portrait .bar-head .seed-alarm { height: 26px; line-height: 13px; max-width: none; flex: 0 1 auto; min-width: 0; }
+.topbar > .seed-alarm { display: none; }
+@media (max-height: 500px) {
+  .portrait .topbar > .seed-alarm { display: flex; flex: 1 1 0; min-width: 0; height: 34px; margin: 0; border-radius: 8px; font-size: 0.72rem; line-height: 15px; justify-content: flex-start; white-space: normal; text-align: left; }
+  .portrait .topbar > .seed-alarm .seed-alarm-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .portrait .topbar > .seed-alarm ~ .logo { display: none; }
+  .portrait .action-bar .seed-alarm { display: none; }
+}
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */
 .dock { flex-shrink: 0; min-height: var(--held, 0px); }
 .dock.seated { min-height: max(218px, var(--held, 0px)); }
@@ -1007,7 +1052,9 @@ dl.shortcuts dd { margin: 0; }
   .portrait .dock.seated { min-height: max(230px, var(--held, 0px)); }
 }
 /* Fixed-limit games (no bet slider) have a shorter bar. */
-.dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
+/* Its buttons are taller on a window over 820px tall (119px against 93px), so the room kept is too (#486). */
+.dock.seated.limit { min-height: max(120px, var(--held, 0px)); }
+@media (max-height: 820px) { .dock.seated.limit { min-height: max(113px, var(--held, 0px)); } }
 .portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
 /* Coach tips (a practice table, from the moment you sit down, see Dock): the bar sits at the foot of the dock, so a tip
    opening above the buttons grows it upwards, and fixed-limit games (where the tip has no sizing block to stand in

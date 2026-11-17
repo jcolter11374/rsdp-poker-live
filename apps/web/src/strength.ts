@@ -34,3 +34,19 @@ export function handStrength(gameId: string, hole: string[], board: string[]): s
   }
   return parts.length ? parts.join(' · ') : null;
 }
+
+const FIGURE: Record<string, string> = { Ace: 'A', Two: '2', Three: '3', Four: '4', Five: '5', Six: '6', Seven: '7', Eight: '8', Nine: '9', Ten: '10', Jack: 'J', Queen: 'Q', King: 'K' };
+const figures = (low: string) => low.replace(/^(\w+)(?:-(\w+))? low$/, (all, a: string, b?: string) => (FIGURE[a] && (!b || FIGURE[b]) ? `${FIGURE[a]}${b ? '-' + FIGURE[b] : ''} low` : all));
+
+/**
+ * A shown hand's name the short way, for the tab over a phone nameplate (#455): what it made (the part before the first
+ * comma: "Full House", "Two Pair"), a low in figures ("8-6 low"). In hi-lo both halves go on one line, the low without
+ * the word ("Two Pair · 8-7"), and "no low" is left out. The winner line and the hand log keep the full name.
+ */
+export function handKind(name: string): string {
+  const halves = name
+    .split(' · ')
+    .filter((half) => half !== 'no low')
+    .map((half) => figures(half.split(', ')[0]));
+  return halves.length > 1 ? halves.map((half) => half.replace(/ low$/, '')).join(' · ') : (halves[0] ?? '');
+}
