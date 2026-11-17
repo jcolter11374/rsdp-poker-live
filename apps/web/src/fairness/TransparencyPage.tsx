@@ -120,7 +120,7 @@ export function TransparencyPage() {
         <h2>The public record</h2>
         <p>
           Every hand, every change to a player&rsquo;s buy-ins and cash-outs, every admin action that changes something, every chat John reads from the admin page, and every server start goes into a chain where each entry includes a fingerprint of the one
-          before. At a table whose spectators watch on a delay, each hand&rsquo;s own entry goes in that long after the hand ends (at most 10 minutes), and a card shown after the hand goes in that long after it is shown. A buy-in or cash-out total that changes as a hand ends there (someone leaving after the hand, say) waits the same way and goes in with the hand; the ledger tells the players which rows are still waiting. Other buy-ins and
+          before. At a table whose spectators watch on a delay, each hand&rsquo;s own entry goes in that long after the hand ends (at most 10 minutes), and a card shown after the hand goes in that long after it is shown. A buy-in or cash-out total that changes there as a hand ends (someone leaving after the hand, say), or before the people watching have seen it end, waits the same way and goes in with the hand; the ledger tells the players which rows are still waiting. Other buy-ins and
           cash-outs, and everything else, still go in at once. Editing or removing an old entry breaks every
           fingerprint after it. The record holds no names and no table links.
         </p>

@@ -169,6 +169,8 @@ describe('a hand and a ledger against the record', () => {
       entry({ table: tableRef('t1'), player: playerRef('t1', 'p1'), buyIn: 200, cashOut: 0 }, 3),
     ];
     expect(ledgerMismatches('t1', ledger, entries).map((r) => r.name)).toEqual(['Bo']);
+    // Totals waiting for a spectator delay aren't in the record yet, and aren't a mismatch (#471).
+    expect(ledgerMismatches('t1', ledger.map((r) => (r.name === 'Bo' ? { ...r, recordWaits: true as const } : r)), entries)).toEqual([]);
     expect(changedWhileClosed('t1', ledger, [entry({ table: tableRef('t1'), player: playerRef('t1', 'p2'), buyIn: 100, cashOut: 50, loaded: true })]).map((r) => r.name)).toEqual(['Bo']);
   });
 });

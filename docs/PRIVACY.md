@@ -107,7 +107,7 @@ table links**: a table and each player at it appear only as fingerprints that
 someone who already has the table's link can match up. At a table whose
 spectators watch on a delay, the server keeps a hand's entry (only the
 fingerprint that will be public, never cards or seeds), and any buy-in or
-cash-out total that changed as the hand ended (the same amounts that will be
+cash-out total that changed while the hand waited (the same amounts that will be
 public), until the delay has passed, at most 10 minutes, and then adds them. When John takes a
 name out of old records (see *Deleting your data*), the record notes it with a
 fingerprint of that player's id. A player id isn't secret from the people

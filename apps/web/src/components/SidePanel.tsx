@@ -257,7 +257,7 @@ function LedgerRecord({ view }: { view: TableView }) {
       )}
       {waiting.length > 0 && (
         <p className="hint">
-          The latest totals for {waiting.join(', ')} changed as a hand ended. They go in the public record once the people watching on a delay have seen that hand end, and are checked then.
+          The latest totals for {waiting.join(', ')} are waiting for the people watching on a delay. They go in the public record once those people have seen the last hand end, and are checked then.
         </p>
       )}
       {state.reloaded.length > 0 && (

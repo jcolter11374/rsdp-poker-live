@@ -228,6 +228,8 @@ describe('hands at a table watched on a delay', () => {
     for (const p of ['host', 'ann']) rt.connect(p);
     rt.requestSeat('host', { seat: 0, name: 'Host', stack: 100 });
     rt.requestSeat('ann', { seat: 1, name: 'Ann', stack: 100 });
+    // The table's record has been read and the buy-ins are in before any hand is played.
+    await read('/api/audit/head');
     return rt;
   }
 
@@ -319,16 +321,22 @@ describe('hands at a table watched on a delay', () => {
     rt.requestSeat('ann', { seat: 1, name: 'Ann', stack: 40 });
     expect(rt.state.ledger.ann.buyIn).toBe(140);
     expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
-    // A buy-in that has nothing to do with a hand's end still goes in at once.
+    // So does anyone else's buy-in while the hand still waits: it would show the hand is over too.
     rt.connect('bea');
     rt.requestSeat('bea', { seat: 2, name: 'Bea', stack: 70 });
-    expect(await chipsOf('bea')).toMatchObject({ buyIn: 70, cashOut: 0 });
+    expect(await chipsOf('bea')).toBeUndefined();
+    expect(waits('host').sort()).toEqual(['ann', 'bea']);
 
     clock.advance(DELAY - 10_000 - 1);
     expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
     clock.advance(1);
     expect(await chipsOf('ann')).toMatchObject({ buyIn: 140, cashOut });
     expect(waits('host')).toEqual([]);
+    expect(await chipsOf('bea')).toMatchObject({ buyIn: 70, cashOut: 0 });
+    // Once spectators have caught up, a buy-in goes in at once again, and during a hand too.
+    rt.connect('cal');
+    rt.requestSeat('cal', { seat: 3, name: 'Cal', stack: 30 });
+    expect(await chipsOf('cal')).toMatchObject({ buyIn: 30, cashOut: 0 });
     const mine = (await all()).filter((e) => e.kind === 'chips' && e.data.player === playerRef('delay-chips', 'ann'));
     expect(mine.map((e) => [e.data.buyIn, e.data.cashOut])).toEqual([[100, 0], [100, cashOut], [140, cashOut]]);
     expect(chainProblem(await all())).toBeNull();
