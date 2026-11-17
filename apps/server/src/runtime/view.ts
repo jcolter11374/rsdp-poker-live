@@ -128,6 +128,7 @@ export function tableView(
     pendingSettings: s.pendingSettings,
     started: s.started,
     paused: s.paused,
+    resumeAt: s.paused ? (s.resumeAt ?? null) : null,
     stopAfterHand: s.stopAfterHand,
     recordsLocked: rt.recordsLocked(playerId),
     seats,
@@ -324,6 +325,8 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   else if (partMine && mineWaiting && !rejoined) offers.push(partMine);
   return {
     paused: part.paused,
+    // A spectator on a delay sees "Paused" with no countdown: the countdown is the live table's.
+    resumeAt: null,
     bombPotNext: part.bombPotNext,
     nit: part.nit,
     rakeTotal: part.rakeTotal,

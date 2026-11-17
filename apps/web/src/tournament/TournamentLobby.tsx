@@ -262,7 +262,7 @@ function Hero({ state, now }: { state: TournamentState; now: number }) {
     <div className={`tn-hero ${c.onBreak ? 'tn-on-break' : ''}`}>
       <p className="tn-hero-label">
         {c.onBreak ? `Break after level ${c.levelNumber}` : `Level ${c.levelNumber} of ${levels}`}
-        {state.status === 'paused' ? ' · paused' : ''}
+        {state.status === 'paused' ? (state.outage ? ` · paused, resuming in ${countdown(state.outage.resumeAt - now)}` : ' · paused') : ''}
         {sum.handForHand ? ' · hand-for-hand' : ''}
       </p>
       <p className="tn-hero-main">{c.msLeft === null ? '∞' : countdown(c.msLeft)}</p>

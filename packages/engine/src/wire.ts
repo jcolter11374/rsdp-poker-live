@@ -180,6 +180,8 @@ export interface TableView {
   pendingSettings: SettingsPatch | null;
   started: boolean;
   paused: boolean;
+  /** A tournament table paused after the site had been away: when play resumes at the latest. Null otherwise. */
+  resumeAt?: number | null;
   stopAfterHand: boolean;
   /**
    * Hand-history and full-log downloads are closed to me for now, so nobody
