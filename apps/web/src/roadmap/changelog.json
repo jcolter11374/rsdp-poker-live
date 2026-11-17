@@ -1,6 +1,34 @@
 {
   "releases": [
     {
+      "id": "2026.11.17.3",
+      "date": "2026-11-17",
+      "fixes": [
+        "The game and stakes shown for the next hand when no hand is on the table (to someone at a table that doesn't allow watching, or just after the site restarts) now include a change the host made during the last hand, such as new stakes, a blind schedule or a new rotation.",
+        "Watching on a delay: the leaderboard now leaves a game out while a hand is being played there and until the people watching on a delay have seen that hand end, so it can't show who won before they see it.",
+        "Watching on a delay, public record: a buy-in or cash-out total that changes as a hand ends (someone leaving after the hand, for example), or before the people watching on a delay have seen it end, now goes into the public record together with the hand. Before, it went in at once and could show that the hand was over. The ledger tells the players at the table which rows are still waiting.",
+        "Phones held sideways: on your turn the betting controls no longer squeeze the table into a thin strip with the players piled on top of each other (and it no longer stays that way after you act). The bet sizes, slider and amount now share one line with the buttons under them, so the table stays the same height through your turn. The table's faint crest also stays on the table, instead of showing over the top bar and the buttons. Notes under the table (such as \"You're sitting out\") are smaller there, the rabbit hunt and Nit game line waits while a note shows, and your move buttons take a tap from a third of a second after they appear, so a late tap meant for Show cards can't land on Call.",
+        "Laptops, at Stud Hi-Lo and other games where a seat at the end of the table shows a long row of cards: when a pot is split, the winners' lines go one under the other again wherever that keeps the middle of the table bigger. Side by side, they made the middle smaller for about half of all split pots on screens such as 1440x900 and 1600x900; there, a pot split two ways now keeps it full size.",
+        "Practice tables against bots, on a computer or a phone held upright: the table keeps its size. Before, in fixed-limit games such as Seven Card Stud, Razz and 2-7 Triple Draw, it got smaller as the first hand was dealt (by up to 97 pixels on a phone), and again the first time \"Why did the bots play last hand?\" showed under your buttons. On a phone or a touch screen that could happen in Hold'em too. The space under the table now has room for both from the start, and keeps it if a friend joins in."
+      ]
+    },
+    {
+      "id": "2026.11.17.2",
+      "date": "2026-11-17",
+      "fixes": [
+        "Tournaments: if the site goes down in the middle of a tournament, the time it was down no longer counts. The blind clock picks up where it stopped, so nobody comes back to find the blinds a level or two higher, and a rebuy offer that was open is still open."
+      ]
+    },
+    {
+      "id": "2026.11.17",
+      "date": "2026-11-17",
+      "fixes": [
+        "New tournament page: when you change the starting stack, the size of a rebuy and of an add-on now changes with it. Before, they stayed at 63,000 chips, so a tournament with a 1,500 starting stack could hand out 63,000 for a rebuy unless the host noticed. A size you type yourself is left alone.",
+        "Changing your name on your profile now changes it straight away at cash tables where you already have a seat, and in their ledgers. The table's log says who is now who. Tournaments keep the name you registered with.",
+        "A finished tournament's Payouts tab now says \"These are the final prizes\" where it used to say \"Updates as players join\"."
+      ]
+    },
+    {
       "id": "2026.11.07.7",
       "date": "2026-11-07",
       "fixes": [
@@ -13,10 +41,20 @@
         "The table is easier to read. The green buttons (Raise, Start game, Sit down, Invite) now use the darker green the rest of the site uses, the red host tag, request counts and Fold anyway? are darker, and the empty seats' Sit and + Bot are brighter. The words in the middle of the felt (Next hand in, Paused, the game's name, Run 1, the side-pot total) sit on a dark backing. + Bot, the quick chat replies and the Straddle and Wait for the big blind switches are bigger and easier to tap.",
         "Tournaments: after a hand that knocks someone out, the top bar's level and the countdown to the next game keep going, instead of stopping until the next hand, or for good when that hand was the table's last.",
         "Tournaments: a player knocked out in a table's last hand, who stayed looking at it after the table broke, no longer sees \"Next hand in 0\" there for good.",
+        "Tournaments: a player knocked out by an all-in runout now stays at the table, dimmed, through the whole result and fades just before the next deal. Before, after an all-in before the flop they were already fading as the result appeared, and after one on the flop they vanished at the next deal without fading.",
         "Stud games' log names each street before its cards (Fourth Street, then who gets what), instead of after them.",
         "Each table and tournament lobby now names itself in the browser tab's title, so with a few tables open you can tell the tabs apart.",
         "Phones: another player's cards now keep off the next player's name and chip count wherever there's room (this was worst at full Omaha tables, in the top corners). They move aside into the free room, bunch up when there isn't any, and at the fullest tables get smaller too. With the phone upright, your own cards move aside as well, leaving room for the cards beside them, and at a full table they bunch up or get smaller, so they cover less of the players next to you.",
-        "Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room. When a waitlist offer has to be let go (the table gets smaller, or a smaller game has no room for it), its holder keeps their place: the seats are offered again in queue order, so nobody behind them sits first."
+        "Dealer's choice at a table where the host approves new players: a seat offered from the waitlist to someone the host hasn't approved yet no longer stops a smaller game from being picked. Like a seat request, taking it asks the host for the seat, and the request waits until the game has room. When a waitlist offer has to be let go (the table gets smaller, or a smaller game has no room for it), its holder keeps their place: the seats are offered again in queue order, so nobody behind them sits first.",
+        "Tournaments on a laptop: when you're knocked out, the line saying where you finished waits until your seat goes as the next hand is dealt, and the space under the table keeps its size until then. In an event without re-entries or rebuys, the table no longer jumps and grows as the result shows: it changes once, with the next deal. At a table that broke, both come about 8 seconds after the result, together with the note that the table has closed.",
+        "Tournaments: once an event is over, the bar over its tables shows only who won, not a stopped clock with the next blinds. Someone still looking at a table that broke is told it has closed and that play goes on at the other tables.",
+        "Seven Card Stud, Stud Hi-Lo and Razz on a computer: each player's cards sit in a row over their nameplate from the first card, instead of tucked into the nameplate until fifth street. The cards no longer jump up and every nameplate no longer narrows at fifth street, and on some screens a table that only deals stud now has bigger seats and cards.",
+        "Dealer's choice: when the host adds seats during a hand while people are on the waitlist, \"If time runs out\" now counts the people who will be offered the new seats, so it names the game a missed pick really deals.",
+        "Watching a table on a delay: the number of seats, who is sitting where, the chip stacks, the stakes (in the table and in a pasted link's preview), the waitlist and the table's log now stay as they were at the moment you are shown, instead of giving away the live table early. Your screen is only sent an update when something you can see changes, so how often it updates no longer tells you when the live hand ended. Asking for a seat, throwing something at a player, sharing a hand, the hand list and hand search are answered from the table as you see it too. Chat and a few other things stay live on purpose; the Fair dealing page lists them.",
+        "Watching on a delay, when the host changes the delay: the new one starts for you when your view reaches the first hand dealt under it. A longer delay makes the break before that hand longer; a shorter one never skips or hides the end of the hand before. When the host turns the delay off, you see the table live once your view has caught up.",
+        "Watching on a delay, when the host stops spectators seeing every card: what is still to come keeps playing, without the cards, instead of stopping for the length of the delay.",
+        "Waitlist: someone watching on a delay is offered a free seat when their view shows it free, and has the full minute to take it from then.",
+        "Public record: at a table whose spectators watch on a delay, a hand's own entry goes into the public record that long after the hand ends (at most 10 minutes), so it doesn't show the hand ending before the people watching see it end. A card shown after the hand waits the same way, and Check this hand says it is waiting for it rather than failing. Buy-ins and cash-outs, even ones made as a hand ends, and everything else still go in at once. The Checking John page says so."
       ]
     },
     {

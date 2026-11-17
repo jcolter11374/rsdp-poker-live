@@ -226,3 +226,29 @@ describe('Table: empty seats (#303)', () => {
     expect(x).toBeLessThan(at.get(2)!.x);
   });
 });
+
+describe('Table: stud cards in a row over the nameplate (#447)', () => {
+  const three = [
+    { card: '??', up: false },
+    { card: '??', up: false },
+    { card: 'Kh', up: true },
+  ];
+  const cardsOf = (n: number) => Array.from({ length: n }, () => ({ card: '??', up: false }));
+  const rows = (gameId: string, n: number) => {
+    const view = tableView('cash', { hand: handView({ gameId, family: gameId === 'stud' ? 'stud' : 'flop' }) }, Object.fromEntries(HELD.map((s) => [s, { cards: n === 3 ? three : cardsOf(n) }])));
+    const { container, unmount } = render(<Table view={view} skew={0} fmt={fmt} />);
+    const out = [...container.querySelectorAll('.seat[data-seat]')].map((el) => el.classList.contains('long-hand'));
+    unmount();
+    return out;
+  };
+
+  it('shows a stud hand as a row from third street, so the cards and nameplates hold still at fifth', () => {
+    expect(rows('stud', 3)).toEqual(HELD.map(() => true));
+    expect(rows('razz', 4)).toEqual(HELD.map(() => true));
+  });
+
+  it("still tucks Hold'em and four-card Omaha cards into the nameplate", () => {
+    expect(rows('nlhe', 2)).toEqual(HELD.map(() => false));
+    expect(rows('plo4', 4)).toEqual(HELD.map(() => false));
+  });
+});

@@ -3,7 +3,7 @@ import { bombPotSchema } from '@rsdp/engine/modifiers';
 import type { TableSettings } from '@rsdp/engine/settings';
 import { getVariant } from '@rsdp/engine/variants';
 import type { TournamentSettings } from '@rsdp/tournament';
-import { dealtSizes, splitsPot } from './handSizes';
+import { dealtShapes, splitsPot } from './handSizes';
 
 /*
  * Every game a table deals, so a mixed table is laid out once for all of them and its seats don't move when the
@@ -88,11 +88,14 @@ export function dealableGames(games: readonly string[], players: number): string
 }
 
 /**
- * Games whose hands tuck four cards beside the nameplate (Table.tsx: a wider seat and felt margin). The stud games tuck
- * theirs the same way on third and fourth street, before the row goes over the nameplate (#385).
+ * Games whose hands tuck four cards beside the nameplate (Table.tsx: a wider seat and felt margin). Stud's three or four
+ * cards don't: its hand is a row over the nameplate from third street (#447).
  */
-export const FOUR_CARD_GAMES: readonly string[] = ['plo4', 'plo8', 'badugi', 'stud', 'razz', 'stud8'];
-/** Games that show a row of cards over the nameplate (Table.tsx: more room above the top seats in the wide layout). */
+export const FOUR_CARD_GAMES: readonly string[] = ['plo4', 'plo8', 'badugi'];
+/**
+ * Games that show a row of cards over the nameplate from their first card (Table.tsx: more room above the top seats in
+ * the wide layout): those whose hand ever goes past four cards (rowHand in handSizes.ts).
+ */
 export const LONG_HAND_GAMES: readonly string[] = ['plo5', 'plo6', 'plo5-8', 'plo6-8', 'stud', 'razz', 'stud8', 'td27'];
 
 /**
@@ -103,5 +106,5 @@ export const LONG_HAND_GAMES: readonly string[] = ['plo5', 'plo6', 'plo5-8', 'pl
  */
 export function layoutOf(games: readonly string[]): string {
   const any = (list: readonly string[]) => games.some((g) => list.includes(g));
-  return `${dealtSizes(games).join('-')}|${any(FOUR_CARD_GAMES)}|${any(LONG_HAND_GAMES)}|${games.some((g) => splitsPot(g))}`;
+  return `${dealtShapes(games).join('-')}|${any(FOUR_CARD_GAMES)}|${any(LONG_HAND_GAMES)}|${games.some((g) => splitsPot(g))}`;
 }

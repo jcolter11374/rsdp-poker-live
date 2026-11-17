@@ -294,10 +294,13 @@ export async function leaderData(db: Db): Promise<LeaderData> {
  * Everyone's results at real cash games since `since` (all time without it).
  * A table's result counts in the period its last hand was played in. The
  * hands come from `data`; games and accounts no earlier board needed are read
- * now, and kept in `data` for the next board.
+ * now, and kept in `data` for the next board. Games in `without` are left out
+ * whole: their hands, results and names (#469).
  */
-export async function leaderboard(db: Db, data: LeaderData, since?: Date): Promise<LeaderRow[]> {
-  const { hands: all, real, lastHand } = data;
+export async function leaderboard(db: Db, data: LeaderData, since?: Date, without?: ReadonlySet<string>): Promise<LeaderRow[]> {
+  const real = without?.size ? new Set([...data.real].filter((id) => !without.has(id))) : data.real;
+  const all = without?.size ? data.hands.filter((r) => real.has(r.table_id)) : data.hands;
+  const lastHand = without?.size ? new Map([...data.lastHand].filter(([id]) => real.has(id))) : data.lastHand;
   const from = since?.getTime() ?? -Infinity;
   const inPeriod = [...lastHand].filter(([, at]) => at >= from).map(([id]) => id);
   const handTables = new Set(all.filter((r) => real.has(r.table_id) && new Date(r.started_at).getTime() >= from).map((r) => r.table_id));

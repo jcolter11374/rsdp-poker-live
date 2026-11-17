@@ -15,7 +15,7 @@ import {
   type TournamentState,
 } from '@rsdp/tournament';
 import { LocalTournamentClient, tournamentClient, type Session } from './client';
-import { blinds, chips, clockText, countdown, gamesText, localTime, money, ordinal, tableRulesText } from './format';
+import { blinds, chips, clockText, countdown, gamesText, localTime, money, ordinal, prizesNote, tableRulesText } from './format';
 import { navigate, useFollowSeat, useNow, useSession, useTournament } from './hooks';
 import { savedName } from '../socket';
 import { CoHostPanel, EventPanel, PlayerManager, RequestRow } from './HostPanels';
@@ -262,7 +262,7 @@ function Hero({ state, now }: { state: TournamentState; now: number }) {
     <div className={`tn-hero ${c.onBreak ? 'tn-on-break' : ''}`}>
       <p className="tn-hero-label">
         {c.onBreak ? `Break after level ${c.levelNumber}` : `Level ${c.levelNumber} of ${levels}`}
-        {state.status === 'paused' ? ' · paused' : ''}
+        {state.status === 'paused' ? (state.outage && !state.outage.hostPaused ? ` · paused, resuming in ${countdown(state.outage.resumeAt - now)}` : ' · paused') : ''}
         {sum.handForHand ? ' · hand-for-hand' : ''}
       </p>
       <p className="tn-hero-main">{c.msLeft === null ? '∞' : countdown(c.msLeft)}</p>
@@ -570,7 +570,7 @@ function Payouts({ state, now }: { state: TournamentState; now: number }) {
     <>
       <p className="muted">
         For display only. {money(p.money.buyIn)} buy-in{p.money.rebuy && state.settings.rebuy.max ? `, ${money(p.money.rebuy)} rebuy` : ''}
-        {p.money.addOn && state.settings.addOn.max ? `, ${money(p.money.addOn)} add-on` : ''}. Updates as players join.
+        {p.money.addOn && state.settings.addOn.max ? `, ${money(p.money.addOn)} add-on` : ''}.{prizesNote(state.status, sum)}
       </p>
       <PrizeList prizes={prizes} />
     </>

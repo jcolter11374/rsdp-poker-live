@@ -145,6 +145,12 @@ export interface LedgerView {
   net: number;
   /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
   bot?: true;
+  /**
+   * Sent only to people who see the table live (players, the host): these totals changed while a hand waited for the
+   * spectator delay and go in the public record once spectators have seen it end, so the record still has the ones
+   * before (#471).
+   */
+  recordWaits?: true;
 }
 
 export interface ChatView {
@@ -180,6 +186,8 @@ export interface TableView {
   pendingSettings: SettingsPatch | null;
   started: boolean;
   paused: boolean;
+  /** A tournament table paused after the site had been away: when play resumes at the latest. Null otherwise. */
+  resumeAt?: number | null;
   stopAfterHand: boolean;
   /**
    * Hand-history and full-log downloads are closed to me for now, so nobody
@@ -320,6 +328,11 @@ export interface ChoiceView {
   deadline: number | null;
   /** People counted when checking a game fits: everyone sitting down, and anyone a seat is held for. */
   count: number;
+  /**
+   * `count` once the host's change waiting for the next hand applies, when it differs: a bigger table offers its new
+   * seats to the waitlist before a missed pick is dealt (#459). `fallback` is worked out with it.
+   */
+  comingCount?: number;
   /** While a smaller game is picked or played, the table seats at most this many (null: no limit). */
   cap: number | null;
   /** Every seat it can deal is taken or held (counting seat requests), so the empty seats are closed. */

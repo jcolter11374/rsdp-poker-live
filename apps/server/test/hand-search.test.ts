@@ -12,6 +12,7 @@ import { dbIdentity, dbStore } from '../src/storage';
 import { dbSharedHands } from '../src/shared';
 import { parseCards } from '../src/handSearch';
 import { socketClient, type Client } from './socket-client';
+import { FakeClock } from './fake-clock';
 
 let db: Db;
 let server: ReturnType<typeof createApp>;
@@ -144,6 +145,204 @@ describe('hand search and a stopped game', () => {
     const found = (await search('', DAN)).hands.find((h) => h.tableId === tableId)!;
     expect(found.hand.fair).toBeTruthy();
     expect(found.hand.fair!.serverSeed).toBeNull();
+  });
+});
+
+describe('hand search for someone now watching on a delay (#435)', () => {
+  it('keeps the reveal time their view has when the host stops the game at the end of the live hand', { timeout: 30_000 }, async () => {
+    const FAY = 'hs-ivy-secret-0123456789';
+    const GUS = 'hs-jon-secret-0123456789';
+    const HAL = 'hs-kim-secret-0123456789';
+    const fay = client(FAY);
+    const gus = client(GUS);
+    const hal = client(HAL);
+    const { tableId } = await fay.call<{ tableId: string }>('table:create', {
+      settings: { table: { name: 'Delayed search' }, seating: { requireApproval: false }, spectators: { allowed: true, delaySeconds: 60 }, timing: { autoStartNextHand: false } },
+    });
+    for (const c of [fay, gus, hal]) await c.call('table:join', { tableId });
+    await fay.call('seat:request', { seat: 0, name: 'Fay', stack: 100 });
+    await gus.call('seat:request', { seat: 1, name: 'Gus', stack: 100 });
+    await hal.call('seat:request', { seat: 2, name: 'Hal', stack: 100 });
+    await fay.until((v) => v.seats.filter(Boolean).length === 3);
+    await fay.call('host:start');
+    const players = [fay, gus, hal];
+    const playOut = async (n: number) => {
+      for (let i = 0; i < 10; i++) {
+        const v = await fay.until((h) => h.hand?.handNumber === n);
+        if (v.hand!.phase === 'complete') return;
+        const mover = players.find((c) => c.view()?.legal && c.view()?.hand?.handNumber === n);
+        if (mover) await mover.call('hand:act', { type: 'fold' }).catch(() => {});
+        await pause(50);
+      }
+    };
+    await playOut(1);
+    await fay.until((h) => h.hand?.phase === 'complete');
+    // Hal stands up and watches, a minute behind; hand 2 is dealt without him and the host stops the game in it.
+    (hal.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+    await fay.until((v) => !v.seats[2]);
+    await fay.call('host:deal');
+    await fay.until((h) => h.hand?.handNumber === 2 && h.hand.phase !== 'complete');
+    await fay.call('host:stop');
+    await pause(900);
+    const revealsAt = async () => (await search('', HAL)).hands.find((h) => h.tableId === tableId)!.hand.fair as { revealsAt: number | null; serverSeed: string | null };
+    const before = await revealsAt();
+    expect(before.serverSeed).toBeNull();
+    // The live hand ends and the stop takes effect: a minute behind, Hal's search still has the reveal time as it was.
+    await playOut(2);
+    await fay.until((h) => !h.started);
+    await pause(900);
+    expect(await revealsAt()).toEqual(before);
+  });
+});
+
+describe('hand search for someone who just left a table with a delay (#435)', () => {
+  it('has their last hand to its end at once, but a card shown after they left only once their view has it', { timeout: 30_000 }, async () => {
+    // A server of its own on a fake clock, on the same database, so the hand can run longer than the delay.
+    const clock = new FakeClock();
+    clock.t = Date.now();
+    const own = createApp({ clock, identity: dbIdentity(db), store: dbStore(db), shared: dbSharedHands(db), accounts: db, log: () => {} });
+    await new Promise<void>((resolve) => own.http.listen(0, resolve));
+    const at = `http://localhost:${(own.http.address() as AddressInfo).port}`;
+    const mine: Client[] = [];
+    try {
+      const FAY = 'hs-lou-secret-0123456789';
+      const GUS = 'hs-max-secret-0123456789';
+      const HAL = 'hs-ned-secret-0123456789';
+      const [fay, gus, hal] = [FAY, GUS, HAL].map((t) => socketClient(at, t, mine));
+      const { tableId } = await fay.call<{ tableId: string }>('table:create', {
+        settings: { table: { name: 'Left on a delay' }, seating: { requireApproval: false }, spectators: { allowed: true, delaySeconds: 15 }, timing: { decisionSeconds: 0, autoStartNextHand: false } },
+      });
+      for (const c of [fay, gus, hal]) await c.call('table:join', { tableId });
+      await fay.call('seat:request', { seat: 0, name: 'Lou', stack: 100 });
+      await gus.call('seat:request', { seat: 1, name: 'Max', stack: 100 });
+      await hal.call('seat:request', { seat: 2, name: 'Ned', stack: 100 });
+      await fay.until((v) => v.seats.filter(Boolean).length === 3);
+      await fay.call('host:start');
+      await fay.until((v) => !!v.hand && v.hand.phase !== 'complete');
+      // The hand runs past the delay, so what spectators are shown is the hand being played.
+      clock.advance(20_000);
+      const players = [fay, gus, hal];
+      for (let i = 0; i < 10; i++) {
+        const v = await fay.until((h) => !!h.hand);
+        if (v.hand!.phase === 'complete') break;
+        const mover = players.find((c) => c.view()?.legal);
+        if (mover) await mover.call('hand:act', { type: 'fold' }).catch(() => {});
+        await pause(50);
+      }
+      await fay.until((v) => v.hand?.phase === 'complete');
+      // Ned stands up as it ends: he now watches 15 s behind, his view still in the hand.
+      (hal.socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+      await fay.until((v) => !v.seats[2]);
+      await pause(300);
+      type Hand = { handId: string; tableId: string; seatCount: number; hand: { events: { t: string }[] } };
+      const find = async () => {
+        const res = await fetch(`${at}/api/hands/search`, { headers: { 'x-guest-token': HAL } });
+        return ((await res.json()) as { hands: Hand[] }).hands.find((h) => h.tableId === tableId)!;
+      };
+      const kinds = (h: { events: { t: string }[] }) => h.events.map((e) => e.t);
+      const found = await find();
+      expect(kinds(found.hand)).toContain('hand-end');
+      expect(found.seatCount).toBe(10);
+      const share = await fetch(`${at}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': HAL }, body: JSON.stringify({ handId: found.handId }) });
+      const link = (await (await fetch(`${at}/api/shared/${((await share.json()) as { id: string }).id}`)).json()) as { seatCount: number; hand: { events: { t: string }[] } };
+      expect(kinds(link.hand)).toEqual(kinds(found.hand));
+      // A player still seated shows a card: Ned's search has it only once his view shows it.
+      await fay.call('hand:show', { cards: [0], handNumber: 1 });
+      await pause(300);
+      expect(kinds((await find()).hand)).not.toContain('show');
+      // The table gets smaller: the hand keeps the size it was played at.
+      await fay.call('host:settings', { patch: { table: { maxSeats: 6 } } });
+      await fay.until((v) => v.seats.length === 6);
+      clock.advance(1_000);
+      await pause(900);
+      expect((await find()).seatCount).toBe(10);
+      clock.advance(20_000);
+      await pause(300);
+      expect(kinds((await find()).hand)).toContain('show');
+    } finally {
+      for (const c of mine) c.close();
+      await own.close();
+    }
+  });
+});
+
+describe('hand search for someone who just left a table with a delay, with the 7-2 bounty turned up on its own (#435)', () => {
+  it('has the 7-2 shown and its bounty paid at once, as the table ended the hand, but not a card shown after', { timeout: 30_000 }, async () => {
+    const clock = new FakeClock();
+    clock.t = Date.now();
+    const own = createApp({ clock, identity: dbIdentity(db), store: dbStore(db), shared: dbSharedHands(db), accounts: db, log: () => {} });
+    await new Promise<void>((resolve) => own.http.listen(0, resolve));
+    const at = `http://localhost:${(own.http.address() as AddressInfo).port}`;
+    const mine: Client[] = [];
+    try {
+      // The host runs the table without a seat: the host watches live, so none of the players is staff.
+      const host = socketClient(at, 'hs-tia-secret-0123456789', mine);
+      const tokens = ['hs-pia-secret-0123456789', 'hs-qin-secret-0123456789', 'hs-rae-secret-0123456789', 'hs-sol-secret-0123456789'];
+      const cs = tokens.map((t) => socketClient(at, t, mine));
+      const { tableId } = await host.call<{ tableId: string }>('table:create', {
+        settings: {
+          table: { name: '7-2 on a delay' },
+          seating: { requireApproval: false },
+          spectators: { allowed: true, delaySeconds: 15 },
+          timing: { decisionSeconds: 0, autoStartNextHand: false },
+          modifiers: { 'bounty-72': { enabled: true, amount: 15, autoShow: true } },
+        },
+      });
+      for (const c of [host, ...cs]) await c.call('table:join', { tableId });
+      for (const [i, c] of cs.entries()) await c.call('seat:request', { seat: i, name: ['Pia', 'Qin', 'Rae', 'Sol'][i], stack: 100 });
+      await host.until((v) => v.seats.filter(Boolean).length === 4);
+      await host.call('host:start');
+      await host.until((v) => !!v.hand && v.hand.phase !== 'complete');
+      // The first to act is given 7-2 (the deck is shuffled; this overwrites the dealt cards).
+      const live = own.tables.get(tableId)!.state.hand!;
+      const first = live.toAct!;
+      live.seats.find((x) => x.seat === first)!.cards = [
+        { card: '7c', up: false },
+        { card: '2d', up: false },
+      ];
+      // The button posted no blind, so folding costs them only the bounty.
+      const payer = live.input.button;
+      expect(payer).not.toBe(first);
+      const other = [0, 1, 2, 3].find((i) => i !== payer && i !== first)!;
+      clock.advance(20_000);
+      await cs[first].call('hand:act', { type: 'raise', to: 20 });
+      for (let i = 0; i < 10; i++) {
+        const v = await host.until((h) => !!h.hand);
+        if (v.hand!.phase === 'complete') break;
+        const mover = cs.find((c) => c.view()?.legal);
+        if (mover) await mover.call('hand:act', { type: 'fold' }).catch(() => {});
+        await pause(50);
+      }
+      await host.until((v) => v.hand?.phase === 'complete');
+      // The payer stands up as it ends: they now watch 15 s behind, their view still in the hand.
+      (cs[payer].socket.emit as (e: string, ...a: unknown[]) => void)('seat:stand', {});
+      await host.until((v) => !v.seats[payer]);
+      await pause(300);
+      type Event = { t: string; kind?: string; seat?: number };
+      type Hand = { handId: string; tableId: string; hand: { events: Event[] } };
+      const find = async (query = '') => {
+        const res = await fetch(`${at}/api/hands/search?${query}`, { headers: { 'x-guest-token': tokens[payer] } });
+        return ((await res.json()) as { hands: Hand[] }).hands.find((h) => h.tableId === tableId);
+      };
+      const found = (await find())!;
+      // The table ended it with the 7-2 turned up and the bounty paid: so does their search, and it counts as a loss.
+      expect(found.hand.events.some((e) => e.t === 'show' && e.seat === first)).toBe(true);
+      expect(found.hand.events.some((e) => e.t === 'transfer' && e.kind === 'bounty-72')).toBe(true);
+      expect((await find('result=lost'))?.handId).toBe(found.handId);
+      const share = await fetch(`${at}/api/hands/share`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-token': tokens[payer] }, body: JSON.stringify({ handId: found.handId }) });
+      const link = (await (await fetch(`${at}/api/shared/${((await share.json()) as { id: string }).id}`)).json()) as { hand: { events: Event[] } };
+      expect(link.hand.events.map((e) => e.t)).toEqual(found.hand.events.map((e) => e.t));
+      // A card a player still seated shows now: only once their view has it.
+      await cs[other].call('hand:show', { cards: [0], handNumber: 1 });
+      await pause(300);
+      expect((await find())!.hand.events.some((e) => e.t === 'show' && e.seat === other)).toBe(false);
+      clock.advance(20_000);
+      await pause(300);
+      expect((await find())!.hand.events.some((e) => e.t === 'show' && e.seat === other)).toBe(true);
+    } finally {
+      for (const c of mine) c.close();
+      await own.close();
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MIXED_GAMES } from '@rsdp/engine/variants';
-import { clockText, gamesText, tableRulesText } from './format';
+import { clockText, gamesText, prizesNote, tableRulesText } from './format';
 
 const RSDP = { decisionSeconds: 10, timeBankSeconds: 20, timeBankRefillHands: 30, rabbitHunt: false };
 
@@ -30,5 +30,18 @@ describe('gamesText', () => {
     // The same games at their usual betting aren't HORSE.
     expect(gamesText({ games: steps('horse').map((s) => s.gameId) })).toBe("No-Limit Hold'em / Pot-Limit Omaha Hi-Lo (8 or better) / Razz / Seven Card Stud / Stud Hi-Lo (8 or better)");
     expect(gamesText({ games: ['nlhe', 'stud'], gameBetting: ['fixed-limit', null] })).toBe("Limit Hold'em / Seven Card Stud");
+  });
+});
+
+describe('prizesNote (#489)', () => {
+  const closed = { registrationOpen: false, rebuysOpen: false, addOnsOpen: false, reEntryOpen: false };
+  it('says the prizes can change only while they can', () => {
+    expect(prizesNote('registering', { ...closed, registrationOpen: true })).toBe(' Updates as players join.');
+    expect(prizesNote('running', { ...closed, rebuysOpen: true })).toBe(' Updates as players buy more chips.');
+    expect(prizesNote('running', closed)).toBe('');
+    expect(prizesNote('cancelled', { ...closed, registrationOpen: true })).toBe('');
+  });
+  it('calls a finished event\'s prizes final, whatever was open when it ended', () => {
+    expect(prizesNote('finished', { ...closed, reEntryOpen: true, registrationOpen: true })).toBe(' These are the final prizes.');
   });
 });

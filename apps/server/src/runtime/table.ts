@@ -26,6 +26,7 @@ import {
   MAX_CHIPS,
   mergePatches,
   parseSettings,
+  SETTINGS_LIMITS,
   SettingsError,
   settingsNotices,
   spectatorsSeeCards,
@@ -80,12 +81,23 @@ export const FAIR_REVEAL_AFTER_MS = 12 * 60 * 60 * 1000;
  */
 export const FAIR_STOP_REVEAL_MS = 30 * 60 * 1000;
 
-/** When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours after it ended. */
-export function fairRevealsAt(fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined, handNumber: number, endedAt: number, stopRevealMs = FAIR_STOP_REVEAL_MS): number {
+/**
+ * When hand `handNumber` becomes checkable under `fair`: once the game stopped after it for long enough, or 12 hours
+ * after it ended. With `asOf`, a stop made after that time is left out: a spectator on a delay sees the table as it
+ * was then, and a reveal time that moved when the live hand ended would tell them it had (#435). A stop lifted since
+ * is gone from `fair`: TableRuntime.fairRevealsAt puts it back.
+ */
+export function fairRevealsAt(
+  fair: Pick<FairState, 'revealedThrough' | 'stopped'> | undefined,
+  handNumber: number,
+  endedAt: number,
+  stopRevealMs = FAIR_STOP_REVEAL_MS,
+  asOf = Infinity,
+): number {
   if (handNumber <= (fair?.revealedThrough ?? 0)) return -Infinity;
   const late = endedAt + FAIR_REVEAL_AFTER_MS;
   const stop = fair?.stopped;
-  return stop && handNumber <= stop.through ? Math.min(late, stop.at + stopRevealMs) : late;
+  return stop && stop.at <= asOf && handNumber <= stop.through ? Math.min(late, stop.at + stopRevealMs) : late;
 }
 /** Production fairLeadMs: browsers send their seeds the moment a commitment appears, so this is ample. */
 export const FAIR_LEAD_MS = 2500;
@@ -159,6 +171,28 @@ export interface RuntimeDeps {
   tips?: TipWorker;
 }
 
+/** What a spectator on a delay is shown of the seats (#435). */
+export interface ShownTable {
+  /** Who sits in each seat in the view they are shown (as many seats as that view has). */
+  seats: (PlayerId | null)[];
+  /** The table time of the seats shown: before any moment is old enough to show, the time of the oldest kept. */
+  at: number;
+  /** The seat their view shows held for them from the waitlist, if any (#452). */
+  offer?: number;
+  /** Seats their view shows held from the waitlist for someone else. */
+  held?: number[];
+  /** How far behind the table that view runs, in ms. */
+  behindMs: number;
+  /**
+   * How long until what happens now shows in that view, in ms. Usually the delay; after the host lengthens it, the
+   * new one, which their view reaches at the first hand dealt under it (D39).
+   */
+  showsNowInMs: number;
+}
+
+/** The one answer a spectator on a delay gets for a seat the live table won't give them, whatever the reason (#435). */
+const SEAT_CLOSED = 'that seat is closed for now';
+
 /** The game, betting and stakes the next hand is dealt with. */
 interface HandSetup {
   game: GameSpec;
@@ -177,8 +211,27 @@ export class TableRuntime {
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
   onHandFinished: (record: HandRecord) => void = () => {};
+  /**
+   * The players whose latest buy-in and cash-out totals haven't gone in the public record yet: they changed as a hand
+   * ended, and wait until spectators on a delay see it end (#471). The app sets this; seated players' ledger checks
+   * wait for those rows.
+   */
+  ledgerWaiting: () => ReadonlySet<PlayerId> = () => new Set();
   /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
   onLine: (line: TableLine) => void = () => {};
+  /**
+   * For someone watching on a delay (#435): what their view shows, or null when they see the table live. app.ts keeps
+   * the delayed feed and replaces this when it attaches the table. Without it (unit tests), anyone unseated and not
+   * staff at a table with a delay is shown the live seats, as they are now, with the delay's clocks.
+   */
+  shownTo: (playerId: PlayerId) => ShownTable | null = (playerId) => {
+    const delayMs = this.settings.spectators.delaySeconds * 1000;
+    if (delayMs <= 0 || this.seatOf(playerId) || this.isStaff(playerId)) return null;
+    const offers = this.state.offers ?? [];
+    const offer = offers.find((o) => o.playerId === playerId)?.seat;
+    const held = offers.filter((o) => o.playerId !== playerId).map((o) => o.seat);
+    return { seats: this.state.seats.map((x) => x?.playerId ?? null), at: this.clock.now(), behindMs: delayMs, showsNowInMs: delayMs, held, ...(offer === undefined ? {} : { offer }) };
+  };
 
   private readonly clock: Clock;
   private readonly rng: Rng;
@@ -205,6 +258,26 @@ export class TableRuntime {
   private readonly tips: TipWorker;
   /** Why the last tournament deal failed: the table retries on every poke, so each reason is logged once. */
   private dealFailure: string | null = null;
+  /**
+   * Stops the host has lifted lately, oldest first, as they stood before the game went on. A spectator on a delay
+   * sees the table as it was up to the longest delay ago, so their reveal times come from these (fairAsOf) and don't
+   * move when the game starts again live (#435). Kept in memory only: a restart starts the delayed feed afresh too.
+   */
+  private fairLifts: { through: number; at: number; liftedAt: number; revealedBefore: number }[] = [];
+  /**
+   * Who added each bot that has left in the last few minutes, so its owner watching on a delay, still shown it, is
+   * answered as if it were here (goneOwnBotShown, #435). In memory only, like the delayed feed.
+   */
+  private goneBots = new Map<PlayerId, { ownerId: PlayerId; at: number }>();
+  /** When each seat last had someone in it, as this server saw it (see takenSince). */
+  private seatTakenAt: number[] = [];
+  /**
+   * Who left as hand `handNumber` ended because they had said they would before the result (leaveAfterHand: they
+   * stood up, were removed, or had their seat released while offline). While that hand's runout is dealt out,
+   * Dealer's choice can count them as gone (comingCount): that gives nothing away. Never saved: after a restart they
+   * are counted like the runout's other players until it has been shown.
+   */
+  private leftAfterHand: { handNumber: number; players: Set<PlayerId> } | null = null;
   /** Dealer's choice: the Pick chip and the pick clock (choice.ts). */
   readonly choice: DealersChoice;
 
@@ -226,6 +299,7 @@ export class TableRuntime {
       canPick: (seat) => this.canPick(seat),
       tableCount: () => this.tableCount(),
       seatRoom: () => this.seatRoom(null),
+      comingCount: (next) => this.comingCount(next),
       log: (text) => this.log(text),
     });
     // Dealer's choice: a snapshot from before #421 can have the first hand's button on the empty seat of a first chooser
@@ -374,6 +448,12 @@ export class TableRuntime {
     if (this.seatOf(playerId) || this.tournament?.stillPlaying?.(playerId)) return true;
     // A tournament's co-hosts are named in the lobby, so the event is asked as well as the table.
     if (this.isStaff(playerId) || this.tournament?.isStaff?.(playerId)) return false;
+    return this.neverPlayedHere(playerId);
+  }
+
+  /** Never dealt a hand here and never sat down here: neither handNames nor the ledger has them. */
+  neverPlayedHere(playerId: PlayerId): boolean {
+    const s = this.state;
     return !(s.handNames && Object.hasOwn(s.handNames, playerId)) && !Object.hasOwn(s.ledger, playerId);
   }
 
@@ -445,22 +525,31 @@ export class TableRuntime {
     const name = cleanName(input.name);
     let { seat } = input;
     const { stack } = input;
-    if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
-    if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
-    const offered = this.offers().find((o) => o.playerId === playerId);
-    if (offered) seat = offered.seat;
-    else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
-      const open = this.openSeats(playerId);
-      if (!open.length) throw new ActionError('every seat is taken');
-      seat = open[this.rng(open.length)];
+    // A spectator on a delay is answered from the seats they are shown. Someone holding a seat offered from the
+    // waitlist takes that seat, as below, once their view shows them that offer and they ask for it: before, the offer
+    // would tell them it came free. An offer their view still shows after the live table let it go (a smaller table,
+    // the seat given to someone else) is answered from the seats shown, so its Take it doesn't seat them in the seat
+    // the live table offers now, or tell them it has gone.
+    const offer = this.state.offers?.find((o) => o.playerId === playerId);
+    const view = this.shownTo(playerId);
+    const live = offer && view && seat === offer.seat && view.offer === offer.seat && offer.seat < view.seats.length && !view.seats[offer.seat] && !this.takenSince(offer.seat, view.at);
+    const shown = live ? null : view;
+    if (shown) seat = this.shownSeat(playerId, seat, stack, shown);
+    else {
+      if (!Number.isInteger(seat) || seat < 0 || seat >= this.state.seats.length) throw new ActionError('no such seat');
+      if (this.seatOf(playerId)) throw new ActionError('you already have a seat');
+      const offered = this.offers().find((o) => o.playerId === playerId);
+      if (offered) seat = offered.seat;
+      else if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
+        const open = this.openSeats(playerId);
+        if (!open.length) throw new ActionError('every seat is taken');
+        seat = open[this.rng(open.length)];
+      }
+      // Someone who needs the host's OK taking their waitlist offer only asks for the seat. Dealer's choice didn't count
+      // the offer (tableCount), so the request waits while a smaller game is on, and the host's approval checks the room.
+      this.checkSeatLive(playerId, seat, !(offered && this.needsApproval(playerId)));
+      this.checkBuyIn(playerId, stack);
     }
-    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
-    this.checkSeatFree(playerId, seat);
-    this.checkSeatKept(seat, playerId);
-    // Someone who needs the host's OK taking their waitlist offer only asks for the seat. Dealer's choice didn't count
-    // the offer (tableCount), so the request waits while a smaller game is on, and the host's approval checks the room.
-    if (!(offered && this.needsApproval(playerId))) this.checkRoom(playerId);
-    this.checkBuyIn(playerId, stack);
     // A new request replaces your earlier one (which never holds a seat against you).
     this.state.requests = this.state.requests.filter((r) => !(r.playerId === playerId && r.kind === 'seat'));
     // Sitting (or asking to) takes you off the waitlist; an offered seat is yours now.
@@ -473,6 +562,48 @@ export class TableRuntime {
       this.log(`${name} asked for seat ${seat + 1} with ${this.money(stack)}`);
     }
     this.sync();
+  }
+
+  /** A seat against the live table: empty, nobody else waiting on it, not dropped or kept by a smaller table, room to sit. */
+  private checkSeatLive(playerId: PlayerId, seat: number, room = true) {
+    if (this.state.seats[seat]) throw new ActionError('that seat is taken');
+    this.checkSeatFree(playerId, seat);
+    this.checkSeatKept(seat, playerId);
+    if (room) this.checkRoom(playerId);
+  }
+
+  /**
+   * The seat a spectator on a delay gets (#435). Their view runs behind the table, so they are answered from the seats
+   * it shows: an answer worked out against the live seats could tell them early that the live hand has ended (a
+   * player leaving after it has gone, a smaller table has taken effect). Checks of their own come first; then the seat
+   * against what they are shown; then anything the live table refuses gets one answer, the same whatever the reason.
+   */
+  private shownSeat(playerId: PlayerId, asked: number, stack: number, shown: ShownTable): number {
+    // Someone who has just left live is still shown in their seat, so they hear what they heard before it.
+    if (this.seatOf(playerId) || shown.seats.includes(playerId)) throw new ActionError('you already have a seat');
+    this.checkBuyIn(playerId, stack);
+    if (!Number.isInteger(asked) || asked < 0 || asked >= shown.seats.length) throw new ActionError('no such seat');
+    const free = (i: number) => i < shown.seats.length && !shown.seats[i];
+    let seat = asked;
+    if (this.settings.seating.randomSeats && !this.can(playerId, 'players')) {
+      if (!shown.seats.some((x) => !x)) throw new ActionError('every seat is taken');
+      // Only a seat free both live and in their view: one they can see is free, that the live table can give.
+      const open = this.openSeats(playerId).filter((i) => free(i) && !shown.held?.includes(i) && !this.takenSince(i, shown.at));
+      if (!open.length) throw new ActionError(SEAT_CLOSED);
+      seat = open[this.rng(open.length)];
+    } else if (!free(seat)) throw new ActionError('that seat is taken');
+    // Held in their view for someone else from the waitlist: closed, as when it is held live, though the live table
+    // may have offered it to them since (the one it was held for has turned it down).
+    if (shown.held?.includes(seat)) throw new ActionError(SEAT_CLOSED);
+    // Someone has sat there live since the moment they are shown, though it may be free again: it stays closed until
+    // their view gets there, or a yes now would tell them that player has gone.
+    if (seat >= this.state.seats.length || this.takenSince(seat, shown.at)) throw new ActionError(SEAT_CLOSED);
+    try {
+      this.checkSeatLive(playerId, seat);
+    } catch (e) {
+      throw e instanceof ActionError ? new ActionError(SEAT_CLOSED) : e;
+    }
+    return seat;
   }
 
   cancelRequest(playerId: PlayerId) {
@@ -645,6 +776,66 @@ export class TableRuntime {
   }
 
   /**
+   * Dealer's choice: tableCount once the host's change waiting for the next hand (`next`) applies, as the table will
+   * be when a missed pick is dealt (#459). The deal applies the change before the pick clock starts, and upkeep then
+   * offers the seats a bigger table opens to the waitlist: one for each online player waiting without an offer, while
+   * there are free seats nobody holds and the game being played has room, in queue order. As in tableCount, an offer to
+   * someone who still needs the host's OK isn't counted, though it takes a seat. Players leaving after this hand are
+   * gone by then, and their seats are offered too. (The waitlist itself is switched at once, never with the next hand; a
+   * smaller table has already let go of offers in the seats it drops.) While an all-in runout is still being dealt
+   * out, its players' seats stay taken, as tableCount still counts them (revealSeats): the answer doesn't change with
+   * whether one of them busted. Only those who said before the result that they were leaving count as gone then,
+   * and one of them who has asked for a seat again since counts as holding it. Anyone in the runout who has since
+   * sat down elsewhere, or been offered or asked for another seat, leaves their seat in it free, and counts once where
+   * they are now, if tableCount will count them there.
+   */
+  private comingCount(next: TableSettings): number {
+    const s = this.state;
+    const count = this.tableCount();
+    if (!next.seating.waitlist || next.table.maxSeats <= s.seats.length) return count;
+    const reveal = this.revealSeats();
+    const last = s.history.at(-1);
+    const left = this.leftAfterHand;
+    const gone = reveal.size && last && left?.handNumber === last.handNumber ? last.hand.seats.filter((hs) => left.players.has(hs.playerId) && !this.seatOf(hs.playerId)) : [];
+    const leaving = new Set([...s.seats.flatMap((x, i) => (x?.leaveAfterHand ? [i] : [])), ...gone.map((hs) => hs.seat)]);
+    const offered = new Set(this.offers().map((o) => o.playerId));
+    const requested = new Set(s.requests.filter((r) => r.kind === 'seat').map((r) => r.playerId));
+    // A runout seat whose player has since sat down in another seat, or been offered or asked for one, is free once
+    // the runout has been dealt out.
+    const movedOn = new Set(
+      reveal.size && last
+        ? last.hand.seats.filter((hs) => s.seats[hs.seat]?.playerId !== hs.playerId && (this.seatOf(hs.playerId) || offered.has(hs.playerId) || requested.has(hs.playerId))).map((hs) => hs.seat)
+        : [],
+    );
+    const held = new Set([
+      ...this.offers().map((o) => o.seat),
+      ...s.requests.filter((r) => r.kind === 'seat').map((r) => r.seat!),
+      ...[...reveal].filter((i) => !leaving.has(i) && !movedOn.has(i)),
+    ]);
+    let open = 0;
+    for (let i = 0; i < next.table.maxSeats; i++) if ((!s.seats[i] || leaving.has(i)) && !held.has(i)) open++;
+    const waiting = this.queue().filter((w) => !offered.has(w.playerId) && this.isOnline(w.playerId));
+    // A leaver gone in the runout who has since been offered a seat, or asked for one, holds it once the runout has
+    // been dealt out: tableCount counts their offer then, if it counts, and seatRoom takes their hold off the room.
+    // Until then goneInRunout hides both, and counts them as sitting down instead.
+    const back = gone.filter((hs) => offered.has(hs.playerId) && !this.needsApproval(hs.playerId)).length;
+    const holding = gone.filter((hs) => offered.has(hs.playerId) || requested.has(hs.playerId)).length;
+    // Anyone else in the runout who has stood up since and holds only what tableCount won't count once it is over (a
+    // seat request, or an offer while they need the host's OK) counts as gone too. A bot never holds either, so this
+    // doesn't depend on whether one busted.
+    const leavers = new Set(gone.map((hs) => hs.playerId));
+    const stray =
+      reveal.size && last
+        ? last.hand.seats.filter((hs) => !leavers.has(hs.playerId) && !this.seatOf(hs.playerId) && (requested.has(hs.playerId) || offered.has(hs.playerId)) && !(offered.has(hs.playerId) && !this.needsApproval(hs.playerId))).length
+        : 0;
+    // Leavers count toward the room the game being played leaves (seatRoom) until they go.
+    const room = this.seatRoom(null);
+    const fill = Math.max(0, Math.min(open, waiting.length, room === null ? Infinity : room + leaving.size - holding));
+    // Seats are offered in queue order, and one offered to someone who still needs the host's OK isn't counted (#453).
+    return count - leaving.size + back - stray + waiting.slice(0, fill).filter((w) => !this.needsApproval(w.playerId)).length;
+  }
+
+  /**
    * Dealer's choice: how many more people may sit (or be promised a seat) while a smaller game is picked or played,
    * not counting `playerId`'s own held seat. Someone taking a seat held for them (a waitlist offer, or a seat request
    * the host approves) counts only the other counted waitlist offers, as the check that the game fits did
@@ -663,7 +854,7 @@ export class TableRuntime {
   private checkRoom(playerId: PlayerId | null, asker: PlayerId | null = playerId) {
     const room = this.seatRoom(playerId);
     if (room === null || room > 0) return;
-    if (asker !== null && !this.seatOf(asker) && !this.isStaff(asker) && this.settings.spectators.delaySeconds > 0) throw new ActionError('that seat is closed for now');
+    if (asker !== null && this.shownTo(asker) !== null) throw new ActionError(SEAT_CLOSED);
     const cap = this.choice.seatCap()!;
     throw new ActionError(`${gameTitle(cap.gameId, cap.betting)} seats at most ${cap.cap} players, so the other seats are closed until the next game`);
   }
@@ -1075,8 +1266,18 @@ export class TableRuntime {
   private fairResumed() {
     const f = this.state.fair;
     if (!f?.stopped) return;
-    if (this.clock.now() >= f.stopped.at + this.fairStopRevealMs) f.revealedThrough = Math.max(f.revealedThrough, f.stopped.through);
+    const now = this.clock.now();
+    // Kept while a spectator on a delay may still be shown the game stopped (see fairLifts).
+    const shownSince = now - SETTINGS_LIMITS.spectatorDelaySeconds.max * 1000;
+    this.fairLifts = [...this.fairLifts.filter((l) => l.liftedAt >= shownSince), { ...f.stopped, liftedAt: now, revealedBefore: f.revealedThrough }];
+    if (now >= f.stopped.at + this.fairStopRevealMs) f.revealedThrough = Math.max(f.revealedThrough, f.stopped.through);
     delete f.stopped;
+  }
+
+  /** The stop and the hands opened as they stood at `asOf`: from before the first stop lifted since, if any (#435). */
+  private fairAsOf(asOf: number): Pick<FairState, 'revealedThrough' | 'stopped'> | undefined {
+    const lift = this.fairLifts.find((l) => l.liftedAt > asOf);
+    return lift ? { revealedThrough: lift.revealedBefore, stopped: { through: lift.through, at: lift.at } } : this.state.fair;
   }
 
   /** When the hands the last stop covers open, while that's still to come. */
@@ -1095,9 +1296,14 @@ export class TableRuntime {
     return Math.max(f.revealedThrough, stopOpen);
   }
 
-  /** When a finished hand's server seed may be shown (see fairRevealsAt). */
-  fairRevealsAt(handNumber: number, endedAt: number): number {
-    return fairRevealsAt(this.state.fair, handNumber, endedAt, this.fairStopRevealMs);
+  /**
+   * When a finished hand's server seed may be shown (see fairRevealsAt). With `asOf`, as the table stood then: a stop
+   * made later is left out, and one lifted later still counts (#435). Compare that answer with `asOf`, not now: a stop
+   * lifted before its half hour was up still shows that half hour, and the live table keeps those hands private.
+   */
+  fairRevealsAt(handNumber: number, endedAt: number, asOf?: number): number {
+    const fair = asOf === undefined ? this.state.fair : this.fairAsOf(asOf);
+    return fairRevealsAt(fair, handNumber, endedAt, this.fairStopRevealMs, asOf);
   }
 
   fairRevealed(handNumber: number, endedAt: number): boolean {
@@ -1258,6 +1464,25 @@ export class TableRuntime {
     // Tournament tables hold through the director's gate when the tournament pauses.
     if (this.isTournament) throw new ActionError('pause the tournament from its lobby');
     this.setPaused(value);
+  }
+
+  /**
+   * A tournament table after the server had been away (#493): every clock stops where it is, as in a pause, until
+   * the tournament resumes play: at `resumeAt` at the latest, sooner when everyone is back or the host says so.
+   */
+  holdForOutage(resumeAt: number) {
+    if (!this.isTournament) return;
+    this.state.resumeAt = resumeAt;
+    if (this.state.paused) this.sync();
+    else this.setPaused(true);
+  }
+
+  /** Play resumes after holdForOutage; nothing for a table that wasn't held. */
+  releaseOutageHold() {
+    if (this.state.resumeAt == null) return;
+    this.state.resumeAt = null;
+    if (this.state.paused) this.setPaused(false);
+    else this.sync();
   }
 
   /** Freezes every clock where it is; resuming gives back the same time. */
@@ -1827,11 +2052,16 @@ export class TableRuntime {
     );
   }
 
-  /** Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. */
+  /**
+   * Who may throw a gesture at whom: anyone with the table open, at a seated player other than themselves. A
+   * spectator on a delay may throw at whoever their view shows seated, so the answer never tells them early that
+   * someone has left the live table (#435).
+   */
   checkGesture(from: PlayerId, to: PlayerId) {
     if (this.state.settings.chat.gestures === false) throw new ActionError('the host has turned gestures off');
     if (from === to) throw new ActionError('pick another player');
-    if (!this.seatOf(to)) throw new ActionError('that player is not seated');
+    const shown = this.shownTo(from);
+    if (shown ? !shown.seats.includes(to) : !this.seatOf(to)) throw new ActionError('that player is not seated');
   }
 
   // ---------------------------------------------------------------- practice bots
@@ -1886,8 +2116,13 @@ export class TableRuntime {
   /** The bot's owner or the host takes a bot away (after folding its hand). */
   removeBot(by: PlayerId, botId: PlayerId) {
     const bot = this.botInfo(botId);
+    // Someone who sees the table live can see it has gone. A spectator on a delay who may not remove it hears that
+    // whether or not it is still here: they could otherwise learn early that a bot left the live table (busted out
+    // when its hand ended, say) (#435). Its owner, whose view still shows it, is answered as if it were: removed.
+    if (!bot && this.shownTo(by) === null) throw new ActionError('no such bot');
+    if (!bot && this.goneOwnBotShown(by, botId)) return;
+    if (bot?.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (!bot) throw new ActionError('no such bot');
-    if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError('only its owner or the host can remove a bot');
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can remove a bot the host or a co-host added");
     if (this.state.requests.some((r) => r.playerId === botId)) {
       this.state.requests = this.state.requests.filter((r) => r.playerId !== botId);
@@ -1907,15 +2142,27 @@ export class TableRuntime {
   /** The bot's owner or the host changes how well it plays, from its next move on. */
   setBotLevel(by: PlayerId, botId: PlayerId, level: BotLevel) {
     const bot = this.botInfo(botId);
-    if (!bot) throw new ActionError('no such bot');
+    // As removeBot: a spectator on a delay who may not change it hears the same whether or not it is still here (#435).
+    const allowed = bot?.ownerId === by || this.can(by, 'players');
+    if (!bot && (allowed || this.shownTo(by) === null)) throw new ActionError('no such bot');
     if (!BOT_LEVELS.includes(level)) throw new ActionError('no such level');
-    if (bot.ownerId !== by && !this.can(by, 'players')) throw new ActionError("only its owner or the host can change a bot's level");
+    if (!bot && this.goneOwnBotShown(by, botId)) return;
+    if (!allowed || !bot) throw new ActionError("only its owner or the host can change a bot's level");
     if (bot.ownerId !== by && by !== this.state.hostId && this.isStaff(bot.ownerId)) throw new ActionError("only the host can change a bot the host or a co-host added");
     if ((bot.level ?? 'normal') === level) return;
     bot.level = level;
     const name = this.seatOf(botId)?.name ?? this.state.requests.find((r) => r.playerId === botId)?.name ?? 'The bot';
     this.log(`${this.nameOf(by)} set ${name} to ${level[0].toUpperCase()}${level.slice(1)}`);
     this.sync();
+  }
+
+  /**
+   * A bot gone from the live table that its owner, watching on a delay, is still shown seated: what they do to it is
+   * answered as if it were still there, so the answer can't tell them it has left (#435).
+   */
+  private goneOwnBotShown(by: PlayerId, botId: PlayerId): boolean {
+    const shown = this.shownTo(by);
+    return !!shown && shown.seats.includes(botId) && this.goneBots.get(botId)?.ownerId === by;
   }
 
   /** A sensible stack (what a bot sits with): the table's minimum or maximum buy-in if set, else 100 big blinds. */
@@ -1958,6 +2205,55 @@ export class TableRuntime {
     }
   }
 
+  /**
+   * A player changed the name on their profile (#491): the seat they hold here, a seat request or waitlist place, and
+   * their ledger row take the new name, and the log says so. Tournament tables keep the name the player registered
+   * with, as the lobby does. Returns whether anything changed.
+   */
+  renamePlayer(playerId: PlayerId, name: string): boolean {
+    if (this.isTournament || this.isBot(playerId)) return false;
+    const clean = cleanName(name);
+    const s = this.state;
+    const seat = this.seatOf(playerId);
+    // Every place this table keeps the player's name beside their id, as [the thing, the field that holds the name].
+    const held: [object, string][] = [
+      ...(seat ? [[seat, 'name'] as [object, string]] : []),
+      ...s.requests.filter((r) => r.playerId === playerId).map((r) => [r, 'name'] as [object, string]),
+      ...(s.waitlist ?? []).filter((w) => w.playerId === playerId).map((w) => [w, 'name'] as [object, string]),
+      ...(s.ledger[playerId] ? [[s.ledger[playerId], 'name'] as [object, string]] : []),
+    ];
+    // The same name where it is shown second-hand: the co-host list, a Dealer's choice pick, and their practice bots.
+    const also: [object, string][] = [
+      ...(s.coHosts ?? []).filter((c) => c.playerId === playerId).map((c) => [c, 'name'] as [object, string]),
+      ...[s.choice?.current, s.choice?.next].flatMap((pick) => (pick && pick.byId === playerId && pick.by !== null ? [[pick, 'by'] as [object, string]] : [])),
+      ...Object.values(s.bots ?? {}).filter((bot) => bot.ownerId === playerId).map((bot) => [bot, 'ownerName'] as [object, string]),
+      ...Object.values(s.ledger).filter((row) => row.bot && row.owner !== undefined && s.bots?.[row.playerId]?.ownerId === playerId).map((row) => [row, 'owner'] as [object, string]),
+    ];
+    const read = ([o, k]: [object, string]) => (o as Record<string, string>)[k];
+    const old = held.map(read).find((n) => n !== clean);
+    const dealtAs = s.handNames?.[playerId];
+    const names = new Set([...held, ...also].map(read));
+    if (dealtAs !== undefined) names.add(dealtAs);
+    names.delete(clean);
+    if (!names.size) return false;
+    // The log's earlier lines keep the old name, so the table keeps it beside the player's id (see formerNames).
+    const former = (s.formerNames ??= []);
+    for (const was of names) if (!former.some((f) => f.playerId === playerId && f.name === was)) former.push({ playerId, name: was });
+    // Someone changing their name over and over only ever pushes out their own earlier names.
+    const mine = former.filter((f) => f.playerId === playerId);
+    if (mine.length > FORMER_NAMES_EACH) {
+      const drop = new Set(mine.slice(0, mine.length - FORMER_NAMES_EACH));
+      s.formerNames = former.filter((f) => !drop.has(f));
+    }
+    for (const [o, k] of [...held, ...also]) (o as Record<string, string>)[k] = clean;
+    if (dealtAs !== undefined) s.handNames![playerId] = clean;
+    // A bot that already has this name takes another, as when a person of that name sits down.
+    if (seat) this.giveWayTo(clean);
+    if (old !== undefined) this.log(`${old} is now ${clean}`);
+    this.sync();
+    return true;
+  }
+
   /** Gives a bot (here, or gone but still in the ledger) a fresh name and picture, everywhere its name shows. */
   private relookBot(playerId: PlayerId) {
     const bot = this.botInfo(playerId);
@@ -1985,6 +2281,10 @@ export class TableRuntime {
   /** A bot gone from the table entirely leaves no trace but its ledger row. */
   private forgetBot(playerId: PlayerId) {
     if (!this.isBot(playerId) || this.seatOf(playerId) || this.state.requests.some((r) => r.playerId === playerId)) return;
+    const now = this.clock.now();
+    const keepMs = SETTINGS_LIMITS.spectatorDelaySeconds.max * 1000;
+    for (const [id, g] of this.goneBots) if (now - g.at > keepMs) this.goneBots.delete(id);
+    this.goneBots.set(playerId, { ownerId: this.state.bots![playerId].ownerId, at: now });
     delete this.state.bots![playerId];
   }
 
@@ -2307,7 +2607,7 @@ export class TableRuntime {
     return hand;
   }
 
-  private handLive() {
+  handLive() {
     return !!this.state.hand && this.state.hand.phase !== 'complete';
   }
 
@@ -2553,6 +2853,7 @@ export class TableRuntime {
   /** After a hand: leavers go, and busted players sit out (a bot buys back in). */
   private leaversGo() {
     const s = this.state;
+    this.leftAfterHand = { handNumber: s.handNumber, players: new Set(s.seats.flatMap((x) => (x?.leaveAfterHand ? [x.playerId] : []))) };
     for (const seat of s.seats) {
       if (!seat) continue;
       if (seat.leaveAfterHand) {
@@ -3092,14 +3393,33 @@ export class TableRuntime {
    * tells listeners. Every public mutation ends here.
    */
   private sync() {
+    this.noteSeats();
     this.upkeep();
     for (let guard = 0; guard < 20; guard++) {
       if (!this.step()) break;
     }
     // A hand that just ended may have freed seats.
     this.upkeep();
+    this.noteSeats();
     this.armTimers();
     this.onChange();
+  }
+
+  /** Notes the time on every seat with someone in it (see takenSince). */
+  private noteSeats() {
+    const now = this.clock.now();
+    this.state.seats.forEach((x, i) => {
+      if (x) this.seatTakenAt[i] = now;
+    });
+  }
+
+  /**
+   * Someone has been in the seat, live, since `at`, though it may be free again (#435): a spectator on a delay shown
+   * the table as it was then is answered as if it were still taken. Only what this server has seen since it started.
+   */
+  private takenSince(seat: number, at: number): boolean {
+    this.noteSeats();
+    return (this.seatTakenAt[seat] ?? -Infinity) > at;
   }
 
   /** Does one due thing. True if something changed and another pass is needed. */
@@ -3250,7 +3570,9 @@ export class TableRuntime {
       // A table that seats newcomers at random offers a random free seat too, so the waitlist isn't a way to pick one.
       const random = s.settings.seating.randomSeats && !this.can(entry.playerId, 'players');
       const seat = random ? open.splice(this.rng(open.length), 1)[0] : open.shift()!;
-      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS });
+      // Someone watching on a delay sees the seat come free, and the offer, that much later: they get the same minute.
+      const laterMs = this.shownTo(entry.playerId)?.showsNowInMs ?? 0;
+      this.offers().push({ seat, playerId: entry.playerId, expiresAt: now + SEAT_OFFER_MS + laterMs });
       this.log(`Seat ${seat + 1} is free: ${entry.name} is next on the waitlist`);
     }
   }
@@ -3294,6 +3616,11 @@ export class TableRuntime {
     const last = this.state.history.at(-1);
     const ms = last ? runoutMs(last.hand.events) : 0;
     return ms ? last!.endedAt + ms : 0;
+  }
+
+  /** An all-in runout from the last hand is still being dealt out in the browsers (see revealSeats). */
+  showingRunout(): boolean {
+    return this.revealSeats().size > 0;
   }
 
   /**
@@ -3515,6 +3842,9 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
+
+/** The most former names a table keeps for one player (formerNames in types.ts). */
+const FORMER_NAMES_EACH = 20;
 
 function cleanName(name: string) {
   const clean = cleanDisplayName(name, NAME_MAX);

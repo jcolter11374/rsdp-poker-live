@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handSizes, splitsPot } from './handSizes';
+import { handSizes, rowHand, splitsPot } from './handSizes';
 
 describe('handSizes (#363: seats are spaced for the cards before they come)', () => {
   it('gives every size a hand reaches in each game', () => {
@@ -14,6 +14,15 @@ describe('handSizes (#363: seats are spaced for the cards before they come)', ()
   it('gives nothing for an unknown game, or before one is chosen', () => {
     expect(handSizes('')).toEqual([]);
     expect(handSizes('not-a-game')).toEqual([]);
+  });
+});
+
+describe('rowHand (#447: a hand that grows past four cards is a row over the nameplate from its first card)', () => {
+  it('is true for stud, triple draw and five- and six-card Omaha, whose hands reach five cards or more', () => {
+    for (const game of ['stud', 'razz', 'stud8', 'td27', 'plo5', 'plo6', 'plo5-8', 'plo6-8']) expect(rowHand(game)).toBe(true);
+  });
+  it('is false for the games that tuck their cards into the nameplate, and for no game', () => {
+    for (const game of ['nlhe', 'plo4', 'plo8', 'badugi', '', 'not-a-game']) expect(rowHand(game)).toBe(false);
   });
 });
 

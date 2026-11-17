@@ -41,6 +41,14 @@ asked for it, it isn't later: the work isn't done until it ships too.
 See "Definition of done" in CONTRIBUTING.md.
 -->
 
+## Docs
+
+<!--
+Which docs describe what this changes, and are they updated here? List
+them, or write "None". The table in CONTRIBUTING.md ("Keeping the docs
+current") says which doc covers what.
+-->
+
 ## Release notes
 
 <!--

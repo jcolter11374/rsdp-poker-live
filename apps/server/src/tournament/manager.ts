@@ -110,11 +110,20 @@ interface Live {
   reports: Map<unknown, () => void>;
   /** A restart's replay of missed reports, while it runs; hands it ends report at the back. */
   replay: Command[] | null;
+  /** The timer that stamps a running event with the time (see SEEN_EVERY_MS), and the outage pause's check. */
+  seenTimer?: unknown;
+  outageTimer?: unknown;
 }
 
 /** Commands that come from tables, never from a browser. */
 const TABLE_COMMANDS = new Set<Command['type']>(['handStarted', 'handResult']);
 const SAVE_DEBOUNCE_MS = 300;
+/** How long a tournament in play stays paused after the server comes back, so its players can return (#493). */
+export const OUTAGE_PAUSE_MS = 2 * 60_000;
+/** How often an event in play is saved with the time, so a restart knows how long the server was away. */
+const SEEN_EVERY_MS = 10_000;
+/** How often an outage pause looks whether every player is back. */
+const OUTAGE_CHECK_MS = 1_000;
 /** Long sleeps are re-armed in steps, so a far-off scheduled start never overflows a timer. */
 const MAX_SLEEP_MS = 60 * 60 * 1000;
 const NAME_MAX = 20;
@@ -454,6 +463,9 @@ export class TournamentManager {
       this.clock.clearTimeout(live.timer);
       this.clock.clearTimeout(live.saveTimer);
       live.timer = live.saveTimer = null;
+      this.clock.clearTimeout(live.seenTimer);
+      this.clock.clearTimeout(live.outageTimer);
+      live.seenTimer = live.outageTimer = null;
     }
     this.clock.clearTimeout(this.sweepTimer);
     this.sweepTimer = null;
@@ -461,7 +473,7 @@ export class TournamentManager {
 
   /** Saves every tournament now (shutdown). */
   async flush() {
-    await Promise.all([...this.live.values()].map((l) => this.deps.store.save(l.state, l.nextId).catch(() => {})));
+    await Promise.all([...this.live.values()].map((l) => this.deps.store.save(this.seen(l), l.nextId).catch(() => {})));
   }
 
   // ---------------------------------------------------------------- internals
@@ -569,6 +581,9 @@ export class TournamentManager {
   }
 
   private changed(live: Live) {
+    // Play resumed (its time came, everyone was back, or the host said so), or the event ended while it was held.
+    if (!live.state.outage) this.releaseTables(live);
+    if (live.state.status === 'running' ? !live.seenTimer : live.seenTimer) this.keepSeen(live);
     this.arm(live);
     this.scheduleSave(live);
     this.deps.onState(live.state.id);
@@ -578,8 +593,69 @@ export class TournamentManager {
     if (live.saveTimer) return;
     live.saveTimer = this.clock.setTimeout(() => {
       live.saveTimer = null;
-      this.deps.store.save(live.state, live.nextId).catch((e) => this.deps.log(`saving tournament ${live.state.id} failed`, e));
+      this.deps.store.save(this.seen(live), live.nextId).catch((e) => this.deps.log(`saving tournament ${live.state.id} failed`, e));
     }, SAVE_DEBOUNCE_MS);
+  }
+
+  /** The state to save: stamped with the time, so a restart can tell how long the server was away (#493). */
+  private seen(live: Live): TournamentState {
+    live.state = { ...live.state, seenAt: this.clock.now() };
+    return live.state;
+  }
+
+  /**
+   * While an event is in play it is saved every few seconds, so the time on its last save is close to the moment
+   * the server stopped, however it stopped. An event that isn't in play has no clock to protect.
+   */
+  private keepSeen(live: Live) {
+    this.clock.clearTimeout(live.seenTimer);
+    live.seenTimer = null;
+    if (this.closed || this.live.get(live.state.id) !== live || live.state.status !== 'running') return;
+    live.seenTimer = this.clock.setTimeout(() => {
+      live.seenTimer = null;
+      if (this.closed || this.live.get(live.state.id) !== live) return;
+      this.scheduleSave(live);
+      this.keepSeen(live);
+    }, SEEN_EVERY_MS);
+  }
+
+  /**
+   * The outage pause (#493): the tables stop where they are, and play resumes once every player still in is back
+   * at their table. The director's own clock resumes it when the time runs out, and the host can at any time.
+   */
+  private holdForOutage(live: Live) {
+    this.clock.clearTimeout(live.outageTimer);
+    live.outageTimer = null;
+    const outage = live.state.outage;
+    if (!outage || this.closed || this.live.get(live.state.id) !== live) return;
+    for (const [tableId, rt] of live.tables) {
+      try {
+        rt.holdForOutage(outage.resumeAt);
+      } catch (e) {
+        this.deps.log(`tournament ${live.state.id}: holding table ${tableId} failed`, e);
+      }
+    }
+    live.outageTimer = this.clock.setTimeout(() => {
+      live.outageTimer = null;
+      if (!live.state.outage) return;
+      const seated = live.state.entries.filter((e) => e.status === 'seated' && e.tableId);
+      const back = seated.length > 0 && seated.every((e) => live.tables.get(e.tableId!)?.isOnline(e.playerId));
+      if (back) this.dispatchQuietly(live, (s, now) => apply(s, { type: 'outageOver' }, now), 'resuming after an outage');
+      else this.holdForOutage(live);
+    }, OUTAGE_CHECK_MS);
+  }
+
+  /** Play resumes after an outage pause: the tables' clocks pick up where they stopped. */
+  private releaseTables(live: Live) {
+    this.clock.clearTimeout(live.outageTimer);
+    live.outageTimer = null;
+    for (const [tableId, rt] of live.tables) {
+      try {
+        rt.releaseOutageHold();
+      } catch (e) {
+        this.deps.log(`tournament ${live.state.id}: resuming table ${tableId} failed`, e);
+      }
+    }
   }
 
   /** Wakes the director when it next needs to act: start, seating, level changes, offer expiries. */
@@ -651,6 +727,19 @@ export class TournamentManager {
       throw e;
     }
     this.live.set(state.id, live);
+    // Read back from storage with play under way: the server was away (a crash or a release) since the state was
+    // last saved. That time is not time played, and the players get a while to come back (#493). First of all, so
+    // nothing below catches the clock up over the time away.
+    if (!opts.made && (state.status === 'running' || state.status === 'paused')) {
+      const now = this.clock.now();
+      try {
+        const result = this.guard(() => apply(live.state, { type: 'outage', since: state.seenAt ?? now, resumeAt: now + OUTAGE_PAUSE_MS }, now));
+        live.state = result.state;
+        live.deferred.push(...result.events);
+      } catch (e) {
+        this.deps.log(`tournament ${state.id}: pausing after the time away failed`, e);
+      }
+    }
     // The director and its tables are saved on timers of their own, so after a crash either may be behind.
     // Tables hold while they are brought in line, then deal as the director says.
     const missed = missedReports(state, snapshots);
@@ -690,6 +779,13 @@ export class TournamentManager {
         this.deps.log(`tournament ${state.id}: resuming table ${tableId} failed`, e);
       }
     }
+    if (live.state.outage) {
+      this.holdForOutage(live);
+      this.scheduleSave(live);
+    }
+    // The pause's own event (for the lobby's log), if the catch-up above didn't already pass it on.
+    if (live.deferred.length) this.handle(live, []);
+    this.keepSeen(live);
     return live;
   }
 

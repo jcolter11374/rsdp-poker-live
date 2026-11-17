@@ -211,6 +211,125 @@ describe('clock, breaks and pause', () => {
     expect(nextWakeAt(sim.state)).toBe(T0 + 70 * MIN);
   });
 
+  it('an outage is a pause: the time away is not played, and play resumes when its time comes (#493)', () => {
+    const sim = new Sim();
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    // The server was last seen 4 minutes into the level and is back 25 minutes later: two levels and a break later.
+    sim.now = T0 + 29 * MIN;
+    const events = sim.do({ type: 'outage', since: T0 + 4 * MIN, resumeAt: sim.now + 2 * MIN });
+    expect(events).toEqual([{ type: 'paused', outageSeconds: 120 }]);
+    expect(sim.state.status).toBe('paused');
+    expect(sim.state.outage).toEqual({ resumeAt: T0 + 31 * MIN });
+    expect(levelFor(sim.state, t).bb).toBe(100);
+    expect(tableGate(sim.state, t, sim.now)).toBe('hold');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 31 * MIN);
+    // Nothing moves while it waits, and its time resumes it with the 6 minutes the level had left.
+    sim.at(T0 + 30 * MIN);
+    expect(sim.state.status).toBe('paused');
+    sim.at(T0 + 31 * MIN);
+    expect(sim.of('resumed')).toHaveLength(1);
+    expect(sim.state.status).toBe('running');
+    expect(sim.state.outage).toBeUndefined();
+    expect(levelFor(sim.state, t).bb).toBe(100);
+    expect(tableGate(sim.state, t, sim.now)).toBe('deal');
+    expect(nextWakeAt(sim.state)).toBe(T0 + 37 * MIN);
+  });
+
+  it('an outage pause ends early when everyone is back or the host resumes, and starts over if the server goes again', () => {
+    for (const early of [{ type: 'outageOver' }, { type: 'resume', by: 'host' }] as Command[]) {
+      const sim = new Sim();
+      sim.register(2);
+      sim.do({ type: 'startNow', by: 'host' });
+      sim.now = T0 + 5 * MIN;
+      sim.do({ type: 'outage', since: T0 + 4 * MIN, resumeAt: sim.now + 2 * MIN });
+      // Away again half a minute into the pause: the two minutes start over, and the clock stays where it stopped.
+      sim.now = T0 + 9 * MIN;
+      sim.do({ type: 'outage', since: T0 + 5.5 * MIN, resumeAt: sim.now + 2 * MIN });
+      expect(sim.state.outage).toEqual({ resumeAt: T0 + 11 * MIN });
+      sim.now = T0 + 9.5 * MIN;
+      sim.do(early);
+      expect(sim.state.status).toBe('running');
+      expect(sim.state.outage).toBeUndefined();
+      // 4 minutes played, 6 left.
+      expect(nextWakeAt(sim.state)).toBe(T0 + 15.5 * MIN);
+      // Nothing to end twice.
+      expect(sim.do({ type: 'outageOver' })).toEqual([]);
+    }
+  });
+
+  it('an outage leaves alone an event that has not started, and one the host paused stays the host\'s to resume', () => {
+    const waiting = new Sim();
+    waiting.register(2);
+    waiting.now = T0 + 5 * MIN;
+    expect(waiting.do({ type: 'outage', since: T0, resumeAt: waiting.now + 2 * MIN })).toEqual([]);
+    expect(waiting.state.status).toBe('registering');
+    const sim = new Sim();
+    sim.register(2);
+    sim.do({ type: 'startNow', by: 'host' });
+    sim.now = T0 + 4 * MIN;
+    sim.do({ type: 'pause', by: 'host' });
+    sim.now = T0 + 30 * MIN;
+    // Hands still being played out wait for the players like any other, and then the host's pause stands.
+    expect(sim.do({ type: 'outage', since: T0 + 5 * MIN, resumeAt: sim.now + 2 * MIN })).toEqual([{ type: 'paused', outageSeconds: 120 }]);
+    expect(sim.state.outage).toEqual({ resumeAt: T0 + 32 * MIN, hostPaused: true });
+    sim.at(T0 + 40 * MIN);
+    expect(sim.state.outage).toBeUndefined();
+    expect(sim.state.status).toBe('paused');
+    expect(sim.state.clock).toMatchObject({ elapsedMs: 4 * MIN, runningSince: null });
+    // The host's Resume during the wait ends both.
+    sim.do({ type: 'outage', since: T0 + 41 * MIN, resumeAt: sim.now + 2 * MIN });
+    expect(sim.do({ type: 'resume', by: 'host' })).toEqual([{ type: 'resumed' }]);
+    expect(sim.state.outage).toBeUndefined();
+    expect(sim.state.status).toBe('running');
+  });
+
+  it('a rebuy offered during an outage pause counts its time from when play resumes', () => {
+    for (const early of [true, false]) {
+      const sim = new Sim({ rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 } });
+      sim.register(3);
+      sim.do({ type: 'startNow', by: 'host' });
+      const t = sim.state.tables[0].id;
+      sim.now = T0 + 5 * MIN;
+      sim.do({ type: 'outage', since: T0 + MIN, resumeAt: sim.now + 2 * MIN });
+      // A hand the table had finished before the server went, reported after it came back.
+      sim.hand(t, 'p0', ['p2']);
+      expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 2 * MIN + 15_000);
+      if (early) {
+        sim.now += 5_000;
+        sim.do({ type: 'outageOver' });
+        expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 15_000);
+      } else {
+        sim.at(sim.now + 2 * MIN + 14_000);
+        expect(sim.state.outage).toBeUndefined();
+        expect(sim.entry('p2').status).toBe('rebuy-offer');
+      }
+    }
+  });
+
+  it('a rebuy offer open when the server went away keeps the time it had left, counted from when play resumes', () => {
+    const sim = new Sim({ rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 } });
+    sim.register(3);
+    sim.do({ type: 'startNow', by: 'host' });
+    const t = sim.state.tables[0].id;
+    sim.now = T0 + MIN;
+    sim.hand(t, 'p0', ['p2']);
+    expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 15_000);
+    // Last seen 5 seconds into the offer; back 40 seconds later, long after the offer would have run out.
+    sim.now = T0 + MIN + 45_000;
+    sim.do({ type: 'outage', since: T0 + MIN + 5_000, resumeAt: sim.now + 2 * MIN });
+    expect(sim.entry('p2').status).toBe('rebuy-offer');
+    expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 2 * MIN + 10_000);
+    // Everyone is back after 20 seconds: the 10 seconds left count from then, and the rebuy still works.
+    sim.now += 20_000;
+    sim.do({ type: 'outageOver' });
+    expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 10_000);
+    sim.now += 9_000;
+    sim.do({ type: 'rebuy', playerId: 'p2' });
+    expect(sim.entry('p2')).toMatchObject({ status: 'seated', stack: 1000 });
+  });
+
   it('rotates games per level and stops rotating at the chosen level', () => {
     const sim = new Sim({ games: ['nlhe', 'plo', 'stud'], stopRotationAtLevel: 2 });
     sim.register(2);
