@@ -85,6 +85,7 @@ export function ActionBar({
   onPreAction,
   onRules,
   note = null,
+  alarm = null,
 }: {
   view: TableView;
   fmt: Fmt;
@@ -101,6 +102,11 @@ export function ActionBar({
   onRules?: () => void;
   /** Before the first hand, on a small phone table: what happens next (#383), as the empty bar's text. */
   note?: string | null;
+  /**
+   * The fair-dealing warning for this hand (#438), in the place of the hand's name on the bar's top line: that line is
+   * there in every state, your own turn included, and the bar's room is kept for it, so the warning never moves a seat.
+   */
+  alarm?: ReactNode;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
@@ -465,7 +471,7 @@ export function ActionBar({
 
   const myCards = me?.inHand ? me.cards.map((c) => c.card) : [];
   const strength = hand && myCards.length ? handStrength(hand.gameId, myCards, hand.boards[0]?.[0] ?? []) : null;
-  const hint = strength && <div className="strength">{strength}</div>;
+  const hint = alarm || (strength && <div className="strength">{strength}</div>);
   // An armed all-in says what the next Shift+A or Enter sends on the bar's top line, standing in for the hand's strength.
   const armedWords = armed && most && hand && legal && me ? mostWords(most, hand, legal, me, fmt) : '';
   // Screen readers hear it from a live region that is in the bar whenever Shift+A can arm, empty until it does: one

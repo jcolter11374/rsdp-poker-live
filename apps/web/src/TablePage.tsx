@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { call, NoAnswerError, socket } from './socket';
-import { contributeSeed, liveSeedProblem, watchCommitments, watchNextSeen } from './fair';
+import { contributeSeed, liveSeedWarning, watchCommitments, watchNextSeen } from './fair';
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
@@ -153,7 +153,7 @@ export function useTableEffects(view: TableView | null, skew: number, preQueued:
 
 const HURRY_MS = 5000;
 
-type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | null;
+type Dialog = { kind: 'seat'; seat: number; waitlist?: boolean } | { kind: 'player'; seat: SeatView } | { kind: 'add-bot'; seat: number } | { kind: 'rebuy' } | { kind: 'settings' } | { kind: 'rules'; gameId?: string; betting?: BettingKind } | { kind: 'people' } | { kind: 'look' } | { kind: 'keys' } | { kind: 'feedback' } | { kind: 'seed'; text: string; otherDevice: boolean; hand: number } | null;
 
 /** How long the keyboard tip stays up if nobody presses Got it. */
 const KEYS_TIP_MS = 20_000;
@@ -442,7 +442,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   // Your seat, or the one kept for you, marked out, after a knockout until the next deal (#445).
   const place = myPlace(view);
   // Worked out once per render: it reads this browser's saved notes.
-  const seedWarning = liveSeedProblem(view);
+  const seedWarning = liveSeedWarning(view);
   const seatRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'seat');
   const rebuyRequest = view.requests.find((r) => r.playerId === view.me.playerId && r.kind === 'rebuy');
   const pending = view.powers.includes('approve') ? view.requests.length : 0;
@@ -619,6 +619,22 @@ export function TablePage({ tableId }: { tableId: string }) {
   // the window is too narrow for the side column: see .dock-notes in styles.css); the host still sees the count in
   // Host controls, on Host & log or on the menu.
   const yourTurn = !!view.legal || !!view.canDraw || view.canVoteRunItTwice;
+  // The fair-dealing warning (#438): red, in the place of the hand's name on the bar under the table, from the deal to the
+  // next hand, your own turn included. That line is always there and its room is kept, so the warning never takes the
+  // table's height (it was a banner above the table, and every seat moved when it came or went). Phones held sideways
+  // have no hand line: it takes the top bar's place of the logo and the table's name there. Details has the whole of it.
+  const seedAlarm = seedWarning && (
+    <button type="button" className="seed-alarm" aria-haspopup="dialog" onClick={() => setDialog({ kind: 'seed', text: seedWarning.text, otherDevice: seedWarning.otherDevice, hand: view.hand!.handNumber })}>
+      <span className="seed-alarm-text">
+        {'\u26a0'} {seedWarning.line}
+        {portrait ? ' \u203a' : (
+          <>
+            . <u>Details</u>
+          </>
+        )}
+      </span>
+    </button>
+  );
   const dockNotes = [
     noticeUnder && view.hand && (
       <div className="banner" key="stopped">
@@ -704,6 +720,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   return (
     <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
       <header className="topbar">
+        {portrait && seedAlarm}
         <a className="logo small" href="/">
           {portrait ? (
             <>
@@ -880,7 +897,6 @@ export function TablePage({ tableId }: { tableId: string }) {
             </div>
           )}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
-          {seedWarning && <div className="banner warn">⚠ Fair dealing: {seedWarning}. Tell the table, and check this hand once it&rsquo;s revealed.</div>}
           {seatErrorLine}
           <Table
             view={view}
@@ -922,6 +938,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               }}
               onRules={() => setDialog({ kind: 'rules' })}
               note={noticeUnder && !view.hand ? startNotice!.text : null}
+              alarm={seedAlarm}
             />
             <div className="dock-row">
               <HandExtras view={view} />
@@ -1048,6 +1065,20 @@ export function TablePage({ tableId }: { tableId: string }) {
       {dialog?.kind === 'look' && <LookDialog view={view} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'keys' && <ShortcutsDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === 'feedback' && <FeedbackDialog portrait={portrait} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'seed' && (
+        <Modal title="Fair dealing warning" onClose={() => setDialog(null)}>
+          <p>Your browser checks the seeds each hand is dealt from. For hand {dialog.hand}, {dialog.text}.</p>
+          <p>
+            {dialog.otherDevice ? 'If you aren\u2019t on another device, tell the table' : 'Tell the table'}, and check this hand once it&rsquo;s revealed: open it in the replayer and press Check this hand.
+          </p>
+          <p>
+            <a href="/fairness" target="_blank" rel="noreferrer">
+              How fair dealing works
+            </a>
+          </p>
+          <button onClick={() => setDialog(null)}>Close</button>
+        </Modal>
+      )}
     </div>
   );
 }
