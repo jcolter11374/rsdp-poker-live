@@ -185,8 +185,9 @@
   /* All in: the seat goes red-hot and the stack line becomes a stamp. */
   .seat.all-in .last-action { display: none; }
   /* Through the result a phone nameplate keeps the stamp's width (#455): a player knocked out, or one stamped in the
-     hand's last live view (Table.tsx). */
-  .felt.compact .seat:is(.departed, .went-all-in) .nameplate { min-width: 100px; }
+     hand's last live view (Table.tsx). The stamped plate takes the same width, so the two match whatever the font
+     makes of the stamp (99.5 px on CI's, where the result's 100 px then showed as a change). */
+  .felt.compact .seat:is(.all-in, .departed, .went-all-in) .nameplate { min-width: 100px; }
   .seat.all-in .nameplate { border-color: #ff6b5e !important; box-shadow: 0 0 0 1px #ff6b5e, 0 0 24px rgba(255, 90, 76, 0.55), 0 6px 16px rgba(0, 0, 0, 0.45) !important; }
   .seat.all-in .stack {
     display: inline-block;
