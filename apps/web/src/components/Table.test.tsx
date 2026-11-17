@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '@rsdp/engine/settings';
 import type { HandView, SeatView, TableView } from '@rsdp/engine/wire';
 import { stadiumPoint } from './geometry';
-import { Table } from './Table';
+import { boardRowsFor, Table } from './Table';
 
 // Parts of the table (notes, chat bubbles, gestures) listen on the socket when they load; nothing is ever sent on it.
 vi.mock('../socket', () => ({
@@ -250,5 +250,25 @@ describe('Table: stud cards in a row over the nameplate (#447)', () => {
   it("still tucks Hold'em and four-card Omaha cards into the nameplate", () => {
     expect(rows('nlhe', 2)).toEqual(HELD.map(() => false));
     expect(rows('plo4', 4)).toEqual(HELD.map(() => false));
+  });
+});
+
+describe("room for the board on a phone's table (#449)", () => {
+  const flop = { family: 'flop', boards: [[[]]] };
+  const stud = { family: 'stud', boards: [] };
+  it('goes by the games the table deals, not the hand on it', () => {
+    // A mix with a flop game keeps the room through its stud hands; before a first deal it is kept too.
+    expect(boardRowsFor(['nlhe', 'stud'], stud)).toBe(1);
+    expect(boardRowsFor(['nlhe', 'stud'], null)).toBe(1);
+    expect(boardRowsFor([], null)).toBe(1);
+    // A stud-only table never keeps it, hand or no hand.
+    expect(boardRowsFor(['stud'], stud)).toBe(0);
+    expect(boardRowsFor(['stud'], null)).toBe(0);
+    // A game this page doesn't know keeps it: room kept is better than seats moving.
+    expect(boardRowsFor(['a-game-from-the-future'], null)).toBe(1);
+  });
+  it('still gives a flop hand with more boards its rows', () => {
+    expect(boardRowsFor(['nlhe'], flop)).toBe(1);
+    expect(boardRowsFor(['nlhe'], { family: 'flop', boards: [[[]], [[]]] })).toBe(2);
   });
 });

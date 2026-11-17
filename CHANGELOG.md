@@ -18,6 +18,15 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.17.4] - 2026-11-17
+
+### Fixed and changed
+
+- Phones, at the end of a hand: the name of a shown hand ("Two Pair", "Flush") now sits on a small tab over that player's nameplate, and a player who is knocked out shows "Knocked out" where their chips were. Before, the nameplates grew and shrank for those lines and pushed the cards and seats around.
+- Phones, mixed games: the seats no longer shift at the first deal or when the mix changes between a game with a board and a stud or draw game. A table that deals any game with a board keeps room for one all the time.
+- Fixed-limit tables on laptops: the table no longer changes size by a few pixels when your turn comes.
+- The fair-dealing warning (a seed under your name that this browser didn't send, most often because you're on two devices) is now a red line just above your betting buttons, or in the top bar on a phone held sideways. Before, it was a banner over the table, and every seat moved when it came or went. If the seed list also has a bot's or a repeated seed, the warning now says that, not that two devices are expected.
+
 ## [2026.11.17.3] - 2026-11-17
 
 ### Fixed and changed
@@ -822,6 +831,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.17.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.4
 [2026.11.17.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.3
 [2026.11.17.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.2
 [2026.11.17]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17

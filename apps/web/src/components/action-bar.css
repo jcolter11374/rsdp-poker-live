@@ -20,3 +20,9 @@
 .bar-head:is(.with-tip, .with-bank) .armed-note { max-width: calc(100% - 270px); }
 .portrait .bar-head.armed :is(.play-tip-button, .time-bank) { display: none; }
 .portrait .bar-head.armed .armed-note { max-width: 100%; font-size: 0.8rem; }
+/* With the fair-dealing warning up (#438) the two share the line: the warning keeps one line, the note only what is sent. */
+.bar-head.armed .seed-alarm { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 400px); margin: 0 8px 0 0; white-space: nowrap; line-height: 26px; }
+.portrait .bar-head.armed .seed-alarm { max-width: none; }
+.bar-head.armed .seed-alarm-text { display: block; }
+.bar-head .seed-alarm + .armed-note { flex: none; max-width: 120px; }
+.bar-head .seed-alarm + .armed-note .how { display: none; }

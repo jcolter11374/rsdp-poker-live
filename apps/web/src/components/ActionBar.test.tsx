@@ -378,6 +378,30 @@ describe('folding when checking is free', () => {
   });
 });
 
+describe("the fair-dealing warning (#438)", () => {
+  // Ann holds A♠ K♥ on a 2-7-J flop: "Ace High" is her hand's line, the line the warning takes the place of.
+  const alarm = <button className="seed-alarm">Deck may have been steered: tell the table</button>;
+  const states: [string, TableView][] = [
+    ['between turns, with pre-moves', waitingOn()],
+    ['on her turn', checkedToMe()],
+    ['on her turn with the time bank to hand', { ...facingBet(100), turn: { seat: 0, deadline: 30_000, usingBank: false } } as TableView],
+    ['once she has folded', tableView({ me: { folded: true, inHand: false } })],
+    ['at the run-it-twice vote', { ...tableView({ hand: { toAct: null } }), canVoteRunItTwice: true }],
+    ['after the hand', { ...tableView({ hand: { phase: 'complete', toAct: null } }), canShow: [0, 1] }],
+  ];
+  for (const [when, view] of states)
+    it(`shows it ${when}, in the hand line's place`, () => {
+      const { container } = render(<ActionBar view={view} fmt={fmt} skew={0} discard={[]} clearDiscard={() => {}} alarm={alarm} />);
+      expect(container.querySelectorAll('.seed-alarm')).toHaveLength(1);
+      expect(container.querySelector('.strength')).toBeNull();
+    });
+  it('leaves the bar as it was without one', () => {
+    const { container } = render(<ActionBar view={checkedToMe()} fmt={fmt} skew={0} discard={[]} clearDiscard={() => {}} />);
+    expect(container.querySelector('.seed-alarm')).toBeNull();
+    expect(container.querySelector('.strength')).toBeTruthy();
+  });
+});
+
 describe('which buttons show', () => {
   it('offers check and bet when nobody has bet, with the pot presets and the bet box', () => {
     renderBar(checkedToMe());
@@ -796,6 +820,14 @@ describe('all in with Shift+A pressed twice (#307)', () => {
     await shiftA();
     expect(moves()).toEqual([expect.objectContaining({ type: 'raise', to: 1000 })]);
     expect(note()).toBeNull();
+  });
+
+  it('keeps the fair-dealing warning up beside the note while an all-in is armed (#438)', async () => {
+    renderBar(facingBet(100), { alarm: <button className="seed-alarm">Deck may have been steered: tell the table</button> });
+    expect(document.querySelectorAll('.bar-head .seed-alarm')).toHaveLength(1);
+    await shiftA();
+    expect(note()).toBe(`All in 1000. ${HOW}`);
+    expect(document.querySelectorAll('.bar-head .seed-alarm')).toHaveLength(1);
   });
 
   it('reads the armed all-in out from a live region already in the bar, and names Shift+A on the button it presses', async () => {
