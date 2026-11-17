@@ -19,6 +19,7 @@
   { "name": "area: cash", "color": "bfdadc", "description": "Cash games" },
   { "name": "area: tournaments", "color": "bfdadc", "description": "Tournaments and Sit & Gos" },
   { "name": "area: table", "color": "bfdadc", "description": "The table screen: cards, seats, buttons, sounds" },
+  { "name": "area: dealers choice", "color": "bfdadc", "description": "Dealer's choice tables: picking the game, the menu, the pick clock" },
   { "name": "area: accounts", "color": "bfdadc", "description": "Sign-in, profiles, records, leaderboard, the group roster" },
   { "name": "area: fairness", "color": "bfdadc", "description": "Fair dealing, the public record, checking John" },
   { "name": "area: site", "color": "bfdadc", "description": "Pages around the game: home, roadmap, What's new, About" },
