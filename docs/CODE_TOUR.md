@@ -275,7 +275,7 @@ npm run smoke        # browser test; see below
 ```
 
 On a four-core machine the typecheck takes about half a minute, the unit
-tests about three minutes and the smoke test about seven. Nothing needs
+tests about three minutes and the smoke test six or seven. Nothing needs
 setting up to run locally: the settings the live site uses (the admin page's
 key, Sign in with Google, phone alerts) are all optional and listed in
 [DEPLOY.md](DEPLOY.md#settings). There is no linter or code formatter, so
