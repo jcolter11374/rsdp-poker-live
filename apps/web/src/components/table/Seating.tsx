@@ -72,6 +72,8 @@ export function SeatingBanners({
         <div className="banner spectating">
           You're watching{view.spectator.seeAll ? ' with every card face up' : ''}
           {view.spectator.delaySeconds > 0 ? `, ${delayText(view.spectator.delaySeconds)} behind the table` : ''}.
+          {/* Sat down while watching on a delay (#472): the view stays on it until their first hand. */}
+          {seated ? " You'll see it live when you're dealt in." : ''}
         </div>
       )}
       {!view.spectator && <CardsWatched view={view} onPeople={onPeople} />}

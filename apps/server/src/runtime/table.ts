@@ -2599,7 +2599,8 @@ export class TableRuntime {
    */
   private liveHandFor(playerId: PlayerId): HandState {
     const seat = this.seatOf(playerId);
-    if (!seat) throw new ActionError('you are not in this hand');
+    // The same for someone who sat down while watching on a delay and isn't dealt in yet (#472).
+    if (!seat || this.shownTo(playerId) !== null) throw new ActionError('you are not in this hand');
     const hand = this.state.hand;
     if (!hand || hand.phase === 'complete') throw new ActionError('no hand is being played');
     if (this.state.paused) throw new ActionError('the game is paused');
