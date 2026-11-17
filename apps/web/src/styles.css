@@ -1115,11 +1115,14 @@ dl.shortcuts dd { margin: 0; }
   /* The move buttons take taps from 0.3s after they appear. A tap meant for "Show cards", already on its way as the next
      deal makes it your turn, would otherwise land on Call (the bar between hands puts them in the same place). */
   .portrait .action-bar.my-turn > .buttons { position: relative; }
-  .portrait .action-bar.my-turn > .buttons::after { content: ''; position: absolute; inset: 0; z-index: 1; animation: bar-arm 0.3s step-end both; }
+  .portrait .action-bar.my-turn > .buttons::after { content: ''; position: absolute; inset: 0; z-index: 1; visibility: hidden; animation: bar-arm 0.3s step-end; }
   /* Between your turns that line has the room the bar takes on your turn: the rabbit hunt's cards are the table's small size,
      and the Nit game's line runs on as one short paragraph, two lines on most phones (in whole pixels, so the room it takes
      doesn't flicker by a fraction). */
   .portrait .hand-extras .playing-card.small { --cw: 24px; }
+  /* The Nit game's line gives way while that line has a button or the rabbit hunt's cards (a few seconds after a hand):
+     together they wrap past the room held, and the table would get smaller for good. Hidden but kept, as above. */
+  .portrait .hand-extras:has(> button, > .rabbit-cards) > .nit-row { position: absolute; height: 0; overflow: hidden; visibility: hidden; }
   .portrait .nit-row { display: block; font-size: 0.75rem; line-height: 16px; }
   .portrait .nit-row > :not(.modal-backdrop), .portrait .nit-line > * { display: inline; margin: 0 6px 0 0; font-size: inherit; }
   .portrait .nit-line .toggle input { vertical-align: middle; margin: 0 4px 0 0; }
@@ -1128,7 +1131,8 @@ dl.shortcuts dd { margin: 0; }
 /* The smallest phones on their side (568px wide): during a Nit round the "Locked in until this round ends" hint would make
    the line three lines. It gives way; the tick box's title says the same. */
 @media (max-height: 500px) and (max-width: 599px) { .portrait .nit-row .hint { display: none; } }
-@keyframes bar-arm { from { visibility: visible; } to { visibility: hidden; } }
+/* The cover is hidden unless the animation shows it, so a browser that plays no animations leaves the buttons working. */
+@keyframes bar-arm { from { visibility: visible; } }
 
 /* "Are you sure?" under a game picker set to unusual betting. */
 .betting-nudge { background: #4a3a14; color: var(--accent-2); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }
