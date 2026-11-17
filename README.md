@@ -6,13 +6,13 @@ Live at https://rsdp-poker-live.fly.dev. Play money only.
 
 ## Start here
 
-New to the project? Read these three, in this order. Together they take about half an hour.
+New to the project? Read these three, in this order. Together they take under an hour.
 
 1. **This page**, for what the project is and how to run it.
 2. **[docs/CODE_TOUR.md](docs/CODE_TOUR.md)**, the map of the code: what each folder does, one bet followed from the button to every screen, which files to read first, and how a change reaches the live site.
 3. **[CONTRIBUTING.md](CONTRIBUTING.md)**, how work is tracked and released: issues, pull requests, the checks a change needs, and [how the docs are kept current](CONTRIBUTING.md#keeping-the-docs-current).
 
-To see what is going on right now, look at the [open issues](https://github.com/jcolter11374/rsdp-poker-live/issues) (bugs, work in progress, what is waiting on whom) and the newest [release](https://github.com/jcolter11374/rsdp-poker-live/releases) (what is live). Those are the record; nothing important lives only in someone's notes.
+To see what is going on right now, look at the [open issues](https://github.com/jcolter11374/rsdp-poker-live/issues) (bugs, work in progress, what is waiting on whom) and the newest [release](https://github.com/jcolter11374/rsdp-poker-live/releases) (normally what is live; the site's `/api/version` says exactly which commit it runs). Those are the record; nothing important lives only in someone's notes.
 
 Everything else is for looking things up when you need it:
 
@@ -22,12 +22,12 @@ Everything else is for looking things up when you need it:
 | Know the tournament director's rules and how the server calls it | [packages/tournament/README.md](packages/tournament/README.md) | Any change to the director |
 | Know why things are the way they are, and who decided | [docs/DECISIONS.md](docs/DECISIONS.md) | A new entry for each decision; old ones aren't edited |
 | Check that the cards are dealt fairly, and see what the operator could still do | [docs/FAIRNESS.md](docs/FAIRNESS.md) (the site's `/fairness` page shows this file) | Any change to dealing, who sees what, or the public record |
-| See what the site keeps about players, and its terms | [docs/PRIVACY.md](docs/PRIVACY.md), [docs/TERMS.md](docs/TERMS.md) (the site's `/privacy` and `/terms` pages show these files) | Any new stored data, cookie or outside service |
+| See what the site keeps about players, and its terms | [docs/PRIVACY.md](docs/PRIVACY.md), [docs/TERMS.md](docs/TERMS.md) (the site's `/privacy` and `/terms` pages show these files) | PRIVACY: any change to what is stored, for how long, how it's deleted, cookies or outside services. TERMS: any change to what the site promises or asks of players |
 | Host it, back it up, restore it, or release it | [docs/DEPLOY.md](docs/DEPLOY.md) | Any change to hosting, settings, backups or the release steps |
 | Fix it when something goes wrong (site down, bad release, leaked key) | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Any change to what an alarm means or how to recover; each incident adds a line |
-| Know what works with screen readers and keyboards, and what doesn't yet | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) | Any change to the table's look or controls |
+| Know what works with screen readers and keyboards, and what doesn't yet | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) | Any change to the look or controls of the table or the site's main pages |
 | Play-test a release on a copy of the site | [e2e/playtest/README.md](e2e/playtest/README.md) | Any new play-test script |
-| See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) | Made automatically from the site's release notes |
+| See what each release changed | [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/jcolter11374/rsdp-poker-live/releases) | Made by `npm run changelog` from the site's release notes; a test fails if it's stale |
 | See the software this is built on | [docs/CREDITS.md](docs/CREDITS.md) (the site's `/credits` page) | Any new library |
 | Report a security problem | [.github/SECURITY.md](.github/SECURITY.md) (privately, please) | |
 | Know the rules the AI coding sessions work under | [CLAUDE.md](CLAUDE.md) | John's standing rules |

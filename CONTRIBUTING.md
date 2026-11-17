@@ -217,7 +217,9 @@ Decide that before it's merged into `develop`, and make its branch from
    test against the real Docker image, a backup restore drill, and the PR
    check for the issue link and release notes. The description also says
    whether the change is
-   [full or light](#full-or-light-how-much-checking-a-change-needs). We
+   [full or light](#full-or-light-how-much-checking-a-change-needs), and
+   which docs it updated
+   ([Keeping the docs current](#keeping-the-docs-current)). We
    also run a separate review pass with another AI session (a short one for
    a light change). That pass is ours, not an outside audit. Its findings,
    and the commit it reviewed, go in a comment on the pull request, so the
@@ -233,7 +235,8 @@ Decide that before it's merged into `develop`, and make its branch from
    from `develop` into `main`. If the release holds any full change, we
    play-test it on a copy of the site first, never on the live one
    ([DEPLOY.md](docs/DEPLOY.md#releasing)). A release of only light changes
-   skips that. Either way, merge it as soon as it's ready: don't wait for a
+   skips that. Check that each pull request going out did what its "Docs"
+   line says. Either way, merge it as soon as it's ready: don't wait for a
    quiet time (D34). Merging it runs the checks
    again and then deploys. After the deploy, the Release workflow tags the
    commit (`v2026.11.01`), publishes a GitHub release with its notes and
@@ -318,16 +321,19 @@ from the others, so there is one place to update:
 | Changes a rule the code follows, or how two parts talk to each other | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); for the tournament director, [packages/tournament/README.md](packages/tournament/README.md) too |
 | Settles a question (John decides something, or a deliberate simplification is chosen) | A new entry in [docs/DECISIONS.md](docs/DECISIONS.md) |
 | Changes dealing, who sees what and when, or the public record | [docs/FAIRNESS.md](docs/FAIRNESS.md) |
-| Stores something new, sets a cookie, or contacts another service | [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Changes signed builds, the watcher, or what the Checking John page (`/transparency`) reports | [docs/FAIRNESS.md](docs/FAIRNESS.md), and the page's own words in `apps/web/src/fairness/TransparencyPage.tsx` |
+| Stores something new, changes how long something is kept or how it's deleted, sets a cookie, or contacts another service | [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Changes what the site promises players or asks of them | [docs/TERMS.md](docs/TERMS.md) |
 | Changes hosting, a setting or secret, backups, restarts, or the release steps | [docs/DEPLOY.md](docs/DEPLOY.md) |
 | Changes what an alarm means, or how to recover from a failure | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
-| Changes the table's look or controls | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) |
+| Changes the look or controls of the table or one of the site's main pages | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) |
+| Adds or changes a play-test script | [e2e/playtest/README.md](e2e/playtest/README.md) |
 | Changes how a game or a table option plays | Its How to play guide (`apps/web/src/rules/`) |
-| Changes anything players will notice | The release notes, and the roadmap page if it lists it (see [Releases](#releases)) |
+| Changes anything players will notice | The release notes, and the roadmap page if it lists it, by the release that ships it (see [Releases](#releases)) |
 | Adds a library | [docs/CREDITS.md](docs/CREDITS.md) |
 | Changes how work is tracked, reviewed or released | This page, and [CLAUDE.md](CLAUDE.md) if it's a rule sessions must follow |
 
-Each release, whoever cuts it reads the list of pull requests going out
+Each release, whoever prepares it reads the list of pull requests going out
 and checks that each one's "Docs" line was done. A doc found out of date
 later is a bug in the docs: open an issue with the `documentation` label.
 

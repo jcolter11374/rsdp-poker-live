@@ -479,7 +479,7 @@ How this file works:
 - **Decided:** 2026-11-17, by John. He asked for the documentation to be brought up to date and for "a way to document this project that would be easier to follow going forward", so that it is "not difficult for someone to pick up the code and know what is going on". Offered a small option (a starting page and a habit), a larger one (also rewriting ARCHITECTURE.md) or no change, he picked the small one. The details are Claude's.
 - **Decision:**
   - **One starting point.** The README's "Start here" gives a newcomer three things to read, in order, and a table saying what every other doc is for and what keeps it current.
-  - **One habit.** A pull request that changes how something works updates every doc that describes it, and lists them under "Docs" in its description. The review pass checks that list, and whoever cuts a release checks it for each pull request going out.
+  - **One habit.** A pull request that changes how something works updates every doc that describes it, and lists them under "Docs" in its description. The review pass checks that list, and whoever prepares a release checks it for each pull request going out.
   - **One job per doc.** A table in CONTRIBUTING.md says which doc covers what, so a fact has one home and the others link to it.
 - **Why:** a check that day found the docs accurate except where a change had updated some of them and not others: the tournament outage pause (D40) was in three places and missing from five. Nothing asked a change which docs it touched.
 - **Not done:** ARCHITECTURE.md stays as it is, a dense reference. Rewriting it in shorter sections is the larger option John didn't pick.
