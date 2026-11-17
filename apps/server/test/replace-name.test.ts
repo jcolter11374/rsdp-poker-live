@@ -408,6 +408,8 @@ describe('replacing a deleted player’s name', () => {
     const boardBefore = await leaderboard(db, await leaderData(db));
     const graphsBefore = await Promise.all([zekeId, bigId, gusId].map((id) => profitSessions(db!, [id])));
     expect(before.table_snapshots.join()).toMatch(/Zeke/);
+    // The table's log still says "Zeke", the name he sat down with, and the table keeps that name beside his id.
+    expect(before.table_snapshots.join()).toMatch(/Zeke is now Zekey/);
     expect(before.tournament_log.join()).toMatch(/Zekey/);
 
     // The dry run says what would change and changes nothing.
@@ -441,7 +443,8 @@ describe('replacing a deleted player’s name', () => {
     // The leaderboard and everyone's profit graph give the same numbers; only Zeke's name on the board changed.
     const boardAfter = await leaderboard(db, await leaderData(db));
     expect(boardAfter.map(({ name: _n, ...r }) => r)).toEqual(boardBefore.map(({ name: _n, ...r }) => r));
-    expect(boardBefore.map((r) => r.name).sort()).toEqual(['Big Zeke', 'Gus', 'Hana', 'Zeke']);
+    // The board goes by Zeke's newer name: changing it renamed his row in the ledger of the table he had left (#491).
+    expect(boardBefore.map((r) => r.name).sort()).toEqual(['Big Zeke', 'Gus', 'Hana', 'Zekey']);
     expect(boardAfter.map((r) => r.name).sort()).toEqual(['Big Zeke', DELETED_NAME, 'Gus', 'Hana']);
     expect(await Promise.all([zekeId, bigId, gusId].map((id) => profitSessions(db!, [id])))).toEqual(graphsBefore);
 

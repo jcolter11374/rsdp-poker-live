@@ -1633,6 +1633,15 @@ export function createApp(deps: AppDeps = {}) {
         rt?.guestNames.set(me, name);
         if (rt) broadcast(rt);
       }
+      // A seat this player already holds at a cash table takes the new name too (#491), whether or not they have
+      // the table open. A table nobody has opened for a while is not in memory and keeps the old name.
+      for (const rt of tables.values()) {
+        try {
+          rt.renamePlayer(me, name);
+        } catch (e) {
+          log('rename at a table failed', e);
+        }
+      }
     };
     /** A practice table: sits me in the first seat, adds the bots and deals. */
     const startPractice = async (rt: TableRuntime, practice: { name?: unknown; bots?: unknown; level?: unknown }) => {

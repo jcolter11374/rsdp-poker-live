@@ -2180,6 +2180,37 @@ export class TableRuntime {
     }
   }
 
+  /**
+   * A player changed the name on their profile (#491): the seat they hold here, a seat request or waitlist place, and
+   * their ledger row take the new name, and the log says so. Tournament tables keep the name the player registered
+   * with, as the lobby does. Returns whether anything changed.
+   */
+  renamePlayer(playerId: PlayerId, name: string): boolean {
+    if (this.isTournament || this.isBot(playerId)) return false;
+    const clean = cleanName(name);
+    const s = this.state;
+    const seat = this.seatOf(playerId);
+    const held: { name: string }[] = [
+      ...(seat ? [seat] : []),
+      ...s.requests.filter((r) => r.playerId === playerId),
+      ...(s.waitlist ?? []).filter((w) => w.playerId === playerId),
+      ...(s.ledger[playerId] ? [s.ledger[playerId]] : []),
+    ];
+    const old = held.find((h) => h.name !== clean)?.name;
+    const dealtAs = s.handNames?.[playerId];
+    if (old === undefined && (dealtAs === undefined || dealtAs === clean)) return false;
+    for (const was of new Set([...held.map((h) => h.name), ...(dealtAs === undefined ? [] : [dealtAs])])) {
+      if (was !== clean && !s.formerNames?.some((f) => f.playerId === playerId && f.name === was)) (s.formerNames ??= []).push({ playerId, name: was });
+    }
+    // Someone changing their name over and over can't make the table's saved state grow without end.
+    if (s.formerNames && s.formerNames.length > FORMER_NAMES_MAX) s.formerNames = s.formerNames.slice(-FORMER_NAMES_MAX);
+    for (const h of held) h.name = clean;
+    if (dealtAs !== undefined) s.handNames![playerId] = clean;
+    if (old !== undefined) this.log(`${old} is now ${clean}`);
+    this.sync();
+    return true;
+  }
+
   /** Gives a bot (here, or gone but still in the ledger) a fresh name and picture, everywhere its name shows. */
   private relookBot(playerId: PlayerId) {
     const bot = this.botInfo(playerId);
@@ -3763,6 +3794,9 @@ export function handReport(record: HandRecord, seats: RuntimeState['seats'] | nu
   }
   return { handNumber: record.handNumber, startStacks, endStacks, knockedOutBy, button: hand.input.button };
 }
+
+/** The most former names a table keeps (formerNames in types.ts). */
+const FORMER_NAMES_MAX = 200;
 
 function cleanName(name: string) {
   const clean = cleanDisplayName(name, NAME_MAX);

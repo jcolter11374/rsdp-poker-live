@@ -167,6 +167,29 @@ describe('socket server', () => {
     await host.until((x) => x.watchers.length === 0);
   });
 
+  it('gives a seat already held the new name when its player changes their profile name (#491)', async () => {
+    const host = client('rename-host-0123456789');
+    const guest = client('rename-guest-0123456789');
+    const { tableId } = await host.call<{ tableId: string }>('table:create', { settings: { seating: { requireApproval: false } } });
+    await host.call('table:join', { tableId });
+    await host.call('seat:request', { seat: 0, name: 'Host', stack: 100 });
+    await guest.call('table:join', { tableId });
+    await guest.call('seat:request', { seat: 1, name: 'Old Name', stack: 100 });
+    await host.until((x) => x.seats[1]?.name === 'Old Name');
+    // Changed from the profile page: the table isn't open in that tab.
+    guest.socket.emit('table:leave');
+    await guest.call('session:name', { name: 'New Name' });
+    const v = await host.until((x) => x.seats[1]?.name === 'New Name');
+    expect(v.ledger.map((r) => r.name).sort()).toEqual(['Host', 'New Name']);
+    expect(v.log.at(-1)?.text).toBe('Old Name is now New Name');
+    expect(v.seats[0]?.name).toBe('Host');
+    // The same name again changes nothing and says nothing.
+    await guest.call('session:name', { name: 'New Name' });
+    await guest.call('session:name', { name: 'Newer Name' });
+    const again = await host.until((x) => x.seats[1]?.name === 'Newer Name');
+    expect(again.log.filter((l) => / is now /.test(l.text)).map((l) => l.text)).toEqual(['Old Name is now New Name', 'New Name is now Newer Name']);
+  });
+
   it('shows spectators every card, a delay behind the table', async () => {
     const host = client('delay-host-0123456789');
     const guest = client('delay-guest-0123456789');

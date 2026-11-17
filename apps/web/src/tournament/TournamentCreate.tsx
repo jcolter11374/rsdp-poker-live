@@ -56,6 +56,9 @@ const NTH = [
 const pad = (n: number) => String(n).padStart(2, '0');
 const int = (v: string, min = 0) => Math.max(min, Math.floor(Number(v) || 0));
 
+/** Rebuy or add-on chips after the starting stack changes from `was` to `next`: they follow it while they equal it. */
+export const followStack = (was: number, next: number) => (chips: number) => (chips === was ? next : chips);
+
 function defaultDate() {
   const d = new Date(Date.now() + 24 * 3600_000);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -163,6 +166,16 @@ export function TournamentCreate({
   const [lateReg, setLateReg] = useState(base.lateRegistration);
   const [rebuy, setRebuy] = useState({ ...base.rebuy });
   const [addOn, setAddOn] = useState({ ...base.addOn });
+  /**
+   * A rebuy or add-on that is one starting stack (the usual, and the RSDP default) stays one starting stack when the
+   * host changes the stack. One the host has set to something else is theirs and is left alone (#490).
+   */
+  const changeStartingStack = (next: number) => {
+    const follow = followStack(startingStack, next);
+    setRebuy((r) => ({ ...r, chips: follow(r.chips) }));
+    setAddOn((a) => ({ ...a, chips: follow(a.chips) }));
+    setStartingStack(next);
+  };
   const [reEntry, setReEntry] = useState(base.reEntry);
   const [registrationApproval, setRegistrationApproval] = useState(base.registrationApproval);
   const [allowQuit, setAllowQuit] = useState(base.allowQuit);
@@ -355,7 +368,7 @@ export function TournamentCreate({
             <div className="tn-grid3">
               <label>
                 Starting stack
-                <input type="number" min={1} value={startingStack} onChange={(e) => setStartingStack(int(e.target.value, 1))} />
+                <input type="number" min={1} value={startingStack} onChange={(e) => changeStartingStack(int(e.target.value, 1))} />
               </label>
               <label>
                 Seats per table

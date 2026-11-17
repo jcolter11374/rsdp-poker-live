@@ -71,3 +71,15 @@ export function tableRulesText(r: { decisionSeconds: number; timeBankSeconds: nu
   const parts = r.decisionSeconds ? [clock, bank] : [clock];
   return `${parts.join(', ')}, ${r.rabbitHunt ? 'rabbit hunting allowed' : 'no rabbit hunting'} and no straddles.`;
 }
+
+/**
+ * The end of the Payouts tab's note (#489): the prizes can still change while people can join, and are final once
+ * the event has finished. Starts with a space, or is empty when neither is true (play is on and entries are closed).
+ */
+export function prizesNote(status: string, open: { registrationOpen: boolean; rebuysOpen: boolean; addOnsOpen: boolean; reEntryOpen: boolean }): string {
+  if (status === 'finished') return ' These are the final prizes.';
+  if (status === 'cancelled') return '';
+  if (open.registrationOpen) return ' Updates as players join.';
+  if (open.rebuysOpen || open.addOnsOpen || open.reEntryOpen) return ' Updates as players buy more chips.';
+  return '';
+}
