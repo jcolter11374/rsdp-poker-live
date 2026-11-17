@@ -246,6 +246,11 @@ export interface RuntimeState {
   paused: boolean;
   /** While paused: how long was left on each clock, and when the pause began (missing in older snapshots). */
   pausedLeft: { at?: number; turn: number | null; nextHand: number | null; rit: number | null; pick?: number | null } | null;
+  /**
+   * A tournament table held after the server had been away (#493): when play resumes at the latest. The table is
+   * paused while this is set. Missing or null otherwise.
+   */
+  resumeAt?: number | null;
   handNumber: number;
   hand: HandState | null;
   handStartedAt: number | null;

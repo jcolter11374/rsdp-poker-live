@@ -21,7 +21,8 @@ export type LogEvent =
   | { type: 'eliminated'; name: string; place: number; by: string[]; reason: 'busted' | 'quit' | 'removed' }
   | { type: 'tableBroken' }
   | { type: 'handForHand'; active: boolean }
-  | { type: 'paused' }
+  /** `outage`: the server paused it after being away, for at most `seconds`. */
+  | { type: 'paused'; outage?: true; seconds?: number }
   | { type: 'resumed' }
   | { type: 'structureEdited' }
   /** The settings the host changed, by name; anyone can read their new values in the lobby. */
@@ -90,11 +91,12 @@ export function logEvent(e: DirectorEvent, name: (playerId: PlayerId) => string)
       return { type: 'levelUp', levelNumber: e.levelNumber, sb: e.sb, bb: e.bb, ante: e.ante, anteType: e.anteType, gameId: e.gameId, ...(e.betting ? { betting: e.betting } : {}) };
     case 'breakStarted':
       return { type: 'breakStarted', minutes: e.minutes, addOn: e.addOn };
+    case 'paused':
+      return e.outageSeconds === undefined ? { type: 'paused' } : { type: 'paused', outage: true, seconds: e.outageSeconds };
     case 'breakEnded':
     case 'lateRegistrationClosed':
     case 'rebuysClosed':
     case 'reEntryClosed':
-    case 'paused':
     case 'resumed':
     case 'structureEdited':
     case 'tableBroken':

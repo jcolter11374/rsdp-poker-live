@@ -50,6 +50,7 @@ How this file works:
 | [D37](#d37-the-cash-game-recap) | The cash game recap | 2026-11-07 | Claude |
 | [D38](#d38-hand-entries-go-into-the-public-record-after-the-spectator-delay) | Hand entries go into the public record after the spectator delay | 2026-11-07 | John; details Claude |
 | [D39](#d39-what-spectators-on-a-delay-are-shown) | What spectators on a delay are shown | 2026-11-07 | John; details Claude |
+| [D40](#d40-a-tournament-pauses-when-the-site-has-been-down) | A tournament pauses when the site has been down | 2026-11-17 | John; details Claude |
 
 ---
 
@@ -458,3 +459,16 @@ How this file works:
   - **Not covered yet:** after a server restart the view starts again from the table as it is then (#470); the leaderboard (#469); buy-in and cash-out entries in the public record (#471); and sitting down to see the live table (#472).
 - **Why:** anything that came from the live table, or changed when it did, would tell someone watching on a delay what happened before they see it.
 - **Where:** `SpectatorFeed` in `apps/server/src/runtime/feed.ts`; `behind`, `stateThen` and `shownKey` in `apps/server/src/runtime/view.ts`; `remember`, `sendView`, `shownTo` and `attach` in `apps/server/src/app.ts`; `shownTo` and `shownSeat` in `apps/server/src/runtime/table.ts`. Tests in `apps/server/test/spectator-delay-gaps.test.ts`, `spectator-delay-socket.test.ts` and `spectator-delay-answers.test.ts`. [/fairness](FAIRNESS.md) says so under "Watching on a delay". Issues #435 and #452.
+
+## D40. A tournament pauses when the site has been down
+
+- **Decided:** 2026-11-17, by John, on issue #493: "the tournament clock should stop during an outage", and after one "everyone gets 2 minutes to return to the table". Tournaments only: he said cash games don't need it. The details below are Claude's.
+- **Decision:** when the server starts and finds a tournament that was in play, the time it was away counts as a pause, and the tournament stays paused for up to 2 minutes so its players can come back.
+  - **The time away is not time played.** The blind clock goes back to where it stood when the server was last known to be running, so a level or a break never passes while the site is down. The server notes the time on a tournament in play every 10 seconds, and when it shuts down in the ordinary way, so after a crash the clock can stand up to 10 seconds earlier than it really was. That is in the players' favour.
+  - **A rebuy offer** that was open keeps the time it had left, counted from when play resumes.
+  - **The 2 minutes.** Every table stops where it is, mid-hand included, and shows "Resuming in 2:00" counting down; the lobby says the same. Play resumes as soon as every player still in has their table open again, or when the host presses Resume, or when the 2 minutes run out. Whoever is still missing then is treated as away, as before. The player to act gets a whole turn clock.
+  - **If the server goes again during the pause,** the 2 minutes start over.
+  - **A release restarts the server,** so it pauses a running tournament the same way. With everyone's browser reconnecting by itself that pause lasts a second or two.
+  - **Left as they were:** cash tables (a hand resumes with a fresh turn clock, as before); a tournament the host had paused (still the host's to resume; hands being played out wait the same 2 minutes, then go on); a tournament that hasn't started (its start time is a time of day, so it still starts on time, or at once if that time passed while the site was down); and a tournament saved by a release from before this one, which has no time noted, so it gets the 2 minutes but its clock isn't put back.
+- **Why:** on 17 November 2026 a bug check found that a 10-minute outage on 8-minute levels brought everyone back one or two levels higher, and that a busted player's 15-second rebuy offer ran out while the site was down. And when the site comes back, some players will have put their phone down, so the first hand shouldn't be dealt to empty chairs.
+- **Where:** `outage` and `endOutage` in `packages/tournament/src/director.ts`; `adopt`, `seen`, `keepSeen` and `holdForOutage` in `apps/server/src/tournament/manager.ts`; `holdForOutage` in `apps/server/src/runtime/table.ts`; `ResumingIn` in `apps/web/src/components/Table.tsx`. Tests in `packages/tournament/test/director.test.ts` and `apps/server/test/tournament-restart.test.ts`.

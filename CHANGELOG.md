@@ -18,6 +18,18 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.17.2] - 2026-11-17
+
+_Tournaments wait for you after an outage_
+
+### New
+
+- **Two minutes to get back to your table.** If the site goes down during a tournament, the tournament is paused when it comes back, and every table shows "Resuming in 2:00" counting down. Play starts again as soon as everyone has their table open, or when the host presses Resume, or when the two minutes run out. A hand that was being played picks up where it stopped, and the player to act gets a full turn clock. Cash games carry on as before.
+
+### Fixed and changed
+
+- Tournaments: if the site goes down in the middle of a tournament, the time it was down no longer counts. The blind clock picks up where it stopped, so nobody comes back to find the blinds a level or two higher, and a rebuy offer that was open is still open.
+
 ## [2026.11.17] - 2026-11-17
 
 ### Fixed and changed
@@ -797,6 +809,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.17.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.2
 [2026.11.17]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17
 [2026.11.07.7]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.7
 [2026.11.07.6]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.07.6

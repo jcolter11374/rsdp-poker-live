@@ -288,6 +288,19 @@ export interface TournamentState {
   /** Check-in progress: when the first group opened, and how many groups are open. */
   checkIn?: { openedAt: number | null; groupsOpen: number };
   /**
+   * Paused by the server because it had been away (a crash or a release, #493): play resumes at `resumeAt` at the
+   * latest, sooner when every player is back or the host resumes it. Missing while the event is not paused this way.
+   */
+  /** `hostPaused`: the host had paused it before the server went away, so it stays paused when the wait ends. */
+  outage?: { resumeAt: number; hostPaused?: true };
+  /** When the last outage pause ended, so a wait that counts from a knockout doesn't count the time away. */
+  outageEndedAt?: number;
+  /**
+   * The last moment the server is known to have had this event in memory, stamped by the server on each save and
+   * never read by the director. After a restart, the time since then is the time the server was away.
+   */
+  seenAt?: number;
+  /**
    * What the host set for the lobby chat. Set by the server, never by the director, and still changed once the event is
    * over, since its lobby chat stays open. Missing: nothing was ever set (or the state was saved before this was kept).
    */
@@ -335,6 +348,14 @@ export type Command =
   | { type: 'remove'; by: PlayerId; playerId: PlayerId }
   | { type: 'pause'; by: PlayerId }
   | { type: 'resume'; by: PlayerId }
+  /**
+   * The server's own, never a browser's: the server was away from `since` (the last moment it is known to have been
+   * running) until now. A tournament in play counts that time as a pause and stays paused until `resumeAt`, so
+   * the players have time to come back (#493).
+   */
+  | { type: 'outage'; since: number; resumeAt: number }
+  /** The server's own: every player is back at their table, so play resumes before the outage pause runs out. */
+  | { type: 'outageOver' }
   | { type: 'startNow'; by: PlayerId }
   | { type: 'editStructure'; by: PlayerId; structure: StructureRow[] }
   | { type: 'updateSettings'; by: PlayerId; settings: Partial<TournamentSettings> }
@@ -413,7 +434,8 @@ export type DirectorEvent =
   /** Leaves the table for good. */
   | { type: 'eliminated'; entryId: EntryId; playerId: PlayerId; place: number; by: PlayerId[]; tableId: TableId | null; seat: number | null; reason: 'busted' | 'quit' | 'removed' }
   | { type: 'handForHand'; active: boolean }
-  | { type: 'paused' }
+  /** `outageSeconds`: paused by the server after it had been away, for that long at the most. */
+  | { type: 'paused'; outageSeconds?: number }
   | { type: 'resumed' }
   | { type: 'structureEdited' }
   /** The host changed settings: `changed` names the ones whose value differs (empty when a save changed nothing). */

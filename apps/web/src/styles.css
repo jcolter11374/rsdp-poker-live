@@ -709,6 +709,9 @@ button.icon { background: transparent; border-color: transparent; font-size: 1.1
 .board .pots { order: -1; }
 .board .next-hand { order: 1; }
 .next-hand { font-weight: 600; letter-spacing: 0.02em; }
+/* The outage countdown (#493) is the one thing a returning player must read, so it sits over the dealer button and
+   bets where a small table brings them together, on a backing dark enough to read through. */
+.next-hand.resuming { position: relative; z-index: 4; background: rgba(0, 0, 0, 0.72); font-variant-numeric: tabular-nums; }
 /* Before a cash game starts, or after the host stops it, the middle of the table says what happens next: it takes no room
    from the felt, so the seats stay put when the game starts (#383). Under the game's name. */
 .board .board-notice { order: 1; }

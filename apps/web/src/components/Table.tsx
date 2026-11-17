@@ -36,6 +36,20 @@ export function useNow(active: boolean, ms = 200) {
  * The acting seat's clock: a line that drains to empty at the deadline. Keyed on the turn, so where it
  * starts and how long it runs are fixed when it appears; changing them on every tick would make it jump.
  */
+/**
+ * A tournament table paused after the site had been away (#493): the countdown to play resuming, in the spot that
+ * says "Paused". It has its own clock, since the table's stands still while paused.
+ */
+function ResumingIn({ at, skew }: { at: number; skew: number }) {
+  const now = useNow(true, 250) + skew;
+  const left = Math.max(0, Math.ceil((at - now) / 1000));
+  return (
+    <div className="next-hand resuming" role="timer" aria-label="Paused. Play resumes soon">
+      Resuming in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+    </div>
+  );
+}
+
 function TurnLine({ turn, paused, serverNow, skew, bank, low }: { turn: { startedAt: number; deadline: number }; paused: boolean; serverNow: number; skew: number; bank: boolean; low: boolean }) {
   // Read the clock here rather than taking the table's \`now\`, which stands still while nothing ticks (a pause, a fresh turn).
   const [start] = useState(() => {
@@ -1192,7 +1206,7 @@ export function Table({
         )}
         {/* Dealer's choice: who is picking the next game, in the same spot. */}
         <ChoiceLine view={view} now={now} />
-        {view.paused && <div className="next-hand">Paused</div>}
+        {view.paused && (view.resumeAt != null ? <ResumingIn at={view.resumeAt} skew={skew} /> : <div className="next-hand">Paused</div>)}
         {!hand && view.upcoming && !(view.choice && !view.choice.current) && <div className="next-hand muted">{view.upcoming.gameName}</div>}
         {notice && (
           <div

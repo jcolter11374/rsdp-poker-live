@@ -77,6 +77,7 @@ export function logText(e: LogEvent): string {
     case 'handForHand':
       return e.active ? 'Hand-for-hand on the bubble' : 'Hand-for-hand over';
     case 'paused':
+      if (e.outage) return `The site was interrupted, so the tournament is paused. Play resumes within ${countdownWords(e.seconds ?? 0)}, or as soon as everyone is back`;
       return 'The host paused the tournament';
     case 'resumed':
       return 'The tournament resumed';
@@ -136,4 +137,10 @@ export function activityLines(items: readonly LobbyItem[]): ActivityLine[] {
     shown.push({ id: x.id, at: x.at, event: x.event });
   }
   return shown.map((x) => ({ id: x.id, at: x.at, text: logText(x.event) })).reverse();
+}
+
+/** "2 minutes", "90 seconds": how long an outage pause lasts at the most. */
+function countdownWords(seconds: number): string {
+  if (seconds % 60 === 0 && seconds >= 60) return `${seconds / 60} ${seconds === 60 ? 'minute' : 'minutes'}`;
+  return `${seconds} seconds`;
 }
