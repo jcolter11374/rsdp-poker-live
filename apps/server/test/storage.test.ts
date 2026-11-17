@@ -113,7 +113,8 @@ describe('database storage', () => {
     // A second server on the same database picks the tournament and its table back up.
     const again = createApp({ identity: dbIdentity(db), store: dbStore(db), tournaments: dbTournamentStore(db), log: (m, e) => console.error(m, e) });
     await again.resume();
-    expect(again.tournaments.view(id)?.state.status).toBe('running');
+    // In play when the first server was last seen, so it is paused for its players to come back (#493).
+    expect(again.tournaments.view(id)?.state).toMatchObject({ status: 'paused', outage: { resumeAt: expect.any(Number) } });
     expect(again.tables.get(tableId)?.state.seats.filter(Boolean)).toHaveLength(2);
     again.tournaments.dispose();
     for (const rt of again.tables.values()) rt.dispose();

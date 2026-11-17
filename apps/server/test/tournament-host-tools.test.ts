@@ -7,7 +7,7 @@ import { tableView } from '../src/runtime/view';
 import { FINISHED_KEEP_MS, IDLE_ARCHIVE_MS } from '../src/tournament/manager';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock } from './fake-clock';
-import { chipsInPlay, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
+import { backToPlay, chipsInPlay, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
@@ -223,6 +223,7 @@ describe('restart with a stack edit in flight', () => {
     clock.t = env.clock.now();
     const next = setup({ store, snapshots: new Map(env.snapshots), clock });
     await next.manager.resumeAll();
+    await backToPlay(next, id);
     const table = [...next.tables.values()][0];
     expect(table.seatOf('p2')!.pendingStack).toBeNull();
     const total = () => next.manager.view(id)!.state.entries.reduce((n, e) => n + e.stack, 0);

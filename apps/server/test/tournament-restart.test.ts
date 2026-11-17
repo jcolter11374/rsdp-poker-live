@@ -9,7 +9,8 @@ import type { RuntimeState } from '../src/runtime/types';
 import { memoryTournamentStore } from '../src/tournament/store';
 import { FakeClock, seeded } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
-import { chipsInPlay, players, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
+import { OUTAGE_PAUSE_MS } from '../src/tournament/manager';
+import { backToPlay, chipsInPlay, players, playUntil, registerAll, seatsAgree, setup, type Env } from './tournament-helpers';
 
 beforeAll(() => registerAllVariants(variants));
 
@@ -263,7 +264,7 @@ describe('tournaments after a crash', () => {
     expect(standings(now())[0].stack).toBe(4000);
   }, 60_000);
 
-  it.each([30_000, 70_000])('the player to act keeps their hand when the server is back %i ms later, even if a level went up meanwhile', async (gap) => {
+  it.each([30_000, 70_000])('the player to act keeps their hand when the server is back %i ms later, and no level went up meanwhile (#493)', async (gap) => {
     const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 1 });
     const { env, id, state } = await started(3, { structure: [level(10), level(20), level(40)] });
     const [rt] = env.tables.values();
@@ -271,13 +272,83 @@ describe('tournaments after a crash', () => {
     const hand = rt.state.hand!;
     expect(hand.phase).toBe('betting');
     const thinker = hand.seats.find((x) => x.seat === hand.toAct)!.playerId;
+    const played = env.clock.t - state().clock.runningSince!;
+    await env.manager.flush();
 
-    // Down for a while: with 1-minute levels, 70 s means a level went up before the server came back.
-    const after = await restart(await savedAs(state()), env.snapshots, env.clock.t + gap);
+    // Down for a while: with 1-minute levels, 70 s used to mean a level went up before the server came back.
+    const after = await restart(env.store, env.snapshots, env.clock.t + gap);
     const table = after.tables.get(rt.state.id)!;
-    const seat = table.state.hand!.seats.find((x) => x.playerId === thinker)!;
-    expect({ folded: seat.folded, toAct: table.state.hand!.toAct, timeouts: table.seatOf(thinker)!.timeouts }).toEqual({ folded: false, toAct: seat.seat, timeouts: 0 });
-    expect(after.manager.view(id)!.state.status).toBe('running');
+    const seat = () => table.state.hand!.seats.find((x) => x.playerId === thinker)!;
+    const now = () => after.manager.view(id)!.state;
+    expect({ folded: seat().folded, toAct: table.state.hand!.toAct, timeouts: table.seatOf(thinker)!.timeouts }).toEqual({ folded: false, toAct: seat().seat, timeouts: 0 });
+    // The time away is a pause: the clock stands where it stopped, and the table shows when play resumes.
+    expect(now()).toMatchObject({ status: 'paused', outage: { resumeAt: after.clock.t + OUTAGE_PAUSE_MS }, clock: { rowIndex: 0, elapsedMs: played, runningSince: null } });
+    expect(table.state).toMatchObject({ paused: true, resumeAt: after.clock.t + OUTAGE_PAUSE_MS });
+    await expect(async () => table.act(thinker, { type: 'fold' })).rejects.toThrow(/paused/);
+    // Nobody comes back: nothing moves for the two minutes, and nobody is timed out.
+    after.clock.advance(OUTAGE_PAUSE_MS - 1000);
+    expect(now().status).toBe('paused');
+    expect(table.state.hand!.toAct).toBe(seat().seat);
+    after.clock.advance(1000);
+    // Play resumes: the level has the time it had left, and the player to act a whole turn clock.
+    expect(now()).toMatchObject({ status: 'running', clock: { rowIndex: 0, elapsedMs: played, runningSince: after.clock.t } });
+    expect(now().outage).toBeUndefined();
+    expect(table.state).toMatchObject({ paused: false, resumeAt: null });
+    expect(table.state.hand!.toAct).toBe(seat().seat);
+    expect(table.state.turn!.deadline! - after.clock.t).toBeGreaterThanOrEqual(table.state.settings.timing.decisionSeconds * 1000);
+    expect(after.errors).toEqual([]);
+  });
+
+  it('play resumes as soon as every player is back at their table, or when the host resumes it (#493)', async () => {
+    for (const how of ['everyone back', 'host'] as const) {
+      const { env, id } = await started(3);
+      const [rt] = env.tables.values();
+      for (let i = 0; i < 100 && !(rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null); i++) env.clock.advance(250);
+      await env.manager.flush();
+      const after = await restart(env.store, env.snapshots, env.clock.t + 20_000);
+      const [table] = after.tables.values();
+      const now = () => after.manager.view(id)!.state;
+      expect(now().status).toBe('paused');
+      const ids = table.state.seats.flatMap((x) => (x ? [x.playerId] : []));
+      if (how === 'host') await after.manager.command(id, 'host', '', { type: 'resume', by: 'host' });
+      else {
+        // Two of three are back: still waiting.
+        for (const p of ids.slice(0, 2)) table.connect(p);
+        after.clock.advance(5000);
+        expect(now().status).toBe('paused');
+        table.connect(ids[2]);
+        after.clock.advance(1000);
+      }
+      expect(now().status, how).toBe('running');
+      expect(now().outage).toBeUndefined();
+      expect(table.state).toMatchObject({ paused: false, resumeAt: null });
+      expect(after.errors).toEqual([]);
+    }
+  });
+
+  it('a rebuy offer open when the server stopped is still open when it comes back (#493)', async () => {
+    const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 60, rebuy: true });
+    const { env, id, state } = await started(3, { structure: [level(10), level(20)], rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 } });
+    const [rt] = env.tables.values();
+    for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
+    const offered = () => state().entries.find((e) => e.status === 'rebuy-offer');
+    for (let i = 0; i < 5000 && !offered(); i++) {
+      const before = rt.state.hand?.toAct;
+      allIn(rt);
+      if (rt.state.hand?.toAct === before) env.clock.advance(250);
+    }
+    const busted = offered()!.playerId;
+    env.clock.advance(5000);
+    await env.manager.flush();
+    // Back a minute later: four times as long as the offer lasts.
+    const after = await restart(env.store, env.snapshots, env.clock.t + MIN);
+    const now = () => after.manager.view(id)!.state;
+    const entry = () => now().entries.find((e) => e.playerId === busted)!;
+    expect(entry().status).toBe('rebuy-offer');
+    // It has the 10 seconds it had left, counted from when play resumes.
+    expect(entry().rebuyOfferExpiresAt).toBe(after.clock.t + OUTAGE_PAUSE_MS + 10_000);
+    await after.manager.command(id, busted, '', { type: 'rebuy', playerId: busted });
+    expect(entry()).toMatchObject({ status: 'seated', stack: 1000 });
     expect(after.errors).toEqual([]);
   });
 
@@ -352,6 +423,7 @@ describe('tournaments after a crash', () => {
     for (const table of now().tables) expect(table.inHand, table.id).toBe(after.tables.get(tableAddress(table.id))!.state.handStartedAt !== null);
     seatsAgree(after, id);
     expect(after.errors).toEqual([]);
+    await backToPlay(after, id);
     // Nothing waits on a hand that is over: the host can pause, let the last hand finish, and end the event.
     await after.manager.command(id, 'host', '', { type: 'pause', by: 'host' });
     for (const rt of after.tables.values()) for (const seat of rt.state.seats) if (seat) rt.connect(seat.playerId);
@@ -394,7 +466,7 @@ describe('tournaments after a crash', () => {
   it.each([
     ['a break', [{ kind: 'break', minutes: 5 }], null],
     ['a new level', [], 100],
-  ] as const)('a table between hands waits for %s that started while the server was down', async (_, next, bigBlind) => {
+  ] as const)('a table between hands gets %s only once the level has been played out, not while the server was down (#493)', async (_, next, bigBlind) => {
     const level = (sb: number, minutes: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes });
     const { env, id } = await started(2, { structure: [level(10, 1), ...next, level(50, 20)] });
     const [rt] = env.tables.values();
@@ -407,13 +479,26 @@ describe('tournaments after a crash', () => {
     env.clock.advance(0);
     expect(rt.state.handStartedAt).toBeNull();
     await env.manager.flush();
+    const played = env.clock.t - env.manager.view(id)!.state.clock.runningSince!;
 
-    // Back two minutes later: the first level ended a minute ago.
+    // Back two minutes later: the first level would have ended a minute ago.
     const after = await restart(env.store, new Map(env.snapshots), env.clock.t + 2 * MIN);
     const [table] = after.tables.values();
-    expect(after.manager.view(id)!.state.clock.rowIndex).toBe(1);
-    if (bigBlind === null) expect(table.state.handStartedAt).toBeNull();
-    else expect(table.state.hand?.input.stakes.bigBlind).toBe(bigBlind);
+    const now = () => after.manager.view(id)!.state;
+    expect(now()).toMatchObject({ status: 'paused', clock: { rowIndex: 0 } });
+    expect(table.state.handStartedAt).toBeNull();
+    // Nobody is back, so play resumes when the pause runs out, still on the first level.
+    after.clock.advance(OUTAGE_PAUSE_MS);
+    expect(now()).toMatchObject({ status: 'running', clock: { rowIndex: 0 } });
+    for (let i = 0; i < 100 && table.state.handStartedAt === null; i++) after.clock.advance(500);
+    expect(table.state.hand?.input.stakes.bigBlind).toBe(20);
+    // The rest of the level is played, and then the break or the new level comes.
+    after.clock.advance(MIN - played);
+    expect(now().clock.rowIndex).toBe(1);
+    if (bigBlind !== null) {
+      for (let i = 0; i < 400 && table.state.hand?.input.stakes.bigBlind !== bigBlind; i++) after.clock.advance(500);
+      expect(table.state.hand?.input.stakes.bigBlind).toBe(bigBlind);
+    }
     expect(after.errors).toEqual([]);
   });
 

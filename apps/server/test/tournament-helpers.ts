@@ -48,6 +48,14 @@ export function setup(shared?: { store: ReturnType<typeof memoryTournamentStore>
   return { clock, store, snapshots, tables, detached, moves, errors, manager };
 }
 
+/**
+ * After a restart a tournament in play is paused for its players to come back (#493). Tests about something else
+ * have the host resume it at once, which is one of the ways that pause ends.
+ */
+export async function backToPlay(env: ReturnType<typeof setup>, id: string) {
+  if (env.manager.view(id)?.state.outage) await env.manager.command(id, 'host', '', { type: 'resume', by: 'host' });
+}
+
 export const players = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `Player ${i + 1}` }));
 
 /** Everyone at every table plays: mostly check or call, sometimes shove or fold, taking `thinkMs` per round of decisions. */
