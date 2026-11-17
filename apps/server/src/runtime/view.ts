@@ -313,7 +313,8 @@ function withOwnSeat(seats: TableView['seats'], mine?: SeatView): TableView['sea
   const out = seats.slice();
   while (out.length <= mine.seat) out.push(null);
   const there = out[mine.seat];
-  if (!there || there.playerId === mine.playerId) out[mine.seat] = noHand(mine);
+  // Whether they owe blinds changes as each live hand is dealt, which would mark the deal: they are waiting for a hand.
+  if (!there || there.playerId === mine.playerId) out[mine.seat] = { ...noHand(mine), owesBlinds: false, waiting: true };
   return out;
 }
 
@@ -401,7 +402,13 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     const from = oldest ?? delayedPart(live);
     // Chips in front of a player in the hand are theirs until it ends: the ledger has what they had before it.
     const before = new Map(from.ledger.map((r) => [r.playerId, r.stack]));
-    const seats = from.seats.map((x) => x && { ...noHand(x), stack: opts.stacksBefore?.get(x.playerId) ?? (x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack) });
+    const seats = from.seats.map((x) => {
+      if (!x) return x;
+      const held = opts.stacksBefore?.get(x.playerId);
+      // Someone the held hand busted isn't shown as busted either.
+      const bust = held !== undefined && x.sitOutReason === 'busted' ? { sittingOut: false, sitOutReason: null } : {};
+      return { ...noHand(x), ...bust, stack: held ?? (x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack) };
+    });
     // Lines from the delay before the oldest snapshot: a fixed time, so this view stays the same until that snapshot
     // comes due. Cut on the time now, a live change would send it with more lines at the moment it happened (#435).
     const cutoff = (oldest ? oldest.serverNow : live.serverNow) - delayMs;

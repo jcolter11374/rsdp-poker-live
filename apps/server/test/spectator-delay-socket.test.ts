@@ -527,6 +527,8 @@ describe('a spectator on a delay who takes a seat (#472)', () => {
     expect(seated.watchers.some((w) => w.playerId === seated.me.playerId)).toBe(false);
     // The hand that just ended live isn't in their hand list yet.
     await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow();
+    // A move sent by hand is answered as it is while a hand is being played, not "no hand is being played".
+    await expect(fan.call('hand:act', { type: 'fold' })).rejects.toThrow('you are not in this hand');
 
     // Standing up again shows them nothing new either.
     fan.socket.emit('seat:stand', {});
@@ -544,6 +546,21 @@ describe('a spectator on a delay who takes a seat (#472)', () => {
     expect(dealt.spectator).toBeNull();
     expect(dealt.seats[3]?.inHand).toBe(true);
     expect(dealt.seats[3]?.cards.length).toBeGreaterThan(0);
+  });
+
+  it('sees the table as it is when no hand has been dealt yet', async () => {
+    const ann = client('gap-new-ann-0123456789');
+    const ben = client('gap-new-ben-0123456789');
+    const { tableId } = await ann.call<{ tableId: string }>('table:create', {
+      settings: { seating: { requireApproval: false }, spectators: { allowed: true, delaySeconds: 30 }, timing: { decisionSeconds: 0, autoStartNextHand: false } },
+    });
+    for (const c of [ann, ben]) await c.call('table:join', { tableId });
+    await ann.call('seat:request', { seat: 0, name: 'Ann', stack: 10_000 });
+    clock.advance(5_000);
+    await ben.call('seat:request', { seat: 1, name: 'Ben', stack: 10_000 });
+    const seated = await ben.until((v) => v.me.seat === 1);
+    expect(seated.spectator).toBeNull();
+    expect(seated.seats[0]?.name).toBe('Ann');
   });
 
   it('sees the table live at once when their view had already caught up with it', async () => {

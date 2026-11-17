@@ -408,10 +408,12 @@ Two more things are worth knowing:
 - **Sitting down.** At a cash table with a delay, a spectator who takes a seat
   keeps the view they had, with their own seat in it, until they are dealt
   into a hand (or their view has caught up with the table). So sitting down
-  and standing up again shows nothing of the hand being played. From their
-  first hand on they see the table live, like every player. Someone who was
-  playing, stood up and sits back down while their view still shows them in a
-  seat sees it live, as they did until they stood up.
+  and standing up again shows no cards, chips or moves of the hand being
+  played. (A few of the table's answers can still tell them that a hand has
+  ended, such as one to picking a Dealer's choice game.) From their first
+  hand on they see the table live, like every player. It only applies while
+  there is something to keep back: at a table that hasn't started, or long
+  after the last hand, sitting down shows the table as it is.
 - **After a server restart** (every release is one), the server no longer has
   the moments it was keeping to show. Spectators see the table with no hand
   on it until what the table did after the restart is old enough to show. A
@@ -419,7 +421,8 @@ Two more things are worth knowing:
   player in it keeps the chips they had before it until the time spectators
   would have seen it end. They don't get to watch the rest of that hand at
   the table; it is in the hand list once the delay has passed. A seat someone
-  left as that hand ended does show empty at once.
+  left as that hand ended does show empty at once, and side-game totals (the
+  Nit game, house fees) are as the hand left them.
 
 **All-in runouts.** When a hand ends all-in, the remaining cards are dealt
 out on screen over a few seconds, though the server already has the result.

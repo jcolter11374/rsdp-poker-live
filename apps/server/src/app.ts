@@ -620,7 +620,8 @@ export function createApp(deps: AppDeps = {}) {
     asShown: (tableId, ids, past) => {
       const rt = tables.get(tableId);
       // Any of theirs who sees the table live (in a seat, or staff) finds it whole.
-      if (!rt || ids.some((id) => rt.seatOf(id) || rt.isStaff(id))) return undefined;
+      // Not someone who sat down on the delay and isn't dealt in yet (#472).
+      if (!rt || ids.some((id) => !watches(rt, id))) return undefined;
       const player = past.seats.find((x) => ids.includes(x.playerId))?.playerId;
       const shown = player ? shownTo(rt, player, clock.now()) : null;
       if (!shown) return undefined;
@@ -972,7 +973,9 @@ export function createApp(deps: AppDeps = {}) {
       if (tables.get(id) !== rt) return;
       // Timers can fire a millisecond early; the moment due now must count as old enough.
       const now = Math.max(clock.now(), at);
-      // Someone in a seat whose delayed view has just caught up is sent the table live, once.
+      // Someone in a seat whose delayed view has just caught up is sent the table live, once. The moment due now
+      // counts as shown before anyone is asked about, whatever the clock says.
+      feeds.get(id)?.shown(now, true);
       for (const s of watchers.get(id) ?? []) if (satBehind.get(id)?.has(s.data.playerId) || isSpectator(rt, s)) sendView(rt, s, now);
     }, Math.max(0, at - clock.now()));
   }
@@ -1272,8 +1275,14 @@ export function createApp(deps: AppDeps = {}) {
       seated = seatedNow();
       const behindNow = satBehind.get(id);
       const dealt = rt.state.hand?.seats;
-      for (const p of behindNow ?? []) if (!seated.has(p) || dealt?.some((x) => x.playerId === p)) behindNow!.delete(p);
-      if (!rt.tournament) {
+      // Dealt in, gone, or the one the table waits on for a Dealer's choice pick: they have to see it to make it.
+      const picker = rt.isTournament || !rt.choice.pickOpen() ? undefined : rt.choice.chooser()?.playerId;
+      for (const p of behindNow ?? []) if (!seated.has(p) || p === picker || dealt?.some((x) => x.playerId === p)) behindNow!.delete(p);
+      // Only while there is something to keep from them: a hand being played, or one spectators haven't seen end yet.
+      // At a table that hasn't started, or between hands long over, sitting down shows the table as it is.
+      const lastHand = rt.state.history.at(-1);
+      const unseen = rt.handLive() || (!!lastHand && lastHand.endedAt + rt.settings.spectators.delaySeconds * 1000 + runoutMs(lastHand.hand.events) > clock.now());
+      if (!rt.isTournament && unseen) {
         const now = clock.now();
         const feed = feedOf(rt, now);
         // Not someone the delayed view still shows in a seat: they saw the table live until they stood up.
