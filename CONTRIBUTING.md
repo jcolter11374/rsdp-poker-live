@@ -98,7 +98,7 @@ been started.
 | `status: waiting on John` | Needs John: a decision, a setting, something only he can do |
 | `status: waiting on others` | Waiting on someone outside the project |
 | `priority: high` | Breaks games or stops people playing; do it first |
-| `area: cash`, `area: tournaments`, `area: table`, `area: accounts`, `area: fairness`, `area: site`, `area: ops` | Which part of the site it's about (`ops` is hosting, deploys, backups, CI) |
+| `area: cash`, `area: tournaments`, `area: table`, `area: dealers choice`, `area: accounts`, `area: fairness`, `area: site`, `area: ops` | Which part of the site it's about (`ops` is hosting, deploys, backups, CI) |
 | `no issue needed` | On a pull request only: it skips the linked-issue check |
 
 The labels are defined in [`.github/labels.json`](.github/labels.json). Edit
