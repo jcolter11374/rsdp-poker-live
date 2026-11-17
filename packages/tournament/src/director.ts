@@ -1155,7 +1155,7 @@ function advanceClock(c: Ctx) {
  * The server was away from `since` until now (#493). None of that is time played: an event in play is paused as of
  * `since`, and stays paused until `resumeAt` so its players can come back; a rebuy offer open at `since` keeps the
  * time it had left, counted from when play resumes. An event the host had paused stays the host's to resume, and
- * only its offers get the time away back. Before the start nothing changes: a start time is a time of day.
+ * its offers get the time away back, and hands still being played out wait the same while, but it stays paused after. Before the start nothing changes: a start time is a time of day.
  */
 function outage(c: Ctx, since: number, resumeAt: number) {
   const s = c.s;
@@ -1163,7 +1163,9 @@ function outage(c: Ctx, since: number, resumeAt: number) {
   const from = Math.min(since, c.now);
   const inPlay = s.status === 'running' && s.clock.runningSince !== null;
   // Away again during an outage pause: the pause starts over, and offers move on by as much.
-  const held = s.outage ? resumeAt - s.outage.resumeAt : (inPlay ? resumeAt : c.now) - from;
+  // An event the host had paused may have hands still being played out: those wait for the players too.
+  const hostPaused = s.outage ? s.outage.hostPaused : s.status === 'paused';
+  const held = s.outage ? resumeAt - s.outage.resumeAt : (inPlay || hostPaused ? resumeAt : c.now) - from;
   for (const e of s.entries) {
     if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined && e.rebuyOfferExpiresAt > from && held > 0) e.rebuyOfferExpiresAt += held;
   }
@@ -1171,22 +1173,23 @@ function outage(c: Ctx, since: number, resumeAt: number) {
     s.clock = { ...s.clock, elapsedMs: elapsed(s, Math.max(from, s.clock.runningSince!)), runningSince: null };
     s.status = 'paused';
   }
-  if (inPlay || s.outage) {
-    s.outage = { resumeAt };
+  if (inPlay || s.outage || hostPaused) {
+    s.outage = { resumeAt, ...(hostPaused ? { hostPaused } : {}) };
     emit(c, { type: 'paused', outageSeconds: Math.max(0, Math.round((resumeAt - c.now) / 1000)) });
   }
 }
 
 /** Play resumes after an outage pause: at its time, when everyone is back, or when the host says so. */
-function endOutage(c: Ctx) {
+function endOutage(c: Ctx, byHost = false) {
   const s = c.s;
   if (!s.outage) return;
+  const stayPaused = s.outage.hostPaused && !byHost;
   // Resumed early: offers that were waiting for the pause to run out count from now.
   const early = s.outage.resumeAt - c.now;
   if (early > 0) for (const e of s.entries) if (e.status === 'rebuy-offer' && e.rebuyOfferExpiresAt !== undefined) e.rebuyOfferExpiresAt = Math.max(c.now, e.rebuyOfferExpiresAt - early);
   delete s.outage;
   s.outageEndedAt = c.now;
-  if (s.status === 'paused') {
+  if (s.status === 'paused' && !stayPaused) {
     s.clock = { ...s.clock, runningSince: c.now };
     s.status = 'running';
     emit(c, { type: 'resumed' });
@@ -1411,7 +1414,7 @@ export function apply(state: TournamentState, cmd: Command, now: number): Result
       }
       case 'resume': {
         if (s.status !== 'paused') fail('Not paused');
-        if (s.outage) endOutage(c);
+        if (s.outage) endOutage(c, true);
         else {
           s.clock = { ...s.clock, runningSince: now };
           s.status = 'running';
@@ -1559,7 +1562,8 @@ function handResult(c: Ctx, r: HandResult) {
     payBounty(c, e);
     if (canRebuy(s, e)) {
       e.status = 'rebuy-offer';
-      e.rebuyOfferExpiresAt = c.now + s.settings.rebuy.offerSeconds * 1000;
+      // Offered during an outage pause (a hand the server finished just before it went away): the time counts from when play resumes.
+      e.rebuyOfferExpiresAt = (s.outage?.resumeAt ?? c.now) + s.settings.rebuy.offerSeconds * 1000;
       emit(c, { type: 'rebuyOffered', entryId: e.id, playerId: e.playerId, expiresAt: e.rebuyOfferExpiresAt, chips: s.settings.rebuy.chips });
     } else out.push(e);
   }

@@ -291,7 +291,8 @@ export interface TournamentState {
    * Paused by the server because it had been away (a crash or a release, #493): play resumes at `resumeAt` at the
    * latest, sooner when every player is back or the host resumes it. Missing while the event is not paused this way.
    */
-  outage?: { resumeAt: number };
+  /** `hostPaused`: the host had paused it before the server went away, so it stays paused when the wait ends. */
+  outage?: { resumeAt: number; hostPaused?: true };
   /** When the last outage pause ended, so a wait that counts from a knockout doesn't count the time away. */
   outageEndedAt?: number;
   /**

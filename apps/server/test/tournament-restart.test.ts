@@ -326,6 +326,29 @@ describe('tournaments after a crash', () => {
     }
   });
 
+  it('a hand being played out under the host\'s pause waits for the players too, and the pause stays the host\'s (#493)', async () => {
+    const { env, id } = await started(3);
+    const [rt] = env.tables.values();
+    for (let i = 0; i < 100 && !(rt.state.hand?.phase === 'betting' && rt.state.hand.toAct !== null); i++) env.clock.advance(250);
+    await env.manager.command(id, 'host', '', { type: 'pause', by: 'host' });
+    const toAct = rt.state.hand!.toAct;
+    await env.manager.flush();
+    const after = await restart(env.store, env.snapshots, env.clock.t + 5 * MIN);
+    const [table] = after.tables.values();
+    const now = () => after.manager.view(id)!.state;
+    expect(now()).toMatchObject({ status: 'paused', outage: { resumeAt: after.clock.t + OUTAGE_PAUSE_MS, hostPaused: true } });
+    expect(table.state).toMatchObject({ paused: true, resumeAt: after.clock.t + OUTAGE_PAUSE_MS });
+    after.clock.advance(OUTAGE_PAUSE_MS - 1000);
+    expect(table.state.hand!.toAct).toBe(toAct);
+    expect(table.state.seats.every((x) => !x || x.timeouts === 0)).toBe(true);
+    after.clock.advance(1000);
+    // The wait is over: the hand goes on, and the event is still paused by the host.
+    expect(now().status).toBe('paused');
+    expect(now().outage).toBeUndefined();
+    expect(table.state).toMatchObject({ paused: false, resumeAt: null });
+    expect(after.errors).toEqual([]);
+  });
+
   it('a rebuy offer open when the server stopped is still open when it comes back (#493)', async () => {
     const level = (sb: number): StructureRow => ({ kind: 'level', sb, bb: sb * 2, ante: 0, anteType: 'none', minutes: 60, rebuy: true });
     const { env, id, state } = await started(3, { structure: [level(10), level(20)], rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 } });

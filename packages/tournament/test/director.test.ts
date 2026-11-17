@@ -271,10 +271,41 @@ describe('clock, breaks and pause', () => {
     sim.now = T0 + 4 * MIN;
     sim.do({ type: 'pause', by: 'host' });
     sim.now = T0 + 30 * MIN;
-    expect(sim.do({ type: 'outage', since: T0 + 5 * MIN, resumeAt: sim.now + 2 * MIN })).toEqual([]);
-    expect(sim.state.outage).toBeUndefined();
+    // Hands still being played out wait for the players like any other, and then the host's pause stands.
+    expect(sim.do({ type: 'outage', since: T0 + 5 * MIN, resumeAt: sim.now + 2 * MIN })).toEqual([{ type: 'paused', outageSeconds: 120 }]);
+    expect(sim.state.outage).toEqual({ resumeAt: T0 + 32 * MIN, hostPaused: true });
     sim.at(T0 + 40 * MIN);
+    expect(sim.state.outage).toBeUndefined();
     expect(sim.state.status).toBe('paused');
+    expect(sim.state.clock).toMatchObject({ elapsedMs: 4 * MIN, runningSince: null });
+    // The host's Resume during the wait ends both.
+    sim.do({ type: 'outage', since: T0 + 41 * MIN, resumeAt: sim.now + 2 * MIN });
+    expect(sim.do({ type: 'resume', by: 'host' })).toEqual([{ type: 'resumed' }]);
+    expect(sim.state.outage).toBeUndefined();
+    expect(sim.state.status).toBe('running');
+  });
+
+  it('a rebuy offered during an outage pause counts its time from when play resumes', () => {
+    for (const early of [true, false]) {
+      const sim = new Sim({ rebuy: { max: 1, chips: 1000, approval: false, offerSeconds: 15 } });
+      sim.register(3);
+      sim.do({ type: 'startNow', by: 'host' });
+      const t = sim.state.tables[0].id;
+      sim.now = T0 + 5 * MIN;
+      sim.do({ type: 'outage', since: T0 + MIN, resumeAt: sim.now + 2 * MIN });
+      // A hand the table had finished before the server went, reported after it came back.
+      sim.hand(t, 'p0', ['p2']);
+      expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 2 * MIN + 15_000);
+      if (early) {
+        sim.now += 5_000;
+        sim.do({ type: 'outageOver' });
+        expect(sim.entry('p2').rebuyOfferExpiresAt).toBe(sim.now + 15_000);
+      } else {
+        sim.at(sim.now + 2 * MIN + 14_000);
+        expect(sim.state.outage).toBeUndefined();
+        expect(sim.entry('p2').status).toBe('rebuy-offer');
+      }
+    }
   });
 
   it('a rebuy offer open when the server went away keeps the time it had left, counted from when play resumes', () => {
