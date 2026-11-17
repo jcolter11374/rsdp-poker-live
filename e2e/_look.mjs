@@ -34,7 +34,7 @@ await Promise.all(SCENES.filter((s) => !only || only.includes(s.name)).map(async
       await p.waitForTimeout(500);
       const btns = bar.locator('.buttons button');
       const texts = await btns.allInnerTexts().catch(() => []);
-      const i = texts.findIndex((t) => /^(Check|Call)/.test(t));
+      const i = texts.findIndex((t) => /^(Check|Call|Bring|Post)/.test(t));
       if (i >= 0) { await btns.nth(i).click({ timeout: 2000 }).catch(() => {}); turns++; }
     }
     await p.waitForTimeout(120);

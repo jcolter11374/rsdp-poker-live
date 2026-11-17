@@ -14,6 +14,7 @@ import { AuditLog, dbAuditStore, memoryAuditStore, PENDING_HAND_KIND, type Audit
 import { closeDb, loadSnapshot, queryRows, saveSnapshot, type Db } from '../src/db';
 import { createTestDb } from '../src/db/testing';
 import { TableRuntime } from '../src/runtime/table';
+import { tableView } from '../src/runtime/view';
 import { Scheduler } from '../src/scheduler';
 import { dbIdentity, dbStore } from '../src/storage';
 import { FakeClock, seeded } from './fake-clock';
@@ -286,6 +287,51 @@ describe('hands at a table watched on a delay', () => {
     // Each went in once.
     clock.advance(10 * DELAY);
     expect(await handsOf('delay-one')).toHaveLength(3);
+  });
+
+  it('keeps a cash-out made as the hand ends out of the record until the delay has passed, and tells only the players it waits (#471)', { timeout: 20_000 }, async () => {
+    clock = new FakeClock();
+    const store = memoryStore();
+    const app = await serve(memoryAuditStore(), store);
+    const rt = await table(app, store, 'delay-chips', DELAY / 1000);
+    const chipsOf = async (who: string) =>
+      (await read<{ entries: AuditEntry[] }>(`/api/audit/table/${tableRef('delay-chips')}/chips`)).entries.find((e) => e.data.player === playerRef('delay-chips', who))?.data;
+    const waits = (viewer: string) => tableView(rt, viewer, clock.now()).ledger.filter((r) => r.recordWaits).map((r) => r.playerId);
+
+    expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
+    // Ann says she is leaving during the hand: she goes, and is cashed out, as it ends.
+    rt.start('host');
+    rt.stand('ann', { afterHand: true });
+    expect(rt.seatOf('ann')).toBeTruthy();
+    const folder = rt.state.seats[rt.state.hand!.toAct!]!.playerId;
+    rt.act(folder, { type: 'fold' });
+    expect(rt.seatOf('ann')).toBeFalsy();
+    const cashOut = rt.state.ledger.ann.cashOut;
+    expect(cashOut).toBeGreaterThan(0);
+
+    // The record still has her totals from before, so it can't show the hand is over; the players are told which row waits.
+    expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
+    expect(waits('host')).toEqual(['ann']);
+    expect(waits('a-spectator')).toEqual([]);
+    // Sitting down again before then changes her totals again: that waits behind the cash-out, which it would show.
+    clock.advance(10_000);
+    rt.connect('ann');
+    rt.requestSeat('ann', { seat: 1, name: 'Ann', stack: 40 });
+    expect(rt.state.ledger.ann.buyIn).toBe(140);
+    expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
+    // A buy-in that has nothing to do with a hand's end still goes in at once.
+    rt.connect('bea');
+    rt.requestSeat('bea', { seat: 2, name: 'Bea', stack: 70 });
+    expect(await chipsOf('bea')).toMatchObject({ buyIn: 70, cashOut: 0 });
+
+    clock.advance(DELAY - 10_000 - 1);
+    expect(await chipsOf('ann')).toMatchObject({ buyIn: 100, cashOut: 0 });
+    clock.advance(1);
+    expect(await chipsOf('ann')).toMatchObject({ buyIn: 140, cashOut });
+    expect(waits('host')).toEqual([]);
+    const mine = (await all()).filter((e) => e.kind === 'chips' && e.data.player === playerRef('delay-chips', 'ann'));
+    expect(mine.map((e) => [e.data.buyIn, e.data.cashOut])).toEqual([[100, 0], [100, cashOut], [140, cashOut]]);
+    expect(chainProblem(await all())).toBeNull();
   });
 
   it('keeps a table\'s hands in order when its delay is shortened, and leaves tables watched live as they were', { timeout: 20_000 }, async () => {

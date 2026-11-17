@@ -19,12 +19,18 @@ import type { Db } from './db';
 import { dbCause, newId, queryRows, schema } from './db';
 import type { HandRecord, RuntimeState } from './runtime/types';
 
-/** A hand's entry waiting for the table's spectator delay: not in the chain, so it has no number or hash yet. */
+/**
+ * An entry waiting for the table's spectator delay: not in the chain, so it has no number or hash yet. A hand's entry,
+ * or with `chips` a player's buy-in and cash-out totals that changed as a hand ended (#471).
+ */
 export interface PendingHand {
   id: string;
   table: string;
+  /** The hand it is, or for chip totals the hand they changed with. */
   hand: number;
+  /** The hand's fingerprint; '' for chip totals. */
   digest: string;
+  chips?: { player: string; buyIn: number; cashOut: number };
   /** When it goes in, in milliseconds since 1970. */
   at: number;
 }
@@ -118,7 +124,7 @@ export function dbAuditStore(db: Db): AuditStore {
         .from(j)
         .where(and(eq(j.kind, PENDING_HAND_KIND), eq(j.status, 'pending')))
         .orderBy(asc(j.runAt), asc(j.createdAt));
-      return rows.map((r) => ({ id: r.id, at: r.runAt.getTime(), ...(r.payload as Pick<PendingHand, 'table' | 'hand' | 'digest'>) }));
+      return rows.map((r) => ({ id: r.id, at: r.runAt.getTime(), ...(r.payload as Pick<PendingHand, 'table' | 'hand' | 'digest' | 'chips'>) }));
     },
     async hold(p) {
       await db
@@ -127,7 +133,7 @@ export function dbAuditStore(db: Db): AuditStore {
           id: p.id,
           kind: PENDING_HAND_KIND,
           runAt: new Date(p.at),
-          payload: { table: p.table, hand: p.hand, digest: p.digest },
+          payload: { table: p.table, hand: p.hand, digest: p.digest, ...(p.chips ? { chips: p.chips } : {}) },
           status: 'pending',
           // Just after the last one kept, so hands due at the same time go in the order they were kept, even on a
           // database whose clock counts in whole milliseconds. (greatest skips the null when none is waiting.)
@@ -343,7 +349,23 @@ export class AuditLog {
     const going = this.waiting.filter(which);
     if (!going.length) return;
     this.waiting = this.waiting.filter((p) => !which(p));
-    for (const p of going) this.write('hand', { table: p.table, hand: p.hand, digest: p.digest }, p.id);
+    for (const p of going) {
+      if (p.chips) this.write('chips', { table: p.table, ...p.chips }, p.id);
+      else this.write('hand', { table: p.table, hand: p.hand, digest: p.digest }, p.id);
+    }
+    this.onReleased?.(new Set(going.map((p) => p.table)));
+  }
+
+  /** Told the tables (by their refs) whose waiting entries just went in, so their players' ledger checks can look again. */
+  onReleased: ((tables: Set<string>) => void) | null = null;
+
+  /** Keeps `p` until it is due, after every entry due no later, so those due together go in the order they were kept. */
+  private keep(p: PendingHand) {
+    const i = this.waiting.findIndex((x) => x.at > p.at);
+    this.waiting.splice(i < 0 ? this.waiting.length : i, 0, p);
+    this.unsaved.push({ hold: p });
+    this.save();
+    this.arm();
   }
 
   /** One timer, for the soonest waiting hand. One that fires late puts in everything due by then; one that fires early arms again. */
@@ -386,15 +408,9 @@ export class AuditLog {
       events,
     });
     const data = { table: tableRef(tableId), hand: record.handNumber, digest };
-    const behind = this.waiting.filter((p) => p.table === data.table).at(-1)?.at;
+    const behind = this.waiting.filter((p) => p.table === data.table && !p.chips).at(-1)?.at;
     if ((publishAt === undefined || publishAt <= this.now()) && behind === undefined) return void this.record('hand', data);
-    const p: PendingHand = { id: newId(), ...data, at: Math.max(publishAt ?? this.now(), behind ?? -Infinity) };
-    // After every hand due no later, so those due together go in the order they were kept.
-    const i = this.waiting.findIndex((x) => x.at > p.at);
-    this.waiting.splice(i < 0 ? this.waiting.length : i, 0, p);
-    this.unsaved.push({ hold: p });
-    this.save();
-    this.arm();
+    this.keep({ id: newId(), ...data, at: Math.max(publishAt ?? this.now(), behind ?? -Infinity) });
   }
 
   /**
@@ -405,8 +421,8 @@ export class AuditLog {
    */
   async watchTable(state: RuntimeState) {
     const seen = new Map<string, string>();
+    const refs = new Map(Object.keys(state.ledger).map((id) => [playerRef(state.id, id), id]));
     try {
-      const refs = new Map(Object.keys(state.ledger).map((id) => [playerRef(state.id, id), id]));
       for (const e of await this.latestChips(tableRef(state.id))) {
         const id = refs.get(String(e.data.player));
         if (id) seen.set(id, `${e.data.buyIn}/${e.data.cashOut}`);
@@ -415,28 +431,47 @@ export class AuditLog {
       // Recorded again from scratch rather than not at all.
       this.log(`reading the public record for table ${state.id} failed`, e);
     }
+    // Totals still waiting to go in (kept across a restart) are the latest written for their players.
+    const table = tableRef(state.id);
+    for (const p of this.waiting) {
+      const id = p.chips && p.table === table ? refs.get(p.chips.player) : undefined;
+      if (id) seen.set(id, `${p.chips!.buyIn}/${p.chips!.cashOut}`);
+    }
     this.chips.set(state.id, seen);
     this.tableChanged(state, true);
   }
 
-  /** Records the chip totals that changed. Practice bots play for nothing and aren't recorded. */
-  tableChanged(state: RuntimeState, loaded = false) {
+  /**
+   * Records the chip totals that changed. Practice bots play for nothing and aren't recorded.
+   * `publishAt`: these changed as a hand ended at a table whose spectators watch on a delay, and that is when they see
+   * it end. Until then the totals wait like the hand's own entry (#471, D38), so they can't show that it is over. A
+   * later change to the same player's totals waits behind them, since it would show them too.
+   */
+  tableChanged(state: RuntimeState, loaded = false, publishAt?: number) {
     const seen = this.chips.get(state.id);
     if (!seen) return;
+    const table = tableRef(state.id);
     for (const row of Object.values(state.ledger)) {
       if (row.bot) continue;
       const now = `${row.buyIn}/${row.cashOut}`;
       const before = seen.get(row.playerId);
       if (before === now) continue;
       seen.set(row.playerId, now);
-      this.record('chips', {
-        table: tableRef(state.id),
-        player: playerRef(state.id, row.playerId),
-        buyIn: row.buyIn,
-        cashOut: row.cashOut,
-        ...(loaded && before !== undefined ? { loaded: true } : {}),
-      });
+      const player = playerRef(state.id, row.playerId);
+      const behind = this.waiting.filter((p) => p.table === table && p.chips?.player === player).at(-1)?.at;
+      const at = Math.max(publishAt ?? -Infinity, behind ?? -Infinity);
+      if (at > this.now()) {
+        this.keep({ id: newId(), table, hand: state.handNumber, digest: '', chips: { player, buyIn: row.buyIn, cashOut: row.cashOut }, at });
+        continue;
+      }
+      this.record('chips', { table, player, buyIn: row.buyIn, cashOut: row.cashOut, ...(loaded && before !== undefined ? { loaded: true } : {}) });
     }
+  }
+
+  /** The players at this table whose latest buy-in and cash-out totals are still waiting to go in (#471). */
+  chipsWaiting(tableId: string): Set<string> {
+    const table = tableRef(tableId);
+    return new Set(this.waiting.filter((p) => p.table === table && p.chips).map((p) => p.chips!.player));
   }
 
   /**
@@ -445,7 +480,7 @@ export class AuditLog {
    */
   holdsHand(tableId: string): boolean {
     const table = tableRef(tableId);
-    return this.waiting.some((p) => p.table === table);
+    return this.waiting.some((p) => p.table === table && !p.chips);
   }
 
   forgetTable(tableId: string) {

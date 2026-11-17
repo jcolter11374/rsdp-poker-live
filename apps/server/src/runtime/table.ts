@@ -211,6 +211,12 @@ export class TableRuntime {
   onChange: () => void = () => {};
   /** Called with each finished hand, for hand history storage. */
   onHandFinished: (record: HandRecord) => void = () => {};
+  /**
+   * The players whose latest buy-in and cash-out totals haven't gone in the public record yet: they changed as a hand
+   * ended, and wait until spectators on a delay see it end (#471). The app sets this; seated players' ledger checks
+   * wait for those rows.
+   */
+  ledgerWaiting: () => ReadonlySet<PlayerId> = () => new Set();
   /** Called with each new log or chat line, to keep them all: the state keeps only the latest few. */
   onLine: (line: TableLine) => void = () => {};
   /**

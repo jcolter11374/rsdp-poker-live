@@ -156,11 +156,13 @@ export function tableView(
       return { ...r, ...(bot ? { bot: { ownerId: bot.ownerId, ownerName: bot.ownerName, level: bot.level ?? 'normal' } } : {}) };
     }),
     // Bot rows are flagged: they play for nothing, so settle-up pays only between people.
-    ledger: Object.values(s.ledger).map((row) => {
-      const seat = rt.seatOf(row.playerId);
-      const stack = seat ? seat.stack + seat.pendingChips : 0;
-      return { ...row, stack, net: stack + row.cashOut - row.buyIn };
-    }),
+    ledger: ((waiting) =>
+      Object.values(s.ledger).map((row) => {
+        const seat = rt.seatOf(row.playerId);
+        const stack = seat ? seat.stack + seat.pendingChips : 0;
+        // Only the players are told which rows the public record doesn't have yet (#471): they see the table live.
+        return { ...row, stack, net: stack + row.cashOut - row.buyIn, ...(waiting?.has(row.playerId) ? { recordWaits: true as const } : {}) };
+      }))(isSpectator ? null : rt.ledgerWaiting()),
     chat: s.chat.slice(-CHAT_SHOWN),
     log: s.log.slice(-LOG_SHOWN),
     settingsLog: s.settingsLog.slice(-20).map((e) => ({ ...e, by: rt.nameOf(e.by) })),

@@ -277,9 +277,10 @@ the repository (and pulling the `transparency` branch now and then).
   anyone it is over before the people watching see it end. Until then the
   server keeps the entry, saved, outside the chain: it gets its number and
   time when it goes in, and a table's hands go in in the order they ended.
-  Buy-ins, cash-outs and everything else still go in at once, even those that
-  come as a hand ends (someone leaving after the hand, say), so those can show
-  that a hand is over before the people watching see it end. Anyone can read
+  A buy-in or cash-out total that changes as a hand ends there (someone
+  leaving after the hand, say) waits the same way and goes in with the hand,
+  and the ledger tells the players which rows are still waiting. Other
+  buy-ins and cash-outs, and everything else, still go in at once. Anyone can read
   the record at `/api/audit/entries`.
   Privacy: the record names nobody, but anyone with a table's link can find
   that table's entries and see each player's buy-ins and cash-outs there,
@@ -410,8 +411,6 @@ And a few gaps are still open, each with its issue:
   as it is now, ahead of their view, even if they stand up again straight away
   (#472). At a table where the host approves new players, that needs the
   host's OK.
-- A buy-in or cash-out made as a hand ends goes in the public record at once
-  (see "Checking John" above), so it can show that the hand is over (#471).
 
 ## HUDs and tracking software
 

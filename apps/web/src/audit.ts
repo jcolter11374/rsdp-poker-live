@@ -181,7 +181,8 @@ export function ledgerMismatches(tableId: string, ledger: LedgerView[], entries:
   // Oldest first, so the last one per player wins.
   for (const e of entries) if (e.kind === 'chips') latest.set(String(e.data.player), e);
   return ledger.filter((row) => {
-    if (row.bot) return false;
+    // Totals that changed as a hand ended wait for the table's spectator delay before they go in (#471).
+    if (row.bot || row.recordWaits) return false;
     const e = latest.get(playerRef(tableId, row.playerId));
     return !e || e.data.buyIn !== row.buyIn || e.data.cashOut !== row.cashOut;
   });
