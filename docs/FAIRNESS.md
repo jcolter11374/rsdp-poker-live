@@ -431,7 +431,7 @@ someone busted: how the table answers a host's or a bot owner's controls, a
 gesture at a player knocked out of a tournament, the player count in the
 Dealer's choice pick panel, and a page opened in the middle of the runout,
 which shows it finished. These are known and left as they are for now
-(issues #463, #483, #480; decision D42). They may be fixed later.
+(issues #463, #483, #480; decision D43). They may be fixed later.
 
 ## HUDs and tracking software
 
