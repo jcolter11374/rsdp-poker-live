@@ -52,6 +52,7 @@ How this file works:
 | [D39](#d39-what-spectators-on-a-delay-are-shown) | What spectators on a delay are shown | 2026-11-07 | John; details Claude |
 | [D40](#d40-a-tournament-pauses-when-the-site-has-been-down) | A tournament pauses when the site has been down | 2026-11-17 | John; details Claude |
 | [D41](#d41-a-change-updates-its-docs-in-the-same-pull-request) | A change updates its docs in the same pull request | 2026-11-17 | John picked; details Claude |
+| [D42](#d42-how-a-review-is-run-and-who-merges-is-written-down) | How a review is run, and who merges, is written down | 2026-11-17 | John agreed; details Claude |
 
 ---
 
@@ -485,3 +486,13 @@ How this file works:
 - **Why:** a check that day found the docs accurate except where a change had updated some of them and not others: the tournament outage pause (D40) was in three places and missing from five. Nothing asked a change which docs it touched.
 - **Not done:** ARCHITECTURE.md stays as it is, a dense reference. Rewriting it in shorter sections is the larger option John didn't pick.
 - **Where:** [README.md](../README.md#start-here), [CONTRIBUTING.md](../CONTRIBUTING.md#keeping-the-docs-current), [the pull request template](../.github/pull_request_template.md), [CLAUDE.md](../CLAUDE.md).
+
+## D42. How a review is run, and who merges, is written down
+
+- **Decided:** 2026-11-17, by John. A read of the docs as a newcomer (issue #502) found that the process asked for "a review pass with another AI session" without saying how to run one, what a person would do instead, or who may merge. Asked whether to add a short section on that now and leave the rest for later, he said "Go for it!". The details are Claude's and reversible.
+- **Decision:**
+  - CONTRIBUTING.md says what a review pass is, how to run one with an AI session, what a full review checks, and what the review comment says. The list describes what the reviews already did; it adds no new check.
+  - A person who didn't write a change may review it, the same way.
+  - It also says who merges: today only John's account can change the repository, whoever opened the pull request merges it once the checks are green and the review is posted (D05, D22), and a newcomer works from a fork until John decides otherwise.
+- **Not done, waiting until a human developer is actually joining:** rewording ARCHITECTURE.md, which still speaks to "workstreams" (see also D41), and letting the smoke test use a browser already on the machine. Both stay on issue #502.
+- **Where:** [CONTRIBUTING.md](../CONTRIBUTING.md#reviewing-and-merging).

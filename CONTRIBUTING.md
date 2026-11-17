@@ -221,7 +221,7 @@ Decide that before it's merged into `develop`, and make its branch from
    which docs it updated
    ([Keeping the docs current](#keeping-the-docs-current)). We
    also run a separate review pass with another AI session (a short one for
-   a light change). That pass is ours, not an outside audit. Its findings,
+   a light change; see [Reviewing and merging](#reviewing-and-merging)). That pass is ours, not an outside audit. Its findings,
    and the commit it reviewed, go in a comment on the pull request, so the
    review leaves a trace on GitHub. Anything left for later gets its own
    issue, listed under "Left to do", and needs an owner or a "waiting on"
@@ -261,6 +261,69 @@ GitHub also closes an issue by itself when "Closes #123" reaches `main` in a
 release pull request's description or in a commit message. That's fine: the
 Release workflow still lists it in the release notes and comments when it
 went live.
+
+## Reviewing and merging
+
+**What a review pass is.** A second read of a change by a reviewer who
+didn't write it, working from the change itself and its issue, not from the
+author's account of it. So far the reviewer has been a fresh AI session. A
+person can do it just as well: any developer who didn't write the change
+may review it, the same way. The session (or person) that wrote a change
+doesn't review it.
+
+**Running one with an AI session.** Start a new session, not the one that
+wrote the change. Give it the pull request's diff and its issue, tell it to
+change nothing, and ask it to check the list below against the code and
+report what it finds. Give it the code, not your conclusion: a reviewer
+told what to find tends to find it.
+
+**What a full review checks:**
+
+1. The change does what its issue asks, with nothing else mixed in, and
+   "full" or "light" is the right label for it.
+2. The unusual paths around what changed, not only the usual one: a server
+   restart in the middle, a player who is away or on two devices, a
+   spectator watching, the last hand of a tournament, the same button
+   pressed twice.
+3. Hidden information: nothing new reaches a browser that its viewer may
+   not see (other players' cards, the deck, a spectator's delay).
+4. Stored data: tables, tournaments and hands saved by the version now
+   live still load, and a migration follows the rules in
+   [ARCHITECTURE.md](docs/ARCHITECTURE.md#database-migrations-appsserverdrizzle).
+5. The new tests test what they say, and would fail without the change.
+6. Every doc that describes what changed is updated
+   ([Keeping the docs current](#keeping-the-docs-current)), and
+   /fairness, /transparency, /privacy and /terms still say what the code
+   does.
+
+A light review checks the shorter list under
+[Full or light](#full-or-light-how-much-checking-a-change-needs).
+
+**What the review comment says.** It goes on the pull request, headed "a
+separate review we ran ourselves" (never "independent": it isn't an outside
+audit). It names the commit reviewed, what was checked, each finding and
+how it was resolved (fixed, with the commit; accepted, with the reason; or
+left for its own issue), and anything that couldn't be checked. If the
+fixes are more than small, the reviewer looks again at the new commit.
+
+**Who merges.** Today only John's GitHub account can change the
+repository, and the AI sessions work through it. No approval click is
+required ([D22](docs/DECISIONS.md#d22-how-work-is-tracked-and-checked)):
+John gave a standing OK for a change to be merged into `develop` once the
+checks are green and its review is posted, and for finished work to be
+released without asking him each time
+([D05](docs/DECISIONS.md#d05-branches-merges-and-releases),
+[DEPLOY.md](docs/DEPLOY.md#releasing)). So whoever opened the pull request
+merges it when both are done, as one squashed commit whose title keeps the
+issue and pull request numbers. Ask John first about anything that costs
+money, changes what the product is, or can't be undone.
+
+**If you're new.** The code is MIT-licensed, so anyone may fork the
+repository and open a pull request into `develop` from the fork. It follows
+the same rules as any other: an issue, the checks, a review pass by someone
+who didn't write it, and then John (or a session working through his
+account) merges it. Whether someone else gets to change the repository
+directly is John's call; ask him.
 
 ## Releases
 
