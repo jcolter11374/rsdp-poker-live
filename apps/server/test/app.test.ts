@@ -188,6 +188,11 @@ describe('socket server', () => {
     await guest.call('session:name', { name: 'Newer Name' });
     const again = await host.until((x) => x.seats[1]?.name === 'Newer Name');
     expect(again.log.filter((l) => / is now /.test(l.text)).map((l) => l.text)).toEqual(['Old Name is now New Name', 'New Name is now Newer Name']);
+    // Each change is logged at the table, so only a few are taken in a row (the first was the name sat down with).
+    await guest.call('session:name', { name: 'Name Four' });
+    await guest.call('session:name', { name: 'Name Five' });
+    await expect(guest.call('session:name', { name: 'Name Six' })).rejects.toThrow(/too many name changes/);
+    expect((await host.until((x) => x.seats[1]?.name === 'Name Five')).seats[1]?.name).toBe('Name Five');
   });
 
   it('shows spectators every card, a delay behind the table', async () => {

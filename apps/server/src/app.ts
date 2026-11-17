@@ -236,6 +236,9 @@ const IDLE_UNLOAD_MS = 45 * 60_000;
 const IDLE_SWEEP_MS = 5 * 60_000;
 /** Table chat lines one player may send per window (across all their tabs): a burst could wipe the table's chat. */
 const CHAT_BURST = 8;
+/** Name changes one player may make in RENAME_WINDOW_MS: each is logged at every cash table they have a seat at. */
+const RENAME_BURST = 5;
+const RENAME_WINDOW_MS = 5 * 60_000;
 const CHAT_WINDOW_MS = 10_000;
 /** Gestures one player may throw per window (across all their tabs), so nobody floods the table. */
 const GESTURE_BURST = 4;
@@ -464,6 +467,7 @@ export function createApp(deps: AppDeps = {}) {
   const avatarOf = (playerId: PlayerId) => avatars.get(playerId) ?? null;
   const gestureTimes = new Map<PlayerId, number[]>();
   const chatTimes = new Map<PlayerId, number[]>();
+  const renameTimes = new Map<PlayerId, number[]>();
   const tips = tipLimits(() => clock.now());
   // Started with the first tip anyone asks for.
   const coach = deps.tips ? null : coachWorker({ log });
@@ -1624,6 +1628,11 @@ export function createApp(deps: AppDeps = {}) {
       const name = cleanName(value, NAME_MAX);
       if (!name) throw new ActionError('pick a name');
       if (name === socket.data.session.displayName) return;
+      // Each change is announced at the player's tables, so they come a few at a time.
+      const now = clock.now();
+      const recent = (renameTimes.get(me) ?? []).filter((t) => now - t < RENAME_WINDOW_MS);
+      if (recent.length >= RENAME_BURST) throw new ActionError('too many name changes; try again in a few minutes');
+      renameTimes.set(me, [...recent, now]);
       await identity.rename(me, name);
       for (const s of playerSockets.get(me) ?? []) {
         s.data.session = { ...s.data.session, displayName: name };

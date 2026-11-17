@@ -73,8 +73,9 @@ export function tableRulesText(r: { decisionSeconds: number; timeBankSeconds: nu
 }
 
 /**
- * The end of the Payouts tab's note (#489): the prizes can still change while people can join, and are final once
- * the event has finished. Starts with a space, or is empty when neither is true (play is on and entries are closed).
+ * The end of the Payouts tab's note (#489): the prizes are changing while people can join or buy more chips, and are
+ * final once the event has finished. Starts with a space. Empty when nothing is open right now (a later add-on break
+ * can still add to the pool, so it doesn't say final) and for a cancelled event.
  */
 export function prizesNote(status: string, open: { registrationOpen: boolean; rebuysOpen: boolean; addOnsOpen: boolean; reEntryOpen: boolean }): string {
   if (status === 'finished') return ' These are the final prizes.';
