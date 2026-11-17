@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { betUnit, clock, type Fmt } from '../format';
 import { handKind, handStrength } from '../strength';
@@ -20,6 +21,15 @@ const shownHand = (gameId: string, seat: SeatView, board: string[]) =>
   seat.cards.length && seat.cards.every((c) => c.card !== '??') ? handStrength(gameId, seat.cards.map((c) => c.card), board) : null;
 
 /** Re-renders on an interval while something on screen is counting down. */
+/** A game with a board in the middle. One the page doesn't know counts: room kept is better than seats moving. */
+function isFlopGame(gameId: string): boolean {
+  try {
+    return getVariant(gameId).family === 'flop';
+  } catch {
+    return true;
+  }
+}
+
 export function useNow(active: boolean, ms = 200) {
   const [now, setNow] = useState(Date.now());
   // Catch up before painting when it starts again, so a countdown doesn't open on a stale time.
@@ -1089,7 +1099,11 @@ export function Table({
   }, [takenKey, offset, mine, compact, clear, clearNow, minGap, w, h, measured, sized, sizedNow, mixed, allGames, sizedKey, nowKey, showEmpty]);
   // On a phone, no seat sits level with the middle, so the board gets the felt's full width.
   // The band fits the pot, the board rows and a result line, plus the seats either side of it.
-  const boardRows = !hand || hand.family === 'flop' ? Math.max(1, (hand?.boards.length ?? 1) * (hand?.boards[0]?.length ?? 1)) : 0;
+  // The band is for the games the table deals, not the hand on it: a table that deals any flop game keeps room for a
+  // board all the time, and a stud or draw table never does, so no seat moves at the first deal or when a mix changes
+  // game (#449). A flop hand with more boards (run it twice, a bomb pot) still gets its rows.
+  const flopTable = useMemo(() => !dealt.length || dealt.some(isFlopGame), [dealt]);
+  const boardRows = hand?.family === 'flop' ? Math.max(1, hand.boards.length * (hand.boards[0]?.length ?? 1)) : flopTable ? 1 : 0;
   const band = 30 + (boardRows > 1 ? boardRows * 52 : boardRows * 68) + 30 + 100;
   const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - (players + empties) * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);

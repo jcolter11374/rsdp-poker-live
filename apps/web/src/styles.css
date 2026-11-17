@@ -1029,7 +1029,9 @@ dl.shortcuts dd { margin: 0; }
   .portrait .dock.seated { min-height: max(230px, var(--held, 0px)); }
 }
 /* Fixed-limit games (no bet slider) have a shorter bar. */
-.dock.seated.limit { min-height: max(113px, var(--held, 0px)); }
+/* Its buttons are taller on a window over 820px tall (119px against 93px), so the room kept is too (#486). */
+.dock.seated.limit { min-height: max(120px, var(--held, 0px)); }
+@media (max-height: 820px) { .dock.seated.limit { min-height: max(113px, var(--held, 0px)); } }
 .portrait .dock.seated.limit { min-height: max(115px, var(--held, 0px)); }
 /* Coach tips (a practice table, from the moment you sit down, see Dock): the bar sits at the foot of the dock, so a tip
    opening above the buttons grows it upwards, and fixed-limit games (where the tip has no sizing block to stand in
