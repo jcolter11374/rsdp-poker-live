@@ -30,6 +30,16 @@ function isFlopGame(gameId: string): boolean {
   }
 }
 
+/**
+ * How many rows of board cards the middle of a phone's table keeps room for. It goes by the games the table deals, not
+ * the hand on it (#449): any flop game among them keeps one row all the time, a stud or draw table none. A flop hand
+ * with more boards (run it twice, a bomb pot) gets its rows.
+ */
+export function boardRowsFor(dealt: readonly string[], hand?: { family: string; boards: readonly (readonly unknown[])[] } | null): number {
+  if (hand?.family === 'flop') return Math.max(1, hand.boards.length * (hand.boards[0]?.length ?? 1));
+  return !dealt.length || dealt.some(isFlopGame) ? 1 : 0;
+}
+
 export function useNow(active: boolean, ms = 200) {
   const [now, setNow] = useState(Date.now());
   // Catch up before painting when it starts again, so a countdown doesn't open on a stale time.
@@ -1102,8 +1112,7 @@ export function Table({
   // The band is for the games the table deals, not the hand on it: a table that deals any flop game keeps room for a
   // board all the time, and a stud or draw table never does, so no seat moves at the first deal or when a mix changes
   // game (#449). A flop hand with more boards (run it twice, a bomb pot) still gets its rows.
-  const flopTable = useMemo(() => !dealt.length || dealt.some(isFlopGame), [dealt]);
-  const boardRows = hand?.family === 'flop' ? Math.max(1, hand.boards.length * (hand.boards[0]?.length ?? 1)) : flopTable ? 1 : 0;
+  const boardRows = useMemo(() => boardRowsFor(dealt, hand), [dealt, hand]);
   const band = 30 + (boardRows > 1 ? boardRows * 52 : boardRows * 68) + 30 + 100;
   const fractions = compact ? clearSideBands(spread, w, h, Math.max(0, Math.min(band, (perimeter - (players + empties) * 100) / 2))) : spread;
   const seatPoint = (seat: number) => stadiumPoint(fractions[seat], w, h);

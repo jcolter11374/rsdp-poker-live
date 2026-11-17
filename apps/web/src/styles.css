@@ -1013,7 +1013,7 @@ dl.shortcuts dd { margin: 0; }
    a phone), or the head line's 26px on your turn, between the Tip pill and the time bank. So the bar is never taller with
    it than with a hand's name, and the room kept under the table already holds that: no seat moves. Solid red, so it
    reads as an alarm; a tap anywhere on it opens Details. Phones held sideways have no hand line: there it takes the
-   logo's and the table name's place in the top bar, at the buttons' height. */
+   logo's place in the top bar, at the buttons' height, on two lines beside the game and the level clock when one is short. */
 .seed-alarm { position: relative; display: flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; margin: 0 auto; padding: 0 12px; border: 0; border-radius: 999px; background: #8c1d16; box-shadow: inset 0 0 0 1px #ff7a6e; color: #fff; font-weight: 600; text-align: center; white-space: nowrap; cursor: pointer; }
 .seed-alarm:hover:not(:disabled) { background: #a1231b; }
 .seed-alarm-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1027,8 +1027,9 @@ dl.shortcuts dd { margin: 0; }
 .portrait .bar-head .seed-alarm { height: 26px; line-height: 13px; max-width: none; flex: 0 1 auto; min-width: 0; }
 .topbar > .seed-alarm { display: none; }
 @media (max-height: 500px) {
-  .portrait .topbar > .seed-alarm { display: flex; flex: 1 1 0; min-width: 0; height: 34px; margin: 0; border-radius: 8px; font-size: 0.72rem; line-height: 15px; justify-content: flex-start; }
-  .portrait .topbar > .seed-alarm ~ :is(.logo, .stakes) { display: none; }
+  .portrait .topbar > .seed-alarm { display: flex; flex: 1 1 0; min-width: 0; height: 34px; margin: 0; border-radius: 8px; font-size: 0.72rem; line-height: 15px; justify-content: flex-start; white-space: normal; text-align: left; }
+  .portrait .topbar > .seed-alarm .seed-alarm-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .portrait .topbar > .seed-alarm ~ .logo { display: none; }
   .portrait .action-bar .seed-alarm { display: none; }
 }
 /* Room for a full action bar on your turn: the hand line, the bet sizing and the buttons. */

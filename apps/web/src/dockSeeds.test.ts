@@ -54,6 +54,7 @@ describe('the Dock seeds at a practice table (#476)', () => {
     // A touch screen in the computer layout: the open tip's buttons are taller.
     ['.table-page:not(.portrait) .dock.seated.tips.why', '(pointer: coarse)', 237, 'a touch screen, a tip open and the reasons button'],
     ['.table-page:not(.portrait) .dock.seated.tips.why', '(pointer: coarse) and (max-height: 820px)', 205, 'the same on a shorter screen'],
+    ['.dock.seated.limit', '', 119, 'fixed limit on a laptop: the bar with its hand line (#486)'],
     // A phone held upright.
     ['.portrait .dock.seated.why', '', 263, "no limit, the reasons button, the bar's buttons on two lines"],
     ['.portrait .dock.seated.why', '(max-height: 760px)', 247, 'the same on a shorter phone'],

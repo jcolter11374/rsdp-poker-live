@@ -822,6 +822,14 @@ describe('all in with Shift+A pressed twice (#307)', () => {
     expect(note()).toBeNull();
   });
 
+  it('keeps the fair-dealing warning up beside the note while an all-in is armed (#438)', async () => {
+    renderBar(facingBet(100), { alarm: <button className="seed-alarm">Deck may have been steered: tell the table</button> });
+    expect(document.querySelectorAll('.bar-head .seed-alarm')).toHaveLength(1);
+    await shiftA();
+    expect(note()).toBe(`All in 1000. ${HOW}`);
+    expect(document.querySelectorAll('.bar-head .seed-alarm')).toHaveLength(1);
+  });
+
   it('reads the armed all-in out from a live region already in the bar, and names Shift+A on the button it presses', async () => {
     renderBar(facingBet(100));
     // There, and empty, before the first press: a region that appears already holding its words is often not read.

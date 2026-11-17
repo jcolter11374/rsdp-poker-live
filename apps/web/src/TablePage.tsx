@@ -622,7 +622,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   // The fair-dealing warning (#438): red, in the place of the hand's name on the bar under the table, from the deal to the
   // next hand, your own turn included. That line is always there and its room is kept, so the warning never takes the
   // table's height (it was a banner above the table, and every seat moved when it came or went). Phones held sideways
-  // have no hand line: it takes the top bar's place of the logo and the table's name there. Details has the whole of it.
+  // have no hand line: it takes the logo's place in the top bar there, beside the game and the level clock. Details has the whole of it.
   const seedAlarm = seedWarning && (
     <button type="button" className="seed-alarm" aria-haspopup="dialog" onClick={() => setDialog({ kind: 'seed', text: seedWarning.text, otherDevice: seedWarning.otherDevice, hand: view.hand!.handNumber })}>
       <span className="seed-alarm-text">

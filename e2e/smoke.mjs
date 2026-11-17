@@ -1822,6 +1822,29 @@ try {
       const wrong = lines.filter((l) => !l.includes('Seed not from this browser: expected on two devices'));
       if (wrong.length) throw new Error(`the warning for a second device read: ${wrong.join(' / ')}`);
       await second.screenshot({ path: path.join(OUT, 'two-devices-laptop.png') });
+      // Held sideways as a phone, the device that warns has no hand line: the warning is in the top bar, in the logo's
+      // place, wide enough to read, and the game line beside it stays.
+      const visible = (p) => p.evaluate(() => [...document.querySelectorAll('.seed-alarm')].some((b) => b.getClientRects().length > 0));
+      const warned = (await visible(second)) ? second : (await visible(first)) ? first : null;
+      if (!warned) throw new Error('neither device shows the fair-dealing warning during a hand');
+      await warned.setViewportSize({ width: 844, height: 390 });
+      await warned.waitForSelector('.portrait .topbar > .seed-alarm');
+      const top = await warned.evaluate(() => {
+        const shown = [...document.querySelectorAll('.seed-alarm')].filter((b) => b.getClientRects().length > 0);
+        const stakes = document.querySelector('.topbar .stakes');
+        return {
+          count: shown.length,
+          inTopbar: shown.every((b) => b.parentElement?.classList.contains('topbar')),
+          width: Math.round(shown[0]?.getBoundingClientRect().width ?? 0),
+          cut: shown.some((b) => { const t = b.querySelector('.seed-alarm-text'); return t.scrollHeight > t.clientHeight + 1; }),
+          stakes: !!stakes && stakes.getClientRects().length > 0,
+        };
+      });
+      await warned.screenshot({ path: path.join(OUT, 'two-devices-sideways.png') });
+      if (top.count !== 1 || !top.inTopbar) throw new Error(`sideways, the warning shows ${top.count} times, in the top bar: ${top.inTopbar}`);
+      if (top.cut || top.width < 150) throw new Error(`sideways, the warning is cut short (${top.width}px wide)`);
+      if (!top.stakes) throw new Error('sideways, the warning took the game line away');
+      await warned.setViewportSize(laptop);
       await stopGame(first, [first, second]);
     } finally {
       for (const s of guests) s.close();

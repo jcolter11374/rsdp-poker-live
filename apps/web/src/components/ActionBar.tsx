@@ -497,7 +497,15 @@ export function ActionBar({
             <Key k="T" />
           </button>
         )}
-        {armedNote || hint}
+        {armedNote ? (
+          <>
+            {/* The fair-dealing warning stays up while an all-in is armed (#438): the note makes room beside it. */}
+            {alarm}
+            {armedNote}
+          </>
+        ) : (
+          hint
+        )}
         {most && (
           <span className="sr-only" role="status">
             {armedWords ? `${armedWords}. Shift+A or Enter sends it, Escape cancels.` : ''}
