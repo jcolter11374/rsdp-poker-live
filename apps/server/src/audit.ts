@@ -439,6 +439,15 @@ export class AuditLog {
     }
   }
 
+  /**
+   * This table has a hand whose end its spectators on a delay haven't seen yet: one waiting to go in (#469). True
+   * across a restart too, since waiting hands are saved.
+   */
+  holdsHand(tableId: string): boolean {
+    const table = tableRef(tableId);
+    return this.waiting.some((p) => p.table === table);
+  }
+
   forgetTable(tableId: string) {
     this.chips.delete(tableId);
   }

@@ -388,7 +388,11 @@ that long ago: the hand, the seats and stacks, the stakes, the waitlist and the
 table log. The server answers what they ask (a seat, a hand to share, the hand
 list, hand search, a link's preview) from that same moment, and sends them an
 update only when something they can see changes. A change to the delay starts
-for them at the first hand dealt under it. A few things stay live on purpose:
+for them at the first hand dealt under it. The public leaderboard leaves the
+whole game out while a hand is being played there, and until spectators have
+seen that hand end, so it can't show a result early. (A game that drops off
+the leaderboard does tell someone watching that a new hand has started.) A few
+things stay live on purpose:
 
 - Chat, gestures between players their view has seated, who has the table
   open, the table's name and look, and whether watching is allowed.
@@ -402,9 +406,6 @@ And a few gaps are still open, each with its issue:
 - After a server restart (every release is one), a spectator's view starts
   again from the table as it is then, so it can jump ahead by up to the delay
   once (#470).
-- The public leaderboard counts a running table's hands as they end live, so
-  it can show a result about a minute after the live hand ends, before someone
-  on a longer delay sees it (#469).
 - Sitting down shows the table live, so someone who takes a free seat sees it
   as it is now, ahead of their view, even if they stand up again straight away
   (#472). At a table where the host approves new players, that needs the

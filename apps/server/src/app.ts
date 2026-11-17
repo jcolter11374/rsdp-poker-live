@@ -551,6 +551,11 @@ export function createApp(deps: AppDeps = {}) {
       const away = saved.find((t) => !tables.has(t.id) && !deleted.has(t.id));
       return away ? { table: away.name, id: away.id, waiting: !away.seated } : null;
     },
+    heldFromBoards: (tableId) => {
+      const rt = tables.get(tableId);
+      // The hand in play was dealt under the table's delay as it is now: a change to it waits for the next deal.
+      return audit.holdsHand(tableId) || (!!rt && rt.settings.spectators.delaySeconds > 0 && rt.handLive());
+    },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
     deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {
       const mine = new Set(playerIds);

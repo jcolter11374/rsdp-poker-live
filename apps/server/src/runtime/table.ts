@@ -2601,7 +2601,7 @@ export class TableRuntime {
     return hand;
   }
 
-  private handLive() {
+  handLive() {
     return !!this.state.hand && this.state.hand.phase !== 'complete';
   }
 
