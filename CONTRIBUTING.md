@@ -51,6 +51,8 @@ up, it gets an issue too.
    [Reporting status](#reporting-status)).
 7. **Work is done only when the whole ask is done** (see
    [Definition of done](#definition-of-done)).
+8. **A change updates the docs that describe it, in the same pull request**
+   (see [Keeping the docs current](#keeping-the-docs-current)).
 
 ## Definition of done
 
@@ -182,7 +184,9 @@ session and is posted on the pull request like any review (step 3 of
 2. the change does what its issue asks, with nothing else mixed in;
 3. the wording is true and plain, and on the public trust pages each
    changed sentence matches the code;
-4. anything people see has been looked at on a phone-sized and a
+4. every doc that describes what changed is updated in the same pull
+   request ([Keeping the docs current](#keeping-the-docs-current));
+5. anything people see has been looked at on a phone-sized and a
    desktop-sized screen, with screenshots in the pull request when the look
    changes. If shared styles or the table screen change, that includes a
    table where it's your turn, so the action buttons and clock still show.
@@ -296,6 +300,36 @@ notes on each GitHub release.
 If a Release run fails, fix the cause and run it again by hand from the
 Actions tab (Release → Run workflow). It picks up whatever is missing and
 never moves a tag.
+
+## Keeping the docs current
+
+The docs are only useful to the next person if they match the code. So a
+pull request that changes how something works also changes every doc that
+describes it, and says which under "Docs" in its description. The review
+pass checks that list against the change. "None" is a fine answer when it's
+true.
+
+Each doc has one job. Put a fact in the doc whose job it is and link to it
+from the others, so there is one place to update:
+
+| If the change… | Update |
+| --- | --- |
+| Adds, moves or renames a folder, a main file, a workflow or a command | [docs/CODE_TOUR.md](docs/CODE_TOUR.md), and the README if it names it |
+| Changes a rule the code follows, or how two parts talk to each other | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); for the tournament director, [packages/tournament/README.md](packages/tournament/README.md) too |
+| Settles a question (John decides something, or a deliberate simplification is chosen) | A new entry in [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Changes dealing, who sees what and when, or the public record | [docs/FAIRNESS.md](docs/FAIRNESS.md) |
+| Stores something new, sets a cookie, or contacts another service | [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Changes hosting, a setting or secret, backups, restarts, or the release steps | [docs/DEPLOY.md](docs/DEPLOY.md) |
+| Changes what an alarm means, or how to recover from a failure | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Changes the table's look or controls | [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) |
+| Changes how a game or a table option plays | Its How to play guide (`apps/web/src/rules/`) |
+| Changes anything players will notice | The release notes, and the roadmap page if it lists it (see [Releases](#releases)) |
+| Adds a library | [docs/CREDITS.md](docs/CREDITS.md) |
+| Changes how work is tracked, reviewed or released | This page, and [CLAUDE.md](CLAUDE.md) if it's a rule sessions must follow |
+
+Each release, whoever cuts it reads the list of pull requests going out
+and checks that each one's "Docs" line was done. A doc found out of date
+later is a bug in the docs: open an issue with the `documentation` label.
 
 ## Reporting status
 

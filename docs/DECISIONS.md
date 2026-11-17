@@ -51,6 +51,7 @@ How this file works:
 | [D38](#d38-hand-entries-go-into-the-public-record-after-the-spectator-delay) | Hand entries go into the public record after the spectator delay | 2026-11-07 | John; details Claude |
 | [D39](#d39-what-spectators-on-a-delay-are-shown) | What spectators on a delay are shown | 2026-11-07 | John; details Claude |
 | [D40](#d40-a-tournament-pauses-when-the-site-has-been-down) | A tournament pauses when the site has been down | 2026-11-17 | John; details Claude |
+| [D41](#d41-a-change-updates-its-docs-in-the-same-pull-request) | A change updates its docs in the same pull request | 2026-11-17 | John picked; details Claude |
 
 ---
 
@@ -472,3 +473,14 @@ How this file works:
   - **Left as they were:** cash tables (a hand resumes with a fresh turn clock, as before); a tournament the host had paused (still the host's to resume; hands being played out wait the same 2 minutes, then go on); a tournament that hasn't started (its start time is a time of day, so it still starts on time, or at once if that time passed while the site was down); and a tournament saved by a release from before this one, which has no time noted, so it gets the 2 minutes but its clock isn't put back.
 - **Why:** on 17 November 2026 a bug check found that a 10-minute outage on 8-minute levels brought everyone back one or two levels higher, and that a busted player's 15-second rebuy offer ran out while the site was down. And when the site comes back, some players will have put their phone down, so the first hand shouldn't be dealt to empty chairs.
 - **Where:** `outage` and `endOutage` in `packages/tournament/src/director.ts`; `adopt`, `seen`, `keepSeen` and `holdForOutage` in `apps/server/src/tournament/manager.ts`; `holdForOutage` in `apps/server/src/runtime/table.ts`; `ResumingIn` in `apps/web/src/components/Table.tsx`. Tests in `packages/tournament/test/director.test.ts` and `apps/server/test/tournament-restart.test.ts`.
+
+## D41. A change updates its docs in the same pull request
+
+- **Decided:** 2026-11-17, by John. He asked for the documentation to be brought up to date and for "a way to document this project that would be easier to follow going forward", so that it is "not difficult for someone to pick up the code and know what is going on". Offered a small option (a starting page and a habit), a larger one (also rewriting ARCHITECTURE.md) or no change, he picked the small one. The details are Claude's.
+- **Decision:**
+  - **One starting point.** The README's "Start here" gives a newcomer three things to read, in order, and a table saying what every other doc is for and what keeps it current.
+  - **One habit.** A pull request that changes how something works updates every doc that describes it, and lists them under "Docs" in its description. The review pass checks that list, and whoever cuts a release checks it for each pull request going out.
+  - **One job per doc.** A table in CONTRIBUTING.md says which doc covers what, so a fact has one home and the others link to it.
+- **Why:** a check that day found the docs accurate except where a change had updated some of them and not others: the tournament outage pause (D40) was in three places and missing from five. Nothing asked a change which docs it touched.
+- **Not done:** ARCHITECTURE.md stays as it is, a dense reference. Rewriting it in shorter sections is the larger option John didn't pick.
+- **Where:** [README.md](../README.md#start-here), [CONTRIBUTING.md](../CONTRIBUTING.md#keeping-the-docs-current), [the pull request template](../.github/pull_request_template.md), [CLAUDE.md](../CLAUDE.md).
