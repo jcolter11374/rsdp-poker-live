@@ -280,7 +280,12 @@ notes on each GitHub release.
 - **One entry per release.** If the top entry in changelog.json isn't on
   `main` yet, it is the next release's: add your lines to it. If every
   entry is already on `main`, start a new one at the top with today's
-  version. Never change an entry that is already on `main`; it's live.
+  version. Never change an entry that is already on `main`; it's live. To
+  tell which it is, compare the top entry's version with the newest
+  [release](https://github.com/jcolter11374/rsdp-poker-live/releases), or
+  run `git fetch origin main && git diff origin/main -- apps/web/src/roadmap/changelog.json`:
+  an entry that shows up there as added (`+`) lines is still waiting, and
+  no output means every entry is on `main`.
 - **On release day,** if the waiting entry's version isn't today's, rename
   it to today's version (and its date, and its twin in whatsnew.json if it
   has one), run `npm run changelog`, and merge that into `develop` before
