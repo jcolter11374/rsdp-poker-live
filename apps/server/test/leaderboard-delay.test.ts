@@ -97,8 +97,13 @@ describe('the leaderboard and a game watched on a delay (#469)', () => {
     clock.advance(60_000);
     expect(await handsOf('Ann Slow')).toBe(2);
   });
-  it('keeps an all-in hand out until spectators have watched the cards dealt out', { timeout: 40_000 }, async () => {
-    const { ann, ben } = await table('Shove', 120);
+  it.each([
+    ['a table watched on a delay', 'Shove', 120],
+    ['a table watched live', 'Jam', 0],
+  ])('keeps an all-in hand out until the cards have been dealt out: %s', { timeout: 40_000 }, async (_what, name, delay) => {
+    // A minute on, so the boards are read afresh and not served from the test before.
+    clock.advance(61_000);
+    const { ann, ben } = await table(name, delay);
     const v = await ann.until((x) => !!x.hand && x.hand.phase !== 'complete' && x.hand.handNumber === 1);
     const [first, second] = v.legal ? [ann, ben] : [ben, ann];
     await first.call('hand:act', { type: 'raise', to: 100 });
@@ -108,10 +113,11 @@ describe('the leaderboard and a game watched on a delay (#469)', () => {
     for (const c of [ann, ben]) await c.call('hand:runItTwice', { yes: false });
     await ann.until((x) => x.hand?.handNumber === 1 && x.hand.phase === 'complete');
     await saved();
-    // The finished hand reaches spectators after the delay, and their browsers then deal the flop, turn and river.
-    clock.advance(121_000);
-    expect(await handsOf('Ann Shove')).toBeNull();
+    // The finished hand reaches spectators after the delay, and the browsers then deal the flop, turn and river.
+    clock.advance(delay * 1000 + 1_000);
+    expect(await handsOf(`Ann ${name}`)).toBeNull();
     clock.advance(10_000);
-    expect(await handsOf('Ann Shove')).toBe(1);
+    await saved();
+    expect(await handsOf(`Ann ${name}`)).toBe(1);
   });
 });

@@ -554,7 +554,8 @@ export function createApp(deps: AppDeps = {}) {
     heldFromBoards: (tableId) => {
       const rt = tables.get(tableId);
       // A hand in play that spectators wouldn't see as it is now: on a delay, or still catching up after one.
-      return audit.holdsHand(tableId) || (!!rt && rt.handLive() && spectatorsSeeAt(rt, clock.now()) > clock.now());
+      // At any table, an all-in result waits until the browsers have dealt the cards out, for the players too.
+      return audit.holdsHand(tableId) || (!!rt && (rt.showingRunout() || (rt.handLive() && spectatorsSeeAt(rt, clock.now()) > clock.now())));
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
     deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {

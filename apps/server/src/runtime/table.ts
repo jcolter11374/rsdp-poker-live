@@ -3612,6 +3612,11 @@ export class TableRuntime {
     return ms ? last!.endedAt + ms : 0;
   }
 
+  /** An all-in runout from the last hand is still being dealt out in the browsers (see revealSeats). */
+  showingRunout(): boolean {
+    return this.revealSeats().size > 0;
+  }
+
   /**
    * The seats of everyone dealt into the last hand, while browsers are still dealing out its all-in runout. Browsers
    * show those players in their seats until the result (holdBack in runout.ts), so until then each seat stays taken
