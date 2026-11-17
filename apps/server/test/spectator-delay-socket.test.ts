@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { variants } from '@rsdp/engine/core';
 import { registerAllVariants } from '@rsdp/engine/variants';
 import type { TableView } from '@rsdp/engine/wire';
-import { createApp } from '../src/app';
+import { createApp, memoryStore } from '../src/app';
 import { FAIR_REVEAL_AFTER_MS, FAIR_STOP_REVEAL_MS } from '../src/runtime/table';
 import { FakeClock } from './fake-clock';
 import { socketClient, type Client } from './socket-client';
@@ -460,4 +460,104 @@ describe('what a spectator on a delay can fetch', () => {
     expect(shared.tableName).toBe('Renamed');
     void tableId;
   }, 30_000);
+});
+
+describe('a spectator on a delay, after the server restarts (#470)', () => {
+  it("isn't shown that a hand which ended just before the restart is over until the delay has passed", async () => {
+    // A server of its own on a store the next one shares, as a release leaves it.
+    const store = memoryStore();
+    await server.close();
+    server = createApp({ clock, webDist: dir, store, log: () => {} });
+    await new Promise<void>((resolve) => server.http.listen(0, resolve));
+    url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+    const { ann, ben, tableId } = await table('restart', 30);
+    clock.advance(10_000);
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    const live = await ann.until((v) => v.hand?.phase === 'complete');
+    const stacks = (v: TableView) => v.seats.slice(0, 2).map((x) => x?.stack);
+    const after = stacks(live);
+    expect(after).not.toEqual([10_000, 10_000]);
+    // Ten seconds after the hand ended, the server stops and the next one starts.
+    clock.advance(10_000);
+    for (const c of clients.splice(0)) c.close();
+    await server.close();
+    server = createApp({ clock, webDist: dir, store, log: () => {} });
+    await new Promise<void>((resolve) => server.http.listen(0, resolve));
+    url = `http://localhost:${(server.http.address() as AddressInfo).port}`;
+
+    const fan = client('gap-restart-fan2-0123456789');
+    await fan.call('table:join', { tableId });
+    const first = await fan.until((v) => v.seats.filter(Boolean).length === 2);
+    // No hand, and the chips everyone had before it: nothing says it is over.
+    expect(first.hand).toBeNull();
+    expect(stacks(first)).toEqual([10_000, 10_000]);
+    expect(first.history).toEqual([]);
+    clock.advance(19_000);
+    await settle();
+    expect(stacks(fan.view())).toEqual([10_000, 10_000]);
+    // Thirty seconds after it ended live, they would have seen it end: the chips are as it left them.
+    clock.advance(1_000);
+    await fan.until((v) => v.seats[0]?.stack === after[0] && v.seats[1]?.stack === after[1]);
+  });
+});
+
+describe('a spectator on a delay who takes a seat (#472)', () => {
+  it('keeps the view they had, with their own seat, until they are dealt in', async () => {
+    const { ann, ben, fan } = await table('sit', 30);
+    clock.advance(30_000);
+    await fan.until((v) => v.hand?.handNumber === 1 && v.hand.phase !== 'complete');
+    // Live, the hand ends. The fan's view still has it being played.
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    const liveStacks = ann.view().seats.slice(0, 2).map((x) => x?.stack);
+    const before = fan.view();
+    expect(before.hand?.phase).not.toBe('complete');
+
+    // They sit down: the table they see is the one they were watching, with their seat in it.
+    await fan.call('seat:request', { seat: 2, name: 'Fan', stack: 10_000 });
+    await ann.until((v) => !!v.seats[2]);
+    const seated = await fan.until((v) => v.me.seat === 2);
+    expect(seated.seats[2]?.name).toBe('Fan');
+    expect(seated.hand?.phase).toBe(before.hand?.phase);
+    expect(seated.hand?.handNumber).toBe(1);
+    expect(seated.seats.slice(0, 2).map((x) => x?.stack)).toEqual(before.seats.slice(0, 2).map((x) => x?.stack));
+    expect(seated.seats.slice(0, 2).map((x) => x?.stack)).not.toEqual(liveStacks);
+    expect(seated.spectator).toMatchObject({ delaySeconds: 30, blocked: false });
+    expect(seated.history).toEqual(before.history);
+    expect(seated.watchers.some((w) => w.playerId === seated.me.playerId)).toBe(false);
+    // The hand that just ended live isn't in their hand list yet.
+    await expect(fan.call('table:history', { handNumber: 1 })).rejects.toThrow();
+
+    // Standing up again shows them nothing new either.
+    fan.socket.emit('seat:stand', {});
+    const stood = await fan.until((v) => v.me.seat === null);
+    expect(stood.hand?.phase).toBe(before.hand?.phase);
+    expect(stood.seats.slice(0, 2).map((x) => x?.stack)).toEqual(before.seats.slice(0, 2).map((x) => x?.stack));
+
+    // Back in a seat (another one: the one they left stays closed until their view shows it free), they see the
+    // table live from the moment they are dealt in.
+    await fan.call('seat:request', { seat: 3, name: 'Fan', stack: 10_000 });
+    await fan.until((v) => v.me.seat === 3);
+    expect(fan.view().hand?.handNumber).toBe(1);
+    await ann.call('host:deal');
+    const dealt = await fan.until((v) => v.hand?.handNumber === 2);
+    expect(dealt.spectator).toBeNull();
+    expect(dealt.seats[3]?.inHand).toBe(true);
+    expect(dealt.seats[3]?.cards.length).toBeGreaterThan(0);
+  });
+
+  it('sees the table live at once when their view had already caught up with it', async () => {
+    const { ann, ben, fan } = await table('idle', 30);
+    await toAct(ann, ben).call('hand:act', { type: 'fold' });
+    await ann.until((v) => v.hand?.phase === 'complete');
+    // Long enough for everything the table did since to have been shown.
+    for (let i = 0; i < 4; i++) {
+      clock.advance(31_000);
+      await settle();
+    }
+    await fan.until((v) => v.hand?.phase === 'complete');
+    await fan.call('seat:request', { seat: 2, name: 'Fan', stack: 10_000 });
+    const seated = await fan.until((v) => v.me.seat === 2);
+    expect(seated.spectator).toBeNull();
+  });
 });

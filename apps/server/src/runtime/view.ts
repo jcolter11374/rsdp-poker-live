@@ -295,6 +295,26 @@ export interface BehindOptions {
   neverPlayed?: boolean;
   /** When the viewer joined the waitlist they are on now, live: an offer from before they last joined isn't theirs. */
   waitingSince?: number;
+  /**
+   * While nothing is old enough to show: the chips each player had before a hand that ended since the time shown
+   * (after a restart, #470), so the table doesn't show it as over early.
+   */
+  stacksBefore?: ReadonlyMap<PlayerId, number>;
+  /**
+   * The viewer's own seat, live: they sat down while watching on a delay and haven't been dealt in yet, so they keep
+   * the view they had, with their seat in it (#472). Taking a seat and standing up again shows nothing of the live hand.
+   */
+  seat?: SeatView;
+}
+
+/** The seats shown, with the viewer's own seat (see BehindOptions.seat) where the table shown has it free. */
+function withOwnSeat(seats: TableView['seats'], mine?: SeatView): TableView['seats'] {
+  if (!mine) return seats;
+  const out = seats.slice();
+  while (out.length <= mine.seat) out.push(null);
+  const there = out[mine.seat];
+  if (!there || there.playerId === mine.playerId) out[mine.seat] = noHand(mine);
+  return out;
 }
 
 /**
@@ -308,7 +328,7 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
   // still open, stays in their seat until the view gets there (#435).
   const seated = new Set(part.seats.flatMap((x) => (x ? [x.playerId] : [])));
   const audience = opts.audience ?? live.watchers;
-  const watchers = audience.filter((a) => !seated.has(a.playerId));
+  const watchers = audience.filter((a) => !seated.has(a.playerId) && a.playerId !== opts.seat?.playerId);
   // My own place on the waitlist and my own offer are mine to act on, so they follow what I do: joining shows at once.
   // But a seat offered to me only shows once my view has the seat free (#452).
   const mineWaiting = live.waitlist.find((w) => w.playerId === me);
@@ -340,7 +360,10 @@ function stateThen(live: TableView, part: DelayedPart, delayMs: number, opts: Be
     level: part.level && { ...part.level, endsAt: part.level.endsAt === null ? null : part.level.endsAt + move },
     // The delay is the one the hand shown is watched under, so the banner changes with the first hand dealt under a
     // new one; "with every card" starts with its hand too. Whether watching is blocked is as it is now.
-    spectator: live.spectator && { ...live.spectator, delaySeconds: part.spectator?.delaySeconds ?? live.spectator.delaySeconds, seeAll: part.spectator?.seeAll ?? false },
+    // Someone who sat down on a delay and isn't dealt in yet is still told they are watching behind the table (#472).
+    spectator: opts.seat
+      ? { delaySeconds: part.spectator?.delaySeconds ?? live.settings.spectators.delaySeconds, seeAll: part.spectator?.seeAll ?? false, blocked: false }
+      : live.spectator && { ...live.spectator, delaySeconds: part.spectator?.delaySeconds ?? live.spectator.delaySeconds, seeAll: part.spectator?.seeAll ?? false },
     realGame: part.realGame,
     recordsLocked: part.recordsLocked && (opts.neverPlayed ?? true),
     watchers,
@@ -378,7 +401,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     const from = oldest ?? delayedPart(live);
     // Chips in front of a player in the hand are theirs until it ends: the ledger has what they had before it.
     const before = new Map(from.ledger.map((r) => [r.playerId, r.stack]));
-    const seats = from.seats.map((x) => x && { ...noHand(x), stack: x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack });
+    const seats = from.seats.map((x) => x && { ...noHand(x), stack: opts.stacksBefore?.get(x.playerId) ?? (x.inHand ? (before.get(x.playerId) ?? x.stack) : x.stack) });
     // Lines from the delay before the oldest snapshot: a fixed time, so this view stays the same until that snapshot
     // comes due. Cut on the time now, a live change would send it with more lines at the moment it happened (#435).
     const cutoff = (oldest ? oldest.serverNow : live.serverNow) - delayMs;
@@ -386,7 +409,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
     return {
       ...live,
       ...then,
-      seats,
+      seats: withOwnSeat(seats, opts.seat),
       hand: null,
       turn: null,
       log: from.log.filter((l) => l.at <= cutoff),
@@ -408,7 +431,7 @@ export function behind(live: TableView, past: DelayedPart | null, delayMs: numbe
   const hand = blocked ? null : past.hand && { ...past.hand, runItTwice: { ...past.hand.runItTwice, deadline: later(past.hand.runItTwice.deadline) } };
   return {
     ...live,
-    seats: blocked ? past.seats.map((x) => x && { ...x, cards: [] }) : past.seats,
+    seats: withOwnSeat(blocked ? past.seats.map((x) => x && { ...x, cards: [] }) : past.seats, opts.seat),
     hand,
     turn,
     ...stateThen(live, past, delayMs, opts),

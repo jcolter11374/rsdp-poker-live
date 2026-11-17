@@ -403,15 +403,23 @@ things stay live on purpose:
   table is between hands. Delaying it would let people sit down without seeing
   the warning.
 
-And a few gaps are still open, each with its issue:
+Two more things are worth knowing:
 
-- After a server restart (every release is one), a spectator's view starts
-  again from the table as it is then, so it can jump ahead by up to the delay
-  once (#470).
-- Sitting down shows the table live, so someone who takes a free seat sees it
-  as it is now, ahead of their view, even if they stand up again straight away
-  (#472). At a table where the host approves new players, that needs the
-  host's OK.
+- **Sitting down.** At a cash table with a delay, a spectator who takes a seat
+  keeps the view they had, with their own seat in it, until they are dealt
+  into a hand (or their view has caught up with the table). So sitting down
+  and standing up again shows nothing of the hand being played. From their
+  first hand on they see the table live, like every player. Someone who was
+  playing, stood up and sits back down while their view still shows them in a
+  seat sees it live, as they did until they stood up.
+- **After a server restart** (every release is one), the server no longer has
+  the moments it was keeping to show. Spectators see the table with no hand
+  on it until what the table did after the restart is old enough to show. A
+  hand that ended shortly before the restart doesn't show as over early: each
+  player in it keeps the chips they had before it until the time spectators
+  would have seen it end. They don't get to watch the rest of that hand at
+  the table; it is in the hand list once the delay has passed. A seat someone
+  left as that hand ended does show empty at once.
 
 ## HUDs and tracking software
 

@@ -459,6 +459,13 @@ export function createApp(deps: AppDeps = {}) {
   const pendingBroadcast = new Set<string>();
   /** Spectator delay: what each table looked like to spectators, and when each moment may be shown (runtime/feed.ts). */
   const feeds = new Map<string, SpectatorFeed>();
+  /**
+   * After a restart (#470): the feed starts again from the table as it was loaded, so until its first moment is old
+   * enough spectators on a delay are shown the table with no hand. A hand that ended less than the delay before
+   * would show as over at once in the chips, so each player in it keeps the chips they had before it until the time
+   * spectators would have seen it end.
+   */
+  const holds = new Map<string, { until: number; stacks: Map<PlayerId, number> }>();
   /** Per table, the times a timer is already set to show spectators the moment that comes due then. */
   const showTimers = new Map<string, Set<number>>();
   /** What each spectator on a delay was last sent (a digest of shownKey), so a live change that doesn't change their view sends nothing. */
@@ -965,7 +972,8 @@ export function createApp(deps: AppDeps = {}) {
       if (tables.get(id) !== rt) return;
       // Timers can fire a millisecond early; the moment due now must count as old enough.
       const now = Math.max(clock.now(), at);
-      for (const s of watchers.get(id) ?? []) if (isSpectator(rt, s)) sendView(rt, s, now);
+      // Someone in a seat whose delayed view has just caught up is sent the table live, once.
+      for (const s of watchers.get(id) ?? []) if (satBehind.get(id)?.has(s.data.playerId) || isSpectator(rt, s)) sendView(rt, s, now);
     }, Math.max(0, at - clock.now()));
   }
 
@@ -1073,14 +1081,32 @@ export function createApp(deps: AppDeps = {}) {
   /** One answer for a hand that isn't there and one a spectator's delay still hides. */
   const HAND_NOT_AVAILABLE = 'that hand isn’t available';
 
-  const isSpectator = (rt: TableRuntime, s: Sock) => !rt.seatOf(s.data.playerId) && !rt.isStaff(s.data.playerId);
+  /**
+   * Cash tables: who sat down while watching on a delay and hasn't been dealt in since (#472, D42). They keep the
+   * delayed view, with their own seat in it, so taking a seat and standing up again shows nothing of the live hand.
+   * Kept in memory only: after a restart everyone seated sees the table live.
+   */
+  const satBehind = new Map<string, Set<PlayerId>>();
+  /** Still on the delay in their seat: until they are dealt in, or the delayed view has caught up with the table. */
+  function sitsBehind(rt: TableRuntime, playerId: PlayerId): boolean {
+    const set = satBehind.get(rt.state.id);
+    if (!set?.has(playerId)) return false;
+    const now = clock.now();
+    const feed = feedOf(rt, now);
+    if (rt.seatOf(playerId) && feed && !feed.caughtUp(now)) return true;
+    set.delete(playerId);
+    return false;
+  }
+  /** Sees the table as spectators do, on the delay if it has one: not staff, and not in a seat or only just (sitsBehind). */
+  const watches = (rt: TableRuntime, playerId: PlayerId) => !rt.isStaff(playerId) && (!rt.seatOf(playerId) || sitsBehind(rt, playerId));
+  const isSpectator = (rt: TableRuntime, s: Sock) => watches(rt, s.data.playerId);
 
   /**
    * What a spectator on a delay is shown at `now` (null for anyone who sees the table live): the moment shown, or
    * while none is old enough the oldest kept, with how far behind it is shown. Read only, so the link preview can use it.
    */
   function shownTo(rt: TableRuntime, playerId: PlayerId, now: number, start = false): { moment: Moment | null; oldest: Moment | null; behindMs: number; at: number } | null {
-    if (rt.seatOf(playerId) || rt.isStaff(playerId)) return null;
+    if (!watches(rt, playerId)) return null;
     const feed = feedOf(rt, now, start);
     if (!feed) return null;
     const moment = feed.shown(now, true);
@@ -1098,7 +1124,7 @@ export function createApp(deps: AppDeps = {}) {
    */
   function spectatorCutoff(rt: TableRuntime, s: Sock): number {
     if (!isSpectator(rt, s)) return Infinity;
-    if (!rt.settings.spectators.allowed) throw new ActionError('the host has turned watching off');
+    if (!rt.settings.spectators.allowed && !rt.seatOf(s.data.playerId)) throw new ActionError('the host has turned watching off');
     return shownTo(rt, s.data.playerId, clock.now())?.at ?? Infinity;
   }
 
@@ -1149,7 +1175,14 @@ export function createApp(deps: AppDeps = {}) {
     if (!shown) return { view: live, delayed: false };
     // Anything older than the moment shown is no longer needed.
     feeds.get(id)?.shown(now);
+    let hold = holds.get(id);
+    if (hold && (shown.moment || now >= hold.until)) {
+      holds.delete(id);
+      hold = undefined;
+    }
     const view = behind(live, shown.moment?.part ?? null, shown.behindMs, shown.oldest?.part ?? null, {
+      stacksBefore: hold?.stacks,
+      seat: live.seats.find((x) => x?.playerId === s.data.playerId) ?? undefined,
       audience: people,
       isStaff: (p) => rt.isStaff(p),
       neverPlayed: rt.neverPlayedHere(s.data.playerId),
@@ -1206,9 +1239,19 @@ export function createApp(deps: AppDeps = {}) {
     );
   }
 
-  function attach(rt: TableRuntime, ready: Promise<void> = Promise.resolve()) {
+  function attach(rt: TableRuntime, ready: Promise<void> = Promise.resolve(), closed?: PastHand) {
     const id = rt.state.id;
     tables.set(id, rt);
+    // A table loaded with a hand that spectators on a delay haven't seen end yet: `closed`, a hand closed from its
+    // saved result as the table was loaded (it isn't in the history), or the last one played.
+    const record = rt.state.history.at(-1);
+    const last = closed ?? (record && pastHand(record));
+    const delayMs = rt.settings.spectators.delaySeconds * 1000;
+    const seenAt = last && delayMs > 0 ? last.endedAt + delayMs + runoutMs(last.events) : -Infinity;
+    if (last && seenAt > clock.now()) {
+      holds.set(id, { until: seenAt, stacks: new Map(last.seats.map((x) => [x.playerId, x.startStack])) });
+      showLater(rt, seenAt);
+    }
     created.set(id, ready);
     lastWatched.set(id, clock.now());
     lastChange.set(id, clock.now());
@@ -1221,7 +1264,25 @@ export function createApp(deps: AppDeps = {}) {
       return refs.size ? new Set(Object.keys(rt.state.ledger).filter((p) => refs.has(playerRef(id, p)))) : refs;
     };
     let wasLive = rt.handLive();
+    const seatedNow = () => new Set(rt.state.seats.flatMap((x) => (x ? [x.playerId] : [])));
+    let seated = seatedNow();
     rt.onChange = () => {
+      // Whoever sits down while watching on a delay keeps that view until they are dealt in (#472).
+      const was = seated;
+      seated = seatedNow();
+      const behindNow = satBehind.get(id);
+      const dealt = rt.state.hand?.seats;
+      for (const p of behindNow ?? []) if (!seated.has(p) || dealt?.some((x) => x.playerId === p)) behindNow!.delete(p);
+      if (!rt.tournament) {
+        const now = clock.now();
+        const feed = feedOf(rt, now);
+        // Not someone the delayed view still shows in a seat: they saw the table live until they stood up.
+        const shownSeats = feed && !feed.caughtUp(now) ? ((feed.shown(now, true) ?? feed.oldest())?.part.seats ?? []) : null;
+        for (const p of seated) {
+          if (was.has(p) || !shownSeats || rt.isStaff(p) || rt.state.bots?.[p] || shownSeats.some((x) => x?.playerId === p)) continue;
+          satBehind.set(id, (satBehind.get(id) ?? new Set()).add(p));
+        }
+      }
       // The first change after a hand ends can come before the hand is reported finished (a leaver's seat going).
       const ended = wasLive && !rt.handLive();
       wasLive = rt.handLive();
@@ -1341,6 +1402,8 @@ export function createApp(deps: AppDeps = {}) {
     tables.delete(id);
     audit.forgetTable(id);
     feeds.delete(id);
+    holds.delete(id);
+    satBehind.delete(id);
     showTimers.delete(id);
     turnSeen.delete(id);
     watchers.delete(id);
@@ -1405,6 +1468,8 @@ export function createApp(deps: AppDeps = {}) {
       rt.dispose();
       tables.delete(id);
       feeds.delete(id);
+      holds.delete(id);
+      satBehind.delete(id);
       showTimers.delete(id);
       turnSeen.delete(id);
       lastWatched.delete(id);
@@ -1463,6 +1528,8 @@ export function createApp(deps: AppDeps = {}) {
         tables.delete(rt.state.id);
         audit.forgetTable(rt.state.id);
         feeds.delete(rt.state.id);
+        holds.delete(rt.state.id);
+        satBehind.delete(rt.state.id);
         showTimers.delete(rt.state.id);
         turnSeen.delete(rt.state.id);
         lastWatched.delete(rt.state.id);
@@ -1568,8 +1635,9 @@ export function createApp(deps: AppDeps = {}) {
       return getTable(id);
     }
     const runtime = new TableRuntime(saved, { clock, rng: deps.rng, log, fairLeadMs: deps.fairLeadMs, fairStopRevealMs: deps.fairStopRevealMs, tips: tipWorker });
-    if (ended && runtime.closeSavedHand(ended)) log(`table ${id}: hand ${ended.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
-    const rt = attach(runtime);
+    const closed = !!ended && runtime.closeSavedHand(ended);
+    if (closed) log(`table ${id}: hand ${ended!.handNumber} was saved as finished but the table as still playing it; closed it with its saved result`);
+    const rt = attach(runtime, undefined, closed ? ended! : undefined);
     rt.resume();
     return rt;
   }
