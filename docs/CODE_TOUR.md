@@ -114,11 +114,11 @@ and seasons (`season.ts`).
 | [`src/runtime/table.ts`](../apps/server/src/runtime/table.ts) | `TableRuntime`: one per table. Seat requests and approvals, host controls, timers, the time bank, bots, and the steps between hands (apply queued settings, handle busts, plan blinds, shuffle, deal). The largest file, so read it by method name rather than top to bottom. |
 | [`src/runtime/choice.ts`](../apps/server/src/runtime/choice.ts) | Dealer's choice: the Pick chip, the pick clock and its default, bot picks, and the seat limit while a smaller game is picked or played. `dealHand` asks it before each deal. |
 | [`src/runtime/view.ts`](../apps/server/src/runtime/view.ts) | `tableView`: builds what one particular person sees. This is where hidden information is filtered out. |
-| [`src/tournament/manager.ts`](../apps/server/src/tournament/manager.ts) | Runs the director on a real clock, opens and closes tables for it, and saves and resumes tournaments. |
+| [`src/tournament/manager.ts`](../apps/server/src/tournament/manager.ts) | Runs the director on a real clock, opens and closes tables for it, and saves and resumes tournaments. After the server has been away it pauses a tournament in play for up to 2 minutes, so the time away doesn't count and players can get back (D40). |
 | [`src/scheduler/scheduler.ts`](../apps/server/src/scheduler/scheduler.ts) | Timers that must survive a restart (a tournament's start time, for example) are kept as rows in a `jobs` table. |
 | [`src/bots/`](../apps/server/src/bots) | Practice bots (`strategy.ts`) and coach tips (`coach.ts`). Bots only see what their own seat could see. Tips are worked out on a thread of their own (`coachWorker.ts`, which starts `coachThread.mjs`), so they never hold up a table. |
 | [`src/identity/`](../apps/server/src/identity), [`accounts.ts`](../apps/server/src/accounts.ts), [`google.ts`](../apps/server/src/google.ts) | Who you are: a random secret your browser keeps (the server stores only its hash), optional accounts with passwords, and Sign in with Google. |
-| [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. At a table whose spectators watch on a delay, a hand goes in that long after it ends (D38); until then it waits as an `audit-hand` row in `jobs`, which audit.ts puts in itself, not the scheduler. |
+| [`src/audit.ts`](../apps/server/src/audit.ts) | Writes the public record as hands finish and chips move. At a table whose spectators watch on a delay, a hand goes in that long after it ends (D38); until then it waits as an `audit-hand` row in `jobs`, which audit.ts puts in itself, not the scheduler. Buy-in and cash-out totals that change while a hand waits there wait with it, as `audit-chips` rows (#471). |
 | [`src/replaceName.ts`](../apps/server/src/replaceName.ts) | Puts "Deleted player" in place of a deleted player's name in old records, when they ask John. Only names change, so hands and the public record stay as they were. |
 | [`src/push/`](../apps/server/src/push) | Phone alerts that reach a closed site: `webpush.ts` encrypts and signs each one for the browser's push service, `alerts.ts` keeps who gets them and sends them without holding up the game, `starts.ts` times "starting soon". See [ARCHITECTURE.md](ARCHITECTURE.md#phone-alerts-appsserversrcpush-appswebpublicswjs). |
 | [`src/db/`](../apps/server/src/db) | The database tables (`schema.ts`) and the code that reads and writes them. Migrations are the numbered SQL files in [`apps/server/drizzle/`](../apps/server/drizzle) and run automatically at start-up; `npm run db:generate` makes the next one, and the rules for them are in [ARCHITECTURE.md](ARCHITECTURE.md#database-migrations-appsserverdrizzle). |
@@ -274,6 +274,13 @@ npm start            # serve the built website and the game server together on :
 npm run smoke        # browser test; see below
 ```
 
+On a four-core machine the typecheck takes about half a minute, the unit
+tests about three minutes and the smoke test six or seven. Nothing needs
+setting up to run locally: the settings the live site uses (the admin page's
+key, Sign in with Google, phone alerts) are all optional and listed in
+[DEPLOY.md](DEPLOY.md#settings). There is no linter or code formatter, so
+match the style of the code around your change.
+
 The smoke test drives a real browser, so install one first with
 `npx playwright install chromium`. It needs the built website served by the
 game server: run `npm run build && npm start` in one terminal, then
@@ -308,6 +315,14 @@ The same production image the live site runs can be built with Docker; see
 | Once a day (scheduled for 06:23 UTC; GitHub starts it hours late), a GitHub job runs the fuzz tests on `main` far deeper than CI does (400 random cash tables, 400 random tournaments played four ways each, 30,000 random hands), on GitHub's machine. A failure opens an issue naming the failing seeds; the next run that passes closes it. | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) |
 | A GitHub job scheduled every 5 minutes checks the site and its database are up. GitHub starts it hours late, so it is a slow backstop; a quick alert needs an outside monitor (see [DEPLOY.md](DEPLOY.md#site-down-alert)). | [`uptime.yml`](../.github/workflows/uptime.yml) |
 | Once a day (scheduled for 14:47 UTC; GitHub starts it hours late), a GitHub job reads the live server's memory and data disk use from `/api/health`. While memory is over 800 MB or the disk over 70% full, an issue stays open for John (see [DEPLOY.md](DEPLOY.md#memory-and-disk-check)). | [`resources.yml`](../.github/workflows/resources.yml) |
+
+Three more jobs only run when asked, or when their file changes:
+[`live-check.yml`](../.github/workflows/live-check.yml) repeats the read-only
+checks a deploy makes on the live site,
+[`suggestions.yml`](../.github/workflows/suggestions.yml) lists the
+suggestions John approved on the site's roadmap page, and
+[`labels.yml`](../.github/workflows/labels.yml) makes the issue labels match
+[`.github/labels.json`](../.github/labels.json).
 
 The live site is a single small machine on Fly.io. It must stay a single
 copy, because the live tables exist in that one process's memory; see

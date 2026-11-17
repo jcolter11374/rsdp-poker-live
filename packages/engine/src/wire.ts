@@ -145,6 +145,12 @@ export interface LedgerView {
   net: number;
   /** A practice bot: its chips are play money, so nobody pays it or is paid by it. */
   bot?: true;
+  /**
+   * Sent only to people who see the table live (players, the host): these totals changed while a hand waited for the
+   * spectator delay and go in the public record once spectators have seen it end, so the record still has the ones
+   * before (#471).
+   */
+  recordWaits?: true;
 }
 
 export interface ChatView {

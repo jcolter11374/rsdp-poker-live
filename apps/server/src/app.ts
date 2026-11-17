@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createGzip } from 'node:zlib';
 import { Server, type Socket } from 'socket.io';
 import type { Rng } from '@rsdp/engine';
-import { ActionError, type BettingKind, type PlayerId } from '@rsdp/engine/core';
+import { ActionError, runoutMs, type BettingKind, type PlayerId } from '@rsdp/engine/core';
 import { amountText, applyAtNextHand, defaultSettings, mergePatches, newCashSettings, parseSettings, SettingsError, spectatorsSeeCards } from '@rsdp/engine/settings';
 import type { Ack, BotLevel, ClientToServer, ServerToClient, TableView, TurnKey } from '@rsdp/engine/wire';
 import { chatModerationRefusal, isArchived, isTournamentStaff, LOBBY_CHAT_MAX, lobbyChatRefusal, tableAddress, logEvent, namesIn, type LobbyItem, type TournamentClientToServer, type TournamentServerToClient, type TournamentTableChat } from '@rsdp/tournament';
@@ -46,7 +46,7 @@ import { quietSteps, type ShutdownSteps } from './shutdown';
 import { COACH_BUSY, coachWorker, type TipWorker } from './bots/coachWorker';
 import { memoryPushStore, PushAlerts, pushRoutes, type PushConfig, type PushStore } from './push/alerts';
 import { StartAlerts } from './push/starts';
-import { subjectRef } from '@rsdp/engine';
+import { playerRef, subjectRef, tableRef } from '@rsdp/engine';
 import { LoadGate, ReplaceNameError, replacePlayerName } from './replaceName';
 
 export interface Session {
@@ -420,6 +420,10 @@ export function createApp(deps: AppDeps = {}) {
   const startedAt = clock.now();
   audit.boot(build);
   // Hands that waited out a spectator delay across the restart go in after the boot entry (D38).
+  // Entries that waited out a spectator delay went in: the players' ledger checks at those tables can look again (#471).
+  audit.onReleased = (refs) => {
+    for (const [id, rt] of tables) if (refs.has(tableRef(id))) broadcast(rt);
+  };
   audit.start((fn, ms) => {
     const timer = clock.setTimeout(fn, ms);
     return () => clock.clearTimeout(timer);
@@ -550,6 +554,12 @@ export function createApp(deps: AppDeps = {}) {
       const saved = (await store.tablesSeating?.(playerId)) ?? [];
       const away = saved.find((t) => !tables.has(t.id) && !deleted.has(t.id));
       return away ? { table: away.name, id: away.id, waiting: !away.seated } : null;
+    },
+    heldFromBoards: (tableId) => {
+      const rt = tables.get(tableId);
+      // A hand in play that spectators wouldn't see as it is now: on a delay, or still catching up after one.
+      // At any table, an all-in result waits until the browsers have dealt the cards out, for the players too.
+      return audit.holdsHand(tableId) || (!!rt && (rt.showingRunout() || (rt.handLive() && spectatorsSeeAt(rt, clock.now()) > clock.now())));
     },
     peopleAt: (tableId) => new Set([...(watchers.get(tableId) ?? [])].map((s) => s.data.playerId)).size,
     deletePracticeTable: async (tableId, playerIds, stillOnlyMine) => {
@@ -1203,8 +1213,27 @@ export function createApp(deps: AppDeps = {}) {
     lastWatched.set(id, clock.now());
     lastChange.set(id, clock.now());
     audit.watchTable(rt.state).catch((e) => log(`reading the public record for table ${id} failed`, e));
+    // Chip totals that change as a hand ends (someone leaving after it, a stack change waiting for it, a side game
+    // settling) go in the public record with the hand, once spectators on a delay have seen it end (#471).
+    let endSeenAt: number | undefined;
+    rt.ledgerWaiting = () => {
+      const refs = audit.chipsWaiting(id);
+      return refs.size ? new Set(Object.keys(rt.state.ledger).filter((p) => refs.has(playerRef(id, p)))) : refs;
+    };
+    let wasLive = rt.handLive();
     rt.onChange = () => {
-      audit.safely('chip totals', () => audit.tableChanged(rt.state));
+      // The first change after a hand ends can come before the hand is reported finished (a leaver's seat going).
+      const ended = wasLive && !rt.handLive();
+      wasLive = rt.handLive();
+      const last = rt.state.history.at(-1);
+      if (ended && last && endSeenAt === undefined) {
+        const now = clock.now();
+        const seeAt = spectatorsSeeAt(rt, now);
+        if (seeAt > now) endSeenAt = seeAt + runoutMs(last.hand.events);
+      }
+      const publishAt = endSeenAt;
+      endSeenAt = undefined;
+      audit.safely('chip totals', () => audit.tableChanged(rt.state, false, publishAt));
       lastChange.set(id, clock.now());
       broadcast(rt);
       scheduleSave(rt);
@@ -1217,7 +1246,11 @@ export function createApp(deps: AppDeps = {}) {
       audit.safely('a hand', () => {
         const now = clock.now();
         const seeAt = spectatorsSeeAt(rt, now);
-        audit.hand(id, record, seeAt > now ? seeAt : undefined);
+        // Their browsers deal an all-in runout out a street at a time once the finished hand reaches them, so the end
+        // they see comes that much later (#469: the leaderboard holds the game until the hand goes in).
+        const publishAt = seeAt > now ? seeAt + runoutMs(record.hand.events) : undefined;
+        endSeenAt = publishAt;
+        audit.hand(id, record, publishAt);
       });
       handSaves = handSaves.then(() => store.saveHand(id, record)).catch((e) => log(`saving hand ${record.handNumber} failed`, e));
       track(id, handSaves);
