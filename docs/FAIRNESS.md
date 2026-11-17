@@ -421,6 +421,15 @@ Two more things are worth knowing:
   the table; it is in the hand list once the delay has passed. A seat someone
   left as that hand ended does show empty at once.
 
+**All-in runouts.** When a hand ends all-in, the remaining cards are dealt
+out on screen over a few seconds, though the server already has the result.
+No card is shown early. In those seconds a few things can hint at whether
+someone busted: how the table answers a host's or a bot owner's controls, a
+gesture at a player knocked out of a tournament, the player count in the
+Dealer's choice pick panel, and a page opened in the middle of the runout,
+which shows it finished. These are known and left as they are for now
+(issues #463, #483, #480; decision D42). They may be fixed later.
+
 ## HUDs and tracking software
 
 A HUD is a program (PokerTracker, Holdem Manager and the like) that reads hand

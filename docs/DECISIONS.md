@@ -52,6 +52,7 @@ How this file works:
 | [D39](#d39-what-spectators-on-a-delay-are-shown) | What spectators on a delay are shown | 2026-11-07 | John; details Claude |
 | [D40](#d40-a-tournament-pauses-when-the-site-has-been-down) | A tournament pauses when the site has been down | 2026-11-17 | John; details Claude |
 | [D41](#d41-a-change-updates-its-docs-in-the-same-pull-request) | A change updates its docs in the same pull request | 2026-11-17 | John picked; details Claude |
+| [D42](#d42-rare-hints-during-an-all-in-runout-are-left-as-they-are-for-now) | Rare hints during an all-in runout are left as they are, for now | 2026-11-17 | John |
 
 ---
 
@@ -486,3 +487,11 @@ How this file works:
 - **Why:** a check that day found the docs accurate except where a change had updated some of them and not others: the tournament outage pause (D40) was in three places and missing from five. Nothing asked a change which docs it touched.
 - **Not done:** ARCHITECTURE.md stays as it is, a dense reference. Rewriting it in shorter sections is the larger option John didn't pick.
 - **Where:** [README.md](../README.md#start-here), [CONTRIBUTING.md](../CONTRIBUTING.md#keeping-the-docs-current), [the pull request template](../.github/pull_request_template.md), [CLAUDE.md](../CLAUDE.md).
+
+## D42. Rare hints during an all-in runout are left as they are, for now
+
+- **Decided:** 2026-11-17, by John, asked whether to skip four rare bugs: "let's do your option but make a note that we might fix it later".
+- **Decision:** issues #463, #483, #480 and #473 are closed as not planned. While an all-in runout is being dealt out on screen (a few seconds), the server already has the result, and a few answers and counts can differ depending on whether someone busted: a host's or bot owner's controls, a gesture at a knocked-out tournament player, the "N are sitting down" and "If time runs out" lines in Dealer's choice, a page opened mid-runout. No cards are ever shown early. #473 is the same panel naming the wrong game in a few rare seat cases.
+- **Why:** each needs odd timing in those few seconds, a mapping pass counted about 30 such cases, and fixing them would cost far more than it gives a game among friends.
+- **May be fixed later.** The issues keep the full findings and fix ideas, and #463's cash-table part is half built on branch `claude/project-thread-85zhi9`. Reopen them to pick it up; don't treat "not planned" as "never".
+- **Where:** [/fairness](FAIRNESS.md#what-a-tables-host-can-do) ("All-in runouts") says what can show early. What is already fixed stays: the waitlist, sitting down, random seats, bots added to a seat and Dealer's choice's seat count (#448, #467).
