@@ -3,7 +3,7 @@ import { Modal } from './SeatDialog';
 const KEYS: [string, string][] = [
   ['F', 'Fold'],
   ['K', 'Check'],
-  ['C', 'Call'],
+  ['C', 'Call. In stud, when you have to open the betting: bring in'],
   ['R', 'Raise: jumps to the amount box (type it, then Enter). In limit games it raises.'],
   ['0-9', 'On your turn: start typing a bet amount (then Enter)'],
   ['A', 'Call any (before your turn)'],
