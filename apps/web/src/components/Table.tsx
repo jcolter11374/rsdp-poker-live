@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { getVariant } from '@rsdp/engine/variants';
 import type { SeatView, TableView } from '@rsdp/engine/wire';
 import { betUnit, clock, type Fmt } from '../format';
-import { handKind, handStrength } from '../strength';
+import { earlyHand, handKind, handStrength } from '../strength';
 import { PlayingCard } from './PlayingCard';
 import { besideBet, clearOfRows, clearSideBands, fitHand, fitMiddle, fromVars, handRoom, handSpan, inFront, keepPlaced, lerp, placeHand, placePlayers, placeRow, placeSeats, playerFractions, px, seatFractions, seatsFine, stadiumPoint, type Box, type Extent, type HandFit, type Point, type Reach, type RowPlace } from './geometry';
 import { BoardExtras, FeltExtras, SeatExtras } from './table/slots';
@@ -831,6 +831,7 @@ export function Table({
   onNoticeRoom,
   games,
   barNamesHand = false,
+  handTag = false,
 }: {
   view: TableView;
   /** Server clock minus ours. */
@@ -867,6 +868,8 @@ export function Table({
    * nameplate names it, as before #455.
    */
   barNamesHand?: boolean;
+  /** A phone standing up: what your cards make right now goes on a tag on the cards themselves, from the first card. */
+  handTag?: boolean;
 }) {
   const felt = useRef<HTMLDivElement>(null);
   const prefs = usePrefs();
@@ -1303,6 +1306,14 @@ export function Table({
   // its side, where the bar leaves that line out (styles.css). With no such bar your nameplate names it, as before.
   const shownOf = (s: SeatView, seat: number) => (done && !results.has(seat) && s.inHand && !s.folded ? shownHand(hand!.gameId, s, hand!.boards[0]?.[0] ?? []) : null);
   const ownLine = (seat: number) => compact && seat === view.me.seat && !barNamesHand;
+  // Your own hand's name, on your cards (the phone layout with the slim bar, which doesn't name it).
+  const myTag = (s: SeatView, isMe: boolean) => {
+    if (!handTag || !isMe || !hand || !s.inHand || s.folded || !s.cards.length) return null;
+    const mine = s.cards.map((c) => c.card);
+    const board = hand.boards[0]?.[0] ?? [];
+    const name = handStrength(hand.gameId, mine, board) ?? earlyHand(hand.gameId, mine, board);
+    return name ? <div className="hand-tag">{handKind(name)}</div> : null;
+  };
   const tabs = new Map<number, string>();
   if (compact && done)
     view.seats.forEach((s, seat) => {
@@ -1631,6 +1642,7 @@ export function Table({
                   {tab}
                 </div>
               )}
+              {myTag(s, isMe)}
               {won && <div className="win-float">+{fmt(won.amount)}</div>}
             </div>
             {s.bet > 0 && (

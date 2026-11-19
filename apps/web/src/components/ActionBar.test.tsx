@@ -1475,4 +1475,80 @@ describe('all in with Shift+A pressed twice (#307)', () => {
       expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 1000 })]);
     });
   });
+
+  // A phone standing up (#510): one row of buttons, and the bet sizes open from Bet or Raise.
+  describe('the slim bar on a phone', () => {
+    it('shows no sizes until Raise is pressed, then sends the size picked', async () => {
+      renderBar(facingBet(100), { slim: true });
+      expect(screen.queryByRole('spinbutton', { name: /^Amount/ })).toBeNull();
+      expect(screen.queryByRole('slider')).toBeNull();
+      await tap(/^Raise$/);
+      expect(moves()).toEqual([]);
+      expect(box()).toBeTruthy();
+      await tap(/^Raise to/);
+      expect(moves()).toEqual([expect.objectContaining({ type: 'raise' })]);
+    });
+
+    it('says Bet when nobody has bet, and Back shuts the sizes without a move', async () => {
+      renderBar(checkedToMe(), { slim: true });
+      await tap(/^Bet$/);
+      expect(box()).toBeTruthy();
+      await later(600);
+      await tap(/^Back$/);
+      expect(screen.queryByRole('spinbutton', { name: /^Amount/ })).toBeNull();
+      expect(moves()).toEqual([]);
+      // Fold, Check and Bet are back.
+      expect(screen.getByRole('button', { name: /^Check/ })).toBeTruthy();
+    });
+
+    it('starts each new turn with the sizes shut', async () => {
+      const bar = renderBar(checkedToMe(), { slim: true });
+      await tap(/^Bet$/);
+      expect(box()).toBeTruthy();
+      bar.update(waitingOn(0, 1));
+      bar.update(checkedToMe({ street: 2, streetName: 'Turn' }));
+      expect(screen.queryByRole('spinbutton', { name: /^Amount/ })).toBeNull();
+    });
+
+    it('sends a fixed-limit bet in one press: there is no size to pick', async () => {
+      renderBar(
+        tableView({
+          hand: { betting: 'fixed-limit', toAct: 0 },
+          legal: { canFold: true, canCheck: true, callAmount: 0, canRaise: true, raiseKind: 'bet', minTo: 20, maxTo: 20, canBringIn: false },
+        }),
+        { slim: true },
+      );
+      await tap(/^Bet 20/);
+      expect(moves()).toEqual([expect.objectContaining({ type: 'bet', to: 20 })]);
+    });
+
+    it('opens the sizes from the keyboard with R, at the amount, and shuts them with Escape', async () => {
+      renderBar(facingBet(100), { slim: true });
+      fireEvent.keyDown(window, { key: 'r' });
+      await later(50);
+      expect(document.activeElement).toBe(box());
+      // Escape works from the amount box itself, and focus goes back to Raise.
+      fireEvent.keyDown(box(), { key: 'Escape' });
+      await later(50);
+      expect(screen.queryByRole('spinbutton', { name: /^Amount/ })).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Raise$/ }));
+      expect(moves()).toEqual([]);
+    });
+
+    it('moves focus to the button that sends the bet when the sizes open, and back to Bet when they shut', async () => {
+      renderBar(checkedToMe(), { slim: true });
+      screen.getByRole('button', { name: /^Bet$/ }).focus();
+      await tap(/^Bet$/);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Bet \d/ }));
+      await later(600);
+      await tap(/^Back$/);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Bet$/ }));
+    });
+
+    it('leaves the bar off a phone as it was: sizes on show, one press to raise', async () => {
+      renderBar(facingBet(100));
+      expect(box()).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /^Raise$/ })).toBeNull();
+    });
+  });
 });

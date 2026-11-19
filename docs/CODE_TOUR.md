@@ -153,6 +153,13 @@ opens the connection and keeps your browser's secret.
   which saves it with the table and hand number in the `feedback` table.
   It is private: only the admin reads it, on `/roadmap/admin` or from
   `GET /api/feedback`.
+- A phone held upright gets the slim table
+  ([D44](DECISIONS.md#d44-a-phone-held-upright-gets-a-slim-table)):
+  [`components/table/PhoneChat.tsx`](../apps/web/src/components/table/PhoneChat.tsx)
+  is the chat strip along the bottom and the one-line table shown while you
+  type, and its styles are in `phone-chat.css` beside it. `useSlim` in
+  [`src/layout.ts`](../apps/web/src/layout.ts) says when it applies, and
+  `ActionBar.tsx` takes a `slim` prop for the one row of buttons.
 - Screen readers and keyboards: [`src/announce.ts`](../apps/web/src/announce.ts)
   turns each change at the table into words, which
   [`components/table/Announcer.tsx`](../apps/web/src/components/table/Announcer.tsx)
