@@ -6,7 +6,7 @@ import { contributeSeed, liveSeedWarning, watchCommitments, watchNextSeen } from
 import { nextVolume, setVolume, sounds, useVolume, VOLUME_NAME } from './sound';
 import { badgeFavicon, buzz } from './alerts';
 import { closeNotifications, notify } from './notify';
-import { useMinWidth, usePortrait, useWide } from './layout';
+import { useMinWidth, useKeyboardBox, usePortrait, useSlim, useWide } from './layout';
 import { bbFormat, chipFormat, clock, gameLabel, stakesLabel } from './format';
 import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { useWakeLock } from './wakeLock';
@@ -21,6 +21,7 @@ import { SidePanel, type Tab } from './components/SidePanel';
 import { noteRealGame } from './components/table/Recap';
 import { PartBoundary, QuietBoundary } from './components/ErrorBoundary';
 import { ChatBox, newChat, unreadChat } from './components/table/Chat';
+import { MiniTable, PhoneChat } from './components/table/PhoneChat';
 import { TableMenu } from './components/table/TableMenu';
 import { useChatMutes } from './chatMutes';
 import { Sheet } from './components/Sheet';
@@ -191,6 +192,10 @@ export function TablePage({ tableId }: { tableId: string }) {
   const portrait = usePortrait();
   // Big windows: chat in the bottom-left corner, and the records and host controls in a panel from the top bar (#317).
   const wide = useWide(portrait);
+  // A phone standing up: the slim table, with the chat as a strip along the bottom that opens in place.
+  const slim = useSlim(portrait);
+  const [phoneChat, setPhoneChat] = useState(false);
+  const keyboard = useKeyboardBox(slim && phoneChat);
   // Below these the top bar's count of hands left, or time to the next game, takes its short wording, and then the
   // game its short name, so neither is cut (#373).
   const narrowBar = !useMinWidth(1280);
@@ -365,7 +370,7 @@ export function TablePage({ tableId }: { tableId: string }) {
   }, [view?.me.seat]);
 
   // At a desk the chat is always on screen; on a phone it's read when its sheet is open.
-  const chatOpen = !portrait || sheet === 'chat';
+  const chatOpen = !portrait || slim || sheet === 'chat';
   const lastChatAt = view?.chat.at(-1)?.at ?? 0;
   useEffect(() => {
     if (chatOpen && lastChatAt > chatSeenAt) setChatSeenAt(lastChatAt);
@@ -718,7 +723,11 @@ export function TablePage({ tableId }: { tableId: string }) {
   );
 
   return (
-    <div ref={pageRef} className={['table-page', portrait && 'portrait', wide && 'wide'].filter(Boolean).join(' ')}>
+    <div
+      ref={pageRef}
+      className={['table-page', portrait && 'portrait', wide && 'wide', slim && 'slim', slim && phoneChat && 'chat-open', slim && phoneChat && keyboard && 'typing'].filter(Boolean).join(' ')}
+      style={slim && phoneChat && keyboard ? { position: 'fixed', left: 0, right: 0, top: keyboard.top, height: keyboard.height } : undefined}
+    >
       <header className="topbar">
         {portrait && seedAlarm}
         <a className="logo small" href="/">
@@ -801,9 +810,11 @@ export function TablePage({ tableId }: { tableId: string }) {
         )}
         {portrait ? (
           <>
-            <button className="chat-button" onClick={() => setSheet('chat')} aria-label={unread ? `Chat, ${unread} new` : 'Chat'}>
-              💬{unread > 0 && <span className="badge">{unread}</span>}
-            </button>
+            {!slim && (
+              <button className="chat-button" onClick={() => setSheet('chat')} aria-label={unread ? `Chat, ${unread} new` : 'Chat'}>
+                💬{unread > 0 && <span className="badge">{unread}</span>}
+              </button>
+            )}
             <button onClick={() => setSheet('log')}>Log</button>
             <button aria-label={pending > 0 ? `Menu, ${pending} ${pending === 1 ? 'request' : 'requests'} waiting` : 'Menu'} onClick={() => setSheet('menu')}>
               ☰{pending > 0 && <span className="badge">{pending}</span>}
@@ -896,6 +907,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               <button onClick={() => socket.emit('seat:cancel')}>Cancel</button>
             </div>
           )}
+          {slim && phoneChat && keyboard && <MiniTable view={view} fmt={feltFmt} />}
           <SeatingBanners view={view} skew={skew} onTakeSeat={(seat) => setDialog({ kind: 'seat', seat })} onJoinWaitlist={() => setDialog({ kind: 'seat', seat: 0, waitlist: true })} onPeople={() => setDialog({ kind: 'people' })} />
           {seatErrorLine}
           <Table
@@ -914,6 +926,7 @@ export function TablePage({ tableId }: { tableId: string }) {
             noticeHidden={noticeUnder}
             onNoticeRoom={setNoticeRoom}
             barNamesHand
+            handTag={slim}
           />
           <Dock
             reset={`${portrait}:${place}`}
@@ -939,6 +952,7 @@ export function TablePage({ tableId }: { tableId: string }) {
               onRules={() => setDialog({ kind: 'rules' })}
               note={noticeUnder && !view.hand ? startNotice!.text : null}
               alarm={seedAlarm}
+              slim={slim}
             />
             <div className="dock-row">
               <HandExtras view={view} />
@@ -973,6 +987,12 @@ export function TablePage({ tableId }: { tableId: string }) {
           <TableAnnouncer view={view} fmt={feltFmt} skew={skew} preQueued={preQueued} />
         </QuietBoundary>
       </main>
+
+      {slim && (
+        <PartBoundary name="chat">
+          <PhoneChat view={view} open={phoneChat} typing={!!keyboard} onOpen={() => setPhoneChat(true)} onClose={() => setPhoneChat(false)} />
+        </PartBoundary>
+      )}
 
       {portrait && sheet === 'menu' && (
         <Sheet title={view.name} onClose={close}>

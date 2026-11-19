@@ -50,3 +50,36 @@ export function handKind(name: string): string {
     .map((half) => figures(half.split(', ')[0]));
   return halves.length > 1 ? halves.map((half) => half.replace(/ low$/, '')).join(' · ') : (halves[0] ?? '');
 }
+
+const EARLY_RANKS = '23456789TJQKA';
+const EARLY_NAMES = ['Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King', 'Ace'];
+const earlyPlural = (r: number) => (EARLY_NAMES[r] === 'Six' ? 'Sixes' : EARLY_NAMES[r] + 's');
+
+/**
+ * What your cards make before there are five of them, for the tag on your cards on a phone: "Pair of Kings",
+ * "Ace High". Only where every card you hold plays (Hold'em before the flop, stud's first streets): Omaha, draw
+ * and low-only games have no early name, and `handStrength` names the hand once it can.
+ */
+export function earlyHand(gameId: string, hole: string[], board: string[]): string | null {
+  let spec;
+  try {
+    spec = getVariant(gameId);
+  } catch {
+    return null;
+  }
+  const { high, low } = spec.showdown;
+  if (!high || high === 'omaha' || low) return null;
+  const cards = [...hole, ...board];
+  if (!cards.length || cards.length >= 5 || cards.some((c) => c === '??')) return null;
+  const ranks = cards.map((c) => EARLY_RANKS.indexOf(c[0].toUpperCase()));
+  if (ranks.some((r) => r < 0)) return null;
+  const count = new Map<number, number>();
+  for (const r of ranks) count.set(r, (count.get(r) ?? 0) + 1);
+  const groups = [...count.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+  const [top, second] = groups;
+  if (top[1] === 4) return `Four ${earlyPlural(top[0])}`;
+  if (top[1] === 3) return `Three ${earlyPlural(top[0])}`;
+  if (top[1] === 2 && second?.[1] === 2) return `Two Pair, ${earlyPlural(top[0])} and ${earlyPlural(second[0])}`;
+  if (top[1] === 2) return `Pair of ${earlyPlural(top[0])}`;
+  return `${EARLY_NAMES[Math.max(...ranks)]} High`;
+}

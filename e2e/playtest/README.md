@@ -20,7 +20,9 @@ pictures are what to check.
   others it checks as it goes and prints PASS or FAIL for each thing a
   spectator on a delay must not see early. About 2 minutes.
 - `lib.mjs`: what they share: browsers, screenshots, and bots that click the
-  same buttons a player would.
+  same buttons a player would. On the phone-sized browser a bot that
+  wants to bet presses Bet or Raise first, as a player on a phone does, to
+  open the sizes.
 
 Like the smoke test, they refuse a `fly.dev` address, and the browsers may
 only contact the server under test (and other local addresses): anything
