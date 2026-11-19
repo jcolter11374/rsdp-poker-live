@@ -42,7 +42,7 @@ first, details after.
   the commitment for the next hand was swapped for another without being
   dealt, the table shows a warning straight away: in red, on the bar under
   the table, just above your betting buttons when you have them (in the bar
-  at the top on a phone held sideways), for the rest of that hand, your own
+  at the top on a phone, held upright or sideways), for the rest of that hand, your own
   turn included. Tap it for the whole of it. One
   case is harmless: if you sit at a table from two devices at once (a phone
   and a laptop, say), each sends its own seed and the table keeps only the

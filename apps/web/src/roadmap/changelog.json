@@ -1,10 +1,18 @@
 {
   "releases": [
     {
-      "id": "2026.11.19",
+      "id": "2026.11.19.2",
       "date": "2026-11-19",
       "fixes": [
         "Stud games (Stud, Stud Hi-Lo, Razz, and the stud rounds of mixed games): the forced opening bet now has a key. C brings in, as it calls at other times, and R still completes. The key is shown on the Bring in button and in the list of keyboard shortcuts. Before, it was the one move that needed a click."
+      ]
+    },
+    {
+      "id": "2026.11.19",
+      "date": "2026-11-19",
+      "fixes": [
+        "Phones held upright, the small print of the new layout (a tablet held upright gets it too): fixed-limit bets, which have no size to pick, still take one press. In games with more than two cards, the name of your hand sits just under your name rather than on the cards. A coach tip at a practice table opens over the foot of the table, and the fair-dealing warning shows in the top bar.",
+        "A phone or tablet held sideways and a computer keep the layout they had (a very narrow or heavily zoomed window on a computer already got the phone layout, and gets the new one). With a keyboard attached to a phone or tablet held upright, R opens the bet sizes and Esc shuts them."
       ]
     },
     {

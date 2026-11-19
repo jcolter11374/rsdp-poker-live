@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getVariant } from '@rsdp/engine/variants';
-import { handKind, handStrength } from './strength';
+import { earlyHand, handKind, handStrength } from './strength';
 
 describe('handKind: a shown hand on a phone tab (#455)', () => {
   it('keeps what the hand made, a low in figures, and both halves of hi-lo on one line', () => {
@@ -43,5 +43,24 @@ describe('handKind: a shown hand on a phone tab (#455)', () => {
       }
     }
     expect(named).toBe(games.length * 2000);
+  });
+});
+
+describe('earlyHand: the tag on your cards before there are five (#510)', () => {
+  it("names Hold'em hands before the flop and stud hands on the early streets", () => {
+    expect(earlyHand('nlhe', ['Ks', 'Kh'], [])).toBe('Pair of Kings');
+    expect(earlyHand('nlhe', ['As', '7h'], [])).toBe('Ace High');
+    expect(earlyHand('nlhe', ['6s', '6h'], [])).toBe('Pair of Sixes');
+    expect(earlyHand('stud', ['9s', '9h', '9d'], [])).toBe('Three Nines');
+    expect(earlyHand('stud', ['9s', '9h', '4d', '4c'], [])).toBe('Two Pair, Nines and Fours');
+    expect(earlyHand('stud', ['Ts', '2h', '4d'], [])).toBe('Ten High');
+  });
+  it('says nothing where not every card plays, where low wins, with a hidden card, or once five cards make a hand', () => {
+    expect(earlyHand('plo4', ['Ks', 'Kh', '2c', '3d'], [])).toBeNull();
+    expect(earlyHand('razz', ['As', '2h', '3d'], [])).toBeNull();
+    expect(earlyHand('stud8', ['As', 'Ah', '3d'], [])).toBeNull();
+    expect(earlyHand('nlhe', ['Ks', '??'], [])).toBeNull();
+    expect(earlyHand('nlhe', ['Ks', 'Kh'], ['2c', '7d', 'Jh'])).toBeNull();
+    expect(earlyHand('no-such-game', ['Ks', 'Kh'], [])).toBeNull();
   });
 });

@@ -86,6 +86,7 @@ export function ActionBar({
   onRules,
   note = null,
   alarm = null,
+  slim = false,
 }: {
   view: TableView;
   fmt: Fmt;
@@ -107,6 +108,11 @@ export function ActionBar({
    * there in every state, your own turn included, and the bar's room is kept for it, so the warning never moves a seat.
    */
   alarm?: ReactNode;
+  /**
+   * A phone standing up: the bar is one row of buttons, so the table gets the room. The bet sizes open over the foot of
+   * the screen when you press Bet or Raise, and the hand's name is on your cards instead of on the bar.
+   */
+  slim?: boolean;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
@@ -128,6 +134,8 @@ export function ActionBar({
   // Switching units (here or in another tab) redraws the box in the new unit.
   useEffect(() => setTyped(null), [bigBlind]);
   const [error, setError] = useState('');
+  // Slim bar: whether the bet sizes are open. Each new turn starts with them closed.
+  const [sizingAt, setSizingAt] = useState<string | null>(null);
   const [queued, setQueued] = useState<{ key: string; action: PreAction } | null>(null);
   // Queued moves are for one betting round only.
   const streetKey = hand ? `${hand.handNumber}:${hand.street}` : '';
@@ -219,7 +227,7 @@ export function ActionBar({
     boxWanted.current = false;
     amountBox.current?.focus();
     amountBox.current?.select();
-  }, [tipOpen]);
+  }, [tipOpen, sizingAt]);
 
   // One move at a time: a double tap must not send a second move, which could land on the next street
   // (the big blind checking preflop and then first to act on the flop) or queue a pre-move.
@@ -303,6 +311,30 @@ export function ActionBar({
       ? mostIn(hand, legal, me)
       : null;
   const turnNow = `${turnHand}:${hand?.street}:${turnAt}`;
+  // The slim bar swaps its row of buttons when the sizes open or shut: focus follows the swap (to the button that
+  // sends the bet, not the amount box, which would bring a phone's keyboard up; then back to Bet or Raise), unless
+  // it has gone somewhere else, such as the chat. The sizes also take no tap for the first third of a second, so the
+  // second half of a double tap on Bet can't move the slider.
+  const barEl = useRef<HTMLDivElement>(null);
+  const sizesOpen = slim && sized && sizingAt === turnNow;
+  const sizesWere = useRef(sizesOpen);
+  useEffect(() => {
+    if (sizesWere.current === sizesOpen) return;
+    sizesWere.current = sizesOpen;
+    const bar = barEl.current;
+    if (!bar) return;
+    const at = document.activeElement;
+    if (!boxWanted.current && at !== amountBox.current && (!at || at === document.body || bar.contains(at)))
+      bar.querySelector<HTMLElement>('.buttons button.primary')?.focus({ preventScroll: true });
+    const sizes = sizingBox.current;
+    if (!sizesOpen || !sizes) return;
+    sizes.style.pointerEvents = 'none';
+    const t = setTimeout(() => (sizes.style.pointerEvents = ''), 330);
+    return () => {
+      clearTimeout(t);
+      sizes.style.pointerEvents = '';
+    };
+  }, [sizesOpen]);
   // Armed for this turn and this amount only: changing the amount by any other way lets it go too.
   const armed =
     !!most && !!arming && arming.turn === turnNow && arming.most.kind === most.kind && arming.most.to === most.to && (most.kind === 'call' || amount === most.to);
@@ -327,6 +359,8 @@ export function ActionBar({
       setTyped(null);
       setAmountRaw(most.to);
     }
+    // The slim bar keeps the sizes shut: open them, so the ringed all-in button is there to see.
+    if (slim && sized && most.kind === 'raise') setSizingAt(turnNow);
     const now = Date.now();
     setArming({ turn: turnNow, most, at: now, last: now, amount, typed });
   };
@@ -416,6 +450,13 @@ export function ActionBar({
         return;
       }
     }
+    // Escape shuts the slim bar's open sizes, as Back does.
+    const inSizes = e.target instanceof HTMLElement && !!e.target.closest('.action-bar .sizing') && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if ((free || inSizes) && e.key === 'Escape' && slim && legal && sized && sizingAt === turnNow) {
+      e.preventDefault();
+      setSizingAt(null);
+      return;
+    }
     if (shiftA) {
       // Shift+A does nothing but arm the all-in on your turn: before it, it ticks no pre-move.
       if (most) {
@@ -456,6 +497,12 @@ export function ActionBar({
       e.preventDefault();
       boxWanted.current = true;
       setTipAt(null);
+      if (slim) setSizingAt(turnNow);
+    } else if (k === 'r' && slim && sized && legal.canRaise) {
+      // The slim bar's sizes are shut: R opens them and goes to the amount.
+      e.preventDefault();
+      boxWanted.current = true;
+      setSizingAt(turnNow);
     } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
     else return;
   };
@@ -696,12 +743,15 @@ export function ActionBar({
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
+  // Slim bar: the sizes are shut until Bet or Raise is pressed, then they open over the foot of the screen with Back and
+  // the button that sends the bet.
+  const sizingOpen = sizesOpen;
   return (
-    <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
+    <div ref={barEl} className={`action-bar my-turn${sending ? ' sending' : ''}${sizingOpen ? ' sizing-open' : ''}`} data-street={streetKey}>
       {head}
       {errorLine}
       {!sized && tipSlot(null)}
-      {sized && (tipPanel(true) || (
+      {sized && (tipPanel(true) || ((!slim || sizingOpen) && (
         <div className="sizing" ref={sizingBox}>
           {hand.betting !== 'fixed-limit' && (
             <div className="presets">
@@ -757,7 +807,17 @@ export function ActionBar({
             {bigBlind && <span className="unit">BB</span>}
           </div>
         </div>
-      ))}
+      )))}
+      {sizingOpen ? (
+        <div className="buttons">
+          <button className="back" onClick={() => setSizingAt(null)}>
+            Back
+          </button>
+          <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: clamp(amount) })}>
+            {raiseLabel(clamp(amount))}
+          </button>
+        </div>
+      ) : (
       <div className="buttons">
         {legal.canFold && (
           <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F" aria-keyshortcuts="F">
@@ -782,13 +842,26 @@ export function ActionBar({
             <Key k="C" />
           </button>
         )}
-        {legal.canRaise && (
+        {legal.canRaise && slim && sized ? (
+          <button
+            className="primary"
+            aria-expanded={false}
+            aria-keyshortcuts="R"
+            onClick={() => {
+              setTipAt(null);
+              setSizingAt(turnNow);
+            }}
+          >
+            {raiseType === 'bet' ? 'Bet' : 'Raise'}
+          </button>
+        ) : legal.canRaise && (
           <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })} aria-keyshortcuts={[sized ? '' : 'R', most?.kind === 'raise' ? 'Shift+A' : ''].filter(Boolean).join(' ') || undefined}>
             {raiseLabel(sized ? clamp(amount) : legal.minTo)}
             <Key k="R" />
           </button>
         )}
       </div>
+      )}
       {why}
     </div>
   );
