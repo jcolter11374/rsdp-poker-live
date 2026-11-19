@@ -1,0 +1,99 @@
+/* The slim phone table (a phone standing up; TablePage's `slim`): one row of buttons under the table, the bet sizes
+   opening over the foot of the screen, the hand's name on your cards, and the chat as a strip along the bottom that
+   opens in place (PhoneChat.tsx). A phone on its side keeps the layout it had. */
+
+/* The room kept under the table is one row of buttons, whatever the game: nothing else on the bar takes height.
+   (:not(#_) outranks the per-game heights in styles.css.) */
+.slim .dock:not(#_) { min-height: max(64px, var(--held, 0px)); }
+.slim .action-bar { position: relative; justify-content: center; gap: 0; min-height: 64px; padding: 7px 8px; border-radius: 0; border-width: 1px 0 0; background: var(--panel); }
+.slim .action-bar.idle { background: var(--panel); border-color: var(--line); }
+.slim .action-bar .buttons { gap: 8px; }
+.slim .action-bar .buttons button, .slim .action-bar.pre .buttons button { height: 50px; padding: 0 6px; font-size: 1.02rem; line-height: 1.15; }
+.slim .action-bar.pre .buttons button { font-size: 0.86rem; }
+.slim .action-bar .buttons.small { justify-content: safe center; gap: 5px; overflow-x: auto; }
+.slim .action-bar .buttons.small button { flex: none; height: 40px; padding: 0 9px; font-size: 0.84rem; white-space: nowrap; }
+/* Your hand's name is on your cards (.hand-tag), not on the bar. */
+.slim .action-bar .strength { display: none; }
+/* The time bank and the coach's Tip button float over the table's bottom corner, clear of the bar. */
+.slim .bar-head { position: absolute; right: 8px; bottom: calc(100% + 6px); z-index: 5; min-height: 0; gap: 6px; }
+.slim .bar-head .time-bank, .slim .bar-head .play-tip-button { position: static; translate: none; padding: 5px 10px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.slim .action-bar > :is(.error, .sending-note, .prompt) { position: absolute; left: 50%; bottom: calc(100% + 6px); translate: -50% 0; z-index: 5; width: max-content; max-width: calc(100% - 16px); padding: 4px 12px; border-radius: 10px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); font-size: 0.82rem; line-height: 1.25; }
+.slim .action-bar > :is(.play-tip-slot, .play-tip) { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; min-height: 0 !important; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+.slim .action-bar > .play-tip-slot:empty { display: none; }
+/* The fair-dealing warning has no hand line to stand on: it takes the logo's place in the top bar, as on a phone on its side. */
+.portrait.slim .topbar > .seed-alarm { display: flex; flex: 1 1 0; min-width: 0; height: 34px; margin: 0; border-radius: 8px; font-size: 0.72rem; line-height: 15px; justify-content: flex-start; white-space: normal; text-align: left; }
+.portrait.slim .topbar > .seed-alarm .seed-alarm-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.portrait.slim .topbar > .seed-alarm ~ .logo { display: none; }
+.portrait.slim .action-bar .seed-alarm { display: none; }
+
+/* Bet or Raise opens the sizes over the foot of the screen: the table above keeps its size. */
+.slim .action-bar.sizing-open { position: fixed; left: 0; right: 0; bottom: 0; z-index: 12; gap: 6px; padding: 8px 10px max(8px, env(safe-area-inset-bottom)); border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.55); }
+.slim .action-bar.sizing-open .bar-head { display: none; }
+/* The presets and the amount share a line, the slider has the next to itself. */
+.slim .sizing { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; }
+.slim .sizing .slider { display: contents; }
+.slim .sizing .presets { grid-area: 1 / 1; }
+.slim .sizing input[type='number'] { grid-area: 1 / 2; width: 78px; }
+.slim .sizing .unit { grid-area: 1 / 3; }
+.slim .sizing input[type='range'] { grid-area: 2 / 1 / 3 / 4; height: 28px; margin: 0; }
+.slim .sizing:not(:has(.presets)) input[type='range'] { grid-area: 1 / 1; }
+.slim .sizing .presets button { padding: 5px 4px; font-size: 0.88rem; }
+.slim .sizing input[type='number'] { padding: 5px 6px; font-size: 16px; }
+.slim .action-bar.sizing-open .buttons button { height: 46px; }
+.slim .action-bar.sizing-open .buttons .back { flex: 0 0 30%; background: var(--panel-2); }
+/* A little more room under the table than the phone on its side has, so the open sizes stop short of your nameplate. */
+.slim .felt.compact { margin-bottom: 46px; }
+
+/* Your hand's name: under your nameplate, or across the foot of your cards when you hold two (their rank and suit are
+   big enough to stay clear; a longer hand's suits are along its foot). Which one goes by the game, so it never moves
+   during a hand. */
+.felt.compact .hole.n2 ~ .hand-tag { top: auto; bottom: calc(100% - 1px); }
+.felt.compact .hand-tag {
+  position: absolute; left: 50%; top: calc(100% + 2px); translate: -50% 0; z-index: 4;
+  padding: 0 8px; border-radius: 7px; background: #14171b;
+  box-shadow: 0 0 0 1.5px var(--accent-2), 0 2px 6px rgba(0, 0, 0, 0.6);
+  font: 700 0.86rem/17px 'Barlow Condensed', 'Inter Variable', sans-serif; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent-2);
+  white-space: nowrap; pointer-events: none;
+}
+
+/* The chat strip: the last two lines, along the bottom of the screen. Tap it to open the chat. */
+.phone-chat.chat-strip {
+  flex: none; display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: content-box; height: 38px;
+  padding: 3px 0 max(3px, env(safe-area-inset-bottom)); border: 0; border-top: 1px solid var(--line); border-radius: 0;
+  background: #0f1215; color: var(--text); font-weight: 400; text-align: left;
+}
+.chat-strip .lines { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding-left: 12px; }
+.chat-strip .line { font-size: 0.8rem; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-strip .line:not(:last-child) { color: var(--muted); }
+.chat-strip .line.mine b { color: var(--accent); }
+.chat-strip .line.hint { color: var(--muted); }
+.chat-strip .chev, .phone-chat-handle .chev { flex: none; padding-right: 12px; color: var(--muted); font-size: 1rem; line-height: 1; }
+
+/* Open: under the table, which stays in view with its buttons. */
+.phone-chat.open { flex: none; display: flex; flex-direction: column; height: 29%; min-height: 196px; padding-bottom: env(safe-area-inset-bottom); background: #0f1215; border-top: 1px solid var(--line); }
+.phone-chat-handle { position: relative; flex: none; display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 0 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+.phone-chat-handle .grip { position: absolute; left: 50%; top: 7px; translate: -50% 0; width: 38px; height: 4px; border-radius: 2px; background: var(--line); }
+.phone-chat .chat-box { flex: 1; min-height: 0; gap: 6px; padding: 0 12px 8px; border: 0; background: transparent; }
+.phone-chat .chat-box .chat-title { display: none; }
+.phone-chat .chat-scroll { max-height: none; font-size: 0.86rem; }
+/* 16px: Safari on an iPhone zooms the page in on a smaller box. */
+.phone-chat .chat-form input { font-size: 16px; }
+.phone-chat .quick-replies { flex-wrap: nowrap; }
+.phone-chat .quick-replies button { flex: 1 1 0; min-height: 30px; padding: 4px 0; font-size: 0.9rem; }
+
+/* While the chat is open the top bar gives its room to the table. */
+.slim.chat-open .topbar { display: none; }
+
+/* Typing: the keyboard leaves no room for the table, so one line stands in for it and the buttons stay. */
+.table-page.slim.typing { overflow: hidden; }
+.slim.typing .topbar, .slim.typing .felt-area > :not(.mini-table, .dock) { display: none; }
+.slim.typing .layout, .slim.typing .felt-area { flex: none; }
+.slim.typing .phone-chat.open { flex: 1 1 0; height: auto; min-height: 0; padding-bottom: 0; }
+.slim.typing .phone-chat .quick-replies, .slim.typing .bar-head { display: none; }
+.mini-table { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: #173a2a; border-bottom: 1px solid var(--line); }
+.mini-table.your-turn { box-shadow: inset 0 0 0 2px var(--accent-2); }
+.mini-cards { display: flex; gap: 2px; }
+.mini-cards .playing-card.small { --cw: 26px; }
+.mini-cards.mine:not(:empty) { padding-right: 10px; border-right: 1px solid rgba(255, 255, 255, 0.2); }
+.mini-words { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; font-size: 0.8rem; line-height: 1.25; }
+.mini-table.your-turn .who { color: var(--accent-2); font-weight: 700; }

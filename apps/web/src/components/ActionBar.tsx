@@ -86,6 +86,7 @@ export function ActionBar({
   onRules,
   note = null,
   alarm = null,
+  slim = false,
 }: {
   view: TableView;
   fmt: Fmt;
@@ -107,6 +108,11 @@ export function ActionBar({
    * there in every state, your own turn included, and the bar's room is kept for it, so the warning never moves a seat.
    */
   alarm?: ReactNode;
+  /**
+   * A phone standing up: the bar is one row of buttons, so the table gets the room. The bet sizes open over the foot of
+   * the screen when you press Bet or Raise, and the hand's name is on your cards instead of on the bar.
+   */
+  slim?: boolean;
 }) {
   const { legal, hand } = view;
   const centsMode = view.settings.stakes.centsMode;
@@ -128,6 +134,8 @@ export function ActionBar({
   // Switching units (here or in another tab) redraws the box in the new unit.
   useEffect(() => setTyped(null), [bigBlind]);
   const [error, setError] = useState('');
+  // Slim bar: whether the bet sizes are open. Each new turn starts with them closed.
+  const [sizingAt, setSizingAt] = useState<string | null>(null);
   const [queued, setQueued] = useState<{ key: string; action: PreAction } | null>(null);
   // Queued moves are for one betting round only.
   const streetKey = hand ? `${hand.handNumber}:${hand.street}` : '';
@@ -694,12 +702,15 @@ export function ActionBar({
   const raiseLabel = (to: number) =>
     to >= allInTo ? `All in ${fmt(to)}` : legal.canBringIn ? `Complete to ${fmt(to)}` : raiseType === 'bet' ? `Bet ${fmt(to)}` : `Raise to ${fmt(to)}`;
 
+  // Slim bar: the sizes are shut until Bet or Raise is pressed, then they open over the foot of the screen with Back and
+  // the button that sends the bet.
+  const sizingOpen = slim && sized && sizingAt === turnNow;
   return (
-    <div className={`action-bar my-turn${sending ? ' sending' : ''}`} data-street={streetKey}>
+    <div className={`action-bar my-turn${sending ? ' sending' : ''}${sizingOpen ? ' sizing-open' : ''}`} data-street={streetKey}>
       {head}
       {errorLine}
       {!sized && tipSlot(null)}
-      {sized && (tipPanel(true) || (
+      {sized && (tipPanel(true) || ((!slim || sizingOpen) && (
         <div className="sizing" ref={sizingBox}>
           {hand.betting !== 'fixed-limit' && (
             <div className="presets">
@@ -755,7 +766,17 @@ export function ActionBar({
             {bigBlind && <span className="unit">BB</span>}
           </div>
         </div>
-      ))}
+      )))}
+      {sizingOpen ? (
+        <div className="buttons">
+          <button className="back" onClick={() => setSizingAt(null)}>
+            Back
+          </button>
+          <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: clamp(amount) })}>
+            {raiseLabel(clamp(amount))}
+          </button>
+        </div>
+      ) : (
       <div className="buttons">
         {legal.canFold && (
           <button className={`fold ${confirmFold ? 'confirm' : ''}`} onClick={fold} title="Shortcut: F" aria-keyshortcuts="F">
@@ -777,13 +798,18 @@ export function ActionBar({
             <Key k="C" />
           </button>
         )}
-        {legal.canRaise && (
+        {legal.canRaise && slim && sized ? (
+          <button className="primary" aria-expanded={false} onClick={() => setSizingAt(turnNow)}>
+            {raiseType === 'bet' ? 'Bet' : 'Raise'}
+          </button>
+        ) : legal.canRaise && (
           <button className={`primary${armed && most?.kind === 'raise' ? ' armed' : ''}`} onClick={() => send({ type: raiseType, to: sized ? clamp(amount) : legal.minTo })} aria-keyshortcuts={[sized ? '' : 'R', most?.kind === 'raise' ? 'Shift+A' : ''].filter(Boolean).join(' ') || undefined}>
             {raiseLabel(sized ? clamp(amount) : legal.minTo)}
             <Key k="R" />
           </button>
         )}
       </div>
+      )}
       {why}
     </div>
   );

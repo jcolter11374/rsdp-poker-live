@@ -33,3 +33,46 @@ export function useMinWidth(px: number) {
 export function useWide(portrait: boolean) {
   return useMinWidth(WIDE_MIN) && !portrait;
 }
+
+/**
+ * The slim phone table: a phone (or a narrow window) standing up. One row of buttons under the table and the chat
+ * as a strip along the bottom, so the table gets the height. A phone on its side keeps its own layout.
+ */
+export function useSlim(portrait: boolean) {
+  const query = '(max-height: 500px)';
+  const [low, setLow] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const mq = matchMedia(query);
+    const onChange = () => setLow(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return portrait && !low;
+}
+
+/**
+ * The part of the page a phone's on-screen keyboard leaves in view, or null while no keyboard is up. Phones keep
+ * the page its full height under the keyboard, so anything meant to stay in view has to be fitted to this box.
+ */
+export function useKeyboardBox(on: boolean) {
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!on || !vv) {
+      setBox(null);
+      return;
+    }
+    const read = () => {
+      const up = window.innerHeight - vv.height > 120;
+      setBox((old) => (up ? (old && old.top === vv.offsetTop && old.height === vv.height ? old : { top: vv.offsetTop, height: vv.height }) : null));
+    };
+    read();
+    vv.addEventListener('resize', read);
+    vv.addEventListener('scroll', read);
+    return () => {
+      vv.removeEventListener('resize', read);
+      vv.removeEventListener('scroll', read);
+    };
+  }, [on]);
+  return box;
+}
