@@ -25,7 +25,9 @@ export function PhoneChat({ view, open, typing, onOpen, onClose }: { view: Table
     );
   const lines = view.chat.filter((m) => m.playerId && !mutes.includes(m.playerId)).slice(-2);
   return (
-    <button className="phone-chat chat-strip" onClick={onOpen} aria-label="Open chat" aria-expanded="false">
+    <button className="phone-chat chat-strip" onClick={onOpen} aria-expanded="false">
+      {/* Its name is what it shows (the last lines), after these words for screen readers. */}
+      <span className="sr-only">Open chat. </span>
       <span className="lines">
         {lines.length ? (
           lines.map((m, i) => (
