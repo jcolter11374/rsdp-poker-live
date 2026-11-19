@@ -31,7 +31,7 @@ _A bigger table on your phone, with the chat along the bottom_
 ### Fixed and changed
 
 - Phones held upright, the small print of the new layout (a tablet held upright gets it too): fixed-limit bets, which have no size to pick, still take one press. In games with more than two cards, the name of your hand sits just under your name rather than on the cards. A coach tip at a practice table opens over the foot of the table, and the fair-dealing warning shows in the top bar.
-- A phone or tablet held sideways and a computer keep the layout they had. With a keyboard attached to a phone or tablet held upright, R opens the bet sizes and Esc shuts them.
+- A phone or tablet held sideways and a computer keep the layout they had (a very narrow or heavily zoomed window on a computer already got the phone layout, and gets the new one). With a keyboard attached to a phone or tablet held upright, R opens the bet sizes and Esc shuts them.
 
 ## [2026.11.17.4] - 2026-11-17
 

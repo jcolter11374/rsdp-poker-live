@@ -117,8 +117,12 @@ A phone or tablet held upright has its own layout
 does for the keyboard and for screen readers:
 
 - **Bet and Raise** say they open something (collapsed, until pressed). The
-  sizes then come with Back, and Escape shuts them too. R opens them and
-  goes to the amount box; Shift+A opens them with the all-in ringed.
+  sizes then come with Back, and Escape shuts them too, from the amount box
+  as well. Focus goes to the button that sends the bet when they open (not
+  to the amount box, which would bring a phone's keyboard up) and back to
+  Bet or Raise when they shut. R opens them and goes to the amount box;
+  Shift+A opens them with the all-in ringed. A number key starts an amount
+  only once they are open.
 - **The chat strip** is one button. Its name is "Open chat" followed by the
   lines it shows, so what a screen reader says starts the same way as what
   is on it. When the chat opens, focus goes to its top edge ("Close chat"),
@@ -128,7 +132,9 @@ does for the keyboard and for screen readers:
   the board, the pot and whose turn it is.
 - **Sizes:** the move buttons are 50 pixels tall, the chat strip 38, and
   the buttons in the open sizes at least 28.
-- The automatic check runs on this layout too (the smoke test's phone).
+- The automatic check runs on this layout with the chat and the sizes shut
+  (the smoke test's phone). The open chat, the open sizes and the typing
+  view are not in it yet.
 
 ## Known and left
 

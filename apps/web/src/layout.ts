@@ -63,7 +63,8 @@ export function useKeyboardBox(on: boolean) {
       return;
     }
     const read = () => {
-      const up = window.innerHeight - vv.height > 120;
+      // A pinch zoom shrinks the visual viewport too: only an unzoomed page is read as the keyboard coming up.
+      const up = vv.scale <= 1.01 && window.innerHeight - vv.height > 120;
       setBox((old) => (up ? (old && old.top === vv.offsetTop && old.height === vv.height ? old : { top: vv.offsetTop, height: vv.height }) : null));
     };
     read();

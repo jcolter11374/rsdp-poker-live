@@ -1527,11 +1527,22 @@ describe('all in with Shift+A pressed twice (#307)', () => {
       fireEvent.keyDown(window, { key: 'r' });
       await later(50);
       expect(document.activeElement).toBe(box());
-      (document.activeElement as HTMLElement).blur();
-      fireEvent.keyDown(window, { key: 'Escape' });
+      // Escape works from the amount box itself, and focus goes back to Raise.
+      fireEvent.keyDown(box(), { key: 'Escape' });
       await later(50);
       expect(screen.queryByRole('spinbutton', { name: /^Amount/ })).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Raise$/ }));
       expect(moves()).toEqual([]);
+    });
+
+    it('moves focus to the button that sends the bet when the sizes open, and back to Bet when they shut', async () => {
+      renderBar(checkedToMe(), { slim: true });
+      screen.getByRole('button', { name: /^Bet$/ }).focus();
+      await tap(/^Bet$/);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Bet \d/ }));
+      await later(600);
+      await tap(/^Back$/);
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Bet$/ }));
     });
 
     it('leaves the bar off a phone as it was: sizes on show, one press to raise', async () => {
