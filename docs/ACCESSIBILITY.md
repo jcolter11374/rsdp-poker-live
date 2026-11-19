@@ -110,6 +110,26 @@ until John had seen before-and-after pictures and OK'd them
   quick chat replies 21, and the Straddle and Wait for the big blind
   switches 23.
 
+## The slim table on a phone held upright (19 November 2026)
+
+A phone or tablet held upright has its own layout
+([D44](DECISIONS.md#d44-a-phone-held-upright-gets-a-slim-table)). What it
+does for the keyboard and for screen readers:
+
+- **Bet and Raise** say they open something (collapsed, until pressed). The
+  sizes then come with Back, and Escape shuts them too. R opens them and
+  goes to the amount box; Shift+A opens them with the all-in ringed.
+- **The chat strip** is one button. Its name is "Open chat" followed by the
+  lines it shows, so what a screen reader says starts the same way as what
+  is on it. When the chat opens, focus goes to its top edge ("Close chat"),
+  not to the message box, which would bring a phone's keyboard up; when it
+  shuts, focus goes back to the strip.
+- **The one-line table** shown while you type is a status line: your cards,
+  the board, the pot and whose turn it is.
+- **Sizes:** the move buttons are 50 pixels tall, the chat strip 38, and
+  the buttons in the open sizes at least 28.
+- The automatic check runs on this layout too (the smoke test's phone).
+
 ## Known and left
 
 - **No real screen-reader test yet.** The checks above are automated and
@@ -120,6 +140,9 @@ until John had seen before-and-after pictures and OK'd them
   fit the window. Zoom (Ctrl and +, or pinch) grows everything, and pages
   fit without scrolling sideways at 200% and 400%. On a phone with large
   text a long table name is cut short in the top bar.
+- **The slim phone table has not been tried on a real phone's keyboard or
+  with VoiceOver.** The typing view was built against a stand-in for the
+  keyboard. An open coach tip covers your own nameplate until it's shut.
 - **Turn clocks** are part of the game. At a cash table the host can give
   everyone more time per turn and a bigger time bank, or turn the clock off,
   in the table's settings.

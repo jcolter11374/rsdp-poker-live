@@ -227,7 +227,7 @@ export function ActionBar({
     boxWanted.current = false;
     amountBox.current?.focus();
     amountBox.current?.select();
-  }, [tipOpen]);
+  }, [tipOpen, sizingAt]);
 
   // One move at a time: a double tap must not send a second move, which could land on the next street
   // (the big blind checking preflop and then first to act on the flop) or queue a pre-move.
@@ -335,6 +335,8 @@ export function ActionBar({
       setTyped(null);
       setAmountRaw(most.to);
     }
+    // The slim bar keeps the sizes shut: open them, so the ringed all-in button is there to see.
+    if (slim && most.kind === 'raise') setSizingAt(turnNow);
     const now = Date.now();
     setArming({ turn: turnNow, most, at: now, last: now, amount, typed });
   };
@@ -424,6 +426,12 @@ export function ActionBar({
         return;
       }
     }
+    // Escape shuts the slim bar's open sizes, as Back does.
+    if (free && e.key === 'Escape' && slim && legal && sizingAt === turnNow) {
+      e.preventDefault();
+      setSizingAt(null);
+      return;
+    }
     if (shiftA) {
       // Shift+A does nothing but arm the all-in on your turn: before it, it ticks no pre-move.
       if (most) {
@@ -462,6 +470,12 @@ export function ActionBar({
       e.preventDefault();
       boxWanted.current = true;
       setTipAt(null);
+      if (slim) setSizingAt(turnNow);
+    } else if (k === 'r' && slim && sized && legal.canRaise) {
+      // The slim bar's sizes are shut: R opens them and goes to the amount.
+      e.preventDefault();
+      boxWanted.current = true;
+      setSizingAt(turnNow);
     } else if (k === 'r' && hand?.betting === 'fixed-limit' && legal.canRaise) send({ type: legal.raiseKind, to: legal.minTo });
     else return;
   };

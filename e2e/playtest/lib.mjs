@@ -75,6 +75,14 @@ export function bot(p, style = 'call') {
             await bar.locator('.buttons button').nth(i).click({ timeout: 2000 });
             return true;
           };
+          // A phone standing up shows the bet sizes only after Bet or Raise is pressed (#510): open them first.
+          const opener = bar.locator('.buttons button.primary[aria-expanded="false"]');
+          let opened = false;
+          if ((b.style === 'shove' || (b.style === 'mixed' && Math.random() < 0.25)) && (await opener.count())) {
+            await opener.click({ timeout: 2000 });
+            await p.waitForTimeout(150);
+            opened = true;
+          }
           if (texts.some((t) => /Run it twice/.test(t))) {
             if (b.rit !== null) await click(b.rit ? /^Run it twice/ : /^Run it once/);
           }
@@ -86,7 +94,7 @@ export function bot(p, style = 'call') {
               await p.waitForTimeout(150);
               (await click(/^All in/)) || (await click(/^(Call|Check|Bring)/));
             } else (await click(/^All in|\(all in\)/)) || (await click(/^(Call|Check|Bring|Raise|Bet|Complete)/));
-          } else if (b.style === 'mixed' && Math.random() < 0.25) {
+          } else if (b.style === 'mixed' && (opened || Math.random() < 0.25)) {
             const pot = bar.locator('.presets button:has-text("½ pot")');
             if (await pot.count()) {
               await pot.click({ timeout: 2000 });

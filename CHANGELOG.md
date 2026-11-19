@@ -18,6 +18,21 @@ On `main`, every entry here is live. On `develop`, the top entry may be the next
 still being filled in: its tag and GitHub release only exist once it goes live. Work that is
 merged but not live yet is also on the issues labelled [status: on develop](https://github.com/jcolter11374/rsdp-poker-live/issues?q=is%3Aissue+is%3Aopen+label%3A%22status%3A+on+develop%22).
 
+## [2026.11.19] - 2026-11-19
+
+_A bigger table on your phone, with the chat along the bottom_
+
+### New
+
+- **A taller table and one row of buttons.** On a phone held upright the table now fills the screen. On your turn there is one row of buttons under it: Fold, Check or Call, and Bet or Raise. Pressing Bet or Raise opens the bet sizes, the slider and the amount box, with Back to shut them and the button that sends your bet. A phone held sideways and a computer are as they were.
+- **Chat along the bottom.** The chat button is gone. The last two chat lines show along the bottom of the screen. Tap them to open the chat there, with the table and your buttons still in view, and tap the chat's top edge to shut it. While you type, one line shows your cards, the board, the pot and whose turn it is, so you can keep playing.
+- **Your hand, named on your cards.** The name of your hand ("Pair of Kings", "Flush") now sits on a gold tag on your cards, where you're already looking. In games that play for the high hand it names what you hold from the first cards dealt.
+
+### Fixed and changed
+
+- Phones held upright, the small print of the new layout (a tablet held upright gets it too): fixed-limit bets, which have no size to pick, still take one press. In games with more than two cards, the name of your hand sits just under your name rather than on the cards. A coach tip at a practice table opens over the foot of the table, and the fair-dealing warning shows in the top bar.
+- A phone or tablet held sideways and a computer keep the layout they had. With a keyboard attached to a phone or tablet held upright, R opens the bet sizes and Esc shuts them.
+
 ## [2026.11.17.4] - 2026-11-17
 
 ### Fixed and changed
@@ -831,6 +846,7 @@ _RSDP Poker Live! is live_
 - The "Connection lost" banner no longer sticks on slow phones.
 - Add-ons and recurring tournaments carry on after a server restart.
 
+[2026.11.19]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.19
 [2026.11.17.4]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.4
 [2026.11.17.3]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.3
 [2026.11.17.2]: https://github.com/jcolter11374/rsdp-poker-live/releases/tag/v2026.11.17.2

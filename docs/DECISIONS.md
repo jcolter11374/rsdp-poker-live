@@ -54,6 +54,7 @@ How this file works:
 | [D41](#d41-a-change-updates-its-docs-in-the-same-pull-request) | A change updates its docs in the same pull request | 2026-11-17 | John picked; details Claude |
 | [D42](#d42-how-a-review-is-run-and-who-merges-is-written-down) | How a review is run, and who merges, is written down | 2026-11-17 | John agreed; details Claude |
 | [D43](#d43-rare-hints-during-an-all-in-runout-are-left-as-they-are-for-now) | Rare hints during an all-in runout are left as they are, for now | 2026-11-17 | John |
+| [D44](#d44-a-phone-held-upright-gets-a-slim-table) | A phone held upright gets a slim table | 2026-11-19 | John; details Claude |
 
 ---
 
@@ -505,3 +506,16 @@ How this file works:
 - **Why:** each needs odd timing in those few seconds, a mapping pass counted about 30 such cases, and fixing them would cost far more than it gives a game among friends.
 - **May be fixed later.** The issues keep the full findings and fix ideas, and #463's cash-table part is half built on branch `claude/project-thread-85zhi9`. Reopen them to pick it up; don't treat "not planned" as "never".
 - **Where:** [/fairness](FAIRNESS.md#what-a-tables-host-can-do) ("All-in runouts") says what can show early. What is already fixed stays: the waitlist, sitting down, random seats, bots added to a seat and Dealer's choice's seat count (#448, #467).
+
+## D44. A phone held upright gets a slim table
+
+- **Decided:** 2026-11-19, by John. A player tried a real game on an iPhone on 2026-11-18 with PokerNow open beside it, and said the table was too small with black space around it, the name of his hand was hard to find, and the chat covered the table; he then asked for no chat button, with the chat at the bottom, opened by a tap. John had one redesign mocked up as before-and-after pictures (D21) and showed them to that player: "Cool he likes the changes. Let's add them and document them". The details are Claude's.
+- **Decision:** a phone or tablet held upright shows the table in a slim layout (issue #510):
+  - **One row of buttons.** Fold, Check or Call, and Bet or Raise sit in one row under the table. Bet or Raise opens the sizes, the slider and the amount over the foot of the screen, with Back and the button that sends the bet. So a sized bet takes two presses, as it does on PokerNow. Fixed-limit bets have no size and still take one.
+  - **No chat button.** The last two chat lines show in a strip along the bottom. A tap opens the chat there, under the table, which stays in view with its buttons. While the phone's keyboard is up, one line with your cards, the board, the pot and whose turn it is stands in for the table, and the buttons stay.
+  - **The hand's name on the cards.** A gold tag on your cards (under your name in games with more than two cards) replaces the line above the buttons. In high-only games it names what you hold before there are five cards.
+- **Why:** the three rows of controls and the hand line took about a quarter of a phone's screen from the table, on every turn. The bar is now the same height on your turn and off it, so the table never changes size during a hand.
+- **A deliberate simplification:** the sizes cover the foot of the table (your own nameplate's lower edge) while they are open, and an open coach tip covers your nameplate. Both are open only because you asked for them.
+- **Not changed:** a phone or tablet held sideways and a computer keep their layouts. The keyboard shortcuts work as before; R opens the sizes in the slim layout.
+- **Not checked on a real phone before release:** the typing view was built against a stand-in for a phone's keyboard, since a cloud session has no iPhone and test builds never go to the live site. It is to be tried on a real iPhone once live.
+- **Where:** `apps/web/src/components/table/PhoneChat.tsx` and `phone-chat.css`, `useSlim` in `apps/web/src/layout.ts`, the `slim` prop of `ActionBar.tsx`, `earlyHand` in `apps/web/src/strength.ts`.

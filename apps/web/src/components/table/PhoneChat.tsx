@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { TableView } from '@rsdp/engine/wire';
 import type { Fmt } from '../../format';
 import { useChatMutes } from '../../chatMutes';
@@ -12,10 +13,19 @@ import './phone-chat.css';
  */
 export function PhoneChat({ view, open, typing, onOpen, onClose }: { view: TableView; open: boolean; typing: boolean; onOpen: () => void; onClose: () => void }) {
   const mutes = useChatMutes();
+  // Opening swaps the strip for the open chat's top edge, and shutting swaps it back: focus follows, so a keyboard
+  // or screen reader stays where it was. (Not into the message box, which would bring a phone's keyboard up.)
+  const edge = useRef<HTMLButtonElement>(null);
+  const was = useRef(open);
+  useEffect(() => {
+    if (was.current === open) return;
+    was.current = open;
+    edge.current?.focus({ preventScroll: true });
+  }, [open]);
   if (open)
     return (
       <section className={`phone-chat open${typing ? ' typing' : ''}`} aria-label="Chat">
-        <button className="phone-chat-handle" onClick={onClose} aria-label="Close chat" aria-expanded="true">
+        <button ref={edge} className="phone-chat-handle" onClick={onClose} aria-label="Close chat" aria-expanded="true">
           <span className="grip" />
           <span className="label">Chat</span>
           <span className="chev" aria-hidden="true">⌄</span>
@@ -25,7 +35,7 @@ export function PhoneChat({ view, open, typing, onOpen, onClose }: { view: Table
     );
   const lines = view.chat.filter((m) => m.playerId && !mutes.includes(m.playerId)).slice(-2);
   return (
-    <button className="phone-chat chat-strip" onClick={onOpen} aria-expanded="false">
+    <button ref={edge} className="phone-chat chat-strip" onClick={onOpen} aria-expanded="false">
       {/* Its name is what it shows (the last lines), after these words for screen readers. */}
       <span className="sr-only">Open chat. </span>
       <span className="lines">
