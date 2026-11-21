@@ -503,6 +503,31 @@ describe('which buttons show', () => {
     expect(moves()).toEqual([expect.objectContaining({ type: 'bring-in' }), expect.objectContaining({ type: 'bet', to: 20 })]);
   });
 
+  it('in stud, C brings in and R completes, and both buttons name their key (#512)', async () => {
+    const view = tableView({
+      hand: { gameId: 'razz', family: 'stud', betting: 'fixed-limit', street: 0, streetName: 'Third street', boards: [[[]]], potTotal: 0, toAct: 0 },
+      me: {
+        cards: [
+          { card: '9c', up: false },
+          { card: '8d', up: false },
+          { card: 'Kh', up: true },
+        ],
+      },
+      legal: { canFold: false, canCheck: false, callAmount: 0, canRaise: true, raiseKind: 'bet', minTo: 20, maxTo: 20, canBringIn: true },
+    });
+    renderBar(view);
+    const buttons = [...document.querySelectorAll('.action-bar .buttons button')];
+    expect(buttons.map((b) => b.getAttribute('aria-keyshortcuts'))).toEqual(['C', 'R']);
+    expect(buttons.map((b) => b.querySelector('.key-hint')?.textContent)).toEqual(['C', 'R']);
+    fireEvent.keyDown(window, { key: 'c' });
+    await later(600);
+    // K and F do nothing here: there is nothing to check, and the forced bet can't be folded.
+    fireEvent.keyDown(window, { key: 'k' });
+    fireEvent.keyDown(window, { key: 'f' });
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(moves()).toEqual([expect.objectContaining({ type: 'bring-in' }), expect.objectContaining({ type: 'bet', to: 20 })]);
+  });
+
   it('after the hand, offers to show the cards nobody had to see, together or one at a time', async () => {
     const done = (canShow: number[]) => ({ ...tableView({ hand: { phase: 'complete', toAct: null } }), canShow });
     const bar = renderBar(done([0, 1]));
