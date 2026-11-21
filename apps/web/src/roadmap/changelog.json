@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "id": "2026.11.21",
+      "date": "2026-11-21",
+      "fixes": [
+        "Stud games (Stud, Stud Hi-Lo, Razz, and the stud rounds of mixed games): the forced opening bet now has a key. C brings in, as it calls at other times, and R still completes. The key is shown on the Bring in button and in the list of keyboard shortcuts. Before, it was the one move that needed a click."
+      ]
+    },
+    {
       "id": "2026.11.19",
       "date": "2026-11-19",
       "fixes": [

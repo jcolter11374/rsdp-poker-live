@@ -481,7 +481,9 @@ export function ActionBar({
     }
     if (k === 'f' && legal.canFold) fold();
     else if (k === 'k' && legal.canCheck) send({ type: 'check' });
-    else if (k === 'c' && !legal.canCheck && !legal.canBringIn) send({ type: 'call' });
+    // C pays the least it takes to go on: the call, or in stud the forced opening bet (#512; R completes).
+    else if (k === 'c' && legal.canBringIn) send({ type: 'bring-in' });
+    else if (k === 'c' && !legal.canCheck) send({ type: 'call' });
     else if (/^[0-9]$/.test(k) && amountBox.current) {
       // A number on your turn starts the bet amount: the box takes focus now, so this key lands in it, replacing
       // what was there (#320). Not preventDefault: the browser types the digit into the newly focused box.
@@ -824,7 +826,10 @@ export function ActionBar({
           </button>
         )}
         {legal.canBringIn ? (
-          <button onClick={() => send({ type: 'bring-in' })}>Bring in {fmt(hand.stakes.bringIn)}</button>
+          <button onClick={() => send({ type: 'bring-in' })} title="Shortcut: C" aria-keyshortcuts="C">
+            Bring in {fmt(hand.stakes.bringIn)}
+            <Key k="C" />
+          </button>
         ) : legal.canCheck ? (
           <button className="call" onClick={() => send({ type: 'check' })} title="Shortcut: K" aria-keyshortcuts="K">
             Check
